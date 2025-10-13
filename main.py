@@ -1,28 +1,54 @@
 import uvicorn
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
+from fastapi.openapi.docs import get_swagger_ui_html
 from tortoise.contrib.fastapi import register_tortoise
 
 from config import settings
 from project_code.routers import rt  
 
+
 # 创建FastAPI应用实例
 app = FastAPI(
     title="MyAPS API",
     description="MyAPS API",
-    version="1.0.0"
+    version="1.0.0",
+    # 配置文档页面URL，禁用默认的 Swagger UI​，防止CDN资源不稳定导致无法访问文档页
+    docs_url=None,  
+    redoc_url=None,
+    swagger_js_url="/static/swagger/swagger-ui-bundle.js",
+    swagger_css_url="/static/swagger/swagger-ui.css",
+    swagger_favicon_url="/static/swagger/favicon-32x32.png",
+    swagger_ui_parameters={"configUrl": None}
 )
 
-# 包含路由
+# 挂载静态文件
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# 覆写原有文档页面路由函数，所有静态资源采用本地文件
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui_html():
+    return get_swagger_ui_html(
+        openapi_url=app.openapi_url,
+        title=app.title + " - Swagger UI",
+        swagger_js_url="/static/swagger/swagger-ui-bundle.js",
+        swagger_css_url="/static/swagger/swagger-ui.css",
+        swagger_favicon_url="/static/swagger/favicon.png",
+        swagger_ui_parameters=app.swagger_ui_parameters
+    )
+
+# 包含子路由
 app.include_router(rt, prefix="/api", tags=[])
 
 # 根路由
-# @app.get("/")
-# async def read_root():
-#     return {
-#         "message": "Welcome to MyAPS API",
-#         "version": "1.0.0",
-#         "status": "running"
-#     }
+@app.get("/")
+async def read_root():
+    return {
+        "message": "Welcome to MyAPS API",
+        "version": "1.0.0",
+        "status": "running"
+    }
 
 # 示例路由 - 获取项目信息
 # @app.get("/api/info")
@@ -53,4 +79,4 @@ if __name__ == "__main__":
         app,
         host=settings.THIS_SERVER_HOST,
         port=settings.THIS_SERVER_PORT,
-    ) 
+    )
