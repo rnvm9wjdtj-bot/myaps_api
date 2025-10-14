@@ -1,33 +1,14 @@
-from typing import Literal
-from enum import Enum
+from typing import Literal#, List, Dict, Any
 from decimal import Decimal
-from pydantic import BaseModel, Field, field_validator
+
+from pydantic import BaseModel, Field, field_validator#, ValidationError
 
 from config import forcustomer as fc
+# from .common import format_validation_error
 
 
-class NyEnum(str, Enum):
-    N = "N"
-    Y = "Y"
 
-class MaterialSchema(BaseModel):
-    class LotsizeEnum(str, Enum):
-        EX = "EX"
-        FX = "FX"
-        D1 = "D1"
-        D2 = "D2"
-        D3 = "D3"
-        D4 = "D4"
-        D5 = "D5"
-        D6 = "D6"
-        W1 = "W1"
-        W2 = "W2"
-        W3 = "W3"
-        W4 = "W4"
-        M1 = "M1"
-        M2 = "M2"
-        VB = "VB"
-
+class SchemaMaterial(BaseModel):
     materialno: str = Field(..., alias=fc.material_map.get("materialno", "materialno"), description="料号")
     description: str = Field(..., alias=fc.material_map.get("description", "description"), description="物料名称")
     size: str = Field(None, alias=fc.material_map.get("size", "size"), description="规格")
@@ -42,12 +23,12 @@ class MaterialSchema(BaseModel):
     price: Decimal = Field(alias=fc.material_map.get("price", "price"), description="价格")
     groupno: str = Field(alias=fc.material_map.get("groupno", "groupno"), description="型号")
     type: Literal["E", "F"] = Field(... if fc.myaps_is_pro else None, alias=fc.material_map.get("type", "type"), description="物料类型  E-自制件 F-采购件")
-    phantom: NyEnum = Field(alias=fc.material_map.get("phantom", "phantom"), description='虚拟件')
+    phantom: Literal["N", "Y"] = Field(alias=fc.material_map.get("phantom", "phantom"), description='虚拟件')
     phantommin: int = Field(..., alias=fc.material_map.get("phantommin", "phantommin"), ge=0, description='虚拟时间(Minute)')
     firmday: int = Field(alias=fc.material_map.get("firmday", "firmday"), ge=0, description="固定天数")
     daygap: int = Field(alias=fc.material_map.get("daygap", "daygap"), ge=0, description='MTO拆分天数')
-    candelay: NyEnum = Field(alias=fc.material_map.get("candelay", "candelay"), description='可否延迟')
-    lotsize: LotsizeEnum = Field(alias=fc.material_map.get("lotsize", "lotsize"), max_length=2, description='批量')
+    candelay: Literal["N", "Y"] = Field(alias=fc.material_map.get("candelay", "candelay"), description='可否延迟')
+    lotsize: Literal["EX", "FX", "D1", "D2", "D3", "D4", "D5", "D6", "W1", "W2", "W3", "W4", "M1", "M2", "VB"] = Field(alias=fc.material_map.get("lotsize", "lotsize"), max_length=2, description='批量')
     lotfix: float = Field(alias=fc.material_map.get("lotfix", "lotfix"), ge=0, description='固定批')
     lotmin: float = Field(alias=fc.material_map.get("lotmin", "lotmin"), ge=0, description='最小批')
     lotmax: float = Field(alias=fc.material_map.get("lotmax", "lotmax"), ge=0, description='最大批')

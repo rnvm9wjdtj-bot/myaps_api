@@ -1,12 +1,13 @@
 import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse
+# from fastapi.responses import RedirectResponse
 from fastapi.openapi.docs import get_swagger_ui_html
 from tortoise.contrib.fastapi import register_tortoise
 
 from config import settings
 from project_code.routers import rt  
+from project_code.common import register_exception_handlers
 
 
 # 创建FastAPI应用实例
@@ -38,6 +39,10 @@ async def custom_swagger_ui_html():
         swagger_ui_parameters=app.swagger_ui_parameters
     )
 
+
+# 注册自定义的异常处理器
+register_exception_handlers(app)
+
 # 包含子路由
 app.include_router(rt, prefix="/api", tags=[])
 
@@ -49,18 +54,6 @@ async def read_root():
         "version": "1.0.0",
         "status": "running"
     }
-
-# 示例路由 - 获取项目信息
-# @app.get("/api/info")
-# async def get_info():
-#     return {
-#         "app_name": "MyAPS API",
-#         "description": "A FastAPI project template",
-#         "version": "1.0.0",
-#         "docs_url": "/docs",
-#         "redoc_url": "/redoc"
-#     }
-
 
 # 注册Tortoise ORM
 register_tortoise(
