@@ -70,9 +70,11 @@ async def common_post(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticS
 
                 if len(model_key) > 1:     # 如果是联合主键，则要排除虚拟主键的干扰
                     exist = await mdl.filter(**match_on).only(*only_fields).first().using_db(db)
+                    # exist = await mdl.filter(**match_on).only(*only_fields).using_db(db)
                     if exist:
                         # TODO 处理更新逻辑
-                        await exist.update_from_dict(_d_dict)
+                        await mdl.filter(**match_on).only(*only_fields).first().using_db(db).update(**_d_dict)
+                        # await exist.update(**_d_dict)
                         update_count += 1
                     else:
                         await mdl.create(**_d_dict, using_db=db)
@@ -80,7 +82,7 @@ async def common_post(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticS
                 else:   # 单一主键
                     exist = await mdl.get_or_none(**match_on, using_db=db)
                     if exist:
-                        await exist.update_from_dict(_d_dict)#.save(using_db=db)
+                        await exist.update_from_dict(_d_dict).save()
                         update_count += 1
                     else:
                         await mdl.create(**_d_dict, using_db=db)
