@@ -1,12 +1,12 @@
-
 from typing import Dict, Any, List
 
 from fastapi import status, Query, HTTPException, status, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from tortoise import Tortoise
+from tortoise.transactions import in_transaction
 from tortoise.models import Model as TortoiseBaseModel
-# from pydantic import ValidationError
+from pydantic import BaseModel as PydanticSchema
 
 from config.settings import DB_SET
 
@@ -27,28 +27,95 @@ def standard_response(
         "meta": meta
     }
 
-
 # url - 公共参数
 common_params = {
     "db_name": Query(DB_SET[0], description="账套"),
     "page_size": Query(1000, description="每页数量", gt=0, le=10000),
     "page_index": Query(0, description="分页页码，从0开始", ge=0)
 }
-# 路由公共方法 - 获取数据
-async def common_get(db_name: str, model: TortoiseBaseModel, page_size: int, page_index: int):
+
+# 路由公共方法 - get
+async def common_get(db_name: str, mdl: TortoiseBaseModel, page_size: int, page_index: int):
     db = Tortoise.get_connection(db_name)
     # 分页查询
     offset = page_size * page_index
-    materials = await model.all().using_db(db).offset(offset).limit(page_size)
+    if mdl._meta.unique_together:   # 如果是联合主键，则要排除虚拟主键的干扰
+        # model_fields = set(mdl._meta.fields)
+        # only_fields = model_fields - {"vid", }     # 必须用set集合{"vid", }
+        only_fields = [f for f in mdl._meta.fields if f != "vid"]
+        data = await mdl.all().only(*only_fields).using_db(db).offset(offset).limit(page_size)
+    else:
+        data = await mdl.all().using_db(db).offset(offset).limit(page_size)
     return standard_response(
-        data=materials,
+        data=data,
         meta={
-            "total": await model.all().using_db(db).count(),
+            "total": await mdl.all().using_db(db).count(),
             "pageSize": page_size,
             "pageIndex": page_index,
         }
     )
 
+# 路由公共方法 - post
+async def common_post(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticSchema]):
+    cerate_count = 0
+    update_count = 0
+    unique_together = mdl._meta.unique_together
+    model_key = unique_together[0] if unique_together else [mdl._meta.pk_attr]
+    only_fields = [f for f in mdl._meta.fields if f != "vid"] if len(model_key) > 1 else None
+    try:
+        async with in_transaction(db_name) as db:
+            for _d in data:
+                _d_dict = _d.model_dump()
+                match_on = {k : _d_dict.get(k) for k in model_key}
+
+                if len(model_key) > 1:     # 如果是联合主键，则要排除虚拟主键的干扰
+                    exist = await mdl.filter(**match_on).only(*only_fields).first().using_db(db)
+                    if exist:
+                        # TODO 处理更新逻辑
+                        await exist.update_from_dict(_d_dict)
+                        update_count += 1
+                    else:
+                        await mdl.create(**_d_dict, using_db=db)
+                        cerate_count += 1
+                else:   # 单一主键
+                    exist = await mdl.get_or_none(**match_on, using_db=db)
+                    if exist:
+                        await exist.update_from_dict(_d_dict)#.save(using_db=db)
+                        update_count += 1
+                    else:
+                        await mdl.create(**_d_dict, using_db=db)
+                        cerate_count += 1
+        return standard_response(
+            message=f"新增{cerate_count}条，修改{update_count}条",
+            meta={"create": cerate_count, "update": update_count}
+            )
+    except Exception as e:
+        return standard_response(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message=f"操作失败：{str(e)}"
+        )
+
+# 路由公共方法 - delete
+async def common_delete(db_name: str, mdl: TortoiseBaseModel, model_key: tuple[str], data: List[PydanticSchema]):
+    delete_count = 0
+    try:
+        async with in_transaction(db_name) as db:
+            for _d in data:
+                _d_dict = _d.model_dump()
+                match_on = {k : _d_dict.get(k) for k in model_key}
+                exist = await mdl.get_or_none(**match_on, using_db=db)
+                if exist:
+                    await exist.delete(using_db=db)
+                    delete_count += 1
+        return standard_response(
+            message=f"删除{delete_count}条",
+            meta={"delete": delete_count}
+            )
+    except Exception as e:
+        return standard_response(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message=f"操作失败：{str(e)}"
+        )
 ################################################################
 # pydantic验证错误统一格式
 class CustomValidationError(HTTPException):

@@ -1,4 +1,4 @@
-from enum import unique
+# from enum import unique
 from tortoise.models import Model as TortoiseBaseModel
 from tortoise import fields
 
@@ -348,7 +348,6 @@ class TMatGrp(TortoiseBaseModel):
 
 
 class TMatVer(TortoiseBaseModel):
-    # pk = fields.CompositePrimaryKey('MaterialNo', 'MatVer')
     vid = fields.IntField(primary_key=True)
     materialno = fields.CharField(source_field='MaterialNo', max_length=64)  # Field name made lowercase.
     matver = fields.CharField(source_field='MatVer', max_length=4)  # Field name made lowercase.
@@ -366,7 +365,6 @@ class TMatVer(TortoiseBaseModel):
 
 
 class TMatWc(TortoiseBaseModel):
-    # pk = fields.CompositePrimaryKey('MaterialNo', 'MatVer', 'ItemNo')
     vid = fields.IntField(primary_key=True)
     materialno = fields.CharField(source_field='MaterialNo', max_length=64)  # Field name made lowercase.
     matver = fields.CharField(source_field='MatVer', max_length=4)  # Field name made lowercase.
@@ -379,7 +377,7 @@ class TMatWc(TortoiseBaseModel):
     sf = fields.CharField(source_field='SF', max_length=1, blank=True, null=True, description='S=串行, F=并行')  # Field name made lowercase.
     offsetsec = fields.IntField(source_field='OffSetSec', blank=True, null=True)  # Field name made lowercase.
     memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
-    sys_stamp = fields.DatetimeField(source_field='Sys_Stamp')  # Field name made lowercase.
+    sys_stamp = fields.DatetimeField(source_field='Sys_Stamp', auto_now=True)  # Field name made lowercase.
 
     class Meta:
         managed = False
@@ -388,7 +386,6 @@ class TMatWc(TortoiseBaseModel):
 
 
 class TMatWcBom(TortoiseBaseModel):
-    # pk = fields.CompositePrimaryKey('ProductNo', 'MatVer', 'ItemNo', 'MaterialNo')
     vid = fields.IntField(primary_key=True)
     productno = fields.CharField(source_field='ProductNo', max_length=64)  # Field name made lowercase.
     matver = fields.CharField(source_field='MatVer', max_length=4)  # Field name made lowercase.
@@ -401,7 +398,7 @@ class TMatWcBom(TortoiseBaseModel):
     scrap = fields.FloatField(source_field='Scrap', blank=True, null=True, description='%')  # Field name made lowercase.
     alt = fields.CharField(source_field='Alt', max_length=1, blank=True, null=True, description='Y/N是否是替代')  # Field name made lowercase.
     memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
-    sys_stamp = fields.DatetimeField(source_field='Sys_Stamp')  # Field name made lowercase.
+    sys_stamp = fields.DatetimeField(source_field='Sys_Stamp', auto_now=True)  # Field name made lowercase.
 
     class Meta:
         managed = False

@@ -11,11 +11,27 @@ default_leadday_f = 1  # 采购件默认提前期
 
 # 前后端字段映射关系，某些客户可能需要
 #  {model字段: 客户字段}
-material_map = {
+t_material = {
     "materialno": "materialno",
     "description": "description",
     "size": "size",
     "unit": "unit",
     "price": "price",
     "remark": "remark",
+}
+
+t_workcenter = {
+    "workcenter": "workcenter",
+}
+
+t_mat_wc = {
+
+}
+
+t_mat_ver = {
+
+}
+
+t_mat_wc_bom = {
+
 }
