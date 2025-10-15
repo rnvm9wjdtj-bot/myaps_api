@@ -23,8 +23,8 @@ def standard_response(
         "status_code": status_code,
         "success": success,
         "message": message,
-        "data": data,
-        "meta": meta
+        "meta": meta,
+        "data": data
     }
 
 # url - 公共参数
@@ -34,8 +34,10 @@ common_params = {
     "page_index": Query(0, description="分页页码，从0开始", ge=0)
 }
 
+########################################################################
+
 # 路由公共方法 - get
-async def common_get(db_name: str, mdl: TortoiseBaseModel, page_size: int, page_index: int):
+async def common_get_by_orm(db_name: str, mdl: TortoiseBaseModel, page_size: int, page_index: int):
     db = Tortoise.get_connection(db_name)
     # 分页查询
     offset = page_size * page_index
@@ -112,6 +114,17 @@ async def common_delete(db_name: str, mdl: TortoiseBaseModel, model_key: tuple[s
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message=f"操作失败：{str(e)}"
         )
+
+
+async def common_get_by_sql(db_name: str, table_name: str, filter_string: str):
+    db = Tortoise.get_connection(db_name)
+    where = f" WHERE {filter_string}" if filter_string else ''
+    sql = f'SELECT * FROM `{table_name}` {where}'
+    data = await db.execute_query(sql)
+    return standard_response(
+        data=data[1],
+        meta={"total": data[0]}
+    )
 ################################################################
 # pydantic验证错误统一格式
 class CustomValidationError(HTTPException):

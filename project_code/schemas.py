@@ -1,12 +1,10 @@
-from typing import Literal#, List, Dict, Any
+from typing import Literal, Optional#, List, Dict, Any
 from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator#, ValidationError
 
 from config import forcustomer as fc
-# from .common import format_validation_error
 
-# 
 
 class MaterialInput(BaseModel):
     materialno: str = Field(..., alias=fc.t_material.get("materialno", "materialno"), description="料号")
@@ -14,7 +12,7 @@ class MaterialInput(BaseModel):
     size: str = Field(None, alias=fc.t_material.get("size", "size"), description="规格")
     plant: str = Field(fc.default_plant, alias=fc.t_material.get("plant", "plant"), description='工厂')
     planner: str = Field(fc.default_planner, alias=fc.t_material.get("planner", "planner"), description="计划员")
-    fifo: int = Field(fc.default_fifo, alias=fc.t_material.get("fifo", "fifo"), ge=0, le=1, description='1-FIFO ,0-最近原则')
+    fifo: int = Field(fc.default_fifo, alias=fc.t_material.get("fifo", "fifo"), ge=0, le=1, description='1-FIFO 0-最近原则')
     leadday: int = Field(alias=fc.t_material.get("leadday", "leadday"), ge=0, description="交期（天）")
     expday: int = Field(alias=fc.t_material.get("expday", "expday"), ge=0, description="保质期（天）")
     grday: int = Field(alias=fc.t_material.get("grday", "grday"), ge=0, description="收货质检（天）")
@@ -82,6 +80,7 @@ class WorkcenterInput(BaseModel):
         title = "验证规则 - 工作中心"
 
 
+
 class MatWcInput(BaseModel):
     materialno: str = Field(..., alias=fc.t_mat_wc.get("materialno", "materialno"), max_length=64, description='料号')
     matver: str = Field(..., alias=fc.t_mat_wc.get("matver", "matver"), max_length=4, description='产线版本')
@@ -99,32 +98,64 @@ class MatWcInput(BaseModel):
         title = "验证规则 - 工序"
 
 
+
 class MatVerInput(BaseModel):
-    materialno: str = Field(alias='MaterialNo', max_length=64)
-    matver: str = Field(alias='MatVer', max_length=4)
-    lotfrom: int = Field(alias='LotFrom', description='')
-    lotto: int = Field(alias='LotTo', description='')
-    priority: int = Field(alias='Priority', description='')
-    refno: str = Field(alias='RefNo', max_length=64, description='')
-    active: str = Field(alias='Active', max_length=1, description='')
-    memo: str = Field(None, alias='Memo', max_length=255, description='')
+    materialno: str = Field(..., alias=fc.t_mat_ver.get("materialno", "materialno"), max_length=64, description='料号')
+    matver: str = Field(..., alias=fc.t_mat_ver.get("matver", "matver"), max_length=4, description='产线版本号')
+    lotfrom: int = Field(..., alias=fc.t_mat_ver.get("lotfrom", "lotfrom"), description='批量起点')
+    lotto: int = Field(..., alias=fc.t_mat_ver.get("lotto", "lotto"), description='批量终点')
+    priority: int = Field(..., alias=fc.t_mat_ver.get("priority", "priority"), description='优先级')
+    refno: str = Field(..., alias=fc.t_mat_ver.get("refno", "refno"), max_length=64, description='MTO订单号/认证线')
+    active: str = Field(..., alias=fc.t_mat_ver.get("active", "active"), max_length=1, description='生效')
+    memo: str = Field(None, alias=fc.t_mat_ver.get("memo", "memo"), max_length=255, description='备注')
 
     class Config:
         title = "验证规则 - 产线版本"
 
 
+
 class MatWcBomInput(BaseModel):
-    productno: str = Field(alias='ProductNo', max_length=64, description='')
-    matver: str = Field(alias='MatVer', max_length=4, description='')
-    itemno: str = Field(alias='ItemNo', max_length=6, description='')
-    materialno: str = Field(alias='MaterialNo', max_length=64, description='')
-    qty: float = Field(alias='Qty', description='')
-    offsethour: int = Field(alias='OffsetHour', description='')
-    treeno: int = Field(alias='TreeNo', description='')
-    mto: str = Field(alias='MTO', max_length=1, description='Y/N')
-    scrap: float = Field(alias='Scrap', description='%')
-    alt: str = Field(alias='Alt', max_length=1, description='Y/N是否是替代')
-    memo: str = Field(None, alias='Memo', max_length=255)
+    productno: str = Field(..., alias=fc.t_mat_wc_bom.get("productno", "productno"), max_length=64, description='产品料号')
+    matver: str = Field(..., alias=fc.t_mat_wc_bom.get("matver", "matver"), max_length=4, description='')
+    itemno: str = Field(..., alias=fc.t_mat_wc_bom.get("itemno", "itemno"), max_length=6, description='')
+    materialno: str = Field(..., alias=fc.t_mat_wc_bom.get("materialno", "materialno"), max_length=64, description='子件料号')
+    qty: float = Field(..., alias=fc.t_mat_wc_bom.get("qty", "qty"), description='')
+    offsethour: int = Field(..., alias=fc.t_mat_wc_bom.get("offsethour", "offsethour"), description='')
+    treeno: int = Field(..., alias=fc.t_mat_wc_bom.get("treeno", "treeno"), description='')
+    mto: str = Field(..., alias=fc.t_mat_wc_bom.get("mto", "mto"), max_length=1, description='Y/N')
+    scrap: float = Field(..., alias=fc.t_mat_wc_bom.get("scrap", "scrap"), description='%')
+    alt: str = Field(..., alias=fc.t_mat_wc_bom.get("alt", "alt"), max_length=1, description='Y/N是否是替代')
+    memo: str = Field(None, alias=fc.t_mat_wc_bom.get("memo", "memo"), max_length=255, description='备注')
 
     class Config:
-        title = "验证规则 - BOM"
+        title = "验证规则 - 工序BOM"
+
+
+class SupplyInput(BaseModel):
+    materialno: str = Field(..., alias=fc.t_supply.get("materialno", "materialno"), max_length=64, description='料号')
+    supplyno: str = Field(..., alias=fc.t_supply.get("supplyno", "supplyno"), max_length=64, description='供应单号')
+    matver: Optional[str] = Field(None, alias=fc.t_supply.get("matver", "matver"), max_length=32, description='产线版本')
+    itemno: str = Field(..., alias=fc.t_supply.get("itemno", "itemno"), max_length=6, description='项目号')
+    type: Literal["PL", "MO", "ST", "PO"] = Field(None, alias=fc.t_supply.get("type", "type"), max_length=64, description='类型 PL-生产计划 MO-生产工单 ST-库存 PO-采购订单')
+    category: Literal["MTO", "MTS"] = Field(None, alias=fc.t_supply.get("category", "category"), max_length=32, description='分类(MTO/MTS)')
+    priority: int = Field(..., alias=fc.t_supply.get("priority", "priority"), description='优先级')
+    status: Literal["NEW", "CRE", "SCH", "REL", "PNF", "CMP"] = Field(None, alias=fc.t_supply.get("status", "status"), max_length=32, description='状态 NEW-新增 CRE-已创建 SCH-计划 REL-已发布 PNF-已报工, CMP-已完成')
+    avail_qty: float = Field(..., alias=fc.t_supply.get("avail_qty", "avail_qty"), ge=0, description='可用数量')
+    create_date: Optional[str] = Field(None, alias=fc.t_supply.get("create_date", "create_date"), description='创建日期')
+    avail_date: str = Field(..., alias=fc.t_supply.get("avail_date", "avail_date"), description='可用日期')
+    dt_req: Optional[str] = Field(None, alias=fc.t_supply.get("dt_req", "dt_req"), description='需求日期')
+    avail_end_date: Optional[str] = Field(None, alias=fc.t_supply.get("avail_end_date", "avail_end_date"), description='可用结束日期')
+    batchno: Optional[str] = Field(None, alias=fc.t_supply.get("batchno", "batchno"), max_length=64, description='批次号')
+    vendorno: Optional[str] = Field(None, alias=fc.t_supply.get("vendorno", "vendorno"), max_length=64, description='供应商编号')
+    partnerno: Optional[str] = Field(None, alias=fc.t_supply.get("partnerno", "partnerno"), max_length=64, description='合作商编号')
+    partnername: Optional[str] = Field(None, alias=fc.t_supply.get("partnername", "partnername"), max_length=255, description='合作商名称')
+    # free1: Optional[str] = Field(None, alias=fc.t_supply.get("free1", "free1"), max_length=255, description='自由字段1')
+    # free2: Optional[str] = Field(None, alias=fc.t_supply.get("free2", "free2"), max_length=255, description='自由字段2')
+    # free3: Optional[str] = Field(None, alias=fc.t_supply.get("free3", "free3"), max_length=255, description='自由字段3')
+    memo: Optional[str] = Field(None, alias=fc.t_supply.get("memo", "memo"), max_length=255, description='备注')
+    # sys_date: Optional[str] = Field(None, alias=fc.t_supply.get("sys_date", "sys_date"), description='系统日期')
+    # sys_user: Optional[str] = Field(None, alias=fc.t_supply.get("sys_user", "sys_user"), max_length=32, description='系统用户')
+    # sys_stamp: Optional[str] = Field(None, alias=fc.t_supply.get("sys_stamp", "sys_stamp"), description='系统时间戳')
+
+    class Config:
+        title = "验证规则 - 供应"
