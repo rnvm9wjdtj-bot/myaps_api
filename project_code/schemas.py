@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal, Optional#, List, Dict, Any
 from decimal import Decimal
 
@@ -6,7 +7,7 @@ from pydantic import BaseModel, Field, field_validator#, ValidationError
 from config import forcustomer as fc
 
 
-class MaterialInput(BaseModel):
+class AcceptMaterial(BaseModel):
     materialno: str = Field(..., alias=fc.t_material.get("materialno", "materialno"), description="料号")
     description: str = Field(..., alias=fc.t_material.get("description", "description"), description="物料名称")
     size: str = Field(None, alias=fc.t_material.get("size", "size"), description="规格")
@@ -59,7 +60,7 @@ class MaterialInput(BaseModel):
         
 
 
-class WorkcenterInput(BaseModel):
+class AcceptWorkcenter(BaseModel):
     workcenter: str = Field(..., alias=fc.t_workcenter.get("workcenter", "workcenter"), max_length=32, description="工作中心代码")
     workcentername: str = Field(..., alias=fc.t_workcenter.get("workcentername", "workcentername"), max_length=255, description="工作中心名称")
     pri_wc: int = Field(None, alias=fc.t_workcenter.get("pri_wc", "pri_wc"), description='优先级')
@@ -81,7 +82,7 @@ class WorkcenterInput(BaseModel):
 
 
 
-class MatWcInput(BaseModel):
+class AcceptMatWc(BaseModel):
     materialno: str = Field(..., alias=fc.t_mat_wc.get("materialno", "materialno"), max_length=64, description='料号')
     matver: str = Field(..., alias=fc.t_mat_wc.get("matver", "matver"), max_length=4, description='产线版本')
     itemno: str = Field(..., alias=fc.t_mat_wc.get("itemno", "itemno"), max_length=6, description='工序项目')
@@ -99,7 +100,7 @@ class MatWcInput(BaseModel):
 
 
 
-class MatVerInput(BaseModel):
+class AcceptMatVer(BaseModel):
     materialno: str = Field(..., alias=fc.t_mat_ver.get("materialno", "materialno"), max_length=64, description='料号')
     matver: str = Field(..., alias=fc.t_mat_ver.get("matver", "matver"), max_length=4, description='产线版本号')
     lotfrom: int = Field(..., alias=fc.t_mat_ver.get("lotfrom", "lotfrom"), description='批量起点')
@@ -114,7 +115,7 @@ class MatVerInput(BaseModel):
 
 
 
-class MatWcBomInput(BaseModel):
+class AcceptMatWcBom(BaseModel):
     productno: str = Field(..., alias=fc.t_mat_wc_bom.get("productno", "productno"), max_length=64, description='产品料号')
     matver: str = Field(..., alias=fc.t_mat_wc_bom.get("matver", "matver"), max_length=4, description='')
     itemno: str = Field(..., alias=fc.t_mat_wc_bom.get("itemno", "itemno"), max_length=6, description='')
@@ -131,12 +132,12 @@ class MatWcBomInput(BaseModel):
         title = "验证规则 - 工序BOM"
 
 
-class SupplyInput(BaseModel):
+class AcceptSupply(BaseModel):
     materialno: str = Field(..., alias=fc.t_supply.get("materialno", "materialno"), max_length=64, description='料号')
     supplyno: str = Field(..., alias=fc.t_supply.get("supplyno", "supplyno"), max_length=64, description='供应单号')
     matver: Optional[str] = Field(None, alias=fc.t_supply.get("matver", "matver"), max_length=32, description='产线版本')
     itemno: str = Field(..., alias=fc.t_supply.get("itemno", "itemno"), max_length=6, description='项目号')
-    type: Literal["PL", "MO", "ST", "PO"] = Field(None, alias=fc.t_supply.get("type", "type"), max_length=64, description='类型 PL-生产计划 MO-生产工单 ST-库存 PO-采购订单')
+    type: Literal["PL", "MO", "ST", "PO"] = Field("MO", alias=fc.t_supply.get("type", "type"), max_length=64, description='类型 PL-生产计划 MO-生产工单 ST-库存 PO-采购订单')
     category: Literal["MTO", "MTS"] = Field(None, alias=fc.t_supply.get("category", "category"), max_length=32, description='分类(MTO/MTS)')
     priority: int = Field(..., alias=fc.t_supply.get("priority", "priority"), description='优先级')
     status: Literal["NEW", "CRE", "SCH", "REL", "PNF", "CMP"] = Field(None, alias=fc.t_supply.get("status", "status"), max_length=32, description='状态 NEW-新增 CRE-已创建 SCH-计划 REL-已发布 PNF-已报工, CMP-已完成')
@@ -159,3 +160,27 @@ class SupplyInput(BaseModel):
 
     class Config:
         title = "验证规则 - 供应"
+
+
+class AcceptDemand(BaseModel):
+    materialno: str = Field(..., alias=fc.t_demand.get("materialno", "materialno"), max_length=64, description='料号')
+    demandno: str = Field(..., alias=fc.t_demand.get("demandno", "demandno"), max_length=64, description='需求单号')
+    itemno: str = Field(..., alias=fc.t_demand.get("itemno", "itemno"), max_length=6, description='项目号')
+    type: Literal["SO", "DM", "RS", "FC", "SS"] = Field("SO", alias=fc.t_demand.get("type", "type"), max_length=64, description='类型 SO-销售订单 DM-计划需求 RS-工单预留 FC-预测 SS-安全库存')
+    category: Literal["MTO", "MTS"] = Field(None, alias=fc.t_demand.get("category", "category"), max_length=32, description='分类(MTO/MTS)')
+    priority: int = Field(..., alias=fc.t_demand.get("priority", "priority"), description='优先级')
+    workcenter: str = Field(..., alias=fc.t_demand.get("workcenter", "workcenter"), max_length=32, description='工作中心')
+    status: Literal["NEW", "CRE", "SCH", "REL", "PNF", "CMP"] = Field(None, alias=fc.t_demand.get("status", "status"), max_length=32, description='状态 NEW-新增 CRE-已创建 SCH-计划 REL-已发布 PNF-已报工, CMP-已完成')
+    req_qty: float = Field(..., alias=fc.t_demand.get("req_qty", "req_qty"), gt=0, description='需求数量')
+    # create_date: Optional[str] = Field(None, alias=fc.t_demand.get("create_date", "create_date"), description='创建日期')
+    req_date: datetime = Field(..., alias=fc.t_demand.get("req_date", "req_date"), description='需求日期')
+    refno: Optional[str] = Field(None, alias=fc.t_demand.get("refno", "refno"), max_length=64, description='MTO订单号')
+    partnerno: Optional[str] = Field(None, alias=fc.t_demand.get("partnerno", "partnerno"), max_length=64, description='伙伴号')
+    partnername: Optional[str] = Field(None, alias=fc.t_demand.get("partnername", "partnername"), max_length=255, description='伙伴名称')
+    # altgrp: Optional[str] = Field(None, alias=fc.t_demand.get("altgrp", "altgrp"), max_length=64, description='替代组')
+    # ori_itemno: Optional[str] = Field(None, alias=fc.t_demand.get("ori_itemno", "ori_itemno"), max_length=6, description='原始项目号')
+    # ori_qty: Optional[float] = Field(None, alias=fc.t_demand.get("ori_qty", "ori_qty"), ge=0, description='原始需求数量')
+    memo: Optional[str] = Field(None, alias=fc.t_demand.get("memo", "memo"), max_length=255, description='备注')
+
+    class Config:
+        title = "验证规则 - 需求"

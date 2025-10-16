@@ -37,5 +37,9 @@ t_mat_wc_bom = {
 }
 
 t_supply = {
-    
+
+}
+
+t_demand = {
+
 }

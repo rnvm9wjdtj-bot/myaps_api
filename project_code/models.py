@@ -164,7 +164,6 @@ class TConfirmmax(TortoiseBaseModel):
         unique_together = [("supplyno", "itemno")]
 
 class TDemand(TortoiseBaseModel):
-    # pk = fields.CompositePrimaryKey
     vid = fields.IntField(primary_key=True)
     materialno = fields.CharField(source_field='MaterialNo', max_length=64)  # Field name made lowercase.
     demandno = fields.CharField(source_field='DemandNo', max_length=64)  # Field name made lowercase.
@@ -187,9 +186,9 @@ class TDemand(TortoiseBaseModel):
     free2 = fields.CharField(source_field='Free2', max_length=255, blank=True, null=True)  # Field name made lowercase.
     free3 = fields.CharField(source_field='Free3', max_length=255, blank=True, null=True)  # Field name made lowercase.
     memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
-    sys_date = fields.DatetimeField(source_field='Sys_Date', blank=True, null=True)  # Field name made lowercase.
+    sys_date = fields.DatetimeField(source_field='Sys_Date', blank=True, null=True, auto_now_add=True)  # Field name made lowercase.
     sys_user = fields.CharField(source_field='Sys_User', max_length=32, blank=True, null=True)  # Field name made lowercase.
-    sys_stamp = fields.DatetimeField(source_field='Sys_Stamp')  # Field name made lowercase.
+    sys_stamp = fields.DatetimeField(source_field='Sys_Stamp', auto_now=True)  # Field name made lowercase.
 
     class Meta:
         managed = False
