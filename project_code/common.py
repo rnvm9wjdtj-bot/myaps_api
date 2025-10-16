@@ -116,14 +116,17 @@ async def common_delete(db_name: str, mdl: TortoiseBaseModel, model_key: tuple[s
         )
 
 
-async def common_get_by_sql(db_name: str, table_name: str, filter_string: str):
+async def common_get_by_sql(db_name: str, table_name: str, filter_string: str, field_mapping: dict[str, str] = {}):
     db = Tortoise.get_connection(db_name)
     where = f" WHERE {filter_string}" if filter_string else ''
     sql = f'SELECT * FROM `{table_name}` {where}'
-    data = await db.execute_query(sql)
+    total, data = await db.execute_query(sql)
+    # 映射字段名
+    if field_mapping:
+        data = [{field_mapping.get(k, k): v for k, v in row.items()} for row in data]
     return standard_response(
-        data=data[1],
-        meta={"total": data[0]}
+        data=data,
+        meta={"total": total}
     )
 ################################################################
 # pydantic验证错误统一格式
