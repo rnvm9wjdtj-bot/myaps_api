@@ -1,14 +1,20 @@
 # from tortoise import Tortoise
 
-# 根据环境不同修改以下变量
-DB_HOST = "1.13.184.21"
-DB_PORT = 3333
-DB_USER = "MYAPS"
-DB_PASSWORD = "MYAPS2025"
-DB_SET = ["qdjh", "myaps0"]   # 主账套放第一个
+import os
+from dotenv import load_dotenv
 
-THIS_SERVER_HOST = "127.0.0.1"
-THIS_SERVER_PORT = 8000
+# 加载.env文件中的环境变量
+load_dotenv(os.getenv('ENV_FILE', os.path.join(os.getcwd(), '.env')))
+
+# 从环境变量读取配置，如果不存在则使用默认值
+DB_HOST = os.getenv("DB_HOST")
+DB_PORT = int(os.getenv("DB_PORT"))
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_SET = os.getenv("DB_SET").split(",")  # 主账套放第一个
+
+THIS_SERVER_HOST = os.getenv("THIS_SERVER_HOST")
+THIS_SERVER_PORT = int(os.getenv("THIS_SERVER_PORT"))
 
 ######################################################################################
 # 数据库配置

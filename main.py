@@ -68,6 +68,11 @@ register_tortoise(
 # 使用命令: uvicorn main:app --reload
 # 然后访问 http://127.0.0.1:8000 或 http://127.0.0.1:8000/docs
 if __name__ == "__main__":
+    import os
+    from dotenv import load_dotenv
+    env_file = os.path.join(os.getcwd(), '.env')
+    os.environ.setdefault('ENV_FILE', env_file)
+    load_dotenv(env_file)
     uvicorn.run(
         app,
         host=settings.THIS_SERVER_HOST,
