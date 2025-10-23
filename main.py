@@ -6,8 +6,8 @@ from fastapi.openapi.docs import get_swagger_ui_html
 from tortoise.contrib.fastapi import register_tortoise
 
 from config import settings
-from project_code.routers import rt  
-from project_code.common import register_exception_handlers
+from apps.io_api.routers import rt  
+from apps.io_api.common import register_exception_handlers
 
 
 # 创建FastAPI应用实例

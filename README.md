@@ -6,7 +6,7 @@ A simple FastAPI project template with a Python virtual environment.
 
 ```
 myaps_fastapi/
-├── myaps_api/         # Python virtual environment
+├── venv/              # Python virtual environment
 ├── main.py            # Main FastAPI application
 ├── requirements.txt   # Project dependencies
 ├── .gitignore         # Git ignore file
@@ -19,12 +19,12 @@ myaps_fastapi/
 
 **Windows:**
 ```cmd
-myaps_api\Scripts\activate
+venv\Scripts\activate
 ```
 
 **macOS/Linux:**
 ```bash
-source myaps_api/bin/activate
+source venv/bin/activate
 ```
 
 ### 2. Install Dependencies
