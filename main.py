@@ -6,8 +6,10 @@ from fastapi.openapi.docs import get_swagger_ui_html
 from tortoise.contrib.fastapi import register_tortoise
 
 from config import settings
-from apps.io_api.routers import rt  
+from apps.io_api.routers import rt as io_rt
 from apps.io_api.common import register_exception_handlers
+# from apps.data_manager.routers import rt as dm_rt
+# from apps.data_manager.common import register_exception_handlers as register_data_manager_exception_handlers
 
 
 # 创建FastAPI应用实例
@@ -42,9 +44,11 @@ async def custom_swagger_ui_html():
 
 # 注册自定义的异常处理器
 register_exception_handlers(app)
+# register_data_manager_exception_handlers(app)
 
 # 包含子路由
-app.include_router(rt, prefix="/api", tags=[])
+app.include_router(io_rt, prefix="/api", tags=[])
+# app.include_router(dm_rt, prefix="/dm", tags=["data_manager"])
 
 # 根路由
 @app.get("/")

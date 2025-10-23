@@ -40,7 +40,7 @@ TORTOISE_ORM_CONFIG = {
     },
     "apps": {
         "models": {
-            "models": ["apps.io_api.models"], 
+            "models": ["apps.io_api.models", "apps.data_manager.models"], 
             "default_connection": MYAPS_DB_SET[0],
         },
     },

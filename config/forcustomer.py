@@ -7,6 +7,29 @@ default_planner = "haida"   # 默认计划员
 default_fifo = 1   # 默认FIFO原则
 default_leadday_e = 10  # 自制件默认提前期
 default_leadday_f = 1  # 采购件默认提前期
+default_expday = 365  # 默认保质期
+default_price = 0  # 默认价格
+default_grday_e = 0
+default_grday_f = 1
+default_phantom = 'N'
+default_phantommin = 0
+default_firmday = 0
+default_daygap = 1
+default_candelay = 'Y'
+default_lotsize = 'EX'  # 默认批次大小
+default_lotfix = 0  # 默认固定批
+default_lotmin = 0  # 默认最小批
+default_lotmax = 0  # 默认最大批
+default_lotround = 0  # 默认取整
+default_lotss = 0  # 默认安全库存
+default_lotpoint = 0  # 默认重订货点
+default_lottop = 0  # 默认最大库存点
+default_preday = 999  # 默认向前冲销(天)
+default_subday = 999  # 默认向后冲销(天)
+
+
+
+default_matver = 'V1'
 
 
 # 前后端字段映射关系，某些客户可能需要
