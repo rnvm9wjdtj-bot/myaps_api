@@ -24,20 +24,21 @@ THIS_DB_NAME = os.getenv("THIS_DB_NAME")
 
 ######################################################################################
 # 数据库配置
+connections = {}
+for db in MYAPS_DB_SET:
+    connections[db] = {
+        "engine": "tortoise.backends.mysql",
+        "credentials": {
+            "host": MYAPS_DB_HOST,
+            "port": MYAPS_DB_PORT,
+            "user": MYAPS_DB_USER,
+            "password": MYAPS_DB_PASSWORD,
+            "database": db,
+            "charset": "utf8mb4",
+        },
+    }
 TORTOISE_ORM_CONFIG = {
-    "connections": {
-        db:{
-            "engine": "tortoise.backends.mysql",
-            "credentials": {
-                "host": MYAPS_DB_HOST,
-                "port": MYAPS_DB_PORT,
-                "user": MYAPS_DB_USER,
-                "password": MYAPS_DB_PASSWORD,
-                "database": db,
-                "charset": "utf8mb4",
-            },
-        } for db in MYAPS_DB_SET
-    },
+    "connections": connections,
     "apps": {
         "models": {
             "models": ["apps.io_api.models", "apps.data_manager.models"], 
@@ -45,3 +46,5 @@ TORTOISE_ORM_CONFIG = {
         },
     },
 }
+
+print(TORTOISE_ORM_CONFIG)

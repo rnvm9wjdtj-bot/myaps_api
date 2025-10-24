@@ -27,9 +27,7 @@ default_lottop = 0  # 默认最大库存点
 default_preday = 999  # 默认向前冲销(天)
 default_subday = 999  # 默认向后冲销(天)
 
-
-
-default_matver = 'V1'
+example_matver = "v1"
 
 
 # 前后端字段映射关系，某些客户可能需要

@@ -1,6 +1,7 @@
 import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 # from fastapi.responses import RedirectResponse
 from fastapi.openapi.docs import get_swagger_ui_html
 from tortoise.contrib.fastapi import register_tortoise
@@ -8,8 +9,8 @@ from tortoise.contrib.fastapi import register_tortoise
 from config import settings
 from apps.io_api.routers import rt as io_rt
 from apps.io_api.common import register_exception_handlers
-# from apps.data_manager.routers import rt as dm_rt
-# from apps.data_manager.common import register_exception_handlers as register_data_manager_exception_handlers
+# from apps.data_opt.routers import rt as do_rt
+# from apps.data_opt.common import register_exception_handlers as register_data_manager_exception_handlers
 
 
 # 创建FastAPI应用实例
@@ -24,6 +25,15 @@ app = FastAPI(
     swagger_css_url="/static/swagger/swagger-ui.css",
     swagger_favicon_url="/static/swagger/favicon-32x32.png",
     swagger_ui_parameters={"configUrl": None}
+)
+
+# 配置CORS中间件解决跨域访问问题
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 在生产环境中应该设置具体的域名列表
+    allow_credentials=True,
+    allow_methods=["*"],  # 允许所有HTTP方法
+    allow_headers=["*"],  # 允许所有请求头
 )
 
 # 挂载静态文件
@@ -47,8 +57,8 @@ register_exception_handlers(app)
 # register_data_manager_exception_handlers(app)
 
 # 包含子路由
-app.include_router(io_rt, prefix="/api", tags=[])
-# app.include_router(dm_rt, prefix="/dm", tags=["data_manager"])
+app.include_router(io_rt, prefix="/api", tags=["数据输入输出"])
+# app.include_router(do_rt, prefix="/do", tags=["数据管理"])
 
 # 根路由
 @app.get("/")

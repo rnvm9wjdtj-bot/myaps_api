@@ -1,4 +1,5 @@
 from datetime import datetime
+import enum
 from typing import Literal, Optional#, List, Dict, Any
 from decimal import Decimal
 
@@ -11,23 +12,26 @@ class AcceptMaterial(BaseModel):
     materialno: str = Field(..., alias=fc.t_material.get("MaterialNo", "materialno"), description="料号")
     description: str = Field(..., alias=fc.t_material.get("Description", "description"), description="物料名称")
     size: str = Field(None, alias=fc.t_material.get("Size", "size"), description="规格")
-    plant: str = Field(fc.default_plant, alias=fc.t_material.get("Plant", "plant"), description='工厂')
+    plant: str = Field(..., alias=fc.t_material.get("Plant", "plant"), example=fc.default_plant, description='工厂')
     planner: str = Field(fc.default_planner, alias=fc.t_material.get("Planner", "planner"), description="计划员")
     fifo: int = Field(fc.default_fifo, alias=fc.t_material.get("FIFO", "fifo"), ge=0, le=1, description='1-FIFO 0-最近原则')
     leadday: int = Field(alias=fc.t_material.get("LeadDay", "leadday"), ge=0, description="交期（天）")
     expday: int = Field(fc.default_expday, alias=fc.t_material.get("ExpDay", "expday"), ge=0, description="保质期（天）")
     grday: int = Field(alias=fc.t_material.get("GRDay", "grday"), ge=0, description="收货质检（天）")
-    abc: Literal["A", "B", "C"] = Field(alias=fc.t_material.get("ABC", "abc"), description="ABC分类")
+    abc: str = Field(alias=fc.t_material.get("ABC", "abc"), enum=["A", "B", "C"], example="A", description="ABC分类")
     unit: str = Field(alias=fc.t_material.get("Unit", "unit"), description='单位')
     price: Decimal = Field(fc.default_price, alias=fc.t_material.get("Price", "price"), description="价格")
     groupno: str = Field(..., alias=fc.t_material.get("GroupNo", "groupno"), description="型号")
-    type: Literal["E", "F"] = Field(... if fc.myaps_is_pro else None, alias=fc.t_material.get("type", "type"), description="物料类型  E-自制件 F-采购件")
-    phantom: Literal["N", "Y"] = Field(fc.default_phantom, alias=fc.t_material.get("Phantom", "phantom"), description='虚拟件')
+    type: str = Field(... if fc.myaps_is_pro else None, alias=fc.t_material.get("type", "type"), enum=["E", "F"], example="E", description="物料类型  E-自制件 F-采购件")
+    phantom: str = Field(fc.default_phantom, alias=fc.t_material.get("Phantom", "phantom"), enum=["N", "Y"], example="N", description='虚拟件')
     phantommin: int = Field(fc.default_phantommin, alias=fc.t_material.get("PhantomMin", "phantommin"), ge=0, description='虚拟时间(Minute)')
     firmday: int = Field(fc.default_firmday, alias=fc.t_material.get("FirmDay", "firmday"), ge=0, description="固定天数")
     daygap: int = Field(fc.default_daygap, alias=fc.t_material.get("DayGap", "daygap"), ge=0, description='MTO拆分天数')
-    candelay: Literal["N", "Y"] = Field(fc.default_candelay, alias=fc.t_material.get("CanDelay", "candelay"), description='可否延迟')
-    lotsize: Literal["EX", "FX", "D1", "D2", "D3", "D4", "D5", "D6", "W1", "W2", "W3", "W4", "M1", "M2", "VB"] = Field(fc.default_lotsize, alias=fc.t_material.get("LotSize", "lotsize"), max_length=2, description='批量')
+    candelay: str = Field(fc.default_candelay, alias=fc.t_material.get("CanDelay", "candelay"), enum=["N", "Y"], example="N", description='可否延迟')
+    lotsize: str = Field(
+        fc.default_lotsize, alias=fc.t_material.get("LotSize", "lotsize"),
+        enum=["EX", "FX", "D1", "D2", "D3", "D4", "D5", "D6", "W1", "W2", "W3", "W4", "M1", "M2", "VB"],
+        example="EX", description='批量')
     lotfix: float = Field(fc.default_lotfix, alias=fc.t_material.get("LotFix", "lotfix"), ge=0, description='固定批')
     lotmin: float = Field(fc.default_lotmin, alias=fc.t_material.get("LotMin", "lotmin"), ge=0, description='最小批')
     lotmax: float = Field(fc.default_lotmax, alias=fc.t_material.get("LotMax", "lotmax"), ge=0, description='最大批')
@@ -69,13 +73,13 @@ class AcceptMaterial(BaseModel):
 class AcceptWorkcenter(BaseModel):
     workcenter: str = Field(..., alias=fc.t_workcenter.get("WorkCenter", "workcenter"), max_length=32, description="工作中心代码")
     workcentername: str = Field(..., alias=fc.t_workcenter.get("WorkCenterName", "workcentername"), max_length=255, description="工作中心名称")
-    pri_wc: int = Field(None, alias=fc.t_workcenter.get("Pri_Wc", "pri_wc"), description='优先级')
-    bottleneck: Literal["N", "Y"] = Field(None, alias=fc.t_workcenter.get("Bottleneck", "bottleneck"), max_length=1, description='瓶颈')
+    pri_wc: int = Field(1, alias=fc.t_workcenter.get("Pri_Wc", "pri_wc"), description='优先级')
+    bottleneck: str = Field("N", alias=fc.t_workcenter.get("Bottleneck", "bottleneck"), enum=["N", "Y"], example="N", description='瓶颈')
     sortno: str = Field(None, alias=fc.t_workcenter.get("SortNo", "sortno"), max_length=4, description="序号")
     plant: str = Field(None, alias=fc.t_workcenter.get("Plant", "plant"), max_length=32, description="工厂")
     location: str = Field(None, alias=fc.t_workcenter.get("Location", "location"), max_length=32, description="车间")
-    finite: Literal["N", "Y"] = Field(None, alias=fc.t_workcenter.get("Finite", "finite"), max_length=1, description='有限')
-    type: Literal["N", "Y"] = Field(None, alias=fc.t_workcenter.get("Type", "type"), max_length=32, description="首页显示")
+    finite: str = Field(None, alias=fc.t_workcenter.get("Finite", "finite"), enum=["N", "Y"], example="N", description='有限')
+    type: str = Field(None, alias=fc.t_workcenter.get("Type", "type"), enum=["N", "Y"], example="N", description="首页显示")
     capnum: int = Field(None, alias=fc.t_workcenter.get("CapNum", "capnum"), gt=0, description="默认机台数")
     capmax: int = Field(None, alias=fc.t_workcenter.get("CapMax", "capmax"), gt=0, description="最大机台数")
     worker: float = Field(None, alias=fc.t_workcenter.get("Worker", "worker"), ge=0, description='工时')
@@ -90,14 +94,14 @@ class AcceptWorkcenter(BaseModel):
 
 class AcceptMatWc(BaseModel):
     materialno: str = Field(..., alias=fc.t_mat_wc.get("MaterialNo", "materialno"), max_length=64, description='料号')
-    matver: str = Field(fc.default_matver, alias=fc.t_mat_wc.get("MatVer", "matver"), max_length=4, description='产线版本')
+    matver: str = Field(..., alias=fc.t_mat_wc.get("MatVer", "matver"), max_length=4, example=fc.example_matver, description='产线版本')
     itemno: str = Field(..., alias=fc.t_mat_wc.get("ItemNo", "itemno"), max_length=6, description='工序项目')
     workcenter: str = Field(..., alias=fc.t_mat_wc.get("WorkCenter", "workcenter"), max_length=32, description='工作中心')
     sortno: int = Field(..., alias=fc.t_mat_wc.get("SortNo", "sortno"), ge=0, description='序号')
     basesec: int = Field(..., alias=fc.t_mat_wc.get("BaseSec", "basesec"), ge=0, description='节拍T/T(秒/100)')
     fixqty: int = Field(0, alias=fc.t_mat_wc.get("FixQty", "fixqty"), ge=0, description='额定量')
     fixsec: int = Field(0, alias=fc.t_mat_wc.get("FixSec", "fixsec"), ge=0, description='额定时间(秒)')
-    sf: Literal["S", "F"] = Field("F", alias=fc.t_mat_wc.get("SF", "sf"), max_length=1, description='并行S/串行F')
+    sf: str = Field(..., alias=fc.t_mat_wc.get("SF", "sf"), enum=["S", "F"], example="F", description='并行S/串行F')
     offsetsec: int = Field(0, alias=fc.t_mat_wc.get("OffsetSec", "offsetsec"), description='偏置+/-(秒)')
     memo: str = Field(None, alias=fc.t_mat_wc.get("Memo", "memo"), max_length=255, description='备注')
 
@@ -108,12 +112,12 @@ class AcceptMatWc(BaseModel):
 
 class AcceptMatVer(BaseModel):
     materialno: str = Field(..., alias=fc.t_mat_ver.get("MaterialNo", "materialno"), max_length=64, description='料号')
-    matver: str = Field(fc.default_matver, alias=fc.t_mat_ver.get("MatVer", "matver"), max_length=4, description='产线版本号')
+    matver: str = Field(..., alias=fc.t_mat_ver.get("MatVer", "matver"), example=fc.example_matver, max_length=4, description='产线版本号')
     lotfrom: int = Field(0, alias=fc.t_mat_ver.get("LotFrom", "lotfrom"), description='批量起点')
     lotto: int = Field(9999999, alias=fc.t_mat_ver.get("LotTo", "lotto"), description='批量终点')
     priority: int = Field(1, alias=fc.t_mat_ver.get("Priority", "priority"), description='优先级')
     refno: str = Field(None, alias=fc.t_mat_ver.get("RefNo", "refno"), max_length=64, description='MTO订单号/认证线')
-    active: Literal["N", "Y"] = Field("Y", alias=fc.t_mat_ver.get("Active", "active"), max_length=1, description='生效')
+    active: str = Field("Y", alias=fc.t_mat_ver.get("Active", "active"), enum=["N", "Y"], example="Y", description='生效')
     memo: str = Field(None, alias=fc.t_mat_ver.get("Memo", "memo"), max_length=255, description='备注')
 
     class Config:
@@ -123,15 +127,15 @@ class AcceptMatVer(BaseModel):
 
 class AcceptMatWcBom(BaseModel):
     productno: str = Field(..., alias=fc.t_mat_wc_bom.get("ProductNo", "productno"), max_length=64, description='产品料号')
-    matver: str = Field(fc.default_matver, alias=fc.t_mat_wc_bom.get("MatVer", "matver"), max_length=4, description='产线版本')
+    matver: str = Field(..., alias=fc.t_mat_wc_bom.get("MatVer", "matver"), example=fc.example_matver, max_length=4, description='产线版本')
     itemno: str = Field(..., alias=fc.t_mat_wc_bom.get("ItemNo", "itemno"), max_length=6, description='工序项目')
     materialno: str = Field(..., alias=fc.t_mat_wc_bom.get("MaterialNo", "materialno"), max_length=64, description='子件料号')
     qty: float = Field(..., alias=fc.t_mat_wc_bom.get("Qty", "qty"), ge=0, description='')
     offsethour: int = Field(0, alias=fc.t_mat_wc_bom.get("OffsetHour", "offsethour"), description='偏置+/-(小时)')
     treeno: int = Field(None, alias=fc.t_mat_wc_bom.get("TreeNo", "treeno"), description='')
-    mto: Literal["N", "Y"] = Field("N", alias=fc.t_mat_wc_bom.get("MTO", "mto"), max_length=1, description='Y/N')
+    mto: str = Field("N", alias=fc.t_mat_wc_bom.get("MTO", "mto"), enum=["N", "Y"], example="N", description='MTO')
     scrap: float = Field(0, alias=fc.t_mat_wc_bom.get("Scrap", "scrap"), description='%')
-    alt: Literal["N", "Y"] = Field("N", alias=fc.t_mat_wc_bom.get("Alt", "alt"), max_length=1, description='Y/N是否是替代')
+    alt: str = Field("N", alias=fc.t_mat_wc_bom.get("Alt", "alt"), enum=["N", "Y"], example="N", description='Y/N是否是替代')
     memo: str = Field(None, alias=fc.t_mat_wc_bom.get("Memo", "memo"), max_length=255, description='备注')
 
     class Config:
@@ -141,12 +145,15 @@ class AcceptMatWcBom(BaseModel):
 class AcceptSupply(BaseModel):
     materialno: str = Field(..., alias=fc.t_supply.get("MaterialNo", "materialno"), max_length=64, description='料号')
     supplyno: str = Field(..., alias=fc.t_supply.get("SupplyNo", "supplyno"), max_length=64, description='供应单号')
-    matver: Optional[str] = Field(None, alias=fc.t_supply.get("MatVer", "matver"), max_length=32, description='产线版本')
+    matver: Optional[str] = Field(None, alias=fc.t_supply.get("MatVer", "matver"), max_length=32, example=fc.example_matver, description='产线版本')
     itemno: str = Field(None, alias=fc.t_supply.get("ItemNo", "itemno"), max_length=6, description='项目号')
-    type: Literal["PL", "MO", "ST", "PO"] = Field("MO", alias=fc.t_supply.get("Type", "type"), max_length=64, description='类型 PL-生产计划 MO-生产工单 ST-库存 PO-采购订单')
-    category: Literal["MTO", "MTS"] = Field(None, alias=fc.t_supply.get("Category", "category"), max_length=32, description='分类(MTO/MTS)')
+    type: str = Field(..., alias=fc.t_supply.get("Type", "type"), enum=["PL", "MO", "ST", "PO"], example="MO", description='类型 PL-生产计划 MO-生产工单 ST-库存 PO-采购订单')
+    category: str = Field(None, alias=fc.t_supply.get("Category", "category"), enum=["MTO", "MTS"], example="MTO", description='分类(MTO/MTS)')
     priority: int = Field(1, alias=fc.t_supply.get("Priority", "priority"), description='优先级')
-    status: Literal["NEW", "CRE", "SCH", "REL", "PNF", "CMP"] = Field(None, alias=fc.t_supply.get("Status", "status"), max_length=32, description='状态 NEW-新增 CRE-已创建 SCH-计划 REL-已发布 PNF-已报工, CMP-已完成')
+    status: str = Field(
+        None, alias=fc.t_supply.get("Status", "status"),
+        enum=["NEW", "CRE", "SCH", "REL", "PNF", "CMP"],
+        example="NEW", description='状态 NEW-新增 CRE-已创建 SCH-计划 REL-已发布 PNF-已报工, CMP-已完成')
     avail_qty: float = Field(..., alias=fc.t_supply.get("Avail_Qty", "avail_qty"), ge=0, description='可用数量')
     create_date: Optional[str] = Field(None, alias=fc.t_supply.get("Create_Date", "create_date"), description='创建日期')
     avail_date: str = Field(..., alias=fc.t_supply.get("Avail_Date", "avail_date"), description='可用日期 / 开工日期')
@@ -172,12 +179,12 @@ class AcceptDemand(BaseModel):
     materialno: str = Field(..., alias=fc.t_demand.get("MaterialNo", "materialno"), max_length=64, description='料号')
     demandno: str = Field(..., alias=fc.t_demand.get("DemandNo", "demandno"), max_length=64, description='需求单号')
     itemno: str = Field(..., alias=fc.t_demand.get("ItemNo", "itemno"), max_length=6, description='项目号')
-    type: Literal["SO", "DM", "RS", "FC", "SS"] = Field("SO", alias=fc.t_demand.get("Type", "type"), max_length=64, description='类型 SO-销售订单 DM-计划需求 RS-工单预留 FC-预测 SS-安全库存')
-    category: Literal["MTO", "MTS"] = Field(None, alias=fc.t_demand.get("Category", "category"), max_length=32, description='分类(MTO/MTS)')
+    type: str = Field(..., alias=fc.t_demand.get("Type", "type"), enum=["SO", "DM", "RS", "FC", "SS"], example="SO", description='类型 SO-销售订单 DM-计划需求 RS-工单预留 FC-预测 SS-安全库存')
+    category: str = Field(None, alias=fc.t_demand.get("Category", "category"), enum=["MTO", "MTS"], example="MTO", description='分类(MTO/MTS)')
     priority: int = Field(..., alias=fc.t_demand.get("Priority", "priority"), description='优先级')
     workcenter: str = Field(..., alias=fc.t_demand.get("WorkCenter", "workcenter"), max_length=32, description='工作中心')
-    status: Literal["NEW", "CRE", "SCH", "REL", "PNF", "CMP"] = Field(None, alias=fc.t_demand.get("Status", "status"), max_length=32, description='状态 NEW-新增 CRE-已创建 SCH-计划 REL-已发布 PNF-已报工, CMP-已完成')
-    req_qty: float = Field(..., alias=fc.t_demand.get("Req_Qty", "req_qty"), gt=0, description='需求数量')
+    status: str = Field(None, alias=fc.t_demand.get("Status", "status"), enum=["NEW", "CRE", "SCH", "REL", "PNF", "CMP"], example="NEW", description='状态 NEW-新增 CRE-已创建 SCH-计划 REL-已发布 PNF-已报工, CMP-已完成')
+    req_qty: float = Field(..., alias=fc.t_demand.get("Req_Qty", "req_qty"), le=0, description='需求数量')
     # create_date: Optional[str] = Field(None, alias=fc.t_demand.get("Create_Date", "create_date"), description='创建日期')
     req_date: datetime = Field(..., alias=fc.t_demand.get("Req_Date", "req_date"), description='需求日期')
     refno: Optional[str] = Field(None, alias=fc.t_demand.get("RefNo", "refno"), max_length=64, description='MTO订单号')
