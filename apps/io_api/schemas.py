@@ -130,16 +130,39 @@ class AcceptMatWcBom(BaseModel):
     matver: str = Field(..., alias=fc.t_mat_wc_bom.get("MatVer", "matver"), example=fc.example_matver, max_length=4, description='产线版本')
     itemno: str = Field(..., alias=fc.t_mat_wc_bom.get("ItemNo", "itemno"), max_length=6, description='工序项目')
     materialno: str = Field(..., alias=fc.t_mat_wc_bom.get("MaterialNo", "materialno"), max_length=64, description='子件料号')
-    qty: float = Field(..., alias=fc.t_mat_wc_bom.get("Qty", "qty"), ge=0, description='')
+    qty: float = Field(..., alias=fc.t_mat_wc_bom.get("Qty", "qty"), ge=0, description='数量')
     offsethour: int = Field(0, alias=fc.t_mat_wc_bom.get("OffsetHour", "offsethour"), description='偏置+/-(小时)')
-    treeno: int = Field(None, alias=fc.t_mat_wc_bom.get("TreeNo", "treeno"), description='')
+    treeno: int = Field(None, alias=fc.t_mat_wc_bom.get("TreeNo", "treeno"), description='层级')
     mto: str = Field("N", alias=fc.t_mat_wc_bom.get("MTO", "mto"), enum=["N", "Y"], example="N", description='MTO')
-    scrap: float = Field(0, alias=fc.t_mat_wc_bom.get("Scrap", "scrap"), description='%')
+    scrap: float = Field(0, alias=fc.t_mat_wc_bom.get("Scrap", "scrap"), description='报废率%')
     alt: str = Field("N", alias=fc.t_mat_wc_bom.get("Alt", "alt"), enum=["N", "Y"], example="N", description='Y/N是否是替代')
     memo: str = Field(None, alias=fc.t_mat_wc_bom.get("Memo", "memo"), max_length=255, description='备注')
 
     class Config:
-        title = "验证规则 - 工序BOM"
+        title = "验证规则 - BOM"
+
+
+class AcceptMold(BaseModel):
+    moldno: str = Field(..., alias=fc.t_mold.get("MoldNo", "moldno"), max_length=64, description='模具编号')
+    moldname: str = Field(..., alias=fc.t_mold.get("MoldName", "moldname"), max_length=64, description='模具名称')
+    type: str = Field(..., alias=fc.t_mold.get("Type", "type"), example=fc.example_matver, max_length=4, description='类型')
+    status: str = Field(..., alias=fc.t_mold.get("Status", "status"), max_length=6, description='状态')
+    moldnum: int = Field(..., alias=fc.t_mold.get("MoldNum", "moldnum"), ge=0, description='模具穴数')
+    qty: int = Field(..., alias=fc.t_mold.get("Qty", "qty"), ge=0, description='模具台数') 
+    memo: str = Field(None, alias=fc.t_mold.get("Memo", "memo"), max_length=255, description="备注")
+    
+    class Config:
+        title = "验证规则 - 模具"
+
+
+class AcceptMatWcMold(BaseModel):
+    materialno: str = Field(..., alias=fc.t_mat_wc_mold.get("MaterialNo", "materialno"), max_length=64, description='料号')
+    workcenter: str = Field(..., alias=fc.t_mat_wc_mold.get("WorkCenter", "workcenter"), max_length=64, description='工作中心')
+    moldno: str = Field(..., alias=fc.t_mat_wc_mold.get("MoldNo", "moldno"), max_length=64, description='模具编号')
+    basesec: int = Field(..., alias=fc.t_mat_wc_mold.get("BaseSec", "basesec"), ge=0, description='节拍T/T(秒/100)')
+    fixsec: int = Field(0, alias=fc.t_mat_wc_mold.get("FixSec", "fixsec"), ge=0, description='额定时间(秒)')
+    priority: int = Field(1, alias=fc.t_mat_wc_mold.get("Priority", "priority"), description='优先级')
+    memo: str = Field(None, alias=fc.t_mat_wc_mold.get("Memo", "memo"), max_length=255, description='备注')
 
 
 class AcceptSupply(BaseModel):

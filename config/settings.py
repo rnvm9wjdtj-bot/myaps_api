@@ -37,11 +37,22 @@ for db in MYAPS_DB_SET:
             "charset": "utf8mb4",
         },
     }
+# connections[THIS_DB_NAME] = {
+#         "engine": "tortoise.backends.postgres",
+#         "credentials": {
+#             "host": THIS_DB_HOST,
+#             "port": THIS_DB_PORT,
+#             "user": THIS_DB_USER,
+#             "password": THIS_DB_PASSWORD,
+#             "database": THIS_DB_NAME,
+#             "charset": "utf8mb4",
+#         },
+#     }
 TORTOISE_ORM_CONFIG = {
     "connections": connections,
     "apps": {
         "models": {
-            "models": ["apps.io_api.models", "apps.data_manager.models"], 
+            "models": ["apps.io_api.models", "apps.data_opt.models"], 
             "default_connection": MYAPS_DB_SET[0],
         },
     },

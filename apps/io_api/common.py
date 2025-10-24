@@ -37,7 +37,7 @@ common_params = {
 ########################################################################
 
 # 路由公共方法 - get
-async def common_get_by_orm(db_name: str, mdl: TortoiseBaseModel, page_size: int, page_index: int):
+async def common_get_by_orm(db_name: str, mdl: TortoiseBaseModel, page_size: int, page_index: int, field_mapper: Dict[str, str] = None):
     db = Tortoise.get_connection(db_name)
     # 分页查询
     offset = page_size * page_index
@@ -48,6 +48,8 @@ async def common_get_by_orm(db_name: str, mdl: TortoiseBaseModel, page_size: int
         data = await mdl.all().only(*only_fields).using_db(db).offset(offset).limit(page_size)
     else:
         data = await mdl.all().using_db(db).offset(offset).limit(page_size)
+    if field_mapper:
+        data = [{field_mapper.get(k, k): v for k, v in d.items()} for d in data]
     return standard_response(
         data=data,
         meta={
@@ -116,14 +118,14 @@ async def common_delete(db_name: str, mdl: TortoiseBaseModel, model_key: tuple[s
         )
 
 
-async def common_get_by_sql(db_name: str, table_name: str, filter_string: str, field_mapping: dict[str, str] = {}):
+async def common_get_by_sql(db_name: str, table_name: str, filter_string: str, field_mapper: Dict[str, str] = {}):
     db = Tortoise.get_connection(db_name)
     where = f" WHERE {filter_string}" if filter_string else ''
     sql = f'SELECT * FROM `{table_name}` {where}'
     total, data = await db.execute_query(sql)
     # 映射字段名
-    if field_mapping:
-        data = [{field_mapping.get(k, k): v for k, v in row.items()} for row in data]
+    if field_mapper:
+        data = [{field_mapper.get(k, k): v for k, v in row.items()} for row in data]
     return standard_response(
         data=data,
         meta={"total": total}

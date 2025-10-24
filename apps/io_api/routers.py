@@ -4,8 +4,8 @@ from typing import List
 from fastapi import APIRouter, Query, Body#, status, Request, Path
 
 from config import forcustomer as fc
-from .models import TMaterial, TWorkcenter, TMatWc, TMatVer, TMatWcBom, TSupply, TDemand#,TortoiseBaseModel
-from .schemas import AcceptMaterial, AcceptWorkcenter, AcceptMatWc, AcceptMatVer, AcceptMatWcBom, AcceptSupply, AcceptDemand
+from .models import TMaterial, TWorkcenter, TMatWc, TMatVer, TMatWcBom, TSupply, TDemand, TMold, TMatWcMold#,TortoiseBaseModel
+from .schemas import AcceptMaterial, AcceptWorkcenter, AcceptMatWc, AcceptMatVer, AcceptMatWcBom, AcceptSupply, AcceptDemand, AcceptMold, AcceptMatWcMold
 from .common import common_params, common_get_by_orm, common_post, common_delete, common_get_by_sql
 
 # 路由路径对应的数据资源
@@ -135,9 +135,9 @@ async def post_mat_ver(
 
 @rt.get(
     "/t_mat_wc_bom",
-    tags=["主数据 - 工序BOM"],
-    summary="获取工序BOM信息",
-    description="获取工序BOM信息"
+    tags=["主数据 - BOM"],
+    summary="获取BOM信息",
+    description="获取BOM信息"
 )
 async def get_mat_wc_bom(
     db_name: str = common_params["db_name"],
@@ -148,9 +148,9 @@ async def get_mat_wc_bom(
 
 @rt.post(
     "/t_mat_wc_bom",
-    tags=["主数据 - 工序BOM"],
-    summary="新增或修改工序BOM",
-    description="根据🗝️【产品料号+子件料号+产线版本号+工序项目】形成的联合索引新增或修改工序BOM记录"
+    tags=["主数据 - BOM"],
+    summary="新增或修改BOM",
+    description="根据🗝️【产品料号+子件料号+产线版本号+工序项目】形成的联合索引新增或修改BOM记录"
     )
 async def post_mat_wc_bom(
     data: List[AcceptMatWcBom],
@@ -158,6 +158,31 @@ async def post_mat_wc_bom(
     ):
     return await common_post(db_name=db_name, mdl=TMatWcBom, data=data)
 
+
+@rt.post(
+    "/t_mold",
+    tags=["主数据 - 模具"],
+    summary="新增或修改模具",
+    description="根据🗝️【模具编号】新增或修改模具"
+    )
+async def post_mold(
+    data: List[AcceptMold],
+    db_name: str = common_params["db_name"]
+    ):
+    return await common_post(db_name=db_name, mdl=TMold, data=data)
+
+
+@rt.post(
+    "/t_mat_wc_mold",
+    tags=["主数据 - 机台模具"],
+    summary="新增或修改机台模具",
+    description="根据🗝️【料号+工作中心+模具编号】形成的联合索引新增或修改机台模具记录"
+    )
+async def post_mat_wc_mold(
+    data: List[AcceptMatWcMold],
+    db_name: str = common_params["db_name"]
+    ):
+    return await common_post(db_name=db_name, mdl=TMatWcMold, data=data)
 
 ########################################################################
 # 生产数据接口
@@ -177,7 +202,7 @@ async def get_supply(
 @rt.post(
     "/t_supply",
     tags=["生产数据 - 供应"],
-    summary="新增或修改供应记录",
+    summary="新增或修改供应记录（供应来源包含：生产生产计划PL、生产工单MO、库存ST、采购订单PO）",
     description="根据🗝️【料号+供应号】新增或修改生产记录"
     )
 async def post_mat_production(
@@ -203,7 +228,7 @@ async def get_demand(
 @rt.post(
     "/t_demand",
     tags=["生产数据 - 需求"],
-    summary="新增或修改需求记录",
+    summary="新增或修改需求记录（需求来源包含：销售订单SO、计划需求DM、工单预留RS、预测FC、安全库存SS）",
     description="根据🗝️【料号+需求号+项目号】新增或修改需求记录"
     )
 async def post_demand(
@@ -232,7 +257,7 @@ async def get_supply_mo(
         starttime = starttime or date.today()
         endtime = endtime or starttime + timedelta(days=7)
         filter_string = f"DT_OrdStart >= '{starttime}' AND DT_OrdEnd <= '{endtime}'"
-    return await common_get_by_sql(db_name=db_name, table_name="v_supply_mo", filter_string=filter_string, field_mapping=fc.v_supply_mo)
+    return await common_get_by_sql(db_name=db_name, table_name="v_supply_mo", filter_string=filter_string, field_mapper=fc.v_supply_mo)
 
 @rt.get(
     "/v_orderwc",
@@ -252,7 +277,7 @@ async def get_orderwc(
         starttime = starttime or date.today()
         endtime = endtime or starttime + timedelta(days=7)
         filter_string = f"DT_Start >= '{starttime}' AND DT_End <= '{endtime}'"
-    return await common_get_by_sql(db_name=db_name, table_name="v_orderwc", filter_string=filter_string, field_mapping=fc.v_orderwc)
+    return await common_get_by_sql(db_name=db_name, table_name="v_orderwc", filter_string=filter_string, field_mapper=fc.v_orderwc)
 
 @rt.get(
     "/v_matdailyqtyreport",
@@ -271,4 +296,4 @@ async def get_matdailyqtyreport(
     filter_string = f"DateStr >= '{startdate}' AND DateStr <= '{enddate}'"
     if materialno:
         filter_string = f"({filter_string}) AND MaterialNo = '{materialno}'"    
-    return await common_get_by_sql(db_name=db_name, table_name="v_matdailyqtyreport", filter_string=filter_string, field_mapping=fc.v_matdailyqtyreport)
+    return await common_get_by_sql(db_name=db_name, table_name="v_matdailyqtyreport", filter_string=filter_string, field_mapper=fc.v_matdailyqtyreport)

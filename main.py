@@ -57,8 +57,8 @@ register_exception_handlers(app)
 # register_data_manager_exception_handlers(app)
 
 # 包含子路由
-app.include_router(io_rt, prefix="/api", tags=["数据输入输出"])
-# app.include_router(do_rt, prefix="/do", tags=["数据管理"])
+app.include_router(io_rt, prefix="/api", tags=[])
+# app.include_router(do_rt, prefix="/do", tags=[])
 
 # 根路由
 @app.get("/")

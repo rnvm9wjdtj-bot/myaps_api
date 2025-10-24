@@ -57,6 +57,26 @@ t_mat_wc_bom = {
 
 }
 
+t_mold = {
+    "MoldNo": "moldno",
+    "MoldName": "moldname",
+    "Type": "type",
+    "Status": "status",
+    "MoldNum": "moldnum",
+    "Qty": "qty",
+    "Memo": "memo",
+}
+
+t_mat_wc_mold = {
+    "MaterialNo": "materialno",
+    "WorkCenter": "workcenter",
+    "MoldNo": "moldno",
+    "BaseSec": "basesec",
+    "Bottleneck": "bottleneck",
+    "Priority": "priority",
+    "Memo": "memo",
+}
+
 t_supply = {
 
 }
@@ -77,6 +97,7 @@ v_supply_mo = {
     "GRDay": "grday",
     "Phantom": "phantom",
     "PhantomMin": "phantommin",
+    "Color": "color",
     "SupplyNo": "supplyno",
     "ItemNo": "itemno",
     "MatVer": "matver",
