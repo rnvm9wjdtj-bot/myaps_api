@@ -3,7 +3,7 @@ from typing import List
 
 from fastapi import APIRouter, Query, Body#, status, Request, Path
 
-from config import forcustomer as fc
+from config import uservar as uv
 from .models import TMaterial, TWorkcenter, TMatWc, TMatVer, TMatWcBom, TSupply, TDemand, TMold, TMatWcMold#,TortoiseBaseModel
 from .schemas import AcceptMaterial, AcceptWorkcenter, AcceptMatWc, AcceptMatVer, AcceptMatWcBom, AcceptSupply, AcceptDemand, AcceptMold, AcceptMatWcMold
 from .common import common_params, common_get_by_orm, common_post, common_delete, common_get_by_sql
@@ -257,7 +257,7 @@ async def get_supply_mo(
         starttime = starttime or date.today()
         endtime = endtime or starttime + timedelta(days=7)
         filter_string = f"DT_OrdStart >= '{starttime}' AND DT_OrdEnd <= '{endtime}'"
-    return await common_get_by_sql(db_name=db_name, table_name="v_supply_mo", filter_string=filter_string, field_mapper=fc.v_supply_mo)
+    return await common_get_by_sql(db_name=db_name, table_name="v_supply_mo", filter_string=filter_string, field_mapper=uv.v_supply_mo)
 
 @rt.get(
     "/v_orderwc",
@@ -277,7 +277,7 @@ async def get_orderwc(
         starttime = starttime or date.today()
         endtime = endtime or starttime + timedelta(days=7)
         filter_string = f"DT_Start >= '{starttime}' AND DT_End <= '{endtime}'"
-    return await common_get_by_sql(db_name=db_name, table_name="v_orderwc", filter_string=filter_string, field_mapper=fc.v_orderwc)
+    return await common_get_by_sql(db_name=db_name, table_name="v_orderwc", filter_string=filter_string, field_mapper=uv.v_orderwc)
 
 @rt.get(
     "/v_matdailyqtyreport",
@@ -296,4 +296,4 @@ async def get_matdailyqtyreport(
     filter_string = f"DateStr >= '{startdate}' AND DateStr <= '{enddate}'"
     if materialno:
         filter_string = f"({filter_string}) AND MaterialNo = '{materialno}'"    
-    return await common_get_by_sql(db_name=db_name, table_name="v_matdailyqtyreport", filter_string=filter_string, field_mapper=fc.v_matdailyqtyreport)
+    return await common_get_by_sql(db_name=db_name, table_name="v_matdailyqtyreport", filter_string=filter_string, field_mapper=uv.v_matdailyqtyreport)

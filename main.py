@@ -28,13 +28,13 @@ app = FastAPI(
 )
 
 # 配置CORS中间件解决跨域访问问题
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # 在生产环境中应该设置具体的域名列表
-    allow_credentials=True,
-    allow_methods=["*"],  # 允许所有HTTP方法
-    allow_headers=["*"],  # 允许所有请求头
-)
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],  # 在生产环境中应该设置具体的域名列表
+#     allow_credentials=True,
+#     allow_methods=["*"],  # 允许所有HTTP方法
+#     allow_headers=["*"],  # 允许所有请求头
+# )
 
 # 挂载静态文件
 app.mount("/static", StaticFiles(directory="static"), name="static")

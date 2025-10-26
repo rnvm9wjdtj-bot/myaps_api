@@ -4,7 +4,7 @@ from . import protomodels as pm
 
 
 
-class TMaterial(pm.TMaterial):
+class TMaterial(pm.ProtoMaterial):
     materialno = fields.CharField(source_field='MaterialNo', primary_key=True, max_length=64, description='物料')
 
     class Meta:
@@ -14,7 +14,7 @@ class TMaterial(pm.TMaterial):
 
 
 
-class TWorkcenter(pm.TWorkcenter):
+class TWorkcenter(pm.ProtoWorkcenter):
     workcenter = fields.CharField(source_field='WorkCenter', primary_key=True, max_length=32)
 
     class Meta:
@@ -24,7 +24,7 @@ class TWorkcenter(pm.TWorkcenter):
 
 
 
-class TMatWc(pm.TMatWc):
+class TMatWc(pm.ProtoMatWc):
     vid = fields.IntField(primary_key=True)
 
     class Meta:
@@ -35,7 +35,7 @@ class TMatWc(pm.TMatWc):
 
 
 
-class TMatVer(pm.TMatVer):
+class TMatVer(pm.ProtoMatVer):
     vid = fields.IntField(primary_key=True)
 
     class Meta:
@@ -46,7 +46,7 @@ class TMatVer(pm.TMatVer):
 
 
 
-class TMatWcBom(pm.TMatWcBom):
+class TMatWcBom(pm.ProtoMatWcBom):
     vid = fields.IntField(primary_key=True)
 
     class Meta:
@@ -57,7 +57,7 @@ class TMatWcBom(pm.TMatWcBom):
 
 
 
-class TSupply(pm.TSupply):
+class TSupply(pm.ProtoSupply):
     vid = fields.IntField(primary_key=True)
 
     class Meta:
@@ -68,7 +68,7 @@ class TSupply(pm.TSupply):
 
 
 
-class TDemand(pm.TDemand):
+class TDemand(pm.ProtoDemand):
     vid = fields.IntField(primary_key=True)
 
     class Meta:
@@ -79,7 +79,7 @@ class TDemand(pm.TDemand):
 
 
 
-class TMold(pm.TMold):
+class TMold(pm.ProtoMold):
     moldno = fields.CharField(source_field='MoldNo', primary_key=True, max_length=32)
 
     class Meta:
@@ -89,7 +89,7 @@ class TMold(pm.TMold):
 
 
 
-class TMatWcMold(pm.TMatWcMold):
+class TMatWcMold(pm.ProtoMatWcMold):
     vid = fields.IntField(primary_key=True)
 
     class Meta:

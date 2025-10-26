@@ -1,4 +1,4 @@
-myaps_is_pro = True     # myaps是否专业版
+myaps_is_pro = True     # MyAPS是否专业版
 
 # 主数据默认值
 # 物料
@@ -27,7 +27,7 @@ default_lottop = 0  # 默认最大库存点
 default_preday = 999  # 默认向前冲销(天)
 default_subday = 999  # 默认向后冲销(天)
 
-example_matver = "v1"
+example_matver = "V1"
 
 
 # 前后端字段映射关系，某些客户可能需要

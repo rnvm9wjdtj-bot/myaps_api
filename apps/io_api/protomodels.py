@@ -3,7 +3,7 @@ from tortoise.models import Model as TortoiseBaseModel
 from tortoise import fields
 
 
-class TCalendar(TortoiseBaseModel):
+class ProtoCalendar(TortoiseBaseModel):
     shiftdate = fields.DateField(source_field='ShiftDate', unique=True)  # Field name made lowercase.
     shiftno = fields.CharField(source_field='ShiftNo', max_length=4)  # Field name made lowercase.
     caprate = fields.FloatField(source_field='CapRate', description='机台利用率%')  # Field name made lowercase.
@@ -15,7 +15,7 @@ class TCalendar(TortoiseBaseModel):
         # abstract = True  # 设置为抽象模型，不直接关联特定数据库
 
 
-class TCapReport(TortoiseBaseModel):
+class ProtoCapReport(TortoiseBaseModel):
     id = fields.CharField(unique=True, max_length=64)
     workcenter = fields.CharField(source_field='WorkCenter', max_length=255, blank=True, null=True)  # Field name made lowercase.
     materialno = fields.CharField(source_field='MaterialNo', max_length=64)  # Field name made lowercase.
@@ -31,7 +31,7 @@ class TCapReport(TortoiseBaseModel):
         table = 't_cap_report'
 
 
-class TCapacityday(TortoiseBaseModel):
+class ProtoCapacityday(TortoiseBaseModel):
     # vid = fields.IntField(primary_key=True)
     workcenter = fields.CharField(source_field='WorkCenter', max_length=255, blank=True, null=True)  # Field name made lowercase.
     weekno = fields.CharField(source_field='WeekNo', max_length=255, blank=True, null=True)  # Field name made lowercase.
@@ -54,7 +54,7 @@ class TCapacityday(TortoiseBaseModel):
         table = 't_capacityday'
 
 
-class TCapacitymonth(TortoiseBaseModel):
+class ProtoCapacitymonth(TortoiseBaseModel):
     # vid = fields.IntField(primary_key=True)
     workcenter = fields.CharField(source_field='WorkCenter', max_length=255, blank=True, null=True)  # Field name made lowercase.
     workcentername = fields.CharField(source_field='WorkCenterName', max_length=255, blank=True, null=True)  # Field name made lowercase.
@@ -77,7 +77,7 @@ class TCapacitymonth(TortoiseBaseModel):
         table = 't_capacitymonth'
 
 
-class TCapacityweek(TortoiseBaseModel):
+class ProtoCapacityweek(TortoiseBaseModel):
     # vid = fields.IntField(primary_key=True)
     workcenter = fields.CharField(source_field='WorkCenter', max_length=255, blank=True, null=True)  # Field name made lowercase.
     workcentername = fields.CharField(source_field='WorkCenterName', max_length=255, blank=True, null=True)  # Field name made lowercase.
@@ -100,7 +100,7 @@ class TCapacityweek(TortoiseBaseModel):
         table = 't_capacityweek'
 
 
-class TCheckqty(TortoiseBaseModel):
+class ProtoCheckqty(TortoiseBaseModel):
     noid = fields.IntField(source_field='NOID', unique=True)  # Field name made lowercase.
     workcenter = fields.CharField(source_field='WorkCenter', max_length=32)  # Field name made lowercase.
     supplyno = fields.CharField(source_field='SupplyNo', max_length=64, blank=True, null=True)  # Field name made lowercase.
@@ -114,7 +114,7 @@ class TCheckqty(TortoiseBaseModel):
         table = 't_checkqty'
 
 
-class TCheckqtyRecord(TortoiseBaseModel):
+class ProtoCheckqtyRecord(TortoiseBaseModel):
     noid = fields.IntField(source_field='NOID', unique=True)  # Field name made lowercase.
     workcenter = fields.CharField(source_field='WorkCenter', max_length=32)  # Field name made lowercase.
     supplyno = fields.CharField(source_field='SupplyNo', max_length=64, blank=True, null=True)  # Field name made lowercase.
@@ -135,7 +135,7 @@ class TCheckqtyRecord(TortoiseBaseModel):
         table = 't_checkqty_record'
 
 
-class TConfirm(TortoiseBaseModel):
+class ProtoConfirm(TortoiseBaseModel):
     noid = fields.IntField(source_field='NoID', unique=True)  # Field name made lowercase.
     supplyno = fields.CharField(source_field='SupplyNo', max_length=64)  # Field name made lowercase.
     itemno = fields.CharField(source_field='ItemNo', max_length=32)  # Field name made lowercase.
@@ -150,7 +150,7 @@ class TConfirm(TortoiseBaseModel):
         table = 't_confirm'
 
 
-class TConfirmmax(TortoiseBaseModel):
+class ProtoConfirmmax(TortoiseBaseModel):
     # pk = fields.CompositePrimaryKey
     # vid = fields.IntField(primary_key=True)  # Field name made lowercase.
     supplyno = fields.CharField(source_field='SupplyNo', max_length=64)  # Field name made lowercase.
@@ -162,7 +162,7 @@ class TConfirmmax(TortoiseBaseModel):
         table = 't_confirmmax'
         unique_together = [("supplyno", "itemno")]
 
-class TDemand(TortoiseBaseModel):
+class ProtoDemand(TortoiseBaseModel):
     # vid = fields.IntField(primary_key=True)
     materialno = fields.CharField(source_field='MaterialNo', max_length=64)  # Field name made lowercase.
     demandno = fields.CharField(source_field='DemandNo', max_length=64)  # Field name made lowercase.
@@ -195,7 +195,7 @@ class TDemand(TortoiseBaseModel):
         unique_together = [("materialno", "demandno", "itemno")]
 
 
-class TFieldname(TortoiseBaseModel):
+class ProtoFieldname(TortoiseBaseModel):
     id = fields.IntField(unique=True)
     tablename = fields.CharField(max_length=255, blank=True, null=True)
     fieldname = fields.CharField(max_length=255, blank=True, null=True)
@@ -208,7 +208,7 @@ class TFieldname(TortoiseBaseModel):
         table = 't_fieldname'
 
 
-class TForecast(TortoiseBaseModel):
+class ProtoForecast(TortoiseBaseModel):
     # pk = fields.CompositePrimaryKey
     # vid = fields.IntField(primary_key=True)
     region = fields.CharField(source_field='Region', max_length=32)  # Field name made lowercase.
@@ -235,7 +235,7 @@ class TForecast(TortoiseBaseModel):
         unique_together = [("region", "materialno")]
 
 
-class TForecastlog(TortoiseBaseModel):
+class ProtoForecastlog(TortoiseBaseModel):
     # pk = fields.CompositePrimaryKey('Year', 'Region', 'project', 'MaterialNo', 'Type')
     # vid = fields.IntField(primary_key=True)
     year = fields.CharField(source_field='Year', max_length=4)  # Field name made lowercase.
@@ -264,7 +264,7 @@ class TForecastlog(TortoiseBaseModel):
         unique_together = [("year", "region", "project", "materialno", "type")]
 
 
-class TForecastlogv2(TortoiseBaseModel):
+class ProtoForecastlogv2(TortoiseBaseModel):
     # pk = fields.CompositePrimaryKey('Year', 'Region', 'MaterialNo', 'Type')
     # vid = fields.IntField(primary_key=True)
     year = fields.CharField(source_field='Year', max_length=4)  # Field name made lowercase.
@@ -292,7 +292,7 @@ class TForecastlogv2(TortoiseBaseModel):
         unique_together = [("year", "region", "materialno", "type")]
 
 
-class TForecastsplit(TortoiseBaseModel):
+class ProtoForecastsplit(TortoiseBaseModel):
     materialno = fields.CharField(source_field='MaterialNo', max_length=64)  # Field name made lowercase.
     demandno = fields.CharField(source_field='DemandNo', max_length=64)  # Field name made lowercase.
     req_qty = fields.FloatField(source_field='Req_Qty', blank=True, null=True)  # Field name made lowercase.
@@ -304,7 +304,7 @@ class TForecastsplit(TortoiseBaseModel):
         table = 't_forecastsplit'
 
 
-class TGroupcolor(TortoiseBaseModel):
+class ProtoGroupcolor(TortoiseBaseModel):
     groupno = fields.CharField(source_field='GroupNo', unique=True, max_length=32)  # Field name made lowercase.
     grouptxt = fields.CharField(source_field='GroupTxt', max_length=255, blank=True, null=True)  # Field name made lowercase.
     color = fields.CharField(source_field='Color', max_length=16, blank=True, null=True)  # Field name made lowercase.
@@ -315,7 +315,7 @@ class TGroupcolor(TortoiseBaseModel):
         table = 't_groupcolor'
 
 
-class TMatAlt(TortoiseBaseModel):
+class ProtoMatAlt(TortoiseBaseModel):
     # pk = fields.CompositePrimaryKey('MaterialNo', 'GroupNo', 'ItemNo')
     # vid = fields.IntField(primary_key=True)
     materialno = fields.CharField(source_field='MaterialNo', max_length=64)  # Field name made lowercase.
@@ -333,7 +333,7 @@ class TMatAlt(TortoiseBaseModel):
         unique_together = [("materialno", "groupno", "itemno")]
 
 
-class TMatGrp(TortoiseBaseModel):
+class ProtoMatGrp(TortoiseBaseModel):
     # pk = fields.CompositePrimaryKey('GrpNo', 'VerNo')
     # vid = fields.IntField(primary_key=True)
     grpno = fields.CharField(source_field='GrpNo', max_length=6)  # Field name made lowercase.
@@ -345,7 +345,7 @@ class TMatGrp(TortoiseBaseModel):
         unique_together = [("grpno", "verno")]
 
 
-class TMatVer(TortoiseBaseModel):
+class ProtoMatVer(TortoiseBaseModel):
     # vid = fields.IntField(primary_key=True)
     materialno = fields.CharField(source_field='MaterialNo', max_length=64)  # Field name made lowercase.
     matver = fields.CharField(source_field='MatVer', max_length=4)  # Field name made lowercase.
@@ -362,7 +362,7 @@ class TMatVer(TortoiseBaseModel):
         unique_together = [("materialno", "matver")]
 
 
-class TMatWc(TortoiseBaseModel):
+class ProtoMatWc(TortoiseBaseModel):
     # vid = fields.IntField(primary_key=True)
     materialno = fields.CharField(source_field='MaterialNo', max_length=64)  # Field name made lowercase.
     matver = fields.CharField(source_field='MatVer', max_length=4)  # Field name made lowercase.
@@ -383,7 +383,7 @@ class TMatWc(TortoiseBaseModel):
         unique_together = [("materialno", "matver", "itemno")]
 
 
-class TMatWcBom(TortoiseBaseModel):
+class ProtoMatWcBom(TortoiseBaseModel):
     # vid = fields.IntField(primary_key=True)
     productno = fields.CharField(source_field='ProductNo', max_length=64)  # Field name made lowercase.
     matver = fields.CharField(source_field='MatVer', max_length=4)  # Field name made lowercase.
@@ -404,7 +404,7 @@ class TMatWcBom(TortoiseBaseModel):
         unique_together = [("productno", "matver", "itemno", "materialno")]
 
 
-class TMatWcBomNa(TortoiseBaseModel):
+class ProtoMatWcBomNa(TortoiseBaseModel):
     # pk = fields.CompositePrimaryKey('ProductNo', 'MatVer', 'WorkCenter', 'ItemNo', 'MaterialNo')
     # vid = fields.IntField(primary_key=True)
     productno = fields.CharField(source_field='ProductNo', max_length=64)  # Field name made lowercase.
@@ -426,7 +426,7 @@ class TMatWcBomNa(TortoiseBaseModel):
         unique_together = [("productno", "matver", "workcenter", "itemno", "materialno")]
 
 
-class TMatWcData(TortoiseBaseModel):
+class ProtoMatWcData(TortoiseBaseModel):
     # vid = fields.IntField(primary_key=True)
     materialno = fields.CharField(max_length=255, blank=True, null=True)
     workcenter = fields.CharField(max_length=255, blank=True, null=True)
@@ -437,7 +437,7 @@ class TMatWcData(TortoiseBaseModel):
         table = 't_mat_wc_data'
 
 
-class TMatWcMold(TortoiseBaseModel):
+class ProtoMatWcMold(TortoiseBaseModel):
     # pk = fields.CompositePrimaryKey('MaterialNo', 'WorkCenter', 'MoldNo')
     # vid = fields.IntField(primary_key=True)
     materialno = fields.CharField(source_field='MaterialNo', max_length=64, description='产品')  # Field name made lowercase.
@@ -454,7 +454,7 @@ class TMatWcMold(TortoiseBaseModel):
         unique_together = [("materialno", "workcenter", "moldno")]
 
 
-class TMatWcSwitch(TortoiseBaseModel):
+class ProtoMatWcSwitch(TortoiseBaseModel):
     # pk = fields.CompositePrimaryKey('MaterialNo', 'WorkCenter')
     # vid = fields.IntField(primary_key=True)
     materialno = fields.CharField(source_field='MaterialNo', max_length=64, description='产品')  # Field name made lowercase.
@@ -469,7 +469,7 @@ class TMatWcSwitch(TortoiseBaseModel):
         unique_together = [("materialno", "workcenter")]
 
 
-class TMaterial(TortoiseBaseModel):
+class ProtoMaterial(TortoiseBaseModel):
     materialno = fields.CharField(source_field='MaterialNo', unique=True, max_length=64, description='物料')  # Field name made lowercase.
     description = fields.CharField(source_field='Description', max_length=128)  # Field name made lowercase.
     size = fields.CharField(source_field='Size', max_length=128, blank=True, null=True)  # Field name made lowercase.
@@ -513,7 +513,7 @@ class TMaterial(TortoiseBaseModel):
         table = 't_material'
 
 
-class TMaterialData(TortoiseBaseModel):
+class ProtoMaterialData(TortoiseBaseModel):
     materialno = fields.CharField(source_field='MaterialNo', unique=True, max_length=64, description='物料')  # Field name made lowercase.
     description = fields.CharField(source_field='Description', max_length=128)  # Field name made lowercase.
     plant = fields.CharField(source_field='Plant', max_length=32, blank=True, null=True, description='工厂')  # Field name made lowercase.
@@ -553,7 +553,7 @@ class TMaterialData(TortoiseBaseModel):
         table = 't_material_data'
 
 
-class TMaterialNa(TortoiseBaseModel):
+class ProtoMaterialNa(TortoiseBaseModel):
     materialno = fields.CharField(source_field='MaterialNo', unique=True, max_length=64, description='物料')  # Field name made lowercase.
     description = fields.CharField(source_field='Description', max_length=128)  # Field name made lowercase.
     plant = fields.CharField(source_field='Plant', max_length=32, blank=True, null=True, description='工厂')  # Field name made lowercase.
@@ -596,7 +596,7 @@ class TMaterialNa(TortoiseBaseModel):
         table = 't_material_na'
 
 
-class TMold(TortoiseBaseModel):
+class ProtoMold(TortoiseBaseModel):
     moldno = fields.CharField(source_field='MoldNo', unique=True, max_length=32)  # Field name made lowercase.
     moldname = fields.CharField(source_field='MoldName', max_length=255, blank=True, null=True)  # Field name made lowercase.
     type = fields.CharField(source_field='Type', max_length=8, blank=True, null=True, description="'注塑','冲压','压铸','夹具'")  # Field name made lowercase.
@@ -610,7 +610,7 @@ class TMold(TortoiseBaseModel):
         table = 't_mold'
 
 
-class TNamemapping(TortoiseBaseModel):
+class ProtoNamemapping(TortoiseBaseModel):
     # pk = fields.CompositePrimaryKey('No', 'Lang')
     # vid = fields.IntField(primary_key=True)
     no = fields.CharField(source_field='No', max_length=12)  # Field name made lowercase.
@@ -624,7 +624,7 @@ class TNamemapping(TortoiseBaseModel):
         unique_together = [("no", "lang")]
 
 
-class TNonWorkdt(TortoiseBaseModel):
+class ProtoNonWorkdt(TortoiseBaseModel):
     # pk = fields.CompositePrimaryKey('WorkCenter', 'StartTime', 'EndTime')
     # vid = fields.IntField(primary_key=True)
     workcenter = fields.CharField(source_field='WorkCenter', max_length=32)  # Field name made lowercase.
@@ -637,7 +637,7 @@ class TNonWorkdt(TortoiseBaseModel):
         unique_together = [("workcenter", "starttime", "endtime")]
 
 
-class TOrderstatus(TortoiseBaseModel):
+class ProtoOrderstatus(TortoiseBaseModel):
     orderno = fields.CharField(source_field='OrderNo', unique=True, max_length=64)  # Field name made lowercase.
     orderstatus = fields.CharField(source_field='OrderStatus', max_length=64)  # Field name made lowercase.
 
@@ -646,7 +646,7 @@ class TOrderstatus(TortoiseBaseModel):
         table = 't_orderstatus'
 
 
-class TOrderwc(TortoiseBaseModel):
+class ProtoOrderwc(TortoiseBaseModel):
     orderno = fields.CharField(source_field='OrderNo', unique=True, max_length=64)  # Field name made lowercase.
     supplyno = fields.CharField(source_field='SupplyNo', max_length=64)  # Field name made lowercase.
     itemno = fields.CharField(source_field='ItemNo', max_length=6)  # Field name made lowercase.
@@ -676,7 +676,7 @@ class TOrderwc(TortoiseBaseModel):
         table = 't_orderwc'
 
 
-class TOrderwcBackup(TortoiseBaseModel):
+class ProtoOrderwcBackup(TortoiseBaseModel):
     orderno = fields.CharField(source_field='OrderNo', unique=True, max_length=64)  # Field name made lowercase.
     supplyno = fields.CharField(source_field='SupplyNo', max_length=64)  # Field name made lowercase.
     itemno = fields.CharField(source_field='ItemNo', max_length=6)  # Field name made lowercase.
@@ -706,7 +706,7 @@ class TOrderwcBackup(TortoiseBaseModel):
         table = 't_orderwc_backup'
 
 
-class TOrderwcLog(TortoiseBaseModel):
+class ProtoOrderwcLog(TortoiseBaseModel):
     # pk = fields.CompositePrimaryKey('LogNo', 'OrderNo')
     # vid = fields.IntField(primary_key=True)
     userid = fields.CharField(source_field='UserID', max_length=40)  # Field name made lowercase.
@@ -740,7 +740,7 @@ class TOrderwcLog(TortoiseBaseModel):
         unique_together = [("logno", "orderno")]
 
 
-class TOrderwcOverlap(TortoiseBaseModel):
+class ProtoOrderwcOverlap(TortoiseBaseModel):
     orderno = fields.CharField(source_field='OrderNo', unique=True, max_length=64)  # Field name made lowercase.
     supplyno = fields.CharField(source_field='SupplyNo', max_length=64, blank=True, null=True)  # Field name made lowercase.
     itemno = fields.CharField(source_field='ItemNo', max_length=32, blank=True, null=True)  # Field name made lowercase.
@@ -769,7 +769,7 @@ class TOrderwcOverlap(TortoiseBaseModel):
         table = 't_orderwc_overlap'
 
 
-class TOrderwcReturn(TortoiseBaseModel):
+class ProtoOrderwcReturn(TortoiseBaseModel):
     orderno = fields.CharField(source_field='OrderNo', unique=True, max_length=64)  # Field name made lowercase.
     supplyno = fields.CharField(source_field='SupplyNo', max_length=64)  # Field name made lowercase.
     itemno = fields.CharField(source_field='ItemNo', max_length=32)  # Field name made lowercase.
@@ -799,7 +799,7 @@ class TOrderwcReturn(TortoiseBaseModel):
         table = 't_orderwc_return'
 
 
-class TPeg(TortoiseBaseModel):
+class ProtoPeg(TortoiseBaseModel):
     # vid = fields.IntField(primary_key=True)
     materialno = fields.CharField(source_field='MaterialNo', max_length=64)  # Field name made lowercase.
     demandno = fields.CharField(source_field='DemandNO', max_length=64)  # Field name made lowercase.
@@ -819,7 +819,7 @@ class TPeg(TortoiseBaseModel):
         table = 't_peg'
 
 
-class TPir(TortoiseBaseModel):
+class ProtoPir(TortoiseBaseModel):
     # pk = fields.CompositePrimaryKey('MaterialNo', 'VendorNo')
     # vid = fields.IntField(primary_key=True)
     materialno = fields.CharField(source_field='MaterialNo', max_length=64)  # Field name made lowercase.
@@ -834,7 +834,7 @@ class TPir(TortoiseBaseModel):
         unique_together = [("materialno", "vendorno")]
 
 
-class TPlangroup(TortoiseBaseModel):
+class ProtoPlangroup(TortoiseBaseModel):
     planitem = fields.CharField(source_field='PlanItem', unique=True, max_length=32)  # Field name made lowercase.
     planitemname = fields.CharField(source_field='PlanItemName', max_length=255, blank=True, null=True)  # Field name made lowercase.
     plangroup = fields.CharField(source_field='PlanGroup', max_length=32)  # Field name made lowercase.
@@ -844,7 +844,7 @@ class TPlangroup(TortoiseBaseModel):
         table = 't_plangroup'
 
 
-class TPlanlog(TortoiseBaseModel):
+class ProtoPlanlog(TortoiseBaseModel):
     planno = fields.IntField(source_field='PlanNo', unique=True)  # Field name made lowercase.
     plantype = fields.CharField(source_field='PlanType', max_length=16)  # Field name made lowercase.
     workcenter = fields.CharField(source_field='WorkCenter', max_length=32)  # Field name made lowercase.
@@ -860,7 +860,7 @@ class TPlanlog(TortoiseBaseModel):
         table = 't_planlog'
 
 
-class TPlanner(TortoiseBaseModel):
+class ProtoPlanner(TortoiseBaseModel):
     planner = fields.CharField(source_field='Planner', unique=True, max_length=8)  # Field name made lowercase.
     plannertxt = fields.CharField(source_field='PlannerTxt', max_length=255, blank=True, null=True)  # Field name made lowercase.
     memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
@@ -871,7 +871,7 @@ class TPlanner(TortoiseBaseModel):
         table = 't_planner'
 
 
-class TPlanresult(TortoiseBaseModel):
+class ProtoPlanresult(TortoiseBaseModel):
     # pk = fields.CompositePrimaryKey('PlanNo', 'OrderNo')
     # vid = fields.IntField(primary_key=True)
     planno = fields.IntField(source_field='PlanNo')  # Field name made lowercase.
@@ -896,7 +896,7 @@ class TPlanresult(TortoiseBaseModel):
         unique_together = [("planno", "orderno")]
 
 
-class TPriority(TortoiseBaseModel):
+class ProtoPriority(TortoiseBaseModel):
     priortyno = fields.CharField(source_field='PriortyNo', unique=True, max_length=16)  # Field name made lowercase.
     priorityname = fields.CharField(source_field='PriorityName', max_length=255, blank=True, null=True)  # Field name made lowercase.
     memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
@@ -906,7 +906,7 @@ class TPriority(TortoiseBaseModel):
         table = 't_priority'
 
 
-class TReport(TortoiseBaseModel):
+class ProtoReport(TortoiseBaseModel):
     # vid = fields.IntField(primary_key=True)
     orderno = fields.CharField(source_field='OrderNo', max_length=64)  # Field name made lowercase.
     product = fields.CharField(source_field='Product', max_length=64)  # Field name made lowercase.
@@ -952,7 +952,7 @@ class TReport(TortoiseBaseModel):
         table = 't_report'
 
 
-class TSetuptime(TortoiseBaseModel):
+class ProtoSetuptime(TortoiseBaseModel):
     # pk = fields.CompositePrimaryKey('SetupNo', 'PreGroup', 'SubGroup')
     # vid = fields.IntField(primary_key=True)
     setupno = fields.CharField(source_field='SetupNo', max_length=4)  # Field name made lowercase.
@@ -968,7 +968,7 @@ class TSetuptime(TortoiseBaseModel):
         unique_together = [("setupno", "pregroup", "subgroup")]
 
 
-class TShiftdate(TortoiseBaseModel):
+class ProtoShiftdate(TortoiseBaseModel):
     # pk = fields.CompositePrimaryKey('WorkCenter', 'ShiftDate')
     # vid = fields.IntField(primary_key=True)
     workcenter = fields.CharField(source_field='WorkCenter', max_length=32)  # Field name made lowercase.
@@ -984,7 +984,7 @@ class TShiftdate(TortoiseBaseModel):
         unique_together = [("workcenter", "shiftdate")]
 
 
-class TShifttime(TortoiseBaseModel):
+class ProtoShifttime(TortoiseBaseModel):
     noid = fields.IntField(source_field='NoID', unique=True)  # Field name made lowercase.
     shiftno = fields.CharField(source_field='ShiftNo', max_length=4)  # Field name made lowercase.
     starttime = fields.TimeField(source_field='StartTime')  # Field name made lowercase.
@@ -996,7 +996,7 @@ class TShifttime(TortoiseBaseModel):
         table = 't_shifttime'
 
 
-class TSoPln(TortoiseBaseModel):
+class ProtoSoPln(TortoiseBaseModel):
     # vid = fields.IntField(primary_key=True)
     demandno = fields.CharField(source_field='DemandNo', max_length=64)  # Field name made lowercase.
     itemno = fields.CharField(source_field='ItemNo', max_length=4)  # Field name made lowercase.
@@ -1033,7 +1033,7 @@ class TSoPln(TortoiseBaseModel):
         table = 't_so_pln'
 
 
-class TSort(TortoiseBaseModel):
+class ProtoSort(TortoiseBaseModel):
     # pk = fields.CompositePrimaryKey('WorkCenter', 'SortName')
     # vid = fields.IntField(primary_key=True)
     workcenter = fields.CharField(source_field='WorkCenter', max_length=32)  # Field name made lowercase.
@@ -1047,7 +1047,7 @@ class TSort(TortoiseBaseModel):
         unique_together = [("workcenter", "sortname")]
 
 
-class TSortfield(TortoiseBaseModel):
+class ProtoSortfield(TortoiseBaseModel):
     sortname = fields.CharField(source_field='SortName', unique=True, max_length=32)  # Field name made lowercase.
     sortdesc = fields.CharField(source_field='SortDesc', max_length=255, blank=True, null=True)  # Field name made lowercase.
 
@@ -1056,7 +1056,7 @@ class TSortfield(TortoiseBaseModel):
         table = 't_sortfield'
 
 
-class TSqlcheck(TortoiseBaseModel):
+class ProtoSqlcheck(TortoiseBaseModel):
     noid = fields.IntField(source_field='NoID', unique=True)  # Field name made lowercase.
     name = fields.CharField(source_field='Name', max_length=32, blank=True, null=True)  # Field name made lowercase.
     sqltext = fields.CharField(source_field='SQLText', max_length=255, blank=True, null=True)  # Field name made lowercase.
@@ -1067,7 +1067,7 @@ class TSqlcheck(TortoiseBaseModel):
         table = 't_sqlcheck'
 
 
-class TSupply(TortoiseBaseModel):
+class ProtoSupply(TortoiseBaseModel):
     # vid = fields.IntField(primary_key=True)
     materialno = fields.CharField(source_field='MaterialNo', max_length=64)  # Field name made lowercase.
     supplyno = fields.CharField(source_field='SupplyNo', max_length=64)  # Field name made lowercase.
@@ -1100,7 +1100,7 @@ class TSupply(TortoiseBaseModel):
         unique_together = [("materialno", "supplyno")]
 
 
-class TSupplyNa(TortoiseBaseModel):
+class ProtoSupplyNa(TortoiseBaseModel):
     # pk = fields.CompositePrimaryKey('MaterialNo', 'SupplyNo')
     # vid = fields.IntField(primary_key=True)
     materialno = fields.CharField(source_field='MaterialNo', max_length=64)  # Field name made lowercase.
@@ -1134,7 +1134,7 @@ class TSupplyNa(TortoiseBaseModel):
         unique_together = [("materialno", "supplyno")]
 
 
-class TSupplyconfirmqty(TortoiseBaseModel):
+class ProtoSupplyconfirmqty(TortoiseBaseModel):
     noid = fields.IntField(source_field='NoID', unique=True)  # Field name made lowercase.
     materialno = fields.CharField(source_field='MaterialNo', max_length=64)  # Field name made lowercase.
     supplyno = fields.CharField(source_field='SupplyNo', max_length=64)  # Field name made lowercase.
@@ -1147,7 +1147,7 @@ class TSupplyconfirmqty(TortoiseBaseModel):
         table = 't_supplyconfirmqty'
 
 
-class TSyslog(TortoiseBaseModel):
+class ProtoSyslog(TortoiseBaseModel):
     idno = fields.IntField(source_field='IDNo', unique=True)  # Field name made lowercase.
     timeid = fields.DatetimeField(source_field='TimeID')  # Field name made lowercase.
     userid = fields.CharField(source_field='UserID', max_length=40)  # Field name made lowercase.
@@ -1159,7 +1159,7 @@ class TSyslog(TortoiseBaseModel):
         table = 't_syslog'
 
 
-class TSyspara(TortoiseBaseModel):
+class ProtoSyspara(TortoiseBaseModel):
     paraid = fields.CharField(source_field='ParaID', unique=True, max_length=32)  # Field name made lowercase.
     paravalue = fields.CharField(source_field='ParaValue', max_length=32, blank=True, null=True)  # Field name made lowercase.
     memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
@@ -1169,7 +1169,7 @@ class TSyspara(TortoiseBaseModel):
         table = 't_syspara'
 
 
-class TTempAbc(TortoiseBaseModel):
+class ProtoTempAbc(TortoiseBaseModel):
     # vid = fields.IntField(primary_key=True)
     abc = fields.CharField(source_field='ABC', max_length=255, blank=True, null=True)  # Field name made lowercase.
 
@@ -1178,7 +1178,7 @@ class TTempAbc(TortoiseBaseModel):
         table = 't_temp_abc'
 
 
-class TTimepara(TortoiseBaseModel):
+class ProtoTimepara(TortoiseBaseModel):
     timeno = fields.CharField(source_field='TimeNo', unique=True, max_length=8)  # Field name made lowercase.
     timename = fields.CharField(source_field='TimeName', max_length=8)  # Field name made lowercase.
     beginday = fields.IntField(source_field='BeginDay', blank=True, null=True)  # Field name made lowercase.
@@ -1199,7 +1199,7 @@ class TTimepara(TortoiseBaseModel):
         table = 't_timepara'
 
 
-class TTreeso(TortoiseBaseModel):
+class ProtoTreeso(TortoiseBaseModel):
     # vid = fields.IntField(primary_key=True)
     orderno = fields.CharField(source_field='OrderNo', max_length=64)  # Field name made lowercase.
     product = fields.CharField(source_field='Product', max_length=64)  # Field name made lowercase.
@@ -1247,7 +1247,7 @@ class TTreeso(TortoiseBaseModel):
         table = 't_treeso'
 
 
-class TType(TortoiseBaseModel):
+class ProtoType(TortoiseBaseModel):
     type = fields.CharField(source_field='Type', unique=True, max_length=8)  # Field name made lowercase.
     category = fields.CharField(source_field='Category', max_length=2, blank=True, null=True)  # Field name made lowercase.
     memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
@@ -1257,7 +1257,7 @@ class TType(TortoiseBaseModel):
         table = 't_type'
 
 
-class TVendor(TortoiseBaseModel):
+class ProtoVendor(TortoiseBaseModel):
     vendorno = fields.CharField(source_field='VendorNo', unique=True, max_length=64)  # Field name made lowercase.
     vendorname = fields.CharField(source_field='VendorName', max_length=255, blank=True, null=True)  # Field name made lowercase.
     contacter = fields.CharField(source_field='Contacter', max_length=255, blank=True, null=True)  # Field name made lowercase.
@@ -1274,7 +1274,7 @@ class TVendor(TortoiseBaseModel):
         table = 't_vendor'
 
 
-class TWorkcenter(TortoiseBaseModel):
+class ProtoWorkcenter(TortoiseBaseModel):
     workcenter = fields.CharField(source_field='WorkCenter', unique=True, max_length=32)  # Field name made lowercase.
     workcentername = fields.CharField(source_field='WorkCenterName', max_length=255, blank=True, null=True)  # Field name made lowercase.
     pri_wc = fields.IntField(source_field='Pri_WC', blank=True, null=True, description='Planning时，多个WorkCenter的优先级选定')  # Field name made lowercase.
@@ -1296,7 +1296,7 @@ class TWorkcenter(TortoiseBaseModel):
         table = 't_workcenter'
 
 
-class TWorkcenterCheckpoint(TortoiseBaseModel):
+class ProtoWorkcenterCheckpoint(TortoiseBaseModel):
     # pk = fields.CompositePrimaryKey('WorkCenter', 'CheckTime')
     # vid = fields.IntField(primary_key=True)
     workcenter = fields.CharField(source_field='WorkCenter', max_length=32)  # Field name made lowercase.
@@ -1308,7 +1308,7 @@ class TWorkcenterCheckpoint(TortoiseBaseModel):
         unique_together = [("workcenter", "checktime")]
 
 
-class TWorkcenteruser(TortoiseBaseModel):
+class ProtoWorkcenteruser(TortoiseBaseModel):
     username = fields.CharField(unique=True, max_length=255, description='用户名')
     workcenter = fields.CharField(max_length=1255, blank=True, null=True, description='分配工作中心')
 
@@ -1317,7 +1317,7 @@ class TWorkcenteruser(TortoiseBaseModel):
         table = 't_workcenteruser'
 
 
-class TmpReport(TortoiseBaseModel):
+class ProtompReport(TortoiseBaseModel):
     # vid = fields.IntField(primary_key=True)
     orderno = fields.CharField(source_field='OrderNo', max_length=64)  # Field name made lowercase.
     product = fields.CharField(source_field='Product', max_length=64)  # Field name made lowercase.
@@ -1368,7 +1368,7 @@ class TmpReport(TortoiseBaseModel):
         table = 'tmp_report'
 
 
-class TmpWorkcenterSwitch(TortoiseBaseModel):
+class ProtompWorkcenterSwitch(TortoiseBaseModel):
     workcenter = fields.CharField(source_field='WorkCenter', unique=True, max_length=32)  # Field name made lowercase.
 
     class Meta:
