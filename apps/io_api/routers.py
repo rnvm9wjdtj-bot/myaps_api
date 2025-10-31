@@ -205,7 +205,7 @@ async def get_supply(
     summary="新增或修改供应记录（供应来源包含：生产生产计划PL、生产工单MO、库存ST、采购订单PO）",
     description="根据🗝️【料号+供应号】新增或修改生产记录"
     )
-async def post_mat_production(
+async def post_supply(
     data: List[AcceptSupply],
     db_name: str = common_params["db_name"]
     ):

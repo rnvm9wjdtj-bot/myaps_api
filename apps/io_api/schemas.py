@@ -9,43 +9,40 @@ from config import uservar as uv
 
 
 class AcceptMaterial(BaseModel):
-    materialno: str = Field(..., alias=uv.t_material.get("MaterialNo", "materialno"), description="料号")
-    description: str = Field(..., alias=uv.t_material.get("Description", "description"), description="物料名称")
-    size: str = Field(None, alias=uv.t_material.get("Size", "size"), description="规格")
+    materialno: str = Field(..., alias=uv.t_material.get("MaterialNo", "materialno"), description="料号", example="M001")
+    description: str = Field(..., alias=uv.t_material.get("Description", "description"), description="物料名称", example="测试物料A")
+    size: str = Field(None, alias=uv.t_material.get("Size", "size"), description="规格", example="100x100mm")
     plant: str = Field(..., alias=uv.t_material.get("Plant", "plant"), example=uv.default_plant, description='工厂')
-    planner: str = Field(uv.default_planner, alias=uv.t_material.get("Planner", "planner"), description="计划员")
+    planner: str = Field(uv.default_planner, alias=uv.t_material.get("Planner", "planner"), description="计划员", example="张三")
     fifo: int = Field(uv.default_fifo, alias=uv.t_material.get("FIFO", "fifo"), ge=0, le=1, description='1-FIFO 0-最近原则')
-    leadday: int = Field(alias=uv.t_material.get("LeadDay", "leadday"), ge=0, description="交期（天）")
-    expday: int = Field(uv.default_expday, alias=uv.t_material.get("ExpDay", "expday"), ge=0, description="保质期（天）")
-    grday: int = Field(alias=uv.t_material.get("GRDay", "grday"), ge=0, description="收货质检（天）")
+    leadday: int = Field(alias=uv.t_material.get("LeadDay", "leadday"), ge=0, description="交期（天）", example=7)
+    expday: int = Field(uv.default_expday, alias=uv.t_material.get("ExpDay", "expday"), ge=0, description="保质期（天）", example=365)
+    grday: int = Field(alias=uv.t_material.get("GRDay", "grday"), ge=0, description="收货质检（天）", example=1)
     abc: str = Field(alias=uv.t_material.get("ABC", "abc"), enum=["A", "B", "C"], example="A", description="ABC分类")
-    unit: str = Field(alias=uv.t_material.get("Unit", "unit"), description='单位')
-    price: Decimal = Field(uv.default_price, alias=uv.t_material.get("Price", "price"), description="价格")
-    groupno: str = Field(..., alias=uv.t_material.get("GroupNo", "groupno"), description="型号")
+    unit: str = Field(alias=uv.t_material.get("Unit", "unit"), description='单位', example="PCS")
+    price: Decimal = Field(uv.default_price, alias=uv.t_material.get("Price", "price"), description="价格", example=100.50)
+    groupno: str = Field(..., alias=uv.t_material.get("GroupNo", "groupno"), description="型号", example="G001")
     type: str = Field(... if uv.myaps_is_pro else None, alias=uv.t_material.get("type", "type"), enum=["E", "F"], example="E", description="物料类型  E-自制件 F-采购件")
     phantom: str = Field(uv.default_phantom, alias=uv.t_material.get("Phantom", "phantom"), enum=["N", "Y"], example="N", description='虚拟件')
-    phantommin: int = Field(uv.default_phantommin, alias=uv.t_material.get("PhantomMin", "phantommin"), ge=0, description='虚拟时间(Minute)')
-    firmday: int = Field(uv.default_firmday, alias=uv.t_material.get("FirmDay", "firmday"), ge=0, description="固定天数")
-    daygap: int = Field(uv.default_daygap, alias=uv.t_material.get("DayGap", "daygap"), ge=0, description='MTO拆分天数')
+    phantommin: int = Field(uv.default_phantommin, alias=uv.t_material.get("PhantomMin", "phantommin"), ge=0, description='虚拟时间(Minute)', example=0)
+    firmday: int = Field(uv.default_firmday, alias=uv.t_material.get("FirmDay", "firmday"), ge=0, description="固定天数", example=0)
+    daygap: int = Field(uv.default_daygap, alias=uv.t_material.get("DayGap", "daygap"), ge=0, description='MTO拆分天数', example=1)
     candelay: str = Field(uv.default_candelay, alias=uv.t_material.get("CanDelay", "candelay"), enum=["N", "Y"], example="N", description='可否延迟')
     lotsize: str = Field(
         uv.default_lotsize, alias=uv.t_material.get("LotSize", "lotsize"),
         enum=["EX", "FX", "D1", "D2", "D3", "D4", "D5", "D6", "W1", "W2", "W3", "W4", "M1", "M2", "VB"],
         example="EX", description='批量')
-    lotfix: float = Field(uv.default_lotfix, alias=uv.t_material.get("LotFix", "lotfix"), ge=0, description='固定批')
-    lotmin: float = Field(uv.default_lotmin, alias=uv.t_material.get("LotMin", "lotmin"), ge=0, description='最小批')
-    lotmax: float = Field(uv.default_lotmax, alias=uv.t_material.get("LotMax", "lotmax"), ge=0, description='最大批')
-    lotround: float = Field(uv.default_lotround, alias=uv.t_material.get("LotRound", "lotround"), ge=0, description='取整')
-    lotss: float = Field(uv.default_lotss, alias=uv.t_material.get("LotSS", "lotss"), ge=0, description='安全库存')
-    lotpoint: float = Field(uv.default_lotpoint, alias=uv.t_material.get("LotPoint", "lotpoint"), ge=0, description='重订货点')
-    lottop: float = Field(uv.default_lottop, alias=uv.t_material.get("LotTop", "lottop"), ge=0, description='最大库存点')
-    planitem: str = Field(None, alias=uv.t_material.get("PlanItem", "planitem"), description='产品组')
-    preday: int = Field(uv.default_preday, alias=uv.t_material.get("PreDay", "preday"), ge=0, description='向前冲销(天)')
-    subday: int = Field(uv.default_subday, alias=uv.t_material.get("SubDay", "subday"), ge=0, description='向后冲销(天)')
-    memo: str = Field(None,alias=uv.t_material.get("Memo", "memo"),  description='备注')
-    # free1: str = Field(alias='Free1', max_length=255)
-    # free2: str = Field(alias='Free2', max_length=255)
-    # free3: str = Field(alias='Free3', max_length=255)
+    lotfix: float = Field(uv.default_lotfix, alias=uv.t_material.get("LotFix", "lotfix"), ge=0, description='固定批', example=0.0)
+    lotmin: float = Field(uv.default_lotmin, alias=uv.t_material.get("LotMin", "lotmin"), ge=0, description='最小批', example=0.0)
+    lotmax: float = Field(uv.default_lotmax, alias=uv.t_material.get("LotMax", "lotmax"), ge=0, description='最大批', example=0.0)
+    lotround: float = Field(uv.default_lotround, alias=uv.t_material.get("LotRound", "lotround"), ge=0, description='取整', example=0.0)
+    lotss: float = Field(uv.default_lotss, alias=uv.t_material.get("LotSS", "lotss"), ge=0, description='安全库存', example=0.0)
+    lotpoint: float = Field(uv.default_lotpoint, alias=uv.t_material.get("LotPoint", "lotpoint"), ge=0, description='重订货点', example=0.0)
+    lottop: float = Field(uv.default_lottop, alias=uv.t_material.get("LotTop", "lottop"), ge=0, description='最大库存点', example=0.0)
+    planitem: str = Field(None, alias=uv.t_material.get("PlanItem", "planitem"), description='产品组', example="PI001")
+    preday: int = Field(uv.default_preday, alias=uv.t_material.get("PreDay", "preday"), ge=0, description='向前冲销(天)', example=999)
+    subday: int = Field(uv.default_subday, alias=uv.t_material.get("SubDay", "subday"), ge=0, description='向后冲销(天)', example=999)
+    memo: str = Field(None,alias=uv.t_material.get("Memo", "memo"),  description='备注', example="无特殊要求")
     
     @field_validator("leadday")
     def leadday_valid(cls, v, values):
@@ -67,156 +64,293 @@ class AcceptMaterial(BaseModel):
 
     class Config:
         title = "验证规则 - 物料"
+        json_schema_extra = {
+            "example": {
+                "materialno": "M001",
+                "description": "测试物料A",
+                "size": "100x100mm",
+                "plant": "1600",
+                "planner": "haida",
+                "fifo": 1,
+                "leadday": 7,
+                "expday": 365,
+                "grday": 1,
+                "abc": "A",
+                "unit": "PCS",
+                "price": 100.50,
+                "groupno": "G001",
+                "type": "E",
+                "phantom": "N",
+                "memo": "标准物料"
+            }
+        }
         
 
 
 class AcceptWorkcenter(BaseModel):
-    workcenter: str = Field(..., alias=uv.t_workcenter.get("WorkCenter", "workcenter"), max_length=32, description="工作中心代码")
-    workcentername: str = Field(..., alias=uv.t_workcenter.get("WorkCenterName", "workcentername"), max_length=255, description="工作中心名称")
-    pri_wc: int = Field(1, alias=uv.t_workcenter.get("Pri_Wc", "pri_wc"), description='优先级')
+    workcenter: str = Field(..., alias=uv.t_workcenter.get("WorkCenter", "workcenter"), max_length=32, description="工作中心代码", example="WC001")
+    workcentername: str = Field(..., alias=uv.t_workcenter.get("WorkCenterName", "workcentername"), max_length=255, description="工作中心名称", example="装配车间")
+    pri_wc: int = Field(1, alias=uv.t_workcenter.get("Pri_Wc", "pri_wc"), description='优先级', example=1)
     bottleneck: str = Field("N", alias=uv.t_workcenter.get("Bottleneck", "bottleneck"), enum=["N", "Y"], example="N", description='瓶颈')
-    sortno: str = Field(None, alias=uv.t_workcenter.get("SortNo", "sortno"), max_length=4, description="序号")
-    plant: str = Field(None, alias=uv.t_workcenter.get("Plant", "plant"), max_length=32, description="工厂")
-    location: str = Field(None, alias=uv.t_workcenter.get("Location", "location"), max_length=32, description="车间")
+    sortno: str = Field(None, alias=uv.t_workcenter.get("SortNo", "sortno"), max_length=4, description="序号", example="0001")
+    plant: str = Field(uv.default_plant, alias=uv.t_workcenter.get("Plant", "plant"), max_length=32, description="工厂", example="1600")
+    location: str = Field(None, alias=uv.t_workcenter.get("Location", "location"), max_length=32, description="车间", example="A区")
     finite: str = Field(None, alias=uv.t_workcenter.get("Finite", "finite"), enum=["N", "Y"], example="N", description='有限')
     type: str = Field(None, alias=uv.t_workcenter.get("Type", "type"), enum=["N", "Y"], example="N", description="首页显示")
-    capnum: int = Field(None, alias=uv.t_workcenter.get("CapNum", "capnum"), gt=0, description="默认机台数")
-    capmax: int = Field(None, alias=uv.t_workcenter.get("CapMax", "capmax"), gt=0, description="最大机台数")
-    worker: float = Field(None, alias=uv.t_workcenter.get("Worker", "worker"), ge=0, description='工时')
-    setupno: str = Field(None, alias=uv.t_workcenter.get("SetupNo", "setupno"), max_length=6, description='切换组别')
-    grpno: str = Field(None, alias=uv.t_workcenter.get("GrpNo", "grpno"), max_length=6, description='同组号')
-    memo: str = Field(None, alias=uv.t_workcenter.get("Memo", "memo"), max_length=255, description="备注")
+    capnum: int = Field(None, alias=uv.t_workcenter.get("CapNum", "capnum"), gt=0, description="默认机台数", example=5)
+    capmax: int = Field(None, alias=uv.t_workcenter.get("CapMax", "capmax"), gt=0, description="最大机台数", example=10)
+    worker: float = Field(None, alias=uv.t_workcenter.get("Worker", "worker"), ge=0, description='工时', example=8.0)
+    setupno: str = Field(None, alias=uv.t_workcenter.get("SetupNo", "setupno"), max_length=6, description='切换组别', example="S001")
+    grpno: str = Field(None, alias=uv.t_workcenter.get("GrpNo", "grpno"), max_length=6, description='同组号', example="G001")
+    memo: str = Field(None, alias=uv.t_workcenter.get("Memo", "memo"), max_length=255, description="备注", example="标准工作中心")
     
     class Config:
         title = "验证规则 - 工作中心"
+        json_schema_extra = {
+            "example": {
+                "workcenter": "WC001",
+                "workcentername": "装配车间",
+                "pri_wc": 1,
+                "bottleneck": "N",
+                "plant": "1600",
+                "capnum": 5,
+                "capmax": 10,
+                "worker": 8.0,
+                "memo": "标准工作中心"
+            }
+        }
 
+    @field_validator("sortno")
+    def sortno_valid(cls, v, values):
+        if v is None:
+            workcenter = values.get("workcenter")
+            v = uv.workcenter_sort.get(workcenter, workcenter)
+        return v
 
 
 class AcceptMatWc(BaseModel):
-    materialno: str = Field(..., alias=uv.t_mat_wc.get("MaterialNo", "materialno"), max_length=64, description='料号')
+    materialno: str = Field(..., alias=uv.t_mat_wc.get("MaterialNo", "materialno"), max_length=64, description='料号', example="M001")
     matver: str = Field(..., alias=uv.t_mat_wc.get("MatVer", "matver"), max_length=4, example=uv.example_matver, description='产线版本')
-    itemno: str = Field(..., alias=uv.t_mat_wc.get("ItemNo", "itemno"), max_length=6, description='工序项目')
-    workcenter: str = Field(..., alias=uv.t_mat_wc.get("WorkCenter", "workcenter"), max_length=32, description='工作中心')
-    sortno: int = Field(..., alias=uv.t_mat_wc.get("SortNo", "sortno"), ge=0, description='序号')
-    basesec: int = Field(..., alias=uv.t_mat_wc.get("BaseSec", "basesec"), ge=0, description='节拍T/T(秒/100)')
-    fixqty: int = Field(0, alias=uv.t_mat_wc.get("FixQty", "fixqty"), ge=0, description='额定量')
-    fixsec: int = Field(0, alias=uv.t_mat_wc.get("FixSec", "fixsec"), ge=0, description='额定时间(秒)')
+    itemno: str = Field(..., alias=uv.t_mat_wc.get("ItemNo", "itemno"), max_length=6, description='工序项目', example="0010")
+    workcenter: str = Field(..., alias=uv.t_mat_wc.get("WorkCenter", "workcenter"), max_length=32, description='工作中心', example="WC001")
+    sortno: int = Field(..., alias=uv.t_mat_wc.get("SortNo", "sortno"), ge=0, description='序号', example=1)
+    basesec: int = Field(..., alias=uv.t_mat_wc.get("BaseSec", "basesec"), ge=0, description='节拍T/T(秒/100)', example=600)
+    fixqty: int = Field(0, alias=uv.t_mat_wc.get("FixQty", "fixqty"), ge=0, description='额定量', example=100)
+    fixsec: int = Field(0, alias=uv.t_mat_wc.get("FixSec", "fixsec"), ge=0, description='额定时间(秒)', example=300)
     sf: str = Field(..., alias=uv.t_mat_wc.get("SF", "sf"), enum=["S", "F"], example="F", description='并行S/串行F')
-    offsetsec: int = Field(0, alias=uv.t_mat_wc.get("OffsetSec", "offsetsec"), description='偏置+/-(秒)')
-    memo: str = Field(None, alias=uv.t_mat_wc.get("Memo", "memo"), max_length=255, description='备注')
+    offsetsec: int = Field(0, alias=uv.t_mat_wc.get("OffsetSec", "offsetsec"), description='偏置+/-(秒)', example=0)
+    memo: str = Field(None, alias=uv.t_mat_wc.get("Memo", "memo"), max_length=255, description='备注', example="标准工序")
 
     class Config:
         title = "验证规则 - 工序"
+        json_schema_extra = {
+            "example": {
+                "materialno": "M001",
+                "matver": "V1",
+                "itemno": "0010",
+                "workcenter": "WC001",
+                "sortno": 1,
+                "basesec": 600,
+                "fixqty": 100,
+                "fixsec": 300,
+                "sf": "F",
+                "offsetsec": 0,
+                "memo": "标准工序"
+            }
+        }
 
 
 
 class AcceptMatVer(BaseModel):
-    materialno: str = Field(..., alias=uv.t_mat_ver.get("MaterialNo", "materialno"), max_length=64, description='料号')
+    materialno: str = Field(..., alias=uv.t_mat_ver.get("MaterialNo", "materialno"), max_length=64, description='料号', example="M001")
     matver: str = Field(..., alias=uv.t_mat_ver.get("MatVer", "matver"), example=uv.example_matver, max_length=4, description='产线版本号')
-    lotfrom: int = Field(0, alias=uv.t_mat_ver.get("LotFrom", "lotfrom"), description='批量起点')
-    lotto: int = Field(9999999, alias=uv.t_mat_ver.get("LotTo", "lotto"), description='批量终点')
-    priority: int = Field(1, alias=uv.t_mat_ver.get("Priority", "priority"), description='优先级')
-    refno: str = Field(None, alias=uv.t_mat_ver.get("RefNo", "refno"), max_length=64, description='MTO订单号/认证线')
+    lotfrom: int = Field(0, alias=uv.t_mat_ver.get("LotFrom", "lotfrom"), description='批量起点', example=1)
+    lotto: int = Field(9999999, alias=uv.t_mat_ver.get("LotTo", "lotto"), description='批量终点', example=9999999)
+    priority: int = Field(1, alias=uv.t_mat_ver.get("Priority", "priority"), description='优先级', example=1)
+    refno: str = Field(None, alias=uv.t_mat_ver.get("RefNo", "refno"), max_length=64, description='MTO订单号/认证线', example="SO123456")
     active: str = Field("Y", alias=uv.t_mat_ver.get("Active", "active"), enum=["N", "Y"], example="Y", description='生效')
-    memo: str = Field(None, alias=uv.t_mat_ver.get("Memo", "memo"), max_length=255, description='备注')
+    memo: str = Field(None, alias=uv.t_mat_ver.get("Memo", "memo"), max_length=255, description='备注', example="标准版本")
 
     class Config:
         title = "验证规则 - 产线版本"
+        json_schema_extra = {
+            "example": {
+                "materialno": "M001",
+                "matver": "V1",
+                "lotfrom": 1,
+                "lotto": 9999999,
+                "priority": 1,
+                "active": "Y",
+                "memo": "标准版本"
+            }
+        }
 
 
 
 class AcceptMatWcBom(BaseModel):
-    productno: str = Field(..., alias=uv.t_mat_wc_bom.get("ProductNo", "productno"), max_length=64, description='产品料号')
+    productno: str = Field(..., alias=uv.t_mat_wc_bom.get("ProductNo", "productno"), max_length=64, description='产品料号', example="P001")
     matver: str = Field(..., alias=uv.t_mat_wc_bom.get("MatVer", "matver"), example=uv.example_matver, max_length=4, description='产线版本')
-    itemno: str = Field(..., alias=uv.t_mat_wc_bom.get("ItemNo", "itemno"), max_length=6, description='工序项目')
-    materialno: str = Field(..., alias=uv.t_mat_wc_bom.get("MaterialNo", "materialno"), max_length=64, description='子件料号')
-    qty: float = Field(..., alias=uv.t_mat_wc_bom.get("Qty", "qty"), ge=0, description='数量')
-    offsethour: int = Field(0, alias=uv.t_mat_wc_bom.get("OffsetHour", "offsethour"), description='偏置+/-(小时)')
-    treeno: int = Field(None, alias=uv.t_mat_wc_bom.get("TreeNo", "treeno"), description='层级')
+    itemno: str = Field(..., alias=uv.t_mat_wc_bom.get("ItemNo", "itemno"), max_length=6, description='工序项目', example="0010")
+    materialno: str = Field(..., alias=uv.t_mat_wc_bom.get("MaterialNo", "materialno"), max_length=64, description='子件料号', example="M001")
+    qty: float = Field(..., alias=uv.t_mat_wc_bom.get("Qty", "qty"), ge=0, description='数量', example=2.0)
+    offsethour: int = Field(0, alias=uv.t_mat_wc_bom.get("OffsetHour", "offsethour"), description='偏置+/-(小时)', example=0)
+    treeno: int = Field(None, alias=uv.t_mat_wc_bom.get("TreeNo", "treeno"), description='层级', example=1)
     mto: str = Field("N", alias=uv.t_mat_wc_bom.get("MTO", "mto"), enum=["N", "Y"], example="N", description='MTO')
-    scrap: float = Field(0, alias=uv.t_mat_wc_bom.get("Scrap", "scrap"), description='报废率%')
+    scrap: float = Field(0, alias=uv.t_mat_wc_bom.get("Scrap", "scrap"), description='报废率%', example=0.0)
     alt: str = Field("N", alias=uv.t_mat_wc_bom.get("Alt", "alt"), enum=["N", "Y"], example="N", description='Y/N是否是替代')
-    memo: str = Field(None, alias=uv.t_mat_wc_bom.get("Memo", "memo"), max_length=255, description='备注')
+    memo: str = Field(None, alias=uv.t_mat_wc_bom.get("Memo", "memo"), max_length=255, description='备注', example="标准BOM组件")
 
     class Config:
         title = "验证规则 - BOM"
+        json_schema_extra = {
+            "example": {
+                "productno": "P001",
+                "matver": "V1",
+                "itemno": "0010",
+                "materialno": "M001",
+                "qty": 2.0,
+                "offsethour": 0,
+                "treeno": 1,
+                "mto": "N",
+                "scrap": 0.0,
+                "alt": "N",
+                    "memo": "标准BOM组件"
+                }
+            }
+
 
 
 class AcceptMold(BaseModel):
-    moldno: str = Field(..., alias=uv.t_mold.get("MoldNo", "moldno"), max_length=64, description='模具编号')
-    moldname: str = Field(..., alias=uv.t_mold.get("MoldName", "moldname"), max_length=64, description='模具名称')
-    type: str = Field(..., alias=uv.t_mold.get("Type", "type"), example=uv.example_matver, max_length=4, description='类型')
-    status: str = Field(..., alias=uv.t_mold.get("Status", "status"), max_length=6, description='状态')
-    moldnum: int = Field(..., alias=uv.t_mold.get("MoldNum", "moldnum"), ge=0, description='模具穴数')
-    qty: int = Field(..., alias=uv.t_mold.get("Qty", "qty"), ge=0, description='模具台数') 
-    memo: str = Field(None, alias=uv.t_mold.get("Memo", "memo"), max_length=255, description="备注")
+    moldno: str = Field(..., alias=uv.t_mold.get("MoldNo", "moldno"), max_length=64, description='模具编号', example="MOLD001")
+    moldname: str = Field(..., alias=uv.t_mold.get("MoldName", "moldname"), max_length=64, description='模具名称', example="测试模具A")
+    type: str = Field(..., alias=uv.t_mold.get("Type", "type"), example="T1", max_length=4, description='类型')
+    status: str = Field(..., alias=uv.t_mold.get("Status", "status"), max_length=6, description='状态', example="AVL")
+    moldnum: int = Field(..., alias=uv.t_mold.get("MoldNum", "moldnum"), ge=0, description='模具穴数', example=4)
+    qty: int = Field(..., alias=uv.t_mold.get("Qty", "qty"), ge=0, description='模具台数', example=2)
+    memo: str = Field(None, alias=uv.t_mold.get("Memo", "memo"), max_length=255, description="备注", example="标准模具")
     
     class Config:
         title = "验证规则 - 模具"
+        json_schema_extra = {
+            "example": {
+                "moldno": "MOLD001",
+                "moldname": "测试模具A",
+                "type": "T1",
+                "status": "AVL",
+                "moldnum": 4,
+                "qty": 2,
+                "memo": "标准模具"
+            }
+        }
 
 
 class AcceptMatWcMold(BaseModel):
-    materialno: str = Field(..., alias=uv.t_mat_wc_mold.get("MaterialNo", "materialno"), max_length=64, description='料号')
-    workcenter: str = Field(..., alias=uv.t_mat_wc_mold.get("WorkCenter", "workcenter"), max_length=64, description='工作中心')
-    moldno: str = Field(..., alias=uv.t_mat_wc_mold.get("MoldNo", "moldno"), max_length=64, description='模具编号')
-    basesec: int = Field(..., alias=uv.t_mat_wc_mold.get("BaseSec", "basesec"), ge=0, description='节拍T/T(秒/100)')
-    fixsec: int = Field(0, alias=uv.t_mat_wc_mold.get("FixSec", "fixsec"), ge=0, description='额定时间(秒)')
-    priority: int = Field(1, alias=uv.t_mat_wc_mold.get("Priority", "priority"), description='优先级')
-    memo: str = Field(None, alias=uv.t_mat_wc_mold.get("Memo", "memo"), max_length=255, description='备注')
+    materialno: str = Field(..., alias=uv.t_mat_wc_mold.get("MaterialNo", "materialno"), max_length=64, description='料号', example="M001")
+    workcenter: str = Field(..., alias=uv.t_mat_wc_mold.get("WorkCenter", "workcenter"), max_length=64, description='工作中心', example="WC001")
+    moldno: str = Field(..., alias=uv.t_mat_wc_mold.get("MoldNo", "moldno"), max_length=64, description='模具编号', example="MOLD001")
+    basesec: int = Field(..., alias=uv.t_mat_wc_mold.get("BaseSec", "basesec"), ge=0, description='节拍T/T(秒/100)', example=600)
+    fixsec: int = Field(..., alias=uv.t_mat_wc_mold.get("FixSec", "fixsec"), ge=0, description='额定时间(秒)', example=300)
+    priority: int = Field(..., alias=uv.t_mat_wc_mold.get("Priority", "priority"), description='优先级', example=1)
+    memo: str = Field(None, alias=uv.t_mat_wc_mold.get("Memo", "memo"), max_length=255, description='备注', example="标准机台模具配置")
+
+    class Config:
+        title = "验证规则 - 机台模具"
+        json_schema_extra = {
+            "example": {
+                "materialno": "M001",
+                "workcenter": "WC001",
+                "moldno": "MOLD001",
+                "basesec": 600,
+                "fixsec": 300,
+                "priority": 1,
+                "memo": "标准机台模具配置"
+            }
+        }
+
+
+    # @field_validator('priority')
+    # def validate_priority(cls, value):
+    #     if value == 0:
+    #         raise ValueError('优先级不能为0')
+    #     return value
 
 
 class AcceptSupply(BaseModel):
-    materialno: str = Field(..., alias=uv.t_supply.get("MaterialNo", "materialno"), max_length=64, description='料号')
-    supplyno: str = Field(..., alias=uv.t_supply.get("SupplyNo", "supplyno"), max_length=64, description='供应单号')
+    materialno: str = Field(..., alias=uv.t_supply.get("MaterialNo", "materialno"), max_length=64, description='料号', example="M001")
+    supplyno: str = Field(..., alias=uv.t_supply.get("SupplyNo", "supplyno"), max_length=64, description='供应单号', example="MO123456")
     matver: Optional[str] = Field(None, alias=uv.t_supply.get("MatVer", "matver"), max_length=32, example=uv.example_matver, description='产线版本')
-    itemno: str = Field(None, alias=uv.t_supply.get("ItemNo", "itemno"), max_length=6, description='项目号')
+    itemno: str = Field(None, alias=uv.t_supply.get("ItemNo", "itemno"), max_length=6, description='项目号', example="0010")
     type: str = Field(..., alias=uv.t_supply.get("Type", "type"), enum=["PL", "MO", "ST", "PO"], example="MO", description='类型 PL-生产计划 MO-生产工单 ST-库存 PO-采购订单')
     category: str = Field(None, alias=uv.t_supply.get("Category", "category"), enum=["MTO", "MTS"], example="MTO", description='分类(MTO/MTS)')
-    priority: int = Field(1, alias=uv.t_supply.get("Priority", "priority"), description='优先级')
+    priority: int = Field(..., alias=uv.t_supply.get("Priority", "priority"), description='优先级', example=1)
     status: str = Field(
         None, alias=uv.t_supply.get("Status", "status"),
         enum=["NEW", "CRE", "SCH", "REL", "PNF", "CMP"],
         example="NEW", description='状态 NEW-新增 CRE-已创建 SCH-计划 REL-已发布 PNF-已报工, CMP-已完成')
-    avail_qty: float = Field(..., alias=uv.t_supply.get("Avail_Qty", "avail_qty"), ge=0, description='可用数量')
-    create_date: Optional[str] = Field(None, alias=uv.t_supply.get("Create_Date", "create_date"), description='创建日期')
-    avail_date: str = Field(..., alias=uv.t_supply.get("Avail_Date", "avail_date"), description='可用日期 / 开工日期')
-    dt_req: Optional[str] = Field(..., alias=uv.t_supply.get("DT_Req", "dt_req"), description='需求日期 / 完工日期')
-    avail_end_date: Optional[str] = Field(None, alias=uv.t_supply.get("Avail_End_Date", "avail_end_date"), description='可用结束日期')
-    batchno: Optional[str] = Field(None, alias=uv.t_supply.get("BatchNo", "batchno"), max_length=64, description='批次号')
-    vendorno: Optional[str] = Field(None, alias=uv.t_supply.get("VendorNo", "vendorno"), max_length=64, description='供应商编号')
-    partnerno: Optional[str] = Field(None, alias=uv.t_supply.get("PartnerNo", "partnerno"), max_length=64, description='合作商编号')
-    partnername: Optional[str] = Field(None, alias=uv.t_supply.get("PartnerName", "partnername"), max_length=255, description='合作商名称')
-    # free1: Optional[str] = Field(None, alias=fc.t_supply.get("free1", "free1"), max_length=255, description='自由字段1')
-    # free2: Optional[str] = Field(None, alias=fc.t_supply.get("free2", "free2"), max_length=255, description='自由字段2')
-    # free3: Optional[str] = Field(None, alias=fc.t_supply.get("free3", "free3"), max_length=255, description='自由字段3')
-    memo: Optional[str] = Field(None, alias=uv.t_supply.get("Memo", "memo"), max_length=255, description='备注')
-    # sys_date: Optional[str] = Field(None, alias=fc.t_supply.get("sys_date", "sys_date"), description='系统日期')
-    # sys_user: Optional[str] = Field(None, alias=fc.t_supply.get("sys_user", "sys_user"), max_length=32, description='系统用户')
-    # sys_stamp: Optional[str] = Field(None, alias=fc.t_supply.get("sys_stamp", "sys_stamp"), description='系统时间戳')
+    avail_qty: float = Field(..., alias=uv.t_supply.get("Avail_Qty", "avail_qty"), ge=0, description='可用数量', example=100.0)
+    create_date: Optional[str] = Field(None, alias=uv.t_supply.get("Create_Date", "create_date"), description='创建日期', example="2023-01-01")
+    avail_date: str = Field(..., alias=uv.t_supply.get("Avail_Date", "avail_date"), description='可用日期 / 开工日期', example="2023-01-01")
+    dt_req: Optional[str] = Field(..., alias=uv.t_supply.get("DT_Req", "dt_req"), description='需求日期 / 完工日期', example="2023-01-07")
+    avail_end_date: Optional[str] = Field(None, alias=uv.t_supply.get("Avail_End_Date", "avail_end_date"), description='可用结束日期', example="2023-01-07")
+    batchno: Optional[str] = Field(None, alias=uv.t_supply.get("BatchNo", "batchno"), max_length=64, description='批次号', example="BATCH001")
+    vendorno: Optional[str] = Field(None, alias=uv.t_supply.get("VendorNo", "vendorno"), max_length=64, description='供应商编号', example="V001")
+    partnerno: Optional[str] = Field(None, alias=uv.t_supply.get("PartnerNo", "partnerno"), max_length=64, description='合作商编号', example="P001")
+    partnername: Optional[str] = Field(None, alias=uv.t_supply.get("PartnerName", "partnername"), max_length=255, description='合作商名称', example="合作伙伴A")
+    memo: Optional[str] = Field(None, alias=uv.t_supply.get("Memo", "memo"), max_length=255, description='备注', example="标准供应单")
 
     class Config:
         title = "验证规则 - 供应"
+        json_schema_extra = {
+            "example": {
+                "materialno": "M001",
+                "supplyno": "MO123456",
+                "matver": "V1",
+                "itemno": "0010",
+                "type": "MO",
+                "category": "MTO",
+                "priority": 1,
+                "status": "NEW",
+                "avail_qty": 100.0,
+                "avail_date": "2023-01-01",
+                "dt_req": "2023-01-07",
+                "memo": "标准生产工单"
+            }
+        }
 
 
 class AcceptDemand(BaseModel):
-    materialno: str = Field(..., alias=uv.t_demand.get("MaterialNo", "materialno"), max_length=64, description='料号')
-    demandno: str = Field(..., alias=uv.t_demand.get("DemandNo", "demandno"), max_length=64, description='需求单号')
-    itemno: str = Field(..., alias=uv.t_demand.get("ItemNo", "itemno"), max_length=6, description='项目号')
+    materialno: str = Field(..., alias=uv.t_demand.get("MaterialNo", "materialno"), max_length=64, description='料号', example="M001")
+    demandno: str = Field(..., alias=uv.t_demand.get("DemandNo", "demandno"), max_length=64, description='需求单号', example="SO123456")
+    itemno: str = Field(..., alias=uv.t_demand.get("ItemNo", "itemno"), max_length=6, description='项目号', example="0010")
     type: str = Field(..., alias=uv.t_demand.get("Type", "type"), enum=["SO", "DM", "RS", "FC", "SS"], example="SO", description='类型 SO-销售订单 DM-计划需求 RS-工单预留 FC-预测 SS-安全库存')
     category: str = Field(None, alias=uv.t_demand.get("Category", "category"), enum=["MTO", "MTS"], example="MTO", description='分类(MTO/MTS)')
-    priority: int = Field(..., alias=uv.t_demand.get("Priority", "priority"), description='优先级')
-    workcenter: str = Field(..., alias=uv.t_demand.get("WorkCenter", "workcenter"), max_length=32, description='工作中心')
+    priority: int = Field(..., alias=uv.t_demand.get("Priority", "priority"), description='优先级', example=1)
+    workcenter: str = Field(..., alias=uv.t_demand.get("WorkCenter", "workcenter"), max_length=32, description='工作中心', example="WC001")
     status: str = Field(None, alias=uv.t_demand.get("Status", "status"), enum=["NEW", "CRE", "SCH", "REL", "PNF", "CMP"], example="NEW", description='状态 NEW-新增 CRE-已创建 SCH-计划 REL-已发布 PNF-已报工, CMP-已完成')
-    req_qty: float = Field(..., alias=uv.t_demand.get("Req_Qty", "req_qty"), le=0, description='需求数量')
-    # create_date: Optional[str] = Field(None, alias=fc.t_demand.get("Create_Date", "create_date"), description='创建日期')
-    req_date: datetime = Field(..., alias=uv.t_demand.get("Req_Date", "req_date"), description='需求日期')
-    refno: Optional[str] = Field(None, alias=uv.t_demand.get("RefNo", "refno"), max_length=64, description='MTO订单号')
-    partnerno: Optional[str] = Field(None, alias=uv.t_demand.get("PartnerNo", "partnerno"), max_length=64, description='合作商编号')
-    partnername: Optional[str] = Field(None, alias=uv.t_demand.get("PartnerName", "partnername"), max_length=255, description='合作商名称')
-    # altgrp: Optional[str] = Field(None, alias=fc.t_demand.get("AltGrp", "altgrp"), max_length=64, description='替代组')
-    # ori_itemno: Optional[str] = Field(None, alias=fc.t_demand.get("Ori_ItemNo", "ori_itemno"), max_length=6, description='原始项目号')
-    ori_qty: Optional[float] = Field(None, alias=uv.t_demand.get("Ori_Qty", "ori_qty"), ge=0, description='原始需求数量')
-    memo: Optional[str] = Field(None, alias=uv.t_demand.get("Memo", "memo"), max_length=255, description='备注')
+    req_qty: float = Field(..., alias=uv.t_demand.get("Req_Qty", "req_qty"), le=0, description='需求数量', example=-100.0)
+    req_date: datetime = Field(..., alias=uv.t_demand.get("Req_Date", "req_date"), description='需求日期', example="2023-01-07T10:00:00")
+    refno: Optional[str] = Field(None, alias=uv.t_demand.get("RefNo", "refno"), max_length=64, description='MTO订单号', example="MTO123456")
+    partnerno: Optional[str] = Field(None, alias=uv.t_demand.get("PartnerNo", "partnerno"), max_length=64, description='合作商编号', example="P001")
+    partnername: Optional[str] = Field(None, alias=uv.t_demand.get("PartnerName", "partnername"), max_length=255, description='合作商名称', example="客户A")
+    ori_qty: Optional[float] = Field(None, alias=uv.t_demand.get("Ori_Qty", "ori_qty"), ge=0, description='原始需求数量', example=100.0)
+    memo: Optional[str] = Field(None, alias=uv.t_demand.get("Memo", "memo"), max_length=255, description='备注', example="标准销售订单")
 
     class Config:
         title = "验证规则 - 需求"
+        json_schema_extra = {
+            "example": {
+                "materialno": "M001",
+                "demandno": "SO123456",
+                "itemno": "0010",
+                "type": "SO",
+                "category": "MTO",
+                "priority": 1,
+                "workcenter": "WC001",
+                "status": "NEW",
+                "req_qty": -100.0,
+                "req_date": "2023-01-07T10:00:00",
+                "refno": "MTO123456",
+                "ori_qty": 100.0,
+                "memo": "标准销售订单"
+            }
+        }

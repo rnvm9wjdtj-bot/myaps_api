@@ -16,7 +16,7 @@ from apps.io_api.common import register_exception_handlers
 # 创建FastAPI应用实例
 app = FastAPI(
     title="MyAPS API",
-    description="MyAPS API",
+    description="MyAPS API系统接口文档，提供物料、工作中心、工序、BOM等主数据管理，以及供应需求等生产数据管理功能。",
     version="1.0.0",
     # 配置文档页面URL，禁用默认的 Swagger UI​，防止CDN资源不稳定导致无法访问文档页
     docs_url=None,  
@@ -24,8 +24,59 @@ app = FastAPI(
     swagger_js_url="/static/swagger/swagger-ui-bundle.js",
     swagger_css_url="/static/swagger/swagger-ui.css",
     swagger_favicon_url="/static/swagger/favicon-32x32.png",
-    swagger_ui_parameters={"configUrl": None}
+    swagger_ui_parameters={
+        "configUrl": None,
+        "defaultModelsExpandDepth": 2,  # 默认展开模型深度
+        "defaultModelExpandDepth": 3,  # 默认展开模型属性深度
+        "displayRequestDuration": True,  # 显示请求持续时间
+        "docExpansion": "list",  # 文档展开方式: 'list', 'full', 'none'
+        "tryItOutEnabled": True,  # 启用"Try it out"功能
+        "jsonEditor": True,  # 使用JSON编辑器编辑请求体
+        "showCommonExtensions": True,  # 显示扩展字段
+        "showExtensions": True,  # 显示OpenAPI扩展
+        "showMutatedRequest": True  # 显示修改后的请求
+    }
 )
+
+# 增强OpenAPI schema配置
+app.openapi_version = "3.0.2"
+
+# 保存原始的openapi方法
+original_openapi = app.openapi
+
+# 自定义OpenAPI schema生成
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    
+    # 调用原始的openapi方法获取schema
+    openapi_schema = original_openapi()
+    
+    # 确保所有schemas都有详细的描述和示例
+    for schema_name, schema in openapi_schema.get("components", {}).get("schemas", {}).items():
+        # 添加更多描述信息
+        if "properties" in schema:
+            for prop_name, prop in schema["properties"].items():
+                # 确保每个属性都有描述
+                if "description" not in prop and "title" not in prop:
+                    prop["description"] = f"字段: {prop_name}"
+                # 确保每个属性都有示例值
+                if "example" not in prop and "examples" not in prop:
+                    # 根据类型设置默认示例值
+                    if prop.get("type") == "string":
+                        prop["example"] = f"示例{prop_name}"
+                    elif prop.get("type") == "integer":
+                        prop["example"] = 1
+                    elif prop.get("type") == "number":
+                        prop["example"] = 1.0
+                    elif prop.get("type") == "boolean":
+                        prop["example"] = True
+    
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+# 设置自定义的OpenAPI schema生成函数
+app.openapi = custom_openapi
 
 # 配置CORS中间件解决跨域访问问题
 # app.add_middleware(
