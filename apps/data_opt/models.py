@@ -34,7 +34,6 @@ class DataOptBaseModel(TortoiseBaseModel):
 
 
 class OptMaterial(DataOptBaseModel, pm.ProtoMaterial):
-    
     class Meta:
         database = THIS_DB_NAME
         table = "opt_material"

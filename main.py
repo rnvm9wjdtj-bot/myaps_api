@@ -9,7 +9,7 @@ from tortoise.contrib.fastapi import register_tortoise
 from config import settings
 from apps.io_api.routers import rt as io_rt
 from apps.io_api.common import register_exception_handlers
-# from apps.data_opt.routers import rt as do_rt
+from apps.data_opt.routers import rt as do_rt
 # from apps.data_opt.common import register_exception_handlers as register_data_manager_exception_handlers
 
 
@@ -109,7 +109,7 @@ register_exception_handlers(app)
 
 # 包含子路由
 app.include_router(io_rt, prefix="/api", tags=[])
-# app.include_router(do_rt, prefix="/do", tags=[])
+app.include_router(do_rt, prefix="/do", tags=[])
 
 # 根路由
 @app.get("/")

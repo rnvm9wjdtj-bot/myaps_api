@@ -69,28 +69,45 @@ async def common_post(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticS
         async with in_transaction(db_name) as db:
             for _d in data:
                 _d_dict = _d.model_dump()
-                match_on = {k : _d_dict.get(k) for k in model_key}
-                if len(model_key) > 1:     # 如果是联合主键，则要排除虚拟主键的干扰
+                if _d._overwrite:   # 当联合主键之一需要被覆写
+                    match_on = _d._overwrite["match_on"]
+                    new_value = _d._overwrite["new_value"]
                     if await mdl.filter(**match_on).only(*only_fields).using_db(db).exists():
-                        await mdl.filter(**match_on).only(*only_fields).first().using_db(db).update(**_d_dict)  # 必须重新写一遍查询逻辑，因为前面返回的是一个对象，不能直接update
+                        where_clause = " AND ".join([f"{k} = '{v}'" for k, v in match_on.items()])
+                        sql = f"""
+                            UPDATE {mdl._meta.db_table}
+                            SET {", ".join([f"{k} = '{v}'" for k, v in new_value.items() if k != "vid"])}
+                            WHERE {where_clause}
+                        """
+                        await db.execute_query(sql)
                         update_count += 1
                     else:
                         await mdl.create(**_d_dict, using_db=db)
                         cerate_count += 1
-                else:   # 单一主键
-                    exist = await mdl.get_or_none(**match_on, using_db=db)
-                    if exist:
-                        await exist.update_from_dict(_d_dict).save()
-                        update_count += 1
-                    else:
-                        await mdl.create(**_d_dict, using_db=db)
-                        cerate_count += 1
+                else:
+                    match_on = {k : _d_dict.get(k) for k in model_key}
+                    if len(model_key) > 1:     # 如果是联合主键，则要排除虚拟主键的干扰
+                        if await mdl.filter(**match_on).only(*only_fields).using_db(db).exists():
+                            await mdl.filter(**match_on).only(*only_fields).first().using_db(db).update(**_d_dict)# 必须重新写一遍查询逻辑，因为前面返回的是一个对象，不能直接update
+                            update_count += 1
+                        else:
+                            await mdl.create(**_d_dict, using_db=db)
+                            cerate_count += 1
+                    else:   # 单一主键
+                        exist = await mdl.get_or_none(**match_on, using_db=db)
+                        if exist:
+                            await exist.update_from_dict(_d_dict).save(using_db=db, force_update=True, force_create=False)
+                            update_count += 1
+                        else:
+                            await mdl.create(**_d_dict, using_db=db)
+                            cerate_count += 1
         return standard_response(
             message=f"新增{cerate_count}条，修改{update_count}条",
             meta={"create": cerate_count, "update": update_count}
             )
     except Exception as e:
         return standard_response(
+            success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message=f"操作失败：{str(e)}"
         )
@@ -113,6 +130,7 @@ async def common_delete(db_name: str, mdl: TortoiseBaseModel, model_key: tuple[s
             )
     except Exception as e:
         return standard_response(
+            success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message=f"操作失败：{str(e)}"
         )
@@ -126,6 +144,7 @@ async def common_get_by_sql(db_name: str, table_name: str, filter_string: str, f
     # 映射字段名
     if field_mapper:
         data = [{field_mapper.get(k, k): v for k, v in row.items()} for row in data]
+    db.close()
     return standard_response(
         data=data,
         meta={"total": total}

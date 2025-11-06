@@ -1,12 +1,12 @@
 from datetime import date, datetime, timedelta
 from typing import List
 
-from fastapi import APIRouter, Query, Body#, status, Request, Path
+from fastapi import APIRouter, Query, Body, status#, Request, Path
 
 from config import uservar as uv
 from .models import TMaterial, TWorkcenter, TMatWc, TMatVer, TMatWcBom, TSupply, TDemand, TMold, TMatWcMold#,TortoiseBaseModel
 from .schemas import AcceptMaterial, AcceptWorkcenter, AcceptMatWc, AcceptMatVer, AcceptMatWcBom, AcceptSupply, AcceptDemand, AcceptMold, AcceptMatWcMold
-from .common import common_params, common_get_by_orm, common_post, common_delete, common_get_by_sql
+from .common import common_params, common_get_by_orm, common_post, common_delete, common_get_by_sql, standard_response
 
 # 路由路径对应的数据资源
 # data_source = {
@@ -203,12 +203,17 @@ async def get_supply(
     "/t_supply",
     tags=["生产数据 - 供应"],
     summary="新增或修改供应记录（供应来源包含：生产生产计划PL、生产工单MO、库存ST、采购订单PO）",
-    description="根据🗝️【料号+供应号】新增或修改生产记录"
+    description="根据🗝️【料号+供应号】新增或修改供应记录"
     )
 async def post_supply(
     data: List[AcceptSupply],
     db_name: str = common_params["db_name"]
     ):
+    # 检查plno是否存在
+    if any(item.plno for item in data):
+        for item in data:
+            if item.plno:
+                item._overwrite = {"match_on": {"supplyno": item.plno, "materialno": item.materialno, "type": "PL"}, "new_value": {"supplyno": item.supplyno}}
     return await common_post(db_name=db_name, mdl=TSupply, data=data)
 
 # 需求
