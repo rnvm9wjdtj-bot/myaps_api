@@ -88,6 +88,10 @@ async def common_post(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticS
                     match_on = {k : _d_dict.get(k) for k in model_key}
                     if len(model_key) > 1:     # 如果是联合主键，则要排除虚拟主键的干扰
                         if await mdl.filter(**match_on).only(*only_fields).using_db(db).exists():
+                            # 先删除None值
+                            keys_to_remove = [k for k, v in _d_dict.items() if v is None]
+                            for key in keys_to_remove:
+                                del _d_dict[key]
                             await mdl.filter(**match_on).only(*only_fields).first().using_db(db).update(**_d_dict)# 必须重新写一遍查询逻辑，因为前面返回的是一个对象，不能直接update
                             update_count += 1
                         else:
@@ -109,7 +113,7 @@ async def common_post(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticS
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message=f"操作失败：{str(e)}"
+            message=f"操作失败：{str(e)} —— common_post"
         )
 
 # 路由公共方法 - delete

@@ -3,7 +3,7 @@ import pandas as pd
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
 
-
+from config import uservar as uv
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -17,7 +17,6 @@ db_set = ['hdfc', 'hdso']
 
 def get_stock():    # 获取库存
     logger.info("执行获取库存定时任务")
-    now = datetime.datetime.now()
     try:
         response = session.get('http://192.168.201.2:8000/zrestful_test2?sap-client=800', headers={'interface': 'stock', 'werks': '1600'})
         data = response.json()['data']
@@ -33,7 +32,7 @@ def get_stock():    # 获取库存
         stock['avail_qty'] = stock['labst'] + stock['labst2']
         stock['supplyno'] = stock['werks'] + '-' + stock['matnr']
         stock['type'] = 'ST'
-        stock['priority'] = 0
+        stock['priority'] = uv.default_priority
         stock['avail_date'] = datetime.datetime.now().strftime('%Y-%m-%d')
         stock['dt_req'] = datetime.datetime.now().strftime('%Y-%m-%d')
         stock = (stock
@@ -51,7 +50,7 @@ def get_stock():    # 获取库存
         })
         stock_data = stock.to_dict(orient='records')
         for db in db_set:
-            session.post(f"http://172.16.101.209:8000/api/t_supply?db_name={db}", json=stock_data)
+            session.post(f"http://localhost:8000/api/t_supply?db_name={db}", json=stock_data)
         logger.info("获取库存定时任务执行完成")
     except Exception as e:
         logger.error(f"获取库存定时任务执行失败: {str(e)}")
@@ -72,11 +71,12 @@ scheduler = BackgroundScheduler(executors=executors, timezone='Asia/Shanghai')
 def init_scheduler():
     """初始化调度器并添加定时任务"""
     try:
-        # 添加示例定时任务 - 每小时执行一次
+        # 添加库存获取定时任务 - 每天的奇数整点执行(1,3,5,7,9,11,13,15,17,19,21,23点)
         scheduler.add_job(
             func=get_stock,
-            trigger='interval',
-            hours=1,
+            trigger='cron',
+            minute=0,
+            hour=[1,3,5,7,9,11,13,15,17,19,21,23],
             id='get_stock',
             replace_existing=True
         )
