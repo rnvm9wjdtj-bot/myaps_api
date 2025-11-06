@@ -304,6 +304,12 @@ class AcceptSupply(BaseModel):
             }
         }
 
+    @model_validator(mode="before")
+    def model_valid(self):
+        if not self.get("itemno"):
+            self["itemno"] = uv.default_itemno
+        return self
+
 
 class AcceptDemand(BaseModel):
     materialno: str = Field(..., alias=uv.t_demand.get("MaterialNo", "materialno"), max_length=64, description='料号', example="M001")

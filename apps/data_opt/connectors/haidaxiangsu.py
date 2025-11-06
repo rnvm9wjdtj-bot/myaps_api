@@ -33,6 +33,7 @@ def get_stock():    # 获取库存
         stock['avail_qty'] = stock['labst'] + stock['labst2']
         stock['supplyno'] = stock['werks'] + '-' + stock['matnr']
         stock['type'] = 'ST'
+        stock['priority'] = 0
         stock['avail_date'] = datetime.datetime.now().strftime('%Y-%m-%d')
         stock['dt_req'] = datetime.datetime.now().strftime('%Y-%m-%d')
         stock = (stock
@@ -43,6 +44,7 @@ def get_stock():    # 获取库存
                             'type': 'first',
                             'avail_date': 'first',
                             'dt_req': 'first',
+                            'priority': 'first',
                         })) 
         stock = stock.rename(columns={
             'matnr': 'materialno',

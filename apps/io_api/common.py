@@ -69,7 +69,7 @@ async def common_post(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticS
         async with in_transaction(db_name) as db:
             for _d in data:
                 _d_dict = _d.model_dump()
-                if _d._overwrite:   # 当联合主键之一需要被覆写
+                if hasattr(_d, "_overwrite"):   # 当联合主键之一需要被覆写
                     match_on = _d._overwrite["match_on"]
                     new_value = _d._overwrite["new_value"]
                     if await mdl.filter(**match_on).only(*only_fields).using_db(db).exists():
