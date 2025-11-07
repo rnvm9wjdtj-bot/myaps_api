@@ -1,12 +1,15 @@
 from datetime import date, datetime, timedelta
-from typing import List
+from typing import List, Literal
 
 from fastapi import APIRouter, Query, Body, status#, Request, Path
 
 from config import uservar as uv
 from .models import TMaterial, TWorkcenter, TMatWc, TMatVer, TMatWcBom, TSupply, TDemand, TMold, TMatWcMold#,TortoiseBaseModel
-from .schemas import AcceptMaterial, AcceptWorkcenter, AcceptMatWc, AcceptMatVer, AcceptMatWcBom, AcceptSupply, AcceptDemand, AcceptMold, AcceptMatWcMold
-from .common import common_params, common_get_by_orm, common_post, common_delete, common_get_by_sql, standard_response
+from .schemas import (
+    AcceptMaterial, AcceptWorkcenter, AcceptMatWc, AcceptMatVer, AcceptMatWcBom, AcceptSupply, AcceptDemand, AcceptMold, AcceptMatWcMold,
+    DeleteSupply
+    )
+from .common import common_params, common_get_by_orm, common_post, common_delete, common_get_by_sql, common_delete_by_sql, standard_response
 
 # 路由路径对应的数据资源
 # data_source = {
@@ -56,7 +59,7 @@ async def delete_material(
     data: List[AcceptMaterial],
     db_name: str = common_params["db_name"]
     ):
-    return await common_delete(db_name=db_name, mdl=TMaterial, model_key=("materialno", ), data=data)
+    return await common_delete(db_name=db_name, mdl=TMaterial, data=data)
 
 @rt.get(
     "/t_workcenter",
@@ -199,6 +202,7 @@ async def get_supply(
 ):
     return await common_get_by_orm(db_name=db_name, mdl=TSupply, page_size=page_size, page_index=page_index)
 
+
 @rt.post(
     "/t_supply",
     tags=["生产数据 - 供应"],
@@ -215,6 +219,27 @@ async def post_supply(
             if item.plno:
                 item._overwrite = {"match_on": {"supplyno": item.plno, "materialno": item.materialno, "type": "PL"}, "new_value": {"supplyno": item.supplyno}}
     return await common_post(db_name=db_name, mdl=TSupply, data=data)
+
+
+@rt.delete(
+    "/t_supply",
+    tags=["生产数据 - 供应"],
+    summary="删除供应记录",
+    description="根据🗝️【料号+供应号】删除供应记录"
+    )
+async def delete_supply(
+    data: List[DeleteSupply] | str,
+    db_name: str = common_params["db_name"]
+    ):
+    if type(data) == str and data in ["ST", "PL", "PO", "MO"]:
+        return await common_delete_by_sql(db_name=db_name, table_name="t_supply", filter_string=f"Type='{data}'")
+    elif type(data) == list:
+        return await common_delete(db_name=db_name, mdl=TSupply, data=data)
+    else:
+        return standard_response(
+            status=400,
+            success=0,
+            message="Invalid input type. Expected list of DeleteSupply or 'ST', 'PL', 'PO', 'MO'.")
 
 # 需求
 @rt.get(

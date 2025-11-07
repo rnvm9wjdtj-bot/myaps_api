@@ -117,7 +117,9 @@ async def common_post(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticS
         )
 
 # 路由公共方法 - delete
-async def common_delete(db_name: str, mdl: TortoiseBaseModel, model_key: tuple[str], data: List[PydanticSchema]):
+async def common_delete(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticSchema]):
+    unique_together = mdl._meta.unique_together
+    model_key = unique_together[0] if unique_together else [mdl._meta.pk_attr]
     delete_count = 0
     try:
         async with in_transaction(db_name) as db:
@@ -148,6 +150,17 @@ async def common_get_by_sql(db_name: str, table_name: str, filter_string: str, f
     # 映射字段名
     if field_mapper:
         data = [{field_mapper.get(k, k): v for k, v in row.items()} for row in data]
+    db.close()
+    return standard_response(
+        data=data,
+        meta={"total": total}
+    )
+
+async def common_delete_by_sql(db_name: str, table_name: str, filter_string: str):
+    db = Tortoise.get_connection(db_name)
+    where = f" WHERE {filter_string}" if filter_string else ''
+    sql = f'DELETE FROM `{table_name}` {where}'
+    total, data = await db.execute_query(sql)
     db.close()
     return standard_response(
         data=data,

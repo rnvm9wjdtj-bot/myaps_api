@@ -311,6 +311,13 @@ class AcceptSupply(BaseModel):
         return self
 
 
+
+class DeleteSupply(BaseModel):
+    materialno: str = Field(..., alias=uv.t_supply.get("MaterialNo", "materialno"), max_length=64, description='料号', example="M001")
+    supplyno: str = Field(..., alias=uv.t_supply.get("SupplyNo", "supplyno"), max_length=64, description='供应单号', example="MO123456")
+
+
+
 class AcceptDemand(BaseModel):
     materialno: str = Field(..., alias=uv.t_demand.get("MaterialNo", "materialno"), max_length=64, description='料号', example="M001")
     demandno: str = Field(..., alias=uv.t_demand.get("DemandNo", "demandno"), max_length=64, description='需求单号', example="SO123456")

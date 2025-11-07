@@ -1,9 +1,43 @@
+import os
+
+# db_set_str = os.getenv("MYAPS_DB_SET")
+# if 'haida' in db_set_str or 'hdfc' in db_set_str or 'hdso' in db_set_str:
+    
+
 import requests, logging, atexit, datetime
 import pandas as pd
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
 
 from config import uservar as uv
+from ..common import monitor
+
+
+@monitor.on_update_for_table('t_supply')
+async def my_update_handler(table, data):
+    print(f"自定义UPDATE: {table} -> {data}")
+
+
+# 创建异步初始化函数，确保在正确的异步上下文中启动监控
+async def init_binlog_monitor():
+    print("正在启动Binlog监控...")
+    await monitor.start_monitoring()
+    print("Binlog监控已启动")
+
+# 在应用启动时调用的函数
+def start_monitoring_sync():
+    import asyncio
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(init_binlog_monitor())
+    finally:
+        # 注意：这里不关闭事件循环，因为监控需要持续运行
+        pass
+
+
+
+sap_url = 'http://192.168.201.2:8000/zrestful_test2?sap-client=800'
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -15,10 +49,10 @@ session = requests.Session()
 db_set = ['hdfc', 'hdso']
 
 
-def get_stock():    # 获取库存
+async def refresh_stock():    # 刷新库存
     logger.info("执行获取库存定时任务")
     try:
-        response = session.get('http://192.168.201.2:8000/zrestful_test2?sap-client=800', headers={'interface': 'stock', 'werks': '1600'})
+        response = session.get(url=sap_url, headers={'interface': 'stock', 'werks': '1600'})
         data = response.json()['data']
         stock = pd.DataFrame(data)
         stock = stock.astype({
@@ -50,7 +84,8 @@ def get_stock():    # 获取库存
         })
         stock_data = stock.to_dict(orient='records')
         for db in db_set:
-            session.post(f"http://localhost:8000/api/t_supply?db_name={db}", json=stock_data)
+            await session.delete(f"http://localhost:8000/api/t_supply?db_name={db}", data='ST')
+            await session.post(f"http://localhost:8000/api/t_supply?db_name={db}", json=stock_data)
         logger.info("获取库存定时任务执行完成")
     except Exception as e:
         logger.error(f"获取库存定时任务执行失败: {str(e)}")
@@ -73,11 +108,11 @@ def init_scheduler():
     try:
         # 添加库存获取定时任务 - 每天的奇数整点执行(1,3,5,7,9,11,13,15,17,19,21,23点)
         scheduler.add_job(
-            func=get_stock,
+            func=refresh_stock,
             trigger='cron',
             minute=0,
-            hour=[1,3,5,7,9,11,13,15,17,19,21,23],
-            id='get_stock',
+            hour='1,3,5,7,9,11,13,15,17,19,21,23',
+            id='refresh_stock',
             replace_existing=True
         )
         logger.info("调度器初始化完成，已添加定时任务")
@@ -113,11 +148,10 @@ def initialize_and_start_scheduler():
     """初始化并启动调度器，这是模块的主要入口点"""
     init_scheduler()
     start_scheduler()
+    # 启动binlog监控
+    start_monitoring_sync()
     # 注册退出处理函数，确保程序退出时调度器被正确关闭
     atexit.register(shutdown_scheduler)
 
-
-if __name__ == "__main__":
-# 当模块被导入时自动初始化和启动调度器
-    initialize_and_start_scheduler()
+initialize_and_start_scheduler()
 

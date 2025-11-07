@@ -13,16 +13,15 @@ from fastapi import APIRouter#, Query, Body, UploadFile, File, BackgroundTasks
 #     AcceptDataRestore, PaginatedResponse, BatchOperationResponse
 # )
 # from .common import common_params, standard_response, common_get_by_orm
-from .connectors.haidaxiangsu import get_stock
+from .connectors.haidaxiangsu import refresh_stock
 
 
 
 # 创建路由器实例
 rt = APIRouter()
 
-@rt.get("/stock")
-async def get_st():
-    get_stock()
-    return {"message": "数据接收成功"}
+@rt.get("/refresh_stock")
+async def refresh_st():
+    return await refresh_stock()
 
 
