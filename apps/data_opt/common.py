@@ -22,7 +22,7 @@
 #    server_id=1
 # 4. 重启 MySQL 使配置生效
 
-from config.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_DEFAULT_DB
+from config.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_DEFAULT_DB, MYAPS_DB_SET
 
 import os
 import asyncio
@@ -44,65 +44,20 @@ class MySQLBinlogMonitor:
         self.mysql_settings = mysql_settings
         self.running = False
         
-        # 存储表结构信息
-        self._table_schemas = {}
-        # 存储表名映射（解决大小写问题）
-        self._table_name_mapping = {}
+        # 存储表结构信息（按数据库分组）
+        self._table_schemas = {}  # 格式: {database: {table: [columns]}}
+        self._table_name_mapping = {}  # 格式: {database: {lower_table: table}}
         
         # 注册表：事件类型 -> 装饰器函数列表
         self._insert_handlers = []
         self._update_handlers = []
         self._delete_handlers = []
         
-        # 表过滤功能
-        self._table_filters = {}
+        # 表过滤功能（支持多数据库）
+        self._table_filters = {}  # 格式: {database.table: handlers}
         
-        # 验证配置并检查MySQL设置
+        # 验证配置
         self._validate_config()
-        self._check_mysql_settings()
-
-    def _check_mysql_settings(self):
-        """检查并建议MySQL设置"""
-        try:
-            import pymysql
-            conn_params = {
-                "host": self.mysql_settings["host"],
-                "port": int(self.mysql_settings["port"]),
-                "user": self.mysql_settings["user"],
-                "password": self.mysql_settings["password"],
-                "connect_timeout": 5
-            }
-            
-            if self.mysql_settings.get("database"):
-                conn_params["database"] = self.mysql_settings["database"]
-            
-            conn = pymysql.connect(**conn_params)
-            
-            with conn.cursor() as cursor:
-                # 检查当前设置
-                cursor.execute("SHOW VARIABLES LIKE 'binlog_row_metadata'")
-                row_metadata = cursor.fetchone()
-                
-                cursor.execute("SHOW VARIABLES LIKE 'binlog_row_image'")
-                row_image = cursor.fetchone()
-                
-                logger.info(f"当前MySQL设置: binlog_row_metadata={row_metadata[1]}, binlog_row_image={row_image[1]}")
-                
-                # 检查是否需要建议设置
-                if row_metadata[1] != 'FULL' or row_image[1] != 'FULL':
-                    logger.warning("⚠️ 建议设置MySQL变量以获得完整的列信息:")
-                    logger.warning("   在MySQL中执行以下命令:")
-                    logger.warning("   SET GLOBAL binlog_row_metadata = 'FULL';")
-                    logger.warning("   SET GLOBAL binlog_row_image = 'FULL';")
-                    logger.warning("   或者在my.cnf中添加:")
-                    logger.warning("   binlog_row_metadata = FULL")
-                    logger.warning("   binlog_row_image = FULL")
-                    logger.warning("   重启MySQL后生效")
-            
-            conn.close()
-            
-        except Exception as e:
-            logger.warning(f"检查MySQL设置失败: {e}")
 
     def _validate_config(self):
         """验证MySQL配置"""
@@ -117,10 +72,18 @@ class MySQLBinlogMonitor:
             raise ValueError(f"缺少必要的MySQL配置: {', '.join(missing_fields)}")
         
         # 检查数据库配置
-        if not self.mysql_settings.get("database"):
-            logger.warning("未指定数据库名称，列名映射功能将受限")
+        if not self.mysql_settings.get("databases") and not self.mysql_settings.get("database"):
+            logger.warning("未指定数据库名称，将监控所有数据库")
         else:
-            logger.info(f"配置的数据库: {self.mysql_settings['database']}")
+            # 处理数据库列表
+            databases = self.mysql_settings.get("databases", [])
+            if self.mysql_settings.get("database"):
+                databases.append(self.mysql_settings["database"])
+            
+            # 去重
+            databases = list(set(databases))
+            self.mysql_settings["databases"] = databases
+            logger.info(f"配置监控的数据库: {', '.join(databases)}")
         
         # 测试连接
         try:
@@ -133,13 +96,14 @@ class MySQLBinlogMonitor:
                 "connect_timeout": 5
             }
             
-            if self.mysql_settings.get("database"):
-                conn_params["database"] = self.mysql_settings["database"]
+            # 如果指定了数据库，使用第一个数据库测试连接
+            if self.mysql_settings.get("databases"):
+                conn_params["database"] = self.mysql_settings["databases"][0]
             
             conn = pymysql.connect(**conn_params)
             
-            # 预加载表结构信息（如果有数据库）
-            if self.mysql_settings.get("database"):
+            # 预加载表结构信息
+            if self.mysql_settings.get("databases"):
                 self._preload_table_schemas(conn)
             conn.close()
             logger.info("MySQL连接测试成功")
@@ -150,60 +114,71 @@ class MySQLBinlogMonitor:
     def _preload_table_schemas(self, conn):
         """预加载表结构信息"""
         try:
-            with conn.cursor() as cursor:
-                # 确保使用正确的数据库
-                cursor.execute(f"USE `{self.mysql_settings['database']}`")
-                
-                # 方法1: 使用SHOW TABLES
-                cursor.execute("SHOW TABLES")
-                tables = [row[0] for row in cursor.fetchall()]
-                
-                # 创建表名映射（解决大小写敏感问题）
-                for table in tables:
-                    self._table_name_mapping[table.lower()] = table
-                
-                logger.info(f"发现 {len(tables)} 个表，开始预加载表结构...")
-                
-                for table in tables:
-                    try:
-                        # 方法1: 使用DESCRIBE
-                        cursor.execute(f"DESCRIBE `{table}`")
-                        columns = [row[0] for row in cursor.fetchall()]
-                        self._table_schemas[table] = columns
-                        logger.debug(f"预加载表结构: {table} -> {len(columns)}列")
-                    except Exception as e:
-                        logger.warning(f"无法使用DESCRIBE获取表 {table} 结构: {e}")
-                            
-            logger.info(f"成功预加载 {len(self._table_schemas)} 个表的结构")
+            databases = self.mysql_settings.get("databases", [])
+            
+            for database in databases:
+                try:
+                    with conn.cursor() as cursor:
+                        # 切换到目标数据库
+                        cursor.execute(f"USE `{database}`")
+                        
+                        # 获取所有表
+                        cursor.execute("SHOW TABLES")
+                        tables = [row[0] for row in cursor.fetchall()]
+                        
+                        # 初始化数据库结构
+                        if database not in self._table_schemas:
+                            self._table_schemas[database] = {}
+                        if database not in self._table_name_mapping:
+                            self._table_name_mapping[database] = {}
+                        
+                        # 创建表名映射
+                        for table in tables:
+                            self._table_name_mapping[database][table.lower()] = table
+                        
+                        logger.info(f"数据库 {database} 发现 {len(tables)} 个表")
+                        
+                        # 预加载表结构
+                        for table in tables:
+                            try:
+                                cursor.execute(f"DESCRIBE `{table}`")
+                                columns = [row[0] for row in cursor.fetchall()]
+                                self._table_schemas[database][table] = columns
+                                logger.debug(f"预加载表结构: {database}.{table} -> {len(columns)}列")
+                            except Exception as e:
+                                logger.warning(f"无法获取表 {database}.{table} 结构: {e}")
+                                
+                except Exception as e:
+                    logger.warning(f"预加载数据库 {database} 表结构失败: {e}")
+            
+            total_tables = sum(len(tables) for tables in self._table_schemas.values())
+            logger.info(f"成功预加载 {len(self._table_schemas)} 个数据库，共 {total_tables} 个表的结构")
                     
         except Exception as e:
             logger.warning(f"预加载表结构失败: {e}")
 
-    def _get_correct_table_name(self, table_name):
+    def _get_correct_table_name(self, database, table_name):
         """获取正确的表名（解决大小写问题）"""
-        if table_name in self._table_schemas:
+        if database in self._table_schemas and table_name in self._table_schemas[database]:
             return table_name
         
         # 尝试小写匹配
-        lower_table_name = table_name.lower()
-        if lower_table_name in self._table_name_mapping:
-            return self._table_name_mapping[lower_table_name]
+        if database in self._table_name_mapping:
+            lower_table_name = table_name.lower()
+            if lower_table_name in self._table_name_mapping[database]:
+                return self._table_name_mapping[database][lower_table_name]
         
         return table_name
 
-    def _get_column_names(self, table_name):
+    def _get_column_names(self, database, table_name):
         """获取表的列名"""
         # 先尝试获取正确的表名
-        correct_table_name = self._get_correct_table_name(table_name)
+        correct_table_name = self._get_correct_table_name(database, table_name)
         
         # 如果已经加载过，直接返回
-        if correct_table_name in self._table_schemas:
-            return self._table_schemas[correct_table_name]
-        
-        # 如果没有数据库信息，无法获取列结构
-        if not self.mysql_settings.get("database"):
-            logger.warning(f"未指定数据库，无法获取表 {correct_table_name} 的结构")
-            return None
+        if (database in self._table_schemas and 
+            correct_table_name in self._table_schemas[database]):
+            return self._table_schemas[database][correct_table_name]
         
         # 尝试实时查询表结构
         try:
@@ -213,7 +188,7 @@ class MySQLBinlogMonitor:
                 "port": int(self.mysql_settings["port"]),
                 "user": self.mysql_settings["user"],
                 "password": self.mysql_settings["password"],
-                "database": self.mysql_settings["database"],
+                "database": database,
                 "connect_timeout": 5
             }
             
@@ -221,57 +196,58 @@ class MySQLBinlogMonitor:
             
             with conn.cursor() as cursor:
                 # 确保使用正确的数据库
-                cursor.execute(f"USE `{self.mysql_settings['database']}`")
+                cursor.execute(f"USE `{database}`")
                 
-                # 方法1: 尝试DESCRIBE
+                # 尝试DESCRIBE
                 try:
                     cursor.execute(f"DESCRIBE `{correct_table_name}`")
                     columns = [row[0] for row in cursor.fetchall()]
-                    self._table_schemas[correct_table_name] = columns
-                    logger.info(f"实时获取表结构成功: {correct_table_name} -> {len(columns)}列")
+                    
+                    # 保存到缓存
+                    if database not in self._table_schemas:
+                        self._table_schemas[database] = {}
+                    self._table_schemas[database][correct_table_name] = columns
+                    
+                    logger.info(f"实时获取表结构成功: {database}.{correct_table_name} -> {len(columns)}列")
                     return columns
                 except Exception as e:
-                    logger.warning(f"DESCRIBE表 {correct_table_name} 失败: {e}")
+                    logger.warning(f"获取表 {database}.{correct_table_name} 结构失败: {e}")
             
             conn.close()
                 
         except Exception as e:
-            logger.warning(f"获取表 {correct_table_name} 结构失败: {e}")
+            logger.warning(f"连接数据库 {database} 失败: {e}")
         
-        logger.warning(f"无法获取表 {correct_table_name} 的列结构")
+        logger.warning(f"无法获取表 {database}.{correct_table_name} 的列结构")
         return None
 
-    def _map_data_with_column_names(self, table_name, data):
+    def _map_data_with_column_names(self, database, table_name, data):
         """将数据映射到正确的列名"""
         if not data:
             return data
             
         # 尝试获取列名
-        column_names = self._get_column_names(table_name)
+        column_names = self._get_column_names(database, table_name)
         
         # 如果无法获取列名，尝试使用通用列名
         if not column_names:
             if isinstance(data, (list, tuple)):
-                # 如果是列表，创建通用列名
                 mapped_data = {}
                 for i, value in enumerate(data):
                     mapped_data[f"col_{i}"] = value
                 return mapped_data
             elif isinstance(data, dict):
-                # 如果是字典，检查是否是FULL模式的数据
-                if all(key.startswith(('UNKNOWN_COL', 'col_')) for key in data.keys()):
-                    # 尝试使用数字索引映射
-                    mapped_data = {}
-                    for key, value in data.items():
-                        if key.startswith('UNKNOWN_COL'):
+                mapped_data = {}
+                for key, value in data.items():
+                    if key.startswith('UNKNOWN_COL'):
+                        try:
                             col_num = int(key.replace('UNKNOWN_COL', ''))
                             mapped_data[f"col_{col_num}"] = value
-                        else:
+                        except:
                             mapped_data[key] = value
-                    return mapped_data
-                else:
-                    # 可能是FULL模式，已经有正确的列名
-                    return data
+                    else:
+                        mapped_data[key] = value
+                return mapped_data
             else:
                 return {"raw_data": data}
         
@@ -285,23 +261,17 @@ class MySQLBinlogMonitor:
                     mapped_data[f"extra_col_{i}"] = value
             return mapped_data
         elif isinstance(data, dict):
-            # 检查是否已经是正确的列名
-            if set(data.keys()).intersection(set(column_names)):
-                # 已经有正确的列名，直接返回
-                return data
-            else:
-                # 需要映射
-                mapped_data = {}
-                for i, (key, value) in enumerate(data.items()):
-                    if i < len(column_names):
-                        mapped_data[column_names[i]] = value
-                    else:
-                        mapped_data[key] = value
-                return mapped_data
+            mapped_data = {}
+            for i, (key, value) in enumerate(data.items()):
+                if i < len(column_names):
+                    mapped_data[column_names[i]] = value
+                else:
+                    mapped_data[key] = value
+            return mapped_data
         
         return data
 
-    # 装饰器方法
+    # 装饰器方法（支持多数据库）
     def on_insert(self, func):
         """注册全局INSERT事件处理器"""
         self._insert_handlers.append(func)
@@ -317,32 +287,49 @@ class MySQLBinlogMonitor:
         self._delete_handlers.append(func)
         return func
 
-    def on_insert_for_table(self, table_name):
+    def on_insert_for_table(self, table_name, database=None):
         """注册特定表的INSERT事件处理器"""
         def decorator(func):
-            if table_name not in self._table_filters:
-                self._table_filters[table_name] = {"insert": [], "update": [], "delete": []}
-            self._table_filters[table_name]["insert"].append(func)
+            full_table_name = self._get_full_table_name(database, table_name)
+            if full_table_name not in self._table_filters:
+                self._table_filters[full_table_name] = {"insert": [], "update": [], "delete": []}
+            self._table_filters[full_table_name]["insert"].append(func)
             return func
         return decorator
 
-    def on_update_for_table(self, table_name):
+    def on_update_for_table(self, table_name, database=None):
         """注册特定表的UPDATE事件处理器"""
         def decorator(func):
-            if table_name not in self._table_filters:
-                self._table_filters[table_name] = {"insert": [], "update": [], "delete": []}
-            self._table_filters[table_name]["update"].append(func)
+            full_table_name = self._get_full_table_name(database, table_name)
+            if full_table_name not in self._table_filters:
+                self._table_filters[full_table_name] = {"insert": [], "update": [], "delete": []}
+            self._table_filters[full_table_name]["update"].append(func)
             return func
         return decorator
 
-    def on_delete_for_table(self, table_name):
+    def on_delete_for_table(self, table_name, database=None):
         """注册特定表的DELETE事件处理器"""
         def decorator(func):
-            if table_name not in self._table_filters:
-                self._table_filters[table_name] = {"insert": [], "update": [], "delete": []}
-            self._table_filters[table_name]["delete"].append(func)
+            full_table_name = self._get_full_table_name(database, table_name)
+            if full_table_name not in self._table_filters:
+                self._table_filters[full_table_name] = {"insert": [], "update": [], "delete": []}
+            self._table_filters[full_table_name]["delete"].append(func)
             return func
         return decorator
+
+    def _get_full_table_name(self, database, table_name):
+        """获取完整的表名（database.table）"""
+        if database:
+            return f"{database}.{table_name}"
+        return table_name
+
+    def _parse_full_table_name(self, full_table_name):
+        """解析完整的表名为数据库和表名"""
+        if '.' in full_table_name:
+            parts = full_table_name.split('.')
+            if len(parts) == 2:
+                return parts[0], parts[1]  # database, table
+        return None, full_table_name  # 无数据库信息，只有表名
 
     async def start_monitoring(self):
         """开始监控Binlog"""
@@ -378,19 +365,13 @@ class MySQLBinlogMonitor:
             logger.error("达到最大重试次数，停止监控")
 
     def _start_binlog_stream(self):
-        """启动Binlog流"""
+        """启动Binlog流 - 支持多数据库"""
         settings = {
             "host": self.mysql_settings["host"],
             "port": int(self.mysql_settings["port"]),
             "user": self.mysql_settings["user"],
             "passwd": self.mysql_settings["password"],
         }
-        
-        if self.mysql_settings.get("database"):
-            settings["db"] = self.mysql_settings["database"]
-            logger.info(f"Binlog监控数据库: {self.mysql_settings['database']}")
-        else:
-            logger.warning("未指定数据库名称，将监控所有数据库")
         
         server_id = 100 + os.getpid() % 1000
         
@@ -403,26 +384,16 @@ class MySQLBinlogMonitor:
             "only_events": [WriteRowsEvent, UpdateRowsEvent, DeleteRowsEvent],
         }
         
-        if self.mysql_settings.get("database"):
-            stream_config["only_schemas"] = [self.mysql_settings["database"]]
+        # 如果指定了数据库，只监控这些数据库
+        if self.mysql_settings.get("databases"):
+            stream_config["only_schemas"] = self.mysql_settings["databases"]
+            logger.info(f"监控数据库: {', '.join(self.mysql_settings['databases'])}")
+        else:
+            logger.info("监控所有数据库")
         
         try:
             stream = BinLogStreamReader(**stream_config)
             logger.info("开始监控MySQL Binlog...")
-            logger.info(
-                """
-                如果看到UNKNOWN_COL警告，请设置MySQL的binlog_row_metadata和binlog_row_image为FULL：
-                -- 临时设置（重启后失效）
-                SET GLOBAL binlog_row_metadata = 'FULL';
-                SET GLOBAL binlog_row_image = 'FULL';
-
-                -- 永久设置（修改my.cnf）
-                -- 在[mysqld]部分添加：
-                -- binlog_row_metadata = FULL
-                -- binlog_row_image = FULL
-                -- 然后重启MySQL
-                """
-                )
             
             for binlogevent in stream:
                 if not self.running:
@@ -455,13 +426,12 @@ class MySQLBinlogMonitor:
         """处理Binlog事件并调用被装饰的函数"""
         try:
             table = getattr(event, 'table', 'unknown_table')
-            event_type = type(event).__name__
+            schema = getattr(event, 'schema', 'unknown_database')  # 数据库名称
             
-            logger.debug(f"处理事件: 表={table}, 类型={event_type}")
+            logger.debug(f"处理事件: 数据库={schema}, 表={table}, 类型={type(event).__name__}")
             
             if isinstance(event, WriteRowsEvent):
                 for row in event.rows:
-                    # 处理不同的数据格式
                     if hasattr(row, 'values'):
                         data = row.values
                     elif isinstance(row, dict) and 'values' in row:
@@ -469,22 +439,30 @@ class MySQLBinlogMonitor:
                     else:
                         data = row
                     
-                    mapped_data = self._map_data_with_column_names(table, data)
+                    mapped_data = self._map_data_with_column_names(schema, table, data)
                     
                     # 检查数据质量
-                    self._check_data_quality(table, mapped_data, "INSERT")
+                    self._check_data_quality(schema, table, mapped_data, "INSERT")
                     
-                    logger.info(f"📥 INSERT到表 {table}: {mapped_data}")
+                    logger.info(f"📥 INSERT到 {schema}.{table}: {mapped_data}")
                     
+                    # 调用全局处理器
                     for handler in self._insert_handlers:
-                        await handler(table, mapped_data)
+                        await handler(schema, table, mapped_data)
+                    
+                    # 调用特定表处理器
+                    full_table_name = self._get_full_table_name(schema, table)
+                    if full_table_name in self._table_filters:
+                        for handler in self._table_filters[full_table_name]["insert"]:
+                            await handler(schema, table, mapped_data)
+                    
+                    # 调用无数据库前缀的处理器（向后兼容）
                     if table in self._table_filters:
                         for handler in self._table_filters[table]["insert"]:
-                            await handler(table, mapped_data)
+                            await handler(schema, table, mapped_data)
                             
             elif isinstance(event, UpdateRowsEvent):
                 for row in event.rows:
-                    # 处理不同的数据格式
                     if hasattr(row, 'before_values') and hasattr(row, 'after_values'):
                         old_data = row.before_values
                         new_data = row.after_values
@@ -495,15 +473,15 @@ class MySQLBinlogMonitor:
                         old_data = getattr(row, 'before_values', {})
                         new_data = getattr(row, 'after_values', {})
                     
-                    mapped_old_data = self._map_data_with_column_names(table, old_data)
-                    mapped_new_data = self._map_data_with_column_names(table, new_data)
+                    mapped_old_data = self._map_data_with_column_names(schema, table, old_data)
+                    mapped_new_data = self._map_data_with_column_names(schema, table, new_data)
                     change_data = {"old": mapped_old_data, "new": mapped_new_data}
                     
                     # 检查数据质量
-                    self._check_data_quality(table, mapped_old_data, "UPDATE_OLD")
-                    self._check_data_quality(table, mapped_new_data, "UPDATE_NEW")
+                    self._check_data_quality(schema, table, mapped_old_data, "UPDATE_OLD")
+                    self._check_data_quality(schema, table, mapped_new_data, "UPDATE_NEW")
                     
-                    logger.info(f"🔄 UPDATE表 {table}:")
+                    logger.info(f"🔄 UPDATE {schema}.{table}:")
                     # 显示变更的字段
                     changed_fields = []
                     for key in mapped_new_data:
@@ -518,11 +496,20 @@ class MySQLBinlogMonitor:
                     else:
                         logger.info("   无字段变更")
                     
+                    # 调用全局处理器
                     for handler in self._update_handlers:
-                        await handler(table, change_data)
+                        await handler(schema, table, change_data)
+                    
+                    # 调用特定表处理器
+                    full_table_name = self._get_full_table_name(schema, table)
+                    if full_table_name in self._table_filters:
+                        for handler in self._table_filters[full_table_name]["update"]:
+                            await handler(schema, table, change_data)
+                    
+                    # 调用无数据库前缀的处理器
                     if table in self._table_filters:
                         for handler in self._table_filters[table]["update"]:
-                            await handler(table, change_data)
+                            await handler(schema, table, change_data)
                             
             elif isinstance(event, DeleteRowsEvent):
                 for row in event.rows:
@@ -533,34 +520,44 @@ class MySQLBinlogMonitor:
                     else:
                         data = row
                     
-                    mapped_data = self._map_data_with_column_names(table, data)
+                    mapped_data = self._map_data_with_column_names(schema, table, data)
                     
                     # 检查数据质量
-                    self._check_data_quality(table, mapped_data, "DELETE")
+                    self._check_data_quality(schema, table, mapped_data, "DELETE")
                     
-                    logger.info(f"🗑️ DELETE从表 {table}: {mapped_data}")
+                    logger.info(f"🗑️ DELETE从 {schema}.{table}: {mapped_data}")
                     
+                    # 调用全局处理器
                     for handler in self._delete_handlers:
-                        await handler(table, mapped_data)
+                        await handler(schema, table, mapped_data)
+                    
+                    # 调用特定表处理器
+                    full_table_name = self._get_full_table_name(schema, table)
+                    if full_table_name in self._table_filters:
+                        for handler in self._table_filters[full_table_name]["delete"]:
+                            await handler(schema, table, mapped_data)
+                    
+                    # 调用无数据库前缀的处理器
                     if table in self._table_filters:
                         for handler in self._table_filters[table]["delete"]:
-                            await handler(table, mapped_data)
+                            await handler(schema, table, mapped_data)
                             
         except Exception as e:
             logger.error(f"处理Binlog事件错误: {e}")
 
-    def _check_data_quality(self, table, data, event_type):
+    def _check_data_quality(self, database, table, data, event_type):
         """检查数据质量，检测是否有UNKNOWN_COL"""
         if not data:
             return
             
         # 检查是否有UNKNOWN_COL
-        unknown_cols = [key for key in data.keys() if key.startswith('UNKNOWN_COL')]
-        if unknown_cols:
-            logger.warning(f"⚠️ 表 {table} 的 {event_type} 事件包含 {len(unknown_cols)} 个未知列")
-            logger.warning("   建议设置MySQL变量:")
-            logger.warning("   SET GLOBAL binlog_row_metadata = 'FULL';")
-            logger.warning("   SET GLOBAL binlog_row_image = 'FULL';")
+        if isinstance(data, dict):
+            unknown_cols = [key for key in data.keys() if key.startswith('UNKNOWN_COL')]
+            if unknown_cols:
+                logger.warning(f"⚠️ 表 {database}.{table} 的 {event_type} 事件包含 {len(unknown_cols)} 个未知列")
+                logger.warning("   建议设置MySQL变量:")
+                logger.warning("   SET GLOBAL binlog_row_metadata = 'FULL';")
+                logger.warning("   SET GLOBAL binlog_row_image = 'FULL';")
 
     def stop_monitoring(self):
         """停止监控"""
@@ -568,25 +565,42 @@ class MySQLBinlogMonitor:
         logger.info("Binlog监控已停止")
 
 
-# 配置和使用示例
-def get_mysql_config():
-    """获取MySQL配置"""
+def get_mysql_config(is_single_db=True):
+    """获取MySQL配置 - 支持多数据库"""
     config = {
         "host": MYAPS_DB_HOST,
         "port": MYAPS_DB_PORT,
         "user": MYAPS_DB_USER,
         "password": MYAPS_DB_PASSWORD,
-        "database": MYAPS_DEFAULT_DB  # 数据库名称，若不传则监控所有数据库（但代价是无法准确获取数据的column name）
     }
-    
-    # 检查数据库配置
-    if not config["database"]:
-        logger.warning("⚠️ 未设置MYAPS_DEFAULT_DB环境变量，列名映射功能将受限")
-        logger.warning("请设置环境变量: export MYAPS_DEFAULT_DB=your_database_name")
+    if is_single_db:
+        databases = [MYAPS_DEFAULT_DB]
     else:
-        logger.info(f"✅ 数据库配置: {config['database']}")
+        databases = MYAPS_DB_SET
     
+    if databases:
+        config["databases"] = databases
+        logger.info(f"✅ 监控数据库: {', '.join(databases)}")
+    else:
+        logger.warning("⚠️ 未设置数据库，将监控所有数据库")
     return config
+
 
 monitor = MySQLBinlogMonitor(get_mysql_config())
 monitor.start_monitoring()
+
+
+# 全局处理器（所有受监控数据库的所有表）
+# @monitor.on_insert
+# async def handler(database, table, data):
+#     pass
+
+# 特定数据库的特定表
+# @monitor.on_insert_for_table("t_supply", "db1")
+# async def handler(database, table, data):
+#     pass
+
+# 所有数据库的特定表
+# @monitor.on_update_for_table("users")
+# async def handler(database, table, change):
+#     pass

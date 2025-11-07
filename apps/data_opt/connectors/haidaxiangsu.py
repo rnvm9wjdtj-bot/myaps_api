@@ -14,7 +14,7 @@ from ..common import monitor
 
 
 @monitor.on_update_for_table('t_supply')
-async def my_update_handler(table, data):
+async def my_update_handler(database, table, data):
     print(f"自定义UPDATE: {table} -> {data}")
 
 
