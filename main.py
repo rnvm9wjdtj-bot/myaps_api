@@ -111,6 +111,26 @@ register_exception_handlers(app)
 app.include_router(io_rt, prefix="/api", tags=[])
 app.include_router(do_rt, prefix="/do", tags=[])
 
+
+# 导入全局MySQL监控实例
+from apps.data_opt.utils.mysqlmonitor import monitor
+
+# 应用启动事件
+@app.on_event("startup")
+async def startup_event():
+    """应用启动时初始化MySQL监控"""
+    # 直接使用全局monitor实例启动监控
+    await monitor.start_monitoring()
+    print("MySQL Binlog监控已启动")
+
+# 应用关闭事件
+@app.on_event("shutdown")
+async def shutdown_event():
+    """应用关闭时停止MySQL监控"""
+    # 停止监控
+    monitor.stop_monitoring()
+    print("MySQL Binlog监控已停止")
+
 # 根路由
 @app.get("/")
 async def read_root():

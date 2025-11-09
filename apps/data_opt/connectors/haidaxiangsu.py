@@ -1,58 +1,36 @@
-import os
-
-# db_set_str = os.getenv("MYAPS_DB_SET")
-# if 'haida' in db_set_str or 'hdfc' in db_set_str or 'hdso' in db_set_str:
-    
-
-import requests, logging, atexit, datetime
+import os, requests, logging, atexit, datetime
 import pandas as pd
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
 
 from config import uservar as uv
-from ..common import monitor
 
 
-@monitor.on_update_for_table('t_supply')
-async def my_update_handler(database, table, data):
-    print(f"自定义UPDATE: {table} -> {data}")
+effective_db = ['hdso', 'hdfc'] # 主账套放第一位
+main_db = effective_db[0]
+sap_url = 'http://192.168.201.2:8000'
+this_url = 'http://localhost:8000'
+werks = '1600'
 
-
-# 创建异步初始化函数，确保在正确的异步上下文中启动监控
-async def init_binlog_monitor():
-    print("正在启动Binlog监控...")
-    await monitor.start_monitoring()
-    print("Binlog监控已启动")
-
-# 在应用启动时调用的函数
-def start_monitoring_sync():
-    import asyncio
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(init_binlog_monitor())
-    finally:
-        # 注意：这里不关闭事件循环，因为监控需要持续运行
-        pass
-
-
-
-sap_url = 'http://192.168.201.2:8000/zrestful_test2?sap-client=800'
+# 创建requests会话
+erp_session = requests.Session()
+this_api_session = requests.Session()
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# 创建requests会话
-session = requests.Session()
+#################################################################################
+# 定义需要用到的逻辑
 
-db_set = ['hdfc', 'hdso']
-
-
-async def refresh_stock():    # 刷新库存
-    logger.info("执行获取库存定时任务")
+async def refresh_stock(db_name: str | None = None): 
+    """
+    刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据
+    db_name: 账套名称，默认刷新所有账套
+    """
+    logger.info("开始执行刷新库存任务")
     try:
-        response = session.get(url=sap_url, headers={'interface': 'stock', 'werks': '1600'})
+        response = erp_session.get(url=f"{sap_url}/zrestful_test2?sap-client=800", headers={'interface': 'stock', 'werks': werks})
         data = response.json()['data']
         stock = pd.DataFrame(data)
         stock = stock.astype({
@@ -83,17 +61,48 @@ async def refresh_stock():    # 刷新库存
             'matnr': 'materialno',
         })
         stock_data = stock.to_dict(orient='records')
-        for db in db_set:
-            await session.delete(f"http://localhost:8000/api/t_supply?db_name={db}", data='ST')
-            await session.post(f"http://localhost:8000/api/t_supply?db_name={db}", json=stock_data)
-        logger.info("获取库存定时任务执行完成")
+        if db_name is None:
+            for db in effective_db:
+                await this_api_session.delete(f"{this_url}/api/t_supply?db_name={db}", data='ST')
+                await this_api_session.post(f"{this_url}/api/t_supply?db_name={db}", json=stock_data)
+                logger.info(f"刷新库存任务执行完成，账套：{db}")
+        else:
+            await this_api_session.delete(f"{this_url}/api/t_supply?db_name={db_name}", data='ST')
+            await this_api_session.post(f"{this_url}/api/t_supply?db_name={db_name}", json=stock_data)
+            logger.info(f"刷新库存任务执行完成，账套：{db_name}")
     except Exception as e:
-        logger.error(f"获取库存定时任务执行失败: {str(e)}")
+        logger.error(f"刷新库存任务执行失败: {str(e)}")
 
 
+async def push_pl_to_sap(pl_data: dict):
+    """
+    以数据库binlog为触发条件，将主账套中需要转MO的PL推送到SAP
+    """
+    try:
+        headers = {
+            "DEST_SYSTEM": "SAP",
+            "INTF_ID": "ZPP_PLAN_ORD_CREATE",
+            "SRC_SYSTEM": "APS",
+            "SRC_SYSTEM": "APS",
+        }
+        data = {
+            "CY_SEQNR": pl_data['SupplyNo'],  # APS单号
+            "WERKS": werks,  # 工厂
+            "MATNR": pl_data['MaterialNo'],
+            "AUART": "PL",  # 订单类型
+            "VERID": "",    # 生产版本
+            "GSTRP": pl_data['dt_req'],  # 基本开始日期
+            "GLTRP": pl_data['Avail_Date'],  # 基本完成日期
+            "GAMNG": pl_data['Avail_Qty'],  # 总订单数量
+            "FEVOR": "",  # 生产主管
+            "WEMPF": ""  # 产线代码
+        }
+        erp_session.post(url=f"{sap_url}/zrestful_plan?sap-client=500", json=pl_data, headers=headers)
 
+        logger.info(f"推送计划任务执行完成，账套：{main_db}")
+    except Exception as e:
+        logger.error(f"推送计划任务执行失败: {str(e)}")
 #################################################################################
-
 
 # 配置APScheduler的执行器
 executors = {
@@ -148,10 +157,25 @@ def initialize_and_start_scheduler():
     """初始化并启动调度器，这是模块的主要入口点"""
     init_scheduler()
     start_scheduler()
-    # 启动binlog监控
-    start_monitoring_sync()
     # 注册退出处理函数，确保程序退出时调度器被正确关闭
     atexit.register(shutdown_scheduler)
 
-initialize_and_start_scheduler()
+# 开启定时任务
+if os.getenv("TURN_ON_SCHEDULE_TASK") == "True":
+    initialize_and_start_scheduler()
 
+
+#################################################################################
+# 数据库事件处理器
+from apps.data_opt.utils.mysqlmonitor import monitor
+
+@monitor.on_update_for_table("t_supply")
+async def handle_update_supply(database: str, table: str, data: dict, data_diff: dict):
+    """处理t_supply表的更新事件"""
+    if database == main_db:
+        supply_old_type = data['old']['Type']
+        supply_new_type = data['new']['Type']
+        if supply_old_type == 'PL' and supply_new_type == 'MO':
+            await push_pl_to_sap(data['old'])
+    print(f"更新到 {database}.{table}: {data}")
+    print(f"数据变更: {data_diff}")

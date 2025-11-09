@@ -40,9 +40,30 @@ from pymysqlreplication.row_event import (
 logger = logging.getLogger(__name__)
 
 class MySQLBinlogMonitor:
-    def __init__(self, mysql_settings):
-        self.mysql_settings = mysql_settings
-        self.running = False
+    # 单例模式实现
+    _instance = None
+    _lock = threading.RLock()
+    
+    def __new__(cls, mysql_settings=None):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+    
+    def __init__(self, mysql_settings=None):
+        # 确保初始化只执行一次
+        with self.__class__._lock:
+            if hasattr(self, '_initialized') and self._initialized:
+                return
+                
+            # 支持延迟初始化，首次调用时如果未设置mysql_settings则使用默认配置
+            if mysql_settings is None:
+                mysql_settings = get_mysql_config()
+                
+            self.mysql_settings = mysql_settings
+            self.running = False
         
         # 存储表结构信息（按数据库分组）
         self._table_schemas = {}  # 格式: {database: {table: [columns]}}
@@ -107,7 +128,8 @@ class MySQLBinlogMonitor:
                 self._preload_table_schemas(conn)
             conn.close()
             logger.info("MySQL连接测试成功")
-            
+            self._initialized = True  # 标记初始化完成
+                    
         except Exception as e:
             logger.warning(f"MySQL连接测试警告: {e}")
 
@@ -444,7 +466,7 @@ class MySQLBinlogMonitor:
                     # 检查数据质量
                     self._check_data_quality(schema, table, mapped_data, "INSERT")
                     
-                    logger.info(f"📥 INSERT到 {schema}.{table}: {mapped_data}")
+                    logger.info(f"📥 InsertTo {schema}.{table}: {mapped_data}")
                     
                     # 调用全局处理器
                     for handler in self._insert_handlers:
@@ -481,35 +503,36 @@ class MySQLBinlogMonitor:
                     self._check_data_quality(schema, table, mapped_old_data, "UPDATE_OLD")
                     self._check_data_quality(schema, table, mapped_new_data, "UPDATE_NEW")
                     
-                    logger.info(f"🔄 UPDATE {schema}.{table}:")
+                    logger.info(f"🔄 Update {schema}.{table}:")
                     # 显示变更的字段
-                    changed_fields = []
+                    data_diff = {}
                     for key in mapped_new_data:
                         old_val = mapped_old_data.get(key)
                         new_val = mapped_new_data.get(key)
                         if old_val != new_val:
-                            changed_fields.append(f"{key}: {old_val} -> {new_val}")
+                            data_diff[key] = (old_val, new_val)
+
                     
-                    if changed_fields:
-                        for field in changed_fields:
-                            logger.info(f"   {field}")
+                    if data_diff:
+                        for field, (old_val, new_val) in data_diff.items():
+                            logger.info(f"   {field}: {old_val} -> {new_val}")
                     else:
                         logger.info("   无字段变更")
                     
                     # 调用全局处理器
                     for handler in self._update_handlers:
-                        await handler(schema, table, change_data)
+                        await handler(schema, table, change_data, data_diff)
                     
                     # 调用特定表处理器
                     full_table_name = self._get_full_table_name(schema, table)
                     if full_table_name in self._table_filters:
                         for handler in self._table_filters[full_table_name]["update"]:
-                            await handler(schema, table, change_data)
+                            await handler(schema, table, change_data, data_diff)
                     
                     # 调用无数据库前缀的处理器
                     if table in self._table_filters:
                         for handler in self._table_filters[table]["update"]:
-                            await handler(schema, table, change_data)
+                            await handler(schema, table, change_data, data_diff)
                             
             elif isinstance(event, DeleteRowsEvent):
                 for row in event.rows:
@@ -525,7 +548,7 @@ class MySQLBinlogMonitor:
                     # 检查数据质量
                     self._check_data_quality(schema, table, mapped_data, "DELETE")
                     
-                    logger.info(f"🗑️ DELETE从 {schema}.{table}: {mapped_data}")
+                    logger.info(f"🗑️ DeleteFrom {schema}.{table}: {mapped_data}")
                     
                     # 调用全局处理器
                     for handler in self._delete_handlers:
@@ -586,21 +609,38 @@ def get_mysql_config(is_single_db=True):
     return config
 
 
-monitor = MySQLBinlogMonitor(get_mysql_config())
-monitor.start_monitoring()
+# 自管理单例访问方法
+def get_monitor():
+    """
+    获取MySQLBinlogMonitor实例（单例模式）
+    
+    Returns:
+        MySQLBinlogMonitor: 监控实例
+    """
+    return MySQLBinlogMonitor()
 
 
-# 全局处理器（所有受监控数据库的所有表）
-# @monitor.on_insert
-# async def handler(database, table, data):
-#     pass
+# 定义全局的MySQLBinlogMonitor单例实例
+# 用户可以直接导入并使用这个实例，无需再调用get_monitor()函数
+monitor = MySQLBinlogMonitor()
 
-# 特定数据库的特定表
-# @monitor.on_insert_for_table("t_supply", "db1")
-# async def handler(database, table, data):
-#     pass
 
-# 所有数据库的特定表
-# @monitor.on_update_for_table("users")
-# async def handler(database, table, change):
-#     pass
+# 使用说明：
+# 方式一：直接导入全局实例（推荐）
+#    from apps.data_opt.utils.mysqlmonitor import monitor
+#    # 直接使用monitor对象
+#    await monitor.start_monitoring()
+#  
+# 方式二：使用get_monitor函数
+#    from apps.data_opt.utils.mysqlmonitor import get_monitor
+#    monitor = get_monitor()
+#    await monitor.start_monitoring()
+#  
+# 注册事件处理器示例：
+#    @monitor.on_insert_for_table("your_table", "your_database")
+#    async def handle_insert(database, table, data):
+#        # 处理插入事件
+#        pass
+#  
+# 停止监控：
+#    monitor.stop_monitoring()
