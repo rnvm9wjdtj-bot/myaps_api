@@ -4,25 +4,88 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
 
 from config import uservar as uv
+from apps.data_opt.utils.scheduler import daily_task, hourly_task, interval_task, cron_task
 
 
 effective_db = ['hdso', 'hdfc'] # 主账套放第一位
 main_db = effective_db[0]
-sap_url = 'http://192.168.201.2:8000'
-this_url = 'http://localhost:8000'
-werks = '1600'
 
-# 创建requests会话
-erp_session = requests.Session()
+this_url = 'http://localhost:8000'
 this_api_session = requests.Session()
+
+werks = '1600'
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-#################################################################################
-# 定义需要用到的逻辑
 
+#################################################################################
+#
+# SAP 数据交互通用组件
+#
+#################################################################################
+from apps.data_opt.utils.common import add_basic_auth_requests
+
+sap_url1 = 'http://192.168.201.2:8000/zrestful_test2?sap-client=800'  # 库存
+sap_url2 = 'http://192.168.1.170:8001/zrestful_plan?sap-client=500'  # 计划
+
+sap_username = 'T058'
+sap_password = '123456'
+# 创建requests会话
+sap_session1 = requests.Session()
+sap_session2 = requests.Session()
+
+# 添加Basic认证
+add_basic_auth_requests(sap_session1, sap_username, sap_password)
+add_basic_auth_requests(sap_session2, sap_username, sap_password)
+
+# import json
+import uuid
+import requests
+from datetime import datetime
+# from typing import Dict, Any, Optional
+
+
+def sap_post(url: str, session: requests.Session, interface_id: str, data: dict):
+    """
+    向SAP系统发送POST请求
+    url: 请求URL
+    session: requests会话
+    data: 请求数据
+    """
+    headers = {
+            "INTF_ID": interface_id,
+            "SRC_SYSTEM": "APS", 
+            "DEST_SYSTEM": "SAP",
+            "SRC_MSGID": str(uuid.uuid4()).replace("-", ""),
+            "BACKUP1": "",
+            "BACKUP2": ""
+    }
+    response: requests.Response = session.post(url, headers=headers, json={
+        "HEAD": headers,
+        "BODY": [data]
+    })
+
+    response_json = {}
+    if response.status_code == 200:
+        response_json = response.json()
+        logger.info(f"POST请求成功，状态码：{response.status_code}，响应内容：{response_json}")
+    else:
+        logger.error(f"POST请求失败，状态码：{response.status_code}，响应内容：{response.text}")
+    return {
+        'status_code': response.status_code,
+        'response_text': response.text,
+        'response_json': response_json
+    }
+
+#################################################################################
+#
+# 定义可复用的逻辑
+#
+#################################################################################
+
+@cron_task(hour='9,11,13,15,17', minute=0)
 async def refresh_stock(db_name: str | None = None): 
     """
     刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据
@@ -30,7 +93,7 @@ async def refresh_stock(db_name: str | None = None):
     """
     logger.info("开始执行刷新库存任务")
     try:
-        response = erp_session.get(url=f"{sap_url}/zrestful_test2?sap-client=800", headers={'interface': 'stock', 'werks': werks})
+        response = sap_session1.get(url=f"{sap_url1}", headers={'interface': 'stock', 'werks': werks})
         data = response.json()['data']
         stock = pd.DataFrame(data)
         stock = stock.astype({
@@ -74,7 +137,7 @@ async def refresh_stock(db_name: str | None = None):
         logger.error(f"刷新库存任务执行失败: {str(e)}")
 
 
-async def push_pl_to_sap(pl_data: dict):
+async def insert_pl_to_sap(pl_data: dict):
     """
     以数据库binlog为触发条件，将主账套中需要转MO的PL推送到SAP
     """
@@ -97,85 +160,93 @@ async def push_pl_to_sap(pl_data: dict):
             "FEVOR": "",  # 生产主管
             "WEMPF": ""  # 产线代码
         }
-        erp_session.post(url=f"{sap_url}/zrestful_plan?sap-client=500", json=pl_data, headers=headers)
+        sap_session1.post(url=sap_url2, json=pl_data, headers=headers)
 
         logger.info(f"推送计划任务执行完成，账套：{main_db}")
     except Exception as e:
         logger.error(f"推送计划任务执行失败: {str(e)}")
-#################################################################################
 
+
+
+########################################################################
+#
 # 配置APScheduler的执行器
-executors = {
-    'default': ThreadPoolExecutor(10)
-}
+#
+########################################################################
+# executors = {
+#     'default': ThreadPoolExecutor(10)
+# }
 
-# 创建后台调度器实例
-scheduler = BackgroundScheduler(executors=executors, timezone='Asia/Shanghai')
+# # 创建后台调度器实例
+# scheduler = BackgroundScheduler(executors=executors, timezone='Asia/Shanghai')
 
-def init_scheduler():
-    """初始化调度器并添加定时任务"""
-    try:
-        # 添加库存获取定时任务 - 每天的奇数整点执行(1,3,5,7,9,11,13,15,17,19,21,23点)
-        scheduler.add_job(
-            func=refresh_stock,
-            trigger='cron',
-            minute=0,
-            hour='1,3,5,7,9,11,13,15,17,19,21,23',
-            id='refresh_stock',
-            replace_existing=True
-        )
-        logger.info("调度器初始化完成，已添加定时任务")
-    except Exception as e:
-        logger.error(f"调度器初始化失败: {str(e)}")
-
-
-def start_scheduler():
-    """启动调度器"""
-    try:
-        if not scheduler.running:
-            scheduler.start()
-            logger.info("调度器已启动")
-        else:
-            logger.info("调度器已经在运行中")
-    except Exception as e:
-        logger.error(f"调度器启动失败: {str(e)}")
+# def init_scheduler():
+#     """初始化调度器并添加定时任务"""
+#     try:
+#         # 添加库存获取定时任务 - 每天的奇数整点执行(1,3,5,7,9,11,13,15,17,19,21,23点)
+#         scheduler.add_job(
+#             func=refresh_stock,
+#             trigger='cron',
+#             minute=0,
+#             hour='9,11,13,15,17',
+#             id='refresh_stock',
+#             replace_existing=True
+#         )
+#         logger.info("调度器初始化完成，已添加定时任务")
+#     except Exception as e:
+#         logger.error(f"调度器初始化失败: {str(e)}")
 
 
-def shutdown_scheduler():
-    """关闭调度器"""
-    try:
-        if scheduler.running:
-            scheduler.shutdown()
-            logger.info("调度器已关闭")
-        else:
-            logger.info("调度器已经关闭")
-    except Exception as e:
-        logger.error(f"调度器关闭失败: {str(e)}")
+# def start_scheduler():
+#     """启动调度器"""
+#     try:
+#         if not scheduler.running:
+#             scheduler.start()
+#             logger.info("调度器已启动")
+#         else:
+#             logger.info("调度器已经在运行中")
+#     except Exception as e:
+#         logger.error(f"调度器启动失败: {str(e)}")
 
-# 在模块加载时初始化并启动调度器
-def initialize_and_start_scheduler():
-    """初始化并启动调度器，这是模块的主要入口点"""
-    init_scheduler()
-    start_scheduler()
-    # 注册退出处理函数，确保程序退出时调度器被正确关闭
-    atexit.register(shutdown_scheduler)
 
-# 开启定时任务
-if os.getenv("TURN_ON_SCHEDULE_TASK") == "True":
-    initialize_and_start_scheduler()
+# def shutdown_scheduler():
+#     """关闭调度器"""
+#     try:
+#         if scheduler.running:
+#             scheduler.shutdown()
+#             logger.info("调度器已关闭")
+#         else:
+#             logger.info("调度器已经关闭")
+#     except Exception as e:
+#         logger.error(f"调度器关闭失败: {str(e)}")
+
+# # 在模块加载时初始化并启动调度器
+# def initialize_and_start_scheduler():
+#     """初始化并启动调度器，这是模块的主要入口点"""
+#     init_scheduler()
+#     start_scheduler()
+#     # 注册退出处理函数，确保程序退出时调度器被正确关闭
+#     atexit.register(shutdown_scheduler)
+
+# # 开启定时任务
+# if os.getenv("TURN_ON_SCHEDULE_TASK") == "True":
+#     initialize_and_start_scheduler()
 
 
 #################################################################################
+#
 # 数据库事件处理器
-from apps.data_opt.utils.mysqlmonitor import monitor
+#
+#################################################################################
+from apps.data_opt.utils.mysqlmonitor import mysql_monitor
 
-@monitor.on_update_for_table("t_supply")
+@mysql_monitor.on_update_for_table("t_supply")
 async def handle_update_supply(database: str, table: str, data: dict, data_diff: dict):
     """处理t_supply表的更新事件"""
     if database == main_db:
         supply_old_type = data['old']['Type']
         supply_new_type = data['new']['Type']
         if supply_old_type == 'PL' and supply_new_type == 'MO':
-            await push_pl_to_sap(data['old'])
+            await insert_pl_to_sap(data['old'])
     print(f"更新到 {database}.{table}: {data}")
     print(f"数据变更: {data_diff}")

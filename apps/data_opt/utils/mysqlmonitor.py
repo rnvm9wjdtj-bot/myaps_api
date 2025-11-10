@@ -30,6 +30,7 @@ import time
 import logging
 import threading
 import concurrent.futures
+from functools import wraps
 from pymysqlreplication import BinLogStreamReader
 from pymysqlreplication.row_event import (
     WriteRowsEvent,
@@ -622,25 +623,25 @@ def get_monitor():
 
 # 定义全局的MySQLBinlogMonitor单例实例
 # 用户可以直接导入并使用这个实例，无需再调用get_monitor()函数
-monitor = MySQLBinlogMonitor()
+mysql_monitor = MySQLBinlogMonitor()
 
 
 # 使用说明：
 # 方式一：直接导入全局实例（推荐）
-#    from apps.data_opt.utils.mysqlmonitor import monitor
-#    # 直接使用monitor对象
-#    await monitor.start_monitoring()
+#    from apps.data_opt.utils.mysqlmonitor import mysql_monitor
+#    # 直接使用mysql_monitor对象
+#    await mysql_monitor.start_monitoring()
 #  
 # 方式二：使用get_monitor函数
 #    from apps.data_opt.utils.mysqlmonitor import get_monitor
-#    monitor = get_monitor()
-#    await monitor.start_monitoring()
+#    mysql_monitor = get_monitor()
+#    await mysql_monitor.start_monitoring()
 #  
 # 注册事件处理器示例：
-#    @monitor.on_insert_for_table("your_table", "your_database")
+#    @mysql_monitor.on_insert_for_table("your_table", "your_database")
 #    async def handle_insert(database, table, data):
 #        # 处理插入事件
 #        pass
 #  
 # 停止监控：
-#    monitor.stop_monitoring()
+#    mysql_monitor.stop_monitoring()

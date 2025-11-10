@@ -1,4 +1,4 @@
-import uvicorn
+import os, uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -113,14 +113,14 @@ app.include_router(do_rt, prefix="/do", tags=[])
 
 
 # 导入全局MySQL监控实例
-from apps.data_opt.utils.mysqlmonitor import monitor
+from apps.data_opt.utils.mysqlmonitor import mysql_monitor
 
 # 应用启动事件
 @app.on_event("startup")
 async def startup_event():
     """应用启动时初始化MySQL监控"""
     # 直接使用全局monitor实例启动监控
-    await monitor.start_monitoring()
+    await mysql_monitor.start_monitoring()
     print("MySQL Binlog监控已启动")
 
 # 应用关闭事件
@@ -128,7 +128,7 @@ async def startup_event():
 async def shutdown_event():
     """应用关闭时停止MySQL监控"""
     # 停止监控
-    monitor.stop_monitoring()
+    mysql_monitor.stop_monitoring()
     print("MySQL Binlog监控已停止")
 
 # 根路由
@@ -149,11 +149,18 @@ register_tortoise(
     # add_exception_handlers=True,  # 生产环境不要开，会泄露调试信息
 )
 
+# 检查是否开启定时任务
+if os.getenv("TURN_ON_SCHEDULE_TASK", False).lower() == "true":
+    # 初始化定时任务管理器
+    from apps.data_opt.utils.scheduler import initialize_scheduler, get_scheduler_status
+    initialize_scheduler()
+    print(f"定时任务管理器状态: {get_scheduler_status()}")
+
 # 启动说明：
 # 使用命令: uvicorn main:app --reload
 # 然后访问 http://127.0.0.1:8000 或 http://127.0.0.1:8000/docs
 if __name__ == "__main__":
-    import os
+
     from dotenv import load_dotenv
     env_file = os.path.join(os.getcwd(), '.env')
     os.environ.setdefault('ENV_FILE', env_file)
@@ -163,3 +170,5 @@ if __name__ == "__main__":
         host=settings.THIS_SERVER_HOST,
         port=settings.THIS_SERVER_PORT,
     )
+
+

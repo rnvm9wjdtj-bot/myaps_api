@@ -2,7 +2,7 @@
 # from typing import Optional, List, Literal
 from pydantic import BaseModel#, Field, field_validator
 
-from typing import Enum
+from enum import Enum
 
 
 class SupplyAction(str, Enum):
