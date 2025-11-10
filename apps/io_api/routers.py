@@ -287,7 +287,12 @@ async def get_supply_mo(
         starttime = starttime or date.today()
         endtime = endtime or starttime + timedelta(days=7)
         filter_string = f"DT_OrdStart >= '{starttime}' AND DT_OrdEnd <= '{endtime}'"
-    return await common_get_by_sql(db_name=db_name, table_name="v_supply_mo", filter_string=filter_string, field_mapper=uv.v_supply_mo)
+    result = await common_get_by_sql(db_name=db_name, table_name="v_supply_mo", filter_string=filter_string, field_mapper=uv.v_supply_mo)
+    if result['success'] and result['meta']['total'] == 1:  # 过滤到唯一的工单，则补充工序信息（v_orderwc）
+        filter_string = f"SupplyNo = '{supplyno}'"
+        orderwc = await common_get_by_sql(db_name=db_name, table_name="v_orderwc", filter_string=f"SupplyNo = '{supplyno}'", order_string="SortNo ASC", field_mapper=uv.v_orderwc)
+        result['data'][0]['orderwc'] = orderwc['data']
+    return result
 
 @rt.get(
     "/v_orderwc",

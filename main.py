@@ -114,6 +114,7 @@ app.include_router(do_rt, prefix="/do", tags=[])
 
 # 导入全局MySQL监控实例
 from apps.data_opt.utils.mysqlmonitor import mysql_monitor
+from apps.data_opt.utils.scheduler import scheduler_manager
 
 # 应用启动事件
 @app.on_event("startup")
@@ -130,6 +131,9 @@ async def shutdown_event():
     # 停止监控
     mysql_monitor.stop_monitoring()
     print("MySQL Binlog监控已停止")
+    # 关闭调度器
+    scheduler_manager.shutdown()
+    print("定时任务管理器已关闭")
 
 # 根路由
 @app.get("/")

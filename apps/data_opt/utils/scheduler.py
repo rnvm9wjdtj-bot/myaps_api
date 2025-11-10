@@ -238,11 +238,10 @@ def get_scheduler_status() -> Dict:
     }
 
 # 应用启动时自动初始化
-if os.getenv("TURN_ON_SCHEDULE_TASK", "False").lower() == "true":
-    # 注意：这里不会立即初始化，需要显式调用initialize_scheduler()
-    # 或者在模块导入后合适的时机调用
-    pass
-
+# if os.getenv("TURN_ON_SCHEDULE_TASK", "False").lower() == "true":
+#     # initialize_scheduler()
+#     # 或者在模块导入后合适的时机调用
+#     pass
 
 
 # 在其他模块中使用装饰器：

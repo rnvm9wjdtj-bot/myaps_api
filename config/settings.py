@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 load_dotenv(os.getenv('ENV_FILE', os.path.join(os.getcwd(), '.env')))
 
 # 从环境变量读取配置
+MYAPS_ORIGIN_URL = os.getenv("MYAPS_ORIGIN_URL")
 MYAPS_DB_HOST = os.getenv("MYAPS_DB_HOST")
 MYAPS_DB_PORT = int(os.getenv("MYAPS_DB_PORT"))
 MYAPS_DB_USER = os.getenv("MYAPS_DB_USER")

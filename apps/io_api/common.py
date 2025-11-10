@@ -142,10 +142,11 @@ async def common_delete(db_name: str, mdl: TortoiseBaseModel, data: List[Pydanti
         )
 
 
-async def common_get_by_sql(db_name: str, table_name: str, filter_string: str, field_mapper: Dict[str, str] = {}):
+async def common_get_by_sql(db_name: str, table_name: str, filter_string: str = '', order_string: str = '', field_mapper: Dict[str, str] = {}):
     db = Tortoise.get_connection(db_name)
     where = f" WHERE {filter_string}" if filter_string else ''
-    sql = f'SELECT * FROM `{table_name}` {where}'
+    order = f" ORDER BY {order_string}" if order_string else ''
+    sql = f'SELECT * FROM `{table_name}` {where} {order}'
     total, data = await db.execute_query(sql)
     # 映射字段名
     if field_mapper:

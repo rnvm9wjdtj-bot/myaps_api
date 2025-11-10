@@ -31,5 +31,3 @@ async def opt_supply(
     elif body.action == '':
         pass
 
-
-

@@ -1,19 +1,24 @@
 import os, requests, logging, atexit, datetime
 import pandas as pd
+from datetime import datetime
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
 
 from config import uservar as uv
+from config.settings import MYAPS_DB_SET, MYAPS_ORIGIN_URL
 from apps.data_opt.utils.scheduler import daily_task, hourly_task, interval_task, cron_task
 
 
-effective_db = ['hdso', 'hdfc'] # 主账套放第一位
+effective_db = MYAPS_DB_SET[:]
 main_db = effective_db[0]
 
-this_url = 'http://localhost:8000'
-this_api_session = requests.Session()
-
 werks = '1600'
+
+this_base_url = 'http://localhost:8000'
+this_session = requests.Session()
+
+myaps_origin_url = MYAPS_ORIGIN_URL
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -105,7 +110,7 @@ async def refresh_stock(db_name: str | None = None):
             'charg': 'str'
         })
         stock['avail_qty'] = stock['labst'] + stock['labst2']
-        stock['supplyno'] = stock['werks'] + '-' + stock['matnr']
+        stock['supplyno'] = f"{stock['werks']}-{stock['matnr']}"
         stock['type'] = 'ST'
         stock['priority'] = uv.default_priority
         stock['avail_date'] = datetime.datetime.now().strftime('%Y-%m-%d')
@@ -126,12 +131,12 @@ async def refresh_stock(db_name: str | None = None):
         stock_data = stock.to_dict(orient='records')
         if db_name is None:
             for db in effective_db:
-                await this_api_session.delete(f"{this_url}/api/t_supply?db_name={db}", data='ST')
-                await this_api_session.post(f"{this_url}/api/t_supply?db_name={db}", json=stock_data)
+                await this_session.delete(f"{this_base_url}/api/t_supply?db_name={db}", data='ST')
+                await this_session.post(f"{this_base_url}/api/t_supply?db_name={db}", json=stock_data)
                 logger.info(f"刷新库存任务执行完成，账套：{db}")
         else:
-            await this_api_session.delete(f"{this_url}/api/t_supply?db_name={db_name}", data='ST')
-            await this_api_session.post(f"{this_url}/api/t_supply?db_name={db_name}", json=stock_data)
+            await this_session.delete(f"{this_base_url}/api/t_supply?db_name={db_name}", data='ST')
+            await this_session.post(f"{this_base_url}/api/t_supply?db_name={db_name}", json=stock_data)
             logger.info(f"刷新库存任务执行完成，账套：{db_name}")
     except Exception as e:
         logger.error(f"刷新库存任务执行失败: {str(e)}")
@@ -142,31 +147,38 @@ async def insert_pl_to_sap(pl_data: dict):
     以数据库binlog为触发条件，将主账套中需要转MO的PL推送到SAP
     """
     try:
-        headers = {
-            "DEST_SYSTEM": "SAP",
-            "INTF_ID": "ZPP_PLAN_ORD_CREATE",
-            "SRC_SYSTEM": "APS",
-            "SRC_SYSTEM": "APS",
-        }
-        data = {
-            "CY_SEQNR": pl_data['SupplyNo'],  # APS单号
-            "WERKS": werks,  # 工厂
-            "MATNR": pl_data['MaterialNo'],
-            "AUART": "PL",  # 订单类型
-            "VERID": "",    # 生产版本
-            "GSTRP": pl_data['dt_req'],  # 基本开始日期
-            "GLTRP": pl_data['Avail_Date'],  # 基本完成日期
-            "GAMNG": pl_data['Avail_Qty'],  # 总订单数量
-            "FEVOR": "",  # 生产主管
-            "WEMPF": ""  # 产线代码
-        }
-        sap_session1.post(url=sap_url2, json=pl_data, headers=headers)
+        supply_response = this_session.get(f"{this_base_url}/api/v_supply_mo?db_name={main_db}&supplyno={pl_data['SupplyNo']}")
+        supply_response_json = supply_response.json()
+        supply_data = supply_response_json['data'][0]
+        # orderwc = mo_data['orderwc']
+        start_datetime = supply_data['dt_ordstart'].strftime('%Y%m%d %H:%M:%S')
+        end_datetime = supply_data['dt_ordend'].strftime('%Y%m%d %H:%M:%S')
 
-        logger.info(f"推送计划任务执行完成，账套：{main_db}")
+        data = {
+            "CY_SEQNR": supply_data['supplyno'],  # APS单号
+            "WERKS": werks,  # 工厂
+            "MATNR": supply_data['materialno'],
+            "AUART": "ZP01",  # 订单类型
+            "VERID": "SAP",    # 生产版本
+            "GSTRP": start_datetime.split(' ')[0],  # 基本开始日期
+            "GLTRP": end_datetime.split(' ')[0],  # 基本完成日期
+            "GAMNG": supply_data['avail_qty'],  # 总订单数量
+            "FEVOR": "SAP",  # 生产主管
+            "WEMPF": "SAP"  # 产线代码
+        }
+
+        sap_response = await sap_post(url=sap_url2, session=sap_session2, interface_id="ZPP_PLAN_ORD_CREATE", data=data)
+        sap_response_json = sap_response['response_json']
+        sap_mo_data = sap_response_json['BODY'][0]
+        if sap_mo_data['STATUS'] == 'S':
+            logger.info(f"推送计划任务执行成功，账套：{main_db}，MO单号：{sap_mo_data['AUFNR']}")
+
+            # TODO 调用myaps接口，更新pl号为sap工单号
+
+        else:
+            logger.error(f"推送计划任务执行失败，账套：{main_db}，错误信息：{sap_mo_data['RETURN']['MESSAGE']}")
     except Exception as e:
         logger.error(f"推送计划任务执行失败: {str(e)}")
-
-
 
 ########################################################################
 #
@@ -247,6 +259,6 @@ async def handle_update_supply(database: str, table: str, data: dict, data_diff:
         supply_old_type = data['old']['Type']
         supply_new_type = data['new']['Type']
         if supply_old_type == 'PL' and supply_new_type == 'MO':
-            await insert_pl_to_sap(data['old'])
-    print(f"更新到 {database}.{table}: {data}")
-    print(f"数据变更: {data_diff}")
+            await insert_pl_to_sap(data['new'])
+    # print(f"更新到 {database}.{table}: {data}")
+    # print(f"数据变更: {data_diff}")
