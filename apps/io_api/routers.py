@@ -231,7 +231,7 @@ async def delete_supply(
     data: List[DeleteSupply] | str,
     db_name: str = common_params["db_name"]
     ):
-    if type(data) == str and data in ["ST", "PL", "PO", "MO"]:
+    if type(data) == str and data in ["ST", "PO"]:
         return await common_delete_by_sql(db_name=db_name, table_name="t_supply", filter_string=f"Type='{data}'")
     elif type(data) == list:
         return await common_delete(db_name=db_name, mdl=TSupply, data=data)
@@ -239,7 +239,7 @@ async def delete_supply(
         return standard_response(
             status=400,
             success=0,
-            message="Invalid input type. Expected list of DeleteSupply or 'ST', 'PL', 'PO', 'MO'.")
+            message="Invalid input type. Expected list of DeleteSupply or 'ST', 'PO'.")
 
 # 需求
 @rt.get(

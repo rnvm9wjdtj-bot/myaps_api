@@ -8,9 +8,10 @@ from apscheduler.executors.pool import ThreadPoolExecutor
 from config import uservar as uv
 from config.settings import MYAPS_DB_SET, MYAPS_ORIGIN_URL
 from apps.data_opt.utils.scheduler import daily_task, hourly_task, interval_task, cron_task
+from apps.io_api.common import standard_response
 
 
-effective_db = MYAPS_DB_SET[:]
+effective_db = os.getenv('SCHEDULE_EFFECT_DB').split(',')
 main_db = effective_db[0]
 
 werks = '1600'
@@ -90,7 +91,7 @@ def sap_post(url: str, session: requests.Session, interface_id: str, data: dict)
 #
 #################################################################################
 
-schedule_task_hour = os.getenv('SCHEDULE_TASK_HOUR', '0,9,12,15')
+schedule_task_hour = os.getenv('SCHEDULE_TASK_HOUR', '9,12,15')
 schedule_task_minute = os.getenv('SCHEDULE_TASK_MINUTE', 0)
 
 @cron_task(hour=schedule_task_hour, minute=schedule_task_minute)
@@ -100,6 +101,7 @@ async def refresh_stock(db_name: str | None = None):
     db_name: 账套名称，默认刷新所有账套
     """
     logger.info("开始执行刷新库存任务")
+    response = None
     try:
         response = sap_session1.get(url=f"{sap_url1}", headers={'interface': 'stock', 'werks': werks})
         data = response.json()['data']
@@ -113,11 +115,12 @@ async def refresh_stock(db_name: str | None = None):
             'charg': 'str'
         })
         stock['avail_qty'] = stock['labst'] + stock['labst2']
-        stock['supplyno'] = f"{stock['werks']}-{stock['matnr']}"
+        stock['supplyno'] = stock['werks'] + '-' + stock['matnr'] # 注意不要用f string，否则supplyno会变成所有料号的超长字符串
         stock['type'] = 'ST'
         stock['priority'] = uv.default_priority
-        stock['avail_date'] = datetime.datetime.now().strftime('%Y-%m-%d')
-        stock['dt_req'] = datetime.datetime.now().strftime('%Y-%m-%d')
+        stock['avail_date'] = datetime.now().strftime('%Y-%m-%d')
+        stock['dt_req'] = datetime.now().strftime('%Y-%m-%d')
+        stock['create_date'] = datetime.now().strftime('%Y-%m-%d')
         stock = (stock
                         .groupby(['supplyno'], as_index=False)
                         .agg({
@@ -134,15 +137,19 @@ async def refresh_stock(db_name: str | None = None):
         stock_data = stock.to_dict(orient='records')
         if db_name is None:
             for db in effective_db:
-                await this_session.delete(f"{this_base_url}/api/t_supply?db_name={db}", data='ST')
-                await this_session.post(f"{this_base_url}/api/t_supply?db_name={db}", json=stock_data)
+                this_session.delete(f"{this_base_url}/api/t_supply?db_name={db}", data='ST')
+                this_session.post(f"{this_base_url}/api/t_supply?db_name={db}", json=stock_data)
                 logger.info(f"刷新库存任务执行完成，账套：{db}")
+                response = standard_response(status_code=200, success=1, message=f"刷新库存任务执行完成，账套：{db}")
         else:
-            await this_session.delete(f"{this_base_url}/api/t_supply?db_name={db_name}", data='ST')
-            await this_session.post(f"{this_base_url}/api/t_supply?db_name={db_name}", json=stock_data)
+            this_session.delete(f"{this_base_url}/api/t_supply?db_name={db_name}", data='ST')
+            this_session.post(f"{this_base_url}/api/t_supply?db_name={db_name}", json=stock_data)
             logger.info(f"刷新库存任务执行完成，账套：{db_name}")
+            response = standard_response(status_code=200, success=1, message=f"刷新库存任务执行完成，账套：{db_name}")
     except Exception as e:
         logger.error(f"刷新库存任务执行失败: {str(e)}")
+        response = standard_response(status_code=500, success=0, message=f"刷新库存任务执行失败: {str(e)}")
+    return response
 
 
 async def insert_pl_to_sap(pl_data: dict):
@@ -182,71 +189,6 @@ async def insert_pl_to_sap(pl_data: dict):
             logger.error(f"推送计划任务执行失败，账套：{main_db}，错误信息：{sap_mo_data['RETURN']['MESSAGE']}")
     except Exception as e:
         logger.error(f"推送计划任务执行失败: {str(e)}")
-
-########################################################################
-#
-# 配置APScheduler的执行器
-#
-########################################################################
-# executors = {
-#     'default': ThreadPoolExecutor(10)
-# }
-
-# # 创建后台调度器实例
-# scheduler = BackgroundScheduler(executors=executors, timezone='Asia/Shanghai')
-
-# def init_scheduler():
-#     """初始化调度器并添加定时任务"""
-#     try:
-#         # 添加库存获取定时任务 - 每天的奇数整点执行(1,3,5,7,9,11,13,15,17,19,21,23点)
-#         scheduler.add_job(
-#             func=refresh_stock,
-#             trigger='cron',
-#             minute=0,
-#             hour='9,11,13,15,17',
-#             id='refresh_stock',
-#             replace_existing=True
-#         )
-#         logger.info("调度器初始化完成，已添加定时任务")
-#     except Exception as e:
-#         logger.error(f"调度器初始化失败: {str(e)}")
-
-
-# def start_scheduler():
-#     """启动调度器"""
-#     try:
-#         if not scheduler.running:
-#             scheduler.start()
-#             logger.info("调度器已启动")
-#         else:
-#             logger.info("调度器已经在运行中")
-#     except Exception as e:
-#         logger.error(f"调度器启动失败: {str(e)}")
-
-
-# def shutdown_scheduler():
-#     """关闭调度器"""
-#     try:
-#         if scheduler.running:
-#             scheduler.shutdown()
-#             logger.info("调度器已关闭")
-#         else:
-#             logger.info("调度器已经关闭")
-#     except Exception as e:
-#         logger.error(f"调度器关闭失败: {str(e)}")
-
-# # 在模块加载时初始化并启动调度器
-# def initialize_and_start_scheduler():
-#     """初始化并启动调度器，这是模块的主要入口点"""
-#     init_scheduler()
-#     start_scheduler()
-#     # 注册退出处理函数，确保程序退出时调度器被正确关闭
-#     atexit.register(shutdown_scheduler)
-
-# # 开启定时任务
-# if os.getenv("TURN_ON_SCHEDULE_TASK") == "True":
-#     initialize_and_start_scheduler()
-
 
 #################################################################################
 #
