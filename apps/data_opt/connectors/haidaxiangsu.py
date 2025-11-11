@@ -102,6 +102,7 @@ async def refresh_stock(db_name: str | None = None):
     """
     logger.info("开始执行刷新库存任务")
     response = None
+    today = datetime.now().strftime('%Y-%m-%d')
     try:
         response = sap_session1.get(url=f"{sap_url1}", headers={'interface': 'stock', 'werks': werks})
         data = response.json()['data']
@@ -118,9 +119,9 @@ async def refresh_stock(db_name: str | None = None):
         stock['supplyno'] = stock['werks'] + '-' + stock['matnr'] # 注意不要用f string，否则supplyno会变成所有料号的超长字符串
         stock['type'] = 'ST'
         stock['priority'] = uv.default_priority
-        stock['avail_date'] = datetime.now().strftime('%Y-%m-%d')
-        stock['dt_req'] = datetime.now().strftime('%Y-%m-%d')
-        stock['create_date'] = datetime.now().strftime('%Y-%m-%d')
+        stock['avail_date'] = today
+        stock['dt_req'] = today
+        stock['create_date'] = today
         stock = (stock
                         .groupby(['supplyno'], as_index=False)
                         .agg({
@@ -137,12 +138,12 @@ async def refresh_stock(db_name: str | None = None):
         stock_data = stock.to_dict(orient='records')
         if db_name is None:
             for db in effective_db:
-                this_session.delete(f"{this_base_url}/api/t_supply?db_name={db}", data='ST')
+                this_session.delete(f"{this_base_url}/api/t_supply?db_name={db}", data={'bytype': 'ST'})
                 this_session.post(f"{this_base_url}/api/t_supply?db_name={db}", json=stock_data)
                 logger.info(f"刷新库存任务执行完成，账套：{db}")
                 response = standard_response(status_code=200, success=1, message=f"刷新库存任务执行完成，账套：{db}")
         else:
-            this_session.delete(f"{this_base_url}/api/t_supply?db_name={db_name}", data='ST')
+            this_session.delete(f"{this_base_url}/api/t_supply?db_name={db_name}", data={'bytype': 'ST'})
             this_session.post(f"{this_base_url}/api/t_supply?db_name={db_name}", json=stock_data)
             logger.info(f"刷新库存任务执行完成，账套：{db_name}")
             response = standard_response(status_code=200, success=1, message=f"刷新库存任务执行完成，账套：{db_name}")
@@ -165,7 +166,7 @@ async def insert_pl_to_sap(pl_data: dict):
         end_datetime = supply_data['dt_ordend'].strftime('%Y%m%d %H:%M:%S')
 
         data = {
-            "CY_SEQNR": supply_data['supplyno'],  # APS单号
+            # "CY_SEQNR": supply_data['supplyno'],  # APS单号
             "WERKS": werks,  # 工厂
             "MATNR": supply_data['materialno'],
             "AUART": "ZP01",  # 订单类型
@@ -173,7 +174,7 @@ async def insert_pl_to_sap(pl_data: dict):
             "GSTRP": start_datetime.split(' ')[0],  # 基本开始日期
             "GLTRP": end_datetime.split(' ')[0],  # 基本完成日期
             "GAMNG": supply_data['avail_qty'],  # 总订单数量
-            "FEVOR": "SAP",  # 生产主管
+            # "FEVOR": "SAP",  # 生产主管
             "WEMPF": "SAP"  # 产线代码
         }
 
@@ -186,7 +187,7 @@ async def insert_pl_to_sap(pl_data: dict):
             # TODO 调用myaps接口，更新pl号为sap工单号
 
         else:
-            logger.error(f"推送计划任务执行失败，账套：{main_db}，错误信息：{sap_mo_data['RETURN']['MESSAGE']}")
+            logger.error(f"推送计划任务执行失败，账套：{main_db}，错误信息：{sap_mo_data['MESSAGE']}")
     except Exception as e:
         logger.error(f"推送计划任务执行失败: {str(e)}")
 

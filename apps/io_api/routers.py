@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta
+from this import d
 from typing import List, Literal
 
 from fastapi import APIRouter, Query, Body, status#, Request, Path
@@ -228,18 +229,20 @@ async def post_supply(
     description="根据🗝️【料号+供应号】删除供应记录"
     )
 async def delete_supply(
-    data: List[DeleteSupply] | str,
+    data: List[DeleteSupply] | dict,
     db_name: str = common_params["db_name"]
     ):
-    if type(data) == str and data in ["ST", "PO"]:
-        return await common_delete_by_sql(db_name=db_name, table_name="t_supply", filter_string=f"Type='{data}'")
+    if type(data) == dict and data.get('bytype') in ["ST", "PO", "PR"]:
+        return await common_delete_by_sql(db_name=db_name, table_name="t_supply", filter_string=f"Type='{data.get('bytype')}'")
     elif type(data) == list:
         return await common_delete(db_name=db_name, mdl=TSupply, data=data)
     else:
         return standard_response(
             status=400,
             success=0,
-            message="Invalid input type. Expected list of DeleteSupply or 'ST', 'PO'.")
+            message="Invalid input type. Expected list of DeleteSupply or dict with 'bytype' in ['ST', 'PO', 'PR'].")
+
+
 
 # 需求
 @rt.get(

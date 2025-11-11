@@ -610,32 +610,18 @@ def get_mysql_config(is_single_db=True):
     return config
 
 
-# 自管理单例访问方法
-def get_monitor():
-    """
-    获取MySQLBinlogMonitor实例（单例模式）
-    
-    Returns:
-        MySQLBinlogMonitor: 监控实例
-    """
-    return MySQLBinlogMonitor()
-
 
 # 定义全局的MySQLBinlogMonitor单例实例
-# 用户可以直接导入并使用这个实例，无需再调用get_monitor()函数
+# 用户可以直接导入并使用这个实例
 mysql_monitor = MySQLBinlogMonitor()
 
 
 # 使用说明：
-# 方式一：直接导入全局实例（推荐）
+# 直接导入全局实例（推荐）
 #    from apps.data_opt.utils.mysqlmonitor import mysql_monitor
 #    # 直接使用mysql_monitor对象
 #    await mysql_monitor.start_monitoring()
 #  
-# 方式二：使用get_monitor函数
-#    from apps.data_opt.utils.mysqlmonitor import get_monitor
-#    mysql_monitor = get_monitor()
-#    await mysql_monitor.start_monitoring()
 #  
 # 注册事件处理器示例：
 #    @mysql_monitor.on_insert_for_table("your_table", "your_database")

@@ -87,14 +87,14 @@ class TSupply(pm.ProtoSupply):
         table = "t_supply"
         unique_together = [("materialno", "supplyno")]
 
-    async def delete(self, using_db: str):
-        """
-        若删除的实例为MO或PL则同步删除工序
-        """
-        result = await super().delete(using_db=using_db)
-        if self.type in ["MO", "PL"]:
-            await TOrderwc.del_by_supply(using_db, self.materialno, self.supplyno)
-        return result
+    # async def delete(self, using_db: str):
+    #     """
+    #     若删除的实例为MO或PL则同步删除工序
+    #     """
+    #     result = await super().delete(using_db=using_db)
+    #     if self.type in ["MO", "PL"]:
+    #         await TOrderwc.del_by_supply(using_db, self.materialno, self.supplyno)
+    #     return result
 
 
 class TOrderwc(pm.ProtoOrderwc):
@@ -105,15 +105,15 @@ class TOrderwc(pm.ProtoOrderwc):
         abstract = False
         table = "t_orderwc"
 
-    @classmethod
-    async def del_by_supply(cls, using_db: str, materialno: str, supplyno: str):
-        """
-        删除supply关联的工序
-        """
-        cls.filter(
-            materialno=materialno,
-            supplyno=supplyno
-        ).delete(using_db=using_db)
+    # @classmethod
+    # async def del_by_supply(cls, using_db: str, materialno: str, supplyno: str):
+    #     """
+    #     删除supply关联的工序
+    #     """
+    #     cls.filter(
+    #         materialno=materialno,
+    #         supplyno=supplyno
+    #     ).delete(using_db=using_db)
 
 
 
