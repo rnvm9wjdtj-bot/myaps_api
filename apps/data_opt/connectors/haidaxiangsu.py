@@ -138,12 +138,12 @@ async def refresh_stock(db_name: str | None = None):
         stock_data = stock.to_dict(orient='records')
         if db_name is None:
             for db in effective_db:
-                this_session.delete(f"{this_base_url}/api/t_supply?db_name={db}", data={'bytype': 'ST'})
+                this_session.delete(f"{this_base_url}/api/t_supply?db_name={db}&type=ST")
                 this_session.post(f"{this_base_url}/api/t_supply?db_name={db}", json=stock_data)
                 logger.info(f"刷新库存任务执行完成，账套：{db}")
                 response = standard_response(status_code=200, success=1, message=f"刷新库存任务执行完成，账套：{db}")
         else:
-            this_session.delete(f"{this_base_url}/api/t_supply?db_name={db_name}", data={'bytype': 'ST'})
+            this_session.delete(f"{this_base_url}/api/t_supply?db_name={db_name}&type=ST")
             this_session.post(f"{this_base_url}/api/t_supply?db_name={db_name}", json=stock_data)
             logger.info(f"刷新库存任务执行完成，账套：{db_name}")
             response = standard_response(status_code=200, success=1, message=f"刷新库存任务执行完成，账套：{db_name}")
@@ -161,21 +161,21 @@ async def insert_pl_to_sap(pl_data: dict):
         supply_response = this_session.get(f"{this_base_url}/api/v_supply_mo?db_name={main_db}&supplyno={pl_data['SupplyNo']}")
         supply_response_json = supply_response.json()
         supply_data = supply_response_json['data'][0]
-        # orderwc = mo_data['orderwc']
-        start_datetime = supply_data['dt_ordstart'].strftime('%Y%m%d %H:%M:%S')
-        end_datetime = supply_data['dt_ordend'].strftime('%Y%m%d %H:%M:%S')
-
+        start_datetime = supply_data[uv.v_supply_mo['DT_OrdStart']].strftime('%Y%m%d %H:%M:%S')
+        end_datetime = supply_data[uv.v_supply_mo['DT_OrdEnd']].strftime('%Y%m%d %H:%M:%S')
+        orderwc = supply_data['orderwc']
         data = {
             # "CY_SEQNR": supply_data['supplyno'],  # APS单号
             "WERKS": werks,  # 工厂
-            "MATNR": supply_data['materialno'],
+            "MATNR": supply_data[uv.v_supply_mo['MaterialNo']],
             "AUART": "ZP01",  # 订单类型
             "VERID": "SAP",    # 生产版本
             "GSTRP": start_datetime.split(' ')[0],  # 基本开始日期
             "GLTRP": end_datetime.split(' ')[0],  # 基本完成日期
-            "GAMNG": supply_data['avail_qty'],  # 总订单数量
+            "GAMNG": supply_data[uv.v_supply_mo['Avail_Qty']],  # 总订单数量
             # "FEVOR": "SAP",  # 生产主管
-            "WEMPF": "SAP"  # 产线代码
+            "WEMPF": "SAP",  # 产线代码
+            "BACKUP1": ','.join([i[uv.v_mat_wc_mold['WorkCenter']] for i in orderwc])
         }
 
         sap_response = await sap_post(url=sap_url2, session=sap_session2, interface_id="ZPP_PLAN_ORD_CREATE", data=data)

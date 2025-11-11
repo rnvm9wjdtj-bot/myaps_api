@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta
+from re import S
 from this import d
 from typing import List, Literal
 
@@ -222,26 +223,54 @@ async def post_supply(
     return await common_post(db_name=db_name, mdl=TSupply, data=data)
 
 
+# @rt.delete(
+#     "/t_supply",
+#     tags=["生产数据 - 供应"],
+#     summary="删除供应记录",
+#     description="根据🗝️【料号+供应号】删除供应记录"
+#     )
+# async def delete_supply(
+#     data: List[DeleteSupply] | dict,
+#     db_name: str = common_params["db_name"]
+#     ):
+#     if type(data) == dict and data.get('bytype') in ["ST", "PO", "PR"]:
+#         return await common_delete_by_sql(db_name=db_name, table_name="t_supply", filter_string=f"Type='{data.get('bytype')}'")
+#     elif type(data) == list:
+#         return await common_delete(db_name=db_name, mdl=TSupply, data=data)
+#     else:
+#         return standard_response(
+#             status=400,
+#             success=0,
+#             message="Invalid input type. Expected list of DeleteSupply or dict with 'bytype' in ['ST', 'PO', 'PR'].")
 @rt.delete(
     "/t_supply",
     tags=["生产数据 - 供应"],
     summary="删除供应记录",
-    description="根据🗝️【料号+供应号】删除供应记录"
+    description=""
     )
 async def delete_supply(
-    data: List[DeleteSupply] | dict,
-    db_name: str = common_params["db_name"]
+    db_name: str = common_params["db_name"],
+    type: str = 'ST',
+    materialno: str | None = None,
+    supplyno: str | None = None,
     ):
-    if type(data) == dict and data.get('bytype') in ["ST", "PO", "PR"]:
-        return await common_delete_by_sql(db_name=db_name, table_name="t_supply", filter_string=f"Type='{data.get('bytype')}'")
-    elif type(data) == list:
-        return await common_delete(db_name=db_name, mdl=TSupply, data=data)
+    if not type:
+        return standard_response(
+            status=400,
+            success=0,
+            message="Required parameter 'type' not found.")
+    if type in ["ST", "PO", "PR"]:
+        filter_string = f"Type='{type}'"
+        if materialno:
+            filter_string += f" AND MaterialNo='{materialno}'"
+        if supplyno:
+            filter_string += f" AND SupplyNo='{supplyno}'"
+        return await common_delete_by_sql(db_name=db_name, table_name="t_supply", filter_string=filter_string)
     else:
         return standard_response(
             status=400,
             success=0,
             message="Invalid input type. Expected list of DeleteSupply or dict with 'bytype' in ['ST', 'PO', 'PR'].")
-
 
 
 # 需求
