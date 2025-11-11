@@ -90,7 +90,10 @@ def sap_post(url: str, session: requests.Session, interface_id: str, data: dict)
 #
 #################################################################################
 
-@cron_task(hour='9,11,13,15,17', minute=0)
+schedule_task_hour = os.getenv('SCHEDULE_TASK_HOUR', '0,9,12,15')
+schedule_task_minute = os.getenv('SCHEDULE_TASK_MINUTE', 0)
+
+@cron_task(hour=schedule_task_hour, minute=schedule_task_minute)
 async def refresh_stock(db_name: str | None = None): 
     """
     刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据
@@ -260,5 +263,5 @@ async def handle_update_supply(database: str, table: str, data: dict, data_diff:
         supply_new_type = data['new']['Type']
         if supply_old_type == 'PL' and supply_new_type == 'MO':
             await insert_pl_to_sap(data['new'])
-    # print(f"更新到 {database}.{table}: {data}")
-    # print(f"数据变更: {data_diff}")
+    print(f"更新到 {database}.{table}: {data}")
+    print(f"数据变更: {data_diff}")

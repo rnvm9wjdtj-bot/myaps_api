@@ -1,7 +1,5 @@
-import os
-import inspect
-import logging
-import atexit
+import os, asyncio, inspect, logging, atexit
+
 from typing import Dict, List, Callable, Any, Optional
 from functools import wraps
 
@@ -112,19 +110,51 @@ class SchedulerManager:
     
     def _create_safe_function(self, func: Callable) -> Callable:
         """创建安全的任务执行函数（包含异常处理）"""
-        @wraps(func)
-        def wrapper():
-            try:
-                logger.info(f"开始执行任务: {func.__module__}.{func.__name__}")
-                result = func()
-                logger.info(f"任务执行完成: {func.__module__}.{func.__name__}")
-                return result
-            except Exception as e:
-                logger.error(f"任务执行失败: {func.__module__}.{func.__name__}, 错误: {str(e)}", 
-                           exc_info=True)
-                return None
-        return wrapper
-    
+        # 检查函数是否为异步函数
+        is_async = inspect.iscoroutinefunction(func)
+        if is_async:
+            @wraps(func)
+            async def async_wrapper():
+                try:
+                    logger.info(f"开始执行异步任务: {func.__module__}.{func.__name__}")
+                    result = await func()
+                    logger.info(f"异步任务执行完成: {func.__module__}.{func.__name__}")
+                    return result
+                except Exception as e:
+                    logger.error(f"异步任务执行失败: {func.__module__}.{func.__name__}, 错误: {str(e)}", 
+                            exc_info=True)
+                    return None
+            # 为异步函数创建同步包装器
+            @wraps(func)
+            def wrapper():
+                try:
+                    # 使用事件循环运行异步函数
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # 如果事件循环正在运行（如在FastAPI应用中），创建任务
+                        loop.create_task(async_wrapper())
+                    else:
+                        # 否则直接运行
+                        loop.run_until_complete(async_wrapper())
+                except RuntimeError:
+                    # 如果没有事件循环，创建一个新的
+                    asyncio.run(async_wrapper())
+            return wrapper
+        else:
+            # 原有的同步函数处理逻辑
+            @wraps(func)
+            def wrapper():
+                try:
+                    logger.info(f"开始执行任务: {func.__module__}.{func.__name__}")
+                    result = func()
+                    logger.info(f"任务执行完成: {func.__module__}.{func.__name__}")
+                    return result
+                except Exception as e:
+                    logger.error(f"任务执行失败: {func.__module__}.{func.__name__}, 错误: {str(e)}", 
+                            exc_info=True)
+                    return None
+            return wrapper
+
     def _job_error_listener(self, event):
         """任务错误监听器"""
         if event.exception:
