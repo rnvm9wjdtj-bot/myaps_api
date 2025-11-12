@@ -11,8 +11,8 @@ from apps.data_opt.utils.scheduler import daily_task, hourly_task, interval_task
 from apps.io_api.common import standard_response
 
 
-effective_db = os.getenv('SCHEDULE_EFFECT_DB').split(',')
-main_db = effective_db[0]
+effective_dbs = os.getenv('SCHEDULE_EFFECT_DBS').split(',')
+main_db = os.getenv('MAIN_DB')
 
 werks = '1600'
 
@@ -86,9 +86,7 @@ def sap_post(url: str, session: requests.Session, interface_id: str, data: dict)
     }
 
 #################################################################################
-#
 # 定义可复用的逻辑
-#
 #################################################################################
 
 schedule_task_hour = os.getenv('SCHEDULE_TASK_HOUR', '9,12,15')
@@ -137,7 +135,7 @@ async def refresh_stock(db_name: str | None = None):
         })
         stock_data = stock.to_dict(orient='records')
         if db_name is None:
-            for db in effective_db:
+            for db in effective_dbs:
                 this_session.delete(f"{this_base_url}/api/t_supply?db_name={db}&type=ST")
                 this_session.post(f"{this_base_url}/api/t_supply?db_name={db}", json=stock_data)
                 logger.info(f"刷新库存任务执行完成，账套：{db}")
@@ -175,7 +173,7 @@ async def insert_pl_to_sap(pl_data: dict):
             "GAMNG": supply_data[uv.v_supply_mo['Avail_Qty']],  # 总订单数量
             # "FEVOR": "SAP",  # 生产主管
             "WEMPF": "SAP",  # 产线代码
-            "BACKUP1": ','.join([i[uv.v_mat_wc_mold['WorkCenter']] for i in orderwc])
+            "BACKUP1": ','.join([i[uv.v_orderwc['WorkCenter']] for i in orderwc])
         }
 
         sap_response = await sap_post(url=sap_url2, session=sap_session2, interface_id="ZPP_PLAN_ORD_CREATE", data=data)
@@ -192,19 +190,19 @@ async def insert_pl_to_sap(pl_data: dict):
         logger.error(f"推送计划任务执行失败: {str(e)}")
 
 #################################################################################
-#
 # 数据库事件处理器
-#
 #################################################################################
 from apps.data_opt.utils.mysqlmonitor import mysql_monitor
 
-@mysql_monitor.on_update_for_table("t_supply")
+@mysql_monitor.on_update_for_table("t_supply", database=main_db)
 async def handle_update_supply(database: str, table: str, data: dict, data_diff: dict):
     """处理t_supply表的更新事件"""
-    if database == main_db:
-        supply_old_type = data['old']['Type']
-        supply_new_type = data['new']['Type']
-        if supply_old_type == 'PL' and supply_new_type == 'MO':
-            await insert_pl_to_sap(data['new'])
     print(f"更新到 {database}.{table}: {data}")
     print(f"数据变更: {data_diff}")
+    # if database != main_db:
+    #     return
+    supply_old_type = data['old']['Type']
+    supply_new_type = data['new']['Type']
+    if supply_old_type == 'PL' and supply_new_type == 'MO':
+        return await insert_pl_to_sap(data['new'])
+

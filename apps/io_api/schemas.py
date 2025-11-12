@@ -283,7 +283,7 @@ class AcceptSupply(BaseModel):
     partnerno: Optional[str] = Field(None, alias=uv.t_supply.get("PartnerNo", "partnerno"), max_length=64, description='合作商编号', example="P001")
     partnername: Optional[str] = Field(None, alias=uv.t_supply.get("PartnerName", "partnername"), max_length=255, description='合作商名称', example="合作伙伴A")
     memo: Optional[str] = Field(None, alias=uv.t_supply.get("Memo", "memo"), max_length=255, description='备注', example="标准供应单")
-    plno: Optional[str] = Field(None, alias=uv.t_supply.get("PlNo", "plno"), max_length=64, description='原PL（若传入此值则将对应的PL号改写成MO号，若索引不到原PL则新增MO）', example="PL123456")
+    # plno: Optional[str] = Field(None, alias=uv.t_supply.get("PlNo", "plno"), max_length=64, description='原PL（若传入此值则将对应的PL号改写成MO号，若索引不到原PL则新增MO）', example="PL123456")
 
     class Config:
         title = "验证规则 - 供应"

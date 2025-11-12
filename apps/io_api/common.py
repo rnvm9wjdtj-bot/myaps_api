@@ -1,4 +1,5 @@
 from typing import Dict, Any, List
+from enum import Enum
 
 from fastapi import status, Query, HTTPException, status, Request
 from fastapi.responses import JSONResponse
@@ -10,6 +11,14 @@ from pydantic import BaseModel as PydanticSchema
 
 from config.settings import MYAPS_DEFAULT_DB
 
+
+# 公共枚举
+class SupplyType(str, Enum):
+    Stock = "ST"   # 库存
+    PurchaseOrder = "PO"   # 采购订单
+    ProductionRequirement = "PR"   # 生产需求
+    ProductionPlan = "PL"   # 生产计划
+    ManufacturingOrder = "MO"   # 生产工单
 
 # 路由相关公共格式
 def standard_response(
@@ -31,8 +40,16 @@ def standard_response(
 common_params = {
     "db_name": Query(MYAPS_DEFAULT_DB, description="账套"),
     "page_size": Query(1000, description="每页数量", gt=0, le=10000),
-    "page_index": Query(0, description="分页页码，从0开始", ge=0)
+    "page_index": Query(0, description="分页页码，从0开始", ge=0),
+    "supply_type": Query(..., description="供应类型", openapi_examples={
+            SupplyType.Stock.value: {"value": SupplyType.Stock.value, "summary": SupplyType.Stock.name},
+            SupplyType.PurchaseOrder.value: {"value": SupplyType.PurchaseOrder.value, "summary": SupplyType.PurchaseOrder.name},
+            SupplyType.ProductionRequirement.value: {"value": SupplyType.ProductionRequirement.value, "summary": SupplyType.ProductionRequirement.name},
+            SupplyType.ProductionPlan.value: {"value": SupplyType.ProductionPlan.value, "summary": SupplyType.ProductionPlan.name},
+            SupplyType.ManufacturingOrder.value: {"value": SupplyType.ManufacturingOrder.value, "summary": SupplyType.ManufacturingOrder.name}
+        }),
 }
+
 
 ########################################################################
 
@@ -117,16 +134,12 @@ async def common_post(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticS
         )
 
 # 路由公共方法 - delete
-async def common_delete(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticSchema]):
-    unique_together = mdl._meta.unique_together
-    model_key = unique_together[0] if unique_together else [mdl._meta.pk_attr]
+async def common_delete(db_name: str, mdl: TortoiseBaseModel, targets: List[dict]):
     delete_count = 0
     try:
         async with in_transaction(db_name) as db:
-            for _d in data:
-                _d_dict = _d.model_dump()
-                match_on = {k : _d_dict.get(k) for k in model_key}
-                exist = await mdl.get_or_none(**match_on, using_db=db)
+            for _ in targets:
+                exist = await mdl.get_or_none(**_, using_db=db)
                 if exist:
                     await exist.delete(using_db=db)
                     delete_count += 1
@@ -143,30 +156,45 @@ async def common_delete(db_name: str, mdl: TortoiseBaseModel, data: List[Pydanti
 
 
 async def common_get_by_sql(db_name: str, table_name: str, filter_string: str = '', order_string: str = '', field_mapper: Dict[str, str] = {}):
-    db = Tortoise.get_connection(db_name)
-    where = f" WHERE {filter_string}" if filter_string else ''
-    order = f" ORDER BY {order_string}" if order_string else ''
-    sql = f'SELECT * FROM `{table_name}` {where} {order}'
-    total, data = await db.execute_query(sql)
-    # 映射字段名
-    if field_mapper:
-        data = [{field_mapper.get(k, k): v for k, v in row.items()} for row in data]
-    db.close()
-    return standard_response(
-        data=data,
-        meta={"total": total}
-    )
+    try:
+        db = Tortoise.get_connection(db_name)
+        where = f" WHERE {filter_string}" if filter_string else ''
+        order = f" ORDER BY {order_string}" if order_string else ''
+        sql = f'SELECT * FROM `{table_name}` {where} {order}'
+        total, data = await db.execute_query(sql)
+        # 映射字段名
+        if field_mapper:
+            data = [{field_mapper.get(k, k): v for k, v in row.items()} for row in data]
+        db.close()
+        return standard_response(
+            data=data,
+            meta={"total": total}
+        )
+    except Exception as e:
+        return standard_response(
+            success=0,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message=f"操作失败：{str(e)}"
+        )
 
 async def common_delete_by_sql(db_name: str, table_name: str, filter_string: str):
-    db = Tortoise.get_connection(db_name)
-    where = f" WHERE {filter_string}" if filter_string else ''
-    sql = f'DELETE FROM `{table_name}` {where}'
-    total, data = await db.execute_query(sql)
-    db.close()
-    return standard_response(
-        data=data,
-        meta={"total": total}
-    )
+    try:
+        db = Tortoise.get_connection(db_name)
+        where = f" WHERE {filter_string}" if filter_string else ''
+        sql = f'DELETE FROM `{table_name}` {where}'
+        total, data = await db.execute_query(sql)
+        db.close()
+        return standard_response(
+            data=data,
+            meta={"total": total}
+        )
+    except Exception as e:
+        return standard_response(
+            success=0,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message=f"操作失败：{str(e)}"
+        )
+        
 ################################################################
 # pydantic验证错误统一格式
 class CustomValidationError(HTTPException):

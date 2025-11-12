@@ -11,33 +11,31 @@ from .schemas import (
     AcceptMaterial, AcceptWorkcenter, AcceptMatWc, AcceptMatVer, AcceptMatWcBom, AcceptSupply, AcceptDemand, AcceptMold, AcceptMatWcMold,
     DeleteSupply
     )
-from .common import common_params, common_get_by_orm, common_post, common_delete, common_get_by_sql, common_delete_by_sql, standard_response
+from .common import (
+    common_params, SupplyType,
+    common_get_by_orm, common_post, common_delete, common_get_by_sql, common_delete_by_sql,
+    standard_response)
 
-# 路由路径对应的数据资源
-# data_source = {
-#     "material": {"table": "t_material", "model": TMaterial},
-#     "version": {"table": "t_mat_ver", "model": TMatVer},
-#     "workcenter": {"table": "t_workcenter", "model": TWorkcenter},
-# }
-
-################################################################
-rt = APIRouter()
 
 ########################################################################
+rt = APIRouter()
+########################################################################
+########################################################################
 # 主数据接口
+########################################################################
 
-@rt.get(
-    "/t_material",
-    tags=["主数据 - 物料"],
-    summary="获取物料信息",
-    description="获取物料信息"
-)
-async def get_material(
-    db_name: str = common_params["db_name"],
-    page_size: int = common_params["page_size"],
-    page_index: int = common_params["page_index"]
-):
-    return await common_get_by_orm(db_name=db_name, mdl=TMaterial, page_size=page_size, page_index=page_index)
+# @rt.get(
+#     "/t_material",
+#     tags=["主数据 - 物料"],
+#     summary="获取物料信息",
+#     description="获取物料信息"
+# )
+# async def get_material(
+#     db_name: str = common_params["db_name"],
+#     page_size: int = common_params["page_size"],
+#     page_index: int = common_params["page_index"]
+# ):
+#     return await common_get_by_orm(db_name=db_name, mdl=TMaterial, page_size=page_size, page_index=page_index)
 
 @rt.post(
     "/t_material",
@@ -51,30 +49,19 @@ async def post_material(
     ):
     return await common_post(db_name=db_name, mdl=TMaterial, data=data)
 
-@rt.delete(
-    "/t_material",
-    tags=["主数据 - 物料"],
-    summary="删除物料",
-    description="根据🗝️【料号】删除物料"
-    )
-async def delete_material(
-    data: List[AcceptMaterial],
-    db_name: str = common_params["db_name"]
-    ):
-    return await common_delete(db_name=db_name, mdl=TMaterial, data=data)
 
-@rt.get(
-    "/t_workcenter",
-    tags=["主数据 - 工作中心"],
-    summary="获取工作中心信息",
-    description="获取工作中心信息"
-)
-async def get_workcenter(
-    db_name: str = common_params["db_name"],
-    page_size: int = common_params["page_size"],
-    page_index: int = common_params["page_index"]
-):
-    return await common_get_by_orm(db_name=db_name, mdl=TWorkcenter, page_size=page_size, page_index=page_index)
+# @rt.get(
+#     "/t_workcenter",
+#     tags=["主数据 - 工作中心"],
+#     summary="获取工作中心信息",
+#     description="获取工作中心信息"
+# )
+# async def get_workcenter(
+#     db_name: str = common_params["db_name"],
+#     page_size: int = common_params["page_size"],
+#     page_index: int = common_params["page_index"]
+# ):
+#     return await common_get_by_orm(db_name=db_name, mdl=TWorkcenter, page_size=page_size, page_index=page_index)
 
 @rt.post(
     "/t_workcenter",
@@ -88,18 +75,18 @@ async def post_workcenter(
     ):
     return await common_post(db_name=db_name, mdl=TWorkcenter, data=data)
 
-@rt.get(
-    "/t_mat_wc",
-    tags=["主数据 - 工序"],
-    summary="获取工序信息",
-    description="获取工序信息"
-)
-async def get_mat_wc(
-    db_name: str = common_params["db_name"],
-    page_size: int = common_params["page_size"],
-    page_index: int = common_params["page_index"]
-):
-    return await common_get_by_orm(db_name=db_name, mdl=TMatWc, page_size=page_size, page_index=page_index)
+# @rt.get(
+#     "/t_mat_wc",
+#     tags=["主数据 - 工序"],
+#     summary="获取工序信息",
+#     description="获取工序信息"
+# )
+# async def get_mat_wc(
+#     db_name: str = common_params["db_name"],
+#     page_size: int = common_params["page_size"],
+#     page_index: int = common_params["page_index"]
+# ):
+#     return await common_get_by_orm(db_name=db_name, mdl=TMatWc, page_size=page_size, page_index=page_index)
     
 @rt.post(
     "/t_mat_wc",
@@ -113,18 +100,18 @@ async def post_mat_wc(
     ):
     return await common_post(db_name=db_name, mdl=TMatWc, data=data)
 
-@rt.get(
-    "/t_mat_ver",
-    tags=["主数据 - 产线版本"],
-    summary="获取产线版本信息",
-    description="获取产线版本信息"
-)
-async def get_mat_ver(
-    db_name: str = common_params["db_name"],
-    page_size: int = common_params["page_size"],
-    page_index: int = common_params["page_index"]
-):
-    return await common_get_by_orm(db_name=db_name, mdl=TMatVer, page_size=page_size, page_index=page_index)
+# @rt.get(
+#     "/t_mat_ver",
+#     tags=["主数据 - 产线版本"],
+#     summary="获取产线版本信息",
+#     description="获取产线版本信息"
+# )
+# async def get_mat_ver(
+#     db_name: str = common_params["db_name"],
+#     page_size: int = common_params["page_size"],
+#     page_index: int = common_params["page_index"]
+# ):
+#     return await common_get_by_orm(db_name=db_name, mdl=TMatVer, page_size=page_size, page_index=page_index)
 
 @rt.post(
     "/t_mat_ver",
@@ -138,18 +125,18 @@ async def post_mat_ver(
     ):
     return await common_post(db_name=db_name, mdl=TMatVer, data=data)
 
-@rt.get(
-    "/t_mat_wc_bom",
-    tags=["主数据 - BOM"],
-    summary="获取BOM信息",
-    description="获取BOM信息"
-)
-async def get_mat_wc_bom(
-    db_name: str = common_params["db_name"],
-    page_size: int = common_params["page_size"],
-    page_index: int = common_params["page_index"]
-):
-    return await common_get_by_orm(db_name=db_name, mdl=TMatWcBom, page_size=page_size, page_index=page_index)
+# @rt.get(
+#     "/t_mat_wc_bom",
+#     tags=["主数据 - BOM"],
+#     summary="获取BOM信息",
+#     description="获取BOM信息"
+# )
+# async def get_mat_wc_bom(
+#     db_name: str = common_params["db_name"],
+#     page_size: int = common_params["page_size"],
+#     page_index: int = common_params["page_index"]
+# ):
+#     return await common_get_by_orm(db_name=db_name, mdl=TMatWcBom, page_size=page_size, page_index=page_index)
 
 @rt.post(
     "/t_mat_wc_bom",
@@ -189,8 +176,10 @@ async def post_mat_wc_mold(
     ):
     return await common_post(db_name=db_name, mdl=TMatWcMold, data=data)
 
+
 ########################################################################
 # 生产数据接口
+########################################################################
 @rt.get(
     "/t_supply",
     tags=["生产数据 - 供应"],
@@ -204,7 +193,6 @@ async def get_supply(
 ):
     return await common_get_by_orm(db_name=db_name, mdl=TSupply, page_size=page_size, page_index=page_index)
 
-
 @rt.post(
     "/t_supply",
     tags=["生产数据 - 供应"],
@@ -216,61 +204,46 @@ async def post_supply(
     db_name: str = common_params["db_name"]
     ):
     # 检查plno是否存在
-    if any(item.plno for item in data):
-        for item in data:
-            if item.plno:
-                item._overwrite = {"match_on": {"supplyno": item.plno, "materialno": item.materialno, "type": "PL"}, "new_value": {"supplyno": item.supplyno}}
+    # if any(item.plno for item in data):
+    #     for item in data:
+    #         if item.plno:
+    #             item._overwrite = {"match_on": {"supplyno": item.plno, "materialno": item.materialno, "type": "PL"}, "new_value": {"supplyno": item.supplyno}}
     return await common_post(db_name=db_name, mdl=TSupply, data=data)
 
-
-# @rt.delete(
-#     "/t_supply",
-#     tags=["生产数据 - 供应"],
-#     summary="删除供应记录",
-#     description="根据🗝️【料号+供应号】删除供应记录"
-#     )
-# async def delete_supply(
-#     data: List[DeleteSupply] | dict,
-#     db_name: str = common_params["db_name"]
-#     ):
-#     if type(data) == dict and data.get('bytype') in ["ST", "PO", "PR"]:
-#         return await common_delete_by_sql(db_name=db_name, table_name="t_supply", filter_string=f"Type='{data.get('bytype')}'")
-#     elif type(data) == list:
-#         return await common_delete(db_name=db_name, mdl=TSupply, data=data)
-#     else:
-#         return standard_response(
-#             status=400,
-#             success=0,
-#             message="Invalid input type. Expected list of DeleteSupply or dict with 'bytype' in ['ST', 'PO', 'PR'].")
 @rt.delete(
     "/t_supply",
     tags=["生产数据 - 供应"],
     summary="删除供应记录",
-    description=""
+    description="根据供应类型、料号、供应号删除供应记录。如果del_relation为True，还会删除关联的工序记录（仅对PL、MO类型有效）"
     )
 async def delete_supply(
     db_name: str = common_params["db_name"],
-    type: str = 'ST',
-    materialno: str | None = None,
-    supplyno: str | None = None,
+    type: SupplyType = common_params["supply_type"],
+    materialno: str | None = Query(None, description="料号"),
+    supplyno: str | None = Query(None, description="供应号"),
+    del_relation: bool | None = Query(False, description="是否删除关联的工序记录（仅对PL、MO类型有效）"),
     ):
     if not type:
         return standard_response(
             status=400,
             success=0,
             message="Required parameter 'type' not found.")
-    if type in ["ST", "PO", "PR"]:
-        filter_string = f"Type='{type}'"
-        if materialno:
-            filter_string += f" AND MaterialNo='{materialno}'"
-        if supplyno:
-            filter_string += f" AND SupplyNo='{supplyno}'"
-        return await common_delete_by_sql(db_name=db_name, table_name="t_supply", filter_string=filter_string)
-    else:
+    if type not in [m for m in SupplyType.__members__]:
         return standard_response(
             status=400,
             success=0,
-            message="Invalid input type. Expected list of DeleteSupply or dict with 'bytype' in ['ST', 'PO', 'PR'].")
+            message=f"Invalid input type. Expected list of DeleteSupply or dict with 'bytype' in {[m.value for m in SupplyType.__members__]}.")
+
+    filter_conditions = [f"Type='{type}'", ]
+    if materialno:
+        filter_conditions.append(f"MaterialNo='{materialno}'")
+    if supplyno:
+        filter_conditions.append(f"SupplyNo='{supplyno}'")
+    filter_string = " AND ".join(filter_conditions)
+    result = await common_delete_by_sql(db_name=db_name, table_name="t_supply", filter_string=filter_string)
+    if del_relation and type in [SupplyType.ProductionPlan.value, SupplyType.ManufacturingOrder.value] and supplyno and result["success"]: # 删除关联的工序记录
+        await common_delete_by_sql(db_name=db_name, table_name="t_orderwc", filter_string=f"SupplyNo='{supplyno}'")
+    return result
 
 
 # 需求
@@ -298,9 +271,10 @@ async def post_demand(
     db_name: str = common_params["db_name"]
     ):
     return await common_post(db_name=db_name, mdl=TDemand, data=data)
+
 ########################################################################
 # 报表接口
-
+########################################################################
 @rt.get(
     "/v_supply_mo",
     tags=["报表 - 工单报表"],
@@ -320,7 +294,7 @@ async def get_supply_mo(
         endtime = endtime or starttime + timedelta(days=7)
         filter_string = f"DT_OrdStart >= '{starttime}' AND DT_OrdEnd <= '{endtime}'"
     result = await common_get_by_sql(db_name=db_name, table_name="v_supply_mo", filter_string=filter_string, field_mapper=uv.v_supply_mo)
-    if result['success'] and result['meta']['total'] == 1:  # 过滤到唯一的工单，则补充工序信息（v_orderwc）
+    if result['success'] and result['meta']['total'] == 1:  # 筛选到唯一的工单，则补充工序信息（v_orderwc）
         filter_string = f"SupplyNo = '{supplyno}'"
         orderwc = await common_get_by_sql(db_name=db_name, table_name="v_orderwc", filter_string=f"SupplyNo = '{supplyno}'", order_string="SortNo ASC", field_mapper=uv.v_orderwc)
         result['data'][0]['orderwc'] = orderwc['data']
