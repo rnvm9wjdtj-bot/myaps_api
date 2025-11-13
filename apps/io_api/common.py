@@ -9,7 +9,7 @@ from tortoise.transactions import in_transaction
 from tortoise.models import Model as TortoiseBaseModel
 from pydantic import BaseModel as PydanticSchema
 
-from config.settings import MYAPS_DEFAULT_DB
+from config.settings import MYAPS_MAIN_DB
 
 
 # 公共枚举
@@ -38,7 +38,7 @@ def standard_response(
 
 # url - 公共参数
 common_params = {
-    "db_name": Query(MYAPS_DEFAULT_DB, description="账套"),
+    "db_name": Query(MYAPS_MAIN_DB, description="账套"),
     "page_size": Query(1000, description="每页数量", gt=0, le=10000),
     "page_index": Query(0, description="分页页码，从0开始", ge=0),
     "supply_type": Query(..., description="供应类型", openapi_examples={

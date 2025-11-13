@@ -13,7 +13,8 @@ MYAPS_DB_PORT = int(os.getenv("MYAPS_DB_PORT"))
 MYAPS_DB_USER = os.getenv("MYAPS_DB_USER")
 MYAPS_DB_PASSWORD = os.getenv("MYAPS_DB_PASSWORD")
 MYAPS_DB_SET = os.getenv("MYAPS_DB_SET").split(",")
-MYAPS_DEFAULT_DB = MYAPS_DB_SET[0]
+MYAPS_MAIN_DB = os.getenv("MYAPS_MAIN_DB")
+
 
 THIS_SERVER_HOST = os.getenv("THIS_SERVER_HOST")
 THIS_SERVER_PORT = int(os.getenv("THIS_SERVER_PORT"))
@@ -59,7 +60,7 @@ TORTOISE_ORM_CONFIG = {
     "apps": {
         "io_api_models": {
             "models": ["apps.io_api.models",],
-            "default_connection": MYAPS_DEFAULT_DB  # 使用MyAPS账套
+            "default_connection": MAIN_DB  # 使用MyAPS账套
         },
         "data_opt_models": {
             "models": ["apps.data_opt.models", "aerich.models"],

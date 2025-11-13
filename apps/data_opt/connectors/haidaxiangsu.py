@@ -7,13 +7,13 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
 
 from config import uservar as uv
-from config.settings import MYAPS_DB_SET, MYAPS_ORIGIN_URL
+from config.settings import MYAPS_MAIN_DB, MYAPS_ORIGIN_URL
 from apps.data_opt.utils.scheduler import daily_task, hourly_task, interval_task, cron_task
 from apps.io_api.common import standard_response
 
 
-effective_dbs = os.getenv('SCHEDULE_EFFECT_DBS').split(',')
-main_db = os.getenv('MAIN_DB')
+scheduled_dbs = os.getenv('SCHEDULED_DBS').split(',')
+main_db = MYAPS_MAIN_DB
 
 werks = '1600'
 
@@ -141,7 +141,7 @@ async def refresh_stock(db_name: str | None = None):
         })
         stock_data = stock.to_dict(orient='records')
         if not db_name:
-            for db in effective_dbs:
+            for db in scheduled_dbs:
                 this_session.delete(f"{this_base_url}/api/t_supply?db_name={db}&type=ST")
                 this_session.post(f"{this_base_url}/api/t_supply?db_name={db}", json=stock_data)
                 logger.info(f"刷新库存任务执行完成，账套：{db}")

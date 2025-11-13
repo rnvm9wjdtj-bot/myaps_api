@@ -22,7 +22,7 @@
 #    server_id=1
 # 4. 重启 MySQL 使配置生效
 
-from config.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_DEFAULT_DB, MYAPS_DB_SET
+from config.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DB_SET
 
 import os
 import asyncio
@@ -598,7 +598,7 @@ def get_mysql_config(is_single_db=True):
         "password": MYAPS_DB_PASSWORD,
     }
     if is_single_db:
-        databases = [MYAPS_DEFAULT_DB]
+        databases = [MYAPS_MAIN_DB]
     else:
         databases = MYAPS_DB_SET
     
