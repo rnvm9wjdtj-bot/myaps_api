@@ -223,18 +223,19 @@ async def delete_supply(
     supplyno: str | None = Query(None, description="供应号"),
     del_relation: bool | None = Query(False, description="是否删除关联的工序记录（仅对PL、MO类型有效）"),
     ):
+    supply_type = [i.value for i in SupplyType]
     if not type:
         return standard_response(
-            status=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             success=0,
             message="Required parameter 'type' not found.")
-    if type not in [m for m in SupplyType.__members__]:
+    if type.value not in supply_type:
         return standard_response(
-            status=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             success=0,
-            message=f"Invalid input type. Expected list of DeleteSupply or dict with 'bytype' in {[m.value for m in SupplyType.__members__]}.")
+            message=f"Invalid input type. Expected list of DeleteSupply or dict with 'bytype' in {supply_type}.")
 
-    filter_conditions = [f"Type='{type}'", ]
+    filter_conditions = [f"Type='{type.value}'", ]
     if materialno:
         filter_conditions.append(f"MaterialNo='{materialno}'")
     if supplyno:

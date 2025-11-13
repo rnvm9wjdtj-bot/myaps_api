@@ -12,4 +12,5 @@ class SupplyAction(str, Enum):
 
 class SupplyOperationBody(BaseModel):
     action: SupplyAction
+    
     # target_row: dict[str, str]  # 目标行数据 {'materialno': '', 'supplyno': ''}

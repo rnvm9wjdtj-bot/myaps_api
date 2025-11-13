@@ -2,6 +2,7 @@ import os, requests, logging, atexit, datetime
 import pandas as pd
 from datetime import datetime
 
+from fastapi import status
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
 
@@ -74,7 +75,7 @@ def sap_post(url: str, session: requests.Session, interface_id: str, data: dict)
     })
 
     response_json = {}
-    if response.status_code == 200:
+    if response.status_code == status.HTTP_200_OK:
         response_json = response.json()
         logger.info(f"POST请求成功，状态码：{response.status_code}，响应内容：{response_json}")
     else:
@@ -119,6 +120,8 @@ async def refresh_stock(db_name: str | None = None):
         stock['priority'] = uv.default_priority
         stock['avail_date'] = today
         stock['dt_req'] = today
+        stock['status'] = 'NEW'
+        stock['category'] = ''
         stock['create_date'] = today
         stock = (stock
                         .groupby(['supplyno'], as_index=False)
@@ -129,25 +132,28 @@ async def refresh_stock(db_name: str | None = None):
                             'avail_date': 'first',
                             'dt_req': 'first',
                             'priority': 'first',
+                            'status': 'first',
+                            'category': 'first',
+                            'create_date': 'first',
                         })) 
         stock = stock.rename(columns={
             'matnr': 'materialno',
         })
         stock_data = stock.to_dict(orient='records')
-        if db_name is None:
+        if not db_name:
             for db in effective_dbs:
                 this_session.delete(f"{this_base_url}/api/t_supply?db_name={db}&type=ST")
                 this_session.post(f"{this_base_url}/api/t_supply?db_name={db}", json=stock_data)
                 logger.info(f"刷新库存任务执行完成，账套：{db}")
-                response = standard_response(status_code=200, success=1, message=f"刷新库存任务执行完成，账套：{db}")
+                response = standard_response(status_code=status.HTTP_200_OK, success=1, message=f"刷新库存任务执行完成，账套：{db}")
         else:
             this_session.delete(f"{this_base_url}/api/t_supply?db_name={db_name}&type=ST")
             this_session.post(f"{this_base_url}/api/t_supply?db_name={db_name}", json=stock_data)
             logger.info(f"刷新库存任务执行完成，账套：{db_name}")
-            response = standard_response(status_code=200, success=1, message=f"刷新库存任务执行完成，账套：{db_name}")
+            response = standard_response(status_code=status.HTTP_200_OK, success=1, message=f"刷新库存任务执行完成，账套：{db_name}")
     except Exception as e:
         logger.error(f"刷新库存任务执行失败: {str(e)}")
-        response = standard_response(status_code=500, success=0, message=f"刷新库存任务执行失败: {str(e)}")
+        response = standard_response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, success=0, message=f"刷新库存任务执行失败: {str(e)}")
     return response
 
 
