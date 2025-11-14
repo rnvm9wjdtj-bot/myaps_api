@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv(os.getenv('ENV_FILE', os.path.join(os.getcwd(), '.env')))
 
 # 从环境变量读取配置
-MYAPS_ORIGIN_URL = os.getenv("MYAPS_ORIGIN_URL")
+MYAPS_BASE_URL = os.getenv("MYAPS_BASE_URL")
 MYAPS_DB_HOST = os.getenv("MYAPS_DB_HOST")
 MYAPS_DB_PORT = int(os.getenv("MYAPS_DB_PORT"))
 MYAPS_DB_USER = os.getenv("MYAPS_DB_USER")
@@ -60,7 +60,7 @@ TORTOISE_ORM_CONFIG = {
     "apps": {
         "io_api_models": {
             "models": ["apps.io_api.models",],
-            "default_connection": MAIN_DB  # 使用MyAPS账套
+            "default_connection": MYAPS_MAIN_DB  # 使用MyAPS账套
         },
         "data_opt_models": {
             "models": ["apps.data_opt.models", "aerich.models"],

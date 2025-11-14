@@ -1,15 +1,15 @@
 from datetime import date, datetime, timedelta
-from re import S
-from this import d
-from typing import List, Literal
+# from re import S
+# from this import d
+from typing import List#, Literal
 
 from fastapi import APIRouter, Query, Body, status#, Request, Path
 
-from config import uservar as uv
+from config import settings, uservar as uv
 from .models import TMaterial, TWorkcenter, TMatWc, TMatVer, TMatWcBom, TSupply, TDemand, TMold, TMatWcMold#,TortoiseBaseModel
 from .schemas import (
     AcceptMaterial, AcceptWorkcenter, AcceptMatWc, AcceptMatVer, AcceptMatWcBom, AcceptSupply, AcceptDemand, AcceptMold, AcceptMatWcMold,
-    DeleteSupply
+    #DeleteSupply
     )
 from .common import (
     common_params, SupplyType,
@@ -24,6 +24,17 @@ rt = APIRouter()
 # 主数据接口
 ########################################################################
 
+@rt.get("/meta")
+async def get_meta():
+    return standard_response(
+        success=1,
+        message="获取元数据成功",
+        meta={
+            "db_set": settings.MYAPS_DB_SET,
+            "main_db": settings.MYAPS_MAIN_DB,
+        },
+    )
+    
 # @rt.get(
 #     "/t_material",
 #     tags=["主数据 - 物料"],

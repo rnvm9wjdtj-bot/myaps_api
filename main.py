@@ -1,4 +1,5 @@
 import os, uvicorn
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,6 +12,27 @@ from apps.io_api.routers import rt as io_rt
 from apps.io_api.common import register_exception_handlers
 from apps.data_opt.routers import rt as do_rt
 # from apps.data_opt.common import register_exception_handlers as register_data_manager_exception_handlers
+
+# 导入全局MySQL监控实例
+from apps.data_opt.utils.mysqlmonitor import mysql_monitor
+from apps.data_opt.utils.scheduler import scheduler_manager
+
+# 定义生命周期事件处理器
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理器"""
+    # 应用启动时执行的操作
+    await mysql_monitor.start_monitoring()
+    print("MySQL Binlog监控已启动")
+    
+    yield  # 应用运行期间
+    
+    # 应用关闭时执行的操作
+    mysql_monitor.stop_monitoring()
+    print("MySQL Binlog监控已停止")
+    # 关闭调度器
+    scheduler_manager.shutdown()
+    print("定时任务管理器已关闭")
 
 
 # 创建FastAPI应用实例
@@ -35,7 +57,8 @@ app = FastAPI(
         "showCommonExtensions": True,  # 显示扩展字段
         "showExtensions": True,  # 显示OpenAPI扩展
         "showMutatedRequest": True  # 显示修改后的请求
-    }
+    },
+    lifespan=lifespan  # 使用新的生命周期事件处理器
 )
 
 # 增强OpenAPI schema配置
@@ -111,29 +134,6 @@ register_exception_handlers(app)
 app.include_router(io_rt, prefix="/api", tags=[])
 app.include_router(do_rt, prefix="/do", tags=[])
 
-
-# 导入全局MySQL监控实例
-from apps.data_opt.utils.mysqlmonitor import mysql_monitor
-from apps.data_opt.utils.scheduler import scheduler_manager
-
-# 应用启动事件
-@app.on_event("startup")
-async def startup_event():
-    """应用启动时初始化MySQL监控"""
-    # 直接使用全局monitor实例启动监控
-    await mysql_monitor.start_monitoring()
-    print("MySQL Binlog监控已启动")
-
-# 应用关闭事件
-@app.on_event("shutdown")
-async def shutdown_event():
-    """应用关闭时停止MySQL监控"""
-    # 停止监控
-    mysql_monitor.stop_monitoring()
-    print("MySQL Binlog监控已停止")
-    # 关闭调度器
-    scheduler_manager.shutdown()
-    print("定时任务管理器已关闭")
 
 # 根路由
 @app.get("/")

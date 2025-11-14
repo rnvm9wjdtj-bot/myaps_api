@@ -323,11 +323,11 @@ class AcceptDemand(BaseModel):
     demandno: str = Field(..., alias=uv.t_demand.get("DemandNo", "demandno"), max_length=64, description='需求单号', example="SO123456")
     itemno: str = Field(..., alias=uv.t_demand.get("ItemNo", "itemno"), max_length=6, description='项目号（若类型为SO则可传入订单号或其他标识符，不超过6位）', example="0010")
     type: str = Field(..., alias=uv.t_demand.get("Type", "type"), enum=["SO", "DM", "RS", "FC", "SS"], example="SO", description='类型 SO-销售订单 DM-计划需求 RS-工单预留 FC-预测 SS-安全库存')
-    category: str = Field(None, alias=uv.t_demand.get("Category", "category"), enum=["MTO", "MTS"], example="MTO", description='分类(MTO/MTS)')
+    category: str = Field(..., alias=uv.t_demand.get("Category", "category"), enum=["MTO", "MTS"], example="MTO", description='分类(MTO/MTS)')
     priority: int = Field(..., alias=uv.t_demand.get("Priority", "priority"), description='优先级', example=1)
     workcenter: str = Field(None, alias=uv.t_demand.get("WorkCenter", "workcenter"), max_length=32, description='工作中心', example="WC001")
-    status: str = Field(None, alias=uv.t_demand.get("Status", "status"), enum=["NEW", "CRE", "SCH", "REL", "PNF", "CMP"], example="NEW", description='状态 NEW-新增 CRE-已创建 SCH-计划 REL-已发布 PNF-已报工, CMP-已完成')
-    req_qty: float = Field(..., alias=uv.t_demand.get("Req_Qty", "req_qty"), le=0, description='需求数量（注意必须是负数）', example=-100.0)
+    status: str = Field(..., alias=uv.t_demand.get("Status", "status"), enum=["NEW", "CRE", "SCH", "REL", "PNF", "CMP"], example="NEW", description='状态 NEW-新增 CRE-已创建 SCH-计划 REL-已发布 PNF-已报工, CMP-已完成')
+    req_qty: float = Field(..., alias=uv.t_demand.get("Req_Qty", "req_qty"), description='需求数量（须为负数，若输入正数则自动转为负数）', example=-100.0)
     req_date: datetime = Field(..., alias=uv.t_demand.get("Req_Date", "req_date"), description='需求日期', example="2023-01-07T10:00:00")
     refno: Optional[str] = Field(None, alias=uv.t_demand.get("RefNo", "refno"), max_length=64, description='MTO订单号', example="MTO123456")
     partnerno: Optional[str] = Field(None, alias=uv.t_demand.get("PartnerNo", "partnerno"), max_length=64, description='合作商编号', example="P001")
@@ -354,3 +354,10 @@ class AcceptDemand(BaseModel):
                 "memo": "标准销售订单"
             }
         }
+
+    @model_validator(mode="before")
+    def model_valid(self):
+        req_qty = float(self.get("req_qty", 0))
+        if req_qty > 0:
+            self["req_qty"] = -1 * req_qty
+        return self

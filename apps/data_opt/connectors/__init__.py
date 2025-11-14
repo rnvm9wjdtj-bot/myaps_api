@@ -1,31 +1,21 @@
 # import threading
-# from abc import ABC, abstractmethod
+from abc import ABC, abstractmethod
 
 
-# class BaseConnector(ABC):
-#     _instance = None
-#     _lock = threading.Lock()
+class ScheduleTasks(ABC):
+    
+    @classmethod
+    @abstractmethod
+    def get_material(cls, *args, **kwargs):
+        pass
+    
+    @classmethod
+    @abstractmethod
+    def refresh_stock(cls, *args, **kwargs):
+        pass
 
-#     def __new__(cls):
-#         if cls._instance is None:
-#             with cls._lock:
-#                 if cls._instance is None:
-#                     cls._instance = super().__new__(cls)
-#                     cls._instance._initialize_connection()
-#         return cls._instance
 
-#     @abstractmethod
-#     def __init__(self, *args, **kwargs):
-#         pass
 
-#     @abstractmethod
-#     def auth(self, *args, **kwargs):
-#         pass
-
-#     @abstractmethod
-#     def get_data(self, *args, **kwargs):
-#         pass
-
-#     @abstractmethod
-#     def set_data(self, *args, **kwargs):
-#         pass
+class MyapsDbEvents(ABC):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)

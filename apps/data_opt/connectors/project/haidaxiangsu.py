@@ -1,15 +1,16 @@
-import os, requests, logging, atexit, datetime
+import os, requests, logging#, atexit
 import pandas as pd
 from datetime import datetime
 
 from fastapi import status
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.executors.pool import ThreadPoolExecutor
+# from apscheduler.schedulers.background import BackgroundScheduler
+# from apscheduler.executors.pool import ThreadPoolExecutor
 
 from config import uservar as uv
-from config.settings import MYAPS_MAIN_DB, MYAPS_ORIGIN_URL
-from apps.data_opt.utils.scheduler import daily_task, hourly_task, interval_task, cron_task
+from config.settings import MYAPS_MAIN_DB, MYAPS_BASE_URL, THIS_SERVER_HOST, THIS_SERVER_PORT
+# from apps.data_opt.utils.scheduler import cron_task#,daily_task, hourly_task, interval_task
 from apps.io_api.common import standard_response
+# from . import ScheduleTasks, MyapsDbEvents
 
 
 scheduled_dbs = os.getenv('SCHEDULED_DBS').split(',')
@@ -17,10 +18,10 @@ main_db = MYAPS_MAIN_DB
 
 werks = '1600'
 
-this_base_url = 'http://localhost:8000'
+this_base_url = f'http://{THIS_SERVER_HOST}:{THIS_SERVER_PORT}'
 this_session = requests.Session()
 
-myaps_origin_url = MYAPS_ORIGIN_URL
+myaps_base_url = MYAPS_BASE_URL
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -28,9 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 #################################################################################
-#
-# SAP 数据交互通用组件
-#
+# SAP 数据交互
 #################################################################################
 from apps.data_opt.utils.common import add_basic_auth_requests
 
@@ -50,10 +49,11 @@ add_basic_auth_requests(sap_session2, sap_username, sap_password)
 # import json
 import uuid
 import requests
-from datetime import datetime
 # from typing import Dict, Any, Optional
 
-
+#################################################################################
+# 定义可复用的逻辑
+#################################################################################
 def sap_post(url: str, session: requests.Session, interface_id: str, data: dict):
     """
     向SAP系统发送POST请求
@@ -86,14 +86,7 @@ def sap_post(url: str, session: requests.Session, interface_id: str, data: dict)
         'response_json': response_json
     }
 
-#################################################################################
-# 定义可复用的逻辑
-#################################################################################
 
-schedule_task_hour = os.getenv('SCHEDULE_TASK_HOUR', '9,12,15')
-schedule_task_minute = os.getenv('SCHEDULE_TASK_MINUTE', 0)
-
-@cron_task(hour=schedule_task_hour, minute=schedule_task_minute)
 async def refresh_stock(db_name: str | None = None): 
     """
     刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据
@@ -101,7 +94,7 @@ async def refresh_stock(db_name: str | None = None):
     """
     logger.info("开始执行刷新库存任务")
     response = None
-    today = datetime.now().strftime('%Y-%m-%d')
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     try:
         response = sap_session1.get(url=f"{sap_url1}", headers={'interface': 'stock', 'werks': werks})
         data = response.json()['data']
@@ -118,11 +111,11 @@ async def refresh_stock(db_name: str | None = None):
         stock['supplyno'] = stock['werks'] + '-' + stock['matnr'] # 注意不要用f string，否则supplyno会变成所有料号的超长字符串
         stock['type'] = 'ST'
         stock['priority'] = uv.default_priority
-        stock['avail_date'] = today
-        stock['dt_req'] = today
+        stock['avail_date'] = now
+        stock['dt_req'] = now
         stock['status'] = 'NEW'
         stock['category'] = ''
-        stock['create_date'] = today
+        stock['create_date'] = now
         stock = (stock
                         .groupby(['supplyno'], as_index=False)
                         .agg({
@@ -157,9 +150,9 @@ async def refresh_stock(db_name: str | None = None):
     return response
 
 
-async def insert_pl_to_sap(pl_data: dict):
+async def insert_pl_to_external(pl_data: dict):
     """
-    以数据库binlog为触发条件，将主账套中需要转MO的PL推送到SAP
+    将主账套中需要转MO的PL推送到SAP
     """
     try:
         supply_response = this_session.get(f"{this_base_url}/api/v_supply_mo?db_name={main_db}&supplyno={pl_data['SupplyNo']}")
@@ -198,17 +191,5 @@ async def insert_pl_to_sap(pl_data: dict):
 #################################################################################
 # 数据库事件处理器
 #################################################################################
-from apps.data_opt.utils.mysqlmonitor import mysql_monitor
 
-@mysql_monitor.on_update_for_table("t_supply", database=main_db)
-async def handle_update_supply(database: str, table: str, data: dict, data_diff: dict):
-    """处理t_supply表的更新事件"""
-    print(f"更新到 {database}.{table}: {data}")
-    print(f"数据变更: {data_diff}")
-    # if database != main_db:
-    #     return
-    supply_old_type = data['old']['Type']
-    supply_new_type = data['new']['Type']
-    if supply_old_type == 'PL' and supply_new_type == 'MO':
-        return await insert_pl_to_sap(data['new'])
 

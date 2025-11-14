@@ -1,13 +1,13 @@
-from datetime import datetime
+# from datetime import datetime
 import os, importlib#, uuid
-from typing import List, Optional
+# from typing import List, Optional
 
 from fastapi import APIRouter#, Query, Body, UploadFile, File, BackgroundTasks
 
+from .connectors._manage import active_connector
 from .schemas import SupplyOperationBody, SupplyAction
 from apps.io_api.models import TSupply
 
-active_connector = importlib.import_module(os.getenv("ACTIVE_CONNECTOR"))
 
 
 # 创建路由器实例

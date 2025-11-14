@@ -1,6 +1,3 @@
-# from data_opt.connectors import haida as connector
-
-
 myaps_is_pro = True     # MyAPS是否专业版
 
 # 主数据默认值
