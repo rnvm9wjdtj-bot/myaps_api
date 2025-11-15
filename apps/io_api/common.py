@@ -76,7 +76,7 @@ async def common_get_by_orm(db_name: str, mdl: TortoiseBaseModel, page_size: int
         }
     )
 
-async def common_post(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticSchema]):
+async def common_post(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticSchema | Dict[str, Any]]):
     cerate_count = 0
     update_count = 0
     unique_together = mdl._meta.unique_together
@@ -85,8 +85,8 @@ async def common_post(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticS
     try:
         async with in_transaction(db_name) as db:
             for _d in data:
-                _d_dict = _d.model_dump()
-                if hasattr(_d, "_overwrite"):   # 当联合主键之一需要被覆写
+                _d_dict = _d.model_dump() if isinstance(_d, PydanticSchema) else _d
+                if hasattr(_d, "_overwrite"):   # 当联合主键之一需要被覆写，_overwrite = {"match_on": {...}, "new_value": {...}}
                     match_on = _d._overwrite["match_on"]
                     new_value = _d._overwrite["new_value"]
                     if await mdl.filter(**match_on).only(*only_fields).using_db(db).exists():

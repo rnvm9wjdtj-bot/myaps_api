@@ -287,6 +287,7 @@ class AcceptSupply(BaseModel):
 
     class Config:
         title = "验证规则 - 供应"
+        extra = "allow"
         json_schema_extra = {
             "example": {
                 "materialno": "M001",
@@ -303,6 +304,7 @@ class AcceptSupply(BaseModel):
                 "memo": "标准生产工单"
             }
         }
+
 
     @model_validator(mode="before")
     def model_valid(self):

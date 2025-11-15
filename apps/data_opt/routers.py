@@ -4,7 +4,7 @@ import os, importlib#, uuid
 
 from fastapi import APIRouter#, Query, Body, UploadFile, File, BackgroundTasks
 
-from .connectors._manage import active_connector
+from .connectors import active_connector
 from .schemas import SupplyOperationBody, SupplyAction
 from apps.io_api.models import TSupply
 

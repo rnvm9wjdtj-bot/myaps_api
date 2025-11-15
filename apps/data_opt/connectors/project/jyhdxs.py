@@ -1,18 +1,21 @@
+"""
+江阴海达橡塑的连接器
+"""
+
 import os, requests, logging#, atexit
 import pandas as pd
 from datetime import datetime
 
 from fastapi import status
-# from apscheduler.schedulers.background import BackgroundScheduler
-# from apscheduler.executors.pool import ThreadPoolExecutor
 
 from config import uservar as uv
 from config.settings import MYAPS_MAIN_DB, MYAPS_BASE_URL, THIS_SERVER_HOST, THIS_SERVER_PORT
-# from apps.data_opt.utils.scheduler import cron_task#,daily_task, hourly_task, interval_task
 from apps.io_api.common import standard_response
-# from . import ScheduleTasks, MyapsDbEvents
 
 
+#################################################################################
+# ⬇️局部变量
+#################################################################################
 scheduled_dbs = os.getenv('SCHEDULED_DBS').split(',')
 main_db = MYAPS_MAIN_DB
 
@@ -52,7 +55,7 @@ import requests
 # from typing import Dict, Any, Optional
 
 #################################################################################
-# 定义可复用的逻辑
+# 本文件内可复用的逻辑
 #################################################################################
 def sap_post(url: str, session: requests.Session, interface_id: str, data: dict):
     """
@@ -189,7 +192,7 @@ async def insert_pl_to_external(pl_data: dict):
         logger.error(f"推送计划任务执行失败: {str(e)}")
 
 #################################################################################
-# 数据库事件处理器
+# 数据库事件处理函数
 #################################################################################
 
 
