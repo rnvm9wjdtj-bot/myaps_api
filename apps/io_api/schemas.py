@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator, model_validator#, ValidationError
 
-from config import uservar as uv
+from config import uservar as uv, globalconst as gc
 
 
 class AcceptMaterial(BaseModel):
@@ -30,7 +30,7 @@ class AcceptMaterial(BaseModel):
     candelay: str = Field(uv.default_candelay, alias=uv.t_material.get("CanDelay", "candelay"), enum=["N", "Y"], example="N", description='可否延迟')
     lotsize: str = Field(
         uv.default_lotsize, alias=uv.t_material.get("LotSize", "lotsize"),
-        enum=["EX", "FX", "D1", "D2", "D3", "D4", "D5", "D6", "W1", "W2", "W3", "W4", "M1", "M2", "VB"],
+        enum=list(gc.LOT_SIZE.keys()),
         example="EX", description='批量')
     lotfix: float = Field(uv.default_lotfix, alias=uv.t_material.get("LotFix", "lotfix"), ge=0, description='固定批', example=0.0)
     lotmin: float = Field(uv.default_lotmin, alias=uv.t_material.get("LotMin", "lotmin"), ge=0, description='最小批', example=0.0)
@@ -87,8 +87,8 @@ class AcceptWorkcenter(BaseModel):
     sortno: str = Field(None, alias=uv.t_workcenter.get("SortNo", "sortno"), max_length=4, description="序号", example="0001")
     plant: str = Field(uv.default_plant, alias=uv.t_workcenter.get("Plant", "plant"), max_length=32, description="工厂", example="1600")
     location: str = Field(None, alias=uv.t_workcenter.get("Location", "location"), max_length=32, description="车间", example="A区")
-    finite: str = Field(None, alias=uv.t_workcenter.get("Finite", "finite"), enum=["N", "Y"], example="N", description='有限')
-    type: str = Field(None, alias=uv.t_workcenter.get("Type", "type"), enum=["N", "Y"], example="N", description="首页显示")
+    finite: str = Field(None, alias=uv.t_workcenter.get("Finite", "finite"), enum=list(gc.YES_NO.keys()), example="N", description='有限')
+    type: str = Field(None, alias=uv.t_workcenter.get("Type", "type"), enum=list(gc.YES_NO.keys()), example="N", description="首页显示")
     capnum: int = Field(None, alias=uv.t_workcenter.get("CapNum", "capnum"), gt=0, description="默认机台数", example=5)
     capmax: int = Field(None, alias=uv.t_workcenter.get("CapMax", "capmax"), gt=0, description="最大机台数", example=10)
     worker: float = Field(None, alias=uv.t_workcenter.get("Worker", "worker"), ge=0, description='工时', example=8.0)
@@ -160,7 +160,7 @@ class AcceptMatVer(BaseModel):
     lotto: int = Field(9999999, alias=uv.t_mat_ver.get("LotTo", "lotto"), description='批量终点', example=9999999)
     priority: int = Field(1, alias=uv.t_mat_ver.get("Priority", "priority"), description='优先级', example=1)
     refno: str = Field(None, alias=uv.t_mat_ver.get("RefNo", "refno"), max_length=64, description='MTO订单号/认证线', example="SO123456")
-    active: str = Field("Y", alias=uv.t_mat_ver.get("Active", "active"), enum=["N", "Y"], example="Y", description='生效')
+    active: str = Field("Y", alias=uv.t_mat_ver.get("Active", "active"), enum=list(gc.YES_NO.keys()), example="Y", description='生效')
     memo: str = Field(None, alias=uv.t_mat_ver.get("Memo", "memo"), max_length=255, description='备注', example="标准版本")
 
     class Config:
@@ -187,9 +187,9 @@ class AcceptMatWcBom(BaseModel):
     qty: float = Field(..., alias=uv.t_mat_wc_bom.get("Qty", "qty"), ge=0, description='数量', example=2.0)
     offsethour: int = Field(0, alias=uv.t_mat_wc_bom.get("OffsetHour", "offsethour"), description='偏置+/-(小时)', example=0)
     treeno: int = Field(None, alias=uv.t_mat_wc_bom.get("TreeNo", "treeno"), description='层级', example=1)
-    mto: str = Field("N", alias=uv.t_mat_wc_bom.get("MTO", "mto"), enum=["N", "Y"], example="N", description='MTO')
+    mto: str = Field("N", alias=uv.t_mat_wc_bom.get("MTO", "mto"), enum=list(gc.YES_NO.keys()), example="N", description='MTO')
     scrap: float = Field(0, alias=uv.t_mat_wc_bom.get("Scrap", "scrap"), description='报废率%', example=0.0)
-    alt: str = Field("N", alias=uv.t_mat_wc_bom.get("Alt", "alt"), enum=["N", "Y"], example="N", description='Y/N是否是替代')
+    alt: str = Field("N", alias=uv.t_mat_wc_bom.get("Alt", "alt"), enum=list(gc.YES_NO.keys()), example="N", description='Y/N是否是替代')
     memo: str = Field(None, alias=uv.t_mat_wc_bom.get("Memo", "memo"), max_length=255, description='备注', example="标准BOM组件")
 
     class Config:
@@ -266,12 +266,12 @@ class AcceptSupply(BaseModel):
     supplyno: str = Field(..., alias=uv.t_supply.get("SupplyNo", "supplyno"), max_length=64, description='供应单号', example="MO123456")
     matver: Optional[str] = Field(None, alias=uv.t_supply.get("MatVer", "matver"), max_length=32, example=uv.example_matver, description='产线版本')
     itemno: str = Field(None, alias=uv.t_supply.get("ItemNo", "itemno"), max_length=6, description='项目号', example="0010")
-    type: str = Field(..., alias=uv.t_supply.get("Type", "type"), enum=["PL", "MO", "ST", "PO"], example="MO", description='类型 PL-生产计划 MO-生产工单 ST-库存 PO-采购订单')
-    category: str = Field(None, alias=uv.t_supply.get("Category", "category"), enum=["MTO", "MTS"], example="MTO", description='分类(MTO/MTS)')
+    type: str = Field(..., alias=uv.t_supply.get("Type", "type"), enum=list(gc.SUPPLY_TYPE.keys()), example="MO", description='类型 PL-生产计划 MO-生产工单 ST-库存 PO-采购订单')
+    category: str = Field(None, alias=uv.t_supply.get("Category", "category"), enum=list(gc.PRODUCT_CATEGORY.keys()), example="MTO", description='分类(MTO/MTS)')
     priority: int = Field(..., alias=uv.t_supply.get("Priority", "priority"), description='优先级', example=1)
     status: str = Field(
         None, alias=uv.t_supply.get("Status", "status"),
-        enum=["NEW", "CRE", "SCH", "REL", "PNF", "CMP"],
+        enum=list(gc.ORDER_STATUS.keys()),
         example="NEW", description='状态 NEW-新增 CRE-已创建 SCH-计划 REL-已发布 PNF-已报工, CMP-已完成')
     avail_qty: float = Field(..., alias=uv.t_supply.get("Avail_Qty", "avail_qty"), ge=0, description='可用数量', example=100.0)
     create_date: Optional[str] = Field(None, alias=uv.t_supply.get("Create_Date", "create_date"), description='创建日期', example="2023-01-01")
@@ -305,13 +305,36 @@ class AcceptSupply(BaseModel):
             }
         }
 
-
     @model_validator(mode="before")
     def model_valid(self):
         if not self.get("itemno"):
             self["itemno"] = uv.default_itemno
         return self
 
+
+class PatchPl(BaseModel):
+    plno: str = Field(..., max_length=64, description='PL号', example="PL123456")
+    mono: str = Field(None, max_length=64, description='MO号', example="MO123456")
+    status: str = Field(None, enum=list(gc.ORDER_STATUS.keys()), example="CRE", description=f'状态 {gc.ORDER_STATUS}')
+
+    class Config:
+        title = "验证规则 - 生产计划"
+        extra = "allow"
+        json_schema_extra = {
+            "example": {
+                "plno": "PL123456",
+                "mono": "MO123456",
+                "status": "CRE"
+            }
+        }
+
+    @model_validator(mode="before")
+    def model_valid(self):
+        if not self.get("mono"):
+            self["mono"] = self["plno"]
+        if not self.get("status"):
+            self["status"] = "CRE"
+        return self
 
 
 class DeleteSupply(BaseModel):
@@ -324,11 +347,11 @@ class AcceptDemand(BaseModel):
     materialno: str = Field(..., alias=uv.t_demand.get("MaterialNo", "materialno"), max_length=64, description='料号', example="M001")
     demandno: str = Field(..., alias=uv.t_demand.get("DemandNo", "demandno"), max_length=64, description='需求单号', example="SO123456")
     itemno: str = Field(..., alias=uv.t_demand.get("ItemNo", "itemno"), max_length=6, description='项目号（若类型为SO则可传入订单号或其他标识符，不超过6位）', example="0010")
-    type: str = Field(..., alias=uv.t_demand.get("Type", "type"), enum=["SO", "DM", "RS", "FC", "SS"], example="SO", description='类型 SO-销售订单 DM-计划需求 RS-工单预留 FC-预测 SS-安全库存')
-    category: str = Field(..., alias=uv.t_demand.get("Category", "category"), enum=["MTO", "MTS"], example="MTO", description='分类(MTO/MTS)')
+    type: str = Field(..., alias=uv.t_demand.get("Type", "type"), enum=list(gc.DEMAND_TYPE.keys()), example="SO", description='类型 SO-销售订单 DM-计划需求 RS-工单预留 FC-预测 SS-安全库存')
+    category: str = Field(..., alias=uv.t_demand.get("Category", "category"), enum=list(gc.PRODUCT_CATEGORY.keys()), example="MTO", description='分类(MTO/MTS)')
     priority: int = Field(..., alias=uv.t_demand.get("Priority", "priority"), description='优先级', example=1)
     workcenter: str = Field(None, alias=uv.t_demand.get("WorkCenter", "workcenter"), max_length=32, description='工作中心', example="WC001")
-    status: str = Field(..., alias=uv.t_demand.get("Status", "status"), enum=["NEW", "CRE", "SCH", "REL", "PNF", "CMP"], example="NEW", description='状态 NEW-新增 CRE-已创建 SCH-计划 REL-已发布 PNF-已报工, CMP-已完成')
+    status: str = Field(..., alias=uv.t_demand.get("Status", "status"), enum=list(gc.ORDER_STATUS.keys()), example="NEW", description='状态 NEW-新增 CRE-已创建 SCH-计划 REL-已发布 PNF-已报工, CMP-已完成')
     req_qty: float = Field(..., alias=uv.t_demand.get("Req_Qty", "req_qty"), description='需求数量（须为负数，若输入正数则自动转为负数）', example=-100.0)
     req_date: datetime = Field(..., alias=uv.t_demand.get("Req_Date", "req_date"), description='需求日期', example="2023-01-07T10:00:00")
     refno: Optional[str] = Field(None, alias=uv.t_demand.get("RefNo", "refno"), max_length=64, description='MTO订单号', example="MTO123456")

@@ -6,8 +6,9 @@ from enum import Enum
 
 
 class SupplyAction(str, Enum):
-    REFRESH_STOCK = 'st.refresh()'
-    CLOSE_MO = 'mo.close()'
+    REFRESH_STOCK = 'st.refresh'
+    CLOSE_MO = 'mo.close'
+    # PL_TO_MO = 'pl.to_mo'
     # OVERWRITE_PLNO = 'pl.overwrite()'
 
 class SupplyOperationBody(BaseModel):

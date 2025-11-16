@@ -139,7 +139,7 @@ app.include_router(do_rt, prefix="/do", tags=[])
 @app.get("/")
 async def read_root():
     return {
-        "message": "Welcome to MyAPS API",
+        "message": "Welcome to MyAPI",
         "version": "1.0.0",
         "status": "running"
     }

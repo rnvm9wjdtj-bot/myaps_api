@@ -23,7 +23,7 @@ turn_on_schedule_task = os.getenv('TURN_ON_SCHEDULE_TASK', 'True').lower() == 't
 if turn_on_schedule_task:
     @cron_task(hour=schedule_task_hour, minute=schedule_task_minute)
     async def refresh_stock(db_name: str | None = None): 
-        return await active_connector.refresh_stock(db_name)
+        return await active_connector.ScheduleTasks.refresh_stock(db_name)
 
 
 
@@ -45,6 +45,6 @@ async def handle_update_supply(database: str, table: str, data: dict, data_diff:
         supply_old_status = data['old']['Status']
         supply_new_status = data['new']['Status']
         if supply_old_status in ["NEW", "CRE"] and supply_new_status == 'A2E':
-            await active_connector.insert_pl_to_external(data['new'])
+            await active_connector.MyapsDbActions.insert_pl_to_external(data['new'])
     print(f"更新到 {database}.{table}: {data}")
     print(f"数据变更: {data_diff}")

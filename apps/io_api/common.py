@@ -10,15 +10,8 @@ from tortoise.models import Model as TortoiseBaseModel
 from pydantic import BaseModel as PydanticSchema
 
 from config.settings import MYAPS_MAIN_DB
+from config.globalconst import ORDER_STATUS, SUPPLY_TYPE
 
-
-# 公共枚举
-class SupplyType(str, Enum):
-    Stock = "ST"   # 库存
-    PurchaseOrder = "PO"   # 采购订单
-    ProductionRequirement = "PR"   # 生产需求
-    ProductionPlan = "PL"   # 生产计划
-    ManufacturingOrder = "MO"   # 生产工单
 
 # 路由相关公共格式
 def standard_response(
@@ -41,20 +34,14 @@ common_params = {
     "db_name": Query(MYAPS_MAIN_DB, description="账套"),
     "page_size": Query(1000, description="每页数量", gt=0, le=10000),
     "page_index": Query(0, description="分页页码，从0开始", ge=0),
-    "supply_type": Query(..., description="供应类型", openapi_examples={
-            SupplyType.Stock.value: {"value": SupplyType.Stock.value, "summary": SupplyType.Stock.name},
-            SupplyType.PurchaseOrder.value: {"value": SupplyType.PurchaseOrder.value, "summary": SupplyType.PurchaseOrder.name},
-            SupplyType.ProductionRequirement.value: {"value": SupplyType.ProductionRequirement.value, "summary": SupplyType.ProductionRequirement.name},
-            SupplyType.ProductionPlan.value: {"value": SupplyType.ProductionPlan.value, "summary": SupplyType.ProductionPlan.name},
-            SupplyType.ManufacturingOrder.value: {"value": SupplyType.ManufacturingOrder.value, "summary": SupplyType.ManufacturingOrder.name}
-        }),
+    "supply_type": Query(..., description="供应类型", openapi_examples={key: {"value": key, "summary": value} for key, value in SUPPLY_TYPE.items()}),
 }
 
 
 ########################################################################
 
-# 路由公共方法 - get
-async def common_get_by_orm(db_name: str, mdl: TortoiseBaseModel, page_size: int, page_index: int, field_mapper: Dict[str, str] = None):
+# 路由公共方法
+async def common_read_by_orm(db_name: str, mdl: TortoiseBaseModel, page_size: int, page_index: int, field_mapper: Dict[str, str] = None):
     db = Tortoise.get_connection(db_name)
     # 分页查询
     offset = page_size * page_index
@@ -76,7 +63,8 @@ async def common_get_by_orm(db_name: str, mdl: TortoiseBaseModel, page_size: int
         }
     )
 
-async def common_post(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticSchema | Dict[str, Any]]):
+
+async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticSchema | Dict[str, Any]]):
     cerate_count = 0
     update_count = 0
     unique_together = mdl._meta.unique_together
@@ -130,11 +118,11 @@ async def common_post(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticS
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message=f"操作失败：{str(e)} —— common_post"
+            message=f"操作失败：{str(e)} —— common_write"
         )
 
 # 路由公共方法 - delete
-async def common_delete(db_name: str, mdl: TortoiseBaseModel, targets: List[dict]):
+async def common_delete_by_orm(db_name: str, mdl: TortoiseBaseModel, targets: List[dict]):
     delete_count = 0
     try:
         async with in_transaction(db_name) as db:
@@ -154,8 +142,32 @@ async def common_delete(db_name: str, mdl: TortoiseBaseModel, targets: List[dict
             message=f"操作失败：{str(e)}"
         )
 
+async def common_call_dbprocdure(db_name: str, procedure_name: str, params_list: List[List[Any]] = [[]]):
+    """
+    调用数据库存储过程
+    :param db_name: 数据库名称
+    :param procedure_name: 存储过程名称
+    :param params_list: 存储过程参数列表，每个元素是一个参数列表
+    :return: 操作结果
+    """
+    affect_count = 0
+    try:
+        async with in_transaction(db_name) as db:
+            for params in params_list:
+                await db.execute_script(f'CALL {procedure_name}({", ".join(["%s"] * len(params))})', params)
+                affect_count += 1
+            return standard_response(
+                message=f"调用存储过程`{procedure_name}`成功，影响{affect_count}条记录",
+                meta={"affect": affect_count}
+            )
+    except Exception as e:
+        return standard_response(
+            success=0,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message=f"操作失败：{str(e)}"
+        )
 
-async def common_get_by_sql(db_name: str, table_name: str, filter_string: str = '', order_string: str = '', field_mapper: Dict[str, str] = {}):
+async def common_read_by_sql(db_name: str, table_name: str, filter_string: str = '', order_string: str = '', field_mapper: Dict[str, str] = {}):
     try:
         db = Tortoise.get_connection(db_name)
         where = f" WHERE {filter_string}" if filter_string else ''

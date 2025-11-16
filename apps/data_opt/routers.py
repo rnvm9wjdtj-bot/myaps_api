@@ -4,14 +4,21 @@ import os, importlib#, uuid
 
 from fastapi import APIRouter#, Query, Body, UploadFile, File, BackgroundTasks
 
-from .connectors import active_connector
+from .connectors import  active_connector
+from .connectors.project import MyapsDbActionsAbc
 from .schemas import SupplyOperationBody, SupplyAction
 from apps.io_api.models import TSupply
 
 
-
 # 创建路由器实例
 rt = APIRouter()
+
+
+supply_action = {
+    "refresh_stock": "st.refresh()",
+    "close_mo": "mo.close()",
+    "pl_to_mo": "pl.to_mo()",
+}
 
 
 @rt.post("/supply",
@@ -21,8 +28,7 @@ rt = APIRouter()
     执行供应数据操作，支持刷新库存。
     - **db_name**: 账套名称，默认为空，对所有账套生效
     - **action**: 操作类型，目前支持：
-        - 刷新库存(st.refresh())
-        - 关闭MO(mo.close())
+        - 刷新库存(st.refresh)
     """
 )
 async def opt_supply(
@@ -31,9 +37,11 @@ async def opt_supply(
 ):
     if body.action == SupplyAction.REFRESH_STOCK:
         return await active_connector.refresh_stock(db_name or None)
-    elif body.action == SupplyAction.CLOSE_MO and body.type in ["MO", "PL"]:
-        return await TSupply.filter(
-            materialno=body.materialno,
-            supplyno=body.supplyno,
-        ).delete(using_db=db_name or None)
+    # elif body.action == SupplyAction.CLOSE_MO and body.type in ["MO", "PL"]:
+    #     return await TSupply.filter(
+    #         materialno=body.materialno,
+    #         supplyno=body.supplyno,
+    #     ).delete(using_db=db_name or None)
+    # elif body.action == SupplyAction.PL_TO_MO and body.type == "PL":
+    #     await MyapsDbActionsAbc.pl_to_mo(body.materialno, body.supplyno)
 
