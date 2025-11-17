@@ -159,10 +159,11 @@ class ScheduleTasks(ScheduleTasksAbc):
 # ⬇️数据库事件处理
 #################################################################################
 class MyapsDbActions(MyapsDbActionsAbc):
+
     @classmethod
-    async def insert_pl_to_external(cls, pl_data: dict):
+    async def confirm_pl(cls, pl_data: dict):
         """
-        将主账套中需要转MO的PL推送到SAP
+        确认计划任务，将主账套中需要转MO的PL推送到SAP，将计划任务状态更新为已确认
         """
         try:
             supply_response = this_session.get(f"{this_base_url}/api/v_supply_mo?db_name={main_db}&supplyno={pl_data['SupplyNo']}")
@@ -188,12 +189,12 @@ class MyapsDbActions(MyapsDbActionsAbc):
             sap_response = await sap_post(url=sap_url2, session=sap_session2, interface_id="ZPP_PLAN_ORD_CREATE", data=data)
             sap_response_json = sap_response['response_json']
             sap_mo_data = sap_response_json['BODY'][0]
-            if sap_mo_data['STATUS'] == 'S':
-                logger.info(f"推送计划任务执行成功，账套：{main_db}，MO单号：{sap_mo_data['AUFNR']}")
-
-                # TODO 调用myaps接口，更新pl号为sap工单号
-
-            else:
+            
+            if sap_mo_data['STATUS'] != 'S':
                 logger.error(f"推送计划任务执行失败，账套：{main_db}，错误信息：{sap_mo_data['MESSAGE']}")
+                return
+            logger.info(f"推送计划任务执行成功，账套：{main_db}，MO单号：{sap_mo_data['AUFNR']}")
         except Exception as e:
             logger.error(f"推送计划任务执行失败: {str(e)}")
+            return
+        super().confirm_pl(pl_data)

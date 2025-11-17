@@ -254,13 +254,13 @@ async def delete_supply(
             status_code=status.HTTP_400_BAD_REQUEST,
             success=0,
             message="Required parameter 'type' not found.")
-    if type.value not in supply_type:
+    if type not in supply_type:
         return standard_response(
             status_code=status.HTTP_400_BAD_REQUEST,
             success=0,
             message=f"Invalid input type. Expected list of DeleteSupply or dict with 'bytype' in {supply_type}.")
 
-    filter_conditions = [f"Type='{type.value}'", ]
+    filter_conditions = [f"Type='{type}'", ]
     if materialno:
         filter_conditions.append(f"MaterialNo='{materialno}'")
     if supplyno:

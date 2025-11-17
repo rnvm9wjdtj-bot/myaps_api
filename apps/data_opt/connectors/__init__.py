@@ -3,7 +3,7 @@
 
 连接器需要实现以下方法：
 - refresh_stock(db_name: str | None = None) -> None: 刷新库存
-- insert_pl_to_external(pl_data: dict) -> None: 将主账套中的工单类数据推送到外部系统（如ERP）
+- confirm_pl(pl_data: dict) -> None: 确认生产计划单PL
 """
 
 import os, importlib
@@ -40,11 +40,11 @@ async def handle_update_supply(database: str, table: str, data: dict, data_diff:
     """处理t_supply表的更新事件"""
     supply_type = data['new']['Type']
 
-    # 下达生产计划单
+    # 确认/下达生产计划单PL
     if supply_type == 'PL':
         supply_old_status = data['old']['Status']
         supply_new_status = data['new']['Status']
         if supply_old_status in ["NEW", "CRE"] and supply_new_status == 'A2E':
-            await active_connector.MyapsDbActions.insert_pl_to_external(data['new'])
+            await active_connector.MyapsDbActions.confirm_pl(data['new'])
     print(f"更新到 {database}.{table}: {data}")
     print(f"数据变更: {data_diff}")
