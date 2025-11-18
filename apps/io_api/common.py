@@ -154,8 +154,8 @@ async def common_call_dbprocdure(db_name: str, procedure_name: str, params_list:
     try:
         async with in_transaction(db_name) as db:
             for params in params_list:
-                await db.execute_script(f'CALL {procedure_name}({", ".join(["%s"] * len(params))})', params)
-                affect_count += 1
+                count, data  = await db.execute_query(f'CALL {procedure_name}({", ".join(["%s"] * len(params))})', params)
+                affect_count += count
             return standard_response(
                 message=f"调用存储过程`{procedure_name}`成功，影响{affect_count}条记录",
                 meta={"affect": affect_count}
@@ -177,7 +177,7 @@ async def common_read_by_sql(db_name: str, table_name: str, filter_string: str =
         # 映射字段名
         if field_mapper:
             data = [{field_mapper.get(k, k): v for k, v in row.items()} for row in data]
-        db.close()
+        await db.close()
         return standard_response(
             data=data,
             meta={"total": total}
@@ -254,4 +254,3 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 def register_exception_handlers(app):
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(HTTPException, http_exception_handler)
-

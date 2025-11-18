@@ -52,7 +52,7 @@ import requests
 # from typing import Dict, Any, Optional
 
 
-def sap_post(url: str, session: requests.Session, interface_id: str, data: dict):
+async def sap_post(url: str, session: requests.Session, interface_id: str, data: dict):
     """
     向SAP系统发送POST请求
     url: 请求URL
@@ -169,8 +169,8 @@ class MyapsDbActions(MyapsDbActionsAbc):
             supply_response = this_session.get(f"{this_base_url}/api/v_supply_mo?db_name={main_db}&supplyno={pl_data['SupplyNo']}")
             supply_response_json = supply_response.json()
             supply_data = supply_response_json['data'][0]
-            start_datetime = supply_data[uv.v_supply_mo['DT_OrdStart']].strftime('%Y%m%d %H:%M:%S')
-            end_datetime = supply_data[uv.v_supply_mo['DT_OrdEnd']].strftime('%Y%m%d %H:%M:%S')
+            start_datetime = supply_data[uv.v_supply_mo.get('DT_OrdStart', 'dt_ordstart')]#.strftime('%Y%m%d %H:%M:%S')
+            end_datetime = supply_data[uv.v_supply_mo.get('DT_OrdEnd', 'dt_ordend')]#.strftime('%Y%m%d %H:%M:%S')
             orderwc = supply_data['orderwc']
             data = {
                 # "CY_SEQNR": supply_data['supplyno'],  # APS单号
@@ -178,8 +178,8 @@ class MyapsDbActions(MyapsDbActionsAbc):
                 "MATNR": supply_data[uv.v_supply_mo['MaterialNo']],
                 "AUART": "ZP01",  # 订单类型
                 "VERID": "SAP",    # 生产版本
-                "GSTRP": start_datetime.split(' ')[0],  # 基本开始日期
-                "GLTRP": end_datetime.split(' ')[0],  # 基本完成日期
+                "GSTRP": start_datetime.split('T')[0],  # 基本开始日期
+                "GLTRP": end_datetime.split('T')[0],  # 基本完成日期
                 "GAMNG": supply_data[uv.v_supply_mo['Avail_Qty']],  # 总订单数量
                 # "FEVOR": "SAP",  # 生产主管
                 "WEMPF": "SAP",  # 产线代码
@@ -193,8 +193,9 @@ class MyapsDbActions(MyapsDbActionsAbc):
             if sap_mo_data['STATUS'] != 'S':
                 logger.error(f"推送计划任务执行失败，账套：{main_db}，错误信息：{sap_mo_data['MESSAGE']}")
                 return
+            pl_data['MoNo'] = sap_mo_data['AUFNR']
             logger.info(f"推送计划任务执行成功，账套：{main_db}，MO单号：{sap_mo_data['AUFNR']}")
         except Exception as e:
             logger.error(f"推送计划任务执行失败: {str(e)}")
             return
-        super().confirm_pl(pl_data)
+        await super().confirm_pl(pl_data)

@@ -224,7 +224,7 @@ async def post_supply(
     description="根据供应号更新PL记录，与POST方法的区别是：POST方法以【料号+供应号】为联合索引，且不会修改供应号；而PATCH方法以供应号为索引，且允许修改供应号"
     )
 async def patch_pl(
-    data: List[PatchPl] | List[Dict[str, Any]] = Body(..., description="更新PL记录的列表"),
+    data: List[PatchPl] = Body(..., description="更新PL记录的列表"),
     db_name: str = common_params["db_name"]
     ):
     # for item in data:

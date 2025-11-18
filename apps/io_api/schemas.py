@@ -313,6 +313,7 @@ class AcceptSupply(BaseModel):
 
 
 class PatchPl(BaseModel):
+    type: str = Field(..., example="MO", description='类型 PL-生产计划 MO-生产工单 ST-库存 PO-采购订单')
     plno: str = Field(..., max_length=64, description='PL号', example="PL123456")
     mono: str = Field(None, max_length=64, description='MO号', example="MO123456")
     status: str = Field(None, enum=list(gc.ORDER_STATUS.keys()), example="CRE", description=f'状态 {gc.ORDER_STATUS}')
@@ -322,6 +323,7 @@ class PatchPl(BaseModel):
         extra = "allow"
         json_schema_extra = {
             "example": {
+                "type": "MO",
                 "plno": "PL123456",
                 "mono": "MO123456",
                 "status": "CRE"

@@ -64,7 +64,7 @@ class MyapsDbActionsAbc(ABC):
             - 对于异步返回创建结果的，则无需调用 def pl_to_mo() 或执行 "super().confirm_pl()"，因为路由函数已封装 pl_to_mo() ，供ERP异步调用
         - 对于无需根据APS的PL在ERP中创建MO（或无需与ERP对接）的实施场景，则直接调用 def pl_to_mo()将Type设为'MO'、Status设为'CRE'，子类无需覆写此方法
         """
-        await cls.pl_to_mo(material_no=pl_data['MaterialNo'], supply_no=pl_data['SupplyNo'], to_status='CRE')
+        await cls.pl_to_mo(material_no=pl_data['MaterialNo'], supply_no=pl_data['SupplyNo'], mo_no=pl_data['MoNo'], to_status='CRE')
 
     @classmethod
     async def pl_to_mo(cls, material_no: str, supply_no: str, mo_no: str=None, to_status: Literal['CRE', 'REL']='E2A'):
@@ -82,14 +82,14 @@ class MyapsDbActionsAbc(ABC):
             - 无需根据APS的PL在ERP中创建MO（或无需与ERP对接）的实施场景
         - 在路由函数中调用，适用于ERP异步返回MO信息的实施场景
         """
-        # await Tortoise.get_connection(cls.main_db).execute_script(
-        #     "CALL SupplyConvertMOByE2A(%s, %s)",
-        #     [supply_no, mo_no]
-        # )
-        this_session.patch(f'{this_base_url}/api/t_supply/pl', json={
+        response = this_session.patch(f'{this_base_url}/api/t_supply/pl', json=[{
             'type': 'MO',   # 将类型改为MO（原本为PL）
+            'plno': supply_no,
             'status': to_status,
-            })
+            'supplyno': supply_no,
+            'mono': mo_no,
+            }])
+        return response
         # mo_data = {
         #     'materialno': material_no,
         #     'supplyno': supply_no,
