@@ -23,11 +23,11 @@ class AcceptMaterial(BaseModel):
     price: Decimal = Field(uv.default_price, alias=uv.t_material.get("Price", "price"), description="价格", example=100.50)
     groupno: str = Field(..., alias=uv.t_material.get("GroupNo", "groupno"), description="型号", example="G001")
     type: str = Field(... if uv.myaps_is_pro else None, alias=uv.t_material.get("type", "type"), enum=["E", "F"], example="E", description="物料类型  E-自制件 F-采购件")
-    phantom: str = Field(uv.default_phantom, alias=uv.t_material.get("Phantom", "phantom"), enum=["N", "Y"], example="N", description='虚拟件')
+    phantom: str = Field(uv.default_phantom, alias=uv.t_material.get("Phantom", "phantom"), enum=list(gc.YES_NO.keys()), example="N", description='虚拟件')
     phantommin: int = Field(uv.default_phantommin, alias=uv.t_material.get("PhantomMin", "phantommin"), ge=0, description='虚拟时间(Minute)', example=0)
     firmday: int = Field(uv.default_firmday, alias=uv.t_material.get("FirmDay", "firmday"), ge=0, description="固定天数", example=0)
     daygap: int = Field(uv.default_daygap, alias=uv.t_material.get("DayGap", "daygap"), ge=0, description='MTO拆分天数', example=1)
-    candelay: str = Field(uv.default_candelay, alias=uv.t_material.get("CanDelay", "candelay"), enum=["N", "Y"], example="N", description='可否延迟')
+    candelay: str = Field(uv.default_candelay, alias=uv.t_material.get("CanDelay", "candelay"), enum=list(gc.YES_NO.keys()), example="N", description='可否延迟')
     lotsize: str = Field(
         uv.default_lotsize, alias=uv.t_material.get("LotSize", "lotsize"),
         enum=list(gc.LOT_SIZE.keys()),
@@ -83,8 +83,8 @@ class AcceptWorkcenter(BaseModel):
     workcenter: str = Field(..., alias=uv.t_workcenter.get("WorkCenter", "workcenter"), max_length=32, description="工作中心代码", example="WC001")
     workcentername: str = Field(..., alias=uv.t_workcenter.get("WorkCenterName", "workcentername"), max_length=255, description="工作中心名称", example="装配车间")
     pri_wc: int = Field(1, alias=uv.t_workcenter.get("Pri_Wc", "pri_wc"), description='优先级', example=1)
-    bottleneck: str = Field("N", alias=uv.t_workcenter.get("Bottleneck", "bottleneck"), enum=["N", "Y"], example="N", description='瓶颈')
-    sortno: str = Field(None, alias=uv.t_workcenter.get("SortNo", "sortno"), max_length=4, description="序号", example="0001")
+    bottleneck: str = Field(..., alias=uv.t_workcenter.get("Bottleneck", "bottleneck"), enum=list(gc.YES_NO.keys()), example="N", description='瓶颈')
+    sortno: str = Field(..., alias=uv.t_workcenter.get("SortNo", "sortno"), max_length=4, description="序号", example="0001")
     plant: str = Field(uv.default_plant, alias=uv.t_workcenter.get("Plant", "plant"), max_length=32, description="工厂", example="1600")
     location: str = Field(None, alias=uv.t_workcenter.get("Location", "location"), max_length=32, description="车间", example="A区")
     finite: str = Field(None, alias=uv.t_workcenter.get("Finite", "finite"), enum=list(gc.YES_NO.keys()), example="N", description='有限')
@@ -103,6 +103,8 @@ class AcceptWorkcenter(BaseModel):
                 "workcenter": "WC001",
                 "workcentername": "装配车间",
                 "pri_wc": 1,
+                "bottleneck": "N",
+                "sortno": "0001",
                 "bottleneck": "N",
                 "plant": "1600",
                 "capnum": 5,
@@ -126,7 +128,7 @@ class AcceptMatWc(BaseModel):
     itemno: str = Field(..., alias=uv.t_mat_wc.get("ItemNo", "itemno"), max_length=6, description='工序项目', example="0010")
     workcenter: str = Field(..., alias=uv.t_mat_wc.get("WorkCenter", "workcenter"), max_length=32, description='工作中心', example="WC001")
     sortno: int = Field(..., alias=uv.t_mat_wc.get("SortNo", "sortno"), ge=0, description='序号', example=1)
-    basesec: int = Field(..., alias=uv.t_mat_wc.get("BaseSec", "basesec"), ge=0, description='节拍T/T(秒/100)', example=600)
+    basesec: float = Field(..., alias=uv.t_mat_wc.get("BaseSec", "basesec"), ge=0, description='节拍T/T(秒/100)', example=600)
     fixqty: int = Field(0, alias=uv.t_mat_wc.get("FixQty", "fixqty"), ge=0, description='额定量', example=100)
     fixsec: int = Field(0, alias=uv.t_mat_wc.get("FixSec", "fixsec"), ge=0, description='额定时间(秒)', example=300)
     sf: str = Field(..., alias=uv.t_mat_wc.get("SF", "sf"), enum=["S", "F"], example="F", description='并行S/串行F')
@@ -150,6 +152,12 @@ class AcceptMatWc(BaseModel):
                 "memo": "标准工序"
             }
         }
+    
+    @model_validator(mode="before")
+    def model_valid(self):
+        self["basesec"] = int(self["basesec"])  # 数据库该字段为整形
+        return self
+
 
 
 
@@ -191,6 +199,7 @@ class AcceptMatWcBom(BaseModel):
     scrap: float = Field(0, alias=uv.t_mat_wc_bom.get("Scrap", "scrap"), description='报废率%', example=0.0)
     alt: str = Field("N", alias=uv.t_mat_wc_bom.get("Alt", "alt"), enum=list(gc.YES_NO.keys()), example="N", description='Y/N是否是替代')
     memo: str = Field(None, alias=uv.t_mat_wc_bom.get("Memo", "memo"), max_length=255, description='备注', example="标准BOM组件")
+    denominator: int = Field(1, description='用量分母', example=1)
 
     class Config:
         title = "验证规则 - BOM"
@@ -209,6 +218,17 @@ class AcceptMatWcBom(BaseModel):
                     "memo": "标准BOM组件"
                 }
             }
+
+    @model_validator(mode='before')
+    def check_denominator(self):
+        try:
+            self["denominator"] = float(self["denominator"])
+        except ValueError:
+            self["denominator"] = 1
+        self["denominator"] = self["denominator"] or 1    # 排除分母为0的情况
+        self["qty"] = self["qty"] / self["denominator"]
+        self["denominator"] = None # 设置为None，避免在数据库中存储
+        return self
 
 
 
@@ -240,7 +260,7 @@ class AcceptMatWcMold(BaseModel):
     materialno: str = Field(..., alias=uv.t_mat_wc_mold.get("MaterialNo", "materialno"), max_length=64, description='料号', example="M001")
     workcenter: str = Field(..., alias=uv.t_mat_wc_mold.get("WorkCenter", "workcenter"), max_length=64, description='工作中心', example="WC001")
     moldno: str = Field(..., alias=uv.t_mat_wc_mold.get("MoldNo", "moldno"), max_length=64, description='模具编号', example="MOLD001")
-    basesec: int = Field(..., alias=uv.t_mat_wc_mold.get("BaseSec", "basesec"), ge=0, description='节拍T/T(秒/100)', example=600)
+    basesec: float = Field(..., alias=uv.t_mat_wc_mold.get("BaseSec", "basesec"), ge=0, description='节拍T/T(秒/100)', example=600)
     fixsec: int = Field(..., alias=uv.t_mat_wc_mold.get("FixSec", "fixsec"), ge=0, description='额定时间(秒)', example=300)
     priority: int = Field(..., alias=uv.t_mat_wc_mold.get("Priority", "priority"), description='优先级', example=1)
     memo: str = Field(None, alias=uv.t_mat_wc_mold.get("Memo", "memo"), max_length=255, description='备注', example="标准机台模具配置")
@@ -258,6 +278,11 @@ class AcceptMatWcMold(BaseModel):
                 "memo": "标准机台模具配置"
             }
         }
+
+    @model_validator(mode="before")
+    def model_valid(self):
+        self["basesec"] = int(self["basesec"])  # 数据库该字段为整形
+        return self
 
 
 

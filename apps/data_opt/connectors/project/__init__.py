@@ -64,7 +64,7 @@ class MyapsDbActionsAbc(ABC):
             - 对于异步返回创建结果的，则无需调用 def pl_to_mo() 或执行 "super().confirm_pl()"，因为路由函数已封装 pl_to_mo() ，供ERP异步调用
         - 对于无需根据APS的PL在ERP中创建MO（或无需与ERP对接）的实施场景，则直接调用 def pl_to_mo()将Type设为'MO'、Status设为'CRE'，子类无需覆写此方法
         """
-        await cls.pl_to_mo(plno=pl_data['SupplyNo'], mono=pl_data['MoNo'], to_status='CRE', memo=pl_data['Memo'], is_execute_updates=pl_data['is_execute_updates'])
+        await cls.pl_to_mo(plno=pl_data['SupplyNo'], mono=pl_data['MoNo'], to_status=pl_data['Status'], memo=pl_data['Memo'], is_execute_updates=pl_data['is_execute_updates'])
 
     @classmethod
     async def pl_to_mo(cls, plno: str, mono: str=None, to_status: Literal['CRE', 'REL']='E2A', memo: str=None, is_execute_updates: bool=True):
@@ -73,7 +73,9 @@ class MyapsDbActionsAbc(ABC):
         🅰️supplyno: PL计划单编号
         🅰️mono: MO号，可选，若非None则更改PL的SupplyNo为mono
         🅰️to_status: 转化成MO后，Status设为哪个状态，默认'CRE'
-
+        🅰️memo: 写入t_supplymemo注字段的内容
+        🅰️is_execute_updates: 是否执行更新，默认True
+        
         该方法有以下几种使用渠道：
         - 在 def confirm_pl() 被直接调用，适用于:
             - ERP同步返回MO信息的实施场景

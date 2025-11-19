@@ -228,7 +228,7 @@ async def patch_pl(
     db_name: str = common_params["db_name"]
     ):
     # 调用存储过程SupplyConvertMOByE2A，将PL转为MO
-    params_list = [[item.plno, item.mono, item.memo, item.is_execute_updates] for item in data]
+    params_list = [[item.plno, item.mono, item.status, item.memo, item.is_execute_updates] for item in data]
     return await common_call_dbprocdure(db_name=db_name, procedure_name="SupplyConvertMOByE2A", params_list=params_list)
 
 
