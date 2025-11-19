@@ -155,7 +155,7 @@ async def common_call_dbprocdure(db_name: str, procedure_name: str, params_list:
         async with in_transaction(db_name) as db:
             for params in params_list:
                 count, data  = await db.execute_query(f'CALL {procedure_name}({", ".join(["%s"] * len(params))})', params)
-                affect_count += count
+                affect_count += data[0].get('t_supply_updated', 0)
             return standard_response(
                 message=f"调用存储过程`{procedure_name}`成功，影响{affect_count}条记录",
                 meta={"affect": affect_count}

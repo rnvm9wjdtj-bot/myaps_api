@@ -189,14 +189,21 @@ class MyapsDbActions(MyapsDbActionsAbc):
             sap_response = await sap_post(url=sap_url2, session=sap_session2, interface_id="ZPP_PLAN_ORD_CREATE", data=data)
             sap_response_json = sap_response['response_json']
             sap_mo_data = sap_response_json['BODY'][0]
-            
+
             if sap_mo_data['STATUS'] == 'S':
                 logger.info(f"推送计划任务执行成功，账套：{main_db}，MO单号：{sap_mo_data['AUFNR']}")
                 pl_data['MoNo'] = sap_mo_data['AUFNR']
+                pl_data['Memo'] = f'ERP @ {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}【{sap_mo_data['MESSAGE']}】'
+                pl_data['is_execute_updates'] = True
             else:
                 logger.error(f"推送计划任务执行失败，账套：{main_db}，错误信息：{sap_mo_data['MESSAGE']}")
-                pl_data['Memo']= sap_mo_data['MESSAGE']
+                pl_data['MoNo'] = ''#pl_data['SupplyNo']
+                pl_data['Memo'] = f'ERP @ {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}【{sap_mo_data['MESSAGE']}】'
+                pl_data['is_execute_updates'] = False
         except Exception as e:
             logger.error(f"推送计划任务执行失败: {str(e)}")
-            return
+            pl_data['MoNo'] = ''#pl_data['SupplyNo']
+            pl_data['Memo'] = f'APS @ {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}【{str(e)}】'
+            pl_data['is_execute_updates'] = False
+
         await super().confirm_pl(pl_data)

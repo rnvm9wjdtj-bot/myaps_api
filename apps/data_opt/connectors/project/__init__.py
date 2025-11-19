@@ -64,10 +64,10 @@ class MyapsDbActionsAbc(ABC):
             - 对于异步返回创建结果的，则无需调用 def pl_to_mo() 或执行 "super().confirm_pl()"，因为路由函数已封装 pl_to_mo() ，供ERP异步调用
         - 对于无需根据APS的PL在ERP中创建MO（或无需与ERP对接）的实施场景，则直接调用 def pl_to_mo()将Type设为'MO'、Status设为'CRE'，子类无需覆写此方法
         """
-        await cls.pl_to_mo(plno=pl_data['SupplyNo'], mono=pl_data['MoNo'], to_status='CRE', memo=pl_data['Memo'])
+        await cls.pl_to_mo(plno=pl_data['SupplyNo'], mono=pl_data['MoNo'], to_status='CRE', memo=pl_data['Memo'], is_execute_updates=pl_data['is_execute_updates'])
 
     @classmethod
-    async def pl_to_mo(cls, plno: str, mono: str=None, to_status: Literal['CRE', 'REL']='E2A', memo: str=None):
+    async def pl_to_mo(cls, plno: str, mono: str=None, to_status: Literal['CRE', 'REL']='E2A', memo: str=None, is_execute_updates: bool=True):
         """
         将PL转为MO
         🅰️supplyno: PL计划单编号
@@ -86,5 +86,6 @@ class MyapsDbActionsAbc(ABC):
             'status': to_status,
             'mono': mono,
             'memo': memo,
+            'is_execute_updates': is_execute_updates,
             }])
         return response
