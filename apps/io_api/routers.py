@@ -227,11 +227,8 @@ async def patch_pl(
     data: List[PatchPl] = Body(..., description="更新PL记录的列表"),
     db_name: str = common_params["db_name"]
     ):
-    # for item in data:
-    #     item._overwrite = {"match_on": {"supplyno": item.plno, "type": "PL"}, "new_value": {"supplyno": item.mono}}
-    # return await common_write(db_name=db_name, mdl=TSupply, data=data)
     # 调用存储过程SupplyConvertMOByE2A，将PL转为MO
-    params_list = [[item.plno, item.mono] for item in data]
+    params_list = [[item.plno, item.mono, item.memo] for item in data]
     return await common_call_dbprocdure(db_name=db_name, procedure_name="SupplyConvertMOByE2A", params_list=params_list)
 
 

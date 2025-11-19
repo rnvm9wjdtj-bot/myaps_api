@@ -64,17 +64,15 @@ class MyapsDbActionsAbc(ABC):
             - 对于异步返回创建结果的，则无需调用 def pl_to_mo() 或执行 "super().confirm_pl()"，因为路由函数已封装 pl_to_mo() ，供ERP异步调用
         - 对于无需根据APS的PL在ERP中创建MO（或无需与ERP对接）的实施场景，则直接调用 def pl_to_mo()将Type设为'MO'、Status设为'CRE'，子类无需覆写此方法
         """
-        await cls.pl_to_mo(material_no=pl_data['MaterialNo'], supply_no=pl_data['SupplyNo'], mo_no=pl_data['MoNo'], to_status='CRE')
+        await cls.pl_to_mo(plno=pl_data['SupplyNo'], mono=pl_data['MoNo'], to_status='CRE', memo=pl_data['Memo'])
 
     @classmethod
-    async def pl_to_mo(cls, material_no: str, supply_no: str, mo_no: str=None, to_status: Literal['CRE', 'REL']='E2A'):
+    async def pl_to_mo(cls, plno: str, mono: str=None, to_status: Literal['CRE', 'REL']='E2A', memo: str=None):
         """
         将PL转为MO
-
-        material_no: 物料编号
-        supply_no: PL计划单编号
-        mo_no: MO计划单编号，可选，若非None则更改PL的SupplyNo为mo_no
-        to_status: 转化成MO后，MO的设为哪个状态，默认'CRE'
+        🅰️supplyno: PL计划单编号
+        🅰️mono: MO号，可选，若非None则更改PL的SupplyNo为mono
+        🅰️to_status: 转化成MO后，Status设为哪个状态，默认'CRE'
 
         该方法有以下几种使用渠道：
         - 在 def confirm_pl() 被直接调用，适用于:
@@ -82,38 +80,11 @@ class MyapsDbActionsAbc(ABC):
             - 无需根据APS的PL在ERP中创建MO（或无需与ERP对接）的实施场景
         - 在路由函数中调用，适用于ERP异步返回MO信息的实施场景
         """
-        response = this_session.patch(f'{this_base_url}/api/t_supply/pl', json=[{
+        response = this_session.patch(f'{this_base_url}/api/t_supply/pl?db_name={cls.main_db}', json=[{
             'type': 'MO',   # 将类型改为MO（原本为PL）
-            'plno': supply_no,
+            'plno': plno,
             'status': to_status,
-            'supplyno': supply_no,
-            'mono': mo_no,
+            'mono': mono,
+            'memo': memo,
             }])
         return response
-        # mo_data = {
-        #     'materialno': material_no,
-        #     'supplyno': supply_no,
-        #     'type': 'MO',   # 将类型改为MO（原本为PL）
-        #     'status': to_status,
-        #     }
-        # if mo_no:
-        #     mo_data['_overwrite'] = {
-        #             'match_on': {'materialno': material_no, 'supplyno': supply_no},
-        #             'new_value': {'supplyno': mo_no}
-        #             }
-        # await common_write(cls.main_db, TSupply, [mo_data])
-
-        # # 修改工序的SupplyNo为mo_no
-        # orderwc_response = common_read_by_orm(cls.main_db, TOrderwc, {
-        #     'supplyno': supply_no,
-        #     })
-        # orderwcs_data = orderwc_response.json()['data']
-        # if orderwcs_data:
-        #     for orderwc in orderwcs_data:
-        #         orderwc['supplyno'] = mo_no
-        #         orderwc['_overwrite'] = {
-        #             'match_on': {'orderno': orderwc['orderno']},
-        #             'new_value': {'orderno': f"{mo_no}{orderwc['itemno']}"}
-        #             }
-        #     await common_write(cls.main_db, TOrderwc, orderwcs_data)
-        

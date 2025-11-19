@@ -190,11 +190,12 @@ class MyapsDbActions(MyapsDbActionsAbc):
             sap_response_json = sap_response['response_json']
             sap_mo_data = sap_response_json['BODY'][0]
             
-            if sap_mo_data['STATUS'] != 'S':
+            if sap_mo_data['STATUS'] == 'S':
+                logger.info(f"推送计划任务执行成功，账套：{main_db}，MO单号：{sap_mo_data['AUFNR']}")
+                pl_data['MoNo'] = sap_mo_data['AUFNR']
+            else:
                 logger.error(f"推送计划任务执行失败，账套：{main_db}，错误信息：{sap_mo_data['MESSAGE']}")
-                return
-            pl_data['MoNo'] = sap_mo_data['AUFNR']
-            logger.info(f"推送计划任务执行成功，账套：{main_db}，MO单号：{sap_mo_data['AUFNR']}")
+                pl_data['Memo']= sap_mo_data['MESSAGE']
         except Exception as e:
             logger.error(f"推送计划任务执行失败: {str(e)}")
             return

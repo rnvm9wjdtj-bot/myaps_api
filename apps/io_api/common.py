@@ -195,7 +195,7 @@ async def common_delete_by_sql(db_name: str, table_name: str, filter_string: str
         where = f" WHERE {filter_string}" if filter_string else ''
         sql = f'DELETE FROM `{table_name}` {where}'
         total, data = await db.execute_query(sql)
-        db.close()
+        await db.close()
         return standard_response(
             data=data,
             meta={"total": total}

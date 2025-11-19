@@ -15,9 +15,9 @@ rt = APIRouter()
 
 
 supply_action = {
-    "refresh_stock": "st.refresh()",
-    "close_mo": "mo.close()",
-    "pl_to_mo": "pl.to_mo()",
+    "refresh_stock": "st.refresh",
+    "close_mo": "mo.close",
+    "pl_to_mo": "pl.to_mo",
 }
 
 
@@ -43,5 +43,5 @@ async def opt_supply(
     #         supplyno=body.supplyno,
     #     ).delete(using_db=db_name or None)
     # elif body.action == SupplyAction.PL_TO_MO and body.type == "PL":
-    #     await MyapsDbActionsAbc.pl_to_mo(body.materialno, body.supplyno)
+    #     return await active_connector.MyapsDbActions.pl_to_mo(body.supplyno, body.mono, db_name or None)
 
