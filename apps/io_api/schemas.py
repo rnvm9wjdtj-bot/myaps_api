@@ -85,8 +85,8 @@ class AcceptWorkcenter(BaseModel):
     workcenter: str = Field(..., alias=uv.t_workcenter.get("WorkCenter", "workcenter"), max_length=32, description="工作中心代码", example="WC001")
     workcentername: str = Field(..., alias=uv.t_workcenter.get("WorkCenterName", "workcentername"), max_length=255, description="工作中心名称", example="装配车间")
     pri_wc: int = Field(1, alias=uv.t_workcenter.get("Pri_Wc", "pri_wc"), description='优先级', example=1)
-    bottleneck: str = Field(..., alias=uv.t_workcenter.get("Bottleneck", "bottleneck"), enum=list(gc.YES_NO.keys()), example="N", description='瓶颈')
-    sortno: str = Field(..., alias=uv.t_workcenter.get("SortNo", "sortno"), max_length=4, description="序号", example="0001")
+    bottleneck: str = Field(None, alias=uv.t_workcenter.get("Bottleneck", "bottleneck"), enum=list(gc.YES_NO.keys()), example="N", description='瓶颈')
+    sortno: str = Field(None, alias=uv.t_workcenter.get("SortNo", "sortno"), max_length=4, description="序号", example="0001")
     plant: str = Field(uv.default_plant, alias=uv.t_workcenter.get("Plant", "plant"), max_length=32, description="工厂", example="1600")
     location: str = Field(None, alias=uv.t_workcenter.get("Location", "location"), max_length=32, description="车间", example="A区")
     finite: str = Field(None, alias=uv.t_workcenter.get("Finite", "finite"), enum=list(gc.YES_NO.keys()), example="N", description='有限')
@@ -116,12 +116,13 @@ class AcceptWorkcenter(BaseModel):
             }
         }
 
-    # @model_validator(mode="before")
-    # def model_valid(self):
-    #     if not self.get("sortno"):
-    #         workcenter = self.get("workcenter")
-    #         self["sortno"] = uv.workcenter_sort.get(workcenter, '')
-    #     return self
+    @model_validator(mode="before")
+    def model_valid(self):
+        if not self.get("bottleneck"):
+            self["bottleneck"] = "N"
+        if not self.get("sortno"):
+            self["sortno"] = ""
+        return self
 
 
 class AcceptMatWc(BaseModel):
