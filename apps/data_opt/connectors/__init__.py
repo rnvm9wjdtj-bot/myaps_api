@@ -45,6 +45,11 @@ async def handle_update_supply(database: str, table: str, data: dict, data_diff:
         supply_old_status = data['old']['Status']
         supply_new_status = data['new']['Status']
         if supply_old_status in ["NEW", "CRE"] and supply_new_status == 'A2E':
-            await active_connector.MyapsDbActions.confirm_pl(data['new'])
+            pl_data = dict_to_lower_keys(data['new'])
+            await active_connector.MyapsDbActions.confirm_pl(pl_data)
     print(f"更新到 {database}.{table}: {data}")
     print(f"数据变更: {data_diff}")
+
+
+def dict_to_lower_keys(d: dict) -> dict:
+    return {k.lower(): v for k, v in d.items()}

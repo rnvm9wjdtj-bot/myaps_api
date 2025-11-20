@@ -71,7 +71,7 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
     try:
         async with in_transaction(db_name) as db:
             for _d in data:
-                _d_dict = _d.model_dump(exclude_unset=True) if isinstance(_d, PydanticSchema) else _d
+                _d_dict = _d.model_dump(exclude_unset=True, exclude_none=True) if isinstance(_d, PydanticSchema) else _d
                 if hasattr(_d, "_overwrite"):   # 当联合主键之一需要被覆写，_overwrite = {"match_on": {...}, "new_value": {...}}
                     match_on = _d._overwrite["match_on"]
                     new_value = _d._overwrite["new_value"]
@@ -92,9 +92,9 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
                     if len(model_key) > 1:     # 如果是联合主键，则要排除虚拟主键的干扰
                         if await mdl.filter(**match_on).only(*only_fields).using_db(db).exists():
                             # 先删除None值
-                            keys_to_remove = [k for k, v in _d_dict.items() if v is None]
-                            for key in keys_to_remove:
-                                del _d_dict[key]
+                            for k, v in _d_dict.items():
+                                if v is None:
+                                    _d_dict.pop(k)
                             await mdl.filter(**match_on).only(*only_fields).first().using_db(db).update(**_d_dict)# 必须重新写一遍查询逻辑，因为前面返回的是一个对象，不能直接update
                             update_count += 1
                         else:
@@ -102,8 +102,10 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
                             cerate_count += 1
                     else:   # 单一主键
                         exist = await mdl.get_or_none(**match_on, using_db=db)
+                        # exist = await mdl.filter(**match_on).using_db(db).first()
                         if exist:
-                            await exist.update_from_dict(_d_dict).save(using_db=db, force_update=True, force_create=False)
+                            _d_dict.pop(model_key[0])
+                            await exist.update_from_dict(_d_dict).save(using_db=db)
                             update_count += 1
                         else:
                             await mdl.create(**_d_dict, using_db=db)
@@ -172,11 +174,10 @@ async def common_read_by_sql(db_name: str, table_name: str, filter_string: str =
         order = f" ORDER BY {order_string}" if order_string else ''
         sql = f'SELECT * FROM `{table_name}` {where} {order}'
         total, data = await db.execute_query(sql)
-
-        data = [{k.lower(): v for k, v in row.items()} for row in data]
+        lower_keys_data = [{k.lower(): v for k, v in row.items()} for row in data]
         await db.close()
         return standard_response(
-            data=data,
+            data=lower_keys_data,
             meta={"total": total}
         )
     except Exception as e:

@@ -166,24 +166,24 @@ class MyapsDbActions(MyapsDbActionsAbc):
         确认计划任务，将主账套中需要转MO的PL推送到SAP，将计划任务状态更新为已确认
         """
         try:
-            supply_response = this_session.get(f"{this_base_url}/api/v_supply_mo?db_name={main_db}&supplyno={pl_data['SupplyNo']}")
+            supply_response = this_session.get(f"{this_base_url}/api/v_supply_mo?db_name={main_db}&supplyno={pl_data['supplyno']}")
             supply_response_json = supply_response.json()
             supply_data = supply_response_json['data'][0]
-            start_datetime = supply_data[uv.v_supply_mo.get('DT_OrdStart', 'dt_ordstart')]#.strftime('%Y%m%d %H:%M:%S')
-            end_datetime = supply_data[uv.v_supply_mo.get('DT_OrdEnd', 'dt_ordend')]#.strftime('%Y%m%d %H:%M:%S')
+            start_datetime = supply_data['dt_ordstart']#.strftime('%Y%m%d %H:%M:%S')
+            end_datetime = supply_data['dt_ordend']#.strftime('%Y%m%d %H:%M:%S')
             orderwc = supply_data['orderwc']
             data = {
                 # "CY_SEQNR": supply_data['supplyno'],  # APS单号
                 "WERKS": werks,  # 工厂
-                "MATNR": supply_data[uv.v_supply_mo['MaterialNo']],
+                "MATNR": supply_data['materialno'],
                 "AUART": "ZP01",  # 订单类型
                 "VERID": "SAP",    # 生产版本
                 "GSTRP": start_datetime.split('T')[0],  # 基本开始日期
                 "GLTRP": end_datetime.split('T')[0],  # 基本完成日期
-                "GAMNG": supply_data[uv.v_supply_mo['Avail_Qty']],  # 总订单数量
+                "GAMNG": supply_data['avail_qty'],  # 总订单数量
                 # "FEVOR": "SAP",  # 生产主管
                 "WEMPF": "SAP",  # 产线代码
-                "BACKUP1": ','.join([i[uv.v_orderwc['WorkCenter']] for i in orderwc])
+                "BACKUP1": ','.join([i['workcenter'] for i in orderwc])
             }
 
             sap_response = await sap_post(url=sap_url2, session=sap_session2, interface_id="ZPP_PLAN_ORD_CREATE", data=data)
@@ -192,21 +192,21 @@ class MyapsDbActions(MyapsDbActionsAbc):
 
             if sap_mo_data['STATUS'] == 'S':
                 logger.info(f"推送计划任务执行成功，账套：{main_db}，MO单号：{sap_mo_data['AUFNR']}")
-                pl_data['MoNo'] = sap_mo_data['AUFNR']
-                pl_data['Status'] = 'E2A'
-                pl_data['Memo'] = f'ERP @ {datetime.now().strftime("%Y%m%d%H%M%S")}【{sap_mo_data['MESSAGE']}】'
+                pl_data['mono'] = sap_mo_data['AUFNR']
+                pl_data['status'] = 'E2A'
+                pl_data['memo'] = f'ERP @ {datetime.now().strftime("%Y%m%d%H%M%S")}【{sap_mo_data['MESSAGE']}】'
                 pl_data['is_execute_updates'] = True
             else:
                 logger.error(f"推送计划任务执行失败，账套：{main_db}，错误信息：{sap_mo_data['MESSAGE']}")
-                pl_data['MoNo'] = ''#pl_data['SupplyNo']
-                pl_data['Status'] = 'CRE'
-                pl_data['Memo'] = f'ERP @ {datetime.now().strftime("%Y%m%d%H%M%S")}【{sap_mo_data['MESSAGE']}】'
+                pl_data['mono'] = ''
+                pl_data['status'] = 'CRE'
+                pl_data['memo'] = f'ERP @ {datetime.now().strftime("%Y%m%d%H%M%S")}【{sap_mo_data['MESSAGE']}】'
                 pl_data['is_execute_updates'] = False
         except Exception as e:
             logger.error(f"推送计划任务执行失败: {str(e)}")
-            pl_data['MoNo'] = ''#pl_data['SupplyNo']
-            pl_data['Status'] = 'CRE'
-            pl_data['Memo'] = f'APS @ {datetime.now().strftime("%Y%m%d%H%M%S")}【{str(e)}】'
+            pl_data['mono'] = ''
+            pl_data['status'] = 'CRE'
+            pl_data['memo'] = f'APS @ {datetime.now().strftime("%Y%m%d%H%M%S")}【{str(e)}】'
             pl_data['is_execute_updates'] = False
 
         await super().confirm_pl(pl_data)
