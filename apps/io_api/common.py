@@ -41,7 +41,7 @@ common_params = {
 ########################################################################
 
 # 路由公共方法
-async def common_read_by_orm(db_name: str, mdl: TortoiseBaseModel, page_size: int, page_index: int, field_mapper: Dict[str, str] = None):
+async def common_read_by_orm(db_name: str, mdl: TortoiseBaseModel, page_size: int, page_index: int):
     db = Tortoise.get_connection(db_name)
     # 分页查询
     offset = page_size * page_index
@@ -52,8 +52,6 @@ async def common_read_by_orm(db_name: str, mdl: TortoiseBaseModel, page_size: in
         data = await mdl.all().only(*only_fields).using_db(db).offset(offset).limit(page_size)
     else:
         data = await mdl.all().using_db(db).offset(offset).limit(page_size)
-    if field_mapper:
-        data = [{field_mapper.get(k, k): v for k, v in d.items()} for d in data]
     return standard_response(
         data=data,
         meta={
@@ -167,16 +165,15 @@ async def common_call_dbprocdure(db_name: str, procedure_name: str, params_list:
             message=f"操作失败：{str(e)}"
         )
 
-async def common_read_by_sql(db_name: str, table_name: str, filter_string: str = '', order_string: str = '', field_mapper: Dict[str, str] = {}):
+async def common_read_by_sql(db_name: str, table_name: str, filter_string: str = '', order_string: str = ''):
     try:
         db = Tortoise.get_connection(db_name)
         where = f" WHERE {filter_string}" if filter_string else ''
         order = f" ORDER BY {order_string}" if order_string else ''
         sql = f'SELECT * FROM `{table_name}` {where} {order}'
         total, data = await db.execute_query(sql)
-        # 映射字段名
-        if field_mapper:
-            data = [{field_mapper.get(k, k): v for k, v in row.items()} for row in data]
+
+        data = [{k.lower(): v for k, v in row.items()} for row in data]
         await db.close()
         return standard_response(
             data=data,

@@ -8,12 +8,12 @@ from abc import ABC, abstractmethod
 
 from tortoise import Tortoise
 
-from config.settings import MYAPS_MAIN_DB, MYAPS_BASE_URL, THIS_SERVER_HOST, THIS_SERVER_PORT
+from config.settings import MYAPS_MAIN_DB, MYAPS_BASE_URL, THIS_SERVER_HOST, THIS_SERVER_PORT, THIS_PROTOCOL, THIS_PROTOCOL
 # from apps.io_api.models import TSupply, TOrderwc
 # from apps.io_api.common import common_write, common_read_by_orm
 
 
-this_base_url = f'http://{THIS_SERVER_HOST}:{THIS_SERVER_PORT}'
+this_base_url = f'{THIS_PROTOCOL}{THIS_SERVER_HOST}:{THIS_SERVER_PORT}'
 myaps_base_url = MYAPS_BASE_URL
 
 this_session = requests.Session()
@@ -50,7 +50,7 @@ class ScheduleTasksAbc(ABC):
 
 class MyapsDbActionsAbc(ABC):
 
-    this_base_url = f'http://{THIS_SERVER_HOST}:{THIS_SERVER_PORT}'
+    this_base_url = f'{THIS_PROTOCOL}{THIS_SERVER_HOST}:{THIS_SERVER_PORT}'
     main_db = MYAPS_MAIN_DB
 
     @classmethod
@@ -64,7 +64,7 @@ class MyapsDbActionsAbc(ABC):
             - 对于异步返回创建结果的，则无需调用 def pl_to_mo() 或执行 "super().confirm_pl()"，因为路由函数已封装 pl_to_mo() ，供ERP异步调用
         - 对于无需根据APS的PL在ERP中创建MO（或无需与ERP对接）的实施场景，则直接调用 def pl_to_mo()将Type设为'MO'、Status设为'CRE'，子类无需覆写此方法
         """
-        await cls.pl_to_mo(plno=pl_data['SupplyNo'], mono=pl_data['MoNo'], to_status=pl_data['Status'], memo=pl_data['Memo'], is_execute_updates=pl_data['is_execute_updates'])
+        await cls.pl_to_mo(plno=pl_data['supplyno'], mono=pl_data['mono'], to_status=pl_data['status'], memo=pl_data['memo'], is_execute_updates=pl_data['is_execute_updates'])
 
     @classmethod
     async def pl_to_mo(cls, plno: str, mono: str=None, to_status: Literal['CRE', 'REL']='E2A', memo: str=None, is_execute_updates: bool=True):

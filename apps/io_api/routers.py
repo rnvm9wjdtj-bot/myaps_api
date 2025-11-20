@@ -316,10 +316,10 @@ async def get_supply_mo(
         starttime = starttime or date.today()
         endtime = endtime or starttime + timedelta(days=7)
         filter_string = f"DT_OrdStart >= '{starttime}' AND DT_OrdEnd <= '{endtime}'"
-    result = await common_read_by_sql(db_name=db_name, table_name="v_supply_mo", filter_string=filter_string, field_mapper=uv.v_supply_mo)
+    result = await common_read_by_sql(db_name=db_name, table_name="v_supply_mo", filter_string=filter_string)
     if result['success'] and result['meta']['total'] == 1:  # 筛选到唯一的工单，则补充工序信息（v_orderwc）
         filter_string = f"SupplyNo = '{supplyno}'"
-        orderwc = await common_read_by_sql(db_name=db_name, table_name="v_orderwc", filter_string=f"SupplyNo = '{supplyno}'", order_string="SortNo ASC", field_mapper=uv.v_orderwc)
+        orderwc = await common_read_by_sql(db_name=db_name, table_name="v_orderwc", filter_string=f"SupplyNo = '{supplyno}'", order_string="SortNo ASC")
         result['data'][0]['orderwc'] = orderwc['data']
     return result
 
@@ -341,7 +341,7 @@ async def get_orderwc(
         starttime = starttime or date.today()
         endtime = endtime or starttime + timedelta(days=7)
         filter_string = f"DT_Start >= '{starttime}' AND DT_End <= '{endtime}'"
-    return await common_read_by_sql(db_name=db_name, table_name="v_orderwc", filter_string=filter_string, field_mapper=uv.v_orderwc)
+    return await common_read_by_sql(db_name=db_name, table_name="v_orderwc", filter_string=filter_string)
 
 @rt.get(
     "/v_matdailyqtyreport",
@@ -360,4 +360,4 @@ async def get_matdailyqtyreport(
     filter_string = f"DateStr >= '{startdate}' AND DateStr <= '{enddate}'"
     if materialno:
         filter_string = f"({filter_string}) AND MaterialNo = '{materialno}'"    
-    return await common_read_by_sql(db_name=db_name, table_name="v_matdailyqtyreport", filter_string=filter_string, field_mapper=uv.v_matdailyqtyreport)
+    return await common_read_by_sql(db_name=db_name, table_name="v_matdailyqtyreport", filter_string=filter_string)
