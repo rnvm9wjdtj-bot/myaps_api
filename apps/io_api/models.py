@@ -2,6 +2,7 @@ from tortoise import fields
 
 from . import protomodels as pm
 from config import uservar as uv
+from .common import common_write
 
 
 
@@ -13,21 +14,17 @@ class TMaterial(pm.ProtoMaterial):
         abstract = False
         table = "t_material"
 
-    # async def save(self, using_db=None, update_fields=None, force_create=False, force_update=False):
-    #     if uv.auto_matver and self.type == "E":
-    #         # 注意：这里应该使用await，因为get_or_create是异步方法
-    #         await TMatVer.get_or_create(
-    #             materialno=self.materialno,
-    #             matver=uv.example_matver,
-    #             defaults={
-    #                 "materialno": self.materialno,
-    #                 "matver": uv.example_matver,
-    #                 "lotfrom": uv.default_lot_from,
-    #                 "lotto": uv.default_lotto,
-    #             },
-    #             using_db=using_db
-    #         )
-    #     return await super().save(using_db=using_db, update_fields=update_fields, force_create=force_create, force_update=force_update)
+    async def save(self, using_db=None, update_fields=None, force_create=False, force_update=False):
+        if uv.auto_matver and self.type == "E":
+            await common_write(db_name=using_db.connection_name, mdl=TMatVer, data=[{
+                "materialno": self.materialno,
+                "matver": uv.example_matver,
+                "lotfrom": uv.default_lot_from,
+                "lotto": uv.default_lotto,
+                "priority": uv.default_priority,
+                "active": "Y"
+            }])
+        return await super().save(using_db=using_db, update_fields=update_fields, force_create=force_create, force_update=force_update)
 
 
 

@@ -73,7 +73,7 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
     try:
         async with in_transaction(db_name) as db:
             for _d in data:
-                _d_dict = _d.model_dump() if isinstance(_d, PydanticSchema) else _d
+                _d_dict = _d.model_dump(exclude_unset=True) if isinstance(_d, PydanticSchema) else _d
                 if hasattr(_d, "_overwrite"):   # 当联合主键之一需要被覆写，_overwrite = {"match_on": {...}, "new_value": {...}}
                     match_on = _d._overwrite["match_on"]
                     new_value = _d._overwrite["new_value"]

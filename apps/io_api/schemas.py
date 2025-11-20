@@ -1,6 +1,6 @@
 from datetime import datetime
 import enum
-from typing import Literal, Optional#, List, Dict, Any
+from typing import Literal, Optional, Any#, List, Dict
 from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator, model_validator#, ValidationError
@@ -75,6 +75,8 @@ class AcceptMaterial(BaseModel):
             self["grday"] = uv.default_grday_e if self.get("type") == "E" else uv.default_grday_f
         if not self.get("abc"):
             self["abc"] = "A" if self.get("type") == "E" else "B"
+        if self.get("phantommin") is None:
+            self["phantommin"] = 0
         return self
         
 
@@ -199,7 +201,7 @@ class AcceptMatWcBom(BaseModel):
     scrap: float = Field(0, alias=uv.t_mat_wc_bom.get("Scrap", "scrap"), description='报废率%', example=0.0)
     alt: str = Field("N", alias=uv.t_mat_wc_bom.get("Alt", "alt"), enum=list(gc.YES_NO.keys()), example="N", description='Y/N是否是替代')
     memo: str = Field(None, alias=uv.t_mat_wc_bom.get("Memo", "memo"), max_length=255, description='备注', example="标准BOM组件")
-    denominator: int = Field(1, description='用量分母', example=1)
+    denominator: Optional[float | str] = Field(1, description='用量分母', example=1)
 
     class Config:
         title = "验证规则 - BOM"
@@ -219,15 +221,14 @@ class AcceptMatWcBom(BaseModel):
                 }
             }
 
-    @model_validator(mode='before')
-    def check_denominator(self):
+    @model_validator(mode="before")
+    def model_valid(self):
         try:
-            self["denominator"] = float(self["denominator"])
-        except ValueError:
+            self["denominator"] = float(self.get("denominator", 1)) or 1
+        except:
             self["denominator"] = 1
-        self["denominator"] = self["denominator"] or 1    # 排除分母为0的情况
-        self["qty"] = self["qty"] / self["denominator"]
-        self["denominator"] = None # 设置为None，避免在数据库中存储
+        self["qty"] /= self["denominator"]
+        self.pop("denominator") # 删除 denominator ，避免在数据库中存储
         return self
 
 
@@ -259,7 +260,7 @@ class AcceptMold(BaseModel):
 class AcceptMatWcMold(BaseModel):
     materialno: str = Field(..., alias=uv.t_mat_wc_mold.get("MaterialNo", "materialno"), max_length=64, description='料号', example="M001")
     workcenter: str = Field(..., alias=uv.t_mat_wc_mold.get("WorkCenter", "workcenter"), max_length=64, description='工作中心', example="WC001")
-    moldno: str = Field(..., alias=uv.t_mat_wc_mold.get("MoldNo", "moldno"), max_length=64, description='模具编号', example="MOLD001")
+    moldno: str = Field('', alias=uv.t_mat_wc_mold.get("MoldNo", "moldno"), max_length=64, description='模具编号', example="MOLD001")
     basesec: float = Field(..., alias=uv.t_mat_wc_mold.get("BaseSec", "basesec"), ge=0, description='节拍T/T(秒/100)', example=600)
     fixsec: int = Field(..., alias=uv.t_mat_wc_mold.get("FixSec", "fixsec"), ge=0, description='额定时间(秒)', example=300)
     priority: int = Field(..., alias=uv.t_mat_wc_mold.get("Priority", "priority"), description='优先级', example=1)
@@ -282,6 +283,8 @@ class AcceptMatWcMold(BaseModel):
     @model_validator(mode="before")
     def model_valid(self):
         self["basesec"] = int(self["basesec"])  # 数据库该字段为整形
+        if self.get("moldno") is None:
+            self["moldno"] = ''
         return self
 
 
@@ -388,6 +391,9 @@ class AcceptDemand(BaseModel):
     partnername: Optional[str] = Field(None, alias=uv.t_demand.get("PartnerName", "partnername"), max_length=255, description='合作商名称', example="客户A")
     ori_qty: Optional[float] = Field(None, alias=uv.t_demand.get("Ori_Qty", "ori_qty"), ge=0, description='原始需求数量', example=100.0)
     memo: Optional[str] = Field(None, alias=uv.t_demand.get("Memo", "memo"), max_length=255, description='备注', example="标准销售订单")
+    free1: Optional[str] = Field(None, max_length=255, description='自定义字段1', example="自定义字段1")
+    free2: Optional[str] = Field(None, max_length=255, description='自定义字段2', example="自定义字段2")
+    free3: Optional[str] = Field(None, max_length=255, description='自定义字段3', example="自定义字段3")
 
     class Config:
         title = "验证规则 - 需求"

@@ -102,13 +102,13 @@ def custom_openapi():
 app.openapi = custom_openapi
 
 # 配置CORS中间件解决跨域访问问题
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=["*"],  # 在生产环境中应该设置具体的域名列表
-#     allow_credentials=True,
-#     allow_methods=["*"],  # 允许所有HTTP方法
-#     allow_headers=["*"],  # 允许所有请求头
-# )
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 在生产环境中应该设置具体的域名列表
+    allow_credentials=True,
+    allow_methods=["*"],  # 允许所有HTTP方法
+    allow_headers=["*"],  # 允许所有请求头
+)
 
 # 挂载静态文件
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -161,7 +161,7 @@ if os.getenv("TURN_ON_SCHEDULE_TASK", False).lower() == "true":
     print(f"定时任务管理器状态: {get_scheduler_status()}")
 
 # 启动说明：
-# 使用命令: uvicorn main:app --reload
+# 使用命令: uvicorn main:app --host 0.0.0.0 --port 8000 
 # 然后访问 http://127.0.0.1:8000 或 http://127.0.0.1:8000/docs
 if __name__ == "__main__":
 
