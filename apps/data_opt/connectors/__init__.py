@@ -9,6 +9,7 @@
 import os, importlib
 
 from ..utils.scheduler import cron_task
+from apps.io_api.common import dict_to_lower_keys
 
 active_connector = importlib.import_module(os.getenv("ACTIVE_CONNECTOR"))
 
@@ -51,5 +52,59 @@ async def handle_update_supply(database: str, table: str, data: dict, data_diff:
     print(f"数据变更: {data_diff}")
 
 
-def dict_to_lower_keys(d: dict) -> dict:
-    return {k.lower(): v for k, v in d.items()}
+
+"""
+
+CREATE DEFINER=`root`@`localhost` PROCEDURE `SupplyConvertMOByE2A`(
+    IN i_SupplyNo varchar(255),
+    IN i_MONO varchar(255),
+    IN i_Status varchar(255),
+    IN i_Memo varchar(255),
+    IN i_ExecuteUpdates boolean
+)
+BEGIN
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        RESIGNAL;
+    END;
+    
+    -- 只有当 i_ExecuteUpdates 为 TRUE 时才执行完整的更新逻辑
+    IF i_ExecuteUpdates THEN
+        START TRANSACTION;
+        
+            UPDATE t_supply SET Type ='MO', SupplyNo = i_MONO, Memo = i_Memo, `Status` = IFNULL(i_Status, `Status`) 
+            WHERE SupplyNo = i_SupplyNo AND Type ='PL';
+            
+            UPDATE t_OrderWC SET SupplyNo = i_MONO, OrderNo = CONCAT(i_MONO,ItemNo) 
+            WHERE SupplyNo = i_SupplyNo;
+            
+            UPDATE t_demand SET Type ='RS', DemandNo = i_MONO 
+            WHERE DemandNo = i_SupplyNo;
+            
+            UPDATE t_peg SET Type ='RS', DemandNo = i_MONO 
+            WHERE DemandNo = i_SupplyNo AND Type ='DM';
+        
+        COMMIT;
+        
+        SELECT 
+            (SELECT COUNT(*) FROM t_supply WHERE SupplyNo = i_SupplyNo) AS t_supply_updated,
+
+            '已下达' AS Result;
+    ELSE
+        -- 只更新相关表的Memo字段为i_Memo
+        START TRANSACTION;
+        
+            UPDATE t_supply SET Memo = i_Memo, `Status` = IFNULL(i_Status, `Status`)  
+            WHERE SupplyNo = i_SupplyNo;
+        
+        COMMIT;
+        
+        -- 返回更新结果统计
+        SELECT 
+            0 AS t_supply_updated,
+            '未更新' AS Result;
+    END IF;
+END
+
+"""

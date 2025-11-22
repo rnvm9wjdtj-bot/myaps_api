@@ -22,14 +22,7 @@
 #    server_id=1
 # 4. 重启 MySQL 使配置生效
 
-from config.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DB_SET
-
-import os
-import asyncio
-import time
-import logging
-import threading
-import concurrent.futures
+import os, asyncio, time, logging, threading, concurrent.futures
 from functools import wraps
 from pymysqlreplication import BinLogStreamReader
 from pymysqlreplication.row_event import (
@@ -37,6 +30,9 @@ from pymysqlreplication.row_event import (
     UpdateRowsEvent,
     DeleteRowsEvent,
 )
+
+from config.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DB_SET
+
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +57,7 @@ class MySQLBinlogMonitor:
                 
             # 支持延迟初始化，首次调用时如果未设置mysql_settings则使用默认配置
             if mysql_settings is None:
-                mysql_settings = get_mysql_config()
+                mysql_settings = self.get_mysql_config()
                 
             self.mysql_settings = mysql_settings
             self.running = False
@@ -588,26 +584,26 @@ class MySQLBinlogMonitor:
         self.running = False
         logger.info("Binlog监控已停止")
 
-
-def get_mysql_config(is_single_db=True):
-    """获取MySQL配置 - 支持多数据库"""
-    config = {
-        "host": MYAPS_DB_HOST,
-        "port": MYAPS_DB_PORT,
-        "user": MYAPS_DB_USER,
-        "password": MYAPS_DB_PASSWORD,
-    }
-    if is_single_db:
-        databases = [MYAPS_MAIN_DB]
-    else:
-        databases = MYAPS_DB_SET
-    
-    if databases:
-        config["databases"] = databases
-        logger.info(f"✅ 监控数据库: {', '.join(databases)}")
-    else:
-        logger.warning("⚠️ 未设置数据库，将监控所有数据库")
-    return config
+    @staticmethod
+    def get_mysql_config(is_single_db=True):
+        """获取MySQL配置 - 支持多数据库"""
+        config = {
+            "host": MYAPS_DB_HOST,
+            "port": MYAPS_DB_PORT,
+            "user": MYAPS_DB_USER,
+            "password": MYAPS_DB_PASSWORD,
+        }
+        if is_single_db:
+            databases = [MYAPS_MAIN_DB]
+        else:
+            databases = MYAPS_DB_SET
+        
+        if databases:
+            config["databases"] = databases
+            logger.info(f"✅ 监控数据库: {', '.join(databases)}")
+        else:
+            logger.warning("⚠️ 未设置数据库，将监控所有数据库")
+        return config
 
 
 

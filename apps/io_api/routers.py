@@ -318,7 +318,6 @@ async def get_supply_mo(
         filter_string = f"DT_OrdStart >= '{starttime}' AND DT_OrdEnd <= '{endtime}'"
     result = await common_read_by_sql(db_name=db_name, table_name="v_supply_mo", filter_string=filter_string)
     if result['success'] and result['meta']['total'] == 1:  # 筛选到唯一的工单，则补充工序信息（v_orderwc）
-        filter_string = f"SupplyNo = '{supplyno}'"
         orderwc = await common_read_by_sql(db_name=db_name, table_name="v_orderwc", filter_string=f"SupplyNo = '{supplyno}'", order_string="SortNo ASC")
         result['data'][0]['orderwc'] = orderwc['data']
     return result

@@ -13,6 +13,9 @@ from config.settings import MYAPS_MAIN_DB
 from config.globalconst import ORDER_STATUS, SUPPLY_TYPE
 
 
+def dict_to_lower_keys(d: dict) -> dict:
+    return {k.lower(): v for k, v in d.items()}
+
 # 路由相关公共格式
 def standard_response(
     status_code: int = status.HTTP_200_OK,
@@ -174,7 +177,7 @@ async def common_read_by_sql(db_name: str, table_name: str, filter_string: str =
         order = f" ORDER BY {order_string}" if order_string else ''
         sql = f'SELECT * FROM `{table_name}` {where} {order}'
         total, data = await db.execute_query(sql)
-        lower_keys_data = [{k.lower(): v for k, v in row.items()} for row in data]
+        lower_keys_data = [dict_to_lower_keys(row) for row in data]
         await db.close()
         return standard_response(
             data=lower_keys_data,
