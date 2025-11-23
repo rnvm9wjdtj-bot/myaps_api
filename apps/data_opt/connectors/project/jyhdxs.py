@@ -199,7 +199,7 @@ class MyapsDbActions(MyapsDbActionsAbc):
             else:
                 logger.error(f"推送计划任务执行失败，账套：{main_db}，错误信息：{sap_mo_data['MESSAGE']}")
                 pl_data['mono'] = ''
-                pl_data['status'] = 'CRE'
+                pl_data['status'] = 'CRE'   # ❗❗失败情况下，状态务必回撤为 CRE ，否则后续无法再次下达
                 pl_data['memo'] = f'🚫{now} @ERP【{sap_mo_data['MESSAGE']}】'
                 pl_data['is_execute_updates'] = False
         except Exception as e:

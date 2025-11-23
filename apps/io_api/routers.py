@@ -32,6 +32,7 @@ async def get_meta():
         message="获取元数据成功",
         meta={
             "db_set": settings.MYAPS_DB_SET,
+            "dbs_str": ",".join(settings.MYAPS_DB_SET),
             "main_db": settings.MYAPS_MAIN_DB,
         },
     )

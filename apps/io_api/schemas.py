@@ -89,8 +89,8 @@ class AcceptWorkcenter(BaseModel):
     sortno: str = Field(None, max_length=4, description="序号", example="0001")
     plant: str = Field(uv.default_plant, max_length=32, description="工厂", example="1600")
     location: str = Field(None, max_length=32, description="车间", example="A区")
-    finite: str = Field(None, enum=list(gc.YES_NO.keys()), example="N", description='有限')
-    type: str = Field(None, enum=list(gc.YES_NO.keys()), example="N", description="首页显示")
+    finite: str = Field("Y", enum=list(gc.YES_NO.keys()), example="N", description='有限')
+    type: str = Field("Y", enum=list(gc.YES_NO.keys()), example="N", description="首页显示")
     capnum: int = Field(None, gt=0, description="默认机台数", example=5)
     capmax: int = Field(None, gt=0, description="最大机台数", example=10)
     worker: float = Field(None, ge=0, description='工时', example=8.0)
@@ -103,12 +103,11 @@ class AcceptWorkcenter(BaseModel):
         json_schema_extra = {
             "example": {
                 "workcenter": "WC001",
-                "workcentername": "装配车间",
+                "workcentername": "装配线",
                 "pri_wc": 1,
                 "bottleneck": "N",
                 "sortno": "0001",
-                "bottleneck": "N",
-                "plant": "1600",
+                "plant": uv.default_plant,
                 "capnum": 5,
                 "capmax": 10,
                 "worker": 8.0,
@@ -122,6 +121,8 @@ class AcceptWorkcenter(BaseModel):
             self["bottleneck"] = "N"
         if not self.get("sortno"):
             self["sortno"] = ""
+        if not self.get("location"):
+            self["location"] = uv.default_location
         return self
 
 
@@ -134,7 +135,7 @@ class AcceptMatWc(BaseModel):
     basesec: float = Field(..., ge=0, description='节拍T/T(秒/100)', example=600)
     fixqty: int = Field(0, ge=0, description='额定量', example=100)
     fixsec: int = Field(0, ge=0, description='额定时间(秒)', example=300)
-    sf: str = Field(..., enum=["S", "F"], example="F", description='并行S/串行F')
+    sf: str = Field("F", enum=["S", "F"], example="F", description='并行S/串行F')
     offsetsec: int = Field(0, description='偏置+/-(秒)', example=0)
     memo: str = Field(None, max_length=255, description='备注', example="标准工序")
 
@@ -158,7 +159,11 @@ class AcceptMatWc(BaseModel):
     
     @model_validator(mode="before")
     def model_valid(self):
-        self["basesec"] = int(self["basesec"])  # 数据库该字段为整形
+        if not self.get("sf"):
+            self["sf"] = "F"
+        if not self.get("itemno"):
+            self["itemno"] = f"{self.get('sortno'):0{uv.default_itemno_width}d}"
+        self["basesec"] = int(self.get("basesec", 0))  # 数据库该字段为整形
         return self
 
 
@@ -167,9 +172,9 @@ class AcceptMatWc(BaseModel):
 class AcceptMatVer(BaseModel):
     materialno: str = Field(..., max_length=64, description='料号', example="M001")
     matver: str = Field(..., example=uv.example_matver, max_length=4, description='产线版本号')
-    lotfrom: int = Field(0, description='批量起点', example=1)
-    lotto: int = Field(9999999, description='批量终点', example=9999999)
-    priority: int = Field(1, description='优先级', example=1)
+    lotfrom: int = Field(uv.default_lotfrom, description='批量起点', example=1)
+    lotto: int = Field(uv.default_lotto, description='批量终点', example=9999999)
+    priority: int = Field(uv.default_priority, description='优先级', example=1)
     refno: str = Field(None, max_length=64, description='MTO订单号/认证线', example="SO123456")
     active: str = Field("Y", enum=list(gc.YES_NO.keys()), example="Y", description='生效')
     memo: str = Field(None, max_length=255, description='备注', example="标准版本")
@@ -336,7 +341,7 @@ class AcceptSupply(BaseModel):
     @model_validator(mode="before")
     def model_valid(self):
         if not self.get("itemno"):
-            self["itemno"] = uv.default_itemno
+            self["itemno"] = uv.example_itemno
         return self
 
 

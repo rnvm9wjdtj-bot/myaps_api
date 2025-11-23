@@ -114,6 +114,7 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
                             await mdl.create(**_d_dict, using_db=db)
                             cerate_count += 1
         return standard_response(
+            data=data,
             message=f"新增{cerate_count}条，修改{update_count}条",
             meta={"create": cerate_count, "update": update_count}
             )
