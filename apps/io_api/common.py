@@ -66,63 +66,87 @@ async def common_read_by_orm(db_name: str, mdl: TortoiseBaseModel, page_size: in
 
 
 async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticSchema | Dict[str, Any]]):
-    cerate_count = 0
-    update_count = 0
+
     unique_together = mdl._meta.unique_together
     model_key = unique_together[0] if unique_together else [mdl._meta.pk_attr]
     only_fields = [f for f in mdl._meta.fields if f != "vid"] if len(model_key) > 1 else None
+
+    dbs = db_name.split(",")
+    data_dict_list = []
+    for _d in data:
+        # _d_dict = _d.model_dump(exclude_unset=True, exclude_none=True) if isinstance(_d, PydanticSchema) else _d
+        _d_dict = _d.model_dump(exclude_none=True) if isinstance(_d, PydanticSchema) else _d
+        data_dict_list.append(_d_dict)
+
+    success_db = []
+    cerate_count_total = 0
+    update_count_total = 0
     try:
-        async with in_transaction(db_name) as db:
-            for _d in data:
-                _d_dict = _d.model_dump(exclude_unset=True, exclude_none=True) if isinstance(_d, PydanticSchema) else _d
-                if hasattr(_d, "_overwrite"):   # 当联合主键之一需要被覆写，_overwrite = {"match_on": {...}, "new_value": {...}}
-                    match_on = _d._overwrite["match_on"]
-                    new_value = _d._overwrite["new_value"]
-                    if await mdl.filter(**match_on).only(*only_fields).using_db(db).exists():
-                        where_clause = " AND ".join([f"{k} = '{v}'" for k, v in match_on.items()])
-                        sql = f"""
-                            UPDATE {mdl._meta.db_table}
-                            SET {", ".join([f"{k} = '{v}'" for k, v in new_value.items() if k != "vid"])}
-                            WHERE {where_clause}
-                        """
-                        await db.execute_query(sql)
-                        update_count += 1
-                    else:
-                        await mdl.create(**_d_dict, using_db=db)
-                        cerate_count += 1
-                else:
-                    match_on = {k : _d_dict.get(k) for k in model_key}
-                    if len(model_key) > 1:     # 如果是联合主键，则要排除虚拟主键的干扰
+        for _db in dbs:
+            cerate_count = 0
+            update_count = 0
+
+            async with in_transaction(_db) as db:
+                for _d in data_dict_list:
+                    if hasattr(_d, "_overwrite"):   # 当联合主键之一需要被覆写，_overwrite = {"match_on": {...}, "new_value": {...}}
+                        match_on = _d._overwrite["match_on"]
+                        new_value = _d._overwrite["new_value"]
                         if await mdl.filter(**match_on).only(*only_fields).using_db(db).exists():
-                            # 先删除None值
-                            for k, v in _d_dict.items():
-                                if v is None:
-                                    _d_dict.pop(k)
-                            await mdl.filter(**match_on).only(*only_fields).first().using_db(db).update(**_d_dict)# 必须重新写一遍查询逻辑，因为前面返回的是一个对象，不能直接update
+                            where_clause = " AND ".join([f"{k} = '{v}'" for k, v in match_on.items()])
+                            sql = f"""
+                                UPDATE {mdl._meta.db_table}
+                                SET {", ".join([f"{k} = '{v}'" for k, v in new_value.items() if k != "vid"])}
+                                WHERE {where_clause}
+                            """
+                            await db.execute_query(sql)
                             update_count += 1
+                            update_count_total += 1
                         else:
                             await mdl.create(**_d_dict, using_db=db)
                             cerate_count += 1
-                    else:   # 单一主键
-                        exist = await mdl.get_or_none(**match_on, using_db=db)
-                        # exist = await mdl.filter(**match_on).using_db(db).first()
-                        if exist:
-                            _d_dict.pop(model_key[0])
-                            await exist.update_from_dict(_d_dict).save(using_db=db)
-                            update_count += 1
-                        else:
-                            await mdl.create(**_d_dict, using_db=db)
-                            cerate_count += 1
+                            cerate_count_total += 1
+                    else:
+                        match_on = {k : _d_dict.get(k) for k in model_key}
+                        if len(model_key) > 1:     # 如果是联合主键，则要排除虚拟主键的干扰
+                            if await mdl.filter(**match_on).only(*only_fields).using_db(db).exists():
+                                # 先删除None值
+                                for k, v in _d_dict.items():
+                                    if v is None:
+                                        _d_dict.pop(k)
+                                await mdl.filter(**match_on).only(*only_fields).first().using_db(db).update(**_d_dict)# 必须重新写一遍查询逻辑，因为前面返回的是一个对象，不能直接update
+                                update_count += 1
+                                update_count_total += 1
+                            else:
+                                await mdl.create(**_d_dict, using_db=db)
+                                cerate_count += 1
+                                cerate_count_total += 1
+                        else:   # 单一主键
+                            exist = await mdl.get_or_none(**match_on, using_db=db)
+                            # exist = await mdl.filter(**match_on).using_db(db).first()
+                            if exist:
+                                _d_dict.pop(model_key[0])
+                                await exist.update_from_dict(_d_dict).save(using_db=db)
+                                update_count += 1
+                                update_count_total += 1
+                            else:
+                                await mdl.create(**_d_dict, using_db=db)
+                                cerate_count += 1
+                                cerate_count_total += 1
+
+            success_db.append({"db_name": _db, "create": cerate_count, "update": update_count})
+        
         return standard_response(
-            data=data,
-            message=f"新增{cerate_count}条，修改{update_count}条",
-            meta={"create": cerate_count, "update": update_count}
+            data=data_dict_list,
+            message=f"生效{len(success_db)}个账套，总计新增{cerate_count_total}条，修改{update_count_total}条",
+            meta=success_db
             )
     except Exception as e:
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message=f"操作失败：{str(e)} —— common_write"
+            message=f"操作失败：{str(e)} —— common_write",
+            meta={"success_db": success_db, "error_db": _db},
+            data=data_dict_list
         )
 
 # 路由公共方法 - delete

@@ -32,7 +32,7 @@ default_subday = 999  # 默认向后冲销(天)
 auto_matver = True  # 是否自动生成物料版本号
 default_matver_width = 1
 example_matver = f"V{1:0{default_matver_width}d}"  # 示例 / 默认物料版本号
-default_lot_from = 0
+default_lotfrom = 0
 default_lotto = 9999999
 default_priority = 0
 

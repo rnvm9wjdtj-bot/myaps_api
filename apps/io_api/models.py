@@ -60,7 +60,7 @@ class TMatVer(pm.ProtoMatVer):
         unique_together = [("materialno", "matver")]
 
     @classmethod
-    async def create_if_not_exists(cls, db_name: str, materialno: str, matver: str = uv.example_matver, lotfrom: int = uv.default_lot_from, lotto: int = uv.default_lotto, priority: int = uv.default_priority):
+    async def create_if_not_exists(cls, db_name: str, materialno: str, matver: str = uv.example_matver, lotfrom: int = uv.default_lotfrom, lotto: int = uv.default_lotto, priority: int = uv.default_priority):
         """
         若不存在则创建
         """
