@@ -425,4 +425,10 @@ class AcceptDemand(BaseModel):
         req_qty = float(self.get("req_qty", 0))
         if req_qty > 0:
             self["req_qty"] = -1 * req_qty
+        # if not self.get("status"):
+        #     self["status"] = "NEW"
+        # if not self.get("category"):
+        #     self["category"] = "MTO"
+        # if not self.get("priority"):
+        #     self["priority"] = 0
         return self

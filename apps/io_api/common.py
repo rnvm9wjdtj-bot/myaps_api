@@ -1,5 +1,6 @@
 from typing import Dict, Any, List
 from enum import Enum
+from copy import deepcopy
 
 from fastapi import status, Query, HTTPException, status, Request, Header
 from fastapi.responses import JSONResponse
@@ -38,7 +39,7 @@ common_params = {
     "page_size": Query(1000, description="每页数量", gt=0, le=10000),
     "page_index": Query(0, description="分页页码，从0开始", ge=0),
     "supply_type": Query(..., description="供应类型", openapi_examples={key: {"value": key, "summary": value} for key, value in SUPPLY_TYPE.items()}),
-    "key": Header(None, description="API密钥")
+    "x_api_key": Header(None, description="API密钥")
 }
 
 
@@ -74,24 +75,31 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
 
     dbs = db_name.split(",")
     data_dict_list = []
+    data_dict_list2 = []
     for _d in data:
-        # _d_dict = _d.model_dump(exclude_unset=True, exclude_none=True) if isinstance(_d, PydanticSchema) else _d
-        _d_dict = _d.model_dump(exclude_none=True) if isinstance(_d, PydanticSchema) else _d
-        data_dict_list.append(_d_dict)
-
+        # row_dict = _d.model_dump(exclude_unset=True, exclude_none=True) if isinstance(_d, PydanticSchema) else _d
+        row_dict = _d.model_dump(exclude_none=True) if isinstance(_d, PydanticSchema) else _d
+        data_dict_list.append(row_dict)
+        data_dict_list2.append(deepcopy(row_dict))
     success_db = []
     cerate_count_total = 0
     update_count_total = 0
     try:
-        for _db in dbs:
+        match_on = None
+        new_value = None
+        for i in range(len(dbs)):
+            _db = dbs[i]
             cerate_count = 0
             update_count = 0
 
             async with in_transaction(_db) as db:
-                for _d in data_dict_list:
+                for j in range(len(data_dict_list)):
+                    _d = data_dict_list[j]
+                    _d2 = data_dict_list2[j]
                     if hasattr(_d, "_overwrite"):   # 当联合主键之一需要被覆写，_overwrite = {"match_on": {...}, "new_value": {...}}
-                        match_on = _d._overwrite["match_on"]
-                        new_value = _d._overwrite["new_value"]
+                        if i == 0:
+                            match_on = _d._overwrite["match_on"]
+                            new_value = _d._overwrite["new_value"]
                         if await mdl.filter(**match_on).only(*only_fields).using_db(db).exists():
                             where_clause = " AND ".join([f"{k} = '{v}'" for k, v in match_on.items()])
                             sql = f"""
@@ -103,34 +111,34 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
                             update_count += 1
                             update_count_total += 1
                         else:
-                            await mdl.create(**_d_dict, using_db=db)
+                            await mdl.create(**_d, using_db=db)
                             cerate_count += 1
                             cerate_count_total += 1
                     else:
-                        match_on = {k : _d_dict.get(k) for k in model_key}
+                        match_on = {k : _d2.get(k) for k in model_key}
                         if len(model_key) > 1:     # 如果是联合主键，则要排除虚拟主键的干扰
                             if await mdl.filter(**match_on).only(*only_fields).using_db(db).exists():
                                 # 先删除None值
-                                for k, v in _d_dict.items():
+                                for k, v in _d.items():
                                     if v is None:
-                                        _d_dict.pop(k)
-                                await mdl.filter(**match_on).only(*only_fields).first().using_db(db).update(**_d_dict)# 必须重新写一遍查询逻辑，因为前面返回的是一个对象，不能直接update
+                                        _d.pop(k)
+                                await mdl.filter(**match_on).only(*only_fields).first().using_db(db).update(**_d)# 必须重新写一遍查询逻辑，因为前面返回的是一个对象，不能直接update
                                 update_count += 1
                                 update_count_total += 1
                             else:
-                                await mdl.create(**_d_dict, using_db=db)
+                                await mdl.create(**_d2, using_db=db)
                                 cerate_count += 1
                                 cerate_count_total += 1
                         else:   # 单一主键
                             exist = await mdl.get_or_none(**match_on, using_db=db)
                             # exist = await mdl.filter(**match_on).using_db(db).first()
                             if exist:
-                                _d_dict.pop(model_key[0])
-                                await exist.update_from_dict(_d_dict).save(using_db=db)
+                                _d.pop(model_key[0])
+                                await exist.update_from_dict(_d).save(using_db=db)
                                 update_count += 1
                                 update_count_total += 1
                             else:
-                                await mdl.create(**_d_dict, using_db=db)
+                                await mdl.create(**_d2, using_db=db)
                                 cerate_count += 1
                                 cerate_count_total += 1
 

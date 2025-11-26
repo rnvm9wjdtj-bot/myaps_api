@@ -59,7 +59,7 @@ async def get_meta():
 async def post_material(
     data: List[AcceptMaterial] = Body(..., description="新增或修改的物料数据"),
     db_name: str = common_params["db_name"],
-    key: str = common_params["key"]
+    x_api_key: str = common_params["x_api_key"]
     ):
     return await common_write(db_name=db_name, mdl=TMaterial, data=data)
 
@@ -86,7 +86,7 @@ async def post_material(
 async def post_workcenter(
     data: List[AcceptWorkcenter],
     db_name: str = common_params["db_name"],
-    key: str = common_params["key"]
+    x_api_key: str = common_params["x_api_key"]
     ):
     return await common_write(db_name=db_name, mdl=TWorkcenter, data=data)
 
@@ -112,7 +112,7 @@ async def post_workcenter(
 async def post_mat_wc(
     data: List[AcceptMatWc],
     db_name: str = common_params["db_name"],
-    key: str = common_params["key"]
+    x_api_key: str = common_params["x_api_key"]
     ):
     return await common_write(db_name=db_name, mdl=TMatWc, data=data)
 
@@ -138,7 +138,7 @@ async def post_mat_wc(
 async def post_mat_ver(
     data: List[AcceptMatVer],
     db_name: str = common_params["db_name"],
-    key: str = common_params["key"]
+    x_api_key: str = common_params["x_api_key"]
     ):
     return await common_write(db_name=db_name, mdl=TMatVer, data=data)
 
@@ -164,7 +164,7 @@ async def post_mat_ver(
 async def post_mat_wc_bom(
     data: List[AcceptMatWcBom],
     db_name: str = common_params["db_name"],
-    key: str = common_params["key"]
+    x_api_key: str = common_params["x_api_key"]
     ):
     return await common_write(db_name=db_name, mdl=TMatWcBom, data=data)
 
@@ -178,7 +178,7 @@ async def post_mat_wc_bom(
 async def post_mold(
     data: List[AcceptMold],
     db_name: str = common_params["db_name"],
-    key: str = common_params["key"]
+    x_api_key: str = common_params["x_api_key"]
     ):
     return await common_write(db_name=db_name, mdl=TMold, data=data)
 
@@ -192,7 +192,7 @@ async def post_mold(
 async def post_mat_wc_mold(
     data: List[AcceptMatWcMold],
     db_name: str = common_params["db_name"],
-    key: str = common_params["key"]
+    x_api_key: str = common_params["x_api_key"]
     ):
     return await common_write(db_name=db_name, mdl=TMatWcMold, data=data)
 
@@ -210,7 +210,7 @@ async def get_supply(
     db_name: str = common_params["db_name"],
     page_size: int = common_params["page_size"],
     page_index: int = common_params["page_index"],
-    key: str = common_params["key"]
+    # x_api_key: str = common_params["x_api_key"]
 ):
     return await common_read_by_orm(db_name=db_name, mdl=TSupply, page_size=page_size, page_index=page_index)
 
@@ -223,7 +223,7 @@ async def get_supply(
 async def post_supply(
     data: List[AcceptSupply],
     db_name: str = common_params["db_name"],
-    key: str = common_params["key"]
+    x_api_key: str = common_params["x_api_key"]
     ):
     return await common_write(db_name=db_name, mdl=TSupply, data=data)
 
@@ -236,7 +236,7 @@ async def post_supply(
 async def patch_pl(
     data: List[PatchPl] = Body(..., description="更新PL记录的列表"),
     db_name: str = common_params["db_name"],
-    key: str = common_params["key"]
+    x_api_key: str = common_params["x_api_key"]
     ):
     # 调用存储过程SupplyConvertMOByE2A，将PL转为MO
     params_list = [[item.plno, item.mono, item.status, item.memo, item.is_execute_updates] for item in data]
@@ -255,7 +255,7 @@ async def delete_supply(
     materialno: str | None = Query(None, description="料号"),
     supplyno: str | None = Query(None, description="供应号"),
     del_relation: bool | None = Query(True, description="是否删除关联的工序记录（仅对PL、MO类型有效）"),
-    key: str = common_params["key"]
+    x_api_key: str = common_params["x_api_key"]
     ):
     supply_type = list(gc.SUPPLY_TYPE.keys())
     if not type:
@@ -291,8 +291,7 @@ async def delete_supply(
 async def get_demand(
     db_name: str = common_params["db_name"],
     page_size: int = common_params["page_size"],
-    page_index: int = common_params["page_index"],
-    key: str = common_params["key"]
+    page_index: int = common_params["page_index"]
 ):
     return await common_read_by_orm(db_name=db_name, mdl=TDemand, page_size=page_size, page_index=page_index)
 
@@ -304,7 +303,8 @@ async def get_demand(
     )
 async def post_demand(
     data: List[AcceptDemand],
-    db_name: str = common_params["db_name"]
+    db_name: str = common_params["db_name"],
+    x_api_key: str = common_params["x_api_key"]
     ):
     return await common_write(db_name=db_name, mdl=TDemand, data=data)
 
@@ -322,7 +322,7 @@ async def get_supply_mo(
     starttime: datetime = Query(date.today(), description="工单开工时间"),
     endtime: datetime = Query(date.today() + timedelta(days=7), description="工单完工时间"),
     supplyno: str = Query(None, description="工单（供应）号"),
-    key: str = common_params["key"]
+    # x_api_key: str = common_params["x_api_key"]
 ):
     if supplyno:
         filter_string = f"SupplyNo = '{supplyno}'"
@@ -347,7 +347,7 @@ async def get_orderwc(
     starttime: datetime = Query(date.today(), description="工序开工时间"),
     endtime: datetime = Query(date.today() + timedelta(days=7), description="工序完工时间"),
     supplyno: str = Query(None, description="工单（供应）号"),
-    key: str = common_params["key"]
+    # x_api_key: str = common_params["x_api_key"]
 ):
     if supplyno:
         filter_string = f"SupplyNo = '{supplyno}'"
@@ -368,7 +368,7 @@ async def get_matdailyqtyreport(
     startdate: date = Query(date.today(), description="开始日期"),
     enddate: date = Query(date.today() + timedelta(days=7), description="结束日期"),
     materialno: str = Query(None, description="料号"),
-    key: str = common_params["key"]
+    # x_api_key: str = common_params["x_api_key"]
 ):
     startdate = startdate or date.today()
     enddate = enddate or startdate + timedelta(days=7)

@@ -125,8 +125,8 @@ if IP_WHITELIST or API_KEY:
         if client_ip in ["127.0.0.1", "localhost"] or client_ip in IP_WHITELIST:
             return await call_next(request)
             
-        # 若不在IP白名单则需要认证请求头Key
-        if request.headers.get("Key") == API_KEY:
+        # 若不在IP白名单则需要认证请求头X-API-Key
+        if request.headers.get("X-API-Key") == API_KEY:
             return await call_next(request)
 
         return JSONResponse(status_code=200, content={"status_code": 403, "success": 0, "message": "Forbidden: Invalid or missing API Key"})
