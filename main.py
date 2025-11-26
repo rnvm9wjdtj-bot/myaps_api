@@ -1,8 +1,9 @@
-import os, uvicorn
+import os, uvicorn#, hashlib
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 # from fastapi.responses import RedirectResponse
 from fastapi.openapi.docs import get_swagger_ui_html
 from tortoise.contrib.fastapi import register_tortoise
@@ -101,6 +102,31 @@ def custom_openapi():
 # 设置自定义的OpenAPI schema生成函数
 app.openapi = custom_openapi
 
+
+# 定义安全验证验证中间件
+
+IP_WHITELIST = os.getenv("IP_WHITELIST", "").split(",")
+API_KEY = os.getenv("API_KEY", "")
+class SecurityMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        # 允许查阅文档等无需认证的请求
+        if request.url.path in ["/docs", "/redoc", "/openapi.json"]:
+            return await call_next(request)
+        
+        # 检查IP是否在白名单中
+        client_ip = request.client.host
+        if client_ip in ["127.0.0.1", "localhost"]:
+            return await call_next(request)
+        if IP_WHITELIST and client_ip in IP_WHITELIST:
+            return await call_next(request)
+
+        # 若不在IP白名单则需要认证请求头Key字段
+        if API_KEY and request.headers.get("Key") == API_KEY:
+            return await call_next(request)
+        return JSONResponse(status_code=403, success=0, message="Access Denied: Wrong API Key.")
+app.add_middleware(SecurityMiddleware)
+
+
 # 配置CORS中间件解决跨域访问问题
 app.add_middleware(
     CORSMiddleware,
@@ -109,6 +135,8 @@ app.add_middleware(
     allow_methods=["*"],  # 允许所有HTTP方法
     allow_headers=["*"],  # 允许所有请求头
 )
+
+
 
 # 挂载静态文件
 app.mount("/static", StaticFiles(directory="static"), name="static")
