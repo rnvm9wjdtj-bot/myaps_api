@@ -119,9 +119,10 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
                         if len(model_key) > 1:     # 如果是联合主键，则要排除虚拟主键的干扰
                             if await mdl.filter(**match_on).only(*only_fields).using_db(db).exists():
                                 # 先删除None值
-                                for k, v in _d.items():
-                                    if v is None:
-                                        _d.pop(k)
+                                if i == 0:
+                                    for k, v in _d.items():
+                                        if v is None:
+                                            _d.pop(k)
                                 await mdl.filter(**match_on).only(*only_fields).first().using_db(db).update(**_d)# 必须重新写一遍查询逻辑，因为前面返回的是一个对象，不能直接update
                                 update_count += 1
                                 update_count_total += 1
@@ -133,7 +134,7 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
                             exist = await mdl.get_or_none(**match_on, using_db=db)
                             # exist = await mdl.filter(**match_on).using_db(db).first()
                             if exist:
-                                _d.pop(model_key[0])
+                                if i == 0: _d.pop(model_key[0])
                                 await exist.update_from_dict(_d).save(using_db=db)
                                 update_count += 1
                                 update_count_total += 1

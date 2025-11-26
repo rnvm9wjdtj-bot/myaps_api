@@ -123,6 +123,10 @@ class AcceptWorkcenter(BaseModel):
             self["sortno"] = ""
         if not self.get("location"):
             self["location"] = uv.default_location
+        # if not self.get("worker"):
+        #     self["worker"] = uv.default_workcenter_worker
+        if not self.get("pri_wc"):
+            self["pri_wc"] = uv.default_workcenter_pri
         return self
 
 
@@ -159,11 +163,19 @@ class AcceptMatWc(BaseModel):
     
     @model_validator(mode="before")
     def model_valid(self):
+        if not self.get("fixqty"):
+            self["fixqty"] = 0
+        if not self.get("fixsec"):
+            self["fixsec"] = 0
+        if not self.get("offsetsec"):
+            self["offsetsec"] = 0
         if not self.get("sf"):
             self["sf"] = "F"
+
+        self['sortno'] = int(self["sortno"])
         if not self.get("itemno"):
-            self["itemno"] = f"{self.get('sortno'):0{uv.default_itemno_width}d}"
-        self["basesec"] = int(self.get("basesec", 0))  # 数据库该字段为整形
+            self["itemno"] = f"{self['sortno']:0{uv.default_itemno_width}d}"
+        self["basesec"] = int(self.get("basesec", None) or 0)  # 不要写成self.get("basesec", 0)，因为有可能会传入空字符串
         return self
 
 
@@ -192,6 +204,12 @@ class AcceptMatVer(BaseModel):
                 "memo": "标准版本"
             }
         }
+    
+    @model_validator(mode="before")
+    def model_valid(self):
+        if not self.get("active"):
+            self["active"] = "Y"
+        return self
 
 
 

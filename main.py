@@ -105,10 +105,11 @@ app.openapi = custom_openapi
 
 # 定义安全验证验证中间件
 
-IP_WHITELIST = os.getenv("IP_WHITELIST", "").split(",")
+IP_WHITELIST = os.getenv("IP_WHITELIST", "")
 API_KEY = os.getenv("API_KEY", "")      
 
 if IP_WHITELIST or API_KEY:
+    IP_WHITELIST = os.getenv("IP_WHITELIST", "").split(",")
     @app.middleware("http")
     async def security_middleware(request: Request, call_next):
         # 对GET和OPTIONS方法直接放行
@@ -129,7 +130,7 @@ if IP_WHITELIST or API_KEY:
         if request.headers.get("X-API-Key") == API_KEY:
             return await call_next(request)
 
-        return JSONResponse(status_code=200, content={"status_code": 403, "success": 0, "message": "Forbidden: Invalid or missing API Key"})
+        return JSONResponse(status_code=200, content={"status_code": 403, "success": 0, "meta": {}, "message": "Forbidden: Invalid or missing API Key"})
 
 
 # 配置CORS中间件解决跨域访问问题

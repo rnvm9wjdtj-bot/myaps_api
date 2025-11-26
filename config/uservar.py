@@ -36,6 +36,8 @@ default_lotfrom = 0
 default_lotto = 9999999
 default_priority = 0
 
+default_workcenter_worker = 1
+default_workcenter_pri = 0
 
 default_itemno_width = 3
 example_itemno = f"A{1:0{default_itemno_width}d}"
