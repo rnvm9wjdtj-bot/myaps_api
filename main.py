@@ -1,10 +1,10 @@
 import os, uvicorn#, hashlib
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-# from fastapi.responses import RedirectResponse
+# from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.openapi.docs import get_swagger_ui_html
 from tortoise.contrib.fastapi import register_tortoise
 
@@ -106,25 +106,30 @@ app.openapi = custom_openapi
 # 定义安全验证验证中间件
 
 IP_WHITELIST = os.getenv("IP_WHITELIST", "").split(",")
-API_KEY = os.getenv("API_KEY", "")
-class SecurityMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
+API_KEY = os.getenv("API_KEY", "")      
+
+if IP_WHITELIST or API_KEY:
+    @app.middleware("http")
+    async def security_middleware(request: Request, call_next):
+        # 对GET和OPTIONS方法直接放行
+        if request.method in ["GET", "OPTIONS"]:
+            return await call_next(request)
+
         # 允许查阅文档等无需认证的请求
-        if request.url.path in ["/docs", "/redoc", "/openapi.json"]:
+        url_path = request.url.path
+        if url_path in ["/docs", "/redoc", "/openapi.json"] or url_path.startswith("/static/swagger"):
             return await call_next(request)
         
         # 检查IP是否在白名单中
         client_ip = request.client.host
-        if client_ip in ["127.0.0.1", "localhost"]:
+        if client_ip in ["127.0.0.1", "localhost"] or client_ip in IP_WHITELIST:
             return await call_next(request)
-        if IP_WHITELIST and client_ip in IP_WHITELIST:
+            
+        # 若不在IP白名单则需要认证请求头Key
+        if request.headers.get("Key") == API_KEY:
             return await call_next(request)
 
-        # 若不在IP白名单则需要认证请求头Key字段
-        if API_KEY and request.headers.get("Key") == API_KEY:
-            return await call_next(request)
-        return JSONResponse(status_code=403, success=0, message="Access Denied: Wrong API Key.")
-app.add_middleware(SecurityMiddleware)
+        return JSONResponse(status_code=200, content={"status_code": 403, "success": 0, "message": "Forbidden: Invalid or missing API Key"})
 
 
 # 配置CORS中间件解决跨域访问问题

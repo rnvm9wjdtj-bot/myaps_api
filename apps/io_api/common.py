@@ -1,7 +1,7 @@
 from typing import Dict, Any, List
 from enum import Enum
 
-from fastapi import status, Query, HTTPException, status, Request
+from fastapi import status, Query, HTTPException, status, Request, Header
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from tortoise import Tortoise
@@ -38,6 +38,7 @@ common_params = {
     "page_size": Query(1000, description="每页数量", gt=0, le=10000),
     "page_index": Query(0, description="分页页码，从0开始", ge=0),
     "supply_type": Query(..., description="供应类型", openapi_examples={key: {"value": key, "summary": value} for key, value in SUPPLY_TYPE.items()}),
+    "key": Header(None, description="API密钥")
 }
 
 
