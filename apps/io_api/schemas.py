@@ -69,14 +69,39 @@ class AcceptMaterial(BaseModel):
     
     @model_validator(mode="before")
     def model_valid(self):
+        if self.get("fifo", "") == "":  # ，
+            self["fifo"] = uv.default_fifo
+        if self.get("expday", "") == "":
+            self["expday"] = uv.default_expday
+        if self.get("phantommin", "") == "":
+            self["phantommin"] = 0
+        if self.get("firmday", "") == "":
+            self["firmday"] = uv.default_firmday
+        if self.get("lotfix", "") == "":
+            self["lotfix"] = uv.default_lotfix
+        if self.get("lotmin", "") == "":
+            self["lotmin"] = uv.default_lotmin
+        if self.get("lotmax", "") == "":
+            self["lotmax"] = uv.default_lotmax
+        if self.get("lotround", "") == "":
+            self["lotround"] = uv.default_lotround
+        if self.get("lotss", "") == "":
+            self["lotss"] = uv.default_lotss
+        if self.get("lotpoint", "") == "":
+            self["lotpoint"] = uv.default_lotpoint
+        if self.get("lottop", "") == "":
+            self["lottop"] = uv.default_lottop
+        if self.get("preday", "") == "":
+            self["preday"] = uv.default_preday
+        if self.get("subday", "") == "":
+            self["subday"] = uv.default_subday
         if not self.get("leadday"):
             self["leadday"] = uv.default_leadday_e if self.get("type") == "E" else uv.default_leadday_f
         if not self.get("grday"):
             self["grday"] = uv.default_grday_e if self.get("type") == "E" else uv.default_grday_f
         if not self.get("abc"):
             self["abc"] = "A" if self.get("type") == "E" else "B"
-        if self.get("phantommin") is None:
-            self["phantommin"] = 0
+
         return self
         
 
@@ -123,8 +148,8 @@ class AcceptWorkcenter(BaseModel):
             self["sortno"] = ""
         if not self.get("location"):
             self["location"] = uv.default_location
-        # if not self.get("worker"):
-        #     self["worker"] = uv.default_workcenter_worker
+        if not self.get("worker"):
+            self["worker"] = uv.default_workcenter_worker
         if not self.get("pri_wc"):
             self["pri_wc"] = uv.default_workcenter_pri
         return self
@@ -207,6 +232,12 @@ class AcceptMatVer(BaseModel):
     
     @model_validator(mode="before")
     def model_valid(self):
+        if self.get("lotfrom", "") == "":
+            self["lotfrom"] = uv.default_lotfrom
+        if self.get("lotto", "") == "":
+            self["lotto"] = uv.default_lotto
+        if self.get("priority", "") == "":
+            self["priority"] = uv.default_priority
         if not self.get("active"):
             self["active"] = "Y"
         return self

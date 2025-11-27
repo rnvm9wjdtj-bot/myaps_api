@@ -74,6 +74,7 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
     only_fields = [f for f in mdl._meta.fields if f != "vid"] if len(model_key) > 1 else None
 
     dbs = db_name.split(",")
+    oritin_total = len(data)
     data_dict_list = []
     data_dict_list2 = []
     for _d in data:
@@ -146,16 +147,16 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
             success_db.append({"db_name": _db, "create": cerate_count, "update": update_count})
         
         return standard_response(
-            data=data_dict_list,
+            data=data_dict_list2,
             message=f"生效{len(success_db)}个账套，总计新增{cerate_count_total}条，修改{update_count_total}条",
-            meta=success_db
+            meta={"origin_total": oritin_total, "success_db": success_db}
             )
     except Exception as e:
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message=f"操作失败：{str(e)} —— common_write",
-            meta={"success_db": success_db, "error_db": _db},
+            meta={"origin_total": oritin_total, "success_db": success_db, "error_db": _db},
             data=data_dict_list
         )
 
