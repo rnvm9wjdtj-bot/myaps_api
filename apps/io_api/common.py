@@ -10,7 +10,7 @@ from tortoise.transactions import in_transaction
 from tortoise.models import Model as TortoiseBaseModel
 from pydantic import BaseModel as PydanticSchema
 
-from config.settings import MYAPS_MAIN_DB
+from config.settings import MYAPS_MAIN_DB, MYAPS_DB_SET
 from config.globalconst import ORDER_STATUS, SUPPLY_TYPE
 
 
@@ -73,7 +73,7 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
     model_key = unique_together[0] if unique_together else [mdl._meta.pk_attr]
     only_fields = [f for f in mdl._meta.fields if f != "vid"] if len(model_key) > 1 else None
 
-    dbs = db_name.split(",")
+    dbs = [i for i in db_name.split(",") if i in MYAPS_DB_SET]
     oritin_total = len(data)
     data_dict_list = []
     data_dict_list2 = []

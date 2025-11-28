@@ -6,6 +6,7 @@ from decimal import Decimal
 from pydantic import BaseModel, Field, field_validator, model_validator#, ValidationError
 
 from config import uservar as uv, globalconst as gc
+from .models import TMatWc
 
 
 class AcceptMaterial(BaseModel):
@@ -158,7 +159,7 @@ class AcceptWorkcenter(BaseModel):
 class AcceptMatWc(BaseModel):
     materialno: str = Field(..., max_length=64, description='料号', example="M001")
     matver: str = Field(..., max_length=4, example=uv.example_matver, description='产线版本')
-    itemno: str = Field(..., max_length=6, description='工序项目', example="0010")
+    itemno: str = Field(None, max_length=6, description='工序项目', example="0010")
     workcenter: str = Field(..., max_length=32, description='工作中心', example="WC001")
     sortno: int = Field(..., ge=0, description='序号', example=1)
     basesec: float = Field(..., ge=0, description='节拍T/T(秒/100)', example=600)
@@ -256,7 +257,7 @@ class AcceptMatWcBom(BaseModel):
     scrap: float = Field(0, description='报废率%', example=0.0)
     alt: str = Field("N", enum=list(gc.YES_NO.keys()), example="N", description='Y/N是否是替代')
     memo: str = Field(None, max_length=255, description='备注', example="标准BOM组件")
-    denominator: Optional[float | str] = Field(1, description='用量分母', example=1)
+    denominator: Optional[float | str] = Field(None, description='用量分母', example=1)
 
     class Config:
         title = "验证规则 - BOM"
@@ -278,12 +279,16 @@ class AcceptMatWcBom(BaseModel):
 
     @model_validator(mode="before")
     def model_valid(self):
-        try:
-            self["denominator"] = float(self.get("denominator", 1)) or 1
-        except:
-            self["denominator"] = 1
-        self["qty"] /= self["denominator"]
-        self.pop("denominator") # 删除 denominator ，避免在数据库中存储
+        denominator = self.get("denominator")
+        if denominator:
+            try:
+                self["denominator"] = float(denominator) or 1
+            except:
+                self["denominator"] = 1
+            self["qty"] /= self["denominator"]
+            self.pop("denominator") # 删除 denominator ，避免在数据库中存储
+        # if not self.get("itemno"):
+        #     self["itemno"] = f"{1:0{uv.default_itemno_width}d}"
         return self
 
 

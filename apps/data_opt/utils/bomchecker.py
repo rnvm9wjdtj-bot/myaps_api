@@ -6,19 +6,11 @@ import warnings
 
 warnings.filterwarnings('ignore')
 
-def process_json_bom_data(json_data):
+def process_json_bom_data(json_data, field_mapper):
     """
     处理JSON格式的BOM数据，转换为适合校验的结构
     """
-    field_mapper = {
-        "productno": "matnr",
-        "productunit": "bmein",
-        "materialno": "idnrk",
-        "materialunit": "meins",
-        "qty": "menge",
-        "denominator": "bmeng",
-        # "memo": None,
-    }
+
     # 如果输入是字符串，先解析为JSON
     if isinstance(json_data, str):
         try:
@@ -36,13 +28,13 @@ def process_json_bom_data(json_data):
         df_data.append(row)
     return pd.DataFrame(df_data)
 
-def comprehensive_bom_check_json(json_bom_data, parent_column='productno', child_column='materialno', qty_column='qty'):
+def comprehensive_bom_check_json(json_bom_data, field_mapper, parent_column='pn', child_column='mn', qty_column='n'):
     """
     专门处理JSON格式BOM数据的综合检查函数
     """
     try:
         # 处理JSON数据
-        bom_df = process_json_bom_data(json_bom_data)
+        bom_df = process_json_bom_data(json_bom_data, field_mapper=field_mapper)
         
         if bom_df.empty:
             return {
@@ -64,9 +56,9 @@ def comprehensive_bom_check_json(json_bom_data, parent_column='productno', child
             'marked_data': marked_data.to_dict('records'),
             'statistics': {
                 'total_records': len(bom_df),
-                'error_records': len(marked_data[marked_data['ERROR'] != '']),
-                'warning_records': len(marked_data[marked_data['WARNING'] != '']),
-                'clean_records': len(marked_data[(marked_data['ERROR'] == '') & (marked_data['WARNING'] == '')])
+                'error_records': len(marked_data[marked_data['E'] != '']),
+                'warning_records': len(marked_data[marked_data['W'] != '']),
+                'clean_records': len(marked_data[(marked_data['E'] == '') & (marked_data['W'] == '')])
             }
         }
     
@@ -85,9 +77,9 @@ def comprehensive_bom_check_with_multiple_issues(bom_data, parent_column, child_
     marked_data = bom_data.copy()
     
     # 初始化结果列
-    marked_data['ERROR'] = marked_data.apply(lambda _: [], axis=1)
-    marked_data['WARNING'] = marked_data.apply(lambda _: [], axis=1)
-    marked_data['ISSUE_TYPE'] = marked_data.apply(lambda _: [], axis=1)
+    marked_data['E'] = marked_data.apply(lambda _: [], axis=1)
+    marked_data['W'] = marked_data.apply(lambda _: [], axis=1)
+    marked_data['I'] = marked_data.apply(lambda _: [], axis=1)
     
     # 初始化问题汇总
     issue_summary = {
@@ -112,8 +104,8 @@ def comprehensive_bom_check_with_multiple_issues(bom_data, parent_column, child_
     
     if missing_cols:
         for idx in marked_data.index:
-            marked_data.at[idx, 'ERROR'] = [f'缺少必要列: {missing_cols}']
-            marked_data.at[idx, 'ISSUE_TYPE'] = ['系统性错误']
+            marked_data.at[idx, 'E'] = [f'缺少必要列: {missing_cols}']
+            marked_data.at[idx, 'I'] = ['系统性错误']
         issue_summary['data_quality_issues']['missing_cols'] = missing_cols
         return {
             'marked_data': marked_data,
@@ -140,22 +132,22 @@ def comprehensive_bom_check_with_multiple_issues(bom_data, parent_column, child_
         # 检查无父级料号
         if pd.isna(parent) or str(parent).strip() == '':
             issue_summary['data_quality_issues']['non_parent'].append((parent, child))
-            marked_data.at[idx, 'ERROR'].append('无父级料号')
-            marked_data.at[idx, 'ISSUE_TYPE'].append('数据质量问题')
+            marked_data.at[idx, 'E'].append('无父级料号')
+            marked_data.at[idx, 'I'].append('数据质量问题')
             continue
 
         # 检查无子级料号
         if pd.isna(child) or str(child).strip() == '':
             issue_summary['data_quality_issues']['non_child'].append((parent, child))
-            marked_data.at[idx, 'ERROR'].append('无子级料号')
-            marked_data.at[idx, 'ISSUE_TYPE'].append('数据质量问题')
+            marked_data.at[idx, 'E'].append('无子级料号')
+            marked_data.at[idx, 'I'].append('数据质量问题')
             continue
 
         # 检查无效数量
         if pd.isna(qty) or qty <= 0:
             issue_summary['data_quality_issues']['invalid_qty'].append((parent, child))
-            marked_data.at[idx, 'ERROR'].append('无效数量')
-            marked_data.at[idx, 'ISSUE_TYPE'].append('数据质量问题')
+            marked_data.at[idx, 'E'].append('无效数量')
+            marked_data.at[idx, 'I'].append('数据质量问题')
         
         # 记录关系
         relation = (str(parent), str(child))
@@ -163,8 +155,8 @@ def comprehensive_bom_check_with_multiple_issues(bom_data, parent_column, child_
         
         if relation in seen_relations:
             issue_summary['data_quality_issues']['duplicate_relations'].append((parent, child))
-            marked_data.at[idx, 'WARNING'].append('重复关系')
-            marked_data.at[idx, 'ISSUE_TYPE'].append('数据质量问题')
+            marked_data.at[idx, 'W'].append('重复关系')
+            marked_data.at[idx, 'I'].append('数据质量问题')
         else:
             seen_relations.add(relation)
             parent_to_child[str(parent)].append(str(child))
@@ -187,8 +179,8 @@ def comprehensive_bom_check_with_multiple_issues(bom_data, parent_column, child_
         parent, child = relation
         if parent == child:
             for idx in indices:
-                marked_data.at[idx, 'ERROR'].append('父子同号')
-                marked_data.at[idx, 'ISSUE_TYPE'].append('结构性问题')
+                marked_data.at[idx, 'E'].append('父子同号')
+                marked_data.at[idx, 'I'].append('结构性问题')
     
     # 2. 检查循环引用
     def has_cycle(node, visited=None, path=None):
@@ -216,8 +208,8 @@ def comprehensive_bom_check_with_multiple_issues(bom_data, parent_column, child_
         parent, child = relation
         if parent in circular_items or child in circular_items:
             for idx in indices:
-                marked_data.at[idx, 'ERROR'].append('循环引用')
-                marked_data.at[idx, 'ISSUE_TYPE'].append('结构性问题')
+                marked_data.at[idx, 'E'].append('循环引用')
+                marked_data.at[idx, 'I'].append('结构性问题')
     
     # 3. 检查孤立项目
     # 找出所有在BOM中出现过的物料
@@ -237,8 +229,8 @@ def comprehensive_bom_check_with_multiple_issues(bom_data, parent_column, child_
     for idx, row in marked_data.iterrows():
         item = str(row[parent_column])
         if item in orphan_items:
-            marked_data.at[idx, 'WARNING'].append('孤立项目')
-            marked_data.at[idx, 'ISSUE_TYPE'].append('结构性问题')
+            marked_data.at[idx, 'W'].append('孤立项目')
+            marked_data.at[idx, 'I'].append('结构性问题')
     
     # 4. 检查多父项
     multi_parents = defaultdict(list)
@@ -253,16 +245,16 @@ def comprehensive_bom_check_with_multiple_issues(bom_data, parent_column, child_
         parent, child = relation
         if child in multi_parents:
             for idx in indices:
-                marked_data.at[idx, 'WARNING'].append('多父项')
-                marked_data.at[idx, 'ISSUE_TYPE'].append('结构性问题')
+                marked_data.at[idx, 'W'].append('多父项')
+                marked_data.at[idx, 'I'].append('结构性问题')
     
     # 格式化输出
     def format_issues(issues):
         return ', '.join(sorted(set(issues))) if issues else ''
 
-    marked_data['ERROR'] = marked_data['ERROR'].apply(format_issues)
-    marked_data['WARNING'] = marked_data['WARNING'].apply(format_issues)
-    marked_data['ISSUE_TYPE'] = marked_data['ISSUE_TYPE'].apply(
+    marked_data['E'] = marked_data['E'].apply(format_issues)
+    marked_data['W'] = marked_data['W'].apply(format_issues)
+    marked_data['I'] = marked_data['I'].apply(
         lambda x: ', '.join(sorted(set(x))) if x else '')
     
     return {
@@ -329,158 +321,36 @@ def export_bom_check_results(results, output_file=None):
 
 #################################################################################
 if __name__ == '__main__':
+    import requests
 
-    bom_json_data ="""
-        [{
-            "matnr": "20007168",
-            "bismt2": "202000570AA",
-            "maktx2": "硫化件/202000570AA",
-            "werks": "1600",
-            "stlal": "01",
-            "bmeng": 1,
-            "bmein": "PC",
-            "stktx": "",
-            "loekz": "",
-            "posnr": "0010",
-            "idnrk": "20004595",
-            "menge": 56.4,
-            "meins": "G",
-            "fmeng": "",
-            "ausch": 0,
-            "bismt": "J1502A",
-            "maktx": "混炼胶/J1502A",
-            "sobsl": ""
-        }, {
-            "matnr": "20007168",
-            "bismt2": "202000570AA",
-            "maktx2": "硫化件/202000570AA",
-            "werks": "1600",
-            "stlal": "01",
-            "bmeng": 1,
-            "bmein": "PC",
-            "stktx": "",
-            "loekz": "",
-            "posnr": "0020",
-            "idnrk": "20004595",
-            "menge": 1,
-            "meins": "PC",
-            "fmeng": "",
-            "ausch": 0,
-            "bismt": "202000570AA-01-T",
-            "maktx": "涂胶件/202000570AA_01",
-            "sobsl": ""
-        }, {
-            "matnr": "20004595",
-            "bismt2": "202000570AA",
-            "maktx2": "硫化件/202000570AA",
-            "werks": "1600",
-            "stlal": "01",
-            "bmeng": 1,
-            "bmein": "PC",
-            "stktx": "",
-            "loekz": "",
-            "posnr": "0030",
-            "idnrk": "20007168",
-            "menge": 1,
-            "meins": "PC",
-            "fmeng": "",
-            "ausch": 0,
-            "bismt": "202000570AA-02-T",
-            "maktx": "涂胶件/202000570AA_02",
-            "sobsl": ""
-        }, {
-            "matnr": "20007169",
-            "bismt2": "202000570AA-02-L",
-            "maktx2": "磷化件/202000570AA_02",
-            "werks": "1600",
-            "stlal": "01",
-            "bmeng": 1,
-            "bmein": "PC",
-            "stktx": "",
-            "loekz": "",
-            "posnr": "0010",
-            "idnrk": "10002637",
-            "menge": 1,
-            "meins": "PC",
-            "fmeng": "",
-            "ausch": 0,
-            "bismt": "101500835",
-            "maktx": "外管/202000570AA_02",
-            "sobsl": "30"
-        }, {
-            "matnr": "20007170",
-            "bismt2": "202000570AA-01-L",
-            "maktx2": "磷化件/202000570AA_01",
-            "werks": "1600",
-            "stlal": "01",
-            "bmeng": 1,
-            "bmein": "PC",
-            "stktx": "新-常规生产",
-            "loekz": "",
-            "posnr": "0010",
-            "idnrk": "10002636",
-            "menge": 1,
-            "meins": "PC",
-            "fmeng": "",
-            "ausch": 0,
-            "bismt": "101500834",
-            "maktx": "内管/202000570AA_01",
-            "sobsl": "30"
-        }, {
-            "matnr": "20007171",
-            "bismt2": "202000570AA-02-T",
-            "maktx2": "涂胶件/202000570AA_02",
-            "werks": "1600",
-            "stlal": "01",
-            "bmeng": 1000,
-            "bmein": "PC",
-            "stktx": "新-常规生产",
-            "loekz": "",
-            "posnr": "0010",
-            "idnrk": "20007169",
-            "menge": 1000,
-            "meins": "PC",
-            "fmeng": "",
-            "ausch": 0,
-            "bismt": "202000570AA-02-L",
-            "maktx": "磷化件/202000570AA_02",
-            "sobsl": ""
-        }, {
-            "matnr": "20007171",
-            "bismt2": "202000570AA-02-T",
-            "maktx2": "涂胶件/202000570AA_02",
-            "werks": "1600",
-            "stlal": "01",
-            "bmeng": 1000,
-            "bmein": "PC",
-            "stktx": "新-常规生产",
-            "loekz": "",
-            "posnr": "0020",
-            "idnrk": "10004116",
-            "menge": 0.596,
-            "meins": "KG",
-            "fmeng": "",
-            "ausch": 0,
-            "bismt": "",
-            "maktx": "开姆洛克/205(170KG/桶)GB",
-            "sobsl": ""
-        }
-    ]
-"""
+
+    Session = requests.Session()
+    response = Session.get('http://192.168.201.2:8000/zrestful_test2?sap-client=800', headers={'interface': 'bom', 'werks': '1600'})
+    bom_json_data = response.json()['data']
+
+    field_mapper = {
+        "pn": "matnr",   # 产品料号
+        "pu": "bmein",   # 产品单位
+        "mn": "idnrk",   # 物料料号
+        "mu": "meins",   # 物料单位n
+        "n": "menge",   # 数量
+        "d": "bmeng",   # 分母
+        # "memo": None,
+    }
     # 1. 执行BOM检查
-    results = comprehensive_bom_check_json(bom_json_data)
-
-    print(results)
+    results = comprehensive_bom_check_json(bom_json_data, field_mapper=field_mapper)
+    if results.get('success'):
+        print(results['marked_data'])
 
     # 2. 打印结果摘要
-    if results['success']:
-        stats = results['statistics']
-        print(f"检查完成: {stats['total_records']} 条记录")
-        print(f"错误记录: {stats['error_records']} 条")
-        print(f"警告记录: {stats['warning_records']} 条")
-        print(f"正常记录: {stats['clean_records']} 条")
+    # if results['success']:
+    #     stats = results['statistics']
+    #     print(f"检查完成: {stats['total_records']} 条记录")
+    #     print(f"错误记录: {stats['error_records']} 条")
+    #     print(f"警告记录: {stats['warning_records']} 条")
+    #     print(f"正常记录: {stats['clean_records']} 条")
         
-        # 3. 导出结果
-        export_result = export_bom_check_results(results)
-        if export_result['success']:
-            print(export_result['message'])
+    #     # 3. 导出结果
+    #     export_result = export_bom_check_results(results)
+    #     if export_result['success']:
+    #         print(export_result['message'])
