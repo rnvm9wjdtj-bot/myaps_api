@@ -6,7 +6,7 @@ import warnings
 
 warnings.filterwarnings('ignore')
 
-def process_json_bom_data(json_data, field_mapper):
+def process_json_bom_data(json_data, field_mapper, num_columns):
     """
     处理JSON格式的BOM数据，转换为适合校验的结构
     """
@@ -21,20 +21,27 @@ def process_json_bom_data(json_data, field_mapper):
     else:
         bom_list = json_data
     
+    # 预处理：将num_columns转换为集合以提高查找效率
+    num_columns_set = set(num_columns)
+
     # 转换为DataFrame
-    df_data = []
-    for item in bom_list:
-        row = {k: item.get(v, '') if v is not None else '' for k, v in field_mapper.items()}
-        df_data.append(row)
+    df_data = [
+            {
+                mk: 0 if mk in num_columns_set and not item.get(ok) else item.get(ok, '')
+                for mk, ok in field_mapper.items()
+            }
+            for item in bom_list
+        ]
+
     return pd.DataFrame(df_data)
 
-def comprehensive_bom_check_json(json_bom_data, field_mapper, parent_column='pn', child_column='mn', qty_column='n'):
+def comprehensive_bom_check_json(json_bom_data, field_mapper, parent_column='pn', child_column='mn', numerator_column='n', denominator_column='d'):
     """
     专门处理JSON格式BOM数据的综合检查函数
     """
     try:
         # 处理JSON数据
-        bom_df = process_json_bom_data(json_bom_data, field_mapper=field_mapper)
+        bom_df = process_json_bom_data(json_bom_data, field_mapper=field_mapper, num_columns=[numerator_column, denominator_column])
         
         if bom_df.empty:
             return {
@@ -45,7 +52,7 @@ def comprehensive_bom_check_json(json_bom_data, field_mapper, parent_column='pn'
             }
         
         # 执行BOM检查
-        results = comprehensive_bom_check_with_multiple_issues(bom_df, parent_column, child_column, qty_column)
+        results = comprehensive_bom_check_with_multiple_issues(bom_df, parent_column, child_column, numerator_column, denominator_column)
         marked_data = results['marked_data']
         
         # 准备返回结果
@@ -70,7 +77,7 @@ def comprehensive_bom_check_json(json_bom_data, field_mapper, parent_column='pn'
             'marked_data': []
         }
 
-def comprehensive_bom_check_with_multiple_issues(bom_data, parent_column, child_column, qty_column):
+def comprehensive_bom_check_with_multiple_issues(bom_data, parent_column, child_column, numerator_column, denominator_column):
     """
     BOM检查核心函数（适配JSON数据结构）
     """
@@ -97,9 +104,13 @@ def comprehensive_bom_check_with_multiple_issues(bom_data, parent_column, child_
             'duplicate_relations': []
         }
     }
+
+
     
     # 检查必要列
-    required_cols = [parent_column, child_column, qty_column]
+    if denominator_column not in marked_data.columns:
+        marked_data[denominator_column] = 1
+    required_cols = [parent_column, child_column, numerator_column, denominator_column]
     missing_cols = [col for col in required_cols if col not in marked_data.columns]
     
     if missing_cols:
@@ -123,31 +134,37 @@ def comprehensive_bom_check_with_multiple_issues(bom_data, parent_column, child_
     for idx, row in marked_data.iterrows():
         parent = row[parent_column]
         child = row[child_column]
-        qty = row[qty_column]
+        numerator = row[numerator_column]
+        denominator = row[denominator_column]
         
-        # 跳过空值行
-        if pd.isna(parent) or parent == '':
-            continue
             
         # 检查无父级料号
         if pd.isna(parent) or str(parent).strip() == '':
             issue_summary['data_quality_issues']['non_parent'].append((parent, child))
             marked_data.at[idx, 'E'].append('无父级料号')
             marked_data.at[idx, 'I'].append('数据质量问题')
-            continue
+
 
         # 检查无子级料号
         if pd.isna(child) or str(child).strip() == '':
             issue_summary['data_quality_issues']['non_child'].append((parent, child))
             marked_data.at[idx, 'E'].append('无子级料号')
             marked_data.at[idx, 'I'].append('数据质量问题')
-            continue
 
-        # 检查无效数量
-        if pd.isna(qty) or qty <= 0:
+
+        # 检查无效数量（分子）
+        if pd.isna(numerator) or numerator <= 0:
             issue_summary['data_quality_issues']['invalid_qty'].append((parent, child))
             marked_data.at[idx, 'E'].append('无效数量')
             marked_data.at[idx, 'I'].append('数据质量问题')
+        
+
+        # 检查无效数量（分母）
+        if pd.isna(denominator) or denominator <= 0:
+            issue_summary['data_quality_issues']['invalid_qty'].append((parent, child))
+            marked_data.at[idx, 'E'].append('无效数量')
+            marked_data.at[idx, 'I'].append('数据质量问题')
+        
         
         # 记录关系
         relation = (str(parent), str(child))
@@ -321,18 +338,18 @@ def export_bom_check_results(results, output_file=None):
 
 #################################################################################
 if __name__ == '__main__':
-    import requests
-
-
-    Session = requests.Session()
-    response = Session.get('http://192.168.201.2:8000/zrestful_test2?sap-client=800', headers={'interface': 'bom', 'werks': '1600'})
-    bom_json_data = response.json()['data']
+    print("开始检查BOM数据...")
+    # import requests
+    # Session = requests.Session()
+    # response = Session.get('http://192.168.201.2:8000/zrestful_test2?sap-client=800', headers={'interface': 'bom', 'werks': '1600'})
+    # bom_json_data = response.json()['data']
+    bom_json_data = [{"matnr":"","bmein":"","idnrk":"","meins":"","menge":"","bmeng":""}]
 
     field_mapper = {
         "pn": "matnr",   # 产品料号
         "pu": "bmein",   # 产品单位
         "mn": "idnrk",   # 物料料号
-        "mu": "meins",   # 物料单位n
+        "mu": "meins",   # 物料单位
         "n": "menge",   # 数量
         "d": "bmeng",   # 分母
         # "memo": None,
