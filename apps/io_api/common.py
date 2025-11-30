@@ -47,7 +47,9 @@ common_params = {
 
 # 路由公共方法
 async def common_read_by_orm(db_name: str, mdl: TortoiseBaseModel, page_size: int, page_index: int):
-    db = Tortoise.get_connection(db_name)
+    dbs = [i for i in db_name.split(",") if i in MYAPS_DB_SET]
+    assert dbs, "账套参数错误"
+    db = Tortoise.get_connection(dbs[0])
     # 分页查询
     offset = page_size * page_index
     if mdl._meta.unique_together:   # 如果是联合主键，则要排除虚拟主键的干扰
@@ -60,6 +62,7 @@ async def common_read_by_orm(db_name: str, mdl: TortoiseBaseModel, page_size: in
     return standard_response(
         data=data,
         meta={
+            "db_name": dbs[0],
             "total": await mdl.all().using_db(db).count(),
             "pageSize": page_size,
             "pageIndex": page_index,
