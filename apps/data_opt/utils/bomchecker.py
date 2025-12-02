@@ -308,7 +308,7 @@ def bom_check_core_processor(
         'issue_summary': issue_summary
     }
 
-def export_bom_check_results(results, output_file=None):
+def export_bom_check_results_as_excel(results, output_file=None):
     """
     导出BOM检查结果到Excel文件
     """
@@ -365,6 +365,20 @@ def export_bom_check_results(results, output_file=None):
     except Exception as e:
         return {'success': False, 'message': f'导出失败: {str(e)}'}
 
+def output_bom_check_result_as_markdown(results):
+    """
+    将BOM检查结果转换为Markdown格式
+    """
+
+    output = "### BOM检查结果\n"
+    if results['success']:
+        stats = results['statistics']
+        output += f"- 检查完成: {stats['total_records']}\n"
+        output += f"- 错误记录: {stats['error_records']}\n"
+        output += f"- 警告记录: {stats['warning_records']}\n"
+        output += f"- 正常记录: {stats['clean_records']}\n"
+    # output += "\n"
+    return {'bom_check_result': output}
 
 def bom_unit_check_core_processor(
     df: pd.DataFrame,
@@ -472,14 +486,14 @@ def bom_unit_check_core_processor(
     # 生成详细的问题分析
     problematic_details = []
     for material in problematic_materials:
-        # 获取该料号作为产品时的所有记录
+        # 获取该料号作为父级时的所有记录
         product_records = []
         if product_no_col in df.columns:
             product_mask = df[product_no_col].astype(str) == material['material_number']
             if product_mask.any():
                 product_records = df[product_mask][[product_no_col, product_unit_col]].to_dict('records')
         
-        # 获取该料号作为物料时的所有记录
+        # 获取该料号作为子级时的所有记录
         material_records = []
         if material_no_col in df.columns:
             material_mask = df[material_no_col].astype(str) == material['material_number']
@@ -518,98 +532,46 @@ def bom_unit_check_core_processor(
     return {
         'exec_success': True,
         'summary': summary,
-        'validation_details': validation_results,
+        # 'validation_details': validation_results,
+        # 'material_units_map': material_units_map,
+        'material_units_map_list': [{'materialno': k, 'unit': ','.join(v)} for k, v in material_units_map.items()],
         'problematic_details': problematic_details,
         'critical_issues': [m for m in problematic_materials if m['appears_as_product'] and m['appears_as_material']]
     }
 
-def output_unit_check_result(unit_check_results):
+def output_unit_check_result_as_markdown(unit_check_results):
     if not unit_check_results.get('exec_success'):
         # print(unit_check_results['summary'])
         return {'source_info': unit_check_results}
     
-    summary_description = f"""
-- 总计校验料号数: {unit_check_results['summary']['total_unique_materials']}
-- 单位统一料号数: {unit_check_results['summary']['unified_materials_count']}
-- 多角色料号数: {unit_check_results['summary']['multi_role_materials_count']}
-- 存在问题的料号数: {unit_check_results['summary']['problematic_materials_count']}
-- 通过率: {unit_check_results['summary']['pass_rate_percent']}%
-    """
+    summary = unit_check_results['summary']
+    output = "### 量纲校验结果摘要\n"
+    output += f"- 总计校验料号数: {summary['total_unique_materials']}\n"
+    output += f"- 单位统一料号数: {summary['unified_materials_count']}\n"
+    output += f"- 多角色料号数: {summary['multi_role_materials_count']}\n"
+    output += f"- 存在问题的料号数: {summary['problematic_materials_count']}\n"
+    output += f"- 通过率: {summary['pass_rate_percent']}%\n---\n"
 
-    problematic_details_description = "### 问题详情\n---\n"
     problematic_details = unit_check_results['problematic_details']
+    output += "##### 问题详情\n---\n"
     if problematic_details:
         for detail in problematic_details:
-            problematic_details_description += f"- 料号: {detail['material_number']}, 单位分布: {detail['unit_distribution']}, 作为父级: {detail['product_records_count']}, 作为子级: {detail['material_records_count']}\n"
+            output += f"- 料号: {detail['material_number']}, 单位分布: {detail['unit_distribution']}, 作为父级: {detail['product_records_count']}, 作为子级: {detail['material_records_count']}\n"
     else:
-        problematic_details_description += "NONE\n"
+        output += "*🈚NONE*\n---\n"
 
     # print(problematic_details_description)
-
-    critical_issues_description = "### 关键争议\n---\n"
     critical_issues = unit_check_results['critical_issues']
+    output += "##### 关键争议\n"
     if critical_issues:
         for issue in critical_issues:
-            critical_issues_description += f"- 料号: {issue['material_number']}, 使用单位: {issue['unique_units']}\n"
+            output += f"- 料号: {issue['material_number']}, 使用单位: {issue['unique_units']}\n---\n"
     else:
-        critical_issues_description += "NONE\n"
+        output += "*🈚NONE*\n---\n"
 
     # 返回结果与明道云control id对应
     return {
         # 'source_info': unit_check_results,
         'check_timestamp': unit_check_results['summary']['check_timestamp'],
-        'summary': summary_description,
-        'problematic_details': problematic_details_description,
-        'critical_issues': critical_issues_description,
+        'unit_check_result': output,
     }
-
-#################################################################################
-# if __name__ == '__main__':
-#     print("开始检查BOM数据...")
-#     # import requests
-#     # Session = requests.Session()
-#     # response = Session.get('http://192.168.201.2:8000/zrestful_test2?sap-client=800', headers={'interface': 'bom', 'werks': '1600'})
-#     # bom_json_data = response.json()['data']
-#     bom_json_data = [{"matnr":"1","bmein":"PCS","idnrk":"2","meins":"PCS","menge":"1"} ,{"matnr":"3","bmein":"PCS","idnrk":"4","meins":"PCS"}]
-
-#     field_mapper = {
-#         "i": None,      # 原始数据id
-#         "pn": "matnr",   # 产品料号
-#         "pu": "bmein",   # 产品单位
-#         "mn": "idnrk",   # 物料料号
-#         "mu": "meins",   # 物料单位
-#         "n": "menge",   # 数量
-#         "d": "bmeng",   # 分母
-#         # "memo": None,
-#     }
-
-#     bom_df = process_json_bom_data(bom_json_data, field_mapper=field_mapper, numerator_column='n', denominator_column='d')
-
-#     # 1. 执行BOM检查
-#     results = bom_check(bom_df=bom_df)
-#     if results.get('success'):
-#         print(results['marked_data'])
-
-#     # 2. 打印结果摘要
-#     # if results['success']:
-#     #     stats = results['statistics']
-#     #     print(f"检查完成: {stats['total_records']} 条记录")
-#     #     print(f"错误记录: {stats['error_records']} 条")
-#     #     print(f"警告记录: {stats['warning_records']} 条")
-#     #     print(f"正常记录: {stats['clean_records']} 条")
-        
-#     #     # 3. 导出结果
-#     #     export_result = export_bom_check_results(results)
-#     #     if export_result['success']:
-#     #         print(export_result['message'])
-
-
-#     # 检查单位唯一性
-#     unit_check_results = bom_unit_check_core_processor(
-#         df=bom_df,
-#         product_no_col='pn',
-#         product_unit_col='pu',
-#         material_no_col='mn',
-#         material_unit_col='mu'
-#     )
-#     print(output_unit_check_result(unit_check_results))

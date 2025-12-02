@@ -96,13 +96,16 @@ class AcceptMaterial(BaseModel):
             self["preday"] = uv.default_preday
         if self.get("subday", "") == "":
             self["subday"] = uv.default_subday
-        if not self.get("leadday"):
+        if self.get("leadday", "") == "":
             self["leadday"] = uv.default_leadday_e if self.get("type") == "E" else uv.default_leadday_f
-        if not self.get("grday"):
+        if self.get("grday", "") == "":
             self["grday"] = uv.default_grday_e if self.get("type") == "E" else uv.default_grday_f
         if not self.get("abc"):
             self["abc"] = "A" if self.get("type") == "E" else "B"
-
+        if self.get("plant", "") == "":
+            self["plant"] = uv.default_plant
+        if self.get("planner", "") == "":
+            self["planner"] = uv.default_planner
         return self
         
 
