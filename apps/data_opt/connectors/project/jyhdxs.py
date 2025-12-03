@@ -8,7 +8,6 @@ from datetime import datetime
 
 from fastapi import status
 
-from config import uservar as uv
 from config.settings import MYAPS_MAIN_DB#, MYAPS_BASE_URL, THIS_SERVER_HOST, THIS_SERVER_PORT
 from apps.io_api.common import standard_response
 from . import ScheduleTasksAbc, MyapsDbActionsAbc, this_base_url, myaps_base_url, this_session
@@ -113,7 +112,7 @@ class ScheduleTasks(ScheduleTasksAbc):
             stock['avail_qty'] = stock['labst'] + stock['labst2']
             stock['supplyno'] = stock['werks'] + '-' + stock['matnr'] # 注意不要用f string，否则supplyno会变成所有料号的超长字符串
             stock['type'] = 'ST'
-            stock['priority'] = uv.default_priority
+            stock['priority'] = 0
             stock['avail_date'] = now
             stock['dt_req'] = now
             stock['status'] = 'NEW'
