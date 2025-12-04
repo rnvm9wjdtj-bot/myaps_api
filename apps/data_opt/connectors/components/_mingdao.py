@@ -5,7 +5,7 @@
 import requests
 
 class MingdaoApi:
-    def __init__(self, app_key: str, sign: str, base_url: str='https://api.mingdao.com/v2'):
+    def __init__(self, app_key: str, sign: str, base_url: str='https://api.mingdao.com'):
         self.base_url = base_url
         self.api_key = app_key
         self.sign = sign
@@ -54,7 +54,7 @@ class MingdaoApi:
         return controls_list
 
     def add_rows(self, worksheet_id: str, rows: list, trigger_workflow: bool=True):
-        path = "/open/worksheet/addRows"
+        path = "/v2/open/worksheet/addRows"
         chunk_size = min(len(rows), 1000)
         for i in range(0, len(rows), chunk_size):
             chunk = self._rows_data_to_controls_list(rows[i:i+chunk_size])

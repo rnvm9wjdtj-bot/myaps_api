@@ -2,8 +2,11 @@
 class DefaultValue:
     myaps_is_pro = 1 # 1 / 0 MyAPS是否专业版
     auto_matver = 1  # 1 / 0 是否自动生成物料版本号，为True时，会在 material save时自动生成产线版本
+    matver_prefix = "V"
     matver_width = 1
+    itemno_prefix = "A"
     itemno_width = 3
+    
 
     MAT_PLANT = "1600"   # 默认工厂
     MAT_PLANNER = "haida"   # 默认计划员
@@ -31,7 +34,7 @@ class DefaultValue:
     MAT_PREDAY = 999  # 默认向前冲销(天)
     MAT_SUBDAY = 999  # 默认向后冲销(天)
 
-    MATVER = f"V{1:0{matver_width}d}"  # 示例 / 默认物料版本号
+    MATVER = f"{matver_prefix}{1:0{matver_width}d}"  # 示例 / 默认物料版本号
     MATVER_LOTFROM = 0  # 默认最小批
     MATVER_LOTTO = 9999999  # 默认最大批
     MATVER_PRIORITY = 0  # 默认优先级
@@ -39,7 +42,7 @@ class DefaultValue:
     WC_WORKER = 1  # 默认工人数
     WC_PRIORITY = 0  # 默认优先级
 
-    ITEMNO = f"A{1:0{itemno_width}d}"
+    ITEMNO = f"{itemno_prefix}{1:0{itemno_width}d}"
 
 
     @classmethod

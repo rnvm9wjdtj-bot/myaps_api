@@ -22,7 +22,7 @@ class AcceptMaterial(BaseModel):
     grday: int = Field(..., ge=0, description="收货质检（天）", example=1)
     abc: str = Field(..., enum=["A", "B", "C"], example="A", description="ABC分类")
     unit: str = Field(..., description='单位', example="PCS")
-    price: Decimal = Field(DefaultValue.MAT_PRICE, description="价格", example=100.50)
+    price: Decimal = Field(0, description="价格", example=100.50)
     groupno: str = Field(..., description="型号", example="G001")
     type: str = Field(... if DefaultValue.myaps_is_pro else None, enum=["E", "F"], example="E", description="物料类型  E-自制件 F-采购件")
     phantom: str = Field(DefaultValue.MAT_PHANTOM, enum=list(gc.YES_NO.keys()), example="N", description='虚拟件')
@@ -178,8 +178,8 @@ class AcceptMatWc(BaseModel):
         json_schema_extra = {
             "example": {
                 "materialno": "M001",
-                "matver": "V1",
-                "itemno": "0010",
+                "matver": DefaultValue.MATVER,
+                "itemno": DefaultValue.ITEMNO,
                 "workcenter": "WC001",
                 "sortno": 1,
                 "basesec": 600,
@@ -203,8 +203,8 @@ class AcceptMatWc(BaseModel):
             self["sf"] = "F"
 
         self['sortno'] = int(self["sortno"])
-        if not self.get("itemno"):
-            self["itemno"] = f"{self['sortno']:0{DefaultValue.itemno_width}d}"
+        if self.get("itemno", "") == "":
+            self["itemno"] = f"{DefaultValue.itemno_prefix}{self['sortno']:0{DefaultValue.itemno_width}d}"
         self["basesec"] = int(self.get("basesec", None) or 0)  # 不要写成self.get("basesec", 0)，因为有可能会传入空字符串
         return self
 
@@ -291,8 +291,7 @@ class AcceptMatWcBom(BaseModel):
                 self["denominator"] = 1
             self["qty"] /= self["denominator"]
             self.pop("denominator") # 删除 denominator ，避免在数据库中存储
-        # if not self.get("itemno"):
-        #     self["itemno"] = f"{1:0{DefaultConst.itemno_width}d}"
+
         return self
 
 
@@ -464,7 +463,7 @@ class AcceptDemand(BaseModel):
             "example": {
                 "materialno": "M001",
                 "demandno": "SO123456",
-                "itemno": "0010",
+                "itemno": f"{DefaultValue.itemno_prefix}{1:0{DefaultValue.itemno_width}d}",
                 "type": "SO",
                 "category": "MTO",
                 "priority": 1,
