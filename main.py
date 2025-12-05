@@ -205,7 +205,7 @@ if __name__ == "__main__":
     load_dotenv(env_file)
     uvicorn.run(
         app,
-        host=settings.THIS_SERVER_HOST,
+        host="0.0.0.0",
         port=settings.THIS_SERVER_PORT,
     )
 

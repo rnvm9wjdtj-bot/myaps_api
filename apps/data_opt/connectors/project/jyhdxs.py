@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 from apps.data_opt.utils.common import add_basic_auth_requests
 
 sap_url1 = 'http://192.168.201.2:8000/zrestful_test2?sap-client=800'  # 库存
-sap_url2 = 'http://192.168.1.170:8001/zrestful_plan?sap-client=500'  # 计划
+sap_url2 = 'http://192.168.201.2:8000/zrestful_plan?sap-client=800'  # 计划
 
 sap_username = 'T058'
 sap_password = '123456'

@@ -268,8 +268,8 @@ class AcceptMatWcBom(BaseModel):
         json_schema_extra = {
             "example": {
                 "productno": "P001",
-                "matver": "V1",
-                "itemno": "0010",
+                "matver": DefaultValue.MATVER,
+                "itemno": DefaultValue.ITEMNO,
                 "materialno": "M001",
                 "qty": 2.0,
                 "offsethour": 0,
@@ -283,6 +283,8 @@ class AcceptMatWcBom(BaseModel):
 
     @model_validator(mode="before")
     def model_valid(self):
+        if self.get("itemno", "") == "":
+            self["itemno"] = DefaultValue.ITEMNO
         denominator = self.get("denominator")
         if denominator:
             try:

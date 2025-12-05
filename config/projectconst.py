@@ -1,10 +1,12 @@
 
 class DefaultValue:
     myaps_is_pro = 1 # 1 / 0 MyAPS是否专业版
+
     auto_matver = 1  # 1 / 0 是否自动生成物料版本号，为True时，会在 material save时自动生成产线版本
-    matver_prefix = "V"
+    matver_prefix = "V" # 产线版本前缀字母
     matver_width = 1
-    itemno_prefix = "A"
+
+    itemno_prefix = "A" # 工序项目前缀字母
     itemno_width = 3
     
 
@@ -42,15 +44,13 @@ class DefaultValue:
     WC_WORKER = 1  # 默认工人数
     WC_PRIORITY = 0  # 默认优先级
 
-    ITEMNO = f"{itemno_prefix}{1:0{itemno_width}d}"
+    ITEMNO = f"{itemno_prefix}{1:0{itemno_width}d}" # 示例 / 默认工序项目
 
 
     @classmethod
     def to_dict(cls):
         cls_dict = cls.__dict__
         return {k: v for k, v in cls_dict.items() if not k.startswith("__")}
-
-
 
 
 if __name__ == "__main__":

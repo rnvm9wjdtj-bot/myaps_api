@@ -1,5 +1,7 @@
+import logging, queue
+from logging.handlers import TimedRotatingFileHandler, QueueHandler, QueueListener
 from typing import Dict, Any, List
-from enum import Enum
+# from enum import Enum
 from copy import deepcopy
 
 from fastapi import status, Query, HTTPException, status, Request, Header
@@ -12,6 +14,40 @@ from pydantic import BaseModel as PydanticSchema
 
 from config.settings import MYAPS_MAIN_DB, MYAPS_DB_SET
 from config.globalconst import ORDER_STATUS, SUPPLY_TYPE
+
+
+def get_logger(log_path='logs', log_name='app.log'):
+    # 创建一个特定于当前模块的记录器
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+    # 创建一个日志格式器
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    # 按时间轮替：每天午夜轮替一次，最多保留7个备份文件
+    timed_handler = TimedRotatingFileHandler(
+        filename=f"{log_path}/{log_name}",
+        when='midnight',      # 按天轮替
+        interval=1,    # 午夜
+        backupCount=7, # 保留最近7天的日志
+        encoding='utf-8'
+    )
+    timed_handler.suffix = "%Y%m%d"  # 日志文件名后缀，按日期格式
+    timed_handler.setLevel(logging.DEBUG)
+    timed_handler.setFormatter(formatter)
+    logger.addHandler(timed_handler)  # 将按时间轮替处理器添加到记录器
+
+    # 创建队列
+    log_queue = queue.Queue(-1)
+    # 创建 QueueListener 并启动
+    listener = QueueListener(log_queue, timed_handler, respect_handler_level=True)
+    listener.start()
+
+    queue_handler = QueueHandler(log_queue)
+    logger.addHandler(queue_handler)
+    return logger
+
+
+logger = get_logger()
+
 
 
 def dict_to_lower_keys(d: dict) -> dict:
@@ -71,7 +107,6 @@ async def common_read_by_orm(db_name: str, mdl: TortoiseBaseModel, page_size: in
 
 
 async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticSchema | Dict[str, Any]]):
-
     unique_together = mdl._meta.unique_together
     model_key = unique_together[0] if unique_together else [mdl._meta.pk_attr]
     only_fields = [f for f in mdl._meta.fields if f != "vid"] if len(model_key) > 1 else None
@@ -85,6 +120,7 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
         row_dict = _d.model_dump(exclude_none=True) if isinstance(_d, PydanticSchema) else _d
         data_dict_list.append(row_dict)
         data_dict_list2.append(deepcopy(row_dict))
+    logger.info(f"ℹ️PydanticDumpedData: \n{data_dict_list}")
     success_db = []
     cerate_count_total = 0
     update_count_total = 0
