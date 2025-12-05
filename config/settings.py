@@ -16,7 +16,7 @@ MYAPS_DB_PASSWORD = os.getenv("MYAPS_DB_PASSWORD")
 MYAPS_DB_SET = os.getenv("MYAPS_DB_SET").split(",")
 MYAPS_MAIN_DB = os.getenv("MYAPS_MAIN_DB")
 
-THIS_PROTOCOL = os.getenv("THIS_PROTOCOL")
+THIS_PROTOCOL = os.getenv("THIS_PROTOCOL", "http://")
 THIS_SERVER_HOST = os.getenv("THIS_SERVER_HOST")
 THIS_SERVER_PORT = int(os.getenv("THIS_SERVER_PORT"))
 # 本API数据库配置<postgreSQL>

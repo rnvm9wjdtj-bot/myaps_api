@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.openapi.docs import get_swagger_ui_html
 from tortoise.contrib.fastapi import register_tortoise
 
-from config import settings
+from config import settings, logger
 from apps.io_api.routers import rt as io_rt
 from apps.io_api.common import register_exception_handlers
 from apps.data_opt.routers import rt as do_rt
@@ -25,15 +25,26 @@ async def lifespan(app: FastAPI):
     # 应用启动时执行的操作
     await mysql_monitor.start_monitoring()
     print("MySQL Binlog监控已启动")
+
+    logger.setup_logging(__name__)
+    # 启动日志队列监听器
+    if logger._listener is not None:
+        logger._listener.start()
+        print("日志队列监听器已启动")
     
     yield  # 应用运行期间
     
     # 应用关闭时执行的操作
+    print("应用关闭中...")
     mysql_monitor.stop_monitoring()
     print("MySQL Binlog监控已停止")
     # 关闭调度器
     scheduler_manager.shutdown()
     print("定时任务管理器已关闭")
+    # 关闭日志队列监听
+    logger.close_logging()
+    print("日志队列 已停止。")
+
 
 
 # 创建FastAPI应用实例
