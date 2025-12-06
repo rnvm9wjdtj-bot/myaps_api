@@ -8,9 +8,10 @@ from fastapi import APIRouter, Query, Body, status#, Request, Path
 
 from config import settings, globalconst as gc
 from config.projectconst import DefaultValue
-from .models import TMaterial, TWorkcenter, TMatWc, TMatVer, TMatWcBom, TSupply, TDemand, TMold, TMatWcMold#,TortoiseBaseModel
+from .models import TMaterial, TWorkcenter, TMatWc, TMatVer, TMatWcBom, TSupply, TDemand, TMold, TMatWcMold, TConfirm#,TortoiseBaseModel
 from .schemas import (
-    AcceptMaterial, AcceptWorkcenter, AcceptMatWc, AcceptMatVer, AcceptMatWcBom, AcceptSupply, AcceptDemand, AcceptMold, AcceptMatWcMold, PatchPl,
+    AcceptMaterial, AcceptWorkcenter, AcceptMatWc, AcceptMatVer, AcceptMatWcBom, AcceptSupply, AcceptDemand, AcceptMold, AcceptMatWcMold, AcceptConfirm,
+    PatchPl
     #DeleteSupply
     )
 from .common import (
@@ -380,3 +381,17 @@ async def get_matdailyqtyreport(
     if materialno:
         filter_string = f"({filter_string}) AND MaterialNo = '{materialno}'"    
     return await common_read_by_sql(db_name=db_name, table_name="v_matdailyqtyreport", filter_string=filter_string)
+
+
+@rt.post(
+    "/t_confirm",
+    tags=["生产数据 - 报工"],
+    summary="新增报工记录",
+    description="新增报工记录"
+    )
+async def post_record(
+    data: List[AcceptConfirm],
+    db_name: str = common_params["db_name"],
+    x_api_key: str = common_params["x_api_key"]
+    ):
+    return await common_write(db_name=db_name, mdl=TConfirm, data=data)

@@ -15,7 +15,7 @@ from tortoise.models import Model as TortoiseBaseModel
 from pydantic import BaseModel as PydanticSchema
 
 from config.settings import MYAPS_MAIN_DB, MYAPS_DB_SET
-from config.globalconst import ORDER_STATUS, SUPPLY_TYPE
+from config.globalconst import SUPPLY_TYPE#ORDER_STATUS, 
 from config import logger
 
 file_logger = logger.setup_logging(__name__)
@@ -327,7 +327,7 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
     origin_total = len(data)
     
     # 记录日志
-    file_logger.info(f"ℹ️↓接收到{origin_total}条数据，拟写入账套{db_name} —— common_write\n{[i.raw_input_data for i in processed_data_list]}")
+    file_logger.info(f"ℹ️↓接收到{origin_total}条数据，拟写入账套@{db_name} —— common_write\n{[i.raw_input_data for i in processed_data_list]}")
     
     # 验证账套
     valid_dbs = validate_databases(db_name)

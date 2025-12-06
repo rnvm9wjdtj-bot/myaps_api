@@ -150,3 +150,13 @@ class TMatWcMold(pm.ProtoMatWcMold):
         abstract = False
         table = "t_mat_wc_mold"
         unique_together = [("materialno", "workcenter", "moldno")]
+
+
+
+class TConfirm(pm.ProtoConfirm):
+    noid = fields.IntField(primary_key=True, source_field='NoID')
+
+    class Meta:
+        managed = False
+        abstract = False
+        table = "t_confirm"

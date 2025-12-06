@@ -2,15 +2,18 @@
 江阴海达橡塑的连接器
 """
 
-import os, requests, logging#, atexit
+import requests, logging#, os, atexit
 import pandas as pd
 from datetime import datetime
 
 from fastapi import status
 
-from config.settings import MYAPS_MAIN_DB#, MYAPS_BASE_URL, THIS_SERVER_HOST, THIS_SERVER_PORT
+# from config.settings import MYAPS_MAIN_DB#, MYAPS_BASE_URL, THIS_SERVER_HOST, THIS_SERVER_PORT
+from config import logger as lg
+
+
 from apps.io_api.common import standard_response
-from . import ScheduleTasksAbc, MyapsDbActionsAbc, this_base_url, myaps_base_url, this_session
+from . import ScheduleTasksAbc, MyapsDbActionsAbc, this_base_url, this_session#, myaps_base_url
 
 
 #################################################################################
@@ -22,6 +25,7 @@ main_db = MyapsDbActionsAbc.main_db
 werks = '1600'
 
 
+file_logger = lg.setup_logging(__name__)
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -189,20 +193,27 @@ class MyapsDbActions(MyapsDbActionsAbc):
             sap_response_json = sap_response['response_json']
             sap_mo_data = sap_response_json['BODY'][0]
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+             
             if sap_mo_data['STATUS'] == 'S':
-                logger.info(f"推送计划任务执行成功，账套：{main_db}，MO单号：{sap_mo_data['AUFNR']}")
+                log_msg = f"✅推送计划任务执行成功，账套：{main_db}，MO单号：{sap_mo_data['AUFNR']}"
+                logger.info(log_msg)
+                file_logger.info(log_msg)
                 pl_data['mono'] = sap_mo_data['AUFNR']
                 pl_data['status'] = 'E2A'
                 pl_data['memo'] = f'✅{now} @ERP【{sap_mo_data['MESSAGE']}】'
                 pl_data['is_execute_updates'] = True
             else:
-                logger.error(f"推送计划任务执行失败，账套：{main_db}，错误信息：{sap_mo_data['MESSAGE']}")
+                log_msg = f"🚫推送计划任务执行失败，账套：{main_db}，错误信息：{sap_mo_data['MESSAGE']}"
+                logger.error(log_msg)
+                file_logger.error(log_msg)
                 pl_data['mono'] = ''
                 pl_data['status'] = 'CRE'   # ❗❗失败情况下，状态务必回撤为 CRE ，否则后续无法再次下达
                 pl_data['memo'] = f'🚫{now} @ERP【{sap_mo_data['MESSAGE']}】'
                 pl_data['is_execute_updates'] = False
         except Exception as e:
-            logger.error(f"推送计划任务执行失败: {str(e)}")
+            log_msg = f"🚫推送计划任务执行失败: {str(e)}"
+            logger.error(log_msg)
+            file_logger.error(log_msg)
             pl_data['mono'] = ''
             pl_data['status'] = 'CRE'
             pl_data['memo'] = f'🚫{now} @APS【{str(e)}】'

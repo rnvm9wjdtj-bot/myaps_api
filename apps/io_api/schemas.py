@@ -588,3 +588,41 @@ class AcceptDemand(BaseModel):
     def model_valid_after(self):
         _set_raw_input_data(self)
         return self
+
+
+class AcceptConfirm(BaseModel):
+    supplyno: str = Field(..., max_length=64, description='供应单号', example="MO123456")
+    itemno: str = Field(..., max_length=6, description='项目号（若类型为SO则可传入订单号或其他标识符，不超过6位）', example=DefaultValue.ITEMNO)
+    recordqty: float = Field(..., description='报工数量', gt=0, example=100)
+    recorddt: datetime = Field(..., description='报工日期', example="2025-01-07 10:00:00")
+    status: str = Field("Y", enum=list(gc.YES_NO), example="Y", description='状态')
+    sysuser: str = Field(None, max_length=32, description='系统用户', example="张三")
+    _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
+
+    class Config:
+        title = "验证规则 - 报工"
+        json_schema_extra = {
+            "example": {
+                "supplyno": "MO123456",
+                "itemno": DefaultValue.ITEMNO,
+                "recordqty": 100.0,
+                "recorddt": "2025-01-07 10:00:00",
+                "status": "Y",
+                "sysuser": "张三"
+            }
+        }
+
+    @model_validator(mode="before")
+    @classmethod
+    def model_valid(cls, values):
+        _cache_raw_input_data(cls, values)
+        if values.get("status") in gc.NONE_AND_EMPTY:
+            values["status"] = "Y"
+        if values.get("recorddt") in gc.NONE_AND_EMPTY:
+            values["recorddt"] = datetime.now()
+        return values
+
+    @model_validator(mode='after')
+    def model_valid_after(self):
+        _set_raw_input_data(self)
+        return self
