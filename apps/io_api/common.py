@@ -1,9 +1,10 @@
 # import os, logging, queue
 # from logging.handlers import TimedRotatingFileHandler, QueueHandler, QueueListener
 from pickle import LONG
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 # from enum import Enum
 from copy import deepcopy
+from dataclasses import dataclass
 
 from fastapi import status, Query, HTTPException, status, Request, Header
 from fastapi.responses import JSONResponse
@@ -17,8 +18,15 @@ from config.settings import MYAPS_MAIN_DB, MYAPS_DB_SET
 from config.globalconst import ORDER_STATUS, SUPPLY_TYPE
 from config import logger
 
-lg = logger.setup_logging(__name__)
+file_logger = logger.setup_logging(__name__)
 
+
+@dataclass
+class ProcessedData:
+    """处理后的数据类，统一管理不同类型的数据"""
+    processed_data: dict  # 处理后的数据（用于更新）
+    create_data: dict     # 创建数据（深拷贝，用于创建）
+    raw_input_data: Any   # model_validator之前的原始数据
 
 
 def dict_to_lower_keys(d: dict) -> dict:
@@ -50,18 +58,345 @@ common_params = {
 }
 
 
-########################################################################
+def get_raw_input_data(data_item: PydanticSchema | Dict[str, Any]) -> Any:
+    """
+    获取model_validator之前的原始数据
+    
+    Args:
+        data_item: 单个数据项，可以是PydanticSchema对象或字典
+        
+    Returns:
+        model_validator之前的原始数据
+    """
+    if isinstance(data_item, PydanticSchema):
+        # 检查是否有_raw_input_data属性（在after验证阶段设置的）
+        if hasattr(data_item, '_raw_input_data'):
+            return data_item._raw_input_data
+        else:
+            # 如果没有，说明可能没有执行before验证或没有暂存数据
+            # 尝试直接访问属性或使用model_dump(include='_raw_input_data')
+            try:
+                # 使用model_dump获取所有数据，包括私有属性
+                all_data = data_item.model_dump(include={'_raw_input_data'}, exclude_none=False)
+                return all_data['_raw_input_data']
+            except Exception:
+                return data_item.model_dump(exclude_none=False)
+    else:
+        # 如果不是PydanticSchema对象，直接使用原始值
+        return data_item
+
+
+def convert_to_dict(data_item: PydanticSchema | Dict[str, Any], exclude_none: bool = True) -> dict:
+    """
+    将数据项转换为字典
+    
+    Args:
+        data_item: 单个数据项，可以是PydanticSchema对象或字典
+        exclude_none: 是否排除None值
+        
+    Returns:
+        转换后的字典
+    """
+    if isinstance(data_item, PydanticSchema):
+        return data_item.model_dump(exclude_none=exclude_none)
+    return data_item
+
+
+def validate_databases(db_name: str) -> List[str]:
+    """
+    验证并返回有效的账套列表
+    
+    Args:
+        db_name: 账套名称，支持逗号分隔的多个账套
+        
+    Returns:
+        有效的账套列表
+    """
+    return [db for db in db_name.split(",") if db in MYAPS_DB_SET]
+
+
+async def preprocess_data(data: List[PydanticSchema | Dict[str, Any]]) -> List[ProcessedData]:
+    """
+    预处理数据列表，转换为统一的ProcessedData格式
+    
+    Args:
+        data: 原始数据列表
+        
+    Returns:
+        预处理后的ProcessedData列表
+    """
+    processed_list = []
+    
+    for data_item in data:
+        # 获取原始输入数据
+        raw_input_data = get_raw_input_data(data_item)
+        
+        # 转换为字典
+        processed_dict = convert_to_dict(data_item, exclude_none=True)
+        
+        # 深拷贝用于创建操作
+        create_dict = deepcopy(processed_dict)
+        
+        # 添加到处理列表
+        processed_list.append(ProcessedData(
+            processed_data=processed_dict,
+            create_data=create_dict,
+            raw_input_data=raw_input_data
+        ))
+    
+    return processed_list
+
+
+async def process_overwrite_operation(
+    db, mdl, match_on: dict, new_value: dict, create_data: dict, only_fields: List[str],
+    db_name: str
+) -> Tuple[int, int]:
+    """
+    处理覆盖操作
+    
+    Args:
+        db: 数据库连接
+        mdl: 模型类
+        match_on: 匹配条件
+        new_value: 新值
+        create_data: 创建数据
+        only_fields: 仅查询的字段
+        db_name: 账套名称
+        
+    Returns:
+        (创建数量, 更新数量)
+    """
+    create_count = 0
+    update_count = 0
+    
+    # 检查记录是否存在
+    if await mdl.filter(**match_on).only(*only_fields).using_db(db).exists():
+        # 构建参数化查询
+        set_clauses = []
+        params = []
+        
+        for k, v in new_value.items():
+            if k != "vid":
+                set_clauses.append(f"{k} = ?")
+                params.append(v)
+        
+        # 构建WHERE条件
+        where_clauses = []
+        for k, v in match_on.items():
+            where_clauses.append(f"{k} = ?")
+            params.append(v)
+        
+        # 执行更新
+        sql = f"""
+            UPDATE {mdl._meta.db_table}
+            SET {', '.join(set_clauses)}
+            WHERE {' AND '.join(where_clauses)}
+        """
+        
+        await db.execute_query(sql, params)
+        update_count += 1
+        file_logger.info(f"✅↑UPDATE @{db_name}")
+    else:
+        # 创建新记录
+        await mdl.create(**create_data, using_db=db)
+        create_count += 1
+        file_logger.info(f"✅↑CREATE @{db_name}")
+    
+    return create_count, update_count
+
+
+async def process_normal_operation(
+    db, mdl, match_on: dict, update_data: dict, create_data: dict, only_fields: List[str],
+    db_name: str, is_compound_key: bool
+) -> Tuple[int, int]:
+    """
+    处理正常操作（非覆盖）
+    
+    Args:
+        db: 数据库连接
+        mdl: 模型类
+        match_on: 匹配条件
+        update_data: 更新数据
+        create_data: 创建数据
+        only_fields: 仅查询的字段
+        db_name: 账套名称
+        is_compound_key: 是否为联合主键
+        
+    Returns:
+        (创建数量, 更新数量)
+    """
+    create_count = 0
+    update_count = 0
+    
+    if is_compound_key:
+        # 联合主键处理
+        if await mdl.filter(**match_on).only(*only_fields).using_db(db).exists():
+            # 更新记录
+            await mdl.filter(**match_on).only(*only_fields).first().using_db(db).update(**update_data)
+            update_count += 1
+            file_logger.info(f"✅↑UPDATE @{db_name}")
+        else:
+            # 创建新记录
+            await mdl.create(**create_data, using_db=db)
+            create_count += 1
+            file_logger.info(f"✅↑CREATE @{db_name}")
+    else:
+        # 单一主键处理
+        exist = await mdl.get_or_none(**match_on, using_db=db)
+        if exist:
+            # 更新记录
+            await exist.update_from_dict(update_data).save(using_db=db)
+            update_count += 1
+            file_logger.info(f"✅↑UPDATE @{db_name}")
+        else:
+            # 创建新记录
+            await mdl.create(**create_data, using_db=db)
+            create_count += 1
+            file_logger.info(f"✅↑CREATE @{db_name}")
+    
+    return create_count, update_count
+
+
+async def process_single_database(
+    db_name: str, mdl: TortoiseBaseModel, processed_data_list: List[ProcessedData],
+    only_fields: List[str], model_key: List[str]
+) -> Tuple[int, int]:
+    """
+    处理单个数据库的操作
+    
+    Args:
+        db_name: 数据库名称
+        mdl: 模型类
+        processed_data_list: 预处理后的数据列表
+        only_fields: 仅查询的字段
+        model_key: 模型主键
+        
+    Returns:
+        (创建数量, 更新数量)
+    """
+    create_count = 0
+    update_count = 0
+    match_on = None
+    new_value = None
+    
+    async with in_transaction(db_name) as db:
+        for i, processed_data in enumerate(processed_data_list):
+            # 检查是否需要覆盖操作
+            if "_overwrite" in processed_data.processed_data:
+                if i == 0:
+                    match_on = processed_data.processed_data["_overwrite"]["match_on"]
+                    new_value = processed_data.processed_data["_overwrite"]["new_value"]
+                
+                # 处理覆盖操作
+                create, update = await process_overwrite_operation(
+                    db, mdl, match_on, new_value, processed_data.create_data, only_fields,
+                    db_name
+                )
+                create_count += create
+                update_count += update
+            else:
+                # 构建匹配条件
+                match_on = {k: processed_data.create_data.get(k) for k in model_key}
+                
+                is_compound_key = len(model_key) > 1
+                # 处理正常操作
+                create, update = await process_normal_operation(
+                    db, mdl, match_on, processed_data.raw_input_data, processed_data.create_data,
+                    only_fields, db_name, is_compound_key
+                )
+                create_count += create
+                update_count += update
+    
+    return create_count, update_count
+
+
+async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticSchema | Dict[str, Any]]):
+    """
+    通用写入操作，支持创建和更新
+    
+    Args:
+        db_name: 账套名称，支持逗号分隔的多个账套
+        mdl: Tortoise模型类
+        data: 数据列表，可以是PydanticSchema对象或字典
+        
+    Returns:
+        标准响应格式
+    """
+    # 预处理数据
+    processed_data_list = await preprocess_data(data)
+    origin_total = len(data)
+    
+    # 记录日志
+    file_logger.info(f"ℹ️↓接收到{origin_total}条数据，拟写入账套{db_name} —— common_write\n{[i.raw_input_data for i in processed_data_list]}")
+    
+    # 验证账套
+    valid_dbs = validate_databases(db_name)
+    if not valid_dbs:
+        file_logger.error(f"❌↑未找到有效账套（available：{MYAPS_DB_SET}），禁止写入 —— common_write")
+        return standard_response(
+            success=0,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="操作失败：未找到有效账套 —— common_write",
+            meta={
+                "input_db_name": db_name,
+                "available_dbs": ", ".join(MYAPS_DB_SET),
+            },
+            data=[item.processed_data for item in processed_data_list]
+        )
+    
+    # 获取模型信息
+    unique_together = mdl._meta.unique_together
+    model_key = unique_together[0] if unique_together else [mdl._meta.pk_attr]
+    is_compound_key = len(model_key) > 1
+    only_fields = [f for f in mdl._meta.fields if f != "vid"] if is_compound_key else None
+    
+    # 初始化统计信息
+    success_db = []
+    create_count_total = 0
+    update_count_total = 0
+    
+    try:
+        # 处理每个账套
+        for db_name in valid_dbs:
+            # 处理单个账套
+            create_count, update_count = await process_single_database(
+                db_name, mdl, processed_data_list, only_fields, model_key
+            )
+            
+            # 更新统计
+            create_count_total += create_count
+            update_count_total += update_count
+            
+            # 记录成功的账套
+            success_db.append({"db_name": db_name, "create": create_count, "update": update_count})
+        
+        # 记录总日志
+        file_logger.info(f"✅生效{len(success_db)}个账套，总计新增{create_count_total}条，修改{update_count_total}条")
+        
+        return standard_response(
+            data=[item.create_data for item in processed_data_list],
+            message=f"生效{len(success_db)}个账套，总计新增{create_count_total}条，修改{update_count_total}条",
+            meta={"origin_total": origin_total, "success_db": success_db}
+        )
+    except Exception as e:
+        file_logger.error(f"❌↑操作失败：{str(e)} —— common_write")
+        return standard_response(
+            success=0,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message=f"操作失败：{str(e)} —— common_write",
+            meta={"origin_total": origin_total, "success_db": success_db, "error_db": db_name},
+            data=[item.processed_data for item in processed_data_list]
+        )
+
 
 # 路由公共方法
 async def common_read_by_orm(db_name: str, mdl: TortoiseBaseModel, page_size: int, page_index: int):
-    dbs = [i for i in db_name.split(",") if i in MYAPS_DB_SET]
+    dbs = validate_databases(db_name)
     assert dbs, "账套参数错误"
     db = Tortoise.get_connection(dbs[0])
     # 分页查询
     offset = page_size * page_index
     if mdl._meta.unique_together:   # 如果是联合主键，则要排除虚拟主键的干扰
-        # model_fields = set(mdl._meta.fields)
-        # only_fields = model_fields - {"vid", }     # 必须用set集合{"vid", }
         only_fields = [f for f in mdl._meta.fields if f != "vid"]
         data = await mdl.all().only(*only_fields).using_db(db).offset(offset).limit(page_size)
     else:
@@ -77,117 +412,13 @@ async def common_read_by_orm(db_name: str, mdl: TortoiseBaseModel, page_size: in
     )
 
 
-async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticSchema | Dict[str, Any]]):
-    unique_together = mdl._meta.unique_together
-    model_key = unique_together[0] if unique_together else [mdl._meta.pk_attr]
-    only_fields = [f for f in mdl._meta.fields if f != "vid"] if len(model_key) > 1 else None
-
-    dbs = [i for i in db_name.split(",") if i in MYAPS_DB_SET]
-    if not dbs:
-        return standard_response(
-            success=0,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="操作失败：未找到有效账套 —— common_write",
-            meta={
-                "input_db_name": db_name,
-                "available_dbs": ", ".join(MYAPS_DB_SET),
-            },
-            data=data_dict_list
-        )
-    oritin_total = len(data)
-    data_dict_list = []
-    data_dict_list2 = []
-    for _d in data:
-        # row_dict = _d.model_dump(exclude_unset=True, exclude_none=True) if isinstance(_d, PydanticSchema) else _d
-        row_dict = _d.model_dump(exclude_none=True) if isinstance(_d, PydanticSchema) else _d
-        data_dict_list.append(row_dict)
-        data_dict_list2.append(deepcopy(row_dict))
-    lg.info(f"ℹ️PostData: \n{data_dict_list}")
-    success_db = []
-    cerate_count_total = 0
-    update_count_total = 0
-    try:
-        match_on = None
-        new_value = None
-        for i in range(len(dbs)):
-            _db = dbs[i]
-            cerate_count = 0
-            update_count = 0
-
-            async with in_transaction(_db) as db:
-                for j in range(len(data_dict_list)):
-                    _d = data_dict_list[j]
-                    _d2 = data_dict_list2[j]
-                    if hasattr(_d, "_overwrite"):   # 当联合主键之一需要被覆写，_overwrite = {"match_on": {...}, "new_value": {...}}
-                        if i == 0:
-                            match_on = _d._overwrite["match_on"]
-                            new_value = _d._overwrite["new_value"]
-                        if await mdl.filter(**match_on).only(*only_fields).using_db(db).exists():
-                            where_clause = " AND ".join([f"{k} = '{v}'" for k, v in match_on.items()])
-                            sql = f"""
-                                UPDATE {mdl._meta.db_table}
-                                SET {", ".join([f"{k} = '{v}'" for k, v in new_value.items() if k != "vid"])}
-                                WHERE {where_clause}
-                            """
-                            await db.execute_query(sql)
-                            update_count += 1
-                            update_count_total += 1
-                        else:
-                            await mdl.create(**_d, using_db=db)
-                            cerate_count += 1
-                            cerate_count_total += 1
-                    else:
-                        match_on = {k : _d2.get(k) for k in model_key}
-                        if len(model_key) > 1:     # 如果是联合主键，则要排除虚拟主键的干扰
-                            if await mdl.filter(**match_on).only(*only_fields).using_db(db).exists():
-                                # 先删除None值
-                                if i == 0:
-                                    for k, v in _d.items():
-                                        if v is None:
-                                            _d.pop(k)
-                                await mdl.filter(**match_on).only(*only_fields).first().using_db(db).update(**_d)# 必须重新写一遍查询逻辑，因为前面返回的是一个对象，不能直接update
-                                update_count += 1
-                                update_count_total += 1
-                            else:
-                                await mdl.create(**_d2, using_db=db)
-                                cerate_count += 1
-                                cerate_count_total += 1
-                        else:   # 单一主键
-                            exist = await mdl.get_or_none(**match_on, using_db=db)
-                            # exist = await mdl.filter(**match_on).using_db(db).first()
-                            if exist:
-                                if i == 0: _d.pop(model_key[0])
-                                await exist.update_from_dict(_d).save(using_db=db)
-                                update_count += 1
-                                update_count_total += 1
-                            else:
-                                await mdl.create(**_d2, using_db=db)
-                                cerate_count += 1
-                                cerate_count_total += 1
-
-            success_db.append({"db_name": _db, "create": cerate_count, "update": update_count})
-        
-        return standard_response(
-            data=data_dict_list2,
-            message=f"生效{len(success_db)}个账套，总计新增{cerate_count_total}条，修改{update_count_total}条",
-            meta={"origin_total": oritin_total, "success_db": success_db}
-            )
-    except Exception as e:
-        return standard_response(
-            success=0,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message=f"操作失败：{str(e)} —— common_write",
-            meta={"origin_total": oritin_total, "success_db": success_db, "error_db": _db},
-            data=data_dict_list
-        )
-
 # 路由公共方法 - delete
 async def common_delete_by_orm(db_name: str, mdl: TortoiseBaseModel, targets: List[dict]):
     delete_count = 0
     try:
         async with in_transaction(db_name) as db:
-            for _ in targets:
-                exist = await mdl.get_or_none(**_, using_db=db)
+            for target in targets:
+                exist = await mdl.get_or_none(**target, using_db=db)
                 if exist:
                     await exist.delete(using_db=db)
                     delete_count += 1
@@ -202,6 +433,7 @@ async def common_delete_by_orm(db_name: str, mdl: TortoiseBaseModel, targets: Li
             message=f"操作失败：{str(e)}"
         )
 
+
 async def common_call_dbprocdure(db_name: str, procedure_name: str, params_list: List[List[Any]] = [[]]):
     """
     调用数据库存储过程
@@ -214,7 +446,10 @@ async def common_call_dbprocdure(db_name: str, procedure_name: str, params_list:
     try:
         async with in_transaction(db_name) as db:
             for params in params_list:
-                count, data  = await db.execute_query(f'CALL {procedure_name}({", ".join(["%s"] * len(params))})', params)
+                count, data = await db.execute_query(
+                    f'CALL {procedure_name}({", ".join(["%s"] * len(params))})', 
+                    params
+                )
                 affect_count += data[0].get('t_supply_updated', 0)
             return standard_response(
                 message=f"调用存储过程`{procedure_name}`成功，影响{affect_count}条记录",
@@ -226,6 +461,7 @@ async def common_call_dbprocdure(db_name: str, procedure_name: str, params_list:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message=f"操作失败：{str(e)}"
         )
+
 
 async def common_read_by_sql(db_name: str, table_name: str, filter_string: str = '', order_string: str = ''):
     try:
@@ -247,6 +483,7 @@ async def common_read_by_sql(db_name: str, table_name: str, filter_string: str =
             message=f"操作失败：{str(e)}"
         )
 
+
 async def common_delete_by_sql(db_name: str, table_name: str, filter_string: str):
     try:
         db = Tortoise.get_connection(db_name)
@@ -264,7 +501,8 @@ async def common_delete_by_sql(db_name: str, table_name: str, filter_string: str
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message=f"操作失败：{str(e)}"
         )
-        
+
+
 ################################################################
 # pydantic验证错误统一格式
 class CustomValidationError(HTTPException):
@@ -280,6 +518,7 @@ class CustomValidationError(HTTPException):
     )
         super().__init__(status_code=status_code, detail=detail)
 
+
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     errors = []
     for error in exc.errors():
@@ -289,6 +528,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "type": error['type']
         })
     raise CustomValidationError(errors=errors)
+
 
 async def http_exception_handler(request: Request, exc: HTTPException):
     if isinstance(exc.detail, dict):
@@ -308,6 +548,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
             meta=detail.get("meta", None)
         )
     )
+
 
 def register_exception_handlers(app):
     app.add_exception_handler(RequestValidationError, validation_exception_handler)

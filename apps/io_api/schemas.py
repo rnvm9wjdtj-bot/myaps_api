@@ -1,14 +1,28 @@
 from datetime import datetime
-import enum
-from typing import Literal, Optional, Any#, List, Dict
+# import enum
+from typing import Literal, Dict, Optional, Any#, List
 from decimal import Decimal
 
-from pydantic import BaseModel, Field, field_validator, model_validator#, ValidationError
+from pydantic import BaseModel, Field, model_validator, PrivateAttr#, ValidationError, field_validator
 
 from config import globalconst as gc
 from config.projectconst import DefaultValue
 # from .models import TMatWc
 
+def _cache_raw_input_data(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    在模型验证之前捕获原始输入数据。
+    'values' 参数就是传入的原始值。
+    """
+    if isinstance(values, dict):
+        cls._cached_raw_input_data = values.copy()
+    return values
+
+def _set_raw_input_data(self):
+    if hasattr(self, "_cached_raw_input_data"):
+        self._raw_input_data = self._cached_raw_input_data
+        # delattr(self, "_cached_raw_input_data")
+    return self
 
 class AcceptMaterial(BaseModel):
     materialno: str = Field(..., description="料号", example="M001")
@@ -45,6 +59,7 @@ class AcceptMaterial(BaseModel):
     preday: int = Field(DefaultValue.MAT_PREDAY, ge=0, description='向前冲销(天)', example=999)
     subday: int = Field(DefaultValue.MAT_SUBDAY, ge=0, description='向后冲销(天)', example=999)
     memo: str = Field(None,  description='备注', example="无特殊要求")
+    _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
 
     class Config:
         title = "验证规则 - 物料"
@@ -53,9 +68,9 @@ class AcceptMaterial(BaseModel):
                 "materialno": "M001",
                 "description": "测试物料A",
                 "size": "100x100mm",
-                "plant": "1600",
-                "planner": "haida",
-                "fifo": 1,
+                "plant": DefaultValue.MAT_PLANT,
+                "planner": DefaultValue.MAT_PLANNER,
+                "fifo": DefaultValue.MAT_FIFO,
                 "leadday": 7,
                 "expday": 365,
                 "grday": 1,
@@ -68,47 +83,54 @@ class AcceptMaterial(BaseModel):
                 "memo": "标准物料"
             }
         }
-    
+
     @model_validator(mode="before")
-    def model_valid(self):
-        if self.get("fifo", "") == "":  # ，
-            self["fifo"] = DefaultValue.MAT_FIFO
-        if self.get("expday", "") == "":
-            self["expday"] = DefaultValue.MAT_EXPDAY
-        if self.get("phantommin", "") == "":
-            self["phantommin"] = 0
-        if self.get("firmday", "") == "":
-            self["firmday"] = DefaultValue.MAT_FIRMDAY
-        if self.get("lotfix", "") == "":
-            self["lotfix"] = DefaultValue.MAT_LOTFIX
-        if self.get("lotmin", "") == "":
-            self["lotmin"] = DefaultValue.MAT_LOTMIN
-        if self.get("lotmax", "") == "":
-            self["lotmax"] = DefaultValue.MAT_LOTMAX
-        if self.get("lotround", "") == "":
-            self["lotround"] = DefaultValue.MAT_LOTROUND
-        if self.get("lotss", "") == "":
-            self["lotss"] = DefaultValue.MAT_LOTSS
-        if self.get("lotpoint", "") == "":
-            self["lotpoint"] = DefaultValue.MAT_LOTPOINT
-        if self.get("lottop", "") == "":
-            self["lottop"] = DefaultValue.MAT_LOTTOP
-        if self.get("preday", "") == "":
-            self["preday"] = DefaultValue.MAT_PREDAY
-        if self.get("subday", "") == "":
-            self["subday"] = DefaultValue.MAT_SUBDAY
-        if self.get("leadday", "") == "":
-            self["leadday"] = DefaultValue.MAT_LEADDAY_E if self.get("type") == "E" else DefaultValue.MAT_LEADDAY_F
-        if self.get("grday", "") == "":
-            self["grday"] = DefaultValue.MAT_GRDAY_E if self.get("type") == "E" else DefaultValue.MAT_GRDAY_F
-        if not self.get("abc"):
-            self["abc"] = DefaultValue.MAT_ABC_E if self.get("type") == "E" else DefaultValue.MAT_ABC_F
-        if self.get("plant", "") == "":
-            self["plant"] = DefaultValue.MAT_PLANT
-        if self.get("planner", "") == "":
-            self["planner"] = DefaultValue.MAT_PLANNER
-        return self
-        
+    @classmethod
+    def model_valid(cls, values: Dict[str, Any]):
+        if values.get("price") in gc.NONE_AND_EMPTY:
+            values["price"] = 0.00
+        _cache_raw_input_data(cls, values)
+        if values.get("fifo", "") == "":  # ，
+            values["fifo"] = DefaultValue.MAT_FIFO
+        if values.get("expday", "") == "":
+            values["expday"] = DefaultValue.MAT_EXPDAY
+        if values.get("phantommin", "") == "":
+            values["phantommin"] = 0
+        if values.get("firmday", "") == "":
+            values["firmday"] = DefaultValue.MAT_FIRMDAY
+        if values.get("lotfix", "") == "":
+            values["lotfix"] = DefaultValue.MAT_LOTFIX
+        if values.get("lotmin", "") == "":
+            values["lotmin"] = DefaultValue.MAT_LOTMIN
+        if values.get("lotmax", "") == "":
+            values["lotmax"] = DefaultValue.MAT_LOTMAX
+        if values.get("lotround", "") == "":
+            values["lotround"] = DefaultValue.MAT_LOTROUND
+        if values.get("lotss", "") == "":
+            values["lotss"] = DefaultValue.MAT_LOTSS
+        if values.get("lotpoint", "") == "":
+            values["lotpoint"] = DefaultValue.MAT_LOTPOINT
+        if values.get("lottop", "") == "":
+            values["lottop"] = DefaultValue.MAT_LOTTOP
+        if values.get("preday", "") == "":
+            values["preday"] = DefaultValue.MAT_PREDAY
+        if values.get("subday", "") == "":
+            values["subday"] = DefaultValue.MAT_SUBDAY
+        if values.get("leadday", "") == "":
+            values["leadday"] = DefaultValue.MAT_LEADDAY_E if values.get("type") == "E" else DefaultValue.MAT_LEADDAY_F
+        if values.get("grday", "") == "":
+            values["grday"] = DefaultValue.MAT_GRDAY_E if values.get("type") == "E" else DefaultValue.MAT_GRDAY_F
+        if not values.get("abc"):
+            values["abc"] = "A" if values.get("type") == "E" else "B"
+        if values.get("plant", "") == "":
+            values["plant"] = DefaultValue.MAT_PLANT
+        if values.get("planner", "") == "":
+            values["planner"] = DefaultValue.MAT_PLANNER
+        return values
+    
+    @model_validator(mode="after")
+    def model_valid_after(self):
+        return _set_raw_input_data(self)
 
 
 class AcceptWorkcenter(BaseModel):
@@ -121,12 +143,13 @@ class AcceptWorkcenter(BaseModel):
     location: str = Field(None, max_length=32, description="车间", example="A区")
     finite: str = Field("Y", enum=list(gc.YES_NO.keys()), example="N", description='有限')
     type: str = Field("Y", enum=list(gc.YES_NO.keys()), example="N", description="首页显示")
-    capnum: int = Field(None, gt=0, description="默认机台数", example=5)
+    capnum: int = Field(None, gt=0, description="默认机台数", example=6)
     capmax: int = Field(None, gt=0, description="最大机台数", example=10)
     worker: float = Field(None, ge=0, description='工时', example=8.0)
     setupno: str = Field(None, max_length=6, description='切换组别', example="S001")
     grpno: str = Field(None, max_length=6, description='同组号', example="G001")
     memo: str = Field(None, max_length=255, description="备注", example="标准工作中心")
+    _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
     
     class Config:
         title = "验证规则 - 工作中心"
@@ -138,7 +161,7 @@ class AcceptWorkcenter(BaseModel):
                 "bottleneck": "N",
                 "sortno": "0001",
                 "plant": DefaultValue.MAT_PLANT,
-                "capnum": 5,
+                "capnum": 6,
                 "capmax": 10,
                 "worker": 8.0,
                 "memo": "标准工作中心"
@@ -146,18 +169,25 @@ class AcceptWorkcenter(BaseModel):
         }
 
     @model_validator(mode="before")
-    def model_valid(self):
-        if not self.get("bottleneck"):
-            self["bottleneck"] = "N"
-        if not self.get("sortno"):
-            self["sortno"] = ""
-        if not self.get("location"):
-            self["location"] = DefaultValue.MAT_LOCATION
-        if not self.get("worker"):
-            self["worker"] = DefaultValue.MAT_WORKER
-        if not self.get("pri_wc"):
-            self["pri_wc"] = DefaultValue.MAT_WORKER_PRI
-        return self
+    @classmethod
+    def model_valid(cls, values: Dict[str, Any]):
+        _cache_raw_input_data(cls, values)
+        if values.get("sortno") is None:
+            values["sortno"] = ""
+        if values.get("bottleneck") in gc.NONE_AND_EMPTY:
+            values["bottleneck"] = "N"
+        if values.get("location") in gc.NONE_AND_EMPTY:
+            values["location"] = DefaultValue.MAT_LOCATION
+        if values.get("worker") in gc.NONE_AND_EMPTY:
+            values["worker"] = DefaultValue.WC_WORKER
+        if values.get("pri_wc") in gc.NONE_AND_EMPTY:
+            values["pri_wc"] = DefaultValue.WC_PRIORITY
+        return values
+
+    @model_validator(mode="after")
+    def model_valid_after(self):
+        return _set_raw_input_data(self)
+
 
 
 class AcceptMatWc(BaseModel):
@@ -165,13 +195,14 @@ class AcceptMatWc(BaseModel):
     matver: str = Field(..., max_length=4, example=DefaultValue.MATVER, description='产线版本')
     itemno: str = Field(None, max_length=6, description='工序项目', example="0010")
     workcenter: str = Field(..., max_length=32, description='工作中心', example="WC001")
-    sortno: int = Field(..., ge=0, description='序号', example=1)
+    sortno: int = Field(..., ge=0, le=999, description='序号', example=1)
     basesec: float = Field(..., ge=0, description='节拍T/T(秒/100)', example=600)
     fixqty: int = Field(0, ge=0, description='额定量', example=100)
     fixsec: int = Field(0, ge=0, description='额定时间(秒)', example=300)
-    sf: str = Field("F", enum=["S", "F"], example="F", description='并行S/串行F')
+    sf: str = Field(None, enum=["S", "F"], example="F", description='并行S/串行F')
     offsetsec: int = Field(0, description='偏置+/-(秒)', example=0)
     memo: str = Field(None, max_length=255, description='备注', example="标准工序")
+    _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
 
     class Config:
         title = "验证规则 - 工序"
@@ -192,23 +223,33 @@ class AcceptMatWc(BaseModel):
         }
     
     @model_validator(mode="before")
-    def model_valid(self):
-        if not self.get("fixqty"):
-            self["fixqty"] = 0
-        if not self.get("fixsec"):
-            self["fixsec"] = 0
-        if not self.get("offsetsec"):
-            self["offsetsec"] = 0
-        if not self.get("sf"):
-            self["sf"] = "F"
+    @classmethod
+    def model_valid(cls, values):
+        _cache_raw_input_data(cls, values)
+        try:
+            values["sortno"] = int(values["sortno"])
+        except:
+            values["sortno"] = None
+        if values.get("itemno") in gc.NONE_AND_EMPTY and values["sortno"]:
+            values["itemno"] = f"{DefaultValue.itemno_prefix}{values['sortno']:0{DefaultValue.itemno_width}d}"
+        try:
+            values["basesec"] = float(values["basesec"])
+        except:
+            values["basesec"] = None
+        if values.get("sf") in gc.NONE_AND_EMPTY:
+            values["sf"] = "F"
+        if values.get("offsetsec") in gc.NONE_AND_EMPTY:
+            values["offsetsec"] = 0
+        if values.get("fixqty") in gc.NONE_AND_EMPTY:
+            values["fixqty"] = 0
+        if values.get("fixsec") in gc.NONE_AND_EMPTY:
+            values["fixsec"] = 0
+        return values
 
-        self['sortno'] = int(self["sortno"])
-        if self.get("itemno", "") == "":
-            self["itemno"] = f"{DefaultValue.itemno_prefix}{self['sortno']:0{DefaultValue.itemno_width}d}"
-        self["basesec"] = int(self.get("basesec", None) or 0)  # 不要写成self.get("basesec", 0)，因为有可能会传入空字符串
+    @model_validator(mode="after")
+    def model_valid_after(self):
+        _set_raw_input_data(self)
         return self
-
-
 
 
 class AcceptMatVer(BaseModel):
@@ -220,6 +261,7 @@ class AcceptMatVer(BaseModel):
     refno: str = Field(None, max_length=64, description='MTO订单号/认证线', example="SO123456")
     active: str = Field("Y", enum=list(gc.YES_NO.keys()), example="Y", description='生效')
     memo: str = Field(None, max_length=255, description='备注', example="标准版本")
+    _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
 
     class Config:
         title = "验证规则 - 产线版本"
@@ -236,15 +278,22 @@ class AcceptMatVer(BaseModel):
         }
     
     @model_validator(mode="before")
-    def model_valid(self):
-        if self.get("lotfrom", "") == "":
-            self["lotfrom"] = DefaultValue.MATVER_LOTFROM
-        if self.get("lotto", "") == "":
-            self["lotto"] = DefaultValue.MATVER_LOTTO
-        if self.get("priority", "") == "":
-            self["priority"] = DefaultValue.MATVER_PRIORITY
-        if not self.get("active"):
-            self["active"] = "Y"
+    @classmethod
+    def model_valid(cls, values):
+        _cache_raw_input_data(cls, values)
+        if values.get("lotfrom") in gc.NONE_AND_EMPTY:
+            values["lotfrom"] = DefaultValue.MATVER_LOTFROM
+        if values.get("lotto") in gc.NONE_AND_EMPTY:
+            values["lotto"] = DefaultValue.MATVER_LOTTO
+        if values.get("priority") in gc.NONE_AND_EMPTY:
+            values["priority"] = DefaultValue.MATVER_PRIORITY
+        if values.get("active") in gc.NONE_AND_EMPTY:
+            values["active"] = "Y"
+        return values
+
+    @model_validator(mode="after")
+    def model_valid_after(self):
+        _set_raw_input_data(self)
         return self
 
 
@@ -262,7 +311,8 @@ class AcceptMatWcBom(BaseModel):
     alt: str = Field("N", enum=list(gc.YES_NO.keys()), example="N", description='Y/N是否是替代')
     memo: str = Field(None, max_length=255, description='备注', example="标准BOM组件")
     denominator: Optional[float | str] = Field(None, description='用量分母', example=1)
-
+    _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
+    
     class Config:
         title = "验证规则 - BOM"
         json_schema_extra = {
@@ -282,20 +332,25 @@ class AcceptMatWcBom(BaseModel):
             }
 
     @model_validator(mode="before")
-    def model_valid(self):
-        if self.get("itemno", "") == "":
-            self["itemno"] = DefaultValue.ITEMNO
-        denominator = self.get("denominator")
+    @classmethod
+    def model_valid(cls, values):
+        _cache_raw_input_data(cls, values)
+        if values.get("itemno", "") == "":
+            values["itemno"] = DefaultValue.ITEMNO
+        denominator = values.get("denominator")
         if denominator:
             try:
-                self["denominator"] = float(denominator) or 1
+                values["denominator"] = float(denominator) or 1
             except:
-                self["denominator"] = 1
-            self["qty"] /= self["denominator"]
-            self.pop("denominator") # 删除 denominator ，避免在数据库中存储
+                values["denominator"] = 1
+            values["qty"] /= values["denominator"]
+            values.pop("denominator") # 删除 denominator ，避免在数据库中存储
+        return values
 
+    @model_validator(mode="after")
+    def model_valid_after(self):
+        _set_raw_input_data(self)
         return self
-
 
 
 class AcceptMold(BaseModel):
@@ -306,6 +361,7 @@ class AcceptMold(BaseModel):
     moldnum: int = Field(..., ge=0, description='模具穴数', example=4)
     qty: int = Field(..., ge=0, description='模具台数', example=2)
     memo: str = Field(None, max_length=255, description="备注", example="标准模具")
+    _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
     
     class Config:
         title = "验证规则 - 模具"
@@ -321,6 +377,17 @@ class AcceptMold(BaseModel):
             }
         }
 
+    @model_validator(mode="before")
+    @classmethod
+    def model_valid(cls, values):
+        _cache_raw_input_data(cls, values)
+        return values
+
+    @model_validator(mode="after")
+    def model_valid_after(self):
+        _set_raw_input_data(self)
+        return self
+
 
 class AcceptMatWcMold(BaseModel):
     materialno: str = Field(..., max_length=64, description='料号', example="M001")
@@ -330,6 +397,7 @@ class AcceptMatWcMold(BaseModel):
     fixsec: int = Field(..., ge=0, description='额定时间(秒)', example=300)
     priority: int = Field(..., description='优先级', example=1)
     memo: str = Field(None, max_length=255, description='备注', example="标准机台模具配置")
+    _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
 
     class Config:
         title = "验证规则 - 机台模具"
@@ -346,10 +414,20 @@ class AcceptMatWcMold(BaseModel):
         }
 
     @model_validator(mode="before")
-    def model_valid(self):
-        self["basesec"] = int(self["basesec"])  # 数据库该字段为整形
-        if self.get("moldno") is None:
-            self["moldno"] = ''
+    @classmethod
+    def model_valid(cls, values):
+        _cache_raw_input_data(cls, values)
+        try:
+            values["basesec"] = int(values["basesec"])  # 数据库该字段为整形
+        except:
+            values["basesec"] = None
+        if values.get("moldno") is None:
+            values["moldno"] = ''
+        return values
+
+    @model_validator(mode="after")
+    def model_valid_after(self):
+        _set_raw_input_data(self)
         return self
 
 
@@ -368,7 +446,7 @@ class AcceptSupply(BaseModel):
     avail_qty: float = Field(..., ge=0, description='可用数量', example=100.0)
     create_date: Optional[str] = Field(None, description='创建日期', example="2023-01-01")
     avail_date: str = Field(..., description='可用日期 / 开工日期', example="2023-01-01")
-    dt_req: Optional[str] = Field(..., description='需求日期 / 完工日期', example="2023-01-07")
+    dt_req: str = Field(..., description='需求日期 / 完工日期', example="2023-01-07")
     avail_end_date: Optional[str] = Field(None, description='可用结束日期', example="2023-01-07")
     batchno: Optional[str] = Field(None, max_length=64, description='批次号', example="BATCH001")
     vendorno: Optional[str] = Field(None, max_length=64, description='供应商编号', example="V001")
@@ -376,6 +454,7 @@ class AcceptSupply(BaseModel):
     partnername: Optional[str] = Field(None, max_length=255, description='合作商名称', example="合作伙伴A")
     memo: Optional[str] = Field(None, max_length=255, description='备注', example="标准供应单")
     # plno: Optional[str] = Field(None, max_length=64, description='原PL（若传入此值则将对应的PL号改写成MO号，若索引不到原PL则新增MO）', example="PL123456")
+    _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)     # 使用PrivateAttr定义一个不参与序列化和验证的私有属性来保存原始值
 
     class Config:
         title = "验证规则 - 供应"
@@ -398,11 +477,17 @@ class AcceptSupply(BaseModel):
         }
 
     @model_validator(mode="before")
-    def model_valid(self):
-        if not self.get("itemno"):
-            self["itemno"] = DefaultValue.ITEMNO
-        return self
+    @classmethod
+    def model_valid(cls, values):
+        _cache_raw_input_data(cls, values)
+        if values.get('itemno') in gc.NONE_AND_EMPTY:
+            values['itemno'] = DefaultValue.ITEMNO
+        return values
 
+    @model_validator(mode='after')
+    def model_valid_after(self):
+        _set_raw_input_data(self)
+        return self
 
 class PatchPl(BaseModel):
     type: str = Field(..., example="MO", description='类型 PL-生产计划 MO-生产工单 ST-库存 PO-采购订单')
@@ -425,12 +510,13 @@ class PatchPl(BaseModel):
         }
 
     @model_validator(mode="before")
-    def model_valid(self):
-        if not self.get("mono"):
-            self["mono"] = self["plno"]
-        if not self.get("status"):
-            self["status"] = "CRE"
-        return self
+    @classmethod
+    def model_valid(cls, values):
+        if not values.get("mono"):
+            values["mono"] = values["plno"]
+        if not values.get("status"):
+            values["status"] = "CRE"
+        return values
 
 
 class DeleteSupply(BaseModel):
@@ -458,6 +544,7 @@ class AcceptDemand(BaseModel):
     free1: Optional[str] = Field(None, max_length=255, description='自定义字段1', example="自定义字段1")
     free2: Optional[str] = Field(None, max_length=255, description='自定义字段2', example="自定义字段2")
     free3: Optional[str] = Field(None, max_length=255, description='自定义字段3', example="自定义字段3")
+    _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
 
     class Config:
         title = "验证规则 - 需求"
@@ -480,14 +567,24 @@ class AcceptDemand(BaseModel):
         }
 
     @model_validator(mode="before")
-    def model_valid(self):
-        req_qty = float(self.get("req_qty", 0))
-        if req_qty > 0:
-            self["req_qty"] = -1 * req_qty
-        # if not self.get("status"):
-        #     self["status"] = "NEW"
-        # if not self.get("category"):
-        #     self["category"] = "MTO"
-        # if not self.get("priority"):
-        #     self["priority"] = 0
+    @classmethod
+    def model_valid(cls, values):
+        _cache_raw_input_data(cls, values)
+        try:
+            req_qty = float(values.get("req_qty"))
+            if req_qty > 0:
+                values["req_qty"] = -1 * req_qty
+        except ValueError:
+            req_qty = None
+        # if values.get("status") in gc.NONE_AND_EMPTY:
+        #     values["status"] = "NEW"
+        # if values.get("category") in gc.NONE_AND_EMPTY:
+        #     values["category"] = "MTO"
+        # if values.get("priority") in gc.NONE_AND_EMPTY:
+        #     values["priority"] = 0
+        return values
+
+    @model_validator(mode='after')
+    def model_valid_after(self):
+        _set_raw_input_data(self)
         return self

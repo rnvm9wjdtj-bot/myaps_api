@@ -15,18 +15,15 @@ class TMaterial(pm.ProtoMaterial):
         abstract = False
         table = "t_material"
 
-    async def save(self, using_db, update_fields=None, force_create=False, force_update=False):
+    # async def save(self, using_db, update_fields=None, force_create=False, force_update=False):
+    #     if DefaultValue.auto_matver and self.type == "E":
+    #         await TMatVer.create_if_not_exists(db_name=using_db.connection_name, materialno=self.materialno)
+    #     return await super().save(using_db=using_db, update_fields=update_fields, force_create=force_create, force_update=force_update)
+
+    async def create(self, using_db, update_fields=None, force_create=False, force_update=False):
         if DefaultValue.auto_matver and self.type == "E":
             await TMatVer.create_if_not_exists(db_name=using_db.connection_name, materialno=self.materialno)
-        return await super().save(using_db=using_db, update_fields=update_fields, force_create=force_create, force_update=force_update)
-
-    # @post_save
-    # @classmethod
-    # async def post_save_handler(cls, sender, instance, using_db, update_fields) -> None:
-    #     # 只处理TMaterial类型的保存事件
-    #     if sender == TMaterial and instance.type == "E" and DefaultConst.auto_matver:
-    #         await TMatVer.create_if_not_exists(db_name=using_db.connection_name, materialno=instance.materialno)
-
+        return await super().create(using_db=using_db, update_fields=update_fields, force_create=force_create, force_update=force_update)
 
 
 class TWorkcenter(pm.ProtoWorkcenter):
