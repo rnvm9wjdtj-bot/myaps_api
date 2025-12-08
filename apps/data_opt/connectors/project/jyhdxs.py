@@ -8,18 +8,17 @@ from datetime import datetime
 
 from fastapi import status
 
-# from config.settings import MYAPS_MAIN_DB#, MYAPS_BASE_URL, THIS_SERVER_HOST, THIS_SERVER_PORT
 from config import logger as lg
 
 
 from apps.io_api.common import standard_response
-from . import ScheduleTasksAbc, MyapsDbActionsAbc, this_base_url, this_session#, myaps_base_url
+from . import ScheduleTasksAbc, MyapsDbActionsAbc, this_session#, myaps_base_url
 
 
 #################################################################################
 # ⬇️模块变量
 #################################################################################
-scheduled_dbs = ScheduleTasksAbc.scheduled_dbs
+
 main_db = MyapsDbActionsAbc.main_db
 
 werks = '1600'
@@ -139,19 +138,13 @@ class ScheduleTasks(ScheduleTasksAbc):
                 'matnr': 'materialno',
             })
             stock_data = stock.to_dict(orient='records')
-            if not db_name:
-                success_db = []
-                for db in scheduled_dbs:
-                    this_session.delete(f"{this_base_url}/api/t_supply?db_name={db}&type=ST")
-                    this_session.post(f"{this_base_url}/api/t_supply?db_name={db}", json=stock_data)
-                    logger.info(f"刷新库存任务执行完成，账套：{db}")
-                    success_db.append(db)
-                response = standard_response(message=f"刷新库存任务执行完成，账套：{', '.join(success_db)}")
-            else:
-                this_session.delete(f"{this_base_url}/api/t_supply?db_name={db_name}&type=ST")
-                this_session.post(f"{this_base_url}/api/t_supply?db_name={db_name}", json=stock_data)
-                logger.info(f"刷新库存任务执行完成，账套：{db_name}")
-                response = standard_response(message=f"刷新库存任务执行完成，账套：{db_name}")
+
+            dbs = db_name or ','.join(cls.scheduled_dbs)
+            this_session.delete(f"{cls.this_base_url}/api/t_supply?db_name={dbs}&type=ST")
+            this_session.post(f"{cls.this_base_url}/api/t_supply?db_name={dbs}", json=stock_data)
+            logger.info(f"刷新库存任务执行完成，账套：{dbs}")
+            response = standard_response(message=f"刷新库存任务执行完成，账套：{dbs}")
+            
         except Exception as e:
             logger.error(f"刷新库存任务执行失败: {str(e)}")
             response = standard_response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, success=0, message=f"刷新库存任务执行失败: {str(e)}")
@@ -169,7 +162,7 @@ class MyapsDbActions(MyapsDbActionsAbc):
         确认计划任务，将主账套中需要转MO的PL推送到SAP，将计划任务状态更新为已确认
         """
         try:
-            supply_response = this_session.get(f"{this_base_url}/api/v_supply_mo?db_name={main_db}&supplyno={pl_data['supplyno']}")
+            supply_response = this_session.get(f"{cls.this_base_url}/api/v_supply_mo?db_name={main_db}&supplyno={pl_data['supplyno']}")
             supply_response_json = supply_response.json()
             supply_data = supply_response_json['data'][0]
             start_datetime = supply_data['dt_ordstart']#.strftime('%Y%m%d %H:%M:%S')

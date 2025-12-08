@@ -4,22 +4,21 @@
 # import threading
 import os, requests
 from typing import Literal
-from abc import ABC, abstractmethod
+from abc import ABC#, abstractmethod
 
-from tortoise import Tortoise
+# from tortoise import Tortoise
 
-from config.settings import MYAPS_MAIN_DB, MYAPS_BASE_URL, THIS_SERVER_HOST, THIS_SERVER_PORT, THIS_PROTOCOL, THIS_PROTOCOL
+from config.settings import MYAPS_MAIN_DB, THIS_SERVER_PORT, THIS_PROTOCOL#, MYAPS_BASE_URL
 # from apps.io_api.models import TSupply, TOrderwc
 # from apps.io_api.common import common_write, common_read_by_orm
 
 
-this_base_url = f'{THIS_PROTOCOL}{THIS_SERVER_HOST}:{THIS_SERVER_PORT}'
-myaps_base_url = MYAPS_BASE_URL
 
 this_session = requests.Session()
 
 
 class ScheduleTasksAbc(ABC):
+    this_base_url = f'{THIS_PROTOCOL}localhost:{THIS_SERVER_PORT}'
     scheduled_dbs = os.getenv('SCHEDULED_DBS').split(',')
     
     @classmethod
@@ -50,7 +49,7 @@ class ScheduleTasksAbc(ABC):
 
 class MyapsDbActionsAbc(ABC):
 
-    this_base_url = f'{THIS_PROTOCOL}{THIS_SERVER_HOST}:{THIS_SERVER_PORT}'
+    this_base_url = f'{THIS_PROTOCOL}localhost:{THIS_SERVER_PORT}'
     main_db = MYAPS_MAIN_DB
 
     @classmethod
@@ -82,7 +81,7 @@ class MyapsDbActionsAbc(ABC):
             - 无需根据APS的PL在ERP中创建MO（或无需与ERP对接）的实施场景
         - 在路由函数中调用，适用于ERP异步返回MO信息的实施场景
         """
-        response = this_session.patch(f'{this_base_url}/api/t_supply/pl?db_name={cls.main_db}', json=[{
+        response = this_session.patch(f'{cls.this_base_url}/api/t_supply/pl?db_name={cls.main_db}', json=[{
             'type': 'MO',   # 将类型改为MO（原本为PL）
             'plno': plno,
             'status': to_status,

@@ -460,7 +460,9 @@ async def common_call_dbprocdure(db_name: str, procedure_name: str, params_list:
 
 async def common_read_by_sql(db_name: str, table_name: str, filter_string: str = '', order_string: str = ''):
     try:
-        db = Tortoise.get_connection(db_name)
+        valid_dbs = validate_databases(db_name)
+        assert valid_dbs, "未指定账套或账套不存在"
+        db = Tortoise.get_connection(valid_dbs[0])
         where = f" WHERE {filter_string}" if filter_string else ''
         order = f" ORDER BY {order_string}" if order_string else ''
         sql = f'SELECT * FROM `{table_name}` {where} {order}'
@@ -480,17 +482,32 @@ async def common_read_by_sql(db_name: str, table_name: str, filter_string: str =
 
 
 async def common_delete_by_sql(db_name: str, table_name: str, filter_string: str):
+    """
+    执行SQL删除操作
+    :param db_name: 账套名称，多个可用半角逗号分隔
+    :param table_name: 表名称
+    :param filter_string: WHERE子句，用于指定删除条件
+    :return: 操作结果
+    """
     try:
-        db = Tortoise.get_connection(db_name)
         where = f" WHERE {filter_string}" if filter_string else ''
         sql = f'DELETE FROM `{table_name}` {where}'
-        total, data = await db.execute_query(sql)
-        await db.close()
+        valid_dbs = validate_databases(db_name)
+        assert valid_dbs, "未指定账套或账套不存在"
+        affect_count = 0
+        for valid_db in valid_dbs:
+            db = Tortoise.get_connection(valid_db)
+            total, data = await db.execute_query(sql)
+            affect_count += total
+            await db.close()
+            file_logger.info(f"✅执行SQL删除操作成功，账套：{valid_db}，表：{table_name}，条件：{filter_string}，影响{affect_count}条记录")
         return standard_response(
             data=data,
-            meta={"total": total}
+            meta={"affect_count": affect_count, "affect_dbs": ", ".join(valid_dbs)}
         )
+        
     except Exception as e:
+        file_logger.error(f"❌执行SQL删除操作失败，账套：{db_name}，表：{table_name}，条件：{filter_string}，错误信息：{str(e)}")
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
