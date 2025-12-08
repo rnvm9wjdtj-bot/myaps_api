@@ -20,6 +20,20 @@ from config import logger
 
 file_logger = logger.setup_logging(__name__)
 
+# 导入异步上下文管理器
+from contextlib import asynccontextmanager
+
+
+# 创建一个异步上下文管理器来管理Tortoise连接
+@asynccontextmanager
+async def get_tortoise_connection(db_name):
+    """异步上下文管理器，用于获取和自动关闭Tortoise连接"""
+    try:
+        connection = Tortoise.get_connection(db_name)
+        yield connection
+    finally:
+        connection.close()
+
 
 @dataclass
 class ProcessedData:
@@ -388,20 +402,25 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
 async def common_read_by_orm(db_name: str, mdl: TortoiseBaseModel, page_size: int, page_index: int):
     dbs = validate_databases(db_name)
     assert dbs, "账套参数错误"
-    db = Tortoise.get_connection(dbs[0])
-    # 分页查询
-    offset = page_size * page_index
-    if mdl._meta.unique_together:   # 如果是联合主键，则要排除虚拟主键的干扰
-        only_fields = [f for f in mdl._meta.fields if f != "vid"]
-        data = await mdl.all().only(*only_fields).using_db(db).offset(offset).limit(page_size)
-    else:
-        data = await mdl.all().using_db(db).offset(offset).limit(page_size)
-    db.close()
+    
+    # 使用异步上下文管理器管理连接
+    async with get_tortoise_connection(dbs[0]) as db:
+        # 分页查询
+        offset = page_size * page_index
+        if mdl._meta.unique_together:   # 如果是联合主键，则要排除虚拟主键的干扰
+            only_fields = [f for f in mdl._meta.fields if f != "vid"]
+            data = await mdl.all().only(*only_fields).using_db(db).offset(offset).limit(page_size)
+        else:
+            data = await mdl.all().using_db(db).offset(offset).limit(page_size)
+        
+        # 在连接关闭前获取总数
+        total = await mdl.all().using_db(db).count()
+    
     return standard_response(
         data=data,
         meta={
             "db_name": dbs[0],
-            "total": await mdl.all().using_db(db).count(),
+            "total": total,
             "pageSize": page_size,
             "pageIndex": page_index,
         }
@@ -463,13 +482,15 @@ async def common_read_by_sql(db_name: str, table_name: str, filter_string: str =
     try:
         valid_dbs = validate_databases(db_name)
         assert valid_dbs, "未指定账套或账套不存在"
-        db = Tortoise.get_connection(valid_dbs[0])
-        where = f" WHERE {filter_string}" if filter_string else ''
-        order = f" ORDER BY {order_string}" if order_string else ''
-        sql = f'SELECT * FROM `{table_name}` {where} {order}'
-        total, data = await db.execute_query(sql)
-        lower_keys_data = [dict_to_lower_keys(row) for row in data]
-        await db.close()
+        
+        # 使用异步上下文管理器管理连接
+        async with get_tortoise_connection(valid_dbs[0]) as db:
+            where = f" WHERE {filter_string}" if filter_string else ''
+            order = f" ORDER BY {order_string}" if order_string else ''
+            sql = f'SELECT * FROM `{table_name}` {where} {order}'
+            total, data = await db.execute_query(sql)
+            lower_keys_data = [dict_to_lower_keys(row) for row in data]
+        
         return standard_response(
             data=lower_keys_data,
             meta={"total": total}
@@ -498,10 +519,11 @@ async def common_delete_by_sql(db_name: str, table_name: str, filter_string: str
         total_count = 0
         for valid_db in valid_dbs:
             count = 0
-            db = Tortoise.get_connection(valid_db)
-            count, data = await db.execute_query(sql)
-            total_count += count
-            await db.close()
+            async with get_tortoise_connection(valid_db) as db:
+            # db = Tortoise.get_connection(valid_db)
+                count, data = await db.execute_query(sql)
+                total_count += count
+            # await db.close()
             file_logger.info(f"✅执行SQL删除操作成功，账套@{valid_db}，表：{table_name}，条件：{filter_string}，删除{count}条记录")
         file_logger.info(f"✅执行SQL删除操作成功，共删除{total_count}条记录，账套：{', '.join(valid_dbs)}")
         return standard_response(

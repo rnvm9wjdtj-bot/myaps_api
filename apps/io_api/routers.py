@@ -15,7 +15,7 @@ from .schemas import (
     #DeleteSupply
     )
 from .common import (
-    common_params,
+    common_params, get_tortoise_connection,
     common_read_by_orm, common_write, common_delete_by_orm, common_read_by_sql, common_delete_by_sql, common_call_dbprocdure,
     standard_response)
 
@@ -394,16 +394,18 @@ async def post_record(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    for d in data:
-        if not hasattr(d, "itemno") or d.itemno in gc.NONE_AND_EMPTY:
-            workcenter = d.workcenter if hasattr(d, "workcenter") else None
-            assert workcenter not in gc.NONE_AND_EMPTY, "workcenter cannot be empty when itemno is empty"
-            db = Tortoise.get_connection(db_name)
-            query = f"SELECT ItemNo FROM t_orderwc WHERE `SupplyNo` = '{d.supplyno}' AND `WorkCenter` = '{workcenter}'"
-            record_count, result = await db.execute_query(query)
-            if result and len(result) > 0:
-                itemno = result[0]['ItemNo']
-                d.itemno = itemno
-            db.close()
-        d.workcenter = None
+    # 使用异步上下文管理器自动管理连接
+    async with get_tortoise_connection(db_name) as db:
+        for d in data:
+            if not hasattr(d, "itemno") or d.itemno in gc.NONE_AND_EMPTY:
+                workcenter = d.workcenter if hasattr(d, "workcenter") else None
+                assert workcenter not in gc.NONE_AND_EMPTY, "workcenter cannot be empty when itemno is empty"
+                
+                query = f"SELECT ItemNo FROM t_orderwc WHERE `SupplyNo` = '{d.supplyno}' AND `WorkCenter` = '{workcenter}'"
+                record_count, result = await db.execute_query(query)
+                if record_count == 1:
+                    itemno = result[0]['ItemNo']
+                    d.itemno = itemno
+            d.workcenter = None
+    
     return await common_write(db_name=db_name, mdl=TConfirm, data=data)

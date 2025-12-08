@@ -630,17 +630,3 @@ class AcceptConfirm(BaseModel):
     def model_valid_after(self):
         _set_raw_input_data(self)
         return self
-
-    # def get_itemno(self, db_name: str | None = None):
-    #     if self.itemno in gc.NONE_AND_EMPTY:
-    #         workcenter = self.workcenter
-    #         assert workcenter not in gc.NONE_AND_EMPTY, "workcenter cannot be empty when itemno is None"
-    #         db_name = db_name or MYAPS_MAIN_DB
-    #         db = Tortoise.get_connection(db_name)
-    #         self.itemno = TOrderwc.filter(
-    #             supplyno=self.supplyno,
-    #             workcenter=workcenter
-    #         ).using_db(db).first().itemno
-    #         db.close()
-    #         delattr(self, "workcenter")
-    #     return self.itemno
