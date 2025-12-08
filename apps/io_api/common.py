@@ -1,6 +1,6 @@
 # import os, logging, queue
 # from logging.handlers import TimedRotatingFileHandler, QueueHandler, QueueListener
-from pickle import LONG
+# from pickle import LONG
 from typing import Dict, Any, List, Tuple
 # from enum import Enum
 from copy import deepcopy
@@ -126,24 +126,19 @@ async def preprocess_data(data: List[PydanticSchema | Dict[str, Any]]) -> List[P
         预处理后的ProcessedData列表
     """
     processed_list = []
-    
     for data_item in data:
         # 获取原始输入数据
         raw_input_data = get_raw_input_data(data_item)
-        
         # 转换为字典
         processed_dict = convert_to_dict(data_item, exclude_none=True)
-        
         # 深拷贝用于创建操作
         create_dict = deepcopy(processed_dict)
-        
         # 添加到处理列表
         processed_list.append(ProcessedData(
             processed_data=processed_dict,
             create_data=create_dict,
             raw_input_data=raw_input_data
         ))
-    
     return processed_list
 
 
@@ -195,12 +190,12 @@ async def process_overwrite_operation(
         
         await db.execute_query(sql, params)
         update_count += 1
-        file_logger.info(f"✅↑UPDATE @{db_name}")
+        # file_logger.info(f"✅↑UPDATE @{db_name}")
     else:
         # 创建新记录
         await mdl.create(**create_data, using_db=db)
         create_count += 1
-        file_logger.info(f"✅↑CREATE @{db_name}")
+        # file_logger.info(f"✅↑CREATE @{db_name}")
     
     return create_count, update_count
 
@@ -234,12 +229,12 @@ async def process_normal_operation(
             # 更新记录
             await mdl.filter(**match_on).only(*only_fields).first().using_db(db).update(**update_data)
             update_count += 1
-            file_logger.info(f"✅↑UPDATE @{db_name}")
+            # file_logger.info(f"✅↑UPDATE @{db_name}")
         else:
             # 创建新记录
             await mdl.create(**create_data, using_db=db)
             create_count += 1
-            file_logger.info(f"✅↑CREATE @{db_name}")
+            # file_logger.info(f"✅↑CREATE @{db_name}")
     else:
         # 单一主键处理
         exist = await mdl.get_or_none(**match_on, using_db=db)
@@ -247,12 +242,12 @@ async def process_normal_operation(
             # 更新记录
             await exist.update_from_dict(update_data).save(using_db=db)
             update_count += 1
-            file_logger.info(f"✅↑UPDATE @{db_name}")
+            # file_logger.info(f"✅↑UPDATE @{db_name}")
         else:
             # 创建新记录
             await mdl.create(**create_data, using_db=db)
             create_count += 1
-            file_logger.info(f"✅↑CREATE @{db_name}")
+            # file_logger.info(f"✅↑CREATE @{db_name}")
     
     return create_count, update_count
 
@@ -366,7 +361,7 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
             # 更新统计
             create_count_total += create_count
             update_count_total += update_count
-            
+            file_logger.info(f"✅生效账套@{db_name}，新增{create_count}条，修改{update_count}条")
             # 记录成功的账套
             success_db.append({"db_name": db_name, "create": create_count, "update": update_count})
         

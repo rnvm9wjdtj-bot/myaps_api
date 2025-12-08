@@ -72,7 +72,7 @@ class AcceptMaterial(BaseModel):
                 "planner": DefaultValue.MAT_PLANNER,
                 "fifo": DefaultValue.MAT_FIFO,
                 "leadday": 7,
-                "expday": 365,
+                "expday": DefaultValue.MAT_EXPDAY,
                 "grday": 1,
                 "abc": "A",
                 "unit": "PCS",
@@ -268,7 +268,7 @@ class AcceptMatVer(BaseModel):
         json_schema_extra = {
             "example": {
                 "materialno": "M001",
-                "matver": "V1",
+                "matver": DefaultValue.MATVER,
                 "lotfrom": 1,
                 "lotto": 9999999,
                 "priority": 1,
@@ -463,15 +463,15 @@ class AcceptSupply(BaseModel):
             "example": {
                 "materialno": "M001",
                 "supplyno": "MO123456",
-                "matver": "V1",
-                "itemno": "0010",
+                "matver": DefaultValue.MATVER,
+                "itemno": DefaultValue.ITEMNO,
                 "type": "MO",
                 "category": "MTO",
                 "priority": 1,
                 "status": "NEW",
                 "avail_qty": 100.0,
-                "avail_date": "2023-01-01",
-                "dt_req": "2023-01-07",
+                "avail_date": "2025-01-01",
+                "dt_req": "2025-01-07",
                 "memo": "标准生产工单"
             }
         }
@@ -489,7 +489,7 @@ class AcceptSupply(BaseModel):
         _set_raw_input_data(self)
         return self
 
-class PatchPl(BaseModel):
+class ConvertPl(BaseModel):
     type: str = Field(..., example="MO", description='类型 PL-生产计划 MO-生产工单 ST-库存 PO-采购订单')
     plno: str = Field(..., max_length=64, description='PL号', example="PL123456")
     mono: str = Field(None, max_length=64, description='MO号', example="MO123456")
@@ -512,9 +512,9 @@ class PatchPl(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values):
-        if not values.get("mono"):
+        if values.get("mono") in gc.NONE_AND_EMPTY:
             values["mono"] = values["plno"]
-        if not values.get("status"):
+        if values.get("status") not in gc.ORDER_STATUS.keys():
             values["status"] = "CRE"
         return values
 
@@ -559,7 +559,7 @@ class AcceptDemand(BaseModel):
                 "workcenter": "WC001",
                 "status": "NEW",
                 "req_qty": -100.0,
-                "req_date": "2023-01-07T10:00:00",
+                "req_date": "2025-01-07 10:00:00",
                 "refno": "MTO123456",
                 "ori_qty": 100.0,
                 "memo": "标准销售订单"

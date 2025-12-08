@@ -11,7 +11,7 @@ from config.projectconst import DefaultValue
 from .models import TMaterial, TWorkcenter, TMatWc, TMatVer, TMatWcBom, TSupply, TDemand, TMold, TMatWcMold, TConfirm#,TortoiseBaseModel
 from .schemas import (
     AcceptMaterial, AcceptWorkcenter, AcceptMatWc, AcceptMatVer, AcceptMatWcBom, AcceptSupply, AcceptDemand, AcceptMold, AcceptMatWcMold, AcceptConfirm,
-    PatchPl
+    ConvertPl
     #DeleteSupply
     )
 from .common import (
@@ -238,8 +238,8 @@ async def post_supply(
     summary="将生产计划PL转为MO",
     description="根据供应号更新PL记录，与POST方法的区别是：POST方法以【料号+供应号】为联合索引，且不会修改供应号；而PATCH方法以供应号为索引，且允许修改供应号"
     )
-async def patch_pl(
-    data: List[PatchPl] = Body(..., description="更新PL记录的列表"),
+async def convert_pl_to_mo_by_dbprocdure(
+    data: List[ConvertPl] = Body(..., description="更新PL记录的列表"),
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):

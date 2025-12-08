@@ -21,6 +21,8 @@ class FormInfo(NamedTuple):
     field_infos: List[FieldInfo]
 
 
+# material = FormInfo()
+
 form_infos = [
     FormInfo(
         form_id="BD_MATERIAL",
@@ -55,18 +57,18 @@ form_infos = [
 
 class K3CloudConnector():
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, origin_url, acctid, username, password, lcid, need_forms: List[str]):
         # super().__init__(*args, **kwargs)
-        self.origin_url = kwargs.get("origin_url")
-        self.acctid = kwargs.get("acctid")
-        self.username = kwargs.get("username")
-        self.password = kwargs.get("password")
-        self.lcid = kwargs.get("lcid")
+        self.origin_url = origin_url
+        self.acctid = acctid
+        self.username = username
+        self.password = password
+        self.lcid = lcid
         self._cookie = None
         self._cookie_expire = None
         self._session = requests.Session()
 
-    def auth(self, *args, **kwargs):
+    def auth(self):
         if self._cookie and self._cookie_expire and datetime.now() < self._cookie_expire:
             return
         response = self._session.post(
@@ -112,7 +114,7 @@ class K3CloudConnector():
             print(data)
 
 
-    def set_data(self, *args, **kwargs):
+    def set_data(self):
         pass
 
     
