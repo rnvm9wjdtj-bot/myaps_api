@@ -6,8 +6,9 @@ from decimal import Decimal
 from pydantic import BaseModel, Field, model_validator, PrivateAttr#, ValidationError, field_validator
 
 from config import globalconst as gc
+from config.settings import MYAPS_MAIN_DB
 from config.projectconst import DefaultValue
-# from .models import TMatWc
+# from .common import common_read_by_sql
 
 def _cache_raw_input_data(cls, values: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -592,7 +593,8 @@ class AcceptDemand(BaseModel):
 
 class AcceptConfirm(BaseModel):
     supplyno: str = Field(..., max_length=64, description='供应单号', example="MO123456")
-    itemno: str = Field(..., max_length=6, description='项目号（若类型为SO则可传入订单号或其他标识符，不超过6位）', example=DefaultValue.ITEMNO)
+    itemno: str = Field(None, max_length=6, description='工序项目', example=DefaultValue.ITEMNO)
+    workcenter: str = Field(None, max_length=32, description='工作中心', example="WC001")
     recordqty: float = Field(..., description='报工数量', gt=0, example=100)
     recorddt: datetime = Field(..., description='报工日期', example="2025-01-07 10:00:00")
     status: str = Field("Y", enum=list(gc.YES_NO), example="Y", description='状态')
@@ -605,6 +607,7 @@ class AcceptConfirm(BaseModel):
             "example": {
                 "supplyno": "MO123456",
                 "itemno": DefaultValue.ITEMNO,
+                "workcenter": "WC001",
                 "recordqty": 100.0,
                 "recorddt": "2025-01-07 10:00:00",
                 "status": "Y",
@@ -616,6 +619,7 @@ class AcceptConfirm(BaseModel):
     @classmethod
     def model_valid(cls, values):
         _cache_raw_input_data(cls, values)
+        # 基本验证和默认值设置
         if values.get("status") in gc.NONE_AND_EMPTY:
             values["status"] = "Y"
         if values.get("recorddt") in gc.NONE_AND_EMPTY:
@@ -626,3 +630,17 @@ class AcceptConfirm(BaseModel):
     def model_valid_after(self):
         _set_raw_input_data(self)
         return self
+
+    # def get_itemno(self, db_name: str | None = None):
+    #     if self.itemno in gc.NONE_AND_EMPTY:
+    #         workcenter = self.workcenter
+    #         assert workcenter not in gc.NONE_AND_EMPTY, "workcenter cannot be empty when itemno is None"
+    #         db_name = db_name or MYAPS_MAIN_DB
+    #         db = Tortoise.get_connection(db_name)
+    #         self.itemno = TOrderwc.filter(
+    #             supplyno=self.supplyno,
+    #             workcenter=workcenter
+    #         ).using_db(db).first().itemno
+    #         db.close()
+    #         delattr(self, "workcenter")
+    #     return self.itemno

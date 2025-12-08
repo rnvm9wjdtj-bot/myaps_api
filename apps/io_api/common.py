@@ -396,6 +396,7 @@ async def common_read_by_orm(db_name: str, mdl: TortoiseBaseModel, page_size: in
         data = await mdl.all().only(*only_fields).using_db(db).offset(offset).limit(page_size)
     else:
         data = await mdl.all().using_db(db).offset(offset).limit(page_size)
+    db.close()
     return standard_response(
         data=data,
         meta={
@@ -501,7 +502,7 @@ async def common_delete_by_sql(db_name: str, table_name: str, filter_string: str
             count, data = await db.execute_query(sql)
             total_count += count
             await db.close()
-            file_logger.info(f"✅执行SQL删除操作成功，账套：{valid_db}，表：{table_name}，条件：{filter_string}，删除{count}条记录")
+            file_logger.info(f"✅执行SQL删除操作成功，账套@{valid_db}，表：{table_name}，条件：{filter_string}，删除{count}条记录")
         file_logger.info(f"✅执行SQL删除操作成功，共删除{total_count}条记录，账套：{', '.join(valid_dbs)}")
         return standard_response(
             data=data,
@@ -509,7 +510,7 @@ async def common_delete_by_sql(db_name: str, table_name: str, filter_string: str
         )
         
     except Exception as e:
-        file_logger.error(f"❌执行SQL删除操作失败，账套：{db_name}，表：{table_name}，条件：{filter_string}，错误信息：{str(e)}")
+        file_logger.error(f"❌执行SQL删除操作失败，账套@{db_name}，表：{table_name}，条件：{filter_string}，错误信息：{str(e)}")
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

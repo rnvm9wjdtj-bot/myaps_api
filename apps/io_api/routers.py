@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 from typing import List, Dict, Any#, Literal
 
 from fastapi import APIRouter, Query, Body, status#, Request, Path
-# from tortoise import Tortoise
+from tortoise import Tortoise
 
 from config import settings, globalconst as gc
 from config.projectconst import DefaultValue
@@ -394,4 +394,16 @@ async def post_record(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
+    for d in data:
+        if not hasattr(d, "itemno") or d.itemno in gc.NONE_AND_EMPTY:
+            workcenter = d.workcenter if hasattr(d, "workcenter") else None
+            assert workcenter not in gc.NONE_AND_EMPTY, "workcenter cannot be empty when itemno is empty"
+            db = Tortoise.get_connection(db_name)
+            query = f"SELECT ItemNo FROM t_orderwc WHERE `SupplyNo` = '{d.supplyno}' AND `WorkCenter` = '{workcenter}'"
+            record_count, result = await db.execute_query(query)
+            if result and len(result) > 0:
+                itemno = result[0]['ItemNo']
+                d.itemno = itemno
+            db.close()
+        d.workcenter = None
     return await common_write(db_name=db_name, mdl=TConfirm, data=data)
