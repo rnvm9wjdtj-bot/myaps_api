@@ -494,16 +494,18 @@ async def common_delete_by_sql(db_name: str, table_name: str, filter_string: str
         sql = f'DELETE FROM `{table_name}` {where}'
         valid_dbs = validate_databases(db_name)
         assert valid_dbs, "未指定账套或账套不存在"
-        affect_count = 0
+        total_count = 0
         for valid_db in valid_dbs:
+            count = 0
             db = Tortoise.get_connection(valid_db)
-            total, data = await db.execute_query(sql)
-            affect_count += total
+            count, data = await db.execute_query(sql)
+            total_count += count
             await db.close()
-            file_logger.info(f"✅执行SQL删除操作成功，账套：{valid_db}，表：{table_name}，条件：{filter_string}，影响{affect_count}条记录")
+            file_logger.info(f"✅执行SQL删除操作成功，账套：{valid_db}，表：{table_name}，条件：{filter_string}，删除{count}条记录")
+        file_logger.info(f"✅执行SQL删除操作成功，共删除{total_count}条记录，账套：{', '.join(valid_dbs)}")
         return standard_response(
             data=data,
-            meta={"affect_count": affect_count, "affect_dbs": ", ".join(valid_dbs)}
+            meta={"affect_count": total_count, "affect_dbs": ", ".join(valid_dbs)}
         )
         
     except Exception as e:
