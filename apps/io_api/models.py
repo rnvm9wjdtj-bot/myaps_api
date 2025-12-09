@@ -15,15 +15,11 @@ class TMaterial(pm.ProtoMaterial):
         abstract = False
         table = "t_material"
 
-    # async def save(self, using_db, update_fields=None, force_create=False, force_update=False):
-    #     if DefaultValue.auto_matver and self.type == "E":
-    #         await TMatVer.create_if_not_exists(db_name=using_db.connection_name, materialno=self.materialno)
-    #     return await super().save(using_db=using_db, update_fields=update_fields, force_create=force_create, force_update=force_update)
-
-    async def create(self, using_db, update_fields=None, force_create=False, force_update=False):
-        if DefaultValue.auto_matver and self.type == "E":
-            await TMatVer.create_if_not_exists(db_name=using_db.connection_name, materialno=self.materialno)
-        return await super().create(using_db=using_db, update_fields=update_fields, force_create=force_create, force_update=force_update)
+    @classmethod
+    async def create(cls, using_db, update_fields=None, force_create=False, force_update=False, *args, **kwargs):
+        if DefaultValue.auto_matver and kwargs.get("type") == "E":
+            await TMatVer.create_if_not_exists(db_name=using_db.connection_name, materialno=kwargs.get("materialno"))
+        return await super().create(using_db=using_db, update_fields=update_fields, force_create=force_create, force_update=force_update, *args, **kwargs)
 
 
 class TWorkcenter(pm.ProtoWorkcenter):
