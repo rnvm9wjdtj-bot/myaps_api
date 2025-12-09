@@ -310,8 +310,8 @@ async def process_single_database(
                 is_compound_key = len(model_key) > 1
                 # 处理正常操作
                 create, update = await process_normal_operation(
-                    db, mdl, match_on, processed_data.raw_input_data, processed_data.create_data,
-                    only_fields, db_name, is_compound_key
+                    db=db, mdl=mdl, match_on=match_on, update_data=processed_data.raw_input_data, create_data=processed_data.create_data,
+                    only_fields=only_fields, db_name=db_name, is_compound_key=is_compound_key
                 )
                 create_count += create
                 update_count += update
@@ -369,7 +369,7 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
         for db_name in valid_dbs:
             # 处理单个账套
             create_count, update_count = await process_single_database(
-                db_name, mdl, processed_data_list, only_fields, model_key
+                db_name=db_name, mdl=mdl, processed_data_list=processed_data_list, only_fields=only_fields, model_key=model_key
             )
             
             # 更新统计

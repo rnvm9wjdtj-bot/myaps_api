@@ -262,26 +262,30 @@ async def delete_supply(
     del_relation: bool | None = Query(True, description="是否删除关联的工序记录（仅对PL、MO类型有效）"),
     x_api_key: str = common_params["x_api_key"]
     ):
-    supply_type = list(gc.SUPPLY_TYPE.keys())
-    if not type:
+    # 使用一个更具描述性的变量名替换内置函数名
+    supply_type_param = type
+    supply_type_param = supply_type_param.upper()
+    all_supply_type = list(gc.SUPPLY_TYPE.keys())
+    
+    if not supply_type_param:
         return standard_response(
             status_code=status.HTTP_400_BAD_REQUEST,
             success=0,
             message="Required parameter 'type' not found.")
-    if type not in supply_type:
+    if supply_type_param not in all_supply_type:
         return standard_response(
             status_code=status.HTTP_400_BAD_REQUEST,
             success=0,
-            message=f"Invalid input type. Expected list of DeleteSupply or dict with 'bytype' in {supply_type}.")
+            message=f"Invalid input type. Expected list of DeleteSupply or dict with 'bytype' in {all_supply_type}.")
 
-    filter_conditions = [f"Type='{type}'", ]
+    filter_conditions = [f"Type='{supply_type_param}'", ]
     if materialno:
         filter_conditions.append(f"MaterialNo='{materialno}'")
     if supplyno:
         filter_conditions.append(f"SupplyNo='{supplyno}'")
     filter_string = " AND ".join(filter_conditions)
     result = await common_delete_by_sql(db_name=db_name, table_name="t_supply", filter_string=filter_string)
-    if del_relation and type in ['PL', 'MO'] and supplyno and result["success"]: # 删除关联的工序记录
+    if del_relation and supply_type_param in ['PL', 'MO'] and supplyno and result["success"]: # 删除关联的工序记录
         await common_delete_by_sql(db_name=db_name, table_name="t_orderwc", filter_string=f"SupplyNo='{supplyno}'")
     return result
 
