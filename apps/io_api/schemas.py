@@ -59,6 +59,9 @@ class AcceptMaterial(BaseModel):
     planitem: str = Field(None, description='产品组', example="PI001")
     preday: int = Field(DefaultValue.MAT_PREDAY, ge=0, description='向前冲销(天)', example=999)
     subday: int = Field(DefaultValue.MAT_SUBDAY, ge=0, description='向后冲销(天)', example=999)
+    free1: Optional[str] = Field(None, max_length=255, description='自定义1', example="自定义内容。。。")
+    free2: Optional[str] = Field(None, max_length=255, description='自定义2', example="自定义内容。。。")
+    free3: Optional[str] = Field(None, max_length=255, description='自定义3', example="自定义内容。。。")
     memo: str = Field(None,  description='备注', example="无特殊要求")
     _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
 
@@ -453,6 +456,9 @@ class AcceptSupply(BaseModel):
     vendorno: Optional[str] = Field(None, max_length=64, description='供应商编号', example="V001")
     partnerno: Optional[str] = Field(None, max_length=64, description='合作商编号', example="P001")
     partnername: Optional[str] = Field(None, max_length=255, description='合作商名称', example="合作伙伴A")
+    free1: Optional[str] = Field(None, max_length=255, description='自定义1', example="自定义内容。。。")
+    free2: Optional[str] = Field(None, max_length=255, description='自定义2', example="自定义内容。。。")
+    free3: Optional[str] = Field(None, max_length=255, description='自定义3', example="自定义内容。。。")
     memo: Optional[str] = Field(None, max_length=255, description='备注', example="标准供应单")
     # plno: Optional[str] = Field(None, max_length=64, description='原PL（若传入此值则将对应的PL号改写成MO号，若索引不到原PL则新增MO）', example="PL123456")
     _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)     # 使用PrivateAttr定义一个不参与序列化和验证的私有属性来保存原始值

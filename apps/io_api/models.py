@@ -61,7 +61,7 @@ class TMatVer(pm.ProtoMatVer):
         """
         若不存在则创建
         """
-        await common_write(db_name=db_name, mdl=TMatVer, data=[{
+        await common_write(db_name=db_name, mdl=cls, data=[{
                 "materialno": materialno,
                 "matver": matver,
                 "lotfrom": lotfrom,
