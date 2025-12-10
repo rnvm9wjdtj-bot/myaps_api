@@ -1,14 +1,14 @@
 # from datetime import datetime
-import os, importlib#, uuid
-from typing import Optional, Dict, Any
+# import os, importlib#, uuid
+from typing import Optional#, Dict, Any
 
-from fastapi import APIRouter, Query, Body, HTTPException
+from fastapi import APIRouter, Body#, Query, HTTPException
 
-from .connectors import  active_connector
-from .connectors.project import MyapsDbActionsAbc
+from .projects import  active_connector
+# from .connectors.project import MyapsDbActionsAbc
 from .schemas import SupplyOperationBody, SupplyAction
-from apps.io_api.models import TSupply
-from .utils.barcode_qrcode_generator import generate_qrcode_file, generate_barcode_file
+# from apps.io_api.models import TSupply
+from .utils.barcode_qrcode_generator import generate_qrcode, generate_barcode
 from apps.io_api.common import standard_response, common_params
 
 
@@ -68,7 +68,7 @@ async def generate_qrcode_api(
     x_api_key: str = common_params["x_api_key"]
 ):
     try:
-        result = generate_qrcode_file(
+        result = generate_qrcode(
             content=content,
             version=version,
             box_size=box_size,
@@ -104,10 +104,10 @@ async def generate_qrcode_api(
 async def generate_barcode_api(
     content: str = Body(..., description="条形码内容"),
     barcode_type: Optional[str] = Body("code128", description="条形码类型"),
-    width: Optional[int] = Body(300, ge=50, description="条形码宽度(像素)", examples=200),
-    height: Optional[int] = Body(100, ge=30, description="条形码高度(像素)", examples=100),
-    margin: Optional[int] = Body(12, ge=0, description="条形码边距(像素)", examples=10),
-    font_size: Optional[int] = Body(10, ge=6, description="条形码文字大小", examples=10),
+    width: Optional[int] = Body(300, ge=50, description="条形码宽度(像素)", examples=[200]),
+    height: Optional[int] = Body(100, ge=30, description="条形码高度(像素)", examples=[100]),
+    margin: Optional[int] = Body(12, ge=0, description="条形码边距(像素)", examples=[10]),
+    font_size: Optional[int] = Body(10, ge=6, description="条形码文字大小", examples=[10]),
     add_text: Optional[bool] = Body(True, description="是否在条形码下方添加文字"),
     fill_color: Optional[str] = Body("#000000", pattern="^#[0-9A-Fa-f]{6}$", description="条形码颜色"),
     back_color: Optional[str] = Body("#FFFFFF", pattern="^#[0-9A-Fa-f]{6}$", description="条形码背景颜色"),
@@ -117,7 +117,7 @@ async def generate_barcode_api(
     x_api_key: str = common_params["x_api_key"]
 ):
     try:
-        result = generate_barcode_file(
+        result = generate_barcode(
             content=content,
             barcode_type=barcode_type,
             width=width,

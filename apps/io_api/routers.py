@@ -6,8 +6,8 @@ from typing import List, Dict, Any#, Literal
 from fastapi import APIRouter, Query, Body, status#, Request, Path
 from tortoise import Tortoise
 
-from config import settings, globalconst as gc
-from config.projectconst import DefaultValue
+from config import settings
+from globalobjects import globalconst as gc
 from .models import TMaterial, TWorkcenter, TMatWc, TMatVer, TMatWcBom, TSupply, TDemand, TMold, TMatWcMold, TConfirm#,TortoiseBaseModel
 from .schemas import (
     AcceptMaterial, AcceptWorkcenter, AcceptMatWc, AcceptMatVer, AcceptMatWcBom, AcceptSupply, AcceptDemand, AcceptMold, AcceptMatWcMold, AcceptConfirm,
@@ -29,7 +29,6 @@ rt = APIRouter()
 
 @rt.get("/meta")
 async def get_meta():
-    default_value_dict = DefaultValue.to_dict()
     return standard_response(
         success=1,
         message="获取元数据成功",
@@ -37,7 +36,6 @@ async def get_meta():
             "db_set": settings.MYAPS_DB_SET,
             "dbs_str": ",".join(settings.MYAPS_DB_SET),
             "main_db": settings.MYAPS_MAIN_DB,
-            "default_value": default_value_dict,
         },
     )
     

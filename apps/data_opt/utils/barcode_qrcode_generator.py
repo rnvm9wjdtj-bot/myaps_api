@@ -390,10 +390,10 @@ def image_to_base64(
         raise
 
 
-def generate_qrcode_file(
+def generate_qrcode(
     content: str,
     file_path: Optional[str] = None,
-    output_type: str = "file",
+    output_type: str = ["base64", "file"][0],
     **kwargs
 ) -> Union[str, Dict[str, Any]]:
     """
@@ -426,10 +426,10 @@ def generate_qrcode_file(
             raise ValueError("file_path must be provided when output_type is 'file'")
         return save_image(img, file_path)
 
-def generate_barcode_file(
+def generate_barcode(
     content: str,
     file_path: Optional[str] = None,
-    output_type: str = "file",
+    output_type: str = ["base64", "file"][0],
     **kwargs
 ) -> Union[str, Dict[str, Any]]:
     """
@@ -514,7 +514,7 @@ if __name__ == "__main__":
     # 生成像素二维码示例（文件输出）
     qrcode_content = "https://www.example.com"
     qrcode_file = "qrcode_example.png"
-    generate_qrcode_file(
+    generate_qrcode(
         content=qrcode_content,
         file_path=qrcode_file,
         size=300,
@@ -526,7 +526,7 @@ if __name__ == "__main__":
     
     # 生成显示内容的像素二维码示例（文件输出）
     qrcode_with_content_file = "qrcode_with_content_example.png"
-    generate_qrcode_file(
+    generate_qrcode(
         content=qrcode_content,
         file_path=qrcode_with_content_file,
         size=300,
@@ -540,7 +540,7 @@ if __name__ == "__main__":
     
     # 生成SVG二维码示例（文件输出）
     qrcode_svg_file = "qrcode_example.svg"
-    generate_qrcode_file(
+    generate_qrcode(
         content=qrcode_content,
         file_path=qrcode_svg_file,
         image_format="SVG",
@@ -551,7 +551,7 @@ if __name__ == "__main__":
     print(f"SVG二维码生成成功: {qrcode_svg_file}")
     
     # 生成二维码BASE64示例
-    qrcode_base64 = generate_qrcode_file(
+    qrcode_base64 = generate_qrcode(
         content=qrcode_content,
         file_path="",  # 文件路径在base64模式下可选
         size=300,
@@ -566,7 +566,7 @@ if __name__ == "__main__":
     # 生成像素条形码示例（文件输出）
     barcode_content = "123456789012"
     barcode_file = "barcode_example.png"
-    generate_barcode_file(
+    generate_barcode(
         content=barcode_content,
         file_path=barcode_file,
         barcode_type="ean13",
@@ -578,7 +578,7 @@ if __name__ == "__main__":
     
     # 生成显示内容的像素条形码示例（文件输出）
     barcode_with_content_file = "barcode_with_content_example.png"
-    generate_barcode_file(
+    generate_barcode(
         content=barcode_content,
         file_path=barcode_with_content_file,
         barcode_type="ean13",
@@ -592,7 +592,7 @@ if __name__ == "__main__":
     
     # 生成SVG条形码示例（文件输出）
     barcode_svg_file = "barcode_example.svg"
-    generate_barcode_file(
+    generate_barcode(
         content=barcode_content,
         file_path=barcode_svg_file,
         barcode_type="ean13",
@@ -602,7 +602,7 @@ if __name__ == "__main__":
     print(f"SVG条形码生成成功: {barcode_svg_file}")
     
     # 生成条形码BASE64示例
-    barcode_base64 = generate_barcode_file(
+    barcode_base64 = generate_barcode(
         content=barcode_content,
         file_path="",  # 文件路径在base64模式下可选
         barcode_type="ean13",

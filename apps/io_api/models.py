@@ -1,10 +1,10 @@
 from tortoise import fields
-from tortoise.signals import post_save
+# from tortoise.signals import post_save
 
 from . import protomodels as pm
-from config.projectconst import DefaultValue
+# from config.projectconst import project_default_value
 from .common import common_write
-
+from apps.data_opt.projects import project_default_value
 
 
 class TMaterial(pm.ProtoMaterial):
@@ -17,7 +17,7 @@ class TMaterial(pm.ProtoMaterial):
 
     @classmethod
     async def create(cls, using_db, update_fields=None, force_create=False, force_update=False, *args, **kwargs):
-        if DefaultValue.auto_matver and kwargs.get("type") == "E":
+        if project_default_value.auto_matver and kwargs.get("type") == "E":
             await TMatVer.create_if_not_exists(db_name=using_db.connection_name, materialno=kwargs.get("materialno"))
         return await super().create(using_db=using_db, update_fields=update_fields, force_create=force_create, force_update=force_update, *args, **kwargs)
 
@@ -53,7 +53,7 @@ class TMatVer(pm.ProtoMatVer):
         unique_together = [("materialno", "matver")]
 
     @classmethod
-    async def create_if_not_exists(cls, db_name: str, materialno: str, matver: str = DefaultValue.MATVER, lotfrom: int = DefaultValue.MATVER_LOTFROM, lotto: int = DefaultValue.MATVER_LOTTO, priority: int = DefaultValue.MATVER_PRIORITY):
+    async def create_if_not_exists(cls, db_name: str, materialno: str, matver: str = project_default_value.MATVER, lotfrom: int = project_default_value.MATVER_LOTFROM, lotto: int = project_default_value.MATVER_LOTTO, priority: int = project_default_value.MATVER_PRIORITY):
         """
         若不存在则创建
         """

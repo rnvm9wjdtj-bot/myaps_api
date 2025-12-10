@@ -12,7 +12,7 @@ from ..utils.scheduler import cron_task
 from apps.io_api.common import dict_to_lower_keys
 
 active_connector = importlib.import_module(os.getenv("ACTIVE_CONNECTOR"))
-
+project_default_value = active_connector.DefaultValue
 #################################################################################
 # ⬇️定时任务HOOK
 #################################################################################

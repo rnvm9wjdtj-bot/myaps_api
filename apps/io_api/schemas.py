@@ -5,9 +5,9 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field, model_validator, PrivateAttr#, ValidationError, field_validator
 
-from config import globalconst as gc
+from globalobjects import globalconst as gc
 from config.settings import MYAPS_MAIN_DB
-from config.projectconst import DefaultValue
+from apps.data_opt.projects import project_default_value
 # from .common import common_read_by_sql
 
 def _cache_raw_input_data(cls, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -29,36 +29,36 @@ class AcceptMaterial(BaseModel):
     materialno: str = Field(..., description="料号", example="M001")
     description: str = Field(..., description="物料名称", example="测试物料A")
     size: str = Field(None, description="规格", example="100x100mm")
-    plant: str = Field(..., example=DefaultValue.MAT_PLANT, description='工厂')
-    planner: str = Field(DefaultValue.MAT_PLANNER, description="计划员", example="张三")
-    fifo: int = Field(DefaultValue.MAT_FIFO, ge=0, le=1, description='1-FIFO 0-最近原则')
+    plant: str = Field(..., example=project_default_value.MAT_PLANT, description='工厂')
+    planner: str = Field(project_default_value.MAT_PLANNER, description="计划员", example="张三")
+    fifo: int = Field(project_default_value.MAT_FIFO, ge=0, le=1, description='1-FIFO 0-最近原则')
     leadday: int = Field(..., ge=0, description="交期（天）", example=7)
-    expday: int = Field(DefaultValue.MAT_EXPDAY, ge=0, description="保质期（天）", example=365)
+    expday: int = Field(project_default_value.MAT_EXPDAY, ge=0, description="保质期（天）", example=365)
     grday: int = Field(..., ge=0, description="收货质检（天）", example=1)
     abc: str = Field(..., enum=["A", "B", "C"], example="A", description="ABC分类")
     unit: str = Field(..., description='单位', example="PCS")
     price: Decimal = Field(0, description="价格", example=100.50)
     groupno: str = Field(..., description="型号", example="G001")
-    type: str = Field(... if DefaultValue.myaps_is_pro else None, enum=["E", "F"], example="E", description="物料类型  E-自制件 F-采购件")
-    phantom: str = Field(DefaultValue.MAT_PHANTOM, enum=list(gc.YES_NO.keys()), example="N", description='虚拟件')
-    phantommin: int = Field(DefaultValue.MAT_PHANTOMMIN, ge=0, description='虚拟时间(Minute)', example=0)
-    firmday: int = Field(DefaultValue.MAT_FIRMDAY, ge=0, description="固定天数", example=0)
-    daygap: int = Field(DefaultValue.MAT_DAYGAP, ge=0, description='MTO拆分天数', example=1)
-    candelay: str = Field(DefaultValue.MAT_CANDELAY, enum=list(gc.YES_NO.keys()), example="N", description='可否延迟')
+    type: str = Field(... if project_default_value.myaps_is_pro else None, enum=["E", "F"], example="E", description="物料类型  E-自制件 F-采购件")
+    phantom: str = Field(project_default_value.MAT_PHANTOM, enum=list(gc.YES_NO.keys()), example="N", description='虚拟件')
+    phantommin: int = Field(project_default_value.MAT_PHANTOMMIN, ge=0, description='虚拟时间(Minute)', example=0)
+    firmday: int = Field(project_default_value.MAT_FIRMDAY, ge=0, description="固定天数", example=0)
+    daygap: int = Field(project_default_value.MAT_DAYGAP, ge=0, description='MTO拆分天数', example=1)
+    candelay: str = Field(project_default_value.MAT_CANDELAY, enum=list(gc.YES_NO.keys()), example="N", description='可否延迟')
     lotsize: str = Field(
-        DefaultValue.MAT_LOTSIZE,
+        project_default_value.MAT_LOTSIZE,
         enum=list(gc.LOT_SIZE.keys()),
         example="EX", description='批量')
-    lotfix: float = Field(DefaultValue.MAT_LOTFIX, ge=0, description='固定批', example=0.0)
-    lotmin: float = Field(DefaultValue.MAT_LOTMIN, ge=0, description='最小批', example=0.0)
-    lotmax: float = Field(DefaultValue.MAT_LOTMAX, ge=0, description='最大批', example=0.0)
-    lotround: float = Field(DefaultValue.MAT_LOTROUND, ge=0, description='取整', example=0.0)
-    lotss: float = Field(DefaultValue.MAT_LOTSS, ge=0, description='安全库存', example=0.0)
-    lotpoint: float = Field(DefaultValue.MAT_LOTPOINT, ge=0, description='重订货点', example=0.0)
-    lottop: float = Field(DefaultValue.MAT_LOTTOP, ge=0, description='最大库存点', example=0.0)
+    lotfix: float = Field(project_default_value.MAT_LOTFIX, ge=0, description='固定批', example=0.0)
+    lotmin: float = Field(project_default_value.MAT_LOTMIN, ge=0, description='最小批', example=0.0)
+    lotmax: float = Field(project_default_value.MAT_LOTMAX, ge=0, description='最大批', example=0.0)
+    lotround: float = Field(project_default_value.MAT_LOTROUND, ge=0, description='取整', example=0.0)
+    lotss: float = Field(project_default_value.MAT_LOTSS, ge=0, description='安全库存', example=0.0)
+    lotpoint: float = Field(project_default_value.MAT_LOTPOINT, ge=0, description='重订货点', example=0.0)
+    lottop: float = Field(project_default_value.MAT_LOTTOP, ge=0, description='最大库存点', example=0.0)
     planitem: str = Field(None, description='产品组', example="PI001")
-    preday: int = Field(DefaultValue.MAT_PREDAY, ge=0, description='向前冲销(天)', example=999)
-    subday: int = Field(DefaultValue.MAT_SUBDAY, ge=0, description='向后冲销(天)', example=999)
+    preday: int = Field(project_default_value.MAT_PREDAY, ge=0, description='向前冲销(天)', example=999)
+    subday: int = Field(project_default_value.MAT_SUBDAY, ge=0, description='向后冲销(天)', example=999)
     free1: Optional[str] = Field(None, max_length=255, description='自定义1', example="自定义内容。。。")
     free2: Optional[str] = Field(None, max_length=255, description='自定义2', example="自定义内容。。。")
     free3: Optional[str] = Field(None, max_length=255, description='自定义3', example="自定义内容。。。")
@@ -72,11 +72,11 @@ class AcceptMaterial(BaseModel):
                 "materialno": "M001",
                 "description": "测试物料A",
                 "size": "100x100mm",
-                "plant": DefaultValue.MAT_PLANT,
-                "planner": DefaultValue.MAT_PLANNER,
-                "fifo": DefaultValue.MAT_FIFO,
+                "plant": project_default_value.MAT_PLANT,
+                "planner": project_default_value.MAT_PLANNER,
+                "fifo": project_default_value.MAT_FIFO,
                 "leadday": 7,
-                "expday": DefaultValue.MAT_EXPDAY,
+                "expday": project_default_value.MAT_EXPDAY,
                 "grday": 1,
                 "abc": "A",
                 "unit": "PCS",
@@ -95,41 +95,41 @@ class AcceptMaterial(BaseModel):
             values["price"] = 0.00
         _cache_raw_input_data(cls, values)
         if values.get("fifo", "") == "":  # ，
-            values["fifo"] = DefaultValue.MAT_FIFO
+            values["fifo"] = project_default_value.MAT_FIFO
         if values.get("expday", "") == "":
-            values["expday"] = DefaultValue.MAT_EXPDAY
+            values["expday"] = project_default_value.MAT_EXPDAY
         if values.get("phantommin", "") == "":
             values["phantommin"] = 0
         if values.get("firmday", "") == "":
-            values["firmday"] = DefaultValue.MAT_FIRMDAY
+            values["firmday"] = project_default_value.MAT_FIRMDAY
         if values.get("lotfix", "") == "":
-            values["lotfix"] = DefaultValue.MAT_LOTFIX
+            values["lotfix"] = project_default_value.MAT_LOTFIX
         if values.get("lotmin", "") == "":
-            values["lotmin"] = DefaultValue.MAT_LOTMIN
+            values["lotmin"] = project_default_value.MAT_LOTMIN
         if values.get("lotmax", "") == "":
-            values["lotmax"] = DefaultValue.MAT_LOTMAX
+            values["lotmax"] = project_default_value.MAT_LOTMAX
         if values.get("lotround", "") == "":
-            values["lotround"] = DefaultValue.MAT_LOTROUND
+            values["lotround"] = project_default_value.MAT_LOTROUND
         if values.get("lotss", "") == "":
-            values["lotss"] = DefaultValue.MAT_LOTSS
+            values["lotss"] = project_default_value.MAT_LOTSS
         if values.get("lotpoint", "") == "":
-            values["lotpoint"] = DefaultValue.MAT_LOTPOINT
+            values["lotpoint"] = project_default_value.MAT_LOTPOINT
         if values.get("lottop", "") == "":
-            values["lottop"] = DefaultValue.MAT_LOTTOP
+            values["lottop"] = project_default_value.MAT_LOTTOP
         if values.get("preday", "") == "":
-            values["preday"] = DefaultValue.MAT_PREDAY
+            values["preday"] = project_default_value.MAT_PREDAY
         if values.get("subday", "") == "":
-            values["subday"] = DefaultValue.MAT_SUBDAY
+            values["subday"] = project_default_value.MAT_SUBDAY
         if values.get("leadday", "") == "":
-            values["leadday"] = DefaultValue.MAT_LEADDAY_E if values.get("type") == "E" else DefaultValue.MAT_LEADDAY_F
+            values["leadday"] = project_default_value.MAT_LEADDAY_E if values.get("type") == "E" else project_default_value.MAT_LEADDAY_F
         if values.get("grday", "") == "":
-            values["grday"] = DefaultValue.MAT_GRDAY_E if values.get("type") == "E" else DefaultValue.MAT_GRDAY_F
+            values["grday"] = project_default_value.MAT_GRDAY_E if values.get("type") == "E" else project_default_value.MAT_GRDAY_F
         if not values.get("abc"):
             values["abc"] = "A" if values.get("type") == "E" else "B"
         if values.get("plant", "") == "":
-            values["plant"] = DefaultValue.MAT_PLANT
+            values["plant"] = project_default_value.MAT_PLANT
         if values.get("planner", "") == "":
-            values["planner"] = DefaultValue.MAT_PLANNER
+            values["planner"] = project_default_value.MAT_PLANNER
         return values
     
     @model_validator(mode="after")
@@ -143,7 +143,7 @@ class AcceptWorkcenter(BaseModel):
     pri_wc: int = Field(1, description='优先级', example=1)
     bottleneck: str = Field(None, enum=list(gc.YES_NO.keys()), example="N", description='瓶颈')
     sortno: str = Field(None, max_length=4, description="序号", example="0001")
-    plant: str = Field(DefaultValue.MAT_PLANT, max_length=32, description="工厂", example="1600")
+    plant: str = Field(project_default_value.MAT_PLANT, max_length=32, description="工厂", example="1600")
     location: str = Field(None, max_length=32, description="车间", example="A区")
     finite: str = Field("Y", enum=list(gc.YES_NO.keys()), example="N", description='有限')
     type: str = Field("Y", enum=list(gc.YES_NO.keys()), example="N", description="首页显示")
@@ -164,7 +164,7 @@ class AcceptWorkcenter(BaseModel):
                 "pri_wc": 1,
                 "bottleneck": "N",
                 "sortno": "0001",
-                "plant": DefaultValue.MAT_PLANT,
+                "plant": project_default_value.MAT_PLANT,
                 "capnum": 6,
                 "capmax": 10,
                 "worker": 8.0,
@@ -181,11 +181,11 @@ class AcceptWorkcenter(BaseModel):
         if values.get("bottleneck") in gc.NONE_AND_EMPTY:
             values["bottleneck"] = "N"
         if values.get("location") in gc.NONE_AND_EMPTY:
-            values["location"] = DefaultValue.MAT_LOCATION
+            values["location"] = project_default_value.MAT_LOCATION
         if values.get("worker") in gc.NONE_AND_EMPTY:
-            values["worker"] = DefaultValue.WC_WORKER
+            values["worker"] = project_default_value.WC_WORKER
         if values.get("pri_wc") in gc.NONE_AND_EMPTY:
-            values["pri_wc"] = DefaultValue.WC_PRIORITY
+            values["pri_wc"] = project_default_value.WC_PRIORITY
         return values
 
     @model_validator(mode="after")
@@ -196,7 +196,7 @@ class AcceptWorkcenter(BaseModel):
 
 class AcceptMatWc(BaseModel):
     materialno: str = Field(..., max_length=64, description='料号', example="M001")
-    matver: str = Field(..., max_length=4, example=DefaultValue.MATVER, description='产线版本')
+    matver: str = Field(..., max_length=4, example=project_default_value.MATVER, description='产线版本')
     itemno: str = Field(None, max_length=6, description='工序项目', example="0010")
     workcenter: str = Field(..., max_length=32, description='工作中心', example="WC001")
     sortno: int = Field(..., ge=0, le=999, description='序号', example=1)
@@ -213,8 +213,8 @@ class AcceptMatWc(BaseModel):
         json_schema_extra = {
             "example": {
                 "materialno": "M001",
-                "matver": DefaultValue.MATVER,
-                "itemno": DefaultValue.ITEMNO,
+                "matver": project_default_value.MATVER,
+                "itemno": project_default_value.ITEMNO,
                 "workcenter": "WC001",
                 "sortno": 1,
                 "basesec": 600,
@@ -235,7 +235,7 @@ class AcceptMatWc(BaseModel):
         except:
             values["sortno"] = None
         if values.get("itemno") in gc.NONE_AND_EMPTY and values["sortno"]:
-            values["itemno"] = f"{DefaultValue.itemno_prefix}{values['sortno']:0{DefaultValue.itemno_width}d}"
+            values["itemno"] = f"{project_default_value.itemno_prefix}{values['sortno']:0{project_default_value.itemno_width}d}"
         try:
             values["basesec"] = float(values["basesec"])
         except:
@@ -258,10 +258,10 @@ class AcceptMatWc(BaseModel):
 
 class AcceptMatVer(BaseModel):
     materialno: str = Field(..., max_length=64, description='料号', example="M001")
-    matver: str = Field(..., example=DefaultValue.MATVER, max_length=4, description='产线版本号')
-    lotfrom: int = Field(DefaultValue.MATVER_LOTFROM, description='批量起点', example=1)
-    lotto: int = Field(DefaultValue.MATVER_LOTTO, description='批量终点', example=9999999)
-    priority: int = Field(DefaultValue.MATVER_PRIORITY, description='优先级', example=1)
+    matver: str = Field(..., example=project_default_value.MATVER, max_length=4, description='产线版本号')
+    lotfrom: int = Field(project_default_value.MATVER_LOTFROM, description='批量起点', example=1)
+    lotto: int = Field(project_default_value.MATVER_LOTTO, description='批量终点', example=9999999)
+    priority: int = Field(project_default_value.MATVER_PRIORITY, description='优先级', example=1)
     refno: str = Field(None, max_length=64, description='MTO订单号/认证线', example="SO123456")
     active: str = Field("Y", enum=list(gc.YES_NO.keys()), example="Y", description='生效')
     memo: str = Field(None, max_length=255, description='备注', example="标准版本")
@@ -272,7 +272,7 @@ class AcceptMatVer(BaseModel):
         json_schema_extra = {
             "example": {
                 "materialno": "M001",
-                "matver": DefaultValue.MATVER,
+                "matver": project_default_value.MATVER,
                 "lotfrom": 1,
                 "lotto": 9999999,
                 "priority": 1,
@@ -286,11 +286,11 @@ class AcceptMatVer(BaseModel):
     def model_valid(cls, values):
         _cache_raw_input_data(cls, values)
         if values.get("lotfrom") in gc.NONE_AND_EMPTY:
-            values["lotfrom"] = DefaultValue.MATVER_LOTFROM
+            values["lotfrom"] = project_default_value.MATVER_LOTFROM
         if values.get("lotto") in gc.NONE_AND_EMPTY:
-            values["lotto"] = DefaultValue.MATVER_LOTTO
+            values["lotto"] = project_default_value.MATVER_LOTTO
         if values.get("priority") in gc.NONE_AND_EMPTY:
-            values["priority"] = DefaultValue.MATVER_PRIORITY
+            values["priority"] = project_default_value.MATVER_PRIORITY
         if values.get("active") in gc.NONE_AND_EMPTY:
             values["active"] = "Y"
         return values
@@ -304,7 +304,7 @@ class AcceptMatVer(BaseModel):
 
 class AcceptMatWcBom(BaseModel):
     productno: str = Field(..., max_length=64, description='产品料号', example="P001")
-    matver: str = Field(..., example=DefaultValue.MATVER, max_length=4, description='产线版本')
+    matver: str = Field(..., example=project_default_value.MATVER, max_length=4, description='产线版本')
     itemno: str = Field(..., max_length=6, description='工序项目', example="0010")
     materialno: str = Field(..., max_length=64, description='子件料号', example="M001")
     qty: float = Field(..., ge=0, description='数量', example=2.0)
@@ -322,8 +322,8 @@ class AcceptMatWcBom(BaseModel):
         json_schema_extra = {
             "example": {
                 "productno": "P001",
-                "matver": DefaultValue.MATVER,
-                "itemno": DefaultValue.ITEMNO,
+                "matver": project_default_value.MATVER,
+                "itemno": project_default_value.ITEMNO,
                 "materialno": "M001",
                 "qty": 2.0,
                 "offsethour": 0,
@@ -340,7 +340,7 @@ class AcceptMatWcBom(BaseModel):
     def model_valid(cls, values):
         _cache_raw_input_data(cls, values)
         if values.get("itemno", "") == "":
-            values["itemno"] = DefaultValue.ITEMNO
+            values["itemno"] = project_default_value.ITEMNO
         denominator = values.get("denominator")
         if denominator:
             try:
@@ -439,7 +439,7 @@ class AcceptMatWcMold(BaseModel):
 class AcceptSupply(BaseModel):
     materialno: str = Field(..., max_length=64, description='料号', example="M001")
     supplyno: str = Field(..., max_length=64, description='供应单号', example="MO123456")
-    matver: Optional[str] = Field(None, max_length=32, example=DefaultValue.MATVER, description='产线版本')
+    matver: Optional[str] = Field(None, max_length=32, example=project_default_value.MATVER, description='产线版本')
     itemno: str = Field(None, max_length=6, description='项目号', example="0010")
     type: str = Field(..., enum=list(gc.SUPPLY_TYPE.keys()), example="MO", description='类型 PL-生产计划 MO-生产工单 ST-库存 PO-采购订单')
     category: str = Field(None, enum=list(gc.PRODUCT_CATEGORY.keys()), example="MTO", description='分类(MTO/MTS)')
@@ -470,8 +470,8 @@ class AcceptSupply(BaseModel):
             "example": {
                 "materialno": "M001",
                 "supplyno": "MO123456",
-                "matver": DefaultValue.MATVER,
-                "itemno": DefaultValue.ITEMNO,
+                "matver": project_default_value.MATVER,
+                "itemno": project_default_value.ITEMNO,
                 "type": "MO",
                 "category": "MTO",
                 "priority": 1,
@@ -488,7 +488,7 @@ class AcceptSupply(BaseModel):
     def model_valid(cls, values):
         _cache_raw_input_data(cls, values)
         if values.get('itemno') in gc.NONE_AND_EMPTY:
-            values['itemno'] = DefaultValue.ITEMNO
+            values['itemno'] = project_default_value.ITEMNO
         return values
 
     @model_validator(mode='after')
@@ -559,7 +559,7 @@ class AcceptDemand(BaseModel):
             "example": {
                 "materialno": "M001",
                 "demandno": "SO123456",
-                "itemno": f"{DefaultValue.itemno_prefix}{1:0{DefaultValue.itemno_width}d}",
+                "itemno": f"{project_default_value.itemno_prefix}{1:0{project_default_value.itemno_width}d}",
                 "type": "SO",
                 "category": "MTO",
                 "priority": 1,
@@ -599,7 +599,7 @@ class AcceptDemand(BaseModel):
 
 class AcceptConfirm(BaseModel):
     supplyno: str = Field(..., max_length=64, description='供应单号', example="MO123456")
-    itemno: str = Field(None, max_length=6, description='工序项目', example=DefaultValue.ITEMNO)
+    itemno: str = Field(None, max_length=6, description='工序项目', example=project_default_value.ITEMNO)
     workcenter: str = Field(None, max_length=32, description='工作中心', example="WC001")
     recordqty: float = Field(..., description='报工数量', gt=0, example=100)
     recorddt: datetime = Field(..., description='报工日期', example="2025-01-07 10:00:00")
@@ -612,7 +612,7 @@ class AcceptConfirm(BaseModel):
         json_schema_extra = {
             "example": {
                 "supplyno": "MO123456",
-                "itemno": DefaultValue.ITEMNO,
+                "itemno": project_default_value.ITEMNO,
                 "workcenter": "WC001",
                 "recordqty": 100.0,
                 "recorddt": "2025-01-07 10:00:00",

@@ -15,10 +15,10 @@ from tortoise.models import Model as TortoiseBaseModel
 from pydantic import BaseModel as PydanticSchema
 
 from config.settings import MYAPS_MAIN_DB, MYAPS_DB_SET
-from config.globalconst import SUPPLY_TYPE#ORDER_STATUS, 
-from config import logger
+from globalobjects.globalconst import SUPPLY_TYPE#ORDER_STATUS, 
+from globalobjects import filer_timed_logger
 
-file_logger = logger.setup_logging(__name__)
+file_logger = filer_timed_logger.setup_logging(__name__)
 
 # 导入异步上下文管理器
 from contextlib import asynccontextmanager

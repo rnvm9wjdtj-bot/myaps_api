@@ -1,29 +1,32 @@
-# bBinlog方案需要的权限
-# -- 创建监控用户并授权
-# CREATE USER 'monitor_user'@'%' IDENTIFIED BY 'strong_password';
-# GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'monitor_user'@'%';
-# GRANT SELECT ON your_database.* TO 'monitor_user'@'%';
-# FLUSH PRIVILEGES;
+"""
+bBinlog方案需要的权限
+-- 创建监控用户并授权
+CREATE USER 'monitor_user'@'%' IDENTIFIED BY 'strong_password';
+GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'monitor_user'@'%';
+GRANT SELECT ON your_database.* TO 'monitor_user'@'%';
+FLUSH PRIVILEGES;
 
-# -- 检查MySQL配置
-# SHOW VARIABLES LIKE 'log_bin';  -- 必须为ON
-# SHOW VARIABLES LIKE 'binlog_format';  -- 推荐ROW模式
+-- 检查MySQL配置
+SHOW VARIABLES LIKE 'log_bin';  -- 必须为ON
+SHOW VARIABLES LIKE 'binlog_format';  -- 推荐ROW模式
 
-# 本模块用于实时监听 MySQL binlog，捕获指定表的 INSERT/UPDATE/DELETE 事件，
-# 并将变更数据通过 webhook 推送给外部系统，实现第三方系统的增量同步。
-# 依赖 python-mysql-replication 包，要求 MySQL 开启 binlog 且为 ROW 格式。
-# 验证方法：
-# 1. 登录 MySQL 执行：SHOW VARIABLES LIKE 'log_bin'; 结果需为 ON
-# 2. 执行：SHOW VARIABLES LIKE 'binlog_format'; 结果需为 ROW
-# 3. 若未开启，需在 my.cnf 中设置：
-#    [mysqld]
-#    log_bin=mysql-bin
-#    binlog_format=ROW
-#    server_id=1
-# 4. 重启 MySQL 使配置生效
+本模块用于实时监听 MySQL binlog，捕获指定表的 INSERT/UPDATE/DELETE 事件，
+并将变更数据通过 webhook 推送给外部系统，实现第三方系统的增量同步。
+依赖 python-mysql-replication 包，要求 MySQL 开启 binlog 且为 ROW 格式。
+验证方法：
+1. 登录 MySQL 执行：SHOW VARIABLES LIKE 'log_bin'; 结果需为 ON
+2. 执行：SHOW VARIABLES LIKE 'binlog_format'; 结果需为 ROW
+3. 若未开启，需在 my.cnf 中设置：
+   [mysqld]
+   log_bin=mysql-bin
+   binlog_format=ROW
+   server_id=1
+4. 重启 MySQL 使配置生效
+"""
+
 
 import os, asyncio, time, logging, threading, concurrent.futures
-from functools import wraps
+# from functools import wraps
 from pymysqlreplication import BinLogStreamReader
 from pymysqlreplication.row_event import (
     WriteRowsEvent,
@@ -87,11 +90,11 @@ class MySQLBinlogMonitor:
                 missing_fields.append(field)
         
         if missing_fields:
-            raise ValueError(f"缺少必要的MySQL配置: {', '.join(missing_fields)}")
+            raise ValueError(f"❌ 缺少必要的MySQL配置: {', '.join(missing_fields)}")
         
         # 检查数据库配置
         if not self.mysql_settings.get("databases") and not self.mysql_settings.get("database"):
-            logger.warning("未指定数据库名称，将监控所有数据库")
+            logger.warning("🔭 未指定数据库名称，将监控所有数据库")
         else:
             # 处理数据库列表
             databases = self.mysql_settings.get("databases", [])
@@ -101,7 +104,7 @@ class MySQLBinlogMonitor:
             # 去重
             databases = list(set(databases))
             self.mysql_settings["databases"] = databases
-            logger.info(f"配置监控的数据库: {', '.join(databases)}")
+            logger.info(f"🔭 配置监控的数据库: {', '.join(databases)}")
         
         # 测试连接
         try:
@@ -124,11 +127,11 @@ class MySQLBinlogMonitor:
             if self.mysql_settings.get("databases"):
                 self._preload_table_schemas(conn)
             conn.close()
-            logger.info("MySQL连接测试成功")
+            logger.info("✅ MySQL连接测试成功")
             self._initialized = True  # 标记初始化完成
                     
         except Exception as e:
-            logger.warning(f"MySQL连接测试警告: {e}")
+            logger.warning(f"⚠️ MySQL连接测试警告: {e}")
 
     def _preload_table_schemas(self, conn):
         """预加载表结构信息"""
@@ -155,7 +158,7 @@ class MySQLBinlogMonitor:
                         for table in tables:
                             self._table_name_mapping[database][table.lower()] = table
                         
-                        logger.info(f"数据库 {database} 发现 {len(tables)} 个表")
+                        logger.info(f"🐬 数据库 {database} 发现 {len(tables)} 个表")
                         
                         # 预加载表结构
                         for table in tables:
@@ -171,10 +174,10 @@ class MySQLBinlogMonitor:
                     logger.warning(f"预加载数据库 {database} 表结构失败: {e}")
             
             total_tables = sum(len(tables) for tables in self._table_schemas.values())
-            logger.info(f"成功预加载 {len(self._table_schemas)} 个数据库，共 {total_tables} 个表的结构")
+            logger.info(f"✅ 成功预加载 {len(self._table_schemas)} 个数据库，共 {total_tables} 个表的结构")
                     
         except Exception as e:
-            logger.warning(f"预加载表结构失败: {e}")
+            logger.warning(f"❌ 预加载表结构失败: {e}")
 
     def _get_correct_table_name(self, database, table_name):
         """获取正确的表名（解决大小写问题）"""
@@ -355,7 +358,7 @@ class MySQLBinlogMonitor:
         self.running = True
         monitoring_thread = threading.Thread(target=self._monitor_binlog_with_retry, daemon=True)
         monitoring_thread.start()
-        logger.info("Binlog监控线程已启动")
+        logger.info("✅ Binlog监控线程已启动")
 
     def _monitor_binlog_with_retry(self):
         """带重试机制的Binlog监控"""
@@ -406,7 +409,7 @@ class MySQLBinlogMonitor:
         # 如果指定了数据库，只监控这些数据库
         if self.mysql_settings.get("databases"):
             stream_config["only_schemas"] = self.mysql_settings["databases"]
-            logger.info(f"监控数据库: {', '.join(self.mysql_settings['databases'])}")
+            logger.info(f"🔭 监控数据库: {', '.join(self.mysql_settings['databases'])}")
         else:
             logger.info("监控所有数据库")
         
@@ -600,7 +603,7 @@ class MySQLBinlogMonitor:
         
         if databases:
             config["databases"] = databases
-            logger.info(f"✅ 监控数据库: {', '.join(databases)}")
+            logger.info(f"🔭 监控数据库: {', '.join(databases)}")
         else:
             logger.warning("⚠️ 未设置数据库，将监控所有数据库")
         return config
