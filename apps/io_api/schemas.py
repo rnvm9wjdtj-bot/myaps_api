@@ -12,11 +12,18 @@ from apps.data_opt.projects import project_default_value
 
 def _cache_raw_input_data(cls, values: Dict[str, Any]) -> Dict[str, Any]:
     """
-    在模型验证之前捕获原始输入数据。
+    在模型验证之前捕获原始输入数据，并过滤掉不在Pydantic模型中的字段。
     'values' 参数就是传入的原始值。
     """
     if isinstance(values, dict):
-        cls._cached_raw_input_data = values.copy()
+        # 获取模型中定义的所有字段名
+        model_field_names = set(cls.model_fields.keys())
+        # 过滤掉不在模型字段中的键
+        filtered_values = {
+            key: value for key, value in values.items() 
+            if key in model_field_names
+        }
+        cls._cached_raw_input_data = filtered_values
     return values
 
 def _set_raw_input_data(self):
@@ -67,7 +74,7 @@ class AcceptMaterial(BaseModel):
 
     class Config:
         title = "验证规则 - 物料"
-        extra = "allow"
+        extra = "ignore"
         json_schema_extra = {
             "example": {
                 "materialno": "M001",
@@ -158,7 +165,7 @@ class AcceptWorkcenter(BaseModel):
     
     class Config:
         title = "验证规则 - 工作中心"
-        extra = "allow"
+        extra = "ignore"
         json_schema_extra = {
             "example": {
                 "workcenter": "WC001",
@@ -212,7 +219,7 @@ class AcceptMatWc(BaseModel):
 
     class Config:
         title = "验证规则 - 工序"
-        extra = "allow"
+        extra = "ignore"
         json_schema_extra = {
             "example": {
                 "materialno": "M001",
@@ -272,7 +279,7 @@ class AcceptMatVer(BaseModel):
 
     class Config:
         title = "验证规则 - 产线版本"
-        extra = "allow"
+        extra = "ignore"
         json_schema_extra = {
             "example": {
                 "materialno": "M001",
@@ -323,7 +330,7 @@ class AcceptMatWcBom(BaseModel):
     
     class Config:
         title = "验证规则 - BOM"
-        extra = "allow"
+        extra = "ignore"
         json_schema_extra = {
             "example": {
                 "productno": "P001",
@@ -374,7 +381,7 @@ class AcceptMold(BaseModel):
     
     class Config:
         title = "验证规则 - 模具"
-        extra = "allow"
+        extra = "ignore"
         json_schema_extra = {
             "example": {
                 "moldno": "MOLD001",
@@ -411,7 +418,7 @@ class AcceptMatWcMold(BaseModel):
 
     class Config:
         title = "验证规则 - 机台模具"
-        extra = "allow"
+        extra = "ignore"
         json_schema_extra = {
             "example": {
                 "materialno": "M001",
@@ -472,7 +479,7 @@ class AcceptSupply(BaseModel):
 
     class Config:
         title = "验证规则 - 供应"
-        extra = "allow"
+        extra = "ignore"
         json_schema_extra = {
             "example": {
                 "materialno": "M001",
@@ -513,7 +520,7 @@ class ConvertPl(BaseModel):
 
     class Config:
         title = "验证规则 - 生产计划"
-        extra = "allow"
+        extra = "ignore"
         json_schema_extra = {
             "example": {
                 "type": "MO",
@@ -562,7 +569,7 @@ class AcceptDemand(BaseModel):
 
     class Config:
         title = "验证规则 - 需求"
-        extra = "allow"
+        extra = "ignore"
         json_schema_extra = {
             "example": {
                 "materialno": "M001",
@@ -617,7 +624,7 @@ class AcceptConfirm(BaseModel):
 
     class Config:
         title = "验证规则 - 报工"
-        extra = "allow"
+        extra = "ignore"
         json_schema_extra = {
             "example": {
                 "supplyno": "MO123456",

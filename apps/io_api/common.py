@@ -336,7 +336,7 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
     origin_total = len(data)
     
     # 记录日志
-    file_logger.info(f"ℹ️↓接收到{origin_total}条数据，拟写入{mdl._meta.table}@{db_name} —— common_write\n{[i.raw_input_data for i in processed_data_list]}")
+    file_logger.info(f"ℹ️↓接收到{origin_total}条数据，拟写入{mdl._meta.db_table}@[{db_name}] —— common_write\n{[i.raw_input_data for i in processed_data_list]}")
     
     # 验证账套
     valid_dbs = validate_databases(db_name)
