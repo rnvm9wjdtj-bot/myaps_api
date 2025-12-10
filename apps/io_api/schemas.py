@@ -67,6 +67,7 @@ class AcceptMaterial(BaseModel):
 
     class Config:
         title = "验证规则 - 物料"
+        extra = "allow"
         json_schema_extra = {
             "example": {
                 "materialno": "M001",
@@ -157,6 +158,7 @@ class AcceptWorkcenter(BaseModel):
     
     class Config:
         title = "验证规则 - 工作中心"
+        extra = "allow"
         json_schema_extra = {
             "example": {
                 "workcenter": "WC001",
@@ -210,6 +212,7 @@ class AcceptMatWc(BaseModel):
 
     class Config:
         title = "验证规则 - 工序"
+        extra = "allow"
         json_schema_extra = {
             "example": {
                 "materialno": "M001",
@@ -269,6 +272,7 @@ class AcceptMatVer(BaseModel):
 
     class Config:
         title = "验证规则 - 产线版本"
+        extra = "allow"
         json_schema_extra = {
             "example": {
                 "materialno": "M001",
@@ -319,6 +323,7 @@ class AcceptMatWcBom(BaseModel):
     
     class Config:
         title = "验证规则 - BOM"
+        extra = "allow"
         json_schema_extra = {
             "example": {
                 "productno": "P001",
@@ -369,6 +374,7 @@ class AcceptMold(BaseModel):
     
     class Config:
         title = "验证规则 - 模具"
+        extra = "allow"
         json_schema_extra = {
             "example": {
                 "moldno": "MOLD001",
@@ -405,6 +411,7 @@ class AcceptMatWcMold(BaseModel):
 
     class Config:
         title = "验证规则 - 机台模具"
+        extra = "allow"
         json_schema_extra = {
             "example": {
                 "materialno": "M001",
@@ -555,6 +562,7 @@ class AcceptDemand(BaseModel):
 
     class Config:
         title = "验证规则 - 需求"
+        extra = "allow"
         json_schema_extra = {
             "example": {
                 "materialno": "M001",
@@ -609,6 +617,7 @@ class AcceptConfirm(BaseModel):
 
     class Config:
         title = "验证规则 - 报工"
+        extra = "allow"
         json_schema_extra = {
             "example": {
                 "supplyno": "MO123456",
