@@ -1,10 +1,10 @@
 from datetime import date, datetime, timedelta
 # from re import S
 # from this import d
-from typing import List, Dict, Any#, Literal
+from typing import List#, Dict, Any, Literal
 
 from fastapi import APIRouter, Query, Body, status#, Request, Path
-from tortoise import Tortoise
+# from tortoise import Tortoise
 
 from config import settings
 from globalobjects import globalconst as gc

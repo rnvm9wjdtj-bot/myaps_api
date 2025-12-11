@@ -2,7 +2,7 @@
 明道云 API 封装
 """
 
-import requests
+import requests, json
 
 class MingdaoApi:
     def __init__(self, app_key: str, sign: str, base_url: str='https://api.mingdao.com'):

@@ -9,7 +9,8 @@ warnings.filterwarnings('ignore')
 
 def process_json_bom_data(
         json_data: str | List[Dict[str, Any]], 
-        field_mapper: dict, 
+        mainfield_mapper: dict, 
+        otherimportantfield_mapper: dict={},
         numerator_column: str='n', 
         denominator_column: str='d'
     ) -> pd.DataFrame:
@@ -30,13 +31,12 @@ def process_json_bom_data(
     num_columns_set = set([numerator_column, denominator_column])
 
     # 转换为DataFrame
-    df_data = [
-            {
-                mk: 0 if mk in num_columns_set and not item.get(ok) else item.get(ok, '')
-                for mk, ok in field_mapper.items()
-            }
-            for item in bom_list
-        ]
+    df_data = []
+    for item in bom_list:
+        row = {mk: 0 if mk in num_columns_set and not item.get(ok) else item.get(ok, '') for mk, ok in mainfield_mapper.items()}
+        row['oif'] = {mk: item.get(ok, '') for mk, ok in otherimportantfield_mapper.items()} if otherimportantfield_mapper else None
+        df_data.append(row)
+
 
     df = pd.DataFrame(df_data)
     df = df.astype({
@@ -53,9 +53,10 @@ def process_json_bom_data(
 def bom_check(
         bom_df: pd.DataFrame,
         parent_column='pn',
-        child_column='mn',
+        child_column='cn',
         numerator_column='n',
-        denominator_column='d'
+        denominator_column='d',
+        version_column='pv'
     ) -> dict:
     """
     专门处理JSON格式BOM数据的综合检查函数
@@ -76,7 +77,8 @@ def bom_check(
             parent_column=parent_column,
             child_column=child_column,
             numerator_column=numerator_column,
-            denominator_column=denominator_column
+            denominator_column=denominator_column,
+            parentversion_column=version_column
         )
         marked_data = results['marked_data']
         
@@ -105,9 +107,10 @@ def bom_check(
 def bom_check_core_processor(
         bom_df: pd.DataFrame,
         parent_column: str = 'pn',
-        child_column: str = 'mn',
+        child_column: str = 'cn',
         denominator_column: str = 'd',
         numerator_column: str = 'n',
+        parentversion_column: str = 'pv'
     ) -> dict:
     """
     BOM检查核心函数（适配JSON数据结构）
@@ -139,6 +142,11 @@ def bom_check_core_processor(
     # 检查必要列
     if denominator_column not in marked_data.columns:
         marked_data[denominator_column] = 1
+    
+    # 如果version_column不存在，添加一个空列
+    if parentversion_column not in marked_data.columns:
+        marked_data[parentversion_column] = ''
+        
     required_cols = [parent_column, child_column, numerator_column, denominator_column]
     missing_cols = [col for col in required_cols if col not in marked_data.columns]
     
@@ -166,41 +174,44 @@ def bom_check_core_processor(
         numerator = row[numerator_column]
         denominator = row[denominator_column]
         
+        # 获取版本号，如果version_column存在
+        parentversion = row.get(parentversion_column, '')
+        parentversion_str = '' if pd.isna(parentversion) else str(parentversion)
             
         # 检查无父级料号
         if pd.isna(parent) or str(parent).strip() == '':
-            issue_summary['data_quality_issues']['non_parent'].append((parent, child))
+            issue_summary['data_quality_issues']['non_parent'].append((parent, child, parentversion_str))
             marked_data.at[idx, 'E'].append('无父级料号')
             marked_data.at[idx, 'I'].append('数据质量问题')
 
 
         # 检查无子级料号
         if pd.isna(child) or str(child).strip() == '':
-            issue_summary['data_quality_issues']['non_child'].append((parent, child))
+            issue_summary['data_quality_issues']['non_child'].append((parent, child, parentversion_str))
             marked_data.at[idx, 'E'].append('无子级料号')
             marked_data.at[idx, 'I'].append('数据质量问题')
 
 
         # 检查无效数量（分子）
         if pd.isna(numerator) or numerator <= 0:
-            issue_summary['data_quality_issues']['invalid_qty'].append((parent, child))
+            issue_summary['data_quality_issues']['invalid_qty'].append((parent, child, parentversion_str))
             marked_data.at[idx, 'E'].append('无效数量')
             marked_data.at[idx, 'I'].append('数据质量问题')
         
 
         # 检查无效数量（分母）
         if pd.isna(denominator) or denominator <= 0:
-            issue_summary['data_quality_issues']['invalid_qty'].append((parent, child))
+            issue_summary['data_quality_issues']['invalid_qty'].append((parent, child, parentversion_str))
             marked_data.at[idx, 'E'].append('无效数量')
             marked_data.at[idx, 'I'].append('数据质量问题')
         
         
-        # 记录关系
-        relation = (str(parent), str(child))
+        # 记录关系 - 包含版本号，形成(parent, child, version)的唯一标识
+        relation = (str(parent), str(child), parentversion_str)
         relation_indices[relation].append(idx)
         
         if relation in seen_relations:
-            issue_summary['data_quality_issues']['duplicate_relations'].append((parent, child))
+            issue_summary['data_quality_issues']['duplicate_relations'].append((parent, child, parentversion_str))
             marked_data.at[idx, 'W'].append('重复关系')
             marked_data.at[idx, 'I'].append('数据质量问题')
         else:
@@ -222,7 +233,11 @@ def bom_check_core_processor(
     
     # 标记父子同号问题
     for relation, indices in relation_indices.items():
-        parent, child = relation
+        # 正确处理三元组 (parent, child, parentversion)
+        if len(relation) == 3:
+            parent, child, _ = relation  # 忽略版本号，只使用parent和child
+        else:
+            parent, child = relation  # 兼容原有二元组格式
         if parent == child:
             for idx in indices:
                 marked_data.at[idx, 'E'].append('父子同号')
@@ -251,7 +266,11 @@ def bom_check_core_processor(
     
     # 标记循环引用问题
     for relation, indices in relation_indices.items():
-        parent, child = relation
+        # 正确处理三元组 (parent, child, parentversion)
+        if len(relation) == 3:
+            parent, child, _ = relation  # 忽略版本号，只使用parent和child
+        else:
+            parent, child = relation  # 兼容原有二元组格式
         if parent in circular_items or child in circular_items:
             for idx in indices:
                 marked_data.at[idx, 'E'].append('循环引用')
@@ -288,7 +307,11 @@ def bom_check_core_processor(
     
     # 标记多父项问题
     for relation, indices in relation_indices.items():
-        parent, child = relation
+        # 正确处理三元组 (parent, child, parentversion)
+        if len(relation) == 3:
+            parent, child, _ = relation  # 忽略版本号，只使用parent和child
+        else:
+            parent, child = relation  # 兼容原有二元组格式
         if child in multi_parents:
             for idx in indices:
                 marked_data.at[idx, 'W'].append('多父项')
@@ -384,8 +407,8 @@ def bom_unit_check_core_processor(
     df: pd.DataFrame,
     product_no_col: str = 'pn',
     product_unit_col: str = 'pu',
-    material_no_col: str = 'mn',
-    material_unit_col: str = 'mu'
+    material_no_col: str = 'cn',
+    material_unit_col: str = 'cu'
 ) -> Dict[str, Any]:
     """
     全面校验BOM中所有料号的单位唯一性（通盘考虑产品料号和物料料号）
