@@ -524,15 +524,15 @@ async def common_delete_by_sql(db_name: str, table_name: str, filter_string: str
                 count, data = await db.execute_query(sql)
                 total_count += count
             # await db.close()
-            file_logger.info(f"✅执行SQL删除操作成功，账套@{valid_db}，表：{table_name}，条件：{filter_string}，删除{count}条记录")
-        file_logger.info(f"✅执行SQL删除操作成功，共删除{total_count}条记录，账套：{', '.join(valid_dbs)}")
+            file_logger.info(f"✅执行SQL删除操作成功，{table_name}@{valid_db}，条件：{filter_string}，删除{count}条记录")
+        file_logger.info(f"✅执行SQL删除操作成功，共删除{total_count}条记录，{table_name}@[{','.join(valid_dbs)}]")
         return standard_response(
             data=data,
             meta={"affect_count": total_count, "affect_dbs": ", ".join(valid_dbs)}
         )
         
     except Exception as e:
-        file_logger.error(f"❌执行SQL删除操作失败，账套@{db_name}，表：{table_name}，条件：{filter_string}，错误信息：{str(e)}")
+        file_logger.error(f"❌执行SQL删除操作失败，{table_name}@{db_name}，条件：{filter_string}，错误信息：{str(e)}")
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

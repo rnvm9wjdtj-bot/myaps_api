@@ -104,16 +104,16 @@ async def generate_qrcode_api(
 async def generate_barcode_api(
     content: str = Body(..., description="条形码内容"),
     barcode_type: Optional[str] = Body("code128", description="条形码类型"),
-    width: Optional[int] = Body(300, ge=50, description="条形码宽度(像素)", examples=[200]),
-    height: Optional[int] = Body(100, ge=30, description="条形码高度(像素)", examples=[100]),
-    margin: Optional[int] = Body(12, ge=0, description="条形码边距(像素)", examples=[10]),
-    font_size: Optional[int] = Body(10, ge=6, description="条形码文字大小", examples=[10]),
+    width: Optional[int] = Body(500, ge=50, description="条形码宽度(像素)", examples=[200]),
+    height: Optional[int] = Body(150, ge=30, description="条形码高度(像素)", examples=[100]),
+    margin: Optional[int] = Body(20, ge=0, description="条形码边距(像素)", examples=[10]),
+    font_size: Optional[int] = Body(14, ge=6, description="条形码文字大小", examples=[10]),
     add_text: Optional[bool] = Body(True, description="是否在条形码下方添加文字"),
     fill_color: Optional[str] = Body("#000000", pattern="^#[0-9A-Fa-f]{6}$", description="条形码颜色"),
     back_color: Optional[str] = Body("#FFFFFF", pattern="^#[0-9A-Fa-f]{6}$", description="条形码背景颜色"),
     image_format: Optional[str] = Body("SVG", pattern="^(PNG|JPEG|GIF|SVG)$", description="图片格式"),
     show_content: Optional[bool] = Body(True, description="是否在图片底部显示原字符串内容"),
-    content_font_size: Optional[int] = Body(12, ge=8, description="内容文字大小"),
+    content_font_size: Optional[int] = Body(20, ge=8, description="内容文字大小"),
     x_api_key: str = common_params["x_api_key"]
 ):
     try:

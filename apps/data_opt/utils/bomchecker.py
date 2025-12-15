@@ -7,12 +7,23 @@ from datetime import datetime
 
 warnings.filterwarnings('ignore')
 
+MD_CTRLID = {
+    'parent_no': 'pn',
+    'child_no': 'cn',
+    'parent_version': 'pv',
+    'parent_unit': 'pu',
+    'child_unit': 'cu',
+    'numerator': 'n',
+    'denominator': 'd',
+    'dto': 'dto',
+}
+
 def process_json_bom_data(
         json_data: str | List[Dict[str, Any]], 
         mainfield_mapper: dict, 
-        otherimportantfield_mapper: dict={},
-        numerator_column: str='n', 
-        denominator_column: str='d'
+        dtofield_mapper: dict={},
+        numerator_col: str=MD_CTRLID['numerator'], 
+        denominator_col: str=MD_CTRLID['denominator']
     ) -> pd.DataFrame:
     """
     处理JSON格式的BOM数据，转换为适合校验的结构
@@ -28,35 +39,35 @@ def process_json_bom_data(
     else:
         bom_list = json_data
     
-    num_columns_set = set([numerator_column, denominator_column])
+    num_columns_set = set([numerator_col, denominator_col])
 
     # 转换为DataFrame
     df_data = []
     for item in bom_list:
         row = {mk: 0 if mk in num_columns_set and not item.get(ok) else item.get(ok, '') for mk, ok in mainfield_mapper.items()}
-        row['oif'] = {mk: item.get(ok, '') for mk, ok in otherimportantfield_mapper.items()} if otherimportantfield_mapper else None
+        row[MD_CTRLID['dto']] = {mk: item.get(ok, '') for mk, ok in dtofield_mapper.items()} if dtofield_mapper else None
         df_data.append(row)
 
 
     df = pd.DataFrame(df_data)
     df = df.astype({
-        numerator_column: 'float32',
-        denominator_column: 'float32'
+        numerator_col: 'float32',
+        denominator_col: 'float32'
     })
     
     # 若分母全为0，则说明原始数据缺少整列，则统一设为1
-    if (df[denominator_column] == 0).all():
-        df[denominator_column] = 1
+    if (df[denominator_col] == 0).all():
+        df[denominator_col] = 1
 
     return df
 
 def bom_check(
         bom_df: pd.DataFrame,
-        parent_column='pn',
-        child_column='cn',
-        numerator_column='n',
-        denominator_column='d',
-        version_column='pv'
+        parent_col: str = MD_CTRLID['parent_no'],
+        child_col: str = MD_CTRLID['child_no'],
+        numerator_col: str = MD_CTRLID['numerator'],
+        denominator_col: str = MD_CTRLID['denominator'],
+        parentversion_col: str = MD_CTRLID['parent_version']
     ) -> dict:
     """
     专门处理JSON格式BOM数据的综合检查函数
@@ -74,11 +85,11 @@ def bom_check(
         # 执行BOM检查
         results = bom_check_core_processor(
             bom_df,
-            parent_column=parent_column,
-            child_column=child_column,
-            numerator_column=numerator_column,
-            denominator_column=denominator_column,
-            parentversion_column=version_column
+            parent_column=parent_col,
+            child_column=child_col,
+            numerator_column=numerator_col,
+            denominator_column=denominator_col,
+            parentversion_column=parentversion_col
         )
         marked_data = results['marked_data']
         
@@ -106,11 +117,11 @@ def bom_check(
 
 def bom_check_core_processor(
         bom_df: pd.DataFrame,
-        parent_column: str = 'pn',
-        child_column: str = 'cn',
-        denominator_column: str = 'd',
-        numerator_column: str = 'n',
-        parentversion_column: str = 'pv'
+        parent_column: str = MD_CTRLID['parent_no'],
+        child_column: str = MD_CTRLID['child_no'],
+        denominator_column: str = MD_CTRLID['denominator'],
+        numerator_column: str = MD_CTRLID['numerator'],
+        parentversion_column: str = MD_CTRLID['parent_version']
     ) -> dict:
     """
     BOM检查核心函数（适配JSON数据结构）
@@ -174,38 +185,46 @@ def bom_check_core_processor(
         numerator = row[numerator_column]
         denominator = row[denominator_column]
         
-        # 获取版本号，如果version_column存在
+        # 获取版本号，如果parentversion_column存在
         parentversion = row.get(parentversion_column, '')
         parentversion_str = '' if pd.isna(parentversion) else str(parentversion)
+        
+        # 统一创建元组变量
+        data_key = (parent, child, parentversion_str)
             
         # 检查无父级料号
         if pd.isna(parent) or str(parent).strip() == '':
-            issue_summary['data_quality_issues']['non_parent'].append((parent, child, parentversion_str))
+            issue_summary['data_quality_issues']['non_parent'].append(data_key)
             marked_data.at[idx, 'E'].append('无父级料号')
             marked_data.at[idx, 'I'].append('数据质量问题')
 
 
         # 检查无子级料号
         if pd.isna(child) or str(child).strip() == '':
-            issue_summary['data_quality_issues']['non_child'].append((parent, child, parentversion_str))
+            issue_summary['data_quality_issues']['non_child'].append(data_key)
             marked_data.at[idx, 'E'].append('无子级料号')
             marked_data.at[idx, 'I'].append('数据质量问题')
 
 
         # 检查无效数量（分子）
         if pd.isna(numerator) or numerator <= 0:
-            issue_summary['data_quality_issues']['invalid_qty'].append((parent, child, parentversion_str))
+            issue_summary['data_quality_issues']['invalid_qty'].append(data_key)
             marked_data.at[idx, 'E'].append('无效数量')
             marked_data.at[idx, 'I'].append('数据质量问题')
         
 
         # 检查无效数量（分母）
         if pd.isna(denominator) or denominator <= 0:
-            issue_summary['data_quality_issues']['invalid_qty'].append((parent, child, parentversion_str))
+            issue_summary['data_quality_issues']['invalid_qty'].append(data_key)
             marked_data.at[idx, 'E'].append('无效数量')
             marked_data.at[idx, 'I'].append('数据质量问题')
         
-        
+        # 检查长度（APS数据库要求）
+        # if len(parentversion_str) > 4:
+        #     issue_summary['data_quality_issues']['invalid_qty'].append((parent, child, parentversion_str))
+        #     marked_data.at[idx, 'E'].append('版本号超长')
+        #     marked_data.at[idx, 'I'].append('数据质量问题')
+
         # 记录关系 - 包含版本号，形成(parent, child, version)的唯一标识
         relation = (str(parent), str(child), parentversion_str)
         relation_indices[relation].append(idx)
@@ -405,10 +424,10 @@ def output_bom_check_result_as_markdown(results):
 
 def bom_unit_check_core_processor(
     df: pd.DataFrame,
-    product_no_col: str = 'pn',
-    product_unit_col: str = 'pu',
-    material_no_col: str = 'cn',
-    material_unit_col: str = 'cu'
+    parent_col: str = MD_CTRLID['parent_no'],
+    parentunit_col: str = MD_CTRLID['parent_unit'],
+    child_col: str = MD_CTRLID['child_no'],
+    childunit_col: str = MD_CTRLID['child_unit'],
 ) -> Dict[str, Any]:
     """
     全面校验BOM中所有料号的单位唯一性（通盘考虑产品料号和物料料号）
@@ -431,17 +450,17 @@ def bom_unit_check_core_processor(
             'details': []
         }
 
-    if product_unit_col not in df.columns or df[product_unit_col].isnull().all() or df[product_unit_col].astype(str).str.strip().eq('').all():
+    if parentunit_col not in df.columns or df[parentunit_col].isnull().all() or df[parentunit_col].astype(str).str.strip().eq('').all():
         return {
             'exec_success': False,
-            'summary': f'缺少产品单位列 {product_unit_col}',
+            'summary': f'缺少产品单位列 {parentunit_col}',
             'valid': False,
             'details': []
         }
-    if material_unit_col not in df.columns or df[material_unit_col].isnull().all() or df[material_unit_col].astype(str).str.strip().eq('').all():
+    if childunit_col not in df.columns or df[childunit_col].isnull().all() or df[childunit_col].astype(str).str.strip().eq('').all():
         return {
             'exec_success': False,
-            'summary': f'缺少物料单位列 {material_unit_col}',
+            'summary': f'缺少物料单位列 {childunit_col}',
             'valid': False,
             'details': []
         }
@@ -449,11 +468,11 @@ def bom_unit_check_core_processor(
     material_units_map = {}
     
     # 收集产品料号及其单位
-    if product_no_col in df.columns and product_unit_col in df.columns:
-        product_data = df[[product_no_col, product_unit_col]].dropna()
+    if parent_col in df.columns and parentunit_col in df.columns:
+        product_data = df[[parent_col, parentunit_col]].dropna()
         for _, row in product_data.iterrows():
-            material_number = str(row[product_no_col])
-            unit = str(row[product_unit_col])
+            material_number = str(row[parent_col])
+            unit = str(row[parentunit_col])
             
             if material_number and unit:  # 忽略空值
                 if material_number not in material_units_map:
@@ -461,11 +480,11 @@ def bom_unit_check_core_processor(
                 material_units_map[material_number].add(unit)
     
     # 收集物料料号及其单位
-    if material_no_col in df.columns and material_unit_col in df.columns:
-        material_data = df[[material_no_col, material_unit_col]].dropna()
+    if child_col in df.columns and childunit_col in df.columns:
+        material_data = df[[child_col, childunit_col]].dropna()
         for _, row in material_data.iterrows():
-            material_number = str(row[material_no_col])
-            unit = str(row[material_unit_col])
+            material_number = str(row[child_col])
+            unit = str(row[childunit_col])
             
             if material_number and unit:  # 忽略空值
                 if material_number not in material_units_map:
@@ -481,8 +500,8 @@ def bom_unit_check_core_processor(
         unique_units = list(units_set)
         
         # 判断该料号是否同时出现在产品角色和物料角色中
-        appears_as_product = material_number in df[product_no_col].astype(str).values if product_no_col in df.columns else False
-        appears_as_material = material_number in df[material_no_col].astype(str).values if material_no_col in df.columns else False
+        appears_as_product = material_number in df[parent_col].astype(str).values if parent_col in df.columns else False
+        appears_as_material = material_number in df[child_col].astype(str).values if child_col in df.columns else False
         
         result = {
             'material_number': material_number,
@@ -495,8 +514,8 @@ def bom_unit_check_core_processor(
         }
         
         # 计算该料号在数据中出现的总次数
-        product_count = len(df[df[product_no_col].astype(str) == material_number]) if product_no_col in df.columns else 0
-        material_count = len(df[df[material_no_col].astype(str) == material_number]) if material_no_col in df.columns else 0
+        product_count = len(df[df[parent_col].astype(str) == material_number]) if parent_col in df.columns else 0
+        material_count = len(df[df[child_col].astype(str) == material_number]) if child_col in df.columns else 0
         result['occurrence_count'] = product_count + material_count
         
         validation_results.append(result)
@@ -511,26 +530,26 @@ def bom_unit_check_core_processor(
     for material in problematic_materials:
         # 获取该料号作为父级时的所有记录
         product_records = []
-        if product_no_col in df.columns:
-            product_mask = df[product_no_col].astype(str) == material['material_number']
+        if parent_col in df.columns:
+            product_mask = df[parent_col].astype(str) == material['material_number']
             if product_mask.any():
-                product_records = df[product_mask][[product_no_col, product_unit_col]].to_dict('records')
+                product_records = df[product_mask][[parent_col, parentunit_col]].to_dict('records')
         
         # 获取该料号作为子级时的所有记录
         material_records = []
-        if material_no_col in df.columns:
-            material_mask = df[material_no_col].astype(str) == material['material_number']
+        if child_col in df.columns:
+            material_mask = df[child_col].astype(str) == material['material_number']
             if material_mask.any():
-                material_records = df[material_mask][[material_no_col, material_unit_col]].to_dict('records')
+                material_records = df[material_mask][[child_col, childunit_col]].to_dict('records')
         
         # 按单位统计分布
         unit_distribution = {}
         for record in product_records:
-            unit = str(record.get(product_unit_col, ''))
+            unit = str(record.get(parentunit_col, ''))
             unit_distribution[unit] = unit_distribution.get(unit, 0) + 1
         
         for record in material_records:
-            unit = str(record.get(material_unit_col, ''))
+            unit = str(record.get(childunit_col, ''))
             unit_distribution[unit] = unit_distribution.get(unit, 0) + 1
         
         problematic_details.append({
