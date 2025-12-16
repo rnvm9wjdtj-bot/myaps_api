@@ -568,7 +568,12 @@ def bom_unit_check_core_processor(
         'problematic_materials_count': len(problematic_materials),
         'pass_rate_percent': round((len(unified_materials) / len(material_units_map)) * 100, 2) if material_units_map else 0,
         'multi_role_materials_count': len([m for m in validation_results if m['appears_as_product'] and m['appears_as_material']]),
-        'check_timestamp': pd.Timestamp.now().isoformat()
+        # 使用标准的YYYY-MM-DD HH:MM:SS格式的时间戳
+        # 也可以使用其他格式，例如:
+        # - 仅日期: 'YYYY-MM-DD'
+        # - 带毫秒: 'YYYY-MM-DD HH:MM:SS.sss'
+        # - 中文格式: '%Y年%m月%d日 %H时%M分%S秒'
+        'check_timestamp': pd.Timestamp.now().strftime('%Y-%m-%d  %H:%M:%S')
     }
     
     return {

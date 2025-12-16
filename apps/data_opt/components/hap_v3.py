@@ -96,10 +96,9 @@ class HapApiV3:
 
     def add_rows(self, worksheet_id: str, rows: list, trigger_workflow: bool=True):
         path = f"/v3/app/worksheets/{worksheet_id}/rows/batch"
-        chunk_size = min(len(rows), 1000)
+        chunk_size = min(len(rows), 100)
         for i in range(0, len(rows), chunk_size):
             chunk = self._rows_data_to_controls_list(rows[i:i+chunk_size])
-            print(chunk)
             data = {
                 "rows": chunk,
                 "triggerWorkflow": trigger_workflow
