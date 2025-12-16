@@ -434,10 +434,10 @@ def bom_unit_check_core_processor(
     
     参数:
         df: process_json_bom_data函数输出的DataFrame
-        product_no_col: 产品料号列名
-        product_unit_col: 产品单位列名
-        material_no_col: 物料料号列名
-        material_unit_col: 物料单位列名
+        parent_col: 产品料号列名
+        parentunit_col: 产品单位列名
+        child_col: 物料料号列名
+        childunit_col: 物料单位列名
     
     返回:
         Dict: 包含详细校验结果的字典
