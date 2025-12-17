@@ -1,4 +1,5 @@
 import pandas as pd, json, warnings
+from io import BytesIO
 
 from typing import Dict, List, Any#, Set, Tuple
 from collections import defaultdict
@@ -352,7 +353,16 @@ def bom_check_core_processor(
 
 def export_bom_check_results_as_excel(results, output_file=None):
     """
-    导出BOM检查结果到Excel文件
+    导出BOM检查结果到Excel文件或BytesIO对象
+    
+    参数:
+        results: BOM检查结果
+        output_file: 输出文件路径或BytesIO对象。如果为None，将返回BytesIO对象
+    
+    返回:
+        如果output_file是字符串: 返回{'success': True, 'file_path': output_file}
+        如果output_file是None或BytesIO对象: 返回BytesIO对象
+        如果导出失败: 返回{'success': False, 'message': '错误信息'}
     """
     if not results.get('success'):
         return {'success': False, 'message': '无法导出，检查未成功'}
@@ -365,9 +375,15 @@ def export_bom_check_results_as_excel(results, output_file=None):
         # 转换为DataFrame
         df = pd.DataFrame(marked_data)
         
+        # 判断是否使用BytesIO
+        use_bytesio = output_file is None or isinstance(output_file, BytesIO)
+        
+        # 如果output_file为None，创建一个BytesIO对象
         if output_file is None:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            output_file = f'BOM检查结果_{timestamp}.xlsx'
+            output_file = BytesIO()
+        elif isinstance(output_file, str):
+            # 如果是字符串，保持原有的文件路径
+            pass
         
         # 导出到Excel
         with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
@@ -398,11 +414,16 @@ def export_bom_check_results_as_excel(results, output_file=None):
                 summary_df = pd.DataFrame(summary_data)
                 summary_df.to_excel(writer, sheet_name='问题汇总', index=False)
         
-        return {
-            'success': True, 
-            'message': f'结果已导出到: {output_file}',
-            'file_path': output_file
-        }
+        # 如果使用BytesIO，需要将指针重置到开始位置
+        if use_bytesio:
+            output_file.seek(0)
+            return output_file
+        else:
+            return {
+                'success': True, 
+                'message': f'结果已导出到: {output_file}',
+                'file_path': output_file
+            }
     
     except Exception as e:
         return {'success': False, 'message': f'导出失败: {str(e)}'}

@@ -2,7 +2,9 @@
 # import os, importlib#, uuid
 from typing import Optional#, Dict, Any
 
-from fastapi import APIRouter, Body#, Query, HTTPException
+import pandas as pd
+from fastapi import APIRouter, Body, File, UploadFile#, Query, HTTPException
+from fastapi.responses import StreamingResponse
 
 from .projects import  active_connector
 # from .connectors.project import MyapsDbActionsAbc
@@ -10,6 +12,7 @@ from .schemas import SupplyOperationBody, SupplyAction
 # from apps.io_api.models import TSupply
 from .utils.barcode_qrcode_generator import generate_qrcode, generate_barcode
 from apps.io_api.common import standard_response, common_params
+from apps.data_opt.projects import active_connector
 
 
 # 创建路由器实例
@@ -148,3 +151,74 @@ async def generate_barcode_api(
             message=f"条形码生成失败: {str(e)}"
         )
 
+
+@rt.post("/check/bom",
+    tags=["数据操作 - 校验BOM"],
+    summary="校验BOM",
+    description="校验传入的 BOM excel，结果输出至hap"
+)
+async def check_bom_api(
+    file: UploadFile = File(..., description="BOM Excel 文件"),
+    # mainfield_mapper: dict[str, str] = Body(..., description="字段映射 {'hap ctrl id': 'Excel列名'}"),
+    parent_col: str = Body("ProductNo", description="父级料号列名"),
+    child_col: str = Body("MaterialNo", description="子级料号列名"),
+    parentversion_col: str = Body("MatVer", description="版本号列名"),
+    numerator_col: str = Body("Qty", description="数量列名"),
+    denominator_col: str = Body(None, description="分母列名"),
+    childunit_col: str = Body(None, description="子级单位列名"),
+    parentunit_col: str = Body(None, description="父级单位列名"),
+    x_api_key: str = common_params["x_api_key"]
+):
+
+    try:
+        from apps.data_opt.components.hap_v3 import HapApiV3
+        from apps.data_opt.utils.bomchecker_optimized import BOMChecker
+
+        # mainfield_mapper = {
+        #     "id": None,
+        #     "pn": "*料号(父级)ProductNo",   # 产品料号
+        #     "pu": None,   # 产品单位
+        #     "cn": "*子级料号MaterialNo",   # 物料料号
+        #     "cu": None,   # 物料单位
+        #     "n": "数量Qty",   # 数量
+        #     "d": None,   # 分母
+        #     "pv": "*产线版本MatVer"      # 产品版本号
+        # }
+
+        dtofield_mapper = {
+            "productno": parent_col,
+            "materialno": child_col,
+            "matver": parentversion_col,
+        }
+        bom_df = pd.read_excel(file.file)
+        checker = BOMChecker(
+            numerator_col=numerator_col,
+            denominator_col=denominator_col,
+            parent_col=parent_col,
+            child_col=child_col,
+            parentversion_col=parentversion_col,
+            parentunit_col=parentunit_col,
+            childunit_col=childunit_col,
+            dtofield_mapper=dtofield_mapper,
+        )
+        
+
+
+        checker.start_check(bom_df)
+        excel_data = checker.export_results_as_excel()
+
+
+        
+        return StreamingResponse(
+            excel_data,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": "attachment; filename=bom_check_results.xlsx"
+            }
+        )
+    except Exception as e:
+        return standard_response(
+            status_code=500,
+            success=0,
+            message=f"BOM校验失败: {str(e)}"
+        )
