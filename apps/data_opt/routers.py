@@ -1,9 +1,11 @@
 # from datetime import datetime
 # import os, importlib#, uuid
 from typing import Optional#, Dict, Any
+from datetime import datetime
+
 
 import pandas as pd
-from fastapi import APIRouter, Body, File, UploadFile#, Query, HTTPException
+from fastapi import APIRouter, Query, Body, File, UploadFile#, HTTPException
 from fastapi.responses import StreamingResponse
 
 from .projects import  active_connector
@@ -13,6 +15,8 @@ from .schemas import SupplyOperationBody, SupplyAction
 from .utils.barcode_qrcode_generator import generate_qrcode, generate_barcode
 from apps.io_api.common import standard_response, common_params
 from apps.data_opt.projects import active_connector
+from apps.data_opt.utils.bomchecker import BOMChecker, HAP_CTRLID
+from apps.data_opt.components.hap_v3 import HapApiV3
 
 
 # 创建路由器实例
@@ -152,44 +156,31 @@ async def generate_barcode_api(
         )
 
 
-@rt.post("/check/bom",
+@rt.post("/check/bomxlsx",
     tags=["数据操作 - 校验BOM"],
     summary="校验BOM",
-    description="校验传入的 BOM excel，结果输出至hap"
+    description="校验传入的 BOM excel，结果输出至 新的 excel 文件"
 )
-async def check_bom_api(
-    file: UploadFile = File(..., description="BOM Excel 文件"),
-    # mainfield_mapper: dict[str, str] = Body(..., description="字段映射 {'hap ctrl id': 'Excel列名'}"),
-    parent_col: str = Body("ProductNo", description="父级料号列名"),
-    child_col: str = Body("MaterialNo", description="子级料号列名"),
-    parentversion_col: str = Body("MatVer", description="版本号列名"),
-    numerator_col: str = Body("Qty", description="数量列名"),
-    denominator_col: str = Body(None, description="分母列名"),
-    childunit_col: str = Body(None, description="子级单位列名"),
-    parentunit_col: str = Body(None, description="父级单位列名"),
+async def check_bom_excel(
+    file: UploadFile = File(..., description="BOM excel 文件，必须为 xlsx 格式"),
+    parentversion_col: str = Query(None, example="MatVer", description="版本号"),
+    parent_col: str = Query(..., example="ProductNo", description="父料号"),
+    child_col: str = Query(..., example="MaterialNo", description="子料号"),
+    numerator_col: str = Query(..., example="Qty", description="数量"),
+    denominator_col: str = Query(None, example=None, description="分母"),
+    parentunit_col: str = Query(None, example=None, description="父单位"),
+    childunit_col: str = Query(None, example=None, description="子单位"),
     x_api_key: str = common_params["x_api_key"]
 ):
 
     try:
-        from apps.data_opt.components.hap_v3 import HapApiV3
-        from apps.data_opt.utils.bomchecker_optimized import BOMChecker
-
-        # mainfield_mapper = {
-        #     "id": None,
-        #     "pn": "*料号(父级)ProductNo",   # 产品料号
-        #     "pu": None,   # 产品单位
-        #     "cn": "*子级料号MaterialNo",   # 物料料号
-        #     "cu": None,   # 物料单位
-        #     "n": "数量Qty",   # 数量
-        #     "d": None,   # 分母
-        #     "pv": "*产线版本MatVer"      # 产品版本号
-        # }
-
-        dtofield_mapper = {
-            "productno": parent_col,
-            "materialno": child_col,
-            "matver": parentversion_col,
-        }
+        # 验证文件格式是否为 xlsx
+        if not file.filename.lower().endswith('.xlsx'):
+            return standard_response(
+                status_code=400,
+                success=0,
+                message="文件格式错误：请上传 xlsx 格式的 Excel 文件"
+            )
         bom_df = pd.read_excel(file.file)
         checker = BOMChecker(
             numerator_col=numerator_col,
@@ -199,16 +190,10 @@ async def check_bom_api(
             parentversion_col=parentversion_col,
             parentunit_col=parentunit_col,
             childunit_col=childunit_col,
-            dtofield_mapper=dtofield_mapper,
+            # dtofield_mapper=dtofield_mapper,
         )
-        
-
-
         checker.start_check(bom_df)
         excel_data = checker.export_results_as_excel()
-
-
-        
         return StreamingResponse(
             excel_data,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -216,6 +201,76 @@ async def check_bom_api(
                 "Content-Disposition": "attachment; filename=bom_check_results.xlsx"
             }
         )
+    except Exception as e:
+        return standard_response(
+            status_code=500,
+            success=0,
+            message=f"执行失败: {str(e)}"
+        )
+
+
+@rt.get("/check/bomdata",
+    tags=["数据操作 - 校验BOM"],
+    summary="获取校验BOM结果",
+    description="校验三方系统的BOM，结果输出至 excel 文件 或 HAP"
+)
+async def get_bom_check_result_api(
+    output_type: str = Query(..., example="EXCEL", enum=["EXCEL", "HAP"], description="输出格式"),
+    x_api_key: str = common_params["x_api_key"]
+):
+    try:
+        sap_url1 = 'http://192.168.201.2:8000/zrestful_test2?sap-client=800'
+        sap_session1 = requests.Session()
+        response = sap_session1.get(url=f"{sap_url1}", headers={'interface': 'bom', 'werks': "1600"})
+        bom_json_data = response.json()['data']
+
+        mainfield_mapper = {
+            "id": None,
+            "pn": "matnr",   # 产品料号
+            "pu": "bmein",   # 产品单位
+            "cn": "idnrk",   # 物料料号
+            "cu": "meins",   # 物料单位
+            "n": "menge",   # 数量
+            "d": "bmeng",   # 分母
+            "pv": "stlal"      # 产品版本号
+        }
+
+        dtofield_mapper = {
+            "productno": "matnr",
+            "materialno": "idnrk",
+            "matver": "stlal",
+        }
+
+        checker = BOMChecker(
+            mainfield_mapper=mainfield_mapper,
+            dtofield_mapper=dtofield_mapper,
+        )
+
+        checker.start_check(bom_json_data)
+        summary_markdown = checker.output_results_as_markdown()
+
+        if output_type.strip().upper() == "EXCEL":
+            excel_data = checker.export_results_as_excel()
+            ts = summary_markdown.get("check_timestamp", datetime.now().strftime("%Y%m%d%H%M%S"))
+            return StreamingResponse(
+                excel_data,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={
+                    "Content-Disposition": f"attachment; filename=BomCheckResults_{ts}.xlsx"
+                }
+            )
+        elif output_type.strip().upper() == "HAP":
+            hap_app_key = "d519a8ea60f9efa6"
+            hap_sign = "NjAwYzI5OWJlMTNhNTcwODM5ZTEwOWE2YjE3ZDZiNWRmYzk4NTJjNTZmODQ4N2EzNGNjNWM2ZGMzNTBlYjY0Ng=="
+            hap_base_url = "https://api.mingdao.com"
+
+            marked_data = checker.bom_result['marked_data']
+            material_units_map_list = checker.unit_result['material_units_map_list']
+            markdown_result = checker.output_results_as_markdown()
+            mingdao_api = HapApiV3(app_key=hap_app_key, sign=hap_sign, base_url=hap_base_url)
+            mingdao_api.add_rows(worksheet_id='bom_check_summary', rows=[markdown_result])
+            mingdao_api.add_rows(worksheet_id="transit_bom_structure", rows=marked_data)
+            mingdao_api.add_rows(worksheet_id='material_units_map', rows=material_units_map_list)
     except Exception as e:
         return standard_response(
             status_code=500,
