@@ -8,15 +8,14 @@ import pandas as pd
 from fastapi import APIRouter, Query, Body, File, UploadFile#, HTTPException
 from fastapi.responses import StreamingResponse
 
-from .projects import  active_connector
+from .projects import  active_connector, mingdao_api
 # from .connectors.project import MyapsDbActionsAbc
 from .schemas import SupplyOperationBody, SupplyAction
 # from apps.io_api.models import TSupply
 from .utils.barcode_qrcode_generator import generate_qrcode, generate_barcode
 from apps.io_api.common import standard_response, common_params
-from apps.data_opt.projects import active_connector
 from apps.data_opt.utils.bomchecker import BOMChecker, HAP_CTRLID
-from apps.data_opt.components.hap_v3 import HapApiV3
+
 
 
 # 创建路由器实例
@@ -215,7 +214,7 @@ async def check_bom_excel(
     description="校验三方系统的BOM，结果输出至 excel 文件 或 HAP"
 )
 async def get_bom_check_result_api(
-    output_type: str = Query(..., example="EXCEL", enum=["EXCEL", "HAP"], description="输出格式"),
+    output_method: str = Query(..., example="EXCEL", enum=["EXCEL", "HAP"], description="输出方式"),
     x_api_key: str = common_params["x_api_key"]
 ):
     try:
@@ -249,7 +248,8 @@ async def get_bom_check_result_api(
         checker.start_check(bom_json_data)
         summary_markdown = checker.output_results_as_markdown()
 
-        if output_type.strip().upper() == "EXCEL":
+        output_method = output_method.strip().upper()
+        if output_method == "EXCEL":
             excel_data = checker.export_results_as_excel()
             ts = summary_markdown.get("check_timestamp", datetime.now().strftime("%Y%m%d%H%M%S"))
             return StreamingResponse(
@@ -259,18 +259,14 @@ async def get_bom_check_result_api(
                     "Content-Disposition": f"attachment; filename=BomCheckResults_{ts}.xlsx"
                 }
             )
-        elif output_type.strip().upper() == "HAP":
-            hap_app_key = "d519a8ea60f9efa6"
-            hap_sign = "NjAwYzI5OWJlMTNhNTcwODM5ZTEwOWE2YjE3ZDZiNWRmYzk4NTJjNTZmODQ4N2EzNGNjNWM2ZGMzNTBlYjY0Ng=="
-            hap_base_url = "https://api.mingdao.com"
-
-            marked_data = checker.bom_result['marked_data']
-            material_units_map_list = checker.unit_result['material_units_map_list']
-            markdown_result = checker.output_results_as_markdown()
-            mingdao_api = HapApiV3(app_key=hap_app_key, sign=hap_sign, base_url=hap_base_url)
-            mingdao_api.add_rows(worksheet_id='bom_check_summary', rows=[markdown_result])
-            mingdao_api.add_rows(worksheet_id="transit_bom_structure", rows=marked_data)
-            mingdao_api.add_rows(worksheet_id='material_units_map', rows=material_units_map_list)
+        elif output_method == "HAP":
+            if mingdao_api is None:
+                return standard_response(
+                    status_code=500,
+                    success=0,
+                    message="HAP 配置未完成，无法连接"
+                )
+            return standard_response(**checker.output_results_to_hap(mingdao_api))
     except Exception as e:
         return standard_response(
             status_code=500,

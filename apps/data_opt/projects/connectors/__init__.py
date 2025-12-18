@@ -2,19 +2,22 @@
 定义了项目连接器的基础基类，项目需要在各自的py文件中实现该类的方法
 """
 # import threading
-import os, requests
+import os
+import logging
 from typing import Literal
 from abc import ABC#, abstractmethod
 
+
+from apps.data_opt.utils.common import get_session
 # from tortoise import Tortoise
-
 from config.settings import MYAPS_MAIN_DB, THIS_SERVER_PORT, THIS_PROTOCOL#, MYAPS_BASE_URL
-# from apps.io_api.models import TSupply, TOrderwc
-# from apps.io_api.common import common_write, common_read_by_orm
 
 
+# 设置日志
+logger = logging.getLogger(__name__)
 
-this_session = requests.Session()
+# 创建requests会话
+request_session = get_session()
 
 
 class ScheduleTasksAbc(ABC):
@@ -81,7 +84,7 @@ class MyapsDbActionsAbc(ABC):
             - 无需根据APS的PL在ERP中创建MO（或无需与ERP对接）的实施场景
         - 在路由函数中调用，适用于ERP异步返回MO信息的实施场景
         """
-        response = this_session.patch(f'{cls.this_base_url}/api/t_supply/pl?db_name={cls.main_db}', json=[{
+        response = request_session.patch(f'{cls.this_base_url}/api/t_supply/pl?db_name={cls.main_db}', json=[{
             'type': 'MO',   # 将类型改为MO（原本为PL）
             'plno': plno,
             'status': to_status,

@@ -2,9 +2,10 @@
 明道云 API 封装
 """
 
-import requests, json
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+import json
+
+
+from apps.data_opt.utils.common import get_session
 
 class HapApiV3:
     def __init__(self, app_key: str, sign: str, base_url: str=('https://api.mingdao.com', 'http://127.0.0.1:8080/api')[0]):
@@ -19,32 +20,15 @@ class HapApiV3:
         }
         
         # 初始化Session并配置性能参数
-        self.session = requests.Session()
-        
-        # 在Session对象上存储API基本URL
-        self.session.base_url = base_url
-        
-        # 配置重试策略
-        retry_strategy = Retry(
-            total=3,  # 总重试次数
-            status_forcelist=[429, 500, 502, 503, 504],  # 需要重试的HTTP状态码
-            allowed_methods=["HEAD", "GET", "OPTIONS", "POST"],  # 允许重试的请求方法
-            backoff_factor=1  # 重试间隔因子（1秒，2秒，4秒...）
+        self.session = get_session(
+            retries=3,
+            allowed_methods=["GET", "POST"],
+            pool_connections=20,
+            pool_maxsize=20,
+            connect_timeout=3.0,
+            read_timeout=30.0,
         )
         
-        # 配置连接池
-        adapter = HTTPAdapter(
-            pool_connections=20,  # 连接池中的连接数
-            pool_maxsize=20,  # 每个主机的最大连接数
-            max_retries=retry_strategy
-        )
-        
-        # 为HTTP和HTTPS添加适配器
-        self.session.mount("http://", adapter)
-        self.session.mount("https://", adapter)
-        
-        # 设置默认超时时间（连接超时3秒，读取超时30秒）
-        self.session.timeout = (3, 30)
 
     @classmethod
     def _rows_data_to_controls_list(cls, rows_data_list: list[dict], ignore_fields=[], controls_reflection={}, remain_irrelevant_fields=True):
@@ -81,14 +65,14 @@ class HapApiV3:
 
 
     def _post(self, path: str, data: dict):
-        url = f"{self.session.base_url}{path}"
+        url = f"{self.base_url}{path}"
         response = self.session.post(url, headers=self.headers, json=data)
         response.raise_for_status()
         return response.json()
 
 
     def _get(self, path: str, params: dict=None):
-        url = f"{self.session.base_url}{path}"
+        url = f"{self.base_url}{path}"
         response = self.session.get(url, headers=self.headers, params=params)
         response.raise_for_status()
         return response.json()

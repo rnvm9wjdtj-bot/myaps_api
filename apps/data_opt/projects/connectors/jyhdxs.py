@@ -9,15 +9,18 @@ from datetime import datetime
 from fastapi import status
 
 from globalobjects import filer_timed_logger
-
-
 from apps.io_api.common import standard_response
-from . import ScheduleTasksAbc, MyapsDbActionsAbc, DefaultValueTplt, this_session#, myaps_base_url
+from apps.data_opt.utils.common import get_session
+from . import ScheduleTasksAbc, MyapsDbActionsAbc, DefaultValueTplt, request_session#, myaps_base_url
 
 
 #################################################################################
 # ⬇️项目常量
 #################################################################################
+
+SCHEDULE_TASK_HOUR="0,9,10,11,12,13,14,15,16,17"
+SCHEDULE_TASK_MINUTE="0,15,30,45"
+
 class DefaultValue(DefaultValueTplt):
 
     MAT_PLANT = "1600"   # 默认工厂
@@ -50,8 +53,8 @@ sap_url2 = 'http://192.168.201.2:8000/zrestful_plan?sap-client=800'  # 计划
 sap_username = 'T058'
 sap_password = '123456'
 # 创建requests会话
-sap_session1 = requests.Session()
-sap_session2 = requests.Session()
+sap_session1 = get_session(allowed_methods=["GET", "POST"])
+sap_session2 = get_session(allowed_methods=["GET", "POST"])
 
 # 添加Basic认证
 add_basic_auth_requests(sap_session1, sap_username, sap_password)
@@ -59,7 +62,6 @@ add_basic_auth_requests(sap_session2, sap_username, sap_password)
 
 # import json
 import uuid
-import requests
 # from typing import Dict, Any, Optional
 
 
@@ -149,8 +151,8 @@ class ScheduleTasks(ScheduleTasksAbc):
             stock_data = stock.to_dict(orient='records')
 
             dbs = db_name or ','.join(cls.scheduled_dbs)
-            this_session.delete(f"{cls.this_base_url}/api/t_supply?db_name={dbs}&type=ST")
-            this_session.post(f"{cls.this_base_url}/api/t_supply?db_name={dbs}", json=stock_data)
+            request_session.delete(f"{cls.this_base_url}/api/t_supply?db_name={dbs}&type=ST")
+            request_session.post(f"{cls.this_base_url}/api/t_supply?db_name={dbs}", json=stock_data)
             logger.info(f"刷新库存任务执行完成，账套：{dbs}")
             response = standard_response(message=f"刷新库存任务执行完成，账套：{dbs}")
             
@@ -171,7 +173,7 @@ class MyapsDbActions(MyapsDbActionsAbc):
         确认计划任务，将主账套中需要转MO的PL推送到SAP，将计划任务状态更新为已确认
         """
         try:
-            supply_response = this_session.get(f"{cls.this_base_url}/api/v_supply_mo?db_name={main_db}&supplyno={pl_data['supplyno']}")
+            supply_response = request_session.get(f"{cls.this_base_url}/api/v_supply_mo?db_name={main_db}&supplyno={pl_data['supplyno']}")
             supply_response_json = supply_response.json()
             supply_data = supply_response_json['data'][0]
             start_datetime = supply_data['dt_ordstart']#.strftime('%Y%m%d %H:%M:%S')
@@ -223,4 +225,5 @@ class MyapsDbActions(MyapsDbActionsAbc):
 
         await super().confirm_pl(pl_data)
 
+    
 

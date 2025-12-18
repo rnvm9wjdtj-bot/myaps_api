@@ -1,6 +1,67 @@
 import os, base64, requests, json, ast, re
-
+from urllib3.util.retry import Retry
+from requests.adapters import HTTPAdapter
 from typing import Optional, Dict, Union
+
+
+
+def get_session(
+    retries: int = 3,
+    allowed_methods: list = ["HEAD", "GET", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"],
+    pool_connections: int = 10,
+    pool_maxsize: int = 10,
+    connect_timeout: float = 10.0,
+    read_timeout: float = 30.0,
+):
+    # 请求钩子：记录请求信息
+    def _request_hook(r, *args, **kwargs):
+        logger.debug(f"发送请求: {r.method} {r.url}")
+        logger.debug(f"请求头: {r.headers}")
+        if r.body:
+            logger.debug(f"请求体: {r.body[:1000]}..." if len(r.body) > 1000 else f"请求体: {r.body}")
+
+    # 响应钩子：记录响应信息
+    def _response_hook(r, *args, **kwargs):
+        logger.debug(f"收到响应: {r.status_code} {r.url}")
+        logger.debug(f"响应头: {r.headers}")
+        if r.text:
+            logger.debug(f"响应体: {r.text[:1000]}..." if len(r.text) > 1000 else f"响应体: {r.text}")
+    # 配置重试策略
+    retry_strategy = Retry(
+        total=retries,  # 总重试次数
+        backoff_factor=0.5,  # 重试间隔因子，每次重试间隔 = backoff_factor * (2 ** (重试次数 - 1))
+        status_forcelist=[429, 500, 502, 503, 504],  # 需要重试的HTTP状态码
+        allowed_methods=allowed_methods  # 允许重试的HTTP方法
+    )
+
+    # 配置连接池
+    adapter = HTTPAdapter(
+        max_retries=retry_strategy,
+        pool_connections=pool_connections,  # 连接池中的最大连接数
+        pool_maxsize=pool_maxsize  # 连接池中每个主机的最大连接数
+    )
+
+    # 创建Session实例
+    request_session = requests.Session()
+
+    # 设置默认超时时间（连接超时10秒，读取超时30秒）
+    request_session.timeout = (connect_timeout, read_timeout)
+
+    # 挂载适配器到HTTP和HTTPS协议
+    request_session.mount("http://", adapter)
+    request_session.mount("https://", adapter)
+
+    # 添加请求头
+    request_session.headers.update({
+        "User-Agent": "MyAPS-Connector/1.0",
+        "Content-Type": "application/json"
+    })
+    # 注册钩子
+    request_session.hooks["request"] = [_request_hook]
+    request_session.hooks["response"] = [_response_hook]
+
+    return request_session
+
 
 def add_basic_auth_requests(
     session: Optional[Union[requests.Session, Dict[str, str]]] = None,

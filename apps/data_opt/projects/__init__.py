@@ -10,14 +10,25 @@ import os, importlib
 
 from ..utils.scheduler import cron_task
 from apps.io_api.common import dict_to_lower_keys
+from apps.data_opt.components.hap_v3 import HapApiV3
+
+
+app_key = os.getenv("HAP_APP_KEY", None )
+sign = os.getenv("HAP_SIGN", None)
+base_url = os.getenv("HAP_BASE_URL", None)
+if all([app_key, sign, base_url]):
+    mingdao_api = HapApiV3(app_key=app_key, sign=sign, base_url=base_url)
+else:
+    mingdao_api = None
+
 
 active_connector = importlib.import_module(os.getenv("ACTIVE_CONNECTOR"))
 project_default_value = active_connector.DefaultValue
 #################################################################################
 # ⬇️定时任务HOOK
 #################################################################################
-schedule_task_hour = os.getenv('SCHEDULE_TASK_HOUR', '9,12,15')
-schedule_task_minute = os.getenv('SCHEDULE_TASK_MINUTE', 0)
+schedule_task_hour = active_connector.SCHEDULE_TASK_HOUR
+schedule_task_minute = active_connector.SCHEDULE_TASK_MINUTE
 turn_on_schedule_task = os.getenv('TURN_ON_SCHEDULE_TASK', 'True').lower() == 'true'
 
 
