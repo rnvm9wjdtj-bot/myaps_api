@@ -1,12 +1,12 @@
 # from datetime import datetime
 # import os, importlib#, uuid
 from typing import Optional#, Dict, Any
-from datetime import datetime
+# from datetime import datetime
 
 
 import pandas as pd
 from fastapi import APIRouter, Query, Body, File, UploadFile#, HTTPException
-from fastapi.responses import StreamingResponse
+# from fastapi.responses import StreamingResponse
 
 from .projects import  active_connector, mingdao_api
 # from .connectors.project import MyapsDbActionsAbc
@@ -192,14 +192,7 @@ async def check_bom_excel(
             # dtofield_mapper=dtofield_mapper,
         )
         checker.start_check(bom_df)
-        excel_data = checker.export_results_as_excel()
-        return StreamingResponse(
-            excel_data,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={
-                "Content-Disposition": "attachment; filename=bom_check_results.xlsx"
-            }
-        )
+        return checker.export_results_as_excel()
     except Exception as e:
         return standard_response(
             status_code=500,
@@ -218,10 +211,7 @@ async def get_bom_check_result_api(
     x_api_key: str = common_params["x_api_key"]
 ):
     try:
-        sap_url1 = 'http://192.168.201.2:8000/zrestful_test2?sap-client=800'
-        sap_session1 = requests.Session()
-        response = sap_session1.get(url=f"{sap_url1}", headers={'interface': 'bom', 'werks': "1600"})
-        bom_json_data = response.json()['data']
+        bom_json_data = await active_connector.ScheduleTasks.get_bom()
 
         mainfield_mapper = {
             "id": None,
@@ -246,19 +236,10 @@ async def get_bom_check_result_api(
         )
 
         checker.start_check(bom_json_data)
-        summary_markdown = checker.output_results_as_markdown()
 
         output_method = output_method.strip().upper()
         if output_method == "EXCEL":
-            excel_data = checker.export_results_as_excel()
-            ts = summary_markdown.get("check_timestamp", datetime.now().strftime("%Y%m%d%H%M%S"))
-            return StreamingResponse(
-                excel_data,
-                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                headers={
-                    "Content-Disposition": f"attachment; filename=BomCheckResults_{ts}.xlsx"
-                }
-            )
+            return checker.export_results_as_excel()
         elif output_method == "HAP":
             if mingdao_api is None:
                 return standard_response(

@@ -1,5 +1,5 @@
 """
-初始化模块，负责加载当前激活的连接器，并调用其中注册的的数据库事件及定时任务
+初始化模块，负责加载当前激活的连接器（项目py），调用其中注册的数据库事件及定时任务
 
 连接器需要实现以下方法：
 - refresh_stock(db_name: str | None = None) -> None: 刷新库存
@@ -27,8 +27,8 @@ project_default_value = active_connector.DefaultValue
 #################################################################################
 # ⬇️定时任务HOOK
 #################################################################################
-schedule_task_hour = active_connector.SCHEDULE_TASK_HOUR
-schedule_task_minute = active_connector.SCHEDULE_TASK_MINUTE
+schedule_task_hour = active_connector.DefaultParams.SCHEDULE_TASK_HOUR
+schedule_task_minute = active_connector.DefaultParams.SCHEDULE_TASK_MINUTE
 turn_on_schedule_task = os.getenv('TURN_ON_SCHEDULE_TASK', 'True').lower() == 'true'
 
 

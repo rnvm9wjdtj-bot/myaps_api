@@ -5,16 +5,16 @@ XXXX的连接器
 import os, logging, requests
 
 
-from . import ScheduleTasksAbc, MyapsDbActionsAbc, DefaultValueTplt, request_session
+from . import ScheduleTasksAbc, MyapsDbActionsAbc, DefaultValueAbc, DefaultParamsAbc, request_session
 from apps.data_opt.utils.common import add_basic_auth_requests
 
 #################################################################################
 # ⬇️项目常量
 #################################################################################
-SCHEDULE_TASK_HOUR="0,9,10,11,12,13,14,15,16,17"
-SCHEDULE_TASK_MINUTE="0,15,30,45"
+class DefaultParams(DefaultParamsAbc):
+    pass
 
-class DefaultValue(DefaultValueTplt):
+class DefaultValue(DefaultValueAbc):
     
     MAT_PLANT = "..."   # 默认工厂
     MAT_PLANNER = "..."   # 默认计划员

@@ -6,6 +6,10 @@ from typing import Dict, List, Any
 from collections import defaultdict
 from datetime import datetime
 
+
+from fastapi.responses import StreamingResponse
+
+
 warnings.filterwarnings('ignore')
 
 HAP_CTRLID = {
@@ -712,7 +716,15 @@ class BOMChecker:
             
             if use_bytesio:
                 output_file.seek(0)
-                return output_file
+                summary_markdown = self.output_results_as_markdown()
+                ts = summary_markdown.get("check_timestamp", datetime.now().strftime("%Y%m%d%H%M%S")).replace(":", "").replace(" ", "").replace("-", "")
+                return StreamingResponse(
+                    output_file,
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={
+                        "Content-Disposition": f"attachment; filename=bom_check_results_{ts}.xlsx"
+                    }
+                )
             else:
                 return {
                     'success': True, 
@@ -732,7 +744,7 @@ class BOMChecker:
         # 添加BOM检查结果
         if self.bom_result:
             has_results = True
-            output += "### 📝 结果汇总\n"
+            output += "### 结果汇总\n"
             if self.bom_result.get('success'):
                 stats = self.bom_result.get('statistics', {})
                 output += f"- 检查完成: {stats.get('total_records', 0)}\n"
@@ -746,7 +758,7 @@ class BOMChecker:
         # 添加单位检查结果
         if self.unit_result:
             has_results = True
-            output += "### 📏 量纲校验结果\n"
+            output += "### 量纲校验结果\n"
             if self.unit_result.get('exec_success'):
                 summary = self.unit_result.get('summary', {})
                 output += f"- 总计校验料号数: {summary.get('total_unique_materials', 0)}\n"

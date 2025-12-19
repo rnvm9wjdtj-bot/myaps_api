@@ -95,7 +95,12 @@ class MyapsDbActionsAbc(ABC):
         return response
 
 
-class DefaultValueTplt:
+class DefaultParamsAbc:
+    SCHEDULE_TASK_HOUR="6,8,10,12,14,16"
+    SCHEDULE_TASK_MINUTE="55"
+
+
+class DefaultValueAbc:
     myaps_is_pro = 1 # 1 / 0 MyAPS是否专业版
 
     auto_matver = 1  # 1 / 0 是否自动生成物料版本号，为True时，会在 material save时自动生成产线版本

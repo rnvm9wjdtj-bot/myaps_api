@@ -11,17 +11,17 @@ from fastapi import status
 from globalobjects import filer_timed_logger
 from apps.io_api.common import standard_response
 from apps.data_opt.utils.common import get_session
-from . import ScheduleTasksAbc, MyapsDbActionsAbc, DefaultValueTplt, request_session#, myaps_base_url
+from . import ScheduleTasksAbc, MyapsDbActionsAbc, DefaultValueAbc, DefaultParamsAbc, request_session#, myaps_base_url
 
 
 #################################################################################
 # ⬇️项目常量
 #################################################################################
 
-SCHEDULE_TASK_HOUR="0,9,10,11,12,13,14,15,16,17"
-SCHEDULE_TASK_MINUTE="0,15,30,45"
+class DefaultParams(DefaultParamsAbc):
+    pass
 
-class DefaultValue(DefaultValueTplt):
+class DefaultValue(DefaultValueAbc):
 
     MAT_PLANT = "1600"   # 默认工厂
     MAT_PLANNER = "haida"   # 默认计划员
@@ -53,12 +53,12 @@ sap_url2 = 'http://192.168.201.2:8000/zrestful_plan?sap-client=800'  # 计划
 sap_username = 'T058'
 sap_password = '123456'
 # 创建requests会话
-sap_session1 = get_session(allowed_methods=["GET", "POST"])
-sap_session2 = get_session(allowed_methods=["GET", "POST"])
+sap_session = get_session(allowed_methods=["GET", "POST"])
+# sap_session2 = get_session(allowed_methods=["GET", "POST"])
 
 # 添加Basic认证
-add_basic_auth_requests(sap_session1, sap_username, sap_password)
-add_basic_auth_requests(sap_session2, sap_username, sap_password)
+add_basic_auth_requests(sap_session, sap_username, sap_password)
+# add_basic_auth_requests(sap_session2, sap_username, sap_password)
 
 # import json
 import uuid
@@ -102,6 +102,7 @@ async def sap_post(url: str, session: requests.Session, interface_id: str, data:
 # ⬇️定时任务设置
 #################################################################################
 class ScheduleTasks(ScheduleTasksAbc):
+
     @classmethod
     async def refresh_stock(cls, db_name: str | None = None): 
         """
@@ -112,7 +113,7 @@ class ScheduleTasks(ScheduleTasksAbc):
         response = None
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         try:
-            response = sap_session1.get(url=f"{sap_url1}", headers={'interface': 'stock', 'werks': werks})
+            response = sap_session.get(url=f"{sap_url1}", headers={'interface': 'stock', 'werks': werks})
             data = response.json()['data']
             stock = pd.DataFrame(data)
             stock = stock.astype({
@@ -161,6 +162,14 @@ class ScheduleTasks(ScheduleTasksAbc):
             response = standard_response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, success=0, message=f"刷新库存任务执行失败: {str(e)}")
         return response
 
+    @classmethod
+    async def get_bom(cls):
+        """
+        从SAP获取BOM数据
+        """
+        response = sap_session.get(url=sap_url1, headers={'interface': 'bom', 'werks': "1600"})
+        bom_json_data = response.json()['data']
+        return bom_json_data
 
 #################################################################################
 # ⬇️数据库事件处理
@@ -193,7 +202,8 @@ class MyapsDbActions(MyapsDbActionsAbc):
                 "BACKUP1": ','.join([i['workcenter'] for i in orderwc])
             }
 
-            sap_response = await sap_post(url=sap_url2, session=sap_session2, interface_id="ZPP_PLAN_ORD_CREATE", data=data)
+            # sap_response = await sap_post(url=sap_url2, session=sap_session2, interface_id="ZPP_PLAN_ORD_CREATE", data=data)
+            sap_response = await sap_post(url=sap_url2, session=sap_session, interface_id="ZPP_PLAN_ORD_CREATE", data=data)
             sap_response_json = sap_response['response_json']
             sap_mo_data = sap_response_json['BODY'][0]
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
