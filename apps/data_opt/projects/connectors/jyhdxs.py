@@ -8,7 +8,7 @@ from datetime import datetime
 
 from fastapi import status
 
-from globalobjects import filer_timed_logger
+from globalobjects import file_timed_logger
 from apps.io_api.common import standard_response
 from apps.data_opt.utils.common import get_session
 from . import ScheduleTasksAbc, MyapsDbActionsAbc, DefaultValueAbc, DefaultParamsAbc, request_session#, myaps_base_url
@@ -36,7 +36,7 @@ main_db = MyapsDbActionsAbc.main_db
 
 werks = "1600"
 
-file_logger = filer_timed_logger.setup_logging(__name__)
+file_logger = file_timed_logger.setup_logging(__name__)
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)

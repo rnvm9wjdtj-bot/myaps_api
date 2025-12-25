@@ -155,7 +155,7 @@ async def generate_barcode_api(
         )
 
 
-@rt.post("/check/bomxlsx",
+@rt.post("/check/bom",
     tags=["数据操作 - 校验BOM"],
     summary="校验BOM",
     description="校验传入的 BOM excel，结果输出至 新的 excel 文件"
@@ -201,7 +201,7 @@ async def check_bom_excel(
         )
 
 
-@rt.get("/check/bomdata",
+@rt.get("/check/bom",
     tags=["数据操作 - 校验BOM"],
     summary="获取校验BOM结果",
     description="校验三方系统的BOM，结果输出至 excel 文件 或 HAP"
@@ -253,4 +253,33 @@ async def get_bom_check_result_api(
             status_code=500,
             success=0,
             message=f"BOM校验失败: {str(e)}"
+        )
+
+
+@rt.post("/check/route",
+    tags=["数据操作 - 校验工艺路线"],
+    summary="获取校验工艺路线问题",
+    description="校验传入的 工艺路线 excel，返回问题列表"
+)
+def check_route_excel(
+    file: UploadFile = File(..., description="工艺路线 excel 文件，必须为 xlsx 格式"),
+    x_api_key: str = common_params["x_api_key"]
+):
+    try:
+        # 验证文件格式是否为 xlsx
+        if not file.filename.lower().endswith('.xlsx'):
+            return standard_response(
+                status_code=400,
+                success=0,
+                message="文件格式错误：请上传 xlsx 格式的 Excel 文件"
+            )
+        route_df = pd.read_excel(file.file)
+        checker = RouteChecker()
+        checker.start_check(route_df)
+        return checker.export_results_as_excel()
+    except Exception as e:
+        return standard_response(
+            status_code=500,
+            success=0,
+            message=f"执行失败: {str(e)}"
         )

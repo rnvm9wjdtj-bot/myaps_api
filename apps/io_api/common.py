@@ -16,9 +16,9 @@ from pydantic import BaseModel as PydanticSchema
 
 from config.settings import MYAPS_MAIN_DB, MYAPS_DB_SET
 from globalobjects.globalconst import SUPPLY_TYPE#ORDER_STATUS, 
-from globalobjects import filer_timed_logger
+from globalobjects import file_timed_logger
 
-file_logger = filer_timed_logger.setup_logging(__name__)
+file_logger = file_timed_logger.setup_logging(__name__)
 
 # 导入异步上下文管理器
 from contextlib import asynccontextmanager

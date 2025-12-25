@@ -1,5 +1,5 @@
 """
-明道云 API 封装
+明道云 API v3 封装
 """
 
 import json

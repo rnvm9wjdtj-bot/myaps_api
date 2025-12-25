@@ -9,7 +9,7 @@ from fastapi.openapi.docs import get_swagger_ui_html
 from tortoise.contrib.fastapi import register_tortoise
 
 from config import settings
-from globalobjects import filer_timed_logger
+from globalobjects import file_timed_logger
 from apps.io_api.routers import rt as io_rt
 from apps.io_api.common import register_exception_handlers
 from apps.data_opt.routers import rt as do_rt
@@ -27,10 +27,10 @@ async def lifespan(app: FastAPI):
     await mysql_monitor.start_monitoring()
     print("✅ MySQL Binlog监控已启动")
 
-    filer_timed_logger.setup_logging(__name__)
+    file_timed_logger.setup_logging(__name__)
     # 启动日志队列监听器
-    if filer_timed_logger._listener is not None:
-        filer_timed_logger._listener.start()
+    if file_timed_logger._listener is not None:
+        file_timed_logger._listener.start()
         print("✅ 日志队列监听器已启动")
     
     yield  # 应用运行期间
@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI):
     scheduler_manager.shutdown()
     print("🛑 定时任务管理器已关闭")
     # 关闭日志队列监听
-    filer_timed_logger.close_logging()
+    file_timed_logger.close_logging()
     print("🛑 日志队列 已停止。")
 
 
