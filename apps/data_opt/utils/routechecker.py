@@ -1,11 +1,11 @@
-import pandas as pd, json, warnings, os
+import pandas as pd, json, os#, warnings
 from io import BytesIO
 from typing import List, Dict, Any, DefaultDict
 from collections import defaultdict
 from fastapi.responses import StreamingResponse
 
 
-MD_CTRLID = {
+HAP_CTRLID = {
     'product_no': 'pn',
     'product_version': 'pv',
     'sort_no': 'sn',
@@ -20,11 +20,11 @@ class RouteChecker:
         self,
         mainfield_mapper: dict={},
         dtofield_mapper: dict={},
-        product_col: str = MD_CTRLID['product_no'],
-        productversion_col: str = MD_CTRLID['product_version'],
-        sortno_col: str = MD_CTRLID['sort_no'],
-        itemno_col: str = MD_CTRLID['item_no'],
-        workcenter_col: str = MD_CTRLID['workcenter']
+        product_col: str = HAP_CTRLID['product_no'],
+        productversion_col: str = HAP_CTRLID['product_version'],
+        sortno_col: str = HAP_CTRLID['sort_no'],
+        itemno_col: str = HAP_CTRLID['item_no'],
+        workcenter_col: str = HAP_CTRLID['workcenter']
     ):
         """
         初始化工艺路线校验器
@@ -36,7 +36,7 @@ class RouteChecker:
         :param itemno_col: 映射后的工序项列名
         :param workcenter_col: 映射后的工作中心列名
         """
-        self.md_ctrlid = MD_CTRLID
+        self.HAP_CTRLID = HAP_CTRLID
         self.route_result = None  # 存储工艺路线检查结果
         # 初始化映射和列名
         self.mainfield_mapper = mainfield_mapper
@@ -81,22 +81,22 @@ class RouteChecker:
             row = {mk: item.get(ok, '') for mk, ok in self.mainfield_mapper.items()}
             
             # 填充 ItemNo
-            if not row.get(self.md_ctrlid['item_no']):
-                sort_no = row[self.md_ctrlid['sort_no']]
+            if not row.get(self.HAP_CTRLID['item_no']):
+                sort_no = row[self.HAP_CTRLID['sort_no']]
                 try:
                     # 先转换为整数，处理可能的异常
                     sort_no = int(sort_no)
-                    row[self.md_ctrlid['item_no']] = f"{itemno_prefix}{sort_no:0{itemno_width}d}"
+                    row[self.HAP_CTRLID['item_no']] = f"{itemno_prefix}{sort_no:0{itemno_width}d}"
                 except (ValueError, TypeError):
                     # 处理转换失败的情况，例如使用默认值或记录错误
-                    # row[self.md_ctrlid['item_no']] = f"{itemno_prefix}{itemno_width * '0'}"  # 默认值
-                    row[self.md_ctrlid['item_no']] = f"{itemno_prefix}{sort_no}"  # 默认值
+                    # row[self.HAP_CTRLID['item_no']] = f"{itemno_prefix}{itemno_width * '0'}"  # 默认值
+                    row[self.HAP_CTRLID['item_no']] = f"{itemno_prefix}{sort_no}"  # 默认值
             
             # 填充 Workcenter
-            if not row.get(self.md_ctrlid['workcenter']):
-                row[self.md_ctrlid['workcenter']] = ''
+            if not row.get(self.HAP_CTRLID['workcenter']):
+                row[self.HAP_CTRLID['workcenter']] = ''
 
-            row[self.md_ctrlid['dto']] = {mk: item.get(ok, '') for mk, ok in self.dtofield_mapper.items()} if self.dtofield_mapper else None
+            row[self.HAP_CTRLID['dto']] = {mk: item.get(ok, '') for mk, ok in self.dtofield_mapper.items()} if self.dtofield_mapper else None
             df_data.append(row)
 
         df = pd.DataFrame(df_data)
@@ -152,12 +152,12 @@ class RouteChecker:
         # 添加dto字段
         if self.dtofield_mapper:
             reverse_dto_mapper = {v: k for k, v in self.dtofield_mapper.items() if v}
-            df[self.md_ctrlid['dto']] = df.apply(
+            df[self.HAP_CTRLID['dto']] = df.apply(
                 lambda row: {mk: row.get(ok, '') for ok, mk in reverse_dto_mapper.items()}, 
                 axis=1
             )
         else:
-            df[self.md_ctrlid['dto']] = None
+            df[self.HAP_CTRLID['dto']] = None
         
         return df
     
@@ -308,14 +308,21 @@ class RouteChecker:
             issue_summary['ERROR']['missing_required_cols'] = missing_cols
         else:
             # 执行详细检查
-            product_item_map = {}
+            # 使用 defaultdict 自动初始化新键的值
+            product_item_map: DefaultDict[tuple, dict] = defaultdict(lambda: {
+                'item_no': set[str](),
+                'sort_no': set[int | str](),
+                'workcenter': set[str](),
+            })
             for idx, row in marked_data.iterrows():
                 pn = row[product_column]
                 pv = str(row[productversion_column])
                 sn = row[sortno_column]
                 itn = row[itemno_column]
                 wc = row.get(self.workcenter_col, '')
-                data_key = (pn, pv, itn)
+                data_key = (pn, pv)
+                # 直接获取产品项，defaultdict 会自动初始化不存在的键
+                product_item = product_item_map[data_key]
 
                 # 检查产品号是否为空
                 if pd.isna(pn) or str(pn).strip() == '':
@@ -323,58 +330,40 @@ class RouteChecker:
                     issue_summary['ERROR']['empty_product_no'].append(data_key)
 
                 # 检查是否有重复的 ItemNo
-                if data_key in product_item_map:
+                if itn in product_item['item_no']:
                     marked_data.at[idx, 'E'].append("工序项重复")
                     issue_summary['ERROR']['itemno_repeat'].append(data_key)
                 else:
-                    product_item_map[data_key] = set()
+                    product_item['item_no'].add(itn)
 
-                # 检查工作中心是否为空
+                # 检查 Workcenter 是否正确
                 if pd.isna(wc) or str(wc).strip() == '':
                     marked_data.at[idx, 'W'].append("工作中心为空")
                     issue_summary['WARNING']['empty_workcenter'].append(data_key)
                 # 检查是否有重复的 Workcenter
-                elif wc in product_item_map[data_key]:
+                elif wc in product_item['workcenter']:
                     marked_data.at[idx, 'W'].append(f"工作中心重复")
                     issue_summary['WARNING']['workcenter_repeat'].append(data_key)
                 else:
-                    product_item_map[data_key].add(wc)
+                    product_item['workcenter'].add(wc)
 
                 # SortNo 必须是整数
                 try:
-                    sort_int = int(sn)
-                    product_item_map[data_key].add(sn)
-                    
-                    # 检查SortNo是否为正数
-                    if sort_int <= 0:
-                        marked_data.at[idx, 'W'].append("顺序号应为正数")
-                        issue_summary['WARNING']['sortno_sequence_issue'].append(data_key)
+                    sort_num = float(sn)
+                    assert sort_num % 1 == 0, "顺序号必须是整数"
                 except ValueError:
                     marked_data.at[idx, 'E'].append("顺序号非整数")
                     issue_summary['ERROR']['sortno_notint'].append(data_key)
 
                 # 检查是否有重复的 SortNo
-                if not pd.isna(sn) and str(sn).strip() != '' and sn in product_item_map[data_key]:
+                if not pd.isna(sn) and str(sn).strip() != '' and sn in product_item['sort_no']:
                     marked_data.at[idx, 'W'].append(f"顺序号重复")
                     issue_summary['WARNING']['sortno_repeat'].append(data_key)
-
-                # 检查工序项格式是否正确
-                if not pd.isna(itn) and str(itn).strip() != '':
-                    try:
-                        # 检查ItemNo是否符合预期格式（字母+数字）
-                        import re
-                        if not re.match(r'^[A-Za-z]\d+$', str(itn)):
-                            marked_data.at[idx, 'W'].append("工序项格式可能不正确")
-                            issue_summary['ERROR']['invalid_itemno_format'].append(data_key)
-                    except:
-                        pass
-
-        # 格式化输出
-        def format_issues(issues):
-            return ', '.join(sorted(set(issues))) if issues else ''
+                else:
+                    product_item['sort_no'].add(sn)
         
         for col in ['E', 'W']:
-            marked_data[col] = marked_data[col].apply(format_issues)
+            marked_data[col] = marked_data[col].apply(lambda x: ', '.join(sorted(set(x))) if x else '')
 
         return {
             'marked_data': marked_data,
@@ -521,11 +510,11 @@ if __name__ == '__main__':
     
     # 测试映射
     mainfield_mapper = {
-        MD_CTRLID['product_no']: 'productno',
-        MD_CTRLID['product_version']: 'productversion',
-        MD_CTRLID['sort_no']: 'sortno',
-        MD_CTRLID['item_no']: 'itemno',
-        MD_CTRLID['workcenter']: 'workcenter',
+        HAP_CTRLID['product_no']: 'productno',
+        HAP_CTRLID['product_version']: 'productversion',
+        HAP_CTRLID['sort_no']: 'sortno',
+        HAP_CTRLID['item_no']: 'itemno',
+        HAP_CTRLID['workcenter']: 'workcenter',
     }
     dtofield_mapper = {
         'materialno': 'productno',

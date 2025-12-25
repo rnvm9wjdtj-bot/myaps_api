@@ -14,7 +14,8 @@ from .schemas import SupplyOperationBody, SupplyAction
 # from apps.io_api.models import TSupply
 from .utils.barcode_qrcode_generator import generate_qrcode, generate_barcode
 from apps.io_api.common import standard_response, common_params
-from apps.data_opt.utils.bomchecker import BOMChecker, HAP_CTRLID
+from apps.data_opt.utils.bomchecker import BOMChecker#, HAP_CTRLID as HAP_CTRLID_BOM
+from apps.data_opt.utils.routechecker import RouteChecker#, HAP_CTRLID as HAP_CTRLID_ROUTE
 
 
 
@@ -258,11 +259,16 @@ async def get_bom_check_result_api(
 
 @rt.post("/check/route",
     tags=["数据操作 - 校验工艺路线"],
-    summary="获取校验工艺路线问题",
+    summary="校验工艺路线问题",
     description="校验传入的 工艺路线 excel，返回问题列表"
 )
 def check_route_excel(
     file: UploadFile = File(..., description="工艺路线 excel 文件，必须为 xlsx 格式"),
+    product_col: str = Query(..., example="MaterialNo", description="产品料号"),
+    productversion_col: str = Query(None, example="MatVer", description="产品版本号"),
+    sortno_col: str = Query(..., example="SortNo", description="顺序号"),
+    itemno_col: str = Query(..., example="ItemNo", description="工序项"),
+    workcenter_col: str = Query(None, example="WorkCenter", description="工作中心"),
     x_api_key: str = common_params["x_api_key"]
 ):
     try:
@@ -274,7 +280,13 @@ def check_route_excel(
                 message="文件格式错误：请上传 xlsx 格式的 Excel 文件"
             )
         route_df = pd.read_excel(file.file)
-        checker = RouteChecker()
+        checker = RouteChecker(
+            product_col=product_col,
+            productversion_col=productversion_col,
+            sortno_col=sortno_col,
+            itemno_col=itemno_col,
+            workcenter_col=workcenter_col,
+        )
         checker.start_check(route_df)
         return checker.export_results_as_excel()
     except Exception as e:
