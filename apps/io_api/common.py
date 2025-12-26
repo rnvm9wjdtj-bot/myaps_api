@@ -64,7 +64,7 @@ def standard_response(
 
 # url - 公共参数
 common_params = {
-    "db_name": Query(MYAPS_MAIN_DB, description="账套"),
+    "db_name": Query(None, description="账套"),
     "page_size": Query(1000, description="每页数量", gt=0, le=10000),
     "page_index": Query(0, description="分页页码，从0开始", ge=0),
     "supply_type": Query(..., description="供应类型", openapi_examples={key: {"value": key, "summary": value} for key, value in SUPPLY_TYPE.items()}),
@@ -345,7 +345,7 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="操作失败：未找到有效账套 —— common_write",
+            message="操作失败：未找到有效账套",
             meta={
                 "input_db_name": db_name,
                 "available_dbs": ", ".join(MYAPS_DB_SET),

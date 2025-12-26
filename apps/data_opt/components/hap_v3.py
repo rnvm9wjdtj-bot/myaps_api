@@ -91,7 +91,7 @@ class HapApiV3:
             print(response)
 
 
-    def get_row_dict(self, worksheet_id: str, row_id: str, show_fields: list | str=None):
+    def get_row_by_rowid(self, worksheet_id: str, row_id: str, show_fields: list | str=None) -> dict:
         path = f"/v3/app/worksheets/{worksheet_id}/rows/{row_id}?includeSystemFields=false"
         response = self._get(path)
         row_dict = {}
@@ -109,3 +109,35 @@ class HapApiV3:
                     show_fields = show_fields.split(',')
                 row_dict = {k: v for k, v in row_dict.items() if k in show_fields}
         return row_dict
+
+    
+    # def filter_rows(self, worksheet_id: str, filter: dict):
+    #     path = f"/v3/app/worksheets/{worksheet_id}/rows/list"
+    #     data = {
+    #         "pageSize": 1000,
+    #         "pageIndex": 1,
+    #         "includeTotalCount": True,
+    #         "filter": {
+    #             "type": "group",
+    #             "logic": "OR",
+    #             "children": [{
+    #                     "type": "group",
+    #                     "logic": "AND",
+    #                     "children": [{
+    #                             "type": "condition",
+    #                             "field": "677b4a73d14fcf3edf4e7f15",
+    #                             "operator": "eq",
+    #                             "value": ["1"]
+    #                         }, {
+    #                             "type": "condition",
+    #                             "field": "677b4a73d14fcf3edf4e7f15",
+    #                             "operator": "eq",
+    #                             "value": "test"
+    #                         }
+    #                     ]
+    #                 }
+    #             ]
+    #         }
+    #     }
+    #     response = self._post(path, data)
+    #     return response
