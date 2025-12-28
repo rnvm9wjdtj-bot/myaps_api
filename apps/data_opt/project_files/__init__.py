@@ -1,9 +1,13 @@
 """
-初始化模块，负责加载当前激活的连接器（项目py），调用其中注册的数据库事件及定时任务
+加载当前项目文件（项目py），提取其中的对象，并通过预设的钩子方法执行它们
 
-连接器需要实现以下方法：
-- refresh_stock(db_name: str | None = None) -> None: 刷新库存
-- confirm_pl(pl_data: dict) -> None: 确认生产计划单PL
+项目文件要实现以下方法（即使 pass 也需要实现）：
+
+ScheduleTasks
+    - refresh_stock(db_name: str | None = None) -> None: 刷新库存
+
+MyapsDbActions
+    - confirm_pl(pl_data: dict) -> None: 确认生产计划单PL
 """
 
 import os, importlib

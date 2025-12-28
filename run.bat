@@ -81,7 +81,7 @@ if %ERRORLEVEL% NEQ 0 (
 REM Check HTTP response
 powershell -Command "try { Invoke-WebRequest -Uri 'http://localhost:%PORT%/' -TimeoutSec 3 -UseBasicParsing | Out-Null; exit 0 } catch { exit 1 }" >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
-    echo [OK] App responding
+    echo [OK] Service responding
 ) else (
     echo [WARNING] HTTP check failed - restarting...
     taskkill /F /IM uvicorn.exe >nul 2>&1

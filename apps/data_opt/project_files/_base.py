@@ -108,8 +108,8 @@ class MyapsDbActionsAbc(ABC):
 
 
 class DefaultParamsAbc:
-    SCHEDULE_TASK_HOUR="6,8,10,12,14,16"
-    SCHEDULE_TASK_MINUTE="55"
+    SCHEDULE_TASK_HOUR = "6,8,10,12,14,16"
+    SCHEDULE_TASK_MINUTE = "55"
 
 
 

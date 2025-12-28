@@ -1,58 +1,12 @@
-from datetime import datetime
-from typing import NamedTuple, List, Callable
-import requests
+from datetime import datetime, timedelta
+from typing import NamedTuple, List#, Callable
+# import requests
+
+from . import get_session, wrap_data_response, flat_merge_parent_child_data
 
 
-from . import TimedExecutionMixin, timed_execution
 
-
-
-class FieldInfo(NamedTuple):
-    src_name: str
-    src_desc: str
-    ctrl_name: str
-    ctrl_desc: str
-    # handle_func: Callable
-
-
-class FormInfo(NamedTuple):
-    form_id: str
-    field_infos: List[FieldInfo]
-
-
-form_infos = [
-    FormInfo(
-        form_id="BD_MATERIAL",
-        field_infos=[
-            FieldInfo("fNumber", "编码", "materialno", "*料号"),
-            # FieldInfo("fName", "名称", "description", "*物料名称"),
-            # FieldInfo("fWorkShopId.fName", "生产车间", "plant", "工厂"),
-            # FieldInfo("fFixLeadTime", "固定提前期", "fixLeadTime", "固定提前期"),
-            # FieldInfo("fFixLeadTimeType.fCaption", "固定提前期单位", "fixLeadTimeType", "固定提前期单位"),
-            # FieldInfo("fReOrderGood", "再订货点", "lotpoint", "重订货点"),
-            # FieldInfo("fErpClsId.fCaption", "物料属性", "erpCls", "物料属性"),
-            # FieldInfo("fCategoryId.fName", "存货类别", "planItem", "产品组"),
-            # FieldInfo("fProduceUnitId.fName", "生产单位", "unit", "单位"),
-            # FieldInfo("fSpecification", "规格型号", "size", "规格"),
-            # FieldInfo("fExpPeriod", "保质期", "expPeriod", "保质期"),
-            # FieldInfo("fExpUnit.fCaption", "保质期单位", "expunit", "质保期单位"),
-            # FieldInfo("fMaxPoQty", "最大订货量", "lotmax", "最大批"),
-            # FieldInfo("fMinPoQty", "最小订货量", "lotmin", "最小批"),
-            # FieldInfo("fCheckLeadTime", "检验提前期", "checkLeadTime", "检验提前期"),
-            # FieldInfo("fCheckLeadTimeType.fCaption", "检验提前期单位", "checkLeadTimeType", "检验提前期单位"),
-            # FieldInfo("fPlanerId.fName", "计划员", "planner", "计划员"),
-            # FieldInfo("fRefCost", "参考成本", "price", "单价"),
-            # FieldInfo("fPlanIntervalsDays", "批量拆分间隔天数", "daygap", "MTO拆分天数"),
-            # FieldInfo("fCanDelayDays", "允许延后天数", "candelay", "可否延迟"),
-            # FieldInfo("fMaxStock", "最大库存", "lottop", "最大库存"),
-            # FieldInfo("fEOQ", "固定/经济批量", "lotfix", "固定批"),
-            # FieldInfo("fPlanSafeStockQty", "安全库存", "lotss", "安全库存"),
-            # FieldInfo("fMaterialId", "🔑", "id", "ERP数据ID")
-            ]),
-    ]
-
-
-class K3Connection(TimedExecutionMixin):
+class K3Connection():
 
     def __init__(self, origin_url, acctid, username, password, lcid):
         # super().__init__(*args, **kwargs)
@@ -63,39 +17,40 @@ class K3Connection(TimedExecutionMixin):
         self.lcid = lcid
         self._cookie = None
         self._cookie_expire = None
-        self._session = requests.Session()#get_session()#requests.Session()
+        self._session = get_session()
 
 
-    @timed_execution(interval_seconds=300)
     def auth(self):
-        if self._cookie and self._cookie_expire and datetime.now() < self._cookie_expire:
-            return
-        response = self._session.post(
-            f"{self.origin_url}/K3Cloud/Kingdee.BOS.WebApi.ServicesStub.AuthService.ValidateUser.common.kdsvc",
-            data={
-                "acctid": self.acctid,
-                "username": self.username,
-                "password": self.password,
-                "lcid": self.lcid,
-            },
-        )
-        # 处理cookie
-        print(response.json())
-        set_cookies = response.headers['Set-Cookie'].split(';')
-        self._cookie = set_cookies[0] + ';' + set_cookies[3].split(',')[1].strip()
-        self._cookie_expire = datetime.strptime(set_cookies[1].split('=')[1], "%a, %d-%b-%Y %H:%M:%S %Z")
-        self._session.headers.update({
-            "Cookie": self._cookie,
-        })
+        if self._cookie is None or self._cookie_expire is None or (datetime.now() + timedelta(minutes=15)) > self._cookie_expire:
+            response = self._session.post(
+                f"{self.origin_url}/K3Cloud/Kingdee.BOS.WebApi.ServicesStub.AuthService.ValidateUser.common.kdsvc",
+                data={
+                    "acctid": self.acctid,
+                    "username": self.username,
+                    "password": self.password,
+                    "lcid": self.lcid,
+                },
+            )
+            # 处理cookie
+            set_cookies = response.headers['Set-Cookie'].split(';')
+            self._cookie = set_cookies[0] + ';' + set_cookies[3].split(',')[1].strip()
+            self._cookie_expire = datetime.strptime(set_cookies[1].split('=')[1], "%a, %d-%b-%Y %H:%M:%S %Z")
+            self._session.headers.update({
+                "Cookie": self._cookie,
+            })
+        return self._cookie
+
 
     def _get_data(self, form_id: str, field_keys_mapper: dict, filter_string: str=None):
         """
         获取Kingdee K3 Cloud数据
         form_id: 表单ID
-        field_keys_mapper: 字段键映射，键为K3 Cloud字段名，值为自定义字段名
-        filter_string: 查询条件，格式为"字段名1=值1 and 字段名2=值2"
+        field_keys_mapper: 字段键映射，键为K3 字段名，值为映射成的段名
+        filter_string: 查询条件，格式为
         """
-        field_keys = ",".join(field_keys_mapper.keys())
+        k3_fields = list(field_keys_mapper.keys())
+        to_fields = list(field_keys_mapper.values())
+        field_keys = ",".join(k3_fields)
         # 发送请求
         response = self._session.post(
             url=f"{self.origin_url}/K3Cloud/Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.ExecuteBillQuery.common.kdsvc",
@@ -111,14 +66,62 @@ class K3Connection(TimedExecutionMixin):
                 }
             },
         )
+        
         # 处理响应
+        data = []
         if 'ErrorCode' in response.text:
-            return None
-        data = response.json()
-        if data:
-            print(data)
-            
+            return data
+
+        raw_data = response.json()
+        for row in raw_data:
+            data.append({
+                to_fields[i]: row[i]
+                for i in range(len(k3_fields))
+            })
+        return data
 
 
     def _set_data(self):
         pass
+
+
+    @wrap_data_response
+    def get_material_list(self, filter_string: str=None):
+        return self._get_data(
+            form_id="BD_MATERIAL",
+            field_keys_mapper={
+                "fNumber": "materialno", "fName": "description", "fWorkShopId.fName": "plant",
+                "fFixLeadTime": "fixleadtime", "fReOrderGood": "reorder", "fErpClsId.fCaption": "erpCls",
+                "fCategoryId.fName": "planItem", "fProduceUnitId.fName": "unit", "fSpecification": "size",
+                "fExpPeriod": "expPeriod", "fExpUnit.fCaption": "expUnit", "fCheckLeadTime": "checkleadt",
+                "fCheckLeadTimeType.fCaption": "checkleadttype", "fPlanerId.fName": "planner", "fRefCost": "price",
+                "fPlanIntervalsDays": "daygap", "fCanDelayDays": "candelay", "fMaxStock": "lottop",
+                "fEOQ": "lotfix", "fPlanSafeStockQty": "lotss", "fMaterialId": "id",
+                },
+            filter_string=filter_string,
+        )
+
+    def get_bom(self, filter_string: str=None):
+        parent_data = self._get_data(
+            form_id="ENG_BOM",
+            field_keys_mapper={
+                "fId": "id", "fMaterialId.fNumber": "productno", "fMaterialId.fName": "description",
+                "fUnitId.fName": "unit", "fQty": "qty", "fBaseUnitId.fName": "baseunit", "FNumber": "matver"
+            },
+            filter_string=filter_string,
+        )
+
+        child_data = self._get_data(
+            form_id="ENG_BOM",
+            field_keys_mapper={
+                "fTreeEntity_fEntryId": "id", "fID": "parentid", "fMaterialIdChild.fNumber": "materialno",
+                "fChildUnitId.fName": "unit", "fNumerator": "numerator", "fDenominator": "denominator",
+                "FNumber": "matver"
+            },
+            filter_string=filter_string,
+        )
+        return flat_merge_parent_child_data(
+            parent_data=parent_data,
+            child_data=child_data
+        )
+

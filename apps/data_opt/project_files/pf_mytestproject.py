@@ -1,8 +1,11 @@
 """
-项目文件模板
+我的测试项目
 """
 
-import requests, logging#, os, atexit
+import os, logging, requests
+
+
+import requests, logging
 import pandas as pd
 from datetime import datetime
 
@@ -19,8 +22,8 @@ from ._base import (
 
 hap_conn = HapConnection(
     base_url='https://api.mingdao.com',
-    app_key='...',
-    sign='...'
+    app_key='d519a8ea60f9efa6',
+    sign='NjAwYzI5OWJlMTNhNTcwODM5ZTEwOWE2YjE3ZDZiNWRmYzk4NTJjNTZmODQ4N2EzNGNjNWM2ZGMzNTBlYjY0Ng=='
 )
 
 class DefaultParams(DefaultParamsAbc):
@@ -43,7 +46,9 @@ class DefaultValue(DefaultValueAbc):
 # ⬇️定时任务设置
 #################################################################################
 class ScheduleTasks(ScheduleTasksAbc):
-    pass
+    @classmethod
+    async def get_bom(cls, *args, **kwargs):
+        pass
 
     
 

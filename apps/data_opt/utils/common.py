@@ -38,13 +38,6 @@ def get_session(
     request_session.mount("http://", adapter)
     request_session.mount("https://", adapter)
 
-    # 添加请求头
-    request_session.headers.update({
-        # "User-Agent": "MyAPS-Connector/1.0",
-        "Content-Type": "application/json"
-    })
-    # 注册钩子
-
     return request_session
 
 

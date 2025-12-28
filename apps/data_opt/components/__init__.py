@@ -1,61 +1,54 @@
-import threading, functools
+from typing import List, Dict, Optional, Callable, Union
+import pandas as pd
 
 from apps.data_opt.utils.common import get_session
 
 
-def timed_execution(interval_seconds: int = 300):
+def wrap_data_response(func):
     """
-    装饰器：为类方法添加定时执行功能
-    interval_seconds: 执行间隔时间（秒），默认5分钟
+    装饰器：将数据列表封装为字典格式
+    返回格式: {'total': len(data), 'data': data}
     """
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(self, *args, **kwargs):
-            # 如果是第一次调用，创建定时器
-            if not hasattr(self, f'_timer_{func.__name__}'):
-                timer = threading.Timer(interval_seconds, self._execute_timed_method, args=[func.__name__] + list(args), kwargs=kwargs)
-                setattr(self, f'_timer_{func.__name__}', timer)
-                timer.start()
-            return func(self, *args, **kwargs)
-        return wrapper
-    
-    return decorator
+    def wrapper(*args, **kwargs):
+        data = func(*args, **kwargs)
+        return {
+            'total': len(data) if data else 0,
+            'data': data
+        }
+    return wrapper
 
 
-class TimedExecutionMixin:
+def flat_merge_parent_child_data(parent_data: List[Dict], child_data: List[Dict], 
+                                 parent_key_fields: str | list[str] = 'id', 
+                                 child_match_key_fields: str | list[str] = 'parentid') -> List[Dict]:
     """
-    混入类：为任何类添加定时执行方法的功能
+    合并父表和子表数据为扁平结构
     """
-    def _execute_timed_method(self, method_name: str, *args, **kwargs):
-        """执行定时方法"""
-        try:
-            method = getattr(self, method_name)
-            method(*args, **kwargs)
-        except Exception as e:
-            print(f"定时执行方法 {method_name} 出错: {e}")
+    union_key_col = '$index'
+    # 转换为DataFrame
+    df_parent = pd.DataFrame(parent_data)
+    df_child = pd.DataFrame(child_data)
+
+    parent_key_fields = parent_key_fields if isinstance(parent_key_fields, list) else [parent_key_fields]
+    child_match_key_fields = child_match_key_fields if isinstance(child_match_key_fields, list) else [child_match_key_fields]
+
+    df_parent[union_key_col] = df_parent[parent_key_fields].apply(lambda x: tuple(x), axis=1)
+    df_child[union_key_col] = df_child[child_match_key_fields].apply(lambda x: tuple(x), axis=1)
     
-    def start_timed_execution(self, method_name: str, interval_seconds: int = 300):
-        """启动指定方法的定时执行"""
-        if hasattr(self, method_name):
-            timer_name = f'_timer_{method_name}'
-            # 停止现有定时器
-            if hasattr(self, timer_name):
-                getattr(self, timer_name).cancel()
-            
-            # 创建新的定时器
-            timer = threading.Timer(interval_seconds, self._execute_timed_method, args=[method_name])
-            setattr(self, timer_name, timer)
-            timer.start()
-            print(f"方法 {method_name} 已启动定时执行，间隔 {interval_seconds} 秒")
-        else:
-            print(f"方法 {method_name} 不存在")
+    # 处理单字段情况
+    if isinstance(parent_key_fields, str):
+        parent_key_fields = [parent_key_fields]
+    if isinstance(child_match_key_fields, str):
+        child_match_key_fields = [child_match_key_fields]
     
-    def stop_timed_execution(self, method_name: str):
-        """停止指定方法的定时执行"""
-        timer_name = f'_timer_{method_name}'
-        if hasattr(self, timer_name):
-            getattr(self, timer_name).cancel()
-            delattr(self, timer_name)
-            print(f"方法 {method_name} 的定时执行已停止")
-        else:
-            print(f"方法 {method_name} 没有活跃的定时器")
+    # 合并数据
+    merged_df = pd.merge(
+        df_parent,
+        df_child,
+        left_on=union_key_col,
+        right_on=union_key_col,
+        how='left',
+        suffixes=('_parent', '_child')
+    )
+    
+    return merged_df.to_dict(orient='records')
