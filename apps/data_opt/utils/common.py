@@ -13,19 +13,6 @@ def get_session(
     connect_timeout: float = 10.0,
     read_timeout: float = 30.0,
 ):
-    # 请求钩子：记录请求信息
-    # def _request_hook(r, *args, **kwargs):
-    #     logger.debug(f"发送请求: {r.method} {r.url}")
-    #     logger.debug(f"请求头: {r.headers}")
-    #     if r.body:
-    #         logger.debug(f"请求体: {r.body[:1000]}..." if len(r.body) > 1000 else f"请求体: {r.body}")
-
-    # 响应钩子：记录响应信息
-    # def _response_hook(r, *args, **kwargs):
-    #     logger.debug(f"收到响应: {r.status_code} {r.url}")
-    #     logger.debug(f"响应头: {r.headers}")
-    #     if r.text:
-    #         logger.debug(f"响应体: {r.text[:1000]}..." if len(r.text) > 1000 else f"响应体: {r.text}")
     # 配置重试策略
     retry_strategy = Retry(
         total=retries,  # 总重试次数
@@ -53,12 +40,10 @@ def get_session(
 
     # 添加请求头
     request_session.headers.update({
-        "User-Agent": "MyAPS-Connector/1.0",
+        # "User-Agent": "MyAPS-Connector/1.0",
         "Content-Type": "application/json"
     })
     # 注册钩子
-
-    # request_session.hooks["response"] = [_response_hook]
 
     return request_session
 

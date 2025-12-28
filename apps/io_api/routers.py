@@ -20,7 +20,7 @@ from .common import (
     common_params, get_tortoise_connection,
     common_read_by_orm, common_write, common_delete_by_orm, common_read_by_sql, common_delete_by_sql, common_call_dbprocdure,
     standard_response)
-from apps.data_opt.projects import mingdao_api
+from apps.data_opt.projects import hap_conn
 
 
 def _check_db_name(hap_wsid: str = None):
@@ -53,7 +53,7 @@ def _check_db_name(hap_wsid: str = None):
                     # 使用默认值
                     db_name = db_name_param.default
             
-            # 如果没有db_name参数或db_name为None或空，调用mingdao_api
+            # 如果没有db_name参数或db_name为None或空，调用 HAP API
             if db_name_param is None or db_name is None or db_name == "":
                 # 获取原函数的data参数
                 data_param = None
@@ -98,10 +98,10 @@ def _check_db_name(hap_wsid: str = None):
                             processed_data = data_value
                 
                 try:
-                    if mingdao_api is not None:
+                    if hap_conn is not None:
 
-                        # 调用mingdao_api.add_rows()方法，传入原函数的data
-                        result = mingdao_api.add_rows(
+                        # 调用 add_rows()方法，传入原函数的data
+                        result = hap_conn.add_rows(
                             worksheet_id=hap_wsid, 
                             rows=processed_data,
                             trigger_workflow=True

@@ -11,36 +11,38 @@ from fastapi import status
 from globalobjects import file_timed_logger
 from apps.io_api.common import standard_response
 from apps.data_opt.utils.common import get_session
-from . import ScheduleTasksAbc, MyapsDbActionsAbc, DefaultValueAbc, DefaultParamsAbc, request_session#, myaps_base_url
+from apps.data_opt.components.hap_v3 import HapApiV3
+from ._base import ScheduleTasksAbc, MyapsDbActionsAbc, DefaultValueAbc, DefaultParamsAbc, request_session#, myaps_base_url
 
 
 #################################################################################
-# ⬇️项目常量
+# ⬇️项目对象
 #################################################################################
+hap_conn = HapApiV3(
+    app_key='d519a8ea60f9efa6',
+    sign='NjAwYzI5OWJlMTNhNTcwODM5ZTEwOWE2YjE3ZDZiNWRmYzk4NTJjNTZmODQ4N2EzNGNjNWM2ZGMzNTBlYjY0Ng==',
+    base_url='https://api.mingdao.com'
+)
 
 class DefaultParams(DefaultParamsAbc):
     pass
 
 class DefaultValue(DefaultValueAbc):
-
     MAT_PLANT = "1600"   # 默认工厂
     MAT_PLANNER = "haida"   # 默认计划员
     MAT_LOCATION = "1600"  # 默认车间
  
-
-#################################################################################
-# ⬇️模块变量
-#################################################################################
-
-main_db = MyapsDbActionsAbc.main_db
-
-werks = "1600"
-
 file_logger = file_timed_logger.setup_logging(__name__)
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+#################################################################################
+# ⬇️项目参数
+#################################################################################
+
+main_db = MyapsDbActionsAbc.main_db
+werks = "1600"
 
 #################################################################################
 # SAP 数据交互

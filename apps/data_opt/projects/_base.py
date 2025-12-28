@@ -7,9 +7,9 @@ import logging
 from typing import Literal
 from abc import ABC#, abstractmethod
 
+# from tortoise import Tortoise
 
 from apps.data_opt.utils.common import get_session
-# from tortoise import Tortoise
 from config.settings import MYAPS_MAIN_DB, THIS_SERVER_PORT, THIS_PROTOCOL#, MYAPS_BASE_URL
 
 

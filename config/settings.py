@@ -26,9 +26,6 @@ THIS_DB_USER = os.getenv("THIS_DB_USER")
 THIS_DB_PASSWORD = os.getenv("THIS_DB_PASSWORD")
 THIS_DB_NAME = os.getenv("THIS_DB_NAME")
 
-# 激活的连接器
-ACTIVE_CONNECTOR = os.getenv("ACTIVE_CONNECTOR")
-
 ######################################################################################
 # 数据库配置
 connections = {}

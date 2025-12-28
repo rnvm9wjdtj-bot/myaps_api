@@ -8,8 +8,7 @@ import pandas as pd
 from fastapi import APIRouter, Query, Body, File, UploadFile#, HTTPException
 # from fastapi.responses import StreamingResponse
 
-from .projects import  active_connector, mingdao_api
-# from .connectors.project import MyapsDbActionsAbc
+from .projects import  current_project, hap_conn
 from .schemas import SupplyOperationBody, SupplyAction
 # from apps.io_api.models import TSupply
 from .utils.barcode_qrcode_generator import generate_qrcode, generate_barcode
@@ -46,14 +45,14 @@ async def opt_supply(
     x_api_key: str = common_params["x_api_key"]
 ):
     if body.action == SupplyAction.REFRESH_STOCK:
-        return await active_connector.refresh_stock(db_name or None)
+        return await current_project.refresh_stock(db_name or None)
     # elif body.action == SupplyAction.CLOSE_MO and body.type in ["MO", "PL"]:
     #     return await TSupply.filter(
     #         materialno=body.materialno,
     #         supplyno=body.supplyno,
     #     ).delete(using_db=db_name or None)
     # elif body.action == SupplyAction.PL_TO_MO and body.type == "PL":
-    #     return await active_connector.MyapsDbActions.pl_to_mo(body.supplyno, body.mono, db_name or None)
+    #     return await entire_project.MyapsDbActions.pl_to_mo(body.supplyno, body.mono, db_name or None)
 
 
 @rt.post("/generate/qrcode",
@@ -212,7 +211,7 @@ async def get_bom_check_result_api(
     x_api_key: str = common_params["x_api_key"]
 ):
     try:
-        bom_json_data = await active_connector.ScheduleTasks.get_bom()
+        bom_json_data = await current_project.ScheduleTasks.get_bom()
 
         mainfield_mapper = {
             "id": None,
@@ -242,13 +241,13 @@ async def get_bom_check_result_api(
         if output_method == "EXCEL":
             return checker.export_results_as_excel()
         elif output_method == "HAP":
-            if mingdao_api is None:
+            if hap_conn is None:
                 return standard_response(
                     status_code=500,
                     success=0,
                     message="HAP 配置未完成，无法连接"
                 )
-            return standard_response(**checker.output_results_to_hap(mingdao_api))
+            return standard_response(**checker.output_results_to_hap(hap_conn))
     except Exception as e:
         return standard_response(
             status_code=500,

@@ -797,7 +797,7 @@ class BOMChecker:
         return result
 
 
-    def output_results_to_hap(self, mingdao_api) -> Dict[str, str]:
+    def output_results_to_hap(self, hap_conn) -> Dict[str, str]:
         """
         将BOM检查结果和单位检查结果传输至 HAP
         """
@@ -805,9 +805,9 @@ class BOMChecker:
         material_units_map_list = self.unit_result['material_units_map_list']
         markdown_result = self.output_results_as_markdown()
         try:
-            mingdao_api.add_rows(worksheet_id='bom_check_summary', rows=[markdown_result])
-            mingdao_api.add_rows(worksheet_id="transit_bom_structure", rows=marked_data)
-            mingdao_api.add_rows(worksheet_id='material_units_map', rows=material_units_map_list)
+            hap_conn.add_rows(worksheet_id='bom_check_summary', rows=[markdown_result])
+            hap_conn.add_rows(worksheet_id="transit_bom_structure", rows=marked_data)
+            hap_conn.add_rows(worksheet_id='material_units_map', rows=material_units_map_list)
             return {'status_code': 200, 'success': 1, 'message': '数据成功传输至 HAP'}
         except Exception as e:
             return {'status_code': 500, 'success': 0, 'message': str(e)}
