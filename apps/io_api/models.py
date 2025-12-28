@@ -4,7 +4,7 @@ from tortoise import fields
 from . import protomodels as pm
 # from config.projectconst import project_default_value
 from .common import common_write
-from apps.data_opt.projects import project_default_value
+from apps.data_opt.project_files import project_default_value
 
 
 class TMaterial(pm.ProtoMaterial):

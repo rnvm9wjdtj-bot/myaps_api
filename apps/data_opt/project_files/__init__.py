@@ -12,13 +12,15 @@ from ..utils.scheduler import cron_task
 from apps.io_api.common import dict_to_lower_keys
 
 
-project_file = os.getenv("PROJECT_FILE").replace('.py', '')
-current_project = importlib.import_module(f'apps.data_opt.projects.{project_file}')
+project_name = os.getenv("PROJECT_FILE").replace('.py', '')
+current_project = importlib.import_module(f'apps.data_opt.project_files.{project_name}')
 project_default_value = current_project.DefaultValue
 try:
     hap_conn = current_project.hap_conn
 except:
     hap_conn = None
+
+
 #################################################################################
 # ⬇️定时任务HOOK
 #################################################################################

@@ -20,7 +20,7 @@ from .common import (
     common_params, get_tortoise_connection,
     common_read_by_orm, common_write, common_delete_by_orm, common_read_by_sql, common_delete_by_sql, common_call_dbprocdure,
     standard_response)
-from apps.data_opt.projects import hap_conn
+from apps.data_opt.project_files import hap_conn
 
 
 def _check_db_name(hap_wsid: str = None):

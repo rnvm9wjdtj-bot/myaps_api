@@ -1,13 +1,12 @@
-"""
-明道云 API v3 封装
-"""
+"""明道云 API v3 封装"""
 
 import json
 
+from . import get_session
 
-from apps.data_opt.utils.common import get_session
 
-class HapApiV3:
+
+class HapConnection:
     def __init__(self, app_key: str, sign: str, base_url: str=('https://api.mingdao.com', 'http://127.0.0.1:8080/api')[0]):
         self.base_url = base_url
         self.api_key = app_key

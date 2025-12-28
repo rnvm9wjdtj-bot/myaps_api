@@ -1,6 +1,8 @@
 """
-定义了项目连接器的基础基类，项目需要在各自的py文件中实现该类的方法
+引用包和常量，供各项目文件使用
+定义基类，需要在各项目文件中实现具体方法
 """
+
 # import threading
 import os
 import logging
@@ -9,20 +11,28 @@ from abc import ABC#, abstractmethod
 
 # from tortoise import Tortoise
 
-from apps.data_opt.utils.common import get_session
 from config.settings import MYAPS_MAIN_DB, THIS_SERVER_PORT, THIS_PROTOCOL#, MYAPS_BASE_URL
+from apps.data_opt.utils.common import get_session
+
+# ❗⬇️不要删掉，便于各项目文件引用
+from globalobjects import file_timed_logger
+from apps.io_api.common import standard_response
+from apps.data_opt.components.hap import HapConnection
 
 
-# 设置日志
-logger = logging.getLogger(__name__)
 
-# 创建requests会话
-request_session = get_session()
+# 配置日志
+file_log = file_timed_logger.setup_logging(__name__)
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+console_log = logging.getLogger(__name__)
+
 
 
 class ScheduleTasksAbc(ABC):
     this_base_url = f'{THIS_PROTOCOL}localhost:{THIS_SERVER_PORT}'
     scheduled_dbs = os.getenv('SCHEDULED_DBS').split(',')
+    _session = get_session()
     
     @classmethod
     async def get_material(cls, *args, **kwargs):
@@ -54,7 +64,8 @@ class MyapsDbActionsAbc(ABC):
 
     this_base_url = f'{THIS_PROTOCOL}localhost:{THIS_SERVER_PORT}'
     main_db = MYAPS_MAIN_DB
-
+    _session = get_session()
+    
     @classmethod
     async def confirm_pl(cls, pl_data: dict):
         """
@@ -84,7 +95,7 @@ class MyapsDbActionsAbc(ABC):
             - 无需根据APS的PL在ERP中创建MO（或无需与ERP对接）的实施场景
         - 在路由函数中调用，适用于ERP异步返回MO信息的实施场景
         """
-        response = request_session.patch(f'{cls.this_base_url}/api/t_supply/pl?db_name={cls.main_db}', json=[{
+        response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/pl?db_name={cls.main_db}', json=[{
             'type': 'MO',   # 将类型改为MO（原本为PL）
             'plno': plno,
             'status': to_status,
@@ -95,9 +106,11 @@ class MyapsDbActionsAbc(ABC):
         return response
 
 
+
 class DefaultParamsAbc:
     SCHEDULE_TASK_HOUR="6,8,10,12,14,16"
     SCHEDULE_TASK_MINUTE="55"
+
 
 
 class DefaultValueAbc:
@@ -110,7 +123,6 @@ class DefaultValueAbc:
     itemno_prefix = "A" # 工序项目前缀字母
     itemno_width = 3    # 工序项目号宽度
     
-
     MAT_PLANT = None   # 默认工厂
     MAT_PLANNER = None   # 默认计划员
     MAT_LOCATION = None  # 默认车间

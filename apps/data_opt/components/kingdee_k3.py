@@ -2,7 +2,9 @@ from datetime import datetime
 from typing import NamedTuple, List, Callable
 import requests
 
-# from ..utils.common import get_session
+
+from . import TimedExecutionMixin, timed_execution
+
 
 
 class FieldInfo(NamedTuple):
@@ -50,7 +52,7 @@ form_infos = [
     ]
 
 
-class K3CloudApi():
+class K3Connection(TimedExecutionMixin):
 
     def __init__(self, origin_url, acctid, username, password, lcid):
         # super().__init__(*args, **kwargs)
@@ -64,6 +66,7 @@ class K3CloudApi():
         self._session = requests.Session()#get_session()#requests.Session()
 
 
+    @timed_execution(interval_seconds=300)
     def auth(self):
         if self._cookie and self._cookie_expire and datetime.now() < self._cookie_expire:
             return
@@ -86,29 +89,35 @@ class K3CloudApi():
         })
 
     def _get_data(self, form_id: str, field_keys_mapper: dict, filter_string: str=None):
-            field_keys = ",".join(field_keys_mapper.keys())
-            # 发送请求
-            response = self._session.post(
-                url=f"{self.origin_url}/K3Cloud/Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.ExecuteBillQuery.common.kdsvc",
-                json={
-                    "data": {
-                        "FormId": form_id,
-                        "FieldKeys": field_keys,
-                        "FilterString": filter_string,
-                        "StartRow": 0,
-                        "Limit": 1000,
-                        "TopRowCount": 100000,
-                        "SubSystemId": ""
-                    }
-                },
-            )
-            # 处理响应
-            if 'ErrorCode' in response.text:
-                return None
-            data = response.json()
-            if data:
-                pass
+        """
+        获取Kingdee K3 Cloud数据
+        form_id: 表单ID
+        field_keys_mapper: 字段键映射，键为K3 Cloud字段名，值为自定义字段名
+        filter_string: 查询条件，格式为"字段名1=值1 and 字段名2=值2"
+        """
+        field_keys = ",".join(field_keys_mapper.keys())
+        # 发送请求
+        response = self._session.post(
+            url=f"{self.origin_url}/K3Cloud/Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.ExecuteBillQuery.common.kdsvc",
+            json={
+                "data": {
+                    "FormId": form_id,
+                    "FieldKeys": field_keys,
+                    "FilterString": filter_string,
+                    "StartRow": 0,
+                    "Limit": 1000,
+                    "TopRowCount": 100000,
+                    "SubSystemId": ""
+                }
+            },
+        )
+        # 处理响应
+        if 'ErrorCode' in response.text:
+            return None
+        data = response.json()
+        if data:
             print(data)
+            
 
 
     def _set_data(self):

@@ -8,7 +8,7 @@ import pandas as pd
 from fastapi import APIRouter, Query, Body, File, UploadFile#, HTTPException
 # from fastapi.responses import StreamingResponse
 
-from .projects import  current_project, hap_conn
+from .project_files import  current_project, hap_conn
 from .schemas import SupplyOperationBody, SupplyAction
 # from apps.io_api.models import TSupply
 from .utils.barcode_qrcode_generator import generate_qrcode, generate_barcode
@@ -52,7 +52,7 @@ async def opt_supply(
     #         supplyno=body.supplyno,
     #     ).delete(using_db=db_name or None)
     # elif body.action == SupplyAction.PL_TO_MO and body.type == "PL":
-    #     return await entire_project.MyapsDbActions.pl_to_mo(body.supplyno, body.mono, db_name or None)
+    #     return await current_project.MyapsDbActions.pl_to_mo(body.supplyno, body.mono, db_name or None)
 
 
 @rt.post("/generate/qrcode",

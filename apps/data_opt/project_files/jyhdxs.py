@@ -1,6 +1,4 @@
-"""
-江阴海达橡塑的连接器
-"""
+"""江阴海达橡塑"""
 
 import requests, logging#, os, atexit
 import pandas as pd
@@ -8,21 +6,21 @@ from datetime import datetime
 
 from fastapi import status
 
-from globalobjects import file_timed_logger
-from apps.io_api.common import standard_response
-from apps.data_opt.utils.common import get_session
-from apps.data_opt.components.hap_v3 import HapApiV3
-from ._base import ScheduleTasksAbc, MyapsDbActionsAbc, DefaultValueAbc, DefaultParamsAbc, request_session#, myaps_base_url
+from ._base import (
+    ScheduleTasksAbc, MyapsDbActionsAbc, DefaultValueAbc, DefaultParamsAbc,
+    file_log, console_log, standard_response, get_session, HapConnection
+    )
 
 
 #################################################################################
-# ⬇️项目对象
+# ⬇️对象及项目参数
 #################################################################################
-hap_conn = HapApiV3(
+hap_conn = HapConnection(
+    base_url='https://api.mingdao.com',
     app_key='d519a8ea60f9efa6',
-    sign='NjAwYzI5OWJlMTNhNTcwODM5ZTEwOWE2YjE3ZDZiNWRmYzk4NTJjNTZmODQ4N2EzNGNjNWM2ZGMzNTBlYjY0Ng==',
-    base_url='https://api.mingdao.com'
+    sign='NjAwYzI5OWJlMTNhNTcwODM5ZTEwOWE2YjE3ZDZiNWRmYzk4NTJjNTZmODQ4N2EzNGNjNWM2ZGMzNTBlYjY0Ng=='
 )
+
 
 class DefaultParams(DefaultParamsAbc):
     pass
@@ -32,20 +30,11 @@ class DefaultValue(DefaultValueAbc):
     MAT_PLANNER = "haida"   # 默认计划员
     MAT_LOCATION = "1600"  # 默认车间
  
-file_logger = file_timed_logger.setup_logging(__name__)
-# 配置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-#################################################################################
-# ⬇️项目参数
-#################################################################################
-
 main_db = MyapsDbActionsAbc.main_db
 werks = "1600"
 
 #################################################################################
-# SAP 数据交互
+# ⬇️项目可复用逻辑
 #################################################################################
 from apps.data_opt.utils.common import add_basic_auth_requests
 
@@ -90,9 +79,9 @@ async def sap_post(url: str, session: requests.Session, interface_id: str, data:
     response_json = {}
     if response.status_code == status.HTTP_200_OK:
         response_json = response.json()
-        logger.info(f"POST请求成功，状态码：{response.status_code}，响应内容：{response_json}")
+        console_log.info(f"POST请求成功，状态码：{response.status_code}，响应内容：{response_json}")
     else:
-        logger.error(f"POST请求失败，状态码：{response.status_code}，响应内容：{response.text}")
+        console_log.error(f"POST请求失败，状态码：{response.status_code}，响应内容：{response.text}")
     return {
         'status_code': response.status_code,
         'response_text': response.text,
@@ -111,7 +100,7 @@ class ScheduleTasks(ScheduleTasksAbc):
         刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据
         db_name: 账套名称，默认刷新所有账套
         """
-        logger.info("开始执行刷新库存任务")
+        console_log.info("开始执行刷新库存任务")
         response = None
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         try:
@@ -154,13 +143,13 @@ class ScheduleTasks(ScheduleTasksAbc):
             stock_data = stock.to_dict(orient='records')
 
             dbs = db_name or ','.join(cls.scheduled_dbs)
-            request_session.delete(f"{cls.this_base_url}/api/t_supply?db_name={dbs}&type=ST")
-            request_session.post(f"{cls.this_base_url}/api/t_supply?db_name={dbs}", json=stock_data)
-            logger.info(f"刷新库存任务执行完成，账套：{dbs}")
+            cls._session.delete(f"{cls.this_base_url}/api/t_supply?db_name={dbs}&type=ST")
+            cls._session.post(f"{cls.this_base_url}/api/t_supply?db_name={dbs}", json=stock_data)
+            console_log.info(f"刷新库存任务执行完成，账套：{dbs}")
             response = standard_response(message=f"刷新库存任务执行完成，账套：{dbs}")
             
         except Exception as e:
-            logger.error(f"刷新库存任务执行失败: {str(e)}")
+            console_log.error(f"刷新库存任务执行失败: {str(e)}")
             response = standard_response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, success=0, message=f"刷新库存任务执行失败: {str(e)}")
         return response
 
@@ -184,7 +173,7 @@ class MyapsDbActions(MyapsDbActionsAbc):
         确认计划任务，将主账套中需要转MO的PL推送到SAP，将计划任务状态更新为已确认
         """
         try:
-            supply_response = request_session.get(f"{cls.this_base_url}/api/v_supply_mo?db_name={main_db}&supplyno={pl_data['supplyno']}")
+            supply_response = cls._session.get(f"{cls.this_base_url}/api/v_supply_mo?db_name={main_db}&supplyno={pl_data['supplyno']}")
             supply_response_json = supply_response.json()
             supply_data = supply_response_json['data'][0]
             start_datetime = supply_data['dt_ordstart']#.strftime('%Y%m%d %H:%M:%S')
@@ -212,24 +201,24 @@ class MyapsDbActions(MyapsDbActionsAbc):
              
             if sap_mo_data['STATUS'] == 'S':
                 log_msg = f"✅推送计划任务执行成功，账套：{main_db}，MO单号：{sap_mo_data['AUFNR']}"
-                logger.info(log_msg)
-                file_logger.info(log_msg)
+                console_log.info(log_msg)
+                file_log.info(log_msg)
                 pl_data['mono'] = sap_mo_data['AUFNR']
                 pl_data['status'] = 'E2A'
                 pl_data['memo'] = f'✅{now} @ERP【{sap_mo_data['MESSAGE']}】'
                 pl_data['is_execute_updates'] = True
             else:
                 log_msg = f"🚫推送计划任务执行失败，账套：{main_db}，错误信息：{sap_mo_data['MESSAGE']}"
-                logger.error(log_msg)
-                file_logger.error(log_msg)
+                console_log.error(log_msg)
+                file_log.error(log_msg)
                 pl_data['mono'] = ''
                 pl_data['status'] = 'CRE'   # ❗❗失败情况下，状态务必回撤为 CRE ，否则后续无法再次下达
                 pl_data['memo'] = f'🚫{now} @ERP【{sap_mo_data['MESSAGE']}】'
                 pl_data['is_execute_updates'] = False
         except Exception as e:
             log_msg = f"🚫推送计划任务执行失败: {str(e)}"
-            logger.error(log_msg)
-            file_logger.error(log_msg)
+            console_log.error(log_msg)
+            file_log.error(log_msg)
             pl_data['mono'] = ''
             pl_data['status'] = 'CRE'
             pl_data['memo'] = f'🚫{now} @APS【{str(e)}】'
