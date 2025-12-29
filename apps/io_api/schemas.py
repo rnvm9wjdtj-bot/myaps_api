@@ -28,7 +28,15 @@ def _cache_raw_input_data(cls, values: Dict[str, Any]) -> Dict[str, Any]:
 
 def _set_raw_input_data(self):
     if hasattr(self, "_cached_raw_input_data"):
-        self._raw_input_data = self._cached_raw_input_data
+        raw_input_data = {}
+        valid_values = self.__dict__
+        for key, raw_value in self._cached_raw_input_data.items():
+            valid_value = valid_values.get(key)
+            if type(valid_value) in (int, float, Decimal):
+                raw_input_data[key] = valid_value
+            else:
+                raw_input_data[key] = raw_value
+        self._raw_input_data = raw_input_data
         # delattr(self, "_cached_raw_input_data")
     return self
 
