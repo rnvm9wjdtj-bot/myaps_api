@@ -1,13 +1,16 @@
 # from tortoise import Tortoise
 
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 # 加载.env文件中的环境变量
-load_dotenv(os.getenv('ENV_FILE', os.path.join(os.getcwd(), '.env')))
+
+BASE_DIR = os.getcwd()
+load_dotenv(os.getenv('ENV_FILE', os.path.join(BASE_DIR, '.env')))
+
 
 # 从环境变量读取配置
-
 MYAPS_BASE_URL = os.getenv("MYAPS_BASE_URL")
 MYAPS_DB_HOST = os.getenv("MYAPS_DB_HOST")
 MYAPS_DB_PORT = int(os.getenv("MYAPS_DB_PORT"))
@@ -15,6 +18,7 @@ MYAPS_DB_USER = os.getenv("MYAPS_DB_USER")
 MYAPS_DB_PASSWORD = os.getenv("MYAPS_DB_PASSWORD")
 MYAPS_DB_SET = os.getenv("MYAPS_DB_SET").split(",")
 MYAPS_MAIN_DB = os.getenv("MYAPS_MAIN_DB")
+TEST_DB = os.getenv("TEST_DB", "testdb")
 
 THIS_PROTOCOL = os.getenv("THIS_PROTOCOL", "http://")
 THIS_SERVER_HOST = os.getenv("THIS_SERVER_HOST")

@@ -2,12 +2,13 @@
 
 import json
 
-from . import get_session
+from ._base import get_session
 
 
+hap_example_url = ('https://api.mingdao.com', 'http://127.0.0.1:8080/api')
 
 class HapConnection:
-    def __init__(self, app_key: str, sign: str, base_url: str=('https://api.mingdao.com', 'http://127.0.0.1:8080/api')[0]):
+    def __init__(self, app_key: str, sign: str, base_url: str=hap_example_url[0]):
         self.base_url = base_url
         self.api_key = app_key
         self.sign = sign

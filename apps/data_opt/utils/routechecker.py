@@ -1,7 +1,9 @@
 import pandas as pd, json, os#, warnings
+from datetime import datetime
 from io import BytesIO
 from typing import List, Dict, Any, DefaultDict
 from collections import defaultdict
+
 from fastapi.responses import StreamingResponse
 
 
@@ -406,8 +408,6 @@ class RouteChecker:
         
         result = {'combined_result': output}
         
-        # 添加检查时间戳
-        from datetime import datetime
         result['check_timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         return result
@@ -474,9 +474,9 @@ class RouteChecker:
             
             if use_bytesio:
                 output_file.seek(0)
-                summary_markdown = self.output_results_as_markdown()
-                from datetime import datetime
-                ts = summary_markdown.get("check_timestamp", datetime.now().strftime("%Y%m%d%H%M%S")).replace(":", "").replace(" ", "").replace("-", "")
+                # summary_markdown = self.output_results_as_markdown()
+                # ts = summary_markdown.get("check_timestamp", datetime.now().strftime("%Y%m%d%H%M%S")).replace(":", "").replace(" ", "").replace("-", "")
+                ts = datetime.now().strftime("%Y%m%d%H%M%S")
                 return StreamingResponse(
                     output_file,
                     media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

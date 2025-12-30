@@ -1,13 +1,15 @@
 # from datetime import datetime
-# import os, importlib#, uuid
+import os#, importlib#, uuid
+from pathlib import Path
 from typing import Optional#, Dict, Any
 # from datetime import datetime
 
 
 import pandas as pd
 from fastapi import APIRouter, Query, Body, File, UploadFile#, HTTPException
-# from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse#, StreamingResponse
 
+from config.settings import BASE_DIR
 from .project_files import  current_project, hap_conn
 from .schemas import SupplyOperationBody, SupplyAction
 # from apps.io_api.models import TSupply
@@ -199,6 +201,30 @@ async def check_bom_excel(
             success=0,
             message=f"执行失败: {str(e)}"
         )
+
+
+@rt.get("/tools", tags=["数据操作 - 校验工具页面"])
+async def bom_check_page():
+    """
+    校验工具页面
+    提供用户友好的Web界面来上传Excel文件并进行BOM和工序数据校验
+    """
+    html_path = os.path.join(BASE_DIR, "static", "tools.html")
+    if os.path.exists(html_path):
+        html_content = open(html_path, 'r', encoding='utf-8').read()
+        status_code = 200
+    else:
+        html_content = """
+        <html>
+            <body>
+                <h1>BOM校验页面未找到</h1>
+                <p>请确保static/tools.html文件存在</p>
+                <a href="/">返回首页</a>
+            </body>
+        </html>
+        """
+        status_code = 404
+    return HTMLResponse(content=html_content, status_code=status_code)
 
 
 @rt.get("/check/bom",

@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据校验工具</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            background-color: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        /* TAB样式 */
+        .tab-container {
+            margin-bottom: 30px;
+        }
+
+        .tab-nav {
+            display: flex;
+            border-bottom: 2px solid #e0e0e0;
+            margin-bottom: 20px;
+        }
+
+        .tab-button {
+            background: none;
+            border: none;
+            padding: 12px 24px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            color: #666;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .tab-button.active {
+            color: #4CAF50;
+            border-bottom-color: #4CAF50;
+            background-color: #f8f9fa;
+        }
+
+        .tab-button:hover {
+            background-color: #f0f0f0;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #555;
+        }
+
+        input[type="file"], input[type="text"], select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        input[type="text"]:focus, select:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+
+        .required {
+            color: red;
+        }
+
+        .optional {
+            color: #999;
+            font-size: 12px;
+        }
+
+        .file-info {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .btn {
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        .btn:hover {
+            background-color: #45a049;
+        }
+
+        .btn:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            display: none;
+        }
+
+        .result.success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+
+        .result.error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+
+        .download-link {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 8px 16px;
+            background-color: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+
+        .download-link:hover {
+            background-color: #0056b3;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+                margin: 10px;
+            }
+            
+            .tab-nav {
+                flex-direction: column;
+            }
+            
+            .tab-button {
+                text-align: center;
+            }
+        }
+
+        /* 本地访问提示样式 */
+        .local-access-notice {
+            background-color: #e3f2fd;
+            border: 1px solid #2196f3;
+            border-radius: 4px;
+            padding: 12px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #1976d2;
+        }
+
+        .local-access-notice .icon {
+            margin-right: 8px;
+            color: #2196f3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>数据校验工具</h1>
+        
+        <!-- 本地访问提示 -->
+        <div class="local-access-notice" id="localAccessNotice" style="display: none;">
+            <span class="icon">🏠</span>
+            <strong>本地访问检测到</strong>：API密钥输入框已自动隐藏，无需输入API密钥即可使用。
+        </div>
+        
+        <div class="tab-container">
+            <div class="tab-nav">
+                <button class="tab-button active" data-tab="bom">BOM校验</button>
+                <button class="tab-button" data-tab="route">工艺路线校验</button>
+            </div>
+            
+            <!-- BOM校验 TAB -->
+            <div id="bom-tab" class="tab-content active">
+                <form id="bomForm">
+                    <div class="form-group">
+                        <label for="bomExcelFile">选择BOM Excel文件 <span class="required">*</span></label>
+                        <input type="file" id="bomExcelFile" accept=".xlsx" required>
+                        <div class="file-info" id="bomFileInfo" style="display: none;"></div>
+                    </div>
+
+                    <div class="form-group" id="bomApiKeyGroup">
+                        <label for="bomApiKey">API密钥 <span class="required">*</span></label>
+                        <input type="text" id="bomApiKey" placeholder="请输入API密钥" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="bomParentCol">父料号列名 <span class="required">*</span></label>
+                        <input type="text" id="bomParentCol" value="ProductNo" placeholder="例如: ProductNo" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="bomChildCol">子料号列名 <span class="required">*</span></label>
+                        <input type="text" id="bomChildCol" value="MaterialNo" placeholder="例如: MaterialNo" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="bomNumeratorCol">数量列名 <span class="required">*</span></label>
+                        <input type="text" id="bomNumeratorCol" value="Qty" placeholder="例如: Qty" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="bomParentVersionCol">版本号列名 <span class="optional">(可选)</span></label>
+                        <input type="text" id="bomParentVersionCol" placeholder="例如: MatVer">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="bomDenominatorCol">分母列名 <span class="optional">(可选)</span></label>
+                        <input type="text" id="bomDenominatorCol" placeholder="例如: Denominator">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="bomParentUnitCol">父单位列名 <span class="optional">(可选)</span></label>
+                        <input type="text" id="bomParentUnitCol" placeholder="例如: ParentUnit">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="bomChildUnitCol">子单位列名 <span class="optional">(可选)</span></label>
+                        <input type="text" id="bomChildUnitCol" placeholder="例如: ChildUnit">
+                    </div>
+
+                    <button type="submit" class="btn" id="bomSubmitBtn">开始校验BOM</button>
+                </form>
+
+                <div class="loading" id="bomLoading">
+                    <div class="spinner"></div>
+                    <div>正在处理中，请稍候...</div>
+                </div>
+
+                <div class="result" id="bomResult"></div>
+            </div>
+            
+            <!-- 工艺路线校验 TAB -->
+            <div id="route-tab" class="tab-content">
+                <form id="routeForm">
+                    <div class="form-group">
+                        <label for="routeExcelFile">选择工艺路线 Excel文件 <span class="required">*</span></label>
+                        <input type="file" id="routeExcelFile" accept=".xlsx" required>
+                        <div class="file-info" id="routeFileInfo" style="display: none;"></div>
+                    </div>
+
+                    <div class="form-group" id="routeApiKeyGroup">
+                        <label for="routeApiKey">API密钥 <span class="required">*</span></label>
+                        <input type="text" id="routeApiKey" placeholder="请输入API密钥" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="routeProductCol">产品料号列名 <span class="required">*</span></label>
+                        <input type="text" id="routeProductCol" value="MaterialNo" placeholder="例如: MaterialNo" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="routeProductVersionCol">产品版本号列名 <span class="optional">(可选)</span></label>
+                        <input type="text" id="routeProductVersionCol" placeholder="例如: MatVer">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="routeSortNoCol">顺序号列名 <span class="required">*</span></label>
+                        <input type="text" id="routeSortNoCol" value="SortNo" placeholder="例如: SortNo" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="routeItemNoCol">工序项列名 <span class="required">*</span></label>
+                        <input type="text" id="routeItemNoCol" value="ItemNo" placeholder="例如: ItemNo" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="routeWorkCenterCol">工作中心列名 <span class="optional">(可选)</span></label>
+                        <input type="text" id="routeWorkCenterCol" placeholder="例如: WorkCenter">
+                    </div>
+
+                    <button type="submit" class="btn" id="routeSubmitBtn">开始校验工艺路线</button>
+                </form>
+
+                <div class="loading" id="routeLoading">
+                    <div class="spinner"></div>
+                    <div>正在处理中，请稍候...</div>
+                </div>
+
+                <div class="result" id="routeResult"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 检测是否为本地访问
+        function isLocalAccess() {
+            const hostname = window.location.hostname;
+            const protocol = window.location.protocol;
+            
+            // 本地访问的特征：
+            // 1. hostname为 localhost 或 127.0.0.1
+            // 2. hostname以 .local 或 .localhost 结尾
+            // 3. 私有IP地址范围 (192.168.x.x, 10.x.x.x, 172.16.x.x-172.31.x.x)
+            return hostname === 'localhost' || 
+                   hostname === '127.0.0.1' ||
+                   hostname.endsWith('.local') ||
+                   hostname.endsWith('.localhost') ||
+                   hostname.startsWith('192.168.') ||
+                   hostname.startsWith('10.') ||
+                   (hostname.startsWith('172.16.') || hostname.startsWith('172.17.') || 
+                    hostname.startsWith('172.18.') || hostname.startsWith('172.19.') ||
+                    hostname.startsWith('172.20.') || hostname.startsWith('172.21.') ||
+                    hostname.startsWith('172.22.') || hostname.startsWith('172.23.') ||
+                    hostname.startsWith('172.24.') || hostname.startsWith('172.25.') ||
+                    hostname.startsWith('172.26.') || hostname.startsWith('172.27.') ||
+                    hostname.startsWith('172.28.') || hostname.startsWith('172.29.') ||
+                    hostname.startsWith('172.30.') || hostname.startsWith('172.31.'));
+        }
+
+        // TAB切换功能
+        document.addEventListener('DOMContentLoaded', function() {
+            // 检测本地访问并隐藏API密钥输入框
+            if (isLocalAccess()) {
+                // 隐藏API密钥输入框
+                document.getElementById('bomApiKeyGroup').style.display = 'none';
+                document.getElementById('routeApiKeyGroup').style.display = 'none';
+                
+                // 显示本地访问提示
+                document.getElementById('localAccessNotice').style.display = 'block';
+            }
+
+            const tabButtons = document.querySelectorAll('.tab-button');
+            const tabContents = document.querySelectorAll('.tab-content');
+
+            tabButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    const targetTab = this.getAttribute('data-tab');
+                    
+                    // 移除所有活动状态
+                    tabButtons.forEach(btn => btn.classList.remove('active'));
+                    tabContents.forEach(content => content.classList.remove('active'));
+                    
+                    // 添加活动状态
+                    this.classList.add('active');
+                    document.getElementById(targetTab + '-tab').classList.add('active');
+                });
+            });
+
+            // BOM表单处理
+            setupBOMForm();
+            // 工艺路线表单处理
+            setupRouteForm();
+        });
+
+        function setupBOMForm() {
+            const form = document.getElementById('bomForm');
+            const submitBtn = document.getElementById('bomSubmitBtn');
+            const loading = document.getElementById('bomLoading');
+            const result = document.getElementById('bomResult');
+            const fileInput = document.getElementById('bomExcelFile');
+            const fileInfo = document.getElementById('bomFileInfo');
+
+            // 文件选择处理
+            fileInput.addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    if (!file.name.toLowerCase().endsWith('.xlsx')) {
+                        alert('请选择.xlsx格式的Excel文件');
+                        fileInput.value = '';
+                        fileInfo.style.display = 'none';
+                        return;
+                    }
+                    
+                    fileInfo.innerHTML = `
+                        <strong>文件信息:</strong><br>
+                        文件名: ${file.name}<br>
+                        大小: ${(file.size / 1024 / 1024).toFixed(2)} MB<br>
+                        类型: ${file.type}
+                    `;
+                    fileInfo.style.display = 'block';
+                } else {
+                    fileInfo.style.display = 'none';
+                }
+            });
+
+            // 表单提交处理
+            form.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const file = fileInput.files[0];
+                if (!file) {
+                    alert('请选择Excel文件');
+                    return;
+                }
+
+                // 检测是否为本地访问，使用不同的API密钥获取方式
+                const isLocal = isLocalAccess();
+                const apiKey = isLocal ? 'local_access' : document.getElementById('bomApiKey').value;
+                
+                // 如果不是本地访问且没有输入API密钥，则提示输入
+                if (!isLocal && !apiKey) {
+                    alert('请输入API密钥');
+                    return;
+                }
+                
+                const parentCol = document.getElementById('bomParentCol').value;
+                const childCol = document.getElementById('bomChildCol').value;
+                const numeratorCol = document.getElementById('bomNumeratorCol').value;
+                const parentVersionCol = document.getElementById('bomParentVersionCol').value;
+                const denominatorCol = document.getElementById('bomDenominatorCol').value;
+                const parentUnitCol = document.getElementById('bomParentUnitCol').value;
+                const childUnitCol = document.getElementById('bomChildUnitCol').value;
+
+                // 构建查询参数
+                const params = new URLSearchParams();
+                params.append('parent_col', parentCol);
+                params.append('child_col', childCol);
+                params.append('numerator_col', numeratorCol);
+                
+                if (parentVersionCol) params.append('parentversion_col', parentVersionCol);
+                if (denominatorCol) params.append('denominator_col', denominatorCol);
+                if (parentUnitCol) params.append('parentunit_col', parentUnitCol);
+                if (childUnitCol) params.append('childunit_col', childUnitCol);
+                params.append('x_api_key', apiKey);
+
+                // 创建FormData
+                const formData = new FormData();
+                formData.append('file', file);
+
+                // 显示加载状态
+                submitBtn.disabled = true;
+                loading.style.display = 'block';
+                result.style.display = 'none';
+
+                try {
+                    const response = await fetch(`/do/check/bom?${params.toString()}`, {
+                        method: 'POST',
+                        body: formData,
+                        headers: {
+                            'X-API-Key': apiKey
+                        }
+                    });
+
+                    if (response.ok) {
+                        // 获取响应为blob（处理文件下载）
+                        const blob = await response.blob();
+                        
+                        // 检查Content-Type来判断是错误信息还是文件
+                        const contentType = response.headers.get('content-type');
+                        
+                        if (contentType && contentType.includes('application/json')) {
+                            // 如果是JSON响应，说明是错误信息
+                            const errorData = await blob.text();
+                            throw new Error(JSON.parse(errorData).message || '未知错误');
+                        } else {
+                            // 如果是文件流，说明是成功响应
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.style.display = 'none';
+                            a.href = url;
+                            a.download = `bom_check_result_${new Date().getTime()}.xlsx`;
+                            document.body.appendChild(a);
+                            a.click();
+                            window.URL.revokeObjectURL(url);
+                            document.body.removeChild(a);
+
+                            result.className = 'result success';
+                            result.innerHTML = `
+                                <strong>✅ BOM校验完成！</strong><br>
+                                BOM校验已成功完成，结果文件已下载到本地。
+                            `;
+                            result.style.display = 'block';
+                        }
+                    } else {
+                        const errorData = await response.json();
+                        throw new Error(errorData.message || `HTTP ${response.status}`);
+                    }
+                } catch (error) {
+                    result.className = 'result error';
+                    result.innerHTML = `
+                        <strong>❌ BOM校验失败</strong><br>
+                        错误信息: ${error.message}
+                    `;
+                    result.style.display = 'block';
+                } finally {
+                    // 恢复按钮状态
+                    submitBtn.disabled = false;
+                    loading.style.display = 'none';
+                }
+            });
+        }
+
+        function setupRouteForm() {
+            const form = document.getElementById('routeForm');
+            const submitBtn = document.getElementById('routeSubmitBtn');
+            const loading = document.getElementById('routeLoading');
+            const result = document.getElementById('routeResult');
+            const fileInput = document.getElementById('routeExcelFile');
+            const fileInfo = document.getElementById('routeFileInfo');
+
+            // 文件选择处理
+            fileInput.addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    if (!file.name.toLowerCase().endswith('.xlsx')) {
+                        alert('请选择.xlsx格式的Excel文件');
+                        fileInput.value = '';
+                        fileInfo.style.display = 'none';
+                        return;
+                    }
+                    
+                    fileInfo.innerHTML = `
+                        <strong>文件信息:</strong><br>
+                        文件名: ${file.name}<br>
+                        大小: ${(file.size / 1024 / 1024).toFixed(2)} MB<br>
+                        类型: ${file.type}
+                    `;
+                    fileInfo.style.display = 'block';
+                } else {
+                    fileInfo.style.display = 'none';
+                }
+            });
+
+            // 表单提交处理
+            form.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const file = fileInput.files[0];
+                if (!file) {
+                    alert('请选择Excel文件');
+                    return;
+                }
+
+                // 检测是否为本地访问，使用不同的API密钥获取方式
+                const isLocal = isLocalAccess();
+                const apiKey = isLocal ? 'local_access' : document.getElementById('routeApiKey').value;
+                
+                // 如果不是本地访问且没有输入API密钥，则提示输入
+                if (!isLocal && !apiKey) {
+                    alert('请输入API密钥');
+                    return;
+                }
+                
+                const productCol = document.getElementById('routeProductCol').value;
+                const productVersionCol = document.getElementById('routeProductVersionCol').value;
+                const sortNoCol = document.getElementById('routeSortNoCol').value;
+                const itemNoCol = document.getElementById('routeItemNoCol').value;
+                const workCenterCol = document.getElementById('routeWorkCenterCol').value;
+
+                // 构建查询参数
+                const params = new URLSearchParams();
+                params.append('product_col', productCol);
+                params.append('sortno_col', sortNoCol);
+                params.append('itemno_col', itemNoCol);
+                
+                if (productVersionCol) params.append('productversion_col', productVersionCol);
+                if (workCenterCol) params.append('workcenter_col', workCenterCol);
+                params.append('x_api_key', apiKey);
+
+                // 创建FormData
+                const formData = new FormData();
+                formData.append('file', file);
+
+                // 显示加载状态
+                submitBtn.disabled = true;
+                loading.style.display = 'block';
+                result.style.display = 'none';
+
+                try {
+                    const response = await fetch(`/do/check/route?${params.toString()}`, {
+                        method: 'POST',
+                        body: formData,
+                        headers: {
+                            'X-API-Key': apiKey
+                        }
+                    });
+
+                    if (response.ok) {
+                        // 获取响应为blob（处理文件下载）
+                        const blob = await response.blob();
+                        
+                        // 检查Content-Type来判断是错误信息还是文件
+                        const contentType = response.headers.get('content-type');
+                        
+                        if (contentType && contentType.includes('application/json')) {
+                            // 如果是JSON响应，说明是错误信息
+                            const errorData = await blob.text();
+                            throw new Error(JSON.parse(errorData).message || '未知错误');
+                        } else {
+                            // 如果是文件流，说明是成功响应
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.style.display = 'none';
+                            a.href = url;
+                            a.download = `route_check_result_${new Date().getTime()}.xlsx`;
+                            document.body.appendChild(a);
+                            a.click();
+                            window.URL.revokeObjectURL(url);
+                            document.body.removeChild(a);
+
+                            result.className = 'result success';
+                            result.innerHTML = `
+                                <strong>✅ 工艺路线校验完成！</strong><br>
+                                工艺路线校验已成功完成，结果文件已下载到本地。
+                            `;
+                            result.style.display = 'block';
+                        }
+                    } else {
+                        const errorData = await response.json();
+                        throw new Error(errorData.message || `HTTP ${response.status}`);
+                    }
+                } catch (error) {
+                    result.className = 'result error';
+                    result.innerHTML = `
+                        <strong>❌ 工艺路线校验失败</strong><br>
+                        错误信息: ${error.message}
+                    `;
+                    result.style.display = 'block';
+                } finally {
+                    // 恢复按钮状态
+                    submitBtn.disabled = false;
+                    loading.style.display = 'none';
+                }
+            });
+        }
+    </script>
+</body>
+</html>

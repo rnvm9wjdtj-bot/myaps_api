@@ -586,7 +586,7 @@ class BOMChecker:
             'problematic_materials_count': len(problematic_materials),
             'pass_rate_percent': round(((total_materials - len(problematic_materials)) / total_materials) * 100, 2) if total_materials else 0,
             'multi_role_materials_count': len([m for m in validation_results if m['appears_as_product'] and m['appears_as_material']]),
-            'check_timestamp': pd.Timestamp.now().strftime('%Y-%m-%d  %H:%M:%S')
+            'check_timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
         
         self.unit_result = {
@@ -716,8 +716,9 @@ class BOMChecker:
             
             if use_bytesio:
                 output_file.seek(0)
-                summary_markdown = self.output_results_as_markdown()
-                ts = summary_markdown.get("check_timestamp", datetime.now().strftime("%Y%m%d%H%M%S")).replace(":", "").replace(" ", "").replace("-", "")
+                # summary_markdown = self.output_results_as_markdown()
+                # ts = summary_markdown.get("check_timestamp", datetime.now().strftime("%Y%m%d%H%M%S")).replace(":", "").replace(" ", "").replace("-", "")
+                ts = datetime.now().strftime("%Y%m%d%H%M%S")
                 return StreamingResponse(
                     output_file,
                     media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

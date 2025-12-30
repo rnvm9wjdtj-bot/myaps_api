@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.openapi.docs import get_swagger_ui_html
 from tortoise.contrib.fastapi import register_tortoise
 
-from config import settings
+from config.settings import TORTOISE_ORM_CONFIG, THIS_SERVER_PORT, BASE_DIR
 from globalobjects import file_timed_logger
 from apps.io_api.routers import rt as io_rt
 from apps.io_api.common import register_exception_handlers
@@ -193,7 +193,7 @@ async def read_root():
 # 注册Tortoise ORM
 register_tortoise(
     app = app,
-    config=settings.TORTOISE_ORM_CONFIG,
+    config=TORTOISE_ORM_CONFIG,
     # modules={"models": ["project_code.models"]},
     # generate_schemas=True,    # 生产环境不要开，若数据库为空则自动生成对应表单
     # add_exception_handlers=True,  # 生产环境不要开，会泄露调试信息
@@ -210,15 +210,14 @@ if os.getenv("TURN_ON_SCHEDULE_TASK", False).lower() == "true":
 # 使用命令: uvicorn main:app --host 0.0.0.0 --port 8000 
 # 然后访问 http://127.0.0.1:8000 或 http://127.0.0.1:8000/docs
 if __name__ == "__main__":
-
     from dotenv import load_dotenv
-    env_file = os.path.join(os.getcwd(), '.env')
+    env_file = os.path.join(BASE_DIR, '.env')
     os.environ.setdefault('ENV_FILE', env_file)
     load_dotenv(env_file)
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=settings.THIS_SERVER_PORT,
+        port=THIS_SERVER_PORT,
     )
 
 

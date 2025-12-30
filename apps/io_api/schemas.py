@@ -27,18 +27,23 @@ def _cache_raw_input_data(cls, values: Dict[str, Any]) -> Dict[str, Any]:
     return values
 
 def _set_raw_input_data(self):
-    if hasattr(self, "_cached_raw_input_data"):
-        raw_input_data = {}
-        valid_values = self.__dict__
-        for key, raw_value in self._cached_raw_input_data.items():
-            valid_value = valid_values.get(key)
-            if type(valid_value) in (int, float, Decimal):
-                raw_input_data[key] = valid_value
-            else:
-                raw_input_data[key] = raw_value
-        self._raw_input_data = raw_input_data
-        # delattr(self, "_cached_raw_input_data")
-    return self
+    if not hasattr(self, "_cached_raw_input_data"):
+        return
+
+    raw_input_data = {}
+    valid_values = self.__dict__
+    for key, raw_value in self._cached_raw_input_data.items():
+        valid_value = valid_values.get(key)
+        value_type = type(valid_value)
+        if not value_type in (int, float, Decimal):
+            raw_input_data[key] = raw_value
+            continue
+        try:
+            raw_input_data[key] = value_type(raw_value)
+        except:
+            raw_input_data[key] = valid_value
+    self._raw_input_data = raw_input_data
+    return
 
 class AcceptMaterial(BaseModel):
     materialno: str = Field(..., description="料号", example="M001")
@@ -150,7 +155,8 @@ class AcceptMaterial(BaseModel):
     
     @model_validator(mode="after")
     def model_valid_after(self):
-        return _set_raw_input_data(self)
+        _set_raw_input_data(self)
+        return self
 
 
 class AcceptWorkcenter(BaseModel):
@@ -207,7 +213,8 @@ class AcceptWorkcenter(BaseModel):
 
     @model_validator(mode="after")
     def model_valid_after(self):
-        return _set_raw_input_data(self)
+        _set_raw_input_data(self)
+        return self
 
 
 
