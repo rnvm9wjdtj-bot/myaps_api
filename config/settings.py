@@ -18,17 +18,22 @@ MYAPS_DB_USER = os.getenv("MYAPS_DB_USER")
 MYAPS_DB_PASSWORD = os.getenv("MYAPS_DB_PASSWORD")
 MYAPS_DB_SET = os.getenv("MYAPS_DB_SET").split(",")
 MYAPS_MAIN_DB = os.getenv("MYAPS_MAIN_DB")
+SCHEDULED_DBS = os.getenv('SCHEDULED_DBS')
 TEST_DB = os.getenv("TEST_DB", "testdb")
 
 THIS_PROTOCOL = os.getenv("THIS_PROTOCOL", "http://")
 THIS_SERVER_HOST = os.getenv("THIS_SERVER_HOST")
 THIS_SERVER_PORT = int(os.getenv("THIS_SERVER_PORT"))
+THIS_BASE_URL = f"{THIS_PROTOCOL}localhost:{THIS_SERVER_PORT}"
+
 # 本API数据库配置<postgreSQL>
 THIS_DB_HOST = os.getenv("THIS_DB_HOST")
 THIS_DB_PORT = int(os.getenv("THIS_DB_PORT"))
 THIS_DB_USER = os.getenv("THIS_DB_USER")
 THIS_DB_PASSWORD = os.getenv("THIS_DB_PASSWORD")
 THIS_DB_NAME = os.getenv("THIS_DB_NAME")
+
+TURN_ON_SCHEDULE_TASK = os.getenv('TURN_ON_SCHEDULE_TASK', 'true').lower() == 'true'
 
 ######################################################################################
 # 数据库配置

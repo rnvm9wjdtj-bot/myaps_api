@@ -12,7 +12,7 @@ from datetime import datetime
 from fastapi import status
 
 from ._base import (
-    ScheduleTasksAbc, MyapsDbActionsAbc, DefaultValueAbc, DefaultParamsAbc,
+    ScheduleTasksAbc, MyapsDbActionsAbc, DefaultValueAbc,
     file_log, console_log, standard_response, get_session, HapConnection
     )
 
@@ -26,8 +26,6 @@ hap_conn = HapConnection(
     sign='NjAwYzI5OWJlMTNhNTcwODM5ZTEwOWE2YjE3ZDZiNWRmYzk4NTJjNTZmODQ4N2EzNGNjNWM2ZGMzNTBlYjY0Ng=='
 )
 
-class DefaultParams(DefaultParamsAbc):
-    pass
 
 class DefaultValue(DefaultValueAbc):
     

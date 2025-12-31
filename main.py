@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.openapi.docs import get_swagger_ui_html
 from tortoise.contrib.fastapi import register_tortoise
 
-from config.settings import TORTOISE_ORM_CONFIG, THIS_SERVER_PORT, BASE_DIR
+from config.settings import TORTOISE_ORM_CONFIG, THIS_SERVER_PORT, BASE_DIR, TURN_ON_SCHEDULE_TASK
 from globalobjects import file_timed_logger
 from apps.io_api.routers import rt as io_rt
 from apps.io_api.common import register_exception_handlers
@@ -200,7 +200,7 @@ register_tortoise(
 )
 
 # 检查是否开启定时任务
-if os.getenv("TURN_ON_SCHEDULE_TASK", False).lower() == "true":
+if TURN_ON_SCHEDULE_TASK:
     # 初始化定时任务管理器
     from apps.data_opt.utils.scheduler import initialize_scheduler, get_scheduler_status
     initialize_scheduler()

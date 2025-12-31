@@ -4,21 +4,22 @@
 """
 
 # import threading
-import os
+# import os
 import logging
 from typing import Literal
 from abc import ABC#, abstractmethod
 
 # from tortoise import Tortoise
 
-from config.settings import MYAPS_MAIN_DB, THIS_SERVER_PORT, THIS_PROTOCOL#, MYAPS_BASE_URL
+from config.settings import MYAPS_MAIN_DB, THIS_SERVER_PORT, THIS_PROTOCOL, SCHEDULED_DBS#, MYAPS_BASE_URL
 from apps.data_opt.utils.common import get_session
 
 # ❗⬇️不要删掉，便于各项目文件引用
 from globalobjects import file_timed_logger
 from apps.io_api.common import standard_response
 from apps.data_opt.components.hap import HapConnection
-
+from ..utils.scheduler import cron_task
+from ..utils.common import add_basic_auth_requests
 
 
 # 配置日志
@@ -31,7 +32,7 @@ console_log = logging.getLogger(__name__)
 
 class ScheduleTasksAbc(ABC):
     this_base_url = f'{THIS_PROTOCOL}localhost:{THIS_SERVER_PORT}'
-    scheduled_dbs = os.getenv('SCHEDULED_DBS').split(',')
+    scheduled_dbs = SCHEDULED_DBS
     _session = get_session()
     
     @classmethod
@@ -104,13 +105,6 @@ class MyapsDbActionsAbc(ABC):
             'is_execute_updates': is_execute_updates,
             }])
         return response
-
-
-
-class DefaultParamsAbc:
-    SCHEDULE_TASK_HOUR = "6,8,10,12,14,16"
-    SCHEDULE_TASK_MINUTE = "55"
-
 
 
 class DefaultValueAbc:

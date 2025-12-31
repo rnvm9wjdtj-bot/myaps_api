@@ -12,6 +12,7 @@ MyapsDbActions
 
 import os, importlib
 
+from config.settings import MYAPS_MAIN_DB, TURN_ON_SCHEDULE_TASK
 from ..utils.scheduler import cron_task
 from apps.io_api.common import dict_to_lower_keys
 
@@ -28,12 +29,11 @@ except:
 #################################################################################
 # ⬇️定时任务HOOK
 #################################################################################
-schedule_task_hour = current_project.DefaultParams.SCHEDULE_TASK_HOUR
-schedule_task_minute = current_project.DefaultParams.SCHEDULE_TASK_MINUTE
-turn_on_schedule_task = os.getenv('TURN_ON_SCHEDULE_TASK', 'True').lower() == 'true'
+schedule_task_hour = "6,8,10,12,14,16"
+schedule_task_minute = "55"
 
 
-if turn_on_schedule_task:
+if TURN_ON_SCHEDULE_TASK:
     @cron_task(hour=schedule_task_hour, minute=schedule_task_minute)
     async def refresh_stock(db_name: str | None = None): 
         return await current_project.ScheduleTasks.refresh_stock(db_name)
@@ -45,10 +45,8 @@ if turn_on_schedule_task:
 #################################################################################
 from apps.data_opt.utils.mysqlmonitor import mysql_monitor
 
-main_db = os.getenv('MYAPS_MAIN_DB')
 
-
-@mysql_monitor.on_update_for_table("t_supply", database=main_db)
+@mysql_monitor.on_update_for_table("t_supply", database=MYAPS_MAIN_DB)
 async def handle_update_supply(database: str, table: str, data: dict, data_diff: dict):
     """处理t_supply表的更新事件"""
     supply_type = data['new']['Type']

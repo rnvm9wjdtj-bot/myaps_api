@@ -1,18 +1,15 @@
 """江阴海达橡塑"""
 
-import requests, uuid#, logging#, os, atexit
+import requests#, logging#, os, atexit
 import pandas as pd
 from datetime import datetime
 
 from fastapi import status
 
-from config.settings import MYAPS_MAIN_DB, SCHEDULED_DBS, THIS_BASE_URL, TURN_ON_SCHEDULE_TASK
 from ._base import (
     ScheduleTasksAbc, MyapsDbActionsAbc, DefaultValueAbc, 
-    file_log, console_log, standard_response, get_session, HapConnection,
-    cron_task, add_basic_auth_requests
+    file_log, console_log, standard_response, get_session, HapConnection
     )
-
 
 
 #################################################################################
@@ -30,12 +27,14 @@ class DefaultValue(DefaultValueAbc):
     MAT_PLANNER = "haida"   # 默认计划员
     MAT_LOCATION = "1600"  # 默认车间
  
-
+main_db = MyapsDbActionsAbc.main_db
 werks = "1600"
 
 #################################################################################
 # ⬇️项目可复用逻辑
 #################################################################################
+from apps.data_opt.utils.common import add_basic_auth_requests
+
 sap_url1 = 'http://192.168.201.2:8000/zrestful_test2?sap-client=800'  # 库存
 sap_url2 = 'http://192.168.201.2:8000/zrestful_plan?sap-client=800'  # 计划
 
@@ -43,9 +42,15 @@ sap_username = 'T058'
 sap_password = '123456'
 # 创建requests会话
 sap_session = get_session(allowed_methods=["GET", "POST"])
+# sap_session2 = get_session(allowed_methods=["GET", "POST"])
 
 # 添加Basic认证
 add_basic_auth_requests(sap_session, sap_username, sap_password)
+# add_basic_auth_requests(sap_session2, sap_username, sap_password)
+
+# import json
+import uuid
+# from typing import Dict, Any, Optional
 
 
 async def sap_post(url: str, session: requests.Session, interface_id: str, data: dict):
@@ -84,69 +89,76 @@ async def sap_post(url: str, session: requests.Session, interface_id: str, data:
 #################################################################################
 # ⬇️定时任务设置
 #################################################################################
-schedule_task_hour = '6,8,10,12,14,16'
-schedule_task_minute = '55'
+class ScheduleTasks(ScheduleTasksAbc):
 
+    @classmethod
+    async def refresh_stock(cls, db_name: str | None = None): 
+        """
+        刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据
+        db_name: 账套名称，默认刷新所有账套
+        """
+        console_log.info("开始执行刷新库存任务")
+        response = None
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        try:
+            response = sap_session.get(url=f"{sap_url1}", headers={'interface': 'stock', 'werks': werks})
+            data = response.json()['data']
+            stock = pd.DataFrame(data)
+            stock = stock.astype({
+                'werks': 'str',
+                'matnr': 'str',
+                'lgort': 'str',
+                'labst': 'int32',
+                'labst2': 'int32',
+                'charg': 'str'
+            })
+            stock['avail_qty'] = stock['labst'] + stock['labst2']
+            stock['supplyno'] = stock['werks'] + '-' + stock['matnr'] # 注意不要用f string，否则supplyno会变成所有料号的超长字符串
+            stock['type'] = 'ST'
+            stock['priority'] = 0
+            stock['avail_date'] = now
+            stock['dt_req'] = now
+            stock['status'] = 'NEW'
+            stock['category'] = ''
+            stock['create_date'] = now
+            stock = (stock
+                            .groupby(['supplyno'], as_index=False)
+                            .agg({
+                                'matnr': 'first',
+                                'avail_qty': 'sum',
+                                'type': 'first',
+                                'avail_date': 'first',
+                                'dt_req': 'first',
+                                'priority': 'first',
+                                'status': 'first',
+                                'category': 'first',
+                                'create_date': 'first',
+                            })) 
+            stock = stock.rename(columns={
+                'matnr': 'materialno',
+            })
+            stock_data = stock.to_dict(orient='records')
 
-@cron_task(hour=schedule_task_hour, minute=schedule_task_minute)
-def refresh_stock(db_name: str | None = None):
-    """
-    刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据
-    db_name: 账套名称，默认刷新所有账套
-    """
-    console_log.info("开始执行刷新库存任务")
-    response = None
-    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    try:
-        response = sap_session.get(url=f"{sap_url1}", headers={'interface': 'stock', 'werks': werks})
-        data = response.json()['data']
-        stock = pd.DataFrame(data)
-        stock = stock.astype({
-            'werks': 'str',
-            'matnr': 'str',
-            'lgort': 'str',
-            'labst': 'int32',
-            'labst2': 'int32',
-            'charg': 'str'
-        })
-        stock['avail_qty'] = stock['labst'] + stock['labst2']
-        stock['supplyno'] = stock['werks'] + '-' + stock['matnr'] # 注意不要用f string，否则supplyno会变成所有料号的超长字符串
-        stock['type'] = 'ST'
-        stock['priority'] = 0
-        stock['avail_date'] = now
-        stock['dt_req'] = now
-        stock['status'] = 'NEW'
-        stock['category'] = ''
-        stock['create_date'] = now
-        stock = (stock
-                        .groupby(['supplyno'], as_index=False)
-                        .agg({
-                            'matnr': 'first',
-                            'avail_qty': 'sum',
-                            'type': 'first',
-                            'avail_date': 'first',
-                            'dt_req': 'first',
-                            'priority': 'first',
-                            'status': 'first',
-                            'category': 'first',
-                            'create_date': 'first',
-                        })) 
-        stock = stock.rename(columns={
-            'matnr': 'materialno',
-        })
-        stock_data = stock.to_dict(orient='records')
+            dbs = db_name or ','.join(cls.scheduled_dbs)
+            cls._session.delete(f"{cls.this_base_url}/api/t_supply?db_name={dbs}&type=ST")
+            cls._session.post(f"{cls.this_base_url}/api/t_supply?db_name={dbs}", json=stock_data)
+            console_log.info(f"刷新库存任务执行完成，账套：{dbs}")
+            response = standard_response(message=f"刷新库存任务执行完成，账套：{dbs}")
+            
+        except Exception as e:
+            console_log.error(f"刷新库存任务执行失败: {str(e)}")
+            response = standard_response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, success=0, message=f"刷新库存任务执行失败: {str(e)}")
+        return response
 
-        dbs = db_name or SCHEDULED_DBS
-        sap_session.delete(f"{THIS_BASE_URL}/api/t_supply?db_name={dbs}&type=ST")
-        sap_session.post(f"{THIS_BASE_URL}/api/t_supply?db_name={dbs}", json=stock_data)
-        console_log.info(f"刷新库存任务执行完成，账套：{dbs}")
-        response = standard_response(message=f"刷新库存任务执行完成，账套：{dbs}")
-        
-    except Exception as e:
-        console_log.error(f"刷新库存任务执行失败: {str(e)}")
-        response = standard_response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, success=0, message=f"刷新库存任务执行失败: {str(e)}")
-    return response
-    
+    @classmethod
+    async def get_bom(cls):
+        """
+        从SAP获取BOM数据
+        """
+        response = sap_session.get(url=sap_url1, headers={'interface': 'bom', 'werks': "1600"})
+        bom_json_data = response.json()['data']
+        return bom_json_data
+
 #################################################################################
 # ⬇️数据库事件处理
 #################################################################################
@@ -158,7 +170,7 @@ class MyapsDbActions(MyapsDbActionsAbc):
         确认计划任务，将主账套中需要转MO的PL推送到SAP，将计划任务状态更新为已确认
         """
         try:
-            supply_response = sap_session.get(f"{THIS_BASE_URL}/api/v_supply_mo?db_name={MYAPS_MAIN_DB}&supplyno={pl_data['supplyno']}")
+            supply_response = cls._session.get(f"{cls.this_base_url}/api/v_supply_mo?db_name={main_db}&supplyno={pl_data['supplyno']}")
             supply_response_json = supply_response.json()
             supply_data = supply_response_json['data'][0]
             start_datetime = supply_data['dt_ordstart']#.strftime('%Y%m%d %H:%M:%S')
@@ -173,6 +185,7 @@ class MyapsDbActions(MyapsDbActionsAbc):
                 "GSTRP": start_datetime.split('T')[0],  # 基本开始日期
                 "GLTRP": end_datetime.split('T')[0],  # 基本完成日期
                 "GAMNG": supply_data['avail_qty'],  # 总订单数量
+                # "FEVOR": "SAP",  # 生产主管
                 "WEMPF": "SAP",  # 产线代码
                 "BACKUP1": ','.join([i['workcenter'] for i in orderwc])
             }
@@ -184,7 +197,7 @@ class MyapsDbActions(MyapsDbActionsAbc):
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
              
             if sap_mo_data['STATUS'] == 'S':
-                log_msg = f"✅推送计划任务执行成功，账套：{MYAPS_MAIN_DB}，MO单号：{sap_mo_data['AUFNR']}"
+                log_msg = f"✅推送计划任务执行成功，账套：{main_db}，MO单号：{sap_mo_data['AUFNR']}"
                 console_log.info(log_msg)
                 file_log.info(log_msg)
                 pl_data['mono'] = sap_mo_data['AUFNR']
@@ -192,7 +205,7 @@ class MyapsDbActions(MyapsDbActionsAbc):
                 pl_data['memo'] = f'✅{now} @ERP【{sap_mo_data['MESSAGE']}】'
                 pl_data['is_execute_updates'] = True
             else:
-                log_msg = f"🚫推送计划任务执行失败，账套：{MYAPS_MAIN_DB}，错误信息：{sap_mo_data['MESSAGE']}"
+                log_msg = f"🚫推送计划任务执行失败，账套：{main_db}，错误信息：{sap_mo_data['MESSAGE']}"
                 console_log.error(log_msg)
                 file_log.error(log_msg)
                 pl_data['mono'] = ''

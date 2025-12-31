@@ -205,32 +205,12 @@
             }
         }
 
-        /* 本地访问提示样式 */
-        .local-access-notice {
-            background-color: #e3f2fd;
-            border: 1px solid #2196f3;
-            border-radius: 4px;
-            padding: 12px;
-            margin-bottom: 20px;
-            font-size: 14px;
-            color: #1976d2;
-        }
 
-        .local-access-notice .icon {
-            margin-right: 8px;
-            color: #2196f3;
-        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>数据校验工具</h1>
-        
-        <!-- 本地访问提示 -->
-        <div class="local-access-notice" id="localAccessNotice" style="display: none;">
-            <span class="icon">🏠</span>
-            <strong>本地访问检测到</strong>：API密钥输入框已自动隐藏，无需输入API密钥即可使用。
-        </div>
         
         <div class="tab-container">
             <div class="tab-nav">
@@ -248,8 +228,8 @@
                     </div>
 
                     <div class="form-group" id="bomApiKeyGroup">
-                        <label for="bomApiKey">API密钥 <span class="required">*</span></label>
-                        <input type="text" id="bomApiKey" placeholder="请输入API密钥" required>
+                        <label for="bomApiKey">API密钥 <span class="optional">(可选)</span></label>
+                        <input type="text" id="bomApiKey" placeholder="本地访问可留空，远程访问请输入API密钥">
                     </div>
 
                     <div class="form-group">
@@ -308,8 +288,8 @@
                     </div>
 
                     <div class="form-group" id="routeApiKeyGroup">
-                        <label for="routeApiKey">API密钥 <span class="required">*</span></label>
-                        <input type="text" id="routeApiKey" placeholder="请输入API密钥" required>
+                        <label for="routeApiKey">API密钥 <span class="optional">(可选)</span></label>
+                        <input type="text" id="routeApiKey" placeholder="本地访问可留空，远程访问请输入API密钥">
                     </div>
 
                     <div class="form-group">
@@ -351,43 +331,8 @@
     </div>
 
     <script>
-        // 检测是否为本地访问
-        function isLocalAccess() {
-            const hostname = window.location.hostname;
-            const protocol = window.location.protocol;
-            
-            // 本地访问的特征：
-            // 1. hostname为 localhost 或 127.0.0.1
-            // 2. hostname以 .local 或 .localhost 结尾
-            // 3. 私有IP地址范围 (192.168.x.x, 10.x.x.x, 172.16.x.x-172.31.x.x)
-            return hostname === 'localhost' || 
-                   hostname === '127.0.0.1' ||
-                   hostname.endsWith('.local') ||
-                   hostname.endsWith('.localhost') ||
-                   hostname.startsWith('192.168.') ||
-                   hostname.startsWith('10.') ||
-                   (hostname.startsWith('172.16.') || hostname.startsWith('172.17.') || 
-                    hostname.startsWith('172.18.') || hostname.startsWith('172.19.') ||
-                    hostname.startsWith('172.20.') || hostname.startsWith('172.21.') ||
-                    hostname.startsWith('172.22.') || hostname.startsWith('172.23.') ||
-                    hostname.startsWith('172.24.') || hostname.startsWith('172.25.') ||
-                    hostname.startsWith('172.26.') || hostname.startsWith('172.27.') ||
-                    hostname.startsWith('172.28.') || hostname.startsWith('172.29.') ||
-                    hostname.startsWith('172.30.') || hostname.startsWith('172.31.'));
-        }
-
         // TAB切换功能
         document.addEventListener('DOMContentLoaded', function() {
-            // 检测本地访问并隐藏API密钥输入框
-            if (isLocalAccess()) {
-                // 隐藏API密钥输入框
-                document.getElementById('bomApiKeyGroup').style.display = 'none';
-                document.getElementById('routeApiKeyGroup').style.display = 'none';
-                
-                // 显示本地访问提示
-                document.getElementById('localAccessNotice').style.display = 'block';
-            }
-
             const tabButtons = document.querySelectorAll('.tab-button');
             const tabContents = document.querySelectorAll('.tab-content');
 
@@ -452,16 +397,7 @@
                     return;
                 }
 
-                // 检测是否为本地访问，使用不同的API密钥获取方式
-                const isLocal = isLocalAccess();
-                const apiKey = isLocal ? 'local_access' : document.getElementById('bomApiKey').value;
-                
-                // 如果不是本地访问且没有输入API密钥，则提示输入
-                if (!isLocal && !apiKey) {
-                    alert('请输入API密钥');
-                    return;
-                }
-                
+                const apiKey = document.getElementById('bomApiKey').value || 'local_access';
                 const parentCol = document.getElementById('bomParentCol').value;
                 const childCol = document.getElementById('bomChildCol').value;
                 const numeratorCol = document.getElementById('bomNumeratorCol').value;
@@ -590,16 +526,7 @@
                     return;
                 }
 
-                // 检测是否为本地访问，使用不同的API密钥获取方式
-                const isLocal = isLocalAccess();
-                const apiKey = isLocal ? 'local_access' : document.getElementById('routeApiKey').value;
-                
-                // 如果不是本地访问且没有输入API密钥，则提示输入
-                if (!isLocal && !apiKey) {
-                    alert('请输入API密钥');
-                    return;
-                }
-                
+                const apiKey = document.getElementById('routeApiKey').value || 'local_access';
                 const productCol = document.getElementById('routeProductCol').value;
                 const productVersionCol = document.getElementById('routeProductVersionCol').value;
                 const sortNoCol = document.getElementById('routeSortNoCol').value;

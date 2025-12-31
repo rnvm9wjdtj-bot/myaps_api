@@ -16,8 +16,8 @@ from typing import Dict, Optional, Union, Tuple, Any
 import qrcode
 from qrcode.image.styledpil import StyledPilImage
 from qrcode.image.styles.moduledrawers import RoundedModuleDrawer
-from qrcode.image.styles.colormasks import SquareGradiantColorMask
-from qrcode.image.svg import SvgImage, SvgFragmentImage
+# from qrcode.image.styles.colormasks import SquareGradiantColorMask
+from qrcode.image.svg import SvgImage#, SvgFragmentImage
 import barcode
 from barcode.writer import ImageWriter, SVGWriter
 from PIL import Image, ImageDraw, ImageFont
