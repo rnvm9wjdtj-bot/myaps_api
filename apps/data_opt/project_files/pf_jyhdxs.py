@@ -158,7 +158,7 @@ def refresh_stock(db_name: str | None = None):
 class DbEvent(DbEventAbc):
 
     @classmethod
-    def press_release_button(cls, pl_data: dict):
+    async def press_release_button(cls, pl_data: dict):
         try:
             supplymo_detaildata = cls._get_supplymo_detaildata(pl_data['supplyno'])
             start_datetime: str = supplymo_detaildata['dt_ordstart'].split('T')[0]
@@ -208,4 +208,4 @@ class DbEvent(DbEventAbc):
             pl_data['memo'] = f'🚫{now} @APS【{str(e)}】'
             pl_data['is_execute_updates'] = False
 
-        super().press_release_button(pl_data)
+        await super().press_release_button(pl_data)

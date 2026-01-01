@@ -10,7 +10,7 @@ from abc import ABC#, abstractmethod
 
 # from tortoise import Tortoise
 
-from config.settings import MYAPS_MAIN_DB, THIS_SERVER_PORT, THIS_PROTOCOL, SCHEDULED_DBS, MYAPS_BASE_URL
+from config.settings import MYAPS_MAIN_DB, THIS_SERVER_PORT, THIS_PROTOCOL, SCHEDULED_DBS, THIS_BASE_URL
 from apps.data_opt.utils.common import get_session
 
 
@@ -90,29 +90,29 @@ class DefaultValueBase:
 
 class DbEventAbc(ABC):
 
-    this_base_url = MYAPS_BASE_URL
+    this_base_url = THIS_BASE_URL
     main_db = MYAPS_MAIN_DB
     _session = get_session()
     
     @classmethod
-    def press_release_button(cls, pl_data: dict, *args, **kwargs):
+    async def press_release_button(cls, pl_data: dict, *args, **kwargs):
         """
         当按下工单管理的下达按钮（PL的Status变为'A2E'）时该方法将被自动调用
         - 各项目文件须声明子类并覆写该方法以实现推送PL至ERP的逻辑
             - 若 ERP 异步返回创建结果，则由 ERP 异步调用路由函数 convert_pl_to_mo_by_dbprocdure() 改写 APS 的 PL 信息
             - 若同步返回创建结果，则覆写最后一步执行 super().press_release_button()，将ERP返回的工单号等信息改写至原PL
         """
-        cls._convert_pl_to_mo(plno=pl_data['supplyno'], mono=pl_data['mono'], to_status=pl_data['status'], memo=pl_data['memo'], is_execute_updates=pl_data['is_execute_updates'])
+        await cls._convert_pl_to_mo(plno=pl_data['supplyno'], mono=pl_data['mono'], to_status=pl_data['status'], memo=pl_data['memo'], is_execute_updates=pl_data['is_execute_updates'])
 
     @classmethod
     def _get_supplymo_detaildata(cls, supplyno: str):
-        supply_response = cls._session.get(f"{MYAPS_BASE_URL}/api/v_supply_mo?db_name={MYAPS_MAIN_DB}&supplyno={supplyno}")
+        supply_response = cls._session.get(f"{THIS_BASE_URL}/api/v_supply_mo?db_name={MYAPS_MAIN_DB}&supplyno={supplyno}")
         supply_response_json = supply_response.json()
         supplymo_detaildata = supply_response_json['data'][0]
         return supplymo_detaildata
 
     @classmethod
-    def _convert_pl_to_mo(cls, plno: str, mono: str=None, to_status: Literal['CRE', 'REL']='E2A', memo: str=None, is_execute_updates: bool=True):
+    async def _convert_pl_to_mo(cls, plno: str, mono: str=None, to_status: Literal['CRE', 'REL']='E2A', memo: str=None, is_execute_updates: bool=True):
         """
         通过调用自路由修改PL的Type、Status、SupplyNo、Memo等字段
         🅰️supplyno: PL计划单编号

@@ -35,7 +35,7 @@ from apps.data_opt.utils.mysqlmonitor import mysql_monitor
 
 
 @mysql_monitor.on_update_for_table("t_supply", database=MYAPS_MAIN_DB)
-def handle_update_supply(database: str, table: str, data: dict, data_diff: dict):
+async def handle_update_supply(database: str, table: str, data: dict, data_diff: dict):
     """处理t_supply表的更新事件"""
     supply_type = data['new']['Type']
 
@@ -45,7 +45,7 @@ def handle_update_supply(database: str, table: str, data: dict, data_diff: dict)
         supply_new_status = data['new']['Status']
         if supply_old_status in ["NEW", "CRE"] and supply_new_status == 'A2E':
             pl_data = dict_to_lower_keys(data['new'])
-            current_project.DbEvent.press_release_button(pl_data)
+            await current_project.DbEvent.press_release_button(pl_data)
             
             
     # print(f"更新到 {table}@{database}: {data}")
