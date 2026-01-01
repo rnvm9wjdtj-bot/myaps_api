@@ -1,6 +1,5 @@
 """
 引用包和常量，供各项目文件使用
-定义基类，需要在各项目文件中实现具体方法
 """
 
 # import threading
@@ -11,10 +10,11 @@ from abc import ABC#, abstractmethod
 
 # from tortoise import Tortoise
 
-from config.settings import MYAPS_MAIN_DB, THIS_SERVER_PORT, THIS_PROTOCOL, SCHEDULED_DBS#, MYAPS_BASE_URL
+from config.settings import MYAPS_MAIN_DB, THIS_SERVER_PORT, THIS_PROTOCOL, SCHEDULED_DBS, MYAPS_BASE_URL
 from apps.data_opt.utils.common import get_session
 
-# ❗⬇️不要删掉，便于各项目文件引用
+
+# ❗❗❗❗❗❗❗❗❗❗❗❗⬇️不要删掉，便于各项目文件引用 ❗❗❗❗❗❗❗❗❗❗❗❗
 from globalobjects import file_timed_logger
 from apps.io_api.common import standard_response
 from apps.data_opt.components.hap import HapConnection
@@ -29,85 +29,13 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 console_log = logging.getLogger(__name__)
 
 
-
-class ScheduleTasksAbc(ABC):
-    this_base_url = f'{THIS_PROTOCOL}localhost:{THIS_SERVER_PORT}'
-    scheduled_dbs = SCHEDULED_DBS
-    _session = get_session()
-    
-    @classmethod
-    async def get_material(cls, *args, **kwargs):
-        pass
-
-    @classmethod
-    async def get_workcenter(cls, *args, **kwargs):
-        pass
-    
-    @classmethod
-    async def get_bom(cls, *args, **kwargs):
-        pass
-
-    @classmethod
-    async def get_matver(cls, *args, **kwargs):
-        pass
-
-    @classmethod
-    async def get_matwc(cls, *args, **kwargs):
-        pass
-    
-    @classmethod
-    async def refresh_stock(cls, *args, **kwargs):
-        pass
+class ParamValueBase:
+    """
+    项目文件中使用的参数值
+    """
 
 
-
-class MyapsDbActionsAbc(ABC):
-
-    this_base_url = f'{THIS_PROTOCOL}localhost:{THIS_SERVER_PORT}'
-    main_db = MYAPS_MAIN_DB
-    _session = get_session()
-    
-    @classmethod
-    async def confirm_pl(cls, pl_data: dict):
-        """
-        确认PL计划单，将其转为MO
-        
-        当监听到PL的Status变为'A2E'时，该方法将被自动调用
-        - 对于需要根据APS的PL在ERP中创建MO的实施场景，子类需要通过覆写该方法以实现推送PL至ERP的逻辑
-            - 对于同步返回创建结果的，需在覆写的最后一步调用 def pl_to_mo() 或执行 "super().confirm_pl()"，将ERP返回的工单号等信息改写至原PL
-            - 对于异步返回创建结果的，则无需调用 def pl_to_mo() 或执行 "super().confirm_pl()"，因为路由函数已封装 pl_to_mo() ，供ERP异步调用
-        - 对于无需根据APS的PL在ERP中创建MO（或无需与ERP对接）的实施场景，则直接调用 def pl_to_mo()将Type设为'MO'、Status设为'CRE'，子类无需覆写此方法
-        """
-        await cls.pl_to_mo(plno=pl_data['supplyno'], mono=pl_data['mono'], to_status=pl_data['status'], memo=pl_data['memo'], is_execute_updates=pl_data['is_execute_updates'])
-
-    @classmethod
-    async def pl_to_mo(cls, plno: str, mono: str=None, to_status: Literal['CRE', 'REL']='E2A', memo: str=None, is_execute_updates: bool=True):
-        """
-        将PL转为MO
-        🅰️supplyno: PL计划单编号
-        🅰️mono: MO号，可选，若非None则更改PL的SupplyNo为mono
-        🅰️to_status: 转化成MO后，Status设为哪个状态，默认'CRE'
-        🅰️memo: 写入t_supplymemo注字段的内容
-        🅰️is_execute_updates: 是否执行更新，默认True
-        
-        该方法有以下几种使用渠道：
-        - 在 def confirm_pl() 被直接调用，适用于:
-            - ERP同步返回MO信息的实施场景
-            - 无需根据APS的PL在ERP中创建MO（或无需与ERP对接）的实施场景
-        - 在路由函数中调用，适用于ERP异步返回MO信息的实施场景
-        """
-        response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/pl?db_name={cls.main_db}', json=[{
-            'type': 'MO',   # 将类型改为MO（原本为PL）
-            'plno': plno,
-            'status': to_status,
-            'mono': mono,
-            'memo': memo,
-            'is_execute_updates': is_execute_updates,
-            }])
-        return response
-
-
-class DefaultValueAbc:
+class DefaultValueBase:
     myaps_is_pro = 1 # 1 / 0 MyAPS是否专业版
 
     auto_matver = 1  # 1 / 0 是否自动生成物料版本号，为True时，会在 material save时自动生成产线版本
@@ -158,3 +86,53 @@ class DefaultValueAbc:
     def to_dict(cls):
         cls_dict = cls.__dict__
         return {k: v for k, v in cls_dict.items() if not k.startswith("__")}
+
+
+class DbEventAbc(ABC):
+
+    this_base_url = MYAPS_BASE_URL
+    main_db = MYAPS_MAIN_DB
+    _session = get_session()
+    
+    @classmethod
+    def press_release_button(cls, pl_data: dict, *args, **kwargs):
+        """
+        当按下工单管理的下达按钮（PL的Status变为'A2E'）时该方法将被自动调用
+        - 各项目文件须声明子类并覆写该方法以实现推送PL至ERP的逻辑
+            - 若 ERP 异步返回创建结果，则由 ERP 异步调用路由函数 convert_pl_to_mo_by_dbprocdure() 改写 APS 的 PL 信息
+            - 若同步返回创建结果，则覆写最后一步执行 super().press_release_button()，将ERP返回的工单号等信息改写至原PL
+        """
+        cls._convert_pl_to_mo(plno=pl_data['supplyno'], mono=pl_data['mono'], to_status=pl_data['status'], memo=pl_data['memo'], is_execute_updates=pl_data['is_execute_updates'])
+
+    @classmethod
+    def _get_supplymo_detaildata(cls, supplyno: str):
+        supply_response = cls._session.get(f"{MYAPS_BASE_URL}/api/v_supply_mo?db_name={MYAPS_MAIN_DB}&supplyno={supplyno}")
+        supply_response_json = supply_response.json()
+        supplymo_detaildata = supply_response_json['data'][0]
+        return supplymo_detaildata
+
+    @classmethod
+    def _convert_pl_to_mo(cls, plno: str, mono: str=None, to_status: Literal['CRE', 'REL']='E2A', memo: str=None, is_execute_updates: bool=True):
+        """
+        通过调用自路由修改PL的Type、Status、SupplyNo、Memo等字段
+        🅰️supplyno: PL计划单编号
+        🅰️mono: MO号，可选，若非None则更改PL的SupplyNo为mono
+        🅰️to_status: 转化成MO后，Status设为哪个状态，默认'CRE'
+        🅰️memo: 写入t_supplymemo注字段的内容
+        🅰️is_execute_updates: 是否执行更新，默认True
+
+        - 在 def press_release_button() 中被直接调用，适用于:
+            - ERP接到PL后同步返回MO信息
+        - 无需根据APS的PL在ERP中创建MO（或无需与ERP对接）的实施场景，则直接调用
+        """
+        response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/pl?db_name={cls.main_db}', json=[{
+            'type': 'MO',   # 将类型改为MO（原本为PL）
+            'plno': plno,
+            'status': to_status,
+            'mono': mono,
+            'memo': memo,
+            'is_execute_updates': is_execute_updates,
+            }])
+        return response
+
+

@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.openapi.docs import get_swagger_ui_html
 from tortoise.contrib.fastapi import register_tortoise
 
-from config.settings import TORTOISE_ORM_CONFIG, THIS_SERVER_PORT, BASE_DIR, TURN_ON_SCHEDULE_TASK
+from config.settings import TORTOISE_ORM_CONFIG, THIS_SERVER_PORT, BASE_DIR
 from globalobjects import file_timed_logger
 from apps.io_api.routers import rt as io_rt
 from apps.io_api.common import register_exception_handlers
@@ -199,12 +199,12 @@ register_tortoise(
     # add_exception_handlers=True,  # 生产环境不要开，会泄露调试信息
 )
 
-# 检查是否开启定时任务
-if TURN_ON_SCHEDULE_TASK:
-    # 初始化定时任务管理器
-    from apps.data_opt.utils.scheduler import initialize_scheduler, get_scheduler_status
-    initialize_scheduler()
-    print(f"定时任务管理器状态: {get_scheduler_status()}")
+
+# 初始化定时任务管理器
+from apps.data_opt.utils.scheduler import initialize_scheduler, get_scheduler_status
+initialize_scheduler()
+print(f"定时任务管理器状态: {get_scheduler_status()}")
+
 
 # 启动说明：
 # 使用命令: uvicorn main:app --host 0.0.0.0 --port 8000 

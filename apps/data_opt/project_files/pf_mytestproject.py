@@ -3,16 +3,13 @@
 """
 
 import os, logging, requests
-
-
-import requests, logging
 import pandas as pd
 from datetime import datetime
 
 from fastapi import status
 
 from ._base import (
-    ScheduleTasksAbc, MyapsDbActionsAbc, DefaultValueAbc,
+    DbEventAbc, DefaultValueBase,
     file_log, console_log, standard_response, get_session, HapConnection
     )
 
@@ -27,8 +24,7 @@ hap_conn = HapConnection(
 )
 
 
-class DefaultValue(DefaultValueAbc):
-    
+class DefaultValue(DefaultValueBase):
     MAT_PLANT = "..."   # 默认工厂
     MAT_PLANNER = "..."   # 默认计划员
     MAT_LOCATION = "..."  # 默认车间
@@ -43,17 +39,11 @@ class DefaultValue(DefaultValueAbc):
 #################################################################################
 # ⬇️定时任务设置
 #################################################################################
-class ScheduleTasks(ScheduleTasksAbc):
-    @classmethod
-    async def get_bom(cls, *args, **kwargs):
-        pass
-
-    
-
+...
 
 
 #################################################################################
 # ⬇️数据库事件处理
 #################################################################################
-class MyapsDbActions(MyapsDbActionsAbc):
+class DbEvent(DbEventAbc):
     pass

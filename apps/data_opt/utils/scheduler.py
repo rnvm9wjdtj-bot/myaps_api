@@ -8,7 +8,6 @@ from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
 
-from config.settings import TURN_ON_SCHEDULE_TASK
 
 # 配置日志
 logging.basicConfig(
@@ -250,15 +249,13 @@ def weekly_task(day_of_week: str = 'mon', hour: int = 0, minute: int = 0):
 
 def initialize_scheduler():
     """初始化并启动调度器"""
-    if TURN_ON_SCHEDULE_TASK:
-        if scheduler_manager.init_scheduler():
-            scheduler_manager.start()
-            atexit.register(scheduler_manager.shutdown)
-            logger.info("定时任务系统启动完成")
-        else:
-            logger.error("定时任务系统启动失败")
+    if scheduler_manager.init_scheduler():
+        scheduler_manager.start()
+        atexit.register(scheduler_manager.shutdown)
+        logger.info("定时任务系统启动完成")
     else:
-        logger.info("定时任务功能已禁用")
+        logger.error("定时任务系统启动失败")
+
 
 def get_scheduler_status() -> Dict:
     """获取调度器状态"""
@@ -270,10 +267,8 @@ def get_scheduler_status() -> Dict:
     }
 
 # 应用启动时自动初始化
-# if TURN_ON_SCHEDULE_TASK:
-#     # initialize_scheduler()
-#     # 或者在模块导入后合适的时机调用
-#     pass
+# initialize_scheduler()
+# 或者在模块导入后合适的时机调用
 
 
 # 在其他模块中使用装饰器：

@@ -6,9 +6,9 @@ from datetime import datetime
 
 from fastapi import status
 
-from config.settings import MYAPS_MAIN_DB, SCHEDULED_DBS, THIS_BASE_URL, TURN_ON_SCHEDULE_TASK
+from config.settings import MYAPS_MAIN_DB, SCHEDULED_DBS, THIS_BASE_URL
 from ._base import (
-    ScheduleTasksAbc, MyapsDbActionsAbc, DefaultValueAbc, 
+    ParamValueBase, DefaultValueBase, DbEventAbc, 
     file_log, console_log, standard_response, get_session, HapConnection,
     cron_task, add_basic_auth_requests
     )
@@ -25,7 +25,11 @@ hap_conn = HapConnection(
 )
 
 
-class DefaultValue(DefaultValueAbc):
+class ParamValue(ParamValueBase):
+    pass
+
+
+class DefaultValue(DefaultValueBase):
     MAT_PLANT = "1600"   # 默认工厂
     MAT_PLANNER = "haida"   # 默认计划员
     MAT_LOCATION = "1600"  # 默认车间
@@ -150,39 +154,35 @@ def refresh_stock(db_name: str | None = None):
 #################################################################################
 # ⬇️数据库事件处理
 #################################################################################
-class MyapsDbActions(MyapsDbActionsAbc):
+
+class DbEvent(DbEventAbc):
 
     @classmethod
-    async def confirm_pl(cls, pl_data: dict):
-        """
-        确认计划任务，将主账套中需要转MO的PL推送到SAP，将计划任务状态更新为已确认
-        """
+    def press_release_button(cls, pl_data: dict):
         try:
-            supply_response = sap_session.get(f"{THIS_BASE_URL}/api/v_supply_mo?db_name={MYAPS_MAIN_DB}&supplyno={pl_data['supplyno']}")
-            supply_response_json = supply_response.json()
-            supply_data = supply_response_json['data'][0]
-            start_datetime = supply_data['dt_ordstart']#.strftime('%Y%m%d %H:%M:%S')
-            end_datetime = supply_data['dt_ordend']#.strftime('%Y%m%d %H:%M:%S')
-            orderwc = supply_data['orderwc']
+            supplymo_detaildata = cls._get_supplymo_detaildata(pl_data['supplyno'])
+            start_datetime: str = supplymo_detaildata['dt_ordstart'].split('T')[0]
+            end_datetime: str = supplymo_detaildata['dt_ordend'].split('T')[0]
+            orderwc: list = supplymo_detaildata['orderwc']
+
             data = {
-                # "CY_SEQNR": supply_data['supplyno'],  # APS单号
                 "WERKS": werks,  # 工厂
-                "MATNR": supply_data['materialno'],
+                "MATNR": pl_data['materialno'],
                 "AUART": "ZP01",  # 订单类型
                 "VERID": "SAP",    # 生产版本
-                "GSTRP": start_datetime.split('T')[0],  # 基本开始日期
-                "GLTRP": end_datetime.split('T')[0],  # 基本完成日期
-                "GAMNG": supply_data['avail_qty'],  # 总订单数量
+                "GSTRP": start_datetime,  # 基本开始日期
+                "GLTRP": end_datetime,  # 基本完成日期
+                "GAMNG": pl_data['avail_qty'],  # 总订单数量
                 "WEMPF": "SAP",  # 产线代码
                 "BACKUP1": ','.join([i['workcenter'] for i in orderwc])
             }
 
-            # sap_response = await sap_post(url=sap_url2, session=sap_session2, interface_id="ZPP_PLAN_ORD_CREATE", data=data)
-            sap_response = await sap_post(url=sap_url2, session=sap_session, interface_id="ZPP_PLAN_ORD_CREATE", data=data)
+            sap_response = sap_post(url=sap_url2, session=sap_session, interface_id="ZPP_PLAN_ORD_CREATE", data=data)
             sap_response_json = sap_response['response_json']
             sap_mo_data = sap_response_json['BODY'][0]
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-             
+            
+
             if sap_mo_data['STATUS'] == 'S':
                 log_msg = f"✅推送计划任务执行成功，账套：{MYAPS_MAIN_DB}，MO单号：{sap_mo_data['AUFNR']}"
                 console_log.info(log_msg)
@@ -208,7 +208,4 @@ class MyapsDbActions(MyapsDbActionsAbc):
             pl_data['memo'] = f'🚫{now} @APS【{str(e)}】'
             pl_data['is_execute_updates'] = False
 
-        await super().confirm_pl(pl_data)
-
-    
-
+        super().press_release_button(pl_data)
