@@ -7,6 +7,7 @@
 import logging
 from typing import Literal
 from abc import ABC#, abstractmethod
+from datetime import datetime
 
 # from tortoise import Tortoise
 
@@ -89,7 +90,6 @@ class DefaultValueBase:
 
 
 class DbEventAbc(ABC):
-
     this_base_url = THIS_BASE_URL
     main_db = MYAPS_MAIN_DB
     _session = get_session()
@@ -98,40 +98,58 @@ class DbEventAbc(ABC):
     async def press_release_button(cls, pl_data: dict, *args, **kwargs):
         """
         当按下工单管理的下达按钮（PL的Status变为'A2E'）时该方法将被自动调用
-        - 各项目文件须声明子类并覆写该方法以实现推送PL至ERP的逻辑
-            - 若 ERP 异步返回创建结果，则由 ERP 异步调用路由函数 convert_pl_to_mo_by_dbprocdure() 改写 APS 的 PL 信息
-            - 若同步返回创建结果，则覆写最后一步执行 super().press_release_button()，将ERP返回的工单号等信息改写至原PL
+        - 各项目文件须声明子类并覆写该方法，注意要包含实现推送 PL 至 ERP 的逻辑：
+            - 若 ERP 同步返回创建结果，则覆写方法需还需将 ERP 返回信息更新至原PL
+            - 若异步，则由 ERP 调用 api convert_pl_to_mo_by_dbprocdure() 更新 PL
+        - 若无需对接ERP，则无需覆写此方法
         """
-        await cls._convert_pl_to_mo(plno=pl_data['supplyno'], mono=pl_data['mono'], to_status=pl_data['status'], memo=pl_data['memo'], is_execute_updates=pl_data['is_execute_updates'])
+        await cls._pl_release_success(plno=pl_data['supplyno'], to_status='REL')
+
 
     @classmethod
     def _get_supplymo_detaildata(cls, supplyno: str):
-        supply_response = cls._session.get(f"{THIS_BASE_URL}/api/v_supply_mo?db_name={MYAPS_MAIN_DB}&supplyno={supplyno}")
+        supply_response = cls._session.get(f"{cls.this_base_url}/api/v_supply_mo?db_name={cls.main_db}&supplyno={supplyno}")
         supply_response_json = supply_response.json()
         supplymo_detaildata = supply_response_json['data'][0]
         return supplymo_detaildata
 
-    @classmethod
-    async def _convert_pl_to_mo(cls, plno: str, mono: str=None, to_status: Literal['CRE', 'REL']='E2A', memo: str=None, is_execute_updates: bool=True):
-        """
-        通过调用自路由修改PL的Type、Status、SupplyNo、Memo等字段
-        🅰️supplyno: PL计划单编号
-        🅰️mono: MO号，可选，若非None则更改PL的SupplyNo为mono
-        🅰️to_status: 转化成MO后，Status设为哪个状态，默认'CRE'
-        🅰️memo: 写入t_supplymemo注字段的内容
-        🅰️is_execute_updates: 是否执行更新，默认True
 
-        - 在 def press_release_button() 中被直接调用，适用于:
-            - ERP接到PL后同步返回MO信息
-        - 无需根据APS的PL在ERP中创建MO（或无需与ERP对接）的实施场景，则直接调用
+    @classmethod
+    async def _pl_release_success(cls, plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', msg: str=None):
         """
+        通过调用自路由修改PL的Type、Status、SupplyNo、Memo等字段，作为私有方法在 def press_release_button() 中被直接调用
+        🅰 supplyno: PL计划单编号
+        🅰 mono: MO号，可选，若非None则更改PL的SupplyNo
+        🅰 to_status: 转化成MO后，Status设为哪个状态，默认'REL'
+        🅰 memo: 写入t_supplymemo字段的内容
+        """
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_msg = f"✅推送计划任务执行成功，账套：{cls.main_db}，MO单号：{mono or plno}"
+        console_log.info(log_msg)
+        file_log.info(log_msg)
         response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/pl?db_name={cls.main_db}', json=[{
-            'type': 'MO',   # 将类型改为MO（原本为PL）
+            'type': 'MO',
             'plno': plno,
             'status': to_status,
             'mono': mono,
-            'memo': memo,
-            'is_execute_updates': is_execute_updates,
+            'memo': f'✅{now}【{msg}】',
+            'is_execute_updates': True,
+            }])
+        return response
+
+    @classmethod
+    async def _pl_release_failed(cls, plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None):
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_msg = f"🚫推送计划任务执行失败，账套：{cls.main_db}，PL单号：{plno}"
+        console_log.error(log_msg)
+        file_log.error(log_msg)
+        response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/pl?db_name={cls.main_db}', json=[{
+            'type': 'PL',
+            'plno': plno,
+            'status': to_status,    # ❗❗失败情况下，状态务必回撤为 CRE 或 NEW ，否则后续无法再次下达
+            'mono': None,
+            'memo': f'🚫{now}【{msg}】',
+            'is_execute_updates': False,
             }])
         return response
 

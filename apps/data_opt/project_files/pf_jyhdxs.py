@@ -177,35 +177,14 @@ class DbEvent(DbEventAbc):
                 "BACKUP1": ','.join([i['workcenter'] for i in orderwc])
             }
 
-            sap_response = sap_post(url=sap_url2, session=sap_session, interface_id="ZPP_PLAN_ORD_CREATE", data=data)
+            sap_response = await sap_post(url=sap_url2, session=sap_session, interface_id="ZPP_PLAN_ORD_CREATE", data=data)
             sap_response_json = sap_response['response_json']
             sap_mo_data = sap_response_json['BODY'][0]
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
-
             if sap_mo_data['STATUS'] == 'S':
-                log_msg = f"✅推送计划任务执行成功，账套：{MYAPS_MAIN_DB}，MO单号：{sap_mo_data['AUFNR']}"
-                console_log.info(log_msg)
-                file_log.info(log_msg)
-                pl_data['mono'] = sap_mo_data['AUFNR']
-                pl_data['status'] = 'E2A'
-                pl_data['memo'] = f'✅{now} @ERP【{sap_mo_data['MESSAGE']}】'
-                pl_data['is_execute_updates'] = True
+                cls._pl_release_success(plno=pl_data['supplyno'], mono=sap_mo_data['AUFNR'], msg=f"{sap_mo_data['MESSAGE']} @ERP")
             else:
-                log_msg = f"🚫推送计划任务执行失败，账套：{MYAPS_MAIN_DB}，错误信息：{sap_mo_data['MESSAGE']}"
-                console_log.error(log_msg)
-                file_log.error(log_msg)
-                pl_data['mono'] = ''
-                pl_data['status'] = 'CRE'   # ❗❗失败情况下，状态务必回撤为 CRE ，否则后续无法再次下达
-                pl_data['memo'] = f'🚫{now} @ERP【{sap_mo_data['MESSAGE']}】'
-                pl_data['is_execute_updates'] = False
+                cls._pl_release_failed(plno=pl_data['supplyno'], to_status=pl_data.get('status', 'CRE'), msg=f"{sap_mo_data['MESSAGE']} @ERP")
         except Exception as e:
-            log_msg = f"🚫推送计划任务执行失败: {str(e)}"
-            console_log.error(log_msg)
-            file_log.error(log_msg)
-            pl_data['mono'] = ''
-            pl_data['status'] = 'CRE'
-            pl_data['memo'] = f'🚫{now} @APS【{str(e)}】'
-            pl_data['is_execute_updates'] = False
+            cls._pl_release_failed(plno=pl_data['supplyno'], to_status=pl_data.get('status', 'CRE'), msg=f"{str(e)} @APS")
 
-        await super().press_release_button(pl_data)
