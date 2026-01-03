@@ -6,14 +6,12 @@ from datetime import datetime
 
 from fastapi import status
 
-from config.settings import MYAPS_MAIN_DB, SCHEDULED_DBS, THIS_BASE_URL
+from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL
 from ._base import (
-    ParamValueBase, DefaultValueBase, DbEventAbc, 
+    ProjectParamsBase, DefaultValueBase, DbEventBase, 
     file_log, console_log, standard_response, get_session, HapConnection,
     cron_task, add_basic_auth_requests
     )
-
-
 
 #################################################################################
 # ⬇️对象及项目参数
@@ -25,7 +23,7 @@ hap_conn = HapConnection(
 )
 
 
-class ParamValue(ParamValueBase):
+class ProjectParams(ProjectParamsBase):
     pass
 
 
@@ -34,20 +32,16 @@ class DefaultValue(DefaultValueBase):
     MAT_PLANNER = "haida"   # 默认计划员
     MAT_LOCATION = "1600"  # 默认车间
  
-
-werks = "1600"
-
 #################################################################################
 # ⬇️项目可复用逻辑
 #################################################################################
 sap_url1 = 'http://192.168.201.2:8000/zrestful_test2?sap-client=800'  # 库存
 sap_url2 = 'http://192.168.201.2:8000/zrestful_plan?sap-client=800'  # 计划
-
+werks = "1600"
 sap_username = 'T058'
 sap_password = '123456'
 # 创建requests会话
 sap_session = get_session(allowed_methods=["GET", "POST"])
-
 # 添加Basic认证
 add_basic_auth_requests(sap_session, sap_username, sap_password)
 
@@ -93,10 +87,10 @@ schedule_task_minute = '55'
 
 
 @cron_task(hour=schedule_task_hour, minute=schedule_task_minute)
-def refresh_stock(db_name: str | None = None):
+def refresh_stock(db: str = ProjectParams.SCHEDULED_DBS):
     """
     刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据
-    db_name: 账套名称，默认刷新所有账套
+    db: 对哪些账套生效，多个账套用逗号分隔
     """
     console_log.info("开始执行刷新库存任务")
     response = None
@@ -140,11 +134,10 @@ def refresh_stock(db_name: str | None = None):
         })
         stock_data = stock.to_dict(orient='records')
 
-        dbs = db_name or SCHEDULED_DBS
-        sap_session.delete(f"{THIS_BASE_URL}/api/t_supply?db_name={dbs}&type=ST")
-        sap_session.post(f"{THIS_BASE_URL}/api/t_supply?db_name={dbs}", json=stock_data)
-        console_log.info(f"刷新库存任务执行完成，账套：{dbs}")
-        response = standard_response(message=f"刷新库存任务执行完成，账套：{dbs}")
+        sap_session.delete(f"{THIS_BASE_URL}/api/t_supply?db_name={db}&type=ST")
+        sap_session.post(f"{THIS_BASE_URL}/api/t_supply?db_name={db}", json=stock_data)
+        console_log.info(f"刷新库存任务执行完成，账套：{db}")
+        response = standard_response(message=f"刷新库存任务执行完成，账套：{db}")
         
     except Exception as e:
         console_log.error(f"刷新库存任务执行失败: {str(e)}")
@@ -155,7 +148,7 @@ def refresh_stock(db_name: str | None = None):
 # ⬇️数据库事件处理
 #################################################################################
 
-class DbEvent(DbEventAbc):
+class DbEvent(DbEventBase):
 
     @classmethod
     async def press_release_button(cls, pl_data: dict):
@@ -182,9 +175,9 @@ class DbEvent(DbEventAbc):
             sap_mo_data = sap_response_json['BODY'][0]
             
             if sap_mo_data['STATUS'] == 'S':
-                cls._pl_release_success(plno=pl_data['supplyno'], mono=sap_mo_data['AUFNR'], msg=f"{sap_mo_data['MESSAGE']} @ERP")
+                cls._pl_release_success(plno=pl_data['supplyno'], mono=sap_mo_data['AUFNR'], msg=sap_mo_data['MESSAGE'], msg_from='ERP')
             else:
-                cls._pl_release_failed(plno=pl_data['supplyno'], to_status=pl_data.get('status', 'CRE'), msg=f"{sap_mo_data['MESSAGE']} @ERP")
+                cls._pl_release_failed(plno=pl_data['supplyno'], to_status=pl_data.get('status', 'CRE'), msg=sap_mo_data['MESSAGE'], msg_from='ERP')
         except Exception as e:
-            cls._pl_release_failed(plno=pl_data['supplyno'], to_status=pl_data.get('status', 'CRE'), msg=f"{str(e)} @APS")
+            cls._pl_release_failed(plno=pl_data['supplyno'], to_status=pl_data.get('status', 'CRE'), msg=str(e), msg_from='API')
 

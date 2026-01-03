@@ -9,13 +9,14 @@ from datetime import datetime
 from fastapi import status
 
 from ._base import (
-    ParamValueBase, DefaultValueBase, DbEventAbc,
+    ProjectParamsBase, DefaultValueBase, DbEventBase,
     file_log, console_log, standard_response, get_session, HapConnection
     )
 
 #################################################################################
-# ⬇️对象及项目参数
+# ⬇️ 项目对象及参数
 #################################################################################
+hap_conn = None
 
 hap_conn = HapConnection(
     base_url='https://api.mingdao.com',
@@ -23,9 +24,8 @@ hap_conn = HapConnection(
     sign='...'
 )
 
-class ParamValue(ParamValueBase):
+class ProjectParams(ProjectParamsBase):
     pass
-
 
 
 class DefaultValue(DefaultValueBase):
@@ -34,20 +34,20 @@ class DefaultValue(DefaultValueBase):
     MAT_LOCATION = "..."  # 默认车间
 
 #################################################################################
-# ⬇️项目可复用逻辑
+# ⬇️ 项目可复用逻辑
 #################################################################################
 ...
 
 
 
 #################################################################################
-# ⬇️定时任务设置
+# ⬇️ 定时任务
 #################################################################################
 ...
 
 
 #################################################################################
-# ⬇️数据库事件处理
+# ⬇️ 数据库事件
 #################################################################################
-class DbEvent(DbEventAbc):
+class DbEvent(DbEventBase):
     pass

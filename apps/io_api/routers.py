@@ -8,7 +8,7 @@ import functools
 from fastapi import APIRouter, Query, Body, status#, Request, Path
 # from tortoise import Tortoise
 
-from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB
+from config.settings import MYAPS_DB_SET,MYAPS_DBSET_LIST, MYAPS_MAIN_DB
 from globalobjects import globalconst as gc
 from .models import TMaterial, TWorkcenter, TMatWc, TMatVer, TMatWcBom, TSupply, TDemand, TMold, TMatWcMold, TConfirm#,TortoiseBaseModel
 from .schemas import (
@@ -144,8 +144,8 @@ async def get_meta():
         success=1,
         message="获取元数据成功",
         meta={
-            "db_set": MYAPS_DB_SET,
-            "dbs_str": ",".join(MYAPS_DB_SET),
+            "db_set": MYAPS_DBSET_LIST,
+            "dbs_str": MYAPS_DB_SET,
             "main_db": MYAPS_MAIN_DB,
         },
     )

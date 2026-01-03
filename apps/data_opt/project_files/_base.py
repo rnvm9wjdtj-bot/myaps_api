@@ -4,14 +4,15 @@
 
 # import threading
 # import os
-import logging
+import logging, json
+from socket import MsgFlag
 from typing import Literal
 from abc import ABC#, abstractmethod
 from datetime import datetime
 
 # from tortoise import Tortoise
 
-from config.settings import MYAPS_MAIN_DB, THIS_SERVER_PORT, THIS_PROTOCOL, SCHEDULED_DBS, THIS_BASE_URL
+from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET
 from apps.data_opt.utils.common import get_session
 
 
@@ -30,10 +31,12 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 console_log = logging.getLogger(__name__)
 
 
-class ParamValueBase:
+class ProjectParamsBase:
     """
     项目文件中使用的参数值
     """
+    # 连接器中（拉取外部系统数据）定时任务生效的账套数据库，建议与 MYAPS_DB_SET 保持一致
+    SCHEDULED_DBS = MYAPS_DB_SET
 
 
 class DefaultValueBase:
@@ -89,7 +92,7 @@ class DefaultValueBase:
         return {k: v for k, v in cls_dict.items() if not k.startswith("__")}
 
 
-class DbEventAbc(ABC):
+class DbEventBase(ABC):
     this_base_url = THIS_BASE_URL
     main_db = MYAPS_MAIN_DB
     _session = get_session()
@@ -115,16 +118,17 @@ class DbEventAbc(ABC):
 
 
     @classmethod
-    async def _pl_release_success(cls, plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', msg: str=None):
+    async def _pl_release_success(cls, plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None):
         """
         通过调用自路由修改PL的Type、Status、SupplyNo、Memo等字段，作为私有方法在 def press_release_button() 中被直接调用
         🅰 supplyno: PL计划单编号
         🅰 mono: MO号，可选，若非None则更改PL的SupplyNo
         🅰 to_status: 转化成MO后，Status设为哪个状态，默认'REL'
-        🅰 memo: 写入t_supplymemo字段的内容
+        🅰 msg: 外部系统返回信息
+        🅰 msg_from: 外部系统名称
         """
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_msg = f"✅推送计划任务执行成功，账套：{cls.main_db}，MO单号：{mono or plno}"
+        log_msg = f"✅推送计划任务执行成功，账套：{cls.main_db}，PL单号：{plno}，MO单号：{mono or plno}"
         console_log.info(log_msg)
         file_log.info(log_msg)
         response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/pl?db_name={cls.main_db}', json=[{
@@ -132,15 +136,15 @@ class DbEventAbc(ABC):
             'plno': plno,
             'status': to_status,
             'mono': mono,
-            'memo': f'✅{now}【{msg}】',
+            'memo': json.dumps({"msg": f"✅{msg}", "from": msg_from, "success": True, "datetime": now, "plno": plno}, ensure_ascii=False),
             'is_execute_updates': True,
             }])
         return response
 
     @classmethod
-    async def _pl_release_failed(cls, plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None):
+    async def _pl_release_failed(cls, plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, msg_from: str=None):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_msg = f"🚫推送计划任务执行失败，账套：{cls.main_db}，PL单号：{plno}"
+        log_msg = f"🚫 推送计划任务执行失败，账套：{cls.main_db}，PL单号：{plno}"
         console_log.error(log_msg)
         file_log.error(log_msg)
         response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/pl?db_name={cls.main_db}', json=[{
@@ -148,7 +152,7 @@ class DbEventAbc(ABC):
             'plno': plno,
             'status': to_status,    # ❗❗失败情况下，状态务必回撤为 CRE 或 NEW ，否则后续无法再次下达
             'mono': None,
-            'memo': f'🚫{now}【{msg}】',
+            'memo': json.dumps({"msg": f"🚫{msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False),
             'is_execute_updates': False,
             }])
         return response

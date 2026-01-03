@@ -41,7 +41,7 @@ class K3Connection():
         return self._cookie
 
 
-    def _get_data(self, form_id: str, field_keys_mapper: dict, filter_string: str=None):
+    def _get_data(self, form_id: str, field_keys_mapper: dict, page_size: int=1000, filter_string: str=None):
         """
         获取Kingdee K3 Cloud数据
         form_id: 表单ID
@@ -52,41 +52,46 @@ class K3Connection():
         to_fields = list(field_keys_mapper.values())
         field_keys = ",".join(k3_fields)
         # 发送请求
-        response = self._session.post(
-            url=f"{self.origin_url}/K3Cloud/Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.ExecuteBillQuery.common.kdsvc",
-            json={
-                "data": {
-                    "FormId": form_id,
-                    "FieldKeys": field_keys,
-                    "FilterString": filter_string,
-                    "StartRow": 0,
-                    "Limit": 1000,
+        start_row = 0
+        while True:
+            response = self._session.post(
+                url=f"{self.origin_url}/K3Cloud/Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.ExecuteBillQuery.common.kdsvc",
+                json={
+                    "data": {
+                        "FormId": form_id,
+                        "FieldKeys": field_keys,
+                        "FilterString": filter_string,
+                        "StartRow": start_row,
+                    "Limit": page_size,
                     "TopRowCount": 100000,
                     "SubSystemId": ""
-                }
-            },
-        )
+                    }
+                },
+            )
         
-        # 处理响应
-        data = []
-        if 'ErrorCode' in response.text:
-            return data
+            # 处理响应
+            data = []
+            if 'ErrorCode' in response.text:
+                return [{"row_count": 0, "data": data}]
 
-        raw_data = response.json()
-        for row in raw_data:
-            data.append({
-                to_fields[i]: row[i]
-                for i in range(len(k3_fields))
-            })
-        return data
+            raw_data = response.json()
+            row_count = len(raw_data)
+            for row in raw_data:
+                data.append({
+                    to_fields[i]: row[i]
+                    for i in range(len(k3_fields))
+                })
+            yield {"row_count": row_count, "data": data}
+            if row_count < page_size:
+                break
+            start_row += page_size
 
 
     def _set_data(self):
         pass
 
 
-    @wrap_data_response
-    def get_material_list(self, filter_string: str=None):
+    def material_list(self, page_size: int=1000, filter_string: str=None):
         return self._get_data(
             form_id="BD_MATERIAL",
             field_keys_mapper={
@@ -99,9 +104,10 @@ class K3Connection():
                 "fEOQ": "lotfix", "fPlanSafeStockQty": "lotss", "fMaterialId": "id",
                 },
             filter_string=filter_string,
+            page_size=page_size,
         )
 
-    def get_bom(self, filter_string: str=None):
+    def bom_list(self, page_size: int=1000, filter_string: str=None):
         parent_data = self._get_data(
             form_id="ENG_BOM",
             field_keys_mapper={
@@ -109,6 +115,7 @@ class K3Connection():
                 "fUnitId.fName": "unit", "fQty": "qty", "fBaseUnitId.fName": "baseunit", "FNumber": "matver"
             },
             filter_string=filter_string,
+            page_size=page_size,
         )
 
         child_data = self._get_data(

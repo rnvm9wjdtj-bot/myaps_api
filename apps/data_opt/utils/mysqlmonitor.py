@@ -34,7 +34,7 @@ from pymysqlreplication.row_event import (
     DeleteRowsEvent,
 )
 
-from config.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DB_SET
+from config.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST
 
 
 logger = logging.getLogger(__name__)
@@ -599,7 +599,7 @@ class MySQLBinlogMonitor:
         if is_single_db:
             databases = [MYAPS_MAIN_DB]
         else:
-            databases = MYAPS_DB_SET
+            databases = MYAPS_DBSET_LIST
         
         if databases:
             config["databases"] = databases

@@ -14,7 +14,7 @@ from tortoise.transactions import in_transaction
 from tortoise.models import Model as TortoiseBaseModel
 from pydantic import BaseModel as PydanticSchema
 
-from config.settings import MYAPS_MAIN_DB, MYAPS_DB_SET
+from config.settings import MYAPS_MAIN_DB, MYAPS_DB_SET, MYAPS_DBSET_LIST
 from globalobjects.globalconst import SUPPLY_TYPE#ORDER_STATUS, 
 from globalobjects import file_timed_logger
 
@@ -126,7 +126,7 @@ def validate_databases(db_name: str) -> List[str]:
     Returns:
         有效的账套列表
     """
-    return [db for db in db_name.split(",") if db in MYAPS_DB_SET]
+    return [db for db in db_name.split(",") if db in MYAPS_DBSET_LIST]
 
 
 async def preprocess_data(data: List[PydanticSchema | Dict[str, Any]]) -> List[ProcessedData]:
@@ -341,14 +341,14 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
     # 验证账套
     valid_dbs = validate_databases(db_name)
     if not valid_dbs:
-        file_logger.error(f"❌↑未找到有效账套（available：{MYAPS_DB_SET}），禁止写入 —— common_write")
+        file_logger.error(f"❌↑未找到有效账套（available_dbs：{MYAPS_DB_SET}），禁止写入 —— common_write")
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message="操作失败：未找到有效账套",
             meta={
                 "input_db_name": db_name,
-                "available_dbs": ", ".join(MYAPS_DB_SET),
+                "available_dbs": MYAPS_DB_SET,
             },
             data=[item.processed_data for item in processed_data_list]
         )
