@@ -1,11 +1,5 @@
 """
-加载当前项目文件（项目py），提取其中的对象，并通过预设的钩子方法执行它们
-
-项目文件要实现以下方法（即使 pass 也需要实现）：
-
-
-DbEvent
-    - press_release_button(pl_data: dict) -> None: 确认生产计划单PL
+加载当前项目文件（项目py）执行其中的方法
 """
 
 import os, importlib, requests
@@ -13,12 +7,13 @@ import os, importlib, requests
 from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL
 from globalobjects import file_timed_logger
 from apps.io_api.common import dict_to_lower_keys
+# from apps.io_api.schemas import (AcceptMaterial)
 
 
 project_name = os.getenv("PROJECT_FILE").replace('.py', '')
 current_project = importlib.import_module(f'apps.data_opt.project_files.{project_name}')
 project_default_value = current_project.DefaultValue
-project_param_value = current_project.ProjectParams
+project_params = current_project.ProjectParam
 
 
 try:

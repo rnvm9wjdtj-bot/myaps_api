@@ -20,7 +20,7 @@ MYAPS_MAIN_DB = os.getenv("MYAPS_MAIN_DB")
 
 THIS_PROTOCOL = os.getenv("THIS_PROTOCOL", "http://")
 THIS_SERVER_HOST = os.getenv("THIS_SERVER_HOST")
-THIS_SERVER_PORT = int(os.getenv("THIS_SERVER_PORT"))
+THIS_SERVER_PORT = int(os.getenv("THIS_SERVER_PORT", 8000))
 THIS_BASE_URL = f"{THIS_PROTOCOL}localhost:{THIS_SERVER_PORT}"
 
 # 本API数据库配置<postgreSQL>

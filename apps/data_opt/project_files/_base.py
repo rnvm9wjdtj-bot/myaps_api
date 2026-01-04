@@ -31,7 +31,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 console_log = logging.getLogger(__name__)
 
 
-class ProjectParamsBase:
+class ProjectParamBase:
     """
     项目文件中使用的参数值
     """

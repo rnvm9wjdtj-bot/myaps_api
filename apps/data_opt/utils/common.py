@@ -126,3 +126,48 @@ def map_dict_keys(dict_list, key_mapper):
     except (ValueError, SyntaxError) as e:
         print(f"Error mapping keys: {e}")
         return None
+
+
+def convert_timeunit(value, from_unit: str, to_unit: str = 'day'):
+    """
+    将时间单位转换为另一个单位
+    Args:
+        from_unit: 原始时间单位，例如 '天'
+        to_unit: 目标时间单位，例如 '小时'
+        value: 原始时间值
+    
+    Returns:
+        转换后的时间值
+    """
+    # 定义单位转换因子
+    unit_factors = {
+        '日': 24, '天': 24, 'day': 24, 'd': 24,
+        '小时': 1, 'hour': 1, 'hr': 1, 'h': 1,
+        '分钟': 1/60, '分': 1/60, 'minute': 1/60, 'min': 1/60, 'm': 1/60,
+        '秒': 1/3600, 'sec': 1/3600, 's': 1/3600
+    }
+    try:
+        value = float(value)
+        if value == 0:
+            return 0
+    except ValueError:
+        if value in ('', None):
+            return 0
+    if not from_unit in unit_factors:
+        raise ValueError(f"无效的原始时间单位: {from_unit}")
+    if not to_unit in unit_factors:
+        raise ValueError(f"无效的目标时间单位: {to_unit}")
+    if value < 0:
+        raise ValueError("时间值必须非负")
+    
+    # 进行转换
+    return value * unit_factors[from_unit] / unit_factors[to_unit]
+
+
+def clean_value(value: Union[str, int, float, None], if_none_return=''):
+    if value is None:
+        return if_none_return
+    value_type = type(value)
+    if value_type == str:
+        return value.strip()
+    return value

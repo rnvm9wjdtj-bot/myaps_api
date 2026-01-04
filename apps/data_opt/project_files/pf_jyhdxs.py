@@ -8,7 +8,7 @@ from fastapi import status
 
 from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL
 from ._base import (
-    ProjectParamsBase, DefaultValueBase, DbEventBase, 
+    ProjectParamBase, DefaultValueBase, DbEventBase, 
     file_log, console_log, standard_response, get_session, HapConnection,
     cron_task, add_basic_auth_requests
     )
@@ -23,7 +23,7 @@ hap_conn = HapConnection(
 )
 
 
-class ProjectParams(ProjectParamsBase):
+class ProjectParam(ProjectParamBase):
     pass
 
 
@@ -87,7 +87,7 @@ schedule_task_minute = '55'
 
 
 @cron_task(hour=schedule_task_hour, minute=schedule_task_minute)
-def refresh_stock(db: str = ProjectParams.SCHEDULED_DBS):
+def refresh_stock(db: str = ProjectParam.SCHEDULED_DBS):
     """
     刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据
     db: 对哪些账套生效，多个账套用逗号分隔

@@ -1,7 +1,42 @@
 from typing import List, Dict, Optional, Callable, Union
+from abc import ABC, abstractmethod
+
 import pandas as pd
 
-from apps.data_opt.utils.common import get_session
+from apps.data_opt.utils.common import get_session, convert_timeunit, clean_value
+# from apps.io_api.schemas import (AcceptMaterial) # 引起循环引用
+
+
+class BaseConnection(ABC):
+    @abstractmethod
+    def __init__(self):
+        pass
+
+    @abstractmethod
+    def auth(self):
+        pass
+
+    @abstractmethod
+    def _get_paged_data(self, url: str, params: dict = None) -> List[Dict]:
+        """
+        获取分页数据
+        url: 请求URL
+        params: 请求参数
+        """
+        pass
+
+    @staticmethod
+    def _merge_paged_data(paged_data_iter):
+        """
+        合并分页数据
+        """
+        row_count = 0
+        merged_data = []
+        for page in paged_data_iter:
+            row_count += len(page)
+            merged_data.extend(page)
+        return merged_data
+
 
 
 def wrap_data_response(func):
