@@ -1,15 +1,16 @@
-import pandas as pd
-
+# import pandas as pd
+import http.cookies
 
 from datetime import datetime, timedelta
-from typing import Literal, Dict, Any#NamedTuple, List#, Callable
+from typing import Dict, Any#NamedTuple, List#, Callable, Literal, 
 # import requests
 
 from ._base import (
-    BaseConnection, get_session, wrap_data_response, flat_merge_parent_child_data, convert_timeunit, clean_value
+    BaseConnection, wrap_data_response, convert_timeunit, clean_value
 )
 
 from apps.io_api.schemas import (
+    BaseModel as PydanticModel,
     model_validator, AcceptMaterial, Field
 )
 
@@ -64,70 +65,194 @@ class K3Material(AcceptMaterial):
         return cleaned_values
 
 
+class K3Config:
+    """K3基础配置"""
+    AUTH_ENDPOINT = "/K3Cloud/Kingdee.BOS.WebApi.ServicesStub.AuthService.ValidateUser.common.kdsvc"
+    QUERY_ENDPOINT = "/K3Cloud/Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.ExecuteBillQuery.common.kdsvc"
+    
+    # 默认分页大小，注意最大不得超过1000
+    PAGE_SIZE = 1000
+
+    # 最大返回行数，注意最大不得超过100000
+    TOP_ROW_COUNT = 100000
+
+    # 表单ID及字段映射
+    FORMS = {
+        'material': {
+            'form_id': 'BD_MATERIAL',
+            'field_map': {
+                "fMaterialId": "id", "fNumber": "编码", "fName": "名称",
+                "fWorkShopId.fName": "生产车间", "fPlanerId.fName": "计划员",
+                "fSpecification": "规格型号", "fCategoryId.fName": "存货类别",
+                "fErpClsId.fCaption": "物料属性", "fProduceUnitId.fName": "生产单位",
+                "fFixLeadTime": "固定提前期", "fFixLeadTimeType.fCaption": "固定提前期单位",
+                "fExpPeriod": "保质期", "fExpUnit.fCaption": "保质期单位",
+                "fCheckLeadTime": "检验提前期", "fCheckLeadTimeType.fCaption": "检验提前期单位",
+                "fPlanIntervalsDays": "批量拆分间隔天数", "fCanDelayDays": "允许延后天数",
+                "fMaxStock": "最大库存", "fPlanSafeStockQty": "安全库存", "fReOrderGood": "再订货点",
+                "fEOQ": "固定/经济批量", "fRefCost": "参考成本", "fMaxQty": "最大批量", "fMinQty": "最小批量",
+            },
+            'pydantic_model': K3Material,
+        },
+
+        'bom': {
+            'form_id': 'ENG_BOM',
+            'field_map': {
+                "fID": "父项id", "FNumber": "BOM版本", "fMaterialId.fNumber": "父项物料编码", "fMaterialId.fName": "父项物料名称",
+                "fUnitId.fName": "父项物料单位", "fQty": "批量", "fBaseUnitId.fName": "父项基本单位",
+                "fTreeEntity_fEntryId": "子项明细id",
+                "fMaterialIdChild.fNumber": "子项物料编码", "FChildBaseUnitID.fName": "子项基本单位",
+                "fChildUnitId.fName": "子项单位", "fNumerator": "用量:分子", "fDenominator": "用量:分母",
+                "FBaseFixscrapQty": "基本单位固定损耗", "fBaseFixscrapQtyLot": "基本单位固定损耗数量"
+            },
+            'pydantic_model': None,
+        },
+
+        'workcenter': {
+            'form_id': 'ENG_WORKCENTER',
+            'field_map': {
+                "fID": "id", "fNumber": "编码", "fName": "名称", "fDeptId.fName": "所属部门"
+            },
+            'pydantic_model': None,
+        },
+
+        'route': {
+            'form_id': 'ENG_ROUTE',
+            'field_map': {
+                "fID": "父项id", "fNumber": "编码", "fName": "名称", "fMaterialId.fNumber": "物料编码", "fMaterialId.fName": "物料名称",
+                "fProduceType.fCaption": "生产类型", "fApproveDate": "审核日期", "fForbidDate": "禁用日期",
+                "fUnitId.fName": "单位", "fRouteGroupId.fName": "工艺路线分组",
+                "fSubEntity_fDetailId": "子项明细id",
+                "fWorkCenterId.fNumber": "工作中心", "fWorkCenterId.fName": "工作中心名称",
+                "fOperNumber": "工序号", "fProcessId.fNumber": "工序编码", "fProcessId.fName": "工序名称"
+            },
+            'pydantic_model': None,
+        },
+
+        "so": {
+            'form_id': 'SAL_SALEORDER',
+            'field_map': {
+                "fSaleOrderEntry_fEntryId": "子项明细id", "fSaleOrderEntry_fSeq": "序号", "fBillNo": "单据编号", "fModifyDate": "最后修改日期",
+                "fCloseStatus.fCaption": "关闭状态", "fMrpCloseStatus.fCaption": "业务关闭", "fDocumentStatus.fCaption": "单据状态",
+                "fDate": "日期", "fDeliveryDate": "要货日期", "fMaterialId.fNumber": "物料编码", "fMaterialId.fName": "物料名称",
+                "fQty": "销售数量", "fUnitID.fName": "销售单位", "fBaseUnitId.fName": "基本单位",
+            },
+            'pydantic_model': None,
+        },
+
+        "mo": {
+            'form_id': 'PRD_MO',
+            'field_map': {
+                "fId": "id", "fBillNo": "单据编号", "fDocumentStatus.fCaption": "单据状态", "fDate": "日期",
+                "fTreeEntity_fEntryId": "子项明细id",
+                "fTreeEntity_fSeq": "序号", "fMaterialId.fNumber": "物料编码", "fMaterialId.fName": "物料名称",
+                "fQty": "数量", "fUnitId.fName": "单位", "fWorkshopId.fName": "生产车间",
+                "fPlanStartDate": "计划开工时间", "fPlanFinishDate": "计划完工时间",
+                "fScheduleStartTime": "排程开工时间", "fScheduleFinishTime": "排程完工时间",
+                "fCancelDate": "作废日期",
+                "fStatus.fCaption": "业务状态", "fPickMtrlStatus.fCaption": "领料状态",
+                "fReqSrc.fCaption": "需求来源", "fSaleOrderId": "销售订单ID",
+                "fSaleOrderEntryId": "销售订单子项ID", "fSaleOrderNo": "销售订单编号", "fSaleOrderEntrySeq": "需求单据行号",
+                "fSrcBillNo": "源单编号", "fSrcSplitBillNo": "源拆分订单编号",
+                "fMemoItem": "备注", "fBillType.fName": "单据类型",
+            },
+            'pydantic_model': None,
+        },
+
+    }
+
+
+
 class K3Connection(BaseConnection):
 
-    def __init__(cls, origin_url, acctid, username, password, lcid):
-        # super().__init__(*args, **kwargs)
-        cls.origin_url = origin_url
-        cls.acctid = acctid
-        cls.username = username
-        cls.password = password
-        cls.lcid = lcid
-        cls._cookie = None
-        cls._cookie_expire = None
-        cls._session = get_session()
+    def __init__(self, origin_url, acctid, username, password, lcid, config: K3Config=K3Config):
+        
+        self.origin_url = origin_url
+        self.acctid = acctid
+        self.username = username
+        self.password = password
+        self.lcid = lcid
+        self.config = config
+        self._cookie = None
+        self._cookie_expire = None
+        super().__init__()
 
 
-    def auth(cls):
-        if cls._cookie is None or cls._cookie_expire is None or (datetime.now() + timedelta(minutes=15)) > cls._cookie_expire:
-            response = cls._session.post(
-                f"{cls.origin_url}/K3Cloud/Kingdee.BOS.WebApi.ServicesStub.AuthService.ValidateUser.common.kdsvc",
-                data={
-                    "acctid": cls.acctid,
-                    "username": cls.username,
-                    "password": cls.password,
-                    "lcid": cls.lcid,
-                },
-            )
-            # 处理cookie
-            set_cookies = response.headers['Set-Cookie'].split(';')
-            cls._cookie = set_cookies[0] + ';' + set_cookies[3].split(',')[1].strip()
-            cls._cookie_expire = datetime.strptime(set_cookies[1].split('=')[1], "%a, %d-%b-%Y %H:%M:%S %Z")
-            cls._session.headers.update({
-                "Cookie": cls._cookie,
-            })
-        return cls._cookie
+    @staticmethod
+    def _parse_cookies(set_cookie_header: str) -> tuple[str, datetime]:
+        try:
+            cookie_jar = http.cookies.SimpleCookie()
+            cookie_jar.load(set_cookie_header)
+            # 提取主要Cookie值
+            cookie_parts = set_cookie_header.split(';')
+            if len(cookie_parts) < 4:
+                raise ValueError("Cookie格式不正确")
+            cookie_value = cookie_parts[0] + ';' + cookie_parts[3].split(',')[1].strip()
+            # 解析过期时间
+            expire_str = cookie_parts[1].split('=')[1]
+            expire_time = datetime.strptime(expire_str, "%a, %d-%b-%Y %H:%M:%S %Z")
+            print(f"Cookie解析成功，过期时间: {expire_time}")
+            return cookie_value, expire_time
+        except (IndexError, ValueError, http.cookies.CookieError) as e:
+            raise ConnectionError(f"Cookie解析失败: {e}")
 
 
-    def _get_paged_data(cls, form_id: str, field_keys_mapper: dict, page_size: int=1000, filter_string: str=None, only_today: bool=False):
+    def auth(self):
+        try:
+            if self._cookie is None or self._cookie_expire is None or (datetime.now() + timedelta(minutes=15)) > self._cookie_expire:
+                response = self._session.post(
+                    f"{self.origin_url}{self.config.AUTH_ENDPOINT}",
+                    data={
+                        "acctid": self.acctid,
+                        "username": self.username,
+                        "password": self.password,
+                        "lcid": self.lcid,
+                    },
+                    timeout=30
+                )
+                response.raise_for_status()
+
+                cookie_value, expire_time = self._parse_cookies(response.headers['Set-Cookie'])
+                self._cookie = cookie_value
+                self._cookie_expire = expire_time
+
+                self._session.headers.update({
+                    "Cookie": self._cookie,
+                })
+        except Exception as e:
+            raise ConnectionError(f"认证失败: {e}")
+        return self._cookie
+
+
+    def _get_paged_data(self, form_id: str, field_mapper: dict, filter_string: str=None, only_today: bool=False):
         """
-        分页获取数据，每次返回page_size条数据
+        分页获取数据
         form_id: 表单ID
-        field_keys_mapper: 字段键映射，键为K3 字段名，值为映射成的段名
+        field_mapper: 字段键映射，键为K3 字段名，值为映射成的段名
         filter_string: 查询条件，格式为K3 格式
         only_today: 是否仅查询今天变动的数据
         """
-        cls.auth()
+        self.auth()
         filter_string = filter_string or "1=1"
         if only_today:
             today = datetime.now().strftime('%Y-%m-%d')
-            filter_string = f"{filter_string} AND (( fCreateDate >= '{today} 00:00:00' AND fCreateDate < '{today} 23:59:59' ) OR ( fModifyDate >= '{today} 00:00:00' AND fModifyDate < '{today} 23:59:59' ))"
-            #`(( FCREATEDATE >= '${sliceStart}' AND FCREATEDATE < '${sliceEnd}' ) OR ( FMODIFYDATE >= '${sliceStart}' AND FMODIFYDATE < '${sliceEnd}'))`
-        k3_fields = list(set(field_keys_mapper.keys()))
-        to_fields = [field_keys_mapper[k] for k in k3_fields]
+            filter_string = f"{filter_string} AND (( fCreateDate >= '{today} 00:00:00' AND fCreateDate <= '{today} 23:59:59' ) OR ( fModifyDate >= '{today} 00:00:00' AND fModifyDate <= '{today} 23:59:59' ))"
+        k3_fields = set(field_mapper.keys())
+        to_fields = [field_mapper[k] for k in k3_fields]
         # 发送请求
         start_row = 0
+        page_size = self.config.PAGE_SIZE
         while True:
-            response = cls._session.post(
-                url=f"{cls.origin_url}/K3Cloud/Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.ExecuteBillQuery.common.kdsvc",
+            response = self._session.post(
+                url=f"{self.origin_url}{self.config.QUERY_ENDPOINT}",
                 json={
                     "data": {
                         "FormId": form_id,
                         "FieldKeys": ",".join(k3_fields),
                         "FilterString": filter_string,
                         "StartRow": start_row,
-                    "Limit": page_size,
-                    "TopRowCount": 100000,
+                        "Limit": page_size,
+                        "TopRowCount": self.config.TOP_ROW_COUNT,
                     "SubSystemId": ""
                     }
                 }
@@ -151,53 +276,21 @@ class K3Connection(BaseConnection):
             start_row += page_size
 
 
-    def material_list(cls, page_size: int=1000, filter_string: str=None, only_today: bool=False, pydantic_model: AcceptMaterial=K3Material):
-        page_size = min(page_size, 1000)
-        material_paged_data = cls._get_paged_data(
-            form_id="BD_MATERIAL",
-            field_keys_mapper={
-                "fMaterialId": "id", "fNumber": "编码", "fName": "名称",
-                "fWorkShopId.fName": "生产车间", "fPlanerId.fName": "计划员",
-                "fSpecification": "规格型号", "fCategoryId.fName": "存货类别",
-                "fErpClsId.fCaption": "物料属性", "fProduceUnitId.fName": "生产单位",
-                "fFixLeadTime": "固定提前期", "fFixLeadTimeType.fCaption": "固定提前期单位",
-                "fExpPeriod": "保质期", "fExpUnit.fCaption": "保质期单位",
-                "fCheckLeadTime": "检验提前期", "fCheckLeadTimeType.fCaption": "检验提前期单位",
-                "fPlanIntervalsDays": "批量拆分间隔天数", "fCanDelayDays": "允许延后天数",
-                "fMaxStock": "最大库存", "fPlanSafeStockQty": "安全库存", "fReOrderGood": "再订货点",
-                "fEOQ": "固定/经济批量", "fRefCost": "参考成本",
-                "fMaxQty": "最大批量", "fMinQty": "最小批量",
-                },
+    def data_list(self, form_name: str, filter_string: str=None, only_today: bool=False, pydantic_model: PydanticModel=None):
+        data_paged_data = self._get_paged_data(
+            form_id=self.config.FORMS[form_name]['form_id'],
+            field_mapper=self.config.FORMS[form_name]['field_map'],
             filter_string=filter_string,
-            page_size=page_size,
             only_today=only_today,
         )
-        data = cls._merge_paged_data(material_paged_data)
+        data = self._merge_paged_data(data_paged_data)
+        pydantic_model = pydantic_model or self.config.FORMS[form_name].get('pydantic_model')
+        if not pydantic_model:
+            return data
         return [dict(pydantic_model(**item)) for item in data]
 
 
-    def bom_list(cls, page_size: int=1000, filter_string: str=None):
-        parent_data = cls._get_paged_data(
-            form_id="ENG_BOM",
-            field_keys_mapper={
-                "fId": "id", "fMaterialId.fNumber": "productno", "fMaterialId.fName": "description",
-                "fUnitId.fName": "unit", "fQty": "qty", "fBaseUnitId.fName": "baseunit", "FNumber": "matver"
-            },
-            filter_string=filter_string,
-            page_size=page_size,
-        )
-
-        child_data = cls._get_paged_data(
-            form_id="ENG_BOM",
-            field_keys_mapper={
-                "fTreeEntity_fEntryId": "id", "fID": "parentid", "fMaterialIdChild.fNumber": "materialno",
-                "fChildUnitId.fName": "unit", "fNumerator": "numerator", "fDenominator": "denominator",
-                "FNumber": "matver"
-            },
-            filter_string=filter_string,
-        )
-        return flat_merge_parent_child_data(
-            parent_data=parent_data,
-            child_data=child_data
-        )
-
+    def __repr__(self) -> str:
+            """字符串表示"""
+            return (f"K3Connection(url='{self.origin_url}', "
+                    f"user='{self.username}', acctid='{self.acctid}')")

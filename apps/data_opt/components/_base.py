@@ -8,9 +8,10 @@ from apps.data_opt.utils.common import get_session, convert_timeunit, clean_valu
 
 
 class BaseConnection(ABC):
-    @abstractmethod
+    
     def __init__(self):
-        pass
+        self._session = get_session()
+        
 
     @abstractmethod
     def auth(self):
@@ -37,6 +38,51 @@ class BaseConnection(ABC):
             merged_data.extend(page)
         return merged_data
 
+    def __enter__(self):
+        """上下文管理器入口"""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """上下文管理器出口"""
+        if hasattr(self, '_session') and self._session:
+            self._session.close()
+
+
+    @staticmethod
+    def flat_merge_parent_child_data(parent_data: List[Dict], child_data: List[Dict], 
+                                    parent_key_fields: str | list[str] = 'id', 
+                                    child_match_key_fields: str | list[str] = 'parentid') -> List[Dict]:
+        """
+        合并父表和子表数据为扁平结构
+        """
+        union_key_col = '$index'
+        # 转换为DataFrame
+        df_parent = pd.DataFrame(parent_data)
+        df_child = pd.DataFrame(child_data)
+
+        parent_key_fields = parent_key_fields if isinstance(parent_key_fields, list) else [parent_key_fields]
+        child_match_key_fields = child_match_key_fields if isinstance(child_match_key_fields, list) else [child_match_key_fields]
+
+        df_parent[union_key_col] = df_parent[parent_key_fields].apply(lambda x: tuple(x), axis=1)
+        df_child[union_key_col] = df_child[child_match_key_fields].apply(lambda x: tuple(x), axis=1)
+        
+        # 处理单字段情况
+        if isinstance(parent_key_fields, str):
+            parent_key_fields = [parent_key_fields]
+        if isinstance(child_match_key_fields, str):
+            child_match_key_fields = [child_match_key_fields]
+        
+        # 合并数据
+        merged_df = pd.merge(
+            df_parent,
+            df_child,
+            left_on=union_key_col,
+            right_on=union_key_col,
+            how='left',
+            suffixes=('_parent', '_child')
+        )
+        
+        return merged_df.to_dict(orient='records')
 
 
 def wrap_data_response(func):
@@ -51,39 +97,3 @@ def wrap_data_response(func):
             'data': data
         }
     return wrapper
-
-
-def flat_merge_parent_child_data(parent_data: List[Dict], child_data: List[Dict], 
-                                 parent_key_fields: str | list[str] = 'id', 
-                                 child_match_key_fields: str | list[str] = 'parentid') -> List[Dict]:
-    """
-    合并父表和子表数据为扁平结构
-    """
-    union_key_col = '$index'
-    # 转换为DataFrame
-    df_parent = pd.DataFrame(parent_data)
-    df_child = pd.DataFrame(child_data)
-
-    parent_key_fields = parent_key_fields if isinstance(parent_key_fields, list) else [parent_key_fields]
-    child_match_key_fields = child_match_key_fields if isinstance(child_match_key_fields, list) else [child_match_key_fields]
-
-    df_parent[union_key_col] = df_parent[parent_key_fields].apply(lambda x: tuple(x), axis=1)
-    df_child[union_key_col] = df_child[child_match_key_fields].apply(lambda x: tuple(x), axis=1)
-    
-    # 处理单字段情况
-    if isinstance(parent_key_fields, str):
-        parent_key_fields = [parent_key_fields]
-    if isinstance(child_match_key_fields, str):
-        child_match_key_fields = [child_match_key_fields]
-    
-    # 合并数据
-    merged_df = pd.merge(
-        df_parent,
-        df_child,
-        left_on=union_key_col,
-        right_on=union_key_col,
-        how='left',
-        suffixes=('_parent', '_child')
-    )
-    
-    return merged_df.to_dict(orient='records')
