@@ -1,6 +1,8 @@
+import json, base64
 from typing import List, Dict, Optional, Callable, Union
 from abc import ABC, abstractmethod
-
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import unpad
 import pandas as pd
 
 from apps.data_opt.utils.common import get_session, convert_timeunit, clean_value
@@ -97,3 +99,35 @@ def wrap_data_response(func):
             'data': data
         }
     return wrapper
+
+
+
+def aes_decrypt(encrypted_str: str, key: str) -> str:
+    """
+    AES/ECB/PKCS5Padding解密
+    Args:
+        encrypted_str: Base64编码的加密字符串
+        key: 密钥（16/24/32字节对应AES-128/192/256）
+    Returns:
+        解密后的原始字符串
+    """
+    # Base64解码
+    encrypted_bytes = base64.b64decode(encrypted_str)
+    
+    # 确保密钥长度符合AES要求（16, 24, 32字节）
+    # 如果密钥长度不够，可以用特定方式填充（这里用null字节填充到最近的有效长度）
+    key_bytes = key.encode('utf-8')
+    if len(key_bytes) not in [16, 24, 32]:
+        # 将密钥调整到最接近的有效长度
+        valid_lengths = [16, 24, 32]
+        target_length = min(valid_lengths, key=lambda x: abs(x - len(key_bytes)))
+        # 用null字节填充到目标长度
+        key_bytes = key_bytes.ljust(target_length, b'\0')
+    # 创建AES解密器（ECB模式）
+    cipher = AES.new(key_bytes, AES.MODE_ECB)
+    # 解密
+    decrypted_bytes = cipher.decrypt(encrypted_bytes)
+    # 去除PKCS5/PKCS7填充
+    decrypted_bytes = unpad(decrypted_bytes, AES.block_size)
+    # 返回UTF-8字符串
+    return json.loads(decrypted_bytes.decode('utf-8'))
