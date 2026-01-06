@@ -13,6 +13,7 @@ from globalobjects import file_timed_logger
 from apps.io_api.routers import rt as io_rt
 from apps.io_api.common import register_exception_handlers
 from apps.data_opt.routers import rt as do_rt
+from apps.data_opt.optional_routers import register_optional_routers
 # from apps.data_opt.common import register_exception_handlers as register_data_manager_exception_handlers
 
 # 导入全局MySQL监控实例
@@ -180,9 +181,7 @@ register_exception_handlers(app)
 app.include_router(io_rt, prefix="/api", tags=[])
 app.include_router(do_rt, prefix="/do", tags=[])
 
-if THIS_SERVER_PORT == 80:
-    from apps.data_opt.components.yonyou_tplus import rt as cjt_rt
-    app.include_router(cjt_rt, tags=[])
+register_optional_routers(app)
 
 
 # 根路由
