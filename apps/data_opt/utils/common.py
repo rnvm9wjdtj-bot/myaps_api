@@ -142,7 +142,7 @@ def convert_timeunit(value, from_unit: str, to_unit: str = 'day'):
     # 定义单位转换因子
     unit_factors = {
         '日': 24, '天': 24, 'day': 24, 'd': 24,
-        '小时': 1, 'hour': 1, 'hr': 1, 'h': 1,
+        '小时': 1, '时': 1, 'hour': 1, 'hr': 1, 'h': 1,
         '分钟': 1/60, '分': 1/60, 'minute': 1/60, 'min': 1/60, 'm': 1/60,
         '秒': 1/3600, 'sec': 1/3600, 's': 1/3600
     }
@@ -153,6 +153,8 @@ def convert_timeunit(value, from_unit: str, to_unit: str = 'day'):
     except ValueError:
         if value in ('', None):
             return 0
+    from_unit = str(from_unit).lower()
+    to_unit = str(to_unit).lower()
     if not from_unit in unit_factors:
         raise ValueError(f"无效的原始时间单位: {from_unit}")
     if not to_unit in unit_factors:

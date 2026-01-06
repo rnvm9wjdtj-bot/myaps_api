@@ -1,4 +1,5 @@
 # import pandas as pd
+from dataclasses import dataclass
 import http.cookies
 
 from datetime import datetime, timedelta
@@ -65,6 +66,7 @@ class K3Material(AcceptMaterial):
         return cleaned_values
 
 
+
 class K3Config:
     """K3基础配置"""
     AUTH_ENDPOINT = "/K3Cloud/Kingdee.BOS.WebApi.ServicesStub.AuthService.ValidateUser.common.kdsvc"
@@ -92,6 +94,7 @@ class K3Config:
                 "fMaxStock": "最大库存", "fPlanSafeStockQty": "安全库存", "fReOrderGood": "再订货点",
                 "fEOQ": "固定/经济批量", "fRefCost": "参考成本", "fMaxQty": "最大批量", "fMinQty": "最小批量",
             },
+            'base_filterstring': 'fUserOrgId=1',
             'pydantic_model': K3Material,
         },
 
@@ -160,6 +163,22 @@ class K3Config:
         },
 
     }
+
+
+
+# @dataclass
+# class K3ConnectionState:
+#     """连接状态管理"""
+#     cookie: Optional[str] = None
+#     cookie_expire: Optional[datetime] = None
+#     session = None
+    
+#     @property
+#     def is_authenticated(self) -> bool:
+#         """检查是否已认证且未过期"""
+#         if not self.cookie or not self.cookie_expire:
+#             return False
+#         return datetime.now() < self.cookie_expire - timedelta(minutes=15)
 
 
 
@@ -277,6 +296,9 @@ class K3Connection(BaseConnection):
 
 
     def data_list(self, form_name: str, filter_string: str=None, only_today: bool=False, pydantic_model: PydanticModel=None):
+        filter_string = filter_string or "1=1"
+        filter_string = f"{filter_string} AND {self.config.FORMS[form_name]['base_filterstring']}"
+
         data_paged_data = self._get_paged_data(
             form_id=self.config.FORMS[form_name]['form_id'],
             field_mapper=self.config.FORMS[form_name]['field_map'],

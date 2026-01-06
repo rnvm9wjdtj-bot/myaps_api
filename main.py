@@ -180,6 +180,10 @@ register_exception_handlers(app)
 app.include_router(io_rt, prefix="/api", tags=[])
 app.include_router(do_rt, prefix="/do", tags=[])
 
+if THIS_SERVER_PORT == 80:
+    from apps.data_opt.components.yonyou_tplus import rt as cjt_rt
+    app.include_router(cjt_rt, tags=[])
+
 
 # 根路由
 @app.get("/")
