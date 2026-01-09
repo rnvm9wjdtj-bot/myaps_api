@@ -1,4 +1,5 @@
 import json, base64
+from pathlib import Path
 from typing import List, Dict, Optional, Callable, Union
 from abc import ABC, abstractmethod
 from Crypto.Cipher import AES
@@ -9,18 +10,21 @@ from apps.data_opt.utils.common import get_session, convert_timeunit, clean_valu
 # from apps.io_api.schemas import (AcceptMaterial) # 引起循环引用
 
 
+COMPONENT_CACHE_FILE = Path(__file__).parent / "_cache_.json"
+
+
 class BaseConnection(ABC):
     
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         self._session = get_session()
         
 
     @abstractmethod
-    def auth(self):
+    def auth(self, *args, **kwargs):
         pass
 
     @abstractmethod
-    def _get_paged_data(self, url: str, params: dict = None) -> List[Dict]:
+    def _get_paged_data(self, *args, **kwargs) -> List[Dict]:
         """
         获取分页数据
         url: 请求URL

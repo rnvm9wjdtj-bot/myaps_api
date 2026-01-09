@@ -21,6 +21,7 @@ class K3Material(AcceptMaterial):
     leadday: int = Field(None, ge=0, description="交期（天）")
     grday: int = Field(None, ge=0, description="收货质检（天）")
     groupno: str = Field(None, description="型号")
+    fifo: int = Field(None, description="先进先出")
 
     class Config:
         extra = 'allow'
@@ -35,9 +36,9 @@ class K3Material(AcceptMaterial):
         # cleaned_values['plant'] = values['生产车间']
         cleaned_values['planner'] = clean_value(values['计划员'])
         # cleaned_values['fifo'] = values['']
-        cleaned_values['leadday'] = convert_timeunit(int(values.get('固定提前期', 0)), values['固定提前期单位'], 'day')
-        cleaned_values['expday'] = convert_timeunit(int(values.get('保质期', 0)), values['保质期单位'], 'day')
-        cleaned_values['grday'] = convert_timeunit(int(values.get('检验提前期', 0)), values['检验提前期单位'], 'day')
+        cleaned_values['leadday'] = convert_timeunit(values.get('固定提前期', 0), values['固定提前期单位'], 'day')
+        cleaned_values['expday'] = convert_timeunit(values.get('保质期', 0), values['保质期单位'], 'day')
+        cleaned_values['grday'] = convert_timeunit(values.get('检验提前期', 0), values['检验提前期单位'], 'day')
         cleaned_values['abc'] = 'A' if values['物料属性'].replace(' ','') == '自制' else 'B'
         cleaned_values['unit'] = clean_value(values['生产单位'])
         cleaned_values['price'] = values['参考成本']
@@ -101,12 +102,12 @@ class K3Config:
         'bom': {
             'form_id': 'ENG_BOM',
             'field_map': {
-                "fID": "父项id", "FNumber": "BOM版本", "fMaterialId.fNumber": "父项物料编码", "fMaterialId.fName": "父项物料名称",
+                "fID": "父项id", "fNumber": "BOM版本", "fMaterialId.fNumber": "父项物料编码", "fMaterialId.fName": "父项物料名称",
                 "fUnitId.fName": "父项物料单位", "fQty": "批量", "fBaseUnitId.fName": "父项基本单位",
                 "fTreeEntity_fEntryId": "子项明细id",
-                "fMaterialIdChild.fNumber": "子项物料编码", "FChildBaseUnitID.fName": "子项基本单位",
+                "fMaterialIdChild.fNumber": "子项物料编码", "fChildBaseUnitID.fName": "子项基本单位",
                 "fChildUnitId.fName": "子项单位", "fNumerator": "用量:分子", "fDenominator": "用量:分母",
-                "FBaseFixscrapQty": "基本单位固定损耗", "fBaseFixscrapQtyLot": "基本单位固定损耗数量"
+                "fBaseFixscrapQty": "基本单位固定损耗", "fBaseFixscrapQtyLot": "基本单位固定损耗数量"
             },
             'pydantic_model': None,
         },
@@ -162,7 +163,25 @@ class K3Config:
             'pydantic_model': None,
         },
 
+        "stock": {
+            'form_id': 'STK_Inventory',
+            'field_map': {
+                "fID": "id", "fMaterialId.fNumber": "物料编码", "fMaterialId.fName": "物料名称",
+                "fStockLocId": "仓位", "fLot": "批号", "fStockOrgId": "库存组织", "fBomId.fNumber": "BOM版本",
+                "fBaseUnitId.fName": "基本单位", "fStockUnitId.fName": "库存主单位", "fSecUnitId.fName": "库存辅单位",
+                "fBaseQty": "库存量(基本单位)", "fQty": "库存量(主单位)", "fSecQty": "库存量(库存辅单位)",
+                "fAvbQty": "可用量(主单位)", "fBaseAvbQty": "可用量(基本单位)", "fSecAVBQty": "可用量(库存辅单位)",
+                "fUpdateTime": "最后更新时间",
+                
+            },
+            'pydantic_model': None,
+        },
     }
+
+    @classmethod
+    def regist_pydantic_model(cls, form_name: str, pydantic_model: PydanticModel):
+        """注册Pydantic模型"""
+        cls.FORMS[form_name]['pydantic_model'] = pydantic_model
 
 
 
@@ -279,6 +298,7 @@ class K3Connection(BaseConnection):
             # 处理响应
             data = []
             if 'ErrorCode' in response.text:
+                print(f"查询失败: {response.text}")
                 yield data
                 break
 
@@ -297,7 +317,8 @@ class K3Connection(BaseConnection):
 
     def data_list(self, form_name: str, filter_string: str=None, only_today: bool=False, pydantic_model: PydanticModel=None):
         filter_string = filter_string or "1=1"
-        filter_string = f"{filter_string} AND {self.config.FORMS[form_name]['base_filterstring']}"
+        base_filterstring = self.config.FORMS[form_name].get('base_filterstring', "1=1")
+        filter_string = f"{filter_string} AND {base_filterstring}"
 
         data_paged_data = self._get_paged_data(
             form_id=self.config.FORMS[form_name]['form_id'],

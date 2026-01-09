@@ -1,7 +1,7 @@
 """
-项目文件要声明 DbEvent 类，并根据项目实际情况继承或覆写其中的方法
+项目文件要声明 ApsBaseAction 子类，并根据项目实际情况继承或覆写其中的方法
 
-class DbEvent(DbEventBase):
+class ApsAction(ApsBaseAction):
     def press_release_button(self, pl_data: dict) -> None:
         pass
 """
@@ -13,7 +13,7 @@ from datetime import datetime
 from fastapi import status
 
 from ._base import (
-    ProjectParamBase, DefaultValueBase, DbEventBase,
+    ProjectParamBase, DefaultValueBase, ApsBaseAction,
     file_log, console_log, standard_response, get_session, HapConnection
     )
 
@@ -42,7 +42,7 @@ class DefaultValue(DefaultValueBase):
 # ⬇️ 项目可复用逻辑
 #################################################################################
 ...
-TplusConnection()
+
 
 
 #################################################################################
@@ -54,5 +54,5 @@ TplusConnection()
 #################################################################################
 # ⬇️ 数据库事件
 #################################################################################
-class DbEvent(DbEventBase):
+class ApsAction(ApsBaseAction):
     pass

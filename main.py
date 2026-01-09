@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.openapi.docs import get_swagger_ui_html
 from tortoise.contrib.fastapi import register_tortoise
 
-from config.settings import TORTOISE_ORM_CONFIG, THIS_SERVER_PORT, BASE_DIR
+from config.settings import TORTOISE_ORM_CONFIG, PORT, BASE_DIR
 from globalobjects import file_timed_logger
 from apps.io_api.routers import rt as io_rt
 from apps.io_api.common import register_exception_handlers
@@ -220,7 +220,7 @@ if __name__ == "__main__":
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=THIS_SERVER_PORT,
+        port=PORT,
     )
 
 

@@ -495,11 +495,16 @@ async def get_matdailyqtyreport(
     materialno: str = Query(None, description="料号"),
     # x_api_key: str = common_params["x_api_key"]
 ):
+    """获取库存动态报表
+    - 按日期范围和料号筛选库存动态记录
+    - 若未指定日期范围，则默认查询今日至一周后的记录
+    - 若未指定料号，则查询所有料号的记录
+    """
     startdate = startdate or date.today()
     enddate = enddate or startdate + timedelta(days=7)
     filter_string = f"DateStr >= '{startdate}' AND DateStr <= '{enddate}'"
     if materialno:
-        filter_string = f"({filter_string}) AND MaterialNo = '{materialno}'"    
+        filter_string = f"({filter_string}) AND MaterialNo IN ({materialno})"
     return await common_read_by_sql(db_name=db_name, table_name="v_matdailyqtyreport", filter_string=filter_string)
 
 

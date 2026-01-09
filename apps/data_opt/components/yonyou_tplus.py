@@ -17,17 +17,13 @@ https://open.chanjet.com/docs/file/apiFile/tcloud/tjrzy/tplusguide
 """
 import json
 import os
-from pathlib import Path
 from datetime import datetime
 
 from fastapi import APIRouter, Request
 from fastapi.responses import PlainTextResponse
 
-from ._base import BaseConnection, aes_decrypt
+from ._base import BaseConnection, aes_decrypt, COMPONENT_CACHE_FILE
 
-
-
-_TPLUS_CACHE_FILE = Path(__file__).parent / "tplus_cache.json"
 
 
 class TplusConfig():
@@ -39,9 +35,9 @@ class TplusConfig():
 
     @classmethod
     def load(cls):
-        if _TPLUS_CACHE_FILE.exists():
+        if COMPONENT_CACHE_FILE.exists():
             try:
-                with open(_TPLUS_CACHE_FILE, 'r', encoding='utf-8') as f:
+                with open(COMPONENT_CACHE_FILE, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 cls.APP_ID = data.get("app_id")
                 cls.APP_KEY = data.get("app_key")
@@ -59,20 +55,18 @@ class TplusConfig():
                 "app_ticket": cls.APP_TICKET,
                 "updated_at": datetime.now().isoformat()
             }
-            with open(_TPLUS_CACHE_FILE, 'w', encoding='utf-8') as f:
+            with open(COMPONENT_CACHE_FILE, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
             print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} 配置已保存到文件")
         except Exception as e:
             print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} 保存配置到文件失败: {e}")
 
     @classmethod
-    def update(cls, app_id: str, app_key: str, app_ticket: str):
-        cls.APP_ID = app_id
-        cls.APP_KEY = app_key
-        cls.APP_TICKET = app_ticket
+    def update(cls, msg_dict):
+        cls.APP_ID = msg_dict.get("appId")
+        cls.APP_KEY = msg_dict.get("appKey")
+        cls.APP_TICKET = msg_dict["bizContent"].get("appTicket")
         cls.save()
-
-
 
 
 rt = APIRouter()
@@ -83,17 +77,15 @@ async def check_chanjet():
     """畅捷通白名单认证回调接口"""
     return PlainTextResponse(TplusConfig.CHECK_TXT)
 
-@rt.post("/cjt/msg")
+@rt.post("/webhook/cjt/msg")
 async def response_chanjet(request: Request):
     data = await request.json()
     try:
         encrypt_msg = data["encryptMsg"]
         msg_dict = aes_decrypt(encrypt_msg, TplusConfig.AES_KEY)
         print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} 收到畅捷通消息: {msg_dict}")
-        TplusConfig.APP_ID = msg_dict.get("appId")
-        TplusConfig.APP_KEY = msg_dict.get("appKey")
-        TplusConfig.APP_TICKET = msg_dict["bizContent"].get("appTicket")
-        TplusConfig.save()
+        TplusConfig.update(msg_dict)
+
         
     except Exception as e:
         print(f"解密畅捷通消息失败: {e}")
@@ -103,10 +95,7 @@ async def response_chanjet(request: Request):
 
 class TplusConnection(BaseConnection):
     
-
     def __init__(self, app_id: str = None, app_key: str = None, app_ticket: str = None):
-
-
         if app_id is None or app_key is None or app_ticket is None:
             config_data = self._load_from_file()
             self.app_id = app_id or config_data.get("app_id")
@@ -119,17 +108,17 @@ class TplusConnection(BaseConnection):
         super().__init__()
 
     def _load_from_file(self):
-        if _TPLUS_CACHE_FILE.exists():
+        if COMPONENT_CACHE_FILE.exists():
             try:
-                with open(_TPLUS_CACHE_FILE, 'r', encoding='utf-8') as f:
+                with open(COMPONENT_CACHE_FILE, 'r', encoding='utf-8') as f:
                     return json.load(f)
             except Exception as e:
                 print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} 从文件加载配置失败: {e}")
         return {}
         
         
-    def auth():
+    def auth(self):
         pass
 
-    def _get_paged_data(self, url: str, params: dict = None):
+    def _get_paged_data(self):
         pass

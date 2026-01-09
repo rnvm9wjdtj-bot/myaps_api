@@ -54,7 +54,7 @@ rt = APIRouter()
     #         supplyno=body.supplyno,
     #     ).delete(using_db=db_name or None)
     # elif body.action == SupplyAction.PL_TO_MO and body.type == "PL":
-    #     return await current_project.DbEvent.pl_to_mo(body.supplyno, body.mono, db_name or None)
+    #     return await current_project.ApsAction.pl_to_mo(body.supplyno, body.mono, db_name or None)
 
 
 @rt.post("/generate/qrcode",

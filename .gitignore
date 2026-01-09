@@ -80,5 +80,5 @@ test/
 # 忽略project_files文件夹下以_ed为结尾的py文件
 project_files/*_ed.py
 
-# T+ 配置文件
-apps/data_opt/components/tplus_cache.json
+# 缓存文件
+_cache_.json

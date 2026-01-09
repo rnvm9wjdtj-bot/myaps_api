@@ -8,7 +8,7 @@ from fastapi import status
 
 from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL
 from ._base import (
-    ProjectParamBase, DefaultValueBase, DbEventBase, 
+    ProjectParamBase, DefaultValueBase, ApsBaseAction, 
     file_log, console_log, standard_response, get_session, HapConnection,
     cron_task, add_basic_auth_requests
     )
@@ -83,10 +83,10 @@ async def sap_post(url: str, session: requests.Session, interface_id: str, data:
 # ⬇️定时任务设置
 #################################################################################
 schedule_task_hour = '6,8,10,12,14,16'
-schedule_task_minute = '55'
+schedule_task_minute = 55
 
 
-@cron_task(hour=schedule_task_hour, minute=schedule_task_minute)
+@cron_task(hour=schedule_task_hour, minute=f"{schedule_task_minute + 0}")
 def refresh_stock(db: str = ProjectParam.SCHEDULED_DBS):
     """
     刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据
@@ -143,12 +143,16 @@ def refresh_stock(db: str = ProjectParam.SCHEDULED_DBS):
         console_log.error(f"刷新库存任务执行失败: {str(e)}")
         response = standard_response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, success=0, message=f"刷新库存任务执行失败: {str(e)}")
     return response
-    
+
+
+# def push_pr_to_srm():
+#     requests.get(f"{THIS_BASE_URL}/api/t_supply?db_name={db}&type=ST")
+
 #################################################################################
 # ⬇️数据库事件处理
 #################################################################################
 
-class DbEvent(DbEventBase):
+class ApsAction(ApsBaseAction):
 
     @classmethod
     async def press_release_button(cls, pl_data: dict):

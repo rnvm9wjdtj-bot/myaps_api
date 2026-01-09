@@ -40,7 +40,7 @@ async def handle_update_supply(database: str, table: str, data: dict, data_diff:
         supply_new_status = data['new']['Status']
         if supply_old_status in ["NEW", "CRE"] and supply_new_status == 'A2E':
             pl_data = dict_to_lower_keys(data['new'])
-            await current_project.DbEvent.press_release_button(pl_data)
+            await current_project.ApsAction.press_release_button(pl_data)
             
             
     # print(f"更新到 {table}@{database}: {data}")
