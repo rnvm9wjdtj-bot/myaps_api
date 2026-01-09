@@ -157,8 +157,8 @@ class ApsBaseAction(ABC):
             }])
         return response
 
-
-def get_pr_from_matdailyqtyreport(db_name: str = None, period: int = 30, dates: Optional[List[str]] = None, materialno: str = None) -> List[Dict[str, Any]]:
+    @staticmethod
+    def get_pr_from_matdailyqtyreport(db_name: str = None, period: int = 30, dates: Optional[List[str]] = None, materialno: str = None, field_mapping: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
         slice_size = 10 # 每次获取10天数据, 避免一次性请求过多数据
         start_date: datetime.date = datetime.now().date()
         end_date = start_date + timedelta(days=period)
@@ -167,10 +167,27 @@ def get_pr_from_matdailyqtyreport(db_name: str = None, period: int = 30, dates: 
         # 分片获取数据
         while start_date <= end_date:
             slice_date = min(start_date + timedelta(days=slice_size), end_date)
-            response = requests.get(f"http://172.16.101.209:8000/api/v_matdailyqtyreport?db_name={db_name}&materialno={materialno}&startdate={start_date}&enddate={slice_date}")
+            # 构建API请求参数
+            api_params = {
+                'db_name': db_name,
+                'startdate': start_date,
+                'enddate': slice_date
+            }
+            # 只有当materialno不为None时才添加到请求参数中
+            if materialno is not None:
+                api_params['materialno'] = materialno
+            
+            # 构建完整URL
+            url = "http://172.16.101.209:8000/api/v_matdailyqtyreport"
+            
+            response = requests.get(url, params=api_params, timeout=30)
             response.raise_for_status()
-            if data := response.json().get('data'):
+            
+            response_data = response.json()
+            
+            if data := response_data.get('data'):
                 result.extend(data)
+            
             start_date = slice_date + timedelta(days=1)
         
         if not result:
@@ -206,27 +223,28 @@ def get_pr_from_matdailyqtyreport(db_name: str = None, period: int = 30, dates: 
         material_balances = {}
         
         for record in df_grouped.to_dict('records'):
-            materialno = record['materialno']
-            totaldemand = record['totaldemand']
-            totalsupply = record['totalsupply']
-            if materialno not in material_balances:
+            record_materialno = record['materialno']
+            if record_materialno not in material_balances:
                 # 首个日期组
                 opening_balance = record['stockqty']
-                # 期末盈余 = 期初盈余 + totaldemand（因为totalsupply已经包含了stockqty）
-                closing_balance = opening_balance + totaldemand
-                record['本期要货数'] = abs(min(0, totalsupply + totaldemand))
+                closing_balance = opening_balance + record['totaldemand']
+                record['本期要货数'] = abs(min(0, record['totalsupply'] + record['totaldemand']))
             else:
                 # 后续日期组
-                opening_balance = material_balances[materialno]
-                # 期末盈余 = 期初盈余 + totaldemand + totalsupply
-                closing_balance = opening_balance + totaldemand + totalsupply
-                record['本期要货数'] = abs(min(max(0, opening_balance) + totalsupply + totaldemand, 0))
-            # 更新当前记录
+                opening_balance = material_balances[record_materialno]
+                closing_balance = opening_balance + record['totaldemand'] + record['totalsupply']
+                record['本期要货数'] = abs(min(max(0, opening_balance) + record['totalsupply'] + record['totaldemand'], 0))
+            
+            # 更新记录
             record['期初盈余'] = opening_balance
             record['期末盈余'] = closing_balance
+            material_balances[record_materialno] = closing_balance
             
-            # 更新物料的期末盈余，用于下一个日期组
-            material_balances[materialno] = closing_balance
-            result.append(record)
+            # 应用字段映射
+            if field_mapping:
+                mapped_record = {field_mapping.get(k, k): v for k, v in record.items()}
+                result.append(mapped_record)
+            else:
+                result.append(record)
         
         return result

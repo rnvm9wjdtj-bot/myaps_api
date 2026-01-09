@@ -5,6 +5,7 @@ import pandas as pd
 from datetime import datetime
 
 from fastapi import status
+from dateutil.relativedelta import relativedelta
 
 from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL
 from ._base import (
@@ -145,9 +146,24 @@ def refresh_stock(db: str = ProjectParam.SCHEDULED_DBS):
     return response
 
 
-# def push_pr_to_srm():
-#     requests.get(f"{THIS_BASE_URL}/api/t_supply?db_name={db}&type=ST")
+@cron_task(hour=23, minute=50)
+def push_weekpr_to_srm():
+    # 推送周要货计划到SRM
+    pr_data = ApsBaseAction.get_pr_from_matdailyqtyreport(db_name=MYAPS_MAIN_DB)
+    file_log.info(f"从账套{MYAPS_MAIN_DB}获取到周要货计划：\n{pr_data}")
 
+@cron_task(day=1, hour=0, minute=5)
+def push_seasonpr_to_srm():
+    # 每月初推送季度要货计划到SRM
+    # 生成下三个月的月底日期列表
+    date_list = [
+        (datetime.now().replace(day=1) + relativedelta(months=i + 1) - relativedelta(days=1)).strftime('%Y-%m-%d')
+        for i in range(3)
+    ]
+    pr_data = ApsBaseAction.get_pr_from_matdailyqtyreport(db_name=MYAPS_MAIN_DB, period=90, dates=date_list)
+    file_log.info(f"从账套{MYAPS_MAIN_DB}获取到季度要货计划：\n{pr_data}")
+    # 推送季度要货计划到SRM
+  
 #################################################################################
 # ⬇️数据库事件处理
 #################################################################################
