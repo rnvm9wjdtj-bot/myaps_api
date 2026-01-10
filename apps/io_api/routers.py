@@ -2,7 +2,8 @@ from datetime import date, datetime, timedelta
 # from re import S
 # from this import d
 from typing import List#, Dict, Any, Literal
-import inspect, functools, pandas as pd, requests
+import inspect, functools, pandas as pd
+import httpx
 
 from fastapi import APIRouter, Query, Body, status#, Request, Path
 # from tortoise import Tortoise
@@ -481,67 +482,14 @@ async def get_orderwc(
         filter_string = f"DT_Start >= '{starttime}' AND DT_End <= '{endtime}'"
     return await common_read_by_sql(db_name=db_name, table_name="v_orderwc", filter_string=filter_string)
 
+
 @rt.get(
     "/v_matdailyqtyreport",
-    tags=["报表 - 库存动态"],
-    summary="获取库存动态报表",
-    description="获取库存动态报表"
-)
-async def get_matdailyqtyreport(
-    db_name: str = common_params["db_name"],
-    startdate: date = Query(date.today(), description="开始日期"),
-    enddate: date = Query(date.today() + timedelta(days=7), description="结束日期"),
-    materialno: str = Query(None, description="料号"),
-    # x_api_key: str = common_params["x_api_key"]
-):
-    """获取库存动态报表
-    - 按日期范围和料号筛选库存动态记录
-    - 若未指定日期范围，则默认查询今日至一周后的记录
-    - 若未指定料号，则查询所有料号的记录
-    """
-    startdate = startdate or date.today()
-    enddate = enddate or startdate + timedelta(days=7)
-    filter_string = f"DateStr >= '{startdate}' AND DateStr <= '{enddate}'"
-    if materialno:
-        filter_string = f"({filter_string}) AND MaterialNo IN ({materialno})"
-    return await common_read_by_sql(db_name=db_name, table_name="v_matdailyqtyreport", filter_string=filter_string)
-
-
-@rt.post(
-    "/t_confirm",
-    tags=["生产数据 - 报工"],
-    summary="新增报工记录",
-    description="新增报工记录"
-    )
-async def post_record(
-    data: List[AcceptConfirm],
-    db_name: str = common_params["db_name"],
-    x_api_key: str = common_params["x_api_key"]
-    ):
-    # 使用异步上下文管理器自动管理连接
-    async with get_tortoise_connection(db_name) as db:
-        for d in data:
-            if not hasattr(d, "itemno") or d.itemno in gc.NONE_AND_EMPTY:
-                workcenter = d.workcenter if hasattr(d, "workcenter") else None
-                assert workcenter not in gc.NONE_AND_EMPTY, "workcenter cannot be empty when itemno is empty"
-                
-                query = f"SELECT ItemNo FROM t_orderwc WHERE `SupplyNo` = '{d.supplyno}' AND `WorkCenter` = '{workcenter}'"
-                record_count, result = await db.execute_query(query)
-                if record_count == 1:
-                    itemno = result[0]['ItemNo']
-                    d.itemno = itemno
-            d.workcenter = None
-    
-    return await common_write(db_name=db_name, mdl=TConfirm, data=data)
-
-
-@rt.get(
-    "/grouped_pr",
     tags=["报表 - 库存动态"],
     summary="获取按日期分组的库存动态报表",
     description="获取按日期分组的库存动态报表"
 )
-async def get_grouped_pr(
+async def get_matdailyqtyreport(
         db_name: str = common_params["db_name"],
         period: int = Query(default=30, description="查询时间范围（天）"),
         groupdates: str = Query(default=None, description="分组日期，逗号分隔"),
@@ -552,16 +500,14 @@ async def get_grouped_pr(
     end_date = start_date + timedelta(days=period)
     request_result = []
     dates = groupdates.split(',') if groupdates else None
-    
     # 分片获取数据
     while start_date <= end_date:
         slice_date = min(start_date + timedelta(days=slice_size), end_date)
-        # 构建完整URL
-        url = f"{THIS_BASE_URL}/api/v_matdailyqtyreport?db_name={db_name}&startdate={start_date}&enddate={slice_date}&materialno={materialno}"
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
-        response_data = response.json()
-        if data := response_data.get('data'):
+        filter_string = f"DateStr >= '{start_date}' AND DateStr <= '{slice_date}'"
+        if materialno:
+            filter_string += f" AND MaterialNo IN ({materialno})"
+        query_result = await common_read_by_sql(db_name=db_name, table_name="v_matdailyqtyreport", filter_string=filter_string)
+        if data := query_result.get('data'):
             request_result.extend(data)
         start_date = slice_date + timedelta(days=1)
     if not request_result:
@@ -587,7 +533,7 @@ async def get_grouped_pr(
     agg_dict = {
         **{col: 'last' for col in df.columns if col not in group_fields + sum_fields + ['original_datestr']},
         **{f: 'sum' for f in sum_fields},
-        'original_datestr': lambda x: ','.join(sorted(set(x))),
+        'original_datestr': lambda x: ','.join(sorted(set(dt.strftime('%Y-%m-%d') for dt in x))),
     }
     
     df_grouped = df.groupby(group_fields).agg(agg_dict).reset_index()
@@ -615,5 +561,34 @@ async def get_grouped_pr(
             '期末盈余': closing_balance
         })
         material_balances[mat_no] = closing_balance
+        result.append(record)
     
     return standard_response(status_code=status.HTTP_200_OK, meta={'total': len(result)}, data=result)
+
+
+@rt.post(
+    "/t_confirm",
+    tags=["生产数据 - 报工"],
+    summary="新增报工记录",
+    description="新增报工记录"
+    )
+async def create_workreport(
+    data: List[AcceptConfirm],
+    db_name: str = common_params["db_name"],
+    x_api_key: str = common_params["x_api_key"]
+    ):
+    # 使用异步上下文管理器自动管理连接
+    async with get_tortoise_connection(db_name) as db:
+        for d in data:
+            if not hasattr(d, "itemno") or d.itemno in gc.NONE_AND_EMPTY:
+                workcenter = d.workcenter if hasattr(d, "workcenter") else None
+                assert workcenter not in gc.NONE_AND_EMPTY, "workcenter cannot be empty when itemno is empty"
+                
+                query = f"SELECT ItemNo FROM t_orderwc WHERE `SupplyNo` = '{d.supplyno}' AND `WorkCenter` = '{workcenter}'"
+                record_count, result = await db.execute_query(query)
+                if record_count == 1:
+                    itemno = result[0]['ItemNo']
+                    d.itemno = itemno
+            d.workcenter = None
+    
+    return await common_write(db_name=db_name, mdl=TConfirm, data=data)

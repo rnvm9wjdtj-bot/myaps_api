@@ -165,19 +165,11 @@ class ApsBaseAction(ABC):
         return response.json().get('data', [])
 
     @classmethod
-    async def get_grouped_pr(cls, period: int = 30, dates: str = None, materialno: str = None, field_mapping: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
-        # 调用自身 API GET 数据
-        response = await cls._session.get(f"{cls.this_base_url}/api/grouped_pr?db_name={cls.main_db}&period={period}&dates={dates}&materialno={materialno}")
-        response.raise_for_status()
-        result_data = response.json().get('data', [])
-        if not result_data:
-            return result_data
-
-        if not field_mapping:
-            return result_data
-        
-        result = []
-        for record in result_data:
-            mapped_record = {field_mapping.get(k, k): v for k, v in record.items()}
-            result.append(mapped_record)
-        return result
+    async def get_dategrouped_pr(cls, period: int=30, groupdates: str=None, field_mapper: dict=None):
+        response = await cls._session.get(f"{cls.this_base_url}/api/v_matdailyqtyreport?db_name={cls.main_db}&period={period}&groupdates={groupdates}")
+        data = response['data']
+        if not data:
+            return []
+        if field_mapper:
+            return [{field_mapper.get(k, k): v for k, v in item.items()} for item in data]
+        return data
