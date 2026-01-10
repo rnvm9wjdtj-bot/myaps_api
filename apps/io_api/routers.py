@@ -2,13 +2,12 @@ from datetime import date, datetime, timedelta
 # from re import S
 # from this import d
 from typing import List#, Dict, Any, Literal
-import inspect
-import functools
+import inspect, functools, pandas as pd, requests
 
 from fastapi import APIRouter, Query, Body, status#, Request, Path
 # from tortoise import Tortoise
 
-from config.settings import MYAPS_DB_SET,MYAPS_DBSET_LIST, MYAPS_MAIN_DB
+from config.settings import MYAPS_DB_SET, MYAPS_DBSET_LIST, MYAPS_MAIN_DB, THIS_BASE_URL
 from globalobjects import globalconst as gc
 from .models import TMaterial, TWorkcenter, TMatWc, TMatVer, TMatWcBom, TSupply, TDemand, TMold, TMatWcMold, TConfirm#,TortoiseBaseModel
 from .schemas import (
@@ -534,3 +533,87 @@ async def post_record(
             d.workcenter = None
     
     return await common_write(db_name=db_name, mdl=TConfirm, data=data)
+
+
+@rt.get(
+    "/grouped_pr",
+    tags=["报表 - 库存动态"],
+    summary="获取按日期分组的库存动态报表",
+    description="获取按日期分组的库存动态报表"
+)
+async def get_grouped_pr(
+        db_name: str = common_params["db_name"],
+        period: int = Query(default=30, description="查询时间范围（天）"),
+        groupdates: str = Query(default=None, description="分组日期，逗号分隔"),
+        materialno: str = Query(default=None, description="料号，多个料号用逗号分隔")
+    ):
+    slice_size = 10 # 每次获取10天数据, 避免一次性请求过多数据
+    start_date: datetime.date = datetime.now().date()
+    end_date = start_date + timedelta(days=period)
+    request_result = []
+    dates = groupdates.split(',') if groupdates else None
+    
+    # 分片获取数据
+    while start_date <= end_date:
+        slice_date = min(start_date + timedelta(days=slice_size), end_date)
+        # 构建完整URL
+        url = f"{THIS_BASE_URL}/api/v_matdailyqtyreport?db_name={db_name}&startdate={start_date}&enddate={slice_date}&materialno={materialno}"
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        response_data = response.json()
+        if data := response_data.get('data'):
+            request_result.extend(data)
+        start_date = slice_date + timedelta(days=1)
+    if not request_result:
+        return standard_response(status_code=status.HTTP_204_NO_CONTENT, message="No data available", meta={'total': 0}, data=request_result)
+    
+    # 转换为DataFrame并过滤
+    df = pd.DataFrame(request_result)
+    df = df[df['type'] == 'F'].sort_values(by=['materialno', 'datestr'], ascending=[True, True])
+
+    df['original_datestr'] = df['datestr']
+    # 日期映射
+    if dates:
+        sorted_dates = sorted([datetime.strptime(d, '%Y-%m-%d').date() for d in dates])
+        df['datestr'] = pd.to_datetime(df['datestr']).dt.date.apply(
+            lambda x: next((d for d in sorted_dates if d >= x), sorted_dates[-1])
+        ).astype(str)
+    
+    # 分组汇总
+    group_fields = ['materialno', 'datestr']
+    sum_fields = ['totaldemand', 'totalsupply', 'dailybalance']
+
+    # 动态生成聚合字典
+    agg_dict = {
+        **{col: 'last' for col in df.columns if col not in group_fields + sum_fields + ['original_datestr']},
+        **{f: 'sum' for f in sum_fields},
+        'original_datestr': lambda x: ','.join(sorted(set(x))),
+    }
+    
+    df_grouped = df.groupby(group_fields).agg(agg_dict).reset_index()
+    
+    # 计算期初盈余和期末盈余
+    result = []
+    material_balances = {}
+    
+    for record in df_grouped.to_dict('records'):
+        mat_no = record['materialno']
+        if mat_no not in material_balances:
+            # 首个日期组
+            opening_balance = record['stockqty']
+            closing_balance = opening_balance + record['totaldemand']
+            record['本期要货数'] = abs(min(0, record['totalsupply'] + record['totaldemand']))
+        else:
+            # 后续日期组
+            opening_balance = material_balances[mat_no]
+            closing_balance = opening_balance + record['totaldemand'] + record['totalsupply']
+            record['本期要货数'] = abs(min(max(0, opening_balance) + record['totalsupply'] + record['totaldemand'], 0))
+        
+        # 更新记录
+        record.update({
+            '期初盈余': opening_balance,
+            '期末盈余': closing_balance
+        })
+        material_balances[mat_no] = closing_balance
+    
+    return standard_response(status_code=status.HTTP_200_OK, meta={'total': len(result)}, data=result)

@@ -157,94 +157,27 @@ class ApsBaseAction(ABC):
             }])
         return response
 
-    @staticmethod
-    def get_pr_from_matdailyqtyreport(db_name: str = None, period: int = 30, dates: Optional[List[str]] = None, materialno: str = None, field_mapping: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
-        slice_size = 10 # 每次获取10天数据, 避免一次性请求过多数据
-        start_date: datetime.date = datetime.now().date()
-        end_date = start_date + timedelta(days=period)
-        result = []
-        
-        # 分片获取数据
-        while start_date <= end_date:
-            slice_date = min(start_date + timedelta(days=slice_size), end_date)
-            # 构建API请求参数
-            api_params = {
-                'db_name': db_name,
-                'startdate': start_date,
-                'enddate': slice_date
-            }
-            # 只有当materialno不为None时才添加到请求参数中
-            if materialno is not None:
-                api_params['materialno'] = materialno
-            
-            # 构建完整URL
-            url = "http://172.16.101.209:8000/api/v_matdailyqtyreport"
-            
-            response = requests.get(url, params=api_params, timeout=30)
-            response.raise_for_status()
-            
-            response_data = response.json()
-            
-            if data := response_data.get('data'):
-                result.extend(data)
-            
-            start_date = slice_date + timedelta(days=1)
-        
-        if not result:
-            return []
-        
-        # 转换为DataFrame并过滤
-        df = pd.DataFrame(result).sort_values(by=['materialno', 'datestr'], ascending=[True, True])
-        df = df[df['type'] == 'F']
+    @classmethod
+    def _fetch_data(cls, url: str) -> List[Dict]:
+        # 调用自身 API GET 数据
+        response = cls._session.get(url, timeout=30)
+        response.raise_for_status()
+        return response.json().get('data', [])
 
-        df['original_datestr'] = df['datestr']
-        # 日期映射
-        if dates:
-            sorted_dates = sorted([datetime.strptime(d, '%Y-%m-%d').date() for d in dates])
-            df['datestr'] = pd.to_datetime(df['datestr']).dt.date.apply(
-                lambda x: next((d for d in sorted_dates if d >= x), sorted_dates[-1])
-            ).astype(str)
-        
-        # 分组汇总
-        group_fields = ['materialno', 'datestr']
-        sum_fields = ['totaldemand', 'totalsupply', 'dailybalance']
+    @classmethod
+    async def get_grouped_pr(cls, period: int = 30, dates: str = None, materialno: str = None, field_mapping: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
+        # 调用自身 API GET 数据
+        response = await cls._session.get(f"{cls.this_base_url}/api/grouped_pr?db_name={cls.main_db}&period={period}&dates={dates}&materialno={materialno}")
+        response.raise_for_status()
+        result_data = response.json().get('data', [])
+        if not result_data:
+            return result_data
 
-        # 动态生成聚合字典
-        agg_dict = {
-            **{col: 'last' for col in df.columns if col not in group_fields + sum_fields + ['original_datestr']},
-            **{f: 'sum' for f in sum_fields},
-            'original_datestr': lambda x: ','.join(sorted(set(x))),
-        }
+        if not field_mapping:
+            return result_data
         
-        df_grouped = df.groupby(group_fields).agg(agg_dict).reset_index()
-        
-        # 计算期初盈余和期末盈余
         result = []
-        material_balances = {}
-        
-        for record in df_grouped.to_dict('records'):
-            record_materialno = record['materialno']
-            if record_materialno not in material_balances:
-                # 首个日期组
-                opening_balance = record['stockqty']
-                closing_balance = opening_balance + record['totaldemand']
-                record['本期要货数'] = abs(min(0, record['totalsupply'] + record['totaldemand']))
-            else:
-                # 后续日期组
-                opening_balance = material_balances[record_materialno]
-                closing_balance = opening_balance + record['totaldemand'] + record['totalsupply']
-                record['本期要货数'] = abs(min(max(0, opening_balance) + record['totalsupply'] + record['totaldemand'], 0))
-            
-            # 更新记录
-            record['期初盈余'] = opening_balance
-            record['期末盈余'] = closing_balance
-            material_balances[record_materialno] = closing_balance
-            
-            # 应用字段映射
-            if field_mapping:
-                mapped_record = {field_mapping.get(k, k): v for k, v in record.items()}
-                result.append(mapped_record)
-            else:
-                result.append(record)
-        
+        for record in result_data:
+            mapped_record = {field_mapping.get(k, k): v for k, v in record.items()}
+            result.append(mapped_record)
         return result

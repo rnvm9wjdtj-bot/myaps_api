@@ -160,7 +160,7 @@ def push_seasonpr_to_srm():
         (datetime.now().replace(day=1) + relativedelta(months=i + 1) - relativedelta(days=1)).strftime('%Y-%m-%d')
         for i in range(3)
     ]
-    pr_data = ApsBaseAction.get_pr_from_matdailyqtyreport(db_name=MYAPS_MAIN_DB, period=90, dates=date_list)
+    pr_data = ApsBaseAction.get_pr_from_matdailyqtyreport(db_name=MYAPS_MAIN_DB, period=90, dates=','.join(date_list))
     file_log.info(f"从账套{MYAPS_MAIN_DB}获取到季度要货计划：\n{pr_data}")
     # 推送季度要货计划到SRM
   
