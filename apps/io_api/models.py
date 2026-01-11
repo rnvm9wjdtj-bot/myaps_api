@@ -2,7 +2,7 @@ from tortoise import fields
 # from tortoise.signals import post_save
 
 from . import protomodels as pm
-from .common import common_write
+from .utils.common import common_write
 from apps.data_opt.project_files import project_default_value as pdv
 
 

@@ -11,7 +11,7 @@ from tortoise.contrib.fastapi import register_tortoise
 from config.settings import TORTOISE_ORM_CONFIG, PORT, BASE_DIR
 from globalobjects import file_timed_logger
 from apps.io_api.routers import rt as io_rt
-from apps.io_api.common import register_exception_handlers
+from apps.io_api.utils.common import register_exception_handlers
 from apps.data_opt.routers import rt as do_rt
 from apps.data_opt.optional_routers import register_optional_routers
 # from apps.data_opt.common import register_exception_handlers as register_data_manager_exception_handlers
