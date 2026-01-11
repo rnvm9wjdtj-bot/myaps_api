@@ -307,7 +307,7 @@ async def post_mold(
     "/t_mat_wc_mold",
     tags=["主数据 - 机台模具"],
     summary="新增或修改机台模具",
-    description="根据🗝️【料号+工作中心+模具编号】形成的联合索引新增或修改机台模具记录"
+    description="根据🗝️【料号+工作中心+工序项目+模具编号】形成的联合索引新增或修改机台模具记录"
     )
 @_check_db_name(hap_wsid="t_mat_wc_mold")
 async def post_mat_wc_mold(

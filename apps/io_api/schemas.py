@@ -218,7 +218,7 @@ class AcceptWorkcenter(BaseModel):
 class AcceptMatWc(BaseModel):
     materialno: str = Field(..., max_length=64, description='料号', example="M001")
     matver: str = Field(..., max_length=4, example=pdv.MATVER, description='产线版本')
-    itemno: str = Field(None, max_length=6, description='工序项目', example="0010")
+    itemno: str = Field(None, max_length=6, description='工序项目', example=pdv.ITEMNO)
     workcenter: str = Field(..., max_length=32, description='工作中心', example="WC001")
     sortno: int = Field(..., ge=0, le=999, description='序号', example=1)
     basesec: float = Field(..., ge=0, description='节拍T/T(秒/100)', example=600)
@@ -226,6 +226,7 @@ class AcceptMatWc(BaseModel):
     fixsec: int = Field(0, ge=0, description='额定时间(秒)', example=300)
     sf: str = Field(None, enum=["S", "F"], example="F", description='并行S/串行F')
     offsetsec: int = Field(0, description='偏置+/-(秒)', example=0)
+    rate: float = Field(pdv.MATWC_RATE, ge=0, description='配比', example=pdv.MATWC_RATE)
     memo: str = Field(None, max_length=255, description='备注', example="标准工序")
     _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
 
@@ -244,6 +245,7 @@ class AcceptMatWc(BaseModel):
                 "fixsec": 300,
                 "sf": "F",
                 "offsetsec": 0,
+                "rate": pdv.MATWC_RATE,
                 "memo": "标准工序"
             }
         }
@@ -328,7 +330,7 @@ class AcceptMatVer(BaseModel):
 class AcceptMatWcBom(BaseModel):
     productno: str = Field(..., max_length=64, description='产品料号', example="P001")
     matver: str = Field(..., example=pdv.MATVER, max_length=4, description='产线版本')
-    itemno: str = Field(..., max_length=6, description='工序项目', example="0010")
+    itemno: str = Field(..., max_length=6, description='工序项目', example=pdv.ITEMNO)
     materialno: str = Field(..., max_length=64, description='子件料号', example="M001")
     qty: float = Field(..., ge=0, description='数量', example=2.0)
     offsethour: int = Field(0, description='偏置+/-(小时)', example=0)
@@ -421,6 +423,7 @@ class AcceptMold(BaseModel):
 class AcceptMatWcMold(BaseModel):
     materialno: str = Field(..., max_length=64, description='料号', example="M001")
     workcenter: str = Field(..., max_length=64, description='工作中心', example="WC001")
+    itemno: str = Field(..., max_length=6, description='工序项目', example=pdv.ITEMNO)
     moldno: str = Field('', max_length=64, description='模具编号', example="MOLD001")
     basesec: float = Field(..., ge=0, description='节拍T/T(秒/100)', example=600)
     fixsec: int = Field(..., ge=0, description='额定时间(秒)', example=300)
@@ -435,6 +438,7 @@ class AcceptMatWcMold(BaseModel):
             "example": {
                 "materialno": "M001",
                 "workcenter": "WC001",
+                "itemno": pdv.ITEMNO,
                 "moldno": "MOLD001",
                 "basesec": 600,
                 "fixsec": 300,
@@ -466,7 +470,7 @@ class AcceptSupply(BaseModel):
     materialno: str = Field(..., max_length=64, description='料号', example="M001")
     supplyno: str = Field(..., max_length=64, description='供应单号', example="MO123456")
     matver: Optional[str] = Field(None, max_length=32, example=pdv.MATVER, description='产线版本')
-    itemno: str = Field(None, max_length=6, description='项目号', example="0010")
+    itemno: str = Field(None, max_length=6, description='项目号', example=pdv.ITEMNO)
     type: str = Field(..., enum=list(gc.SUPPLY_TYPE.keys()), example="MO", description='类型 PL-生产计划 MO-生产工单 ST-库存 PO-采购订单')
     category: str = Field(None, enum=list(gc.PRODUCT_CATEGORY.keys()), example="MTO", description='分类(MTO/MTS)')
     priority: int = Field(..., description='优先级', example=1)
@@ -561,7 +565,7 @@ class DeleteSupply(BaseModel):
 class AcceptDemand(BaseModel):
     materialno: str = Field(..., max_length=64, description='料号', example="M001")
     demandno: str = Field(..., max_length=64, description='需求单号', example="SO123456")
-    itemno: str = Field(..., max_length=6, description='项目号（若类型为SO则可传入订单号或其他标识符，不超过6位）', example="0010")
+    itemno: str = Field(..., max_length=6, description='项目号（若类型为SO则可传入订单号或其他标识符，不超过6位）', example=pdv.ITEMNO)
     type: str = Field(..., enum=list(gc.DEMAND_TYPE.keys()), example="SO", description='类型 SO-销售订单 DM-计划需求 RS-工单预留 FC-预测 SS-安全库存')
     category: str = Field(..., enum=list(gc.PRODUCT_CATEGORY.keys()), example="MTO", description='分类(MTO/MTS)')
     priority: int = Field(..., description='优先级', example=1)

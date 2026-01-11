@@ -85,6 +85,8 @@ class DefaultValueBase:
 
     ITEMNO = f"{itemno_prefix}{1:0{itemno_width}d}" # 示例 / 默认工序项目
 
+    MATWC_RATE = 1.0  # 默认配比
+
 
     @classmethod
     def to_dict(cls):

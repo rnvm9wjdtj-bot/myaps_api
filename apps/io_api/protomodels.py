@@ -374,6 +374,7 @@ class ProtoMatWc(TortoiseBaseModel):
     fixsec = fields.IntField(source_field='FixSec')  # Field name made lowercase.
     sf = fields.CharField(source_field='SF', max_length=1, blank=True, null=True, description='S=串行, F=并行')  # Field name made lowercase.
     offsetsec = fields.IntField(source_field='OffSetSec', blank=True, null=True)  # Field name made lowercase.
+    rate = fields.FloatField(source_field='Rate', blank=True, null=True, description='配比')  # Field name made lowercase.
     memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
     sys_stamp = fields.DatetimeField(source_field='Sys_Stamp', auto_now=True)  # Field name made lowercase.
 
@@ -442,6 +443,7 @@ class ProtoMatWcMold(TortoiseBaseModel):
     # vid = fields.IntField(primary_key=True)
     materialno = fields.CharField(source_field='MaterialNo', max_length=64, description='产品')  # Field name made lowercase.
     workcenter = fields.CharField(source_field='WorkCenter', max_length=32, description='机台')  # Field name made lowercase.
+    itemno = fields.CharField(source_field='ItemNo', max_length=6, description='工序项目')  # Field name made lowercase.
     moldno = fields.CharField(source_field='MoldNo', max_length=32)  # Field name made lowercase.
     basesec = fields.IntField(source_field='BaseSec', blank=True, null=True, description='UPH（Units Per Hour）每小时产量')  # Field name made lowercase.
     fixsec = fields.IntField(source_field='FixSec', blank=True, null=True)  # Field name made lowercase.
@@ -451,7 +453,7 @@ class ProtoMatWcMold(TortoiseBaseModel):
     class Meta:
         abstract = True
         table = 't_mat_wc_mold'
-        unique_together = [("materialno", "workcenter", "moldno")]
+        unique_together = [("materialno", "workcenter", "itemno", "moldno")]
 
 
 class ProtoMatWcSwitch(TortoiseBaseModel):
