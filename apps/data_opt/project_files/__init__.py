@@ -1,5 +1,5 @@
 """
-加载当前项目文件（项目py）执行其中的方法
+加载当前项目文件（项目py）
 """
 
 import os, importlib, requests

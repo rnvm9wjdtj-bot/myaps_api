@@ -495,24 +495,24 @@ async def get_matdailyqtyreport(
         groupdates: str = Query(default=None, description="分组日期，逗号分隔"),
         materialno: str = Query(default=None, description="料号，多个料号用逗号分隔")
     ):
-    slice_size = 10 # 每次获取10天数据, 避免一次性请求过多数据
     start_date: datetime.date = datetime.now().date()
     end_date = start_date + timedelta(days=period)
     request_result = []
     dates = groupdates.split(',') if groupdates else None
-    # 分片获取数据
-    while start_date <= end_date:
-        slice_date = min(start_date + timedelta(days=slice_size), end_date)
-        filter_string = f"DateStr >= '{start_date}' AND DateStr <= '{slice_date}'"
-        if materialno:
-            filter_string += f" AND MaterialNo IN ({materialno})"
-        query_result = await common_read_by_sql(db_name=db_name, table_name="v_matdailyqtyreport", filter_string=filter_string)
-        if data := query_result.get('data'):
-            request_result.extend(data)
-        start_date = slice_date + timedelta(days=1)
+
+    filter_string = f"DateStr >= '{start_date}' AND DateStr <= '{end_date}'"
+    order_string = "MaterialNo, DateStr"
+    if materialno:
+        filter_string += f" AND MaterialNo IN ({materialno})"
+    query_result = await common_read_by_sql(db_name=db_name, table_name="v_matdailyqtyreport", filter_string=filter_string, order_string=order_string)
+    if data := query_result.get('data'):
+        request_result.extend(data)
+
     if not request_result:
         return standard_response(status_code=status.HTTP_204_NO_CONTENT, message="No data available", meta={'total': 0}, data=request_result)
     
+    # if not groupdates:
+    #     return standard_response(meta={'total': len(request_result)}, data=request_result)
     # 转换为DataFrame并过滤
     df = pd.DataFrame(request_result)
     df = df[df['type'] == 'F'].sort_values(by=['materialno', 'datestr'], ascending=[True, True])

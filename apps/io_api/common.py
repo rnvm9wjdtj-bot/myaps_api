@@ -487,9 +487,37 @@ async def common_read_by_sql(db_name: str, table_name: str, filter_string: str =
         async with get_tortoise_connection(valid_dbs[0]) as db:
             where = f" WHERE {filter_string}" if filter_string else ''
             order = f" ORDER BY {order_string}" if order_string else ''
-            sql = f'SELECT * FROM `{table_name}` {where} {order}'
-            total, data = await db.execute_query(sql)
-            lower_keys_data = [dict_to_lower_keys(row) for row in data]
+            
+            # 先获取数据总条数
+            count_sql = f'SELECT COUNT(*) as total FROM `{table_name}` {where}'
+            count_result = await db.execute_query(count_sql)
+            total = count_result[1][0].get('total', 0)
+            
+            # 定义批次大小
+            batch_size = 1000
+            all_data = []
+            
+            if total <= batch_size:
+                # 数据量不大，直接查询全部
+                sql = f'SELECT * FROM `{table_name}` {where} {order}'
+                _, data = await db.execute_query(sql)
+                all_data.extend(data)
+            else:
+                # 数据量过大，分批次查询
+                offset = 0
+                while offset < total:
+                    # 构建带LIMIT和OFFSET的分页查询SQL
+                    sql = f'SELECT * FROM `{table_name}` {where} {order} LIMIT {batch_size} OFFSET {offset}'
+                    _, batch_data = await db.execute_query(sql)
+                    all_data.extend(batch_data)
+                    offset += batch_size
+                    
+                    # 如果当前批次数据不足batch_size，说明已经获取完所有数据
+                    if len(batch_data) < batch_size:
+                        break
+            
+            # 将所有数据的键转换为小写
+            lower_keys_data = [dict_to_lower_keys(row) for row in all_data]
         
         return standard_response(
             data=lower_keys_data,

@@ -165,8 +165,9 @@ class ApsBaseAction(ABC):
         return response.json().get('data', [])
 
     @classmethod
-    async def get_dategrouped_pr(cls, period: int=30, groupdates: str=None, field_mapper: dict=None):
-        response = await cls._session.get(f"{cls.this_base_url}/api/v_matdailyqtyreport?db_name={cls.main_db}&period={period}&groupdates={groupdates}")
+    async def get_dategrouped_pr(cls, db_name: str=None, period: int=30, groupdates: str=None, field_mapper: dict=None):
+        db_name = db_name or cls.main_db
+        response = await cls._session.get(f"{cls.this_base_url}/api/v_matdailyqtyreport?db_name={db_name}&period={period}&groupdates={groupdates}")
         data = response['data']
         if not data:
             return []
