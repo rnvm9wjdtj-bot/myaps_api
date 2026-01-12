@@ -19,6 +19,7 @@ from apps.data_opt.utils.common import get_session
 # ❗❗❗❗❗❗❗❗❗❗❗❗⬇️不要删掉，便于各项目文件引用 ❗❗❗❗❗❗❗❗❗❗❗❗
 from globalobjects import file_timed_logger
 from apps.io_api.utils.common import standard_response
+from apps.io_api.utils.db_operation import db_delete, db_write
 from apps.data_opt.components.hap import HapConnection
 from ..utils.scheduler import cron_task
 from ..utils.common import add_basic_auth_requests

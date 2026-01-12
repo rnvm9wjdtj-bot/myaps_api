@@ -7,8 +7,10 @@ from tortoise.models import Model as TortoiseBaseModel
 from pydantic import BaseModel as PydanticSchema
 
 from config.settings import MYAPS_DB_SET
-from globalobjects.db_manager import db_managers
+from globalobjects.db_manager import db_managers, DbManager
 from globalobjects import file_timed_logger
+from .common import standard_response, dict_to_lower_keys
+
 
 file_logger = file_timed_logger.setup_logging(__name__)
 
@@ -19,37 +21,6 @@ class ProcessedData:
     processed_data: dict  # 处理后的数据（用于更新）
     create_data: dict     # 创建数据（深拷贝，用于创建）
     raw_input_data: Any   # model_validator之前的原始数据
-
-
-def standard_response(
-    success: int = 1,
-    status_code: int = status.HTTP_200_OK,
-    message: str = "操作成功",
-    data: Any = None,
-    meta: Dict[str, Any] = None
-) -> Dict[str, Any]:
-    """
-    标准响应格式
-    
-    Args:
-        success: 成功标识，1表示成功，0表示失败
-        status_code: HTTP状态码
-        message: 响应消息
-        data: 响应数据
-        meta: 附加信息
-        
-    Returns:
-        标准格式的响应字典
-    """
-    if meta is None:
-        meta = {}
-    
-    return {
-        "success": success,
-        "message": message,
-        "data": data if data is not None else [],
-        "meta": meta
-    }
 
 
 def validate_databases(db_name: str) -> List[str]:
@@ -65,6 +36,34 @@ def validate_databases(db_name: str) -> List[str]:
     db_names = [name.strip() for name in db_name.split(",") if name.strip()]
     valid_dbs = [db for db in db_names if db in MYAPS_DB_SET]
     return valid_dbs
+
+    
+async def db_query(db_name: str, table_name: str, filter_string: str = '', order_string: str = ''):
+    try:
+        valid_db = validate_databases(db_name)[0]
+        assert valid_db, "未指定账套或账套不存在"
+
+        db_manager = db_managers[valid_db]
+        
+        query_result = await db_manager.query_data(
+            table_name=table_name,
+            filter_string=filter_string,
+            order_string=order_string,
+        )
+        lower_keys_data = [dict_to_lower_keys(row) for row in query_result['data']]
+        total = query_result['total']
+        
+        return standard_response(
+            data=lower_keys_data,
+            meta={"total": total}
+        )
+    except Exception as e:
+        return standard_response(
+            success=0,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message=f"操作失败：{str(e)}"
+        )
+
 
 
 async def preprocess_data(data: List[PydanticSchema | Dict[str, Any]]) -> List[ProcessedData]:
@@ -103,7 +102,7 @@ async def preprocess_data(data: List[PydanticSchema | Dict[str, Any]]) -> List[P
     return processed_data_list
 
 
-async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticSchema | Dict[str, Any]]):
+async def db_write(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticSchema | Dict[str, Any]]):
     """
     通用写入操作，支持创建和更新
     融合了common.py的多账套处理逻辑与db_manager.py的高效数据库操作
@@ -138,10 +137,11 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
             data=[item.processed_data for item in processed_data_list]
         )
     
-    # 获取模型信息
-    unique_together = getattr(mdl._meta, 'unique_together', [])
-    model_key = unique_together[0] if unique_together else [mdl._meta.pk_attr]
-    is_compound_key = len(model_key) > 1
+    model_key = DbManager._get_conflict_fields(mdl)
+    # # 获取模型信息
+    # unique_together = getattr(mdl._meta, 'unique_together', [])
+    # model_key = unique_together[0] if unique_together else [mdl._meta.pk_attr]
+    # is_compound_key = len(model_key) > 1
     
     # 准备upsert数据
     upsert_data_list = []
@@ -165,26 +165,22 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
     create_count_total = 0
     update_count_total = 0
     
+    # 准备更新字段（排除主键字段）
+    update_fields = [field for field in upsert_data_list[0].keys() if field not in model_key]
+    
+    # 排除字段（自增ID或不需要upsert的字段）
+    exclude_fields = []
+    if hasattr(mdl._meta, 'pk_attr') and mdl._meta.pk_attr in upsert_data_list[0]:
+        # 检查主键是否是自增类型
+        pk_field = mdl._meta.fields_map.get(mdl._meta.pk_attr)
+        if pk_field and hasattr(pk_field, 'auto_increment') and pk_field.auto_increment:
+            exclude_fields.append(mdl._meta.pk_attr)
+
     try:
         # 处理每个账套，使用专属的DbManager实例
         for db_name in valid_dbs:
-            if db_name not in db_managers:
-                file_logger.error(f"❌↑账套@{db_name} 没有对应的DbManager实例 —— common_write")
-                continue
-            
             # 获取该账套的专属DbManager实例
             db_manager = db_managers[db_name]
-            
-            # 准备更新字段（排除主键字段）
-            update_fields = [field for field in upsert_data_list[0].keys() if field not in model_key]
-            
-            # 排除字段（自增ID或不需要upsert的字段）
-            exclude_fields = []
-            if hasattr(mdl._meta, 'pk_attr') and mdl._meta.pk_attr in upsert_data_list[0]:
-                # 检查主键是否是自增类型
-                pk_field = mdl._meta.fields_map.get(mdl._meta.pk_attr)
-                if pk_field and hasattr(pk_field, 'auto_increment') and pk_field.auto_increment:
-                    exclude_fields.append(mdl._meta.pk_attr)
             
             # 执行批量upsert
             result = await db_manager.bulk_upsert(
@@ -221,4 +217,70 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
             message=f"操作失败：{str(e)}",
             meta={"origin_total": origin_total, "success_db": success_db},
             data=[item.processed_data for item in processed_data_list]
+        )
+
+
+async def db_delete(db_names: str, table_name: str, filter_string: str):
+    """
+    执行SQL删除操作
+    :param db_names: 账套名称，多个可用半角逗号分隔
+    :param table_name: 表名称
+    :param filter_string: WHERE子句，用于指定删除条件
+    :return: 操作结果
+    """
+    try:
+        valid_dbs = validate_databases(db_names)
+        assert valid_dbs, "未指定账套或账套不存在"
+        total_count = 0
+        for db_name in valid_dbs:
+            db_manager = db_managers[db_name]
+            exe_result = await db_manager.delete_data(table_name=table_name, filter_string=filter_string)
+
+            count = exe_result.get("affected_rows", 0)
+            total_count += count
+            file_logger.info(f"✅执行SQL删除操作成功，{table_name}@{db_name}，条件：{filter_string}，删除{count}条记录")
+        file_logger.info(f"✅执行SQL删除操作成功，共删除{total_count}条记录，{table_name}@[{','.join(valid_dbs)}]")
+        return standard_response(
+            meta={"affect_count": total_count, "affect_dbs": ", ".join(valid_dbs)}
+        )
+        
+    except Exception as e:
+        file_logger.error(f"❌执行SQL删除操作失败，{table_name}@{db_names}，条件：{filter_string}，错误信息：{str(e)}")
+        return standard_response(
+            success=0,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message=f"操作失败：{str(e)}"
+        )
+
+
+
+async def call_dbprocdure(db_names: str, procedure_name: str, params_list: List[List[Any]] = [[]]):
+    """
+    调用数据库存储过程
+    :param db_names: 账套名称，多个可用半角逗号分隔
+    :param procedure_name: 存储过程名称
+    :param params_list: 存储过程参数列表，每个元素是一个参数列表
+    :return: 操作结果
+    """
+    valid_dbs = validate_databases(db_names)
+    assert valid_dbs, "未指定账套或账套不存在"
+    total_affect_count = 0
+    meta = {}
+    try:
+        for db_name in valid_dbs:
+            db_manager = db_managers[db_name]
+            exe_result = await db_manager.call_stored_procedure(procedure_name=procedure_name, params_list=params_list)
+            affect_rows = exe_result.get('affected_rows', 0)
+            total_affect_count += affect_rows
+            file_logger.info(f"✅调用存储过程`{procedure_name}`成功，{db_name}，影响{affect_rows}条记录")
+            meta[db_name] = affect_rows
+        return standard_response(
+            message=f"调用存储过程`{procedure_name}`成功，影响{total_affect_count}条记录",
+            meta=meta
+        )
+    except Exception as e:
+        return standard_response(
+            success=0,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message=f"操作失败：{str(e)}"
         )

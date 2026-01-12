@@ -1,8 +1,10 @@
-from typing import List, Dict, Any, Tuple, Optional, Union
+from typing import List, Dict, Any, Tuple, Optional, Union, Literal
 import logging
 from datetime import datetime
 
 from tortoise import Tortoise, transactions
+from tortoise.expressions import Q
+from tortoise.transactions import in_transaction
 from tortoise.exceptions import IntegrityError
 
 from config.settings import MYAPS_DBSET_LIST
@@ -33,7 +35,8 @@ class DbManager:
             'last_execution_time': None
         }
     
-    def _get_conflict_fields(self, model_class, conflict_fields: Optional[Tuple[str, ...]]) -> Tuple[str, ...]:
+    @classmethod
+    def _get_conflict_fields(cls, model_class, conflict_fields: Optional[Tuple[str, ...]]=None) -> Tuple[str, ...]:
         """
         获取冲突字段，如果未提供则自动确定
         
@@ -94,7 +97,7 @@ class DbManager:
             results = []
             
             if transaction_mode:
-                async with transactions.atomic(using=self.connection_name):
+                async with in_transaction(self.connection_name):
                     for params in params_list:
                         result = await conn.execute_query(
                             f'CALL {procedure_name}({", ".join(["%s"] * len(params))})', 
@@ -125,7 +128,7 @@ class DbManager:
                 "procedure_name": procedure_name,
                 "execution_time": execution_time,
                 "total_calls": len(params_list),
-                "total_affected": affect_count,
+                "affected_rows": affect_count,
                 "results": results
             }
             
@@ -260,7 +263,7 @@ class DbManager:
             affected_rows = 0
             
             if transaction_mode:
-                async with transactions.atomic(using=self.connection_name):
+                async with in_transaction(self.connection_name):
                     affected_rows, data = await conn.execute_query(delete_sql)
             else:
                 affected_rows, data = await conn.execute_query(delete_sql)
@@ -318,8 +321,8 @@ class DbManager:
         self,
         model_class,
         data_list: List[Dict[str, Any]],
-        update_fields: List[str],
-        exclude_fields: List[str],
+        update_fields: Optional[List[str]] = None,
+        exclude_fields: Optional[List[str]] = None,
         conflict_fields: Optional[Tuple[str, ...]] = None
     ) -> Dict[str, int]:
         """
@@ -329,8 +332,8 @@ class DbManager:
             model_class: Tortoise 模型类
             data_list: 数据列表（不能为空）
             conflict_fields: 冲突检测字段（联合主键，必须为元组形式，可省略，默认自动从model_class._meta.unique_together或model_class._meta.pk_attr获取）
-            update_fields: 冲突时更新的字段
-            exclude_fields: 排除的字段列表（必须显式提供）
+            update_fields: 冲突时更新的字段（可选，默认使用所有非冲突非排除字段）
+            exclude_fields: 排除的字段列表（可选，默认使用conflict_fields作为排除字段）
             
         Returns:
             包含新增和更新数量的字典: {'inserted': int, 'updated': int, 'total': int}
@@ -340,20 +343,31 @@ class DbManager:
         # 获取冲突字段
         conflict_fields = self._get_conflict_fields(model_class, conflict_fields)
 
+        # 如果未提供exclude_fields，则使用conflict_fields作为默认排除字段
+        if exclude_fields is None:
+            exclude_fields = list(conflict_fields)
+
         # 获取表名
         table_name = model_class._meta.db_table
         
         # 获取所有字段，排除指定字段
         all_fields = [key for key in data_list[0].keys() 
-                     if not exclude_fields or key not in exclude_fields]
+                     if key not in exclude_fields]
         
         if not all_fields:
             raise ValueError("没有可插入的字段")
         
         # 验证字段
-        for field in conflict_fields + tuple(update_fields):
+        # 只验证冲突字段，update_fields可能为空
+        for field in conflict_fields:
             if field not in all_fields:
                 raise ValueError(f"字段 {field} 不在数据字段中")
+        
+        # 如果有update_fields，验证其是否在数据字段中
+        if update_fields:
+            for field in update_fields:
+                if field not in all_fields:
+                    raise ValueError(f"字段 {field} 不在数据字段中")
         
         fields_str = ', '.join(all_fields)
         total_inserted = 0
@@ -373,18 +387,23 @@ class DbManager:
                 placeholders.append('(' + ', '.join(['%s'] * len(all_fields)) + ')')
                 values.extend(row_values)
             
-            # 构建 ON DUPLICATE KEY UPDATE 部分
-            update_parts = [f"{field} = VALUES({field})" for field in update_fields]
-            conflict_fields_str = ', '.join(conflict_fields)
-            update_str = ', '.join(update_parts)
-            
             # 构建 SQL
-            sql = f"""
-            INSERT INTO {table_name} ({fields_str}) 
-            VALUES {', '.join(placeholders)}
-            ON DUPLICATE KEY UPDATE
-            {update_str}
-            """
+            if update_fields:
+                # 如果有update_fields，构建完整的UPSERT语句
+                # 构建 ON DUPLICATE KEY UPDATE 部分
+                update_parts = [f"{field} = VALUES({field})" for field in update_fields]
+                conflict_fields_str = ', '.join(conflict_fields)
+                update_str = ', '.join(update_parts)
+                
+                sql = f"""
+                INSERT INTO {table_name} ({fields_str}) 
+                VALUES {', '.join(placeholders)}
+                ON DUPLICATE KEY UPDATE
+                {update_str}
+                """
+            else:
+                # 如果没有update_fields，只执行INSERT IGNORE
+                sql = f"INSERT IGNORE INTO {table_name} ({fields_str}) VALUES {', '.join(placeholders)}"
             
             # 执行 SQL
             affected = await self._execute_native_sql(
@@ -394,13 +413,20 @@ class DbManager:
             )
             
             # 计算新增和更新数量
-            # 对于 INSERT INTO ... ON DUPLICATE KEY UPDATE:
-            # - 新增行：影响行数 = 1
-            # - 更新行：影响行数 = 2
-            # - 未改变：影响行数 = 0
-            inserted = batch_size
-            updated = max(0, affected - batch_size)
-            inserted -= updated
+            if update_fields:
+                # 对于 INSERT INTO ... ON DUPLICATE KEY UPDATE:
+                # - 新增行：影响行数 = 1
+                # - 更新行：影响行数 = 2
+                # - 未改变：影响行数 = 0
+                inserted = batch_size
+                updated = max(0, affected - batch_size)
+                inserted -= updated
+            else:
+                # 对于 INSERT IGNORE:
+                # - 成功插入：影响行数 = 1
+                # - 忽略冲突：影响行数 = 0
+                inserted = affected
+                updated = 0
             
             total_inserted += inserted
             total_updated += updated
@@ -417,8 +443,8 @@ class DbManager:
         self,
         model_class,
         data_list: List[Dict[str, Any]],
-        update_fields: List[str],
-        exclude_fields: List[str],
+        update_fields: Optional[List[str]] = None,
+        exclude_fields: Optional[List[str]] = None,
         conflict_fields: Optional[Tuple[str, ...]] = None
     ) -> Dict[str, int]:
         """
@@ -440,6 +466,10 @@ class DbManager:
         # 获取冲突字段
         conflict_fields = self._get_conflict_fields(model_class, conflict_fields)
 
+        # 如果未提供exclude_fields，则使用conflict_fields作为默认排除字段
+        if exclude_fields is None:
+            exclude_fields = list(conflict_fields)
+
         # 过滤排除字段
         filtered_data = []
         for data in data_list:
@@ -458,19 +488,40 @@ class DbManager:
                 conditions.append(condition)
             
             # 查询所有满足冲突条件的记录
-            existing_records = await model_class.filter(
-                **{f'__in__': conditions}  # 使用 __in__ 运算符和条件字典列表
-            ).using(self.connection_name).all()
+            # 使用 Q 对象构建 OR 查询
+            if conditions:
+                # 第一个条件作为基础
+                query = Q(**conditions[0])
+                # 为每个条件创建 Q 对象并使用 OR 连接
+                for condition in conditions[1:]:
+                    query |= Q(**condition)
+                
+                # 获取数据库连接对象
+                db = Tortoise.get_connection(self.connection_name)
+                
+                existing_records = await model_class.filter(
+                    query
+                ).using_db(db).all()
+            else:
+                existing_records = []
         
         # 创建模型实例
         instances = [model_class(**data) for data in filtered_data]
         
         # 使用 bulk_create
-        await model_class.bulk_create(
-            instances,
-            on_conflict=conflict_fields,
-            update_fields=update_fields
-        )
+        # 如果没有update_fields，不执行更新操作（仅插入）
+        if update_fields:
+            await model_class.bulk_create(
+                instances,
+                on_conflict=conflict_fields,
+                update_fields=update_fields
+            )
+        else:
+            # 只执行插入操作，忽略冲突
+            await model_class.bulk_create(
+                instances,
+                ignore_conflicts=True
+            )
         
         # 计算新增和更新数量
         # 创建现有记录的冲突字段值的集合，用于快速查找
@@ -500,10 +551,10 @@ class DbManager:
         self,
         model_class,
         data_list: List[Dict[str, Any]],
-        update_fields: List[str],
-        exclude_fields: List[str],
+        update_fields: Optional[List[str]] = None,
+        exclude_fields: Optional[List[str]] = None,
         conflict_fields: Optional[Tuple[str, ...]] = None,
-        force_native_sql: bool = False
+        force_use_orm: bool = False
     ) -> Dict[str, Any]:
         """
         批量 upsert 主方法
@@ -512,9 +563,9 @@ class DbManager:
             model_class: Tortoise 模型类
             data_list: 数据字典列表（不能为空）
             conflict_fields: 冲突检测字段（必须为元组形式，可省略，默认自动从model_class._meta.unique_together或model_class._meta.pk_attr获取）
-            update_fields: 冲突时更新的字段列表
-            exclude_fields: 要排除的字段列表（必须显式提供，如自增ID等不需要upsert的字段）
-            force_native_sql: 强制使用原生 SQL
+            update_fields: 冲突时更新的字段列表（可选，默认使用所有非冲突非排除字段）
+            exclude_fields: 要排除的字段列表（可选，默认使用conflict_fields作为排除字段）
+            force_use_orm: 强制使用 ORM 执行批量 upsert
             
         Returns:
             执行统计信息
@@ -523,19 +574,34 @@ class DbManager:
         start_time = datetime.now()
         
         try:
+            # 获取冲突字段（需要在计算默认update_fields之前获取）
+            if conflict_fields is None:
+                conflict_fields = self._get_conflict_fields(model_class, conflict_fields)
+            
+            # 如果未提供exclude_fields，则使用conflict_fields作为默认排除字段
+            if exclude_fields is None:
+                exclude_fields = list(conflict_fields)
+            
+            # 如果未提供update_fields，则自动使用所有非冲突非排除字段作为默认更新字段
+            if update_fields is None and data_list:
+                # 获取所有字段
+                all_fields = set(data_list[0].keys())
+                # 获取冲突字段和排除字段的集合
+                excluded_set = set(conflict_fields) | set(exclude_fields)
+                # 计算默认更新字段：所有非冲突非排除字段
+                update_fields = list(all_fields - excluded_set)
+            
             if self.use_transaction:
                 # 使用指定连接的事务
-                async with transactions.atomic(using=self.connection_name):
+                async with in_transaction(self.connection_name):
                     # 选择执行策略
-                    if force_native_sql or len(data_list) > 50:
-                        # 大批量数据或强制使用原生 SQL
+                    if not force_use_orm and len(data_list) > 50:
                         method = "native_sql"
                         result = await self._bulk_upsert_native_sql(
                             model_class, data_list, update_fields, 
                             exclude_fields, conflict_fields
                         )
                     else:
-                        # 小批量数据使用 ORM
                         method = "orm"
                         result = await self._bulk_upsert_orm(
                             model_class, data_list, update_fields,
@@ -544,7 +610,7 @@ class DbManager:
             else:
                 # 无事务模式
                 # 选择执行策略
-                if force_native_sql or len(data_list) > 50:
+                if not force_use_orm and len(data_list) > 50:
                     # 大批量数据或强制使用原生 SQL
                     method = "native_sql"
                     result = await self._bulk_upsert_native_sql(
@@ -635,7 +701,7 @@ class DbManager:
         total_updated = 0
         
         # 使用事务处理
-        transaction_context = transactions.atomic(using=self.connection_name) if self.use_transaction else None
+        transaction_context = in_transaction(self.connection_name) if self.use_transaction else None
         
         async def execute_batch():
             nonlocal total_inserted, total_updated
@@ -691,9 +757,19 @@ class DbManager:
                         conditions.append(condition)
                     
                     # 查询所有满足冲突条件的记录
-                    existing_records = await model_class.filter(
-                        **{f'__in__': conditions}
-                    ).using(self.connection_name).all()
+                    # 使用 Q 对象构建 OR 查询
+                    if conditions:
+                        # 第一个条件作为基础
+                        query = Q(**conditions[0])
+                        # 为每个条件创建 Q 对象并使用 OR 连接
+                        for condition in conditions[1:]:
+                            query |= Q(**condition)
+                        
+                        existing_records = await model_class.filter(
+                            query
+                        ).using_db(self.connection_name).all()
+                    else:
+                        existing_records = []
                 
                 # 计算新增数量
                 inserted = batch_size - len(existing_records)

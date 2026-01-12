@@ -251,7 +251,7 @@ async def process_normal_operation(
             # file_logger.info(f"✅↑CREATE @{db_name}")
     else:
         # 单一主键处理
-        exist = await mdl.get_or_none(**match_on, using_db=db)
+        exist = await mdl.get_or_none(Q(**match_on), using_db=db)
         if exist:
             # 更新记录
             await exist.update_from_dict(update_data).save(using_db=db)
@@ -399,173 +399,30 @@ async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[Pydantic
 
 
 # 路由公共方法
-async def common_read_by_orm(db_name: str, mdl: TortoiseBaseModel, page_size: int, page_index: int):
-    dbs = validate_databases(db_name)
-    assert dbs, "账套参数错误"
-    
-    # 使用异步上下文管理器管理连接
-    async with get_tortoise_connection(dbs[0]) as db:
-        # 分页查询
-        offset = page_size * page_index
-        if mdl._meta.unique_together:   # 如果是联合主键，则要排除虚拟主键的干扰
-            only_fields = [f for f in mdl._meta.fields if f != "vid"]
-            data = await mdl.all().only(*only_fields).using_db(db).offset(offset).limit(page_size)
-        else:
-            data = await mdl.all().using_db(db).offset(offset).limit(page_size)
-        
-        # 在连接关闭前获取总数
-        total = await mdl.all().using_db(db).count()
-    
-    return standard_response(
-        data=data,
-        meta={
-            "db_name": dbs[0],
-            "total": total,
-            "pageSize": page_size,
-            "pageIndex": page_index,
-        }
-    )
 
 
-# 路由公共方法 - delete
-async def common_delete_by_orm(db_name: str, mdl: TortoiseBaseModel, targets: List[dict]):
-    delete_count = 0
-    try:
-        async with in_transaction(db_name) as db:
-            for target in targets:
-                exist = await mdl.get_or_none(**target, using_db=db)
-                if exist:
-                    await exist.delete(using_db=db)
-                    delete_count += 1
-        return standard_response(
-            message=f"删除{delete_count}条",
-            meta={"delete": delete_count}
-            )
-    except Exception as e:
-        return standard_response(
-            success=0,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message=f"操作失败：{str(e)}"
-        )
 
+# # 路由公共方法 - delete
+# async def common_delete_by_orm(db_name: str, mdl: TortoiseBaseModel, targets: List[dict]):
+#     delete_count = 0
+#     try:
+#         async with in_transaction(db_name) as db:
+#             for target in targets:
+#                 exist = await mdl.get_or_none(**target, using_db=db)
+#                 if exist:
+#                     await exist.delete(using_db=db)
+#                     delete_count += 1
+#         return standard_response(
+#             message=f"删除{delete_count}条",
+#             meta={"delete": delete_count}
+#             )
+#     except Exception as e:
+#         return standard_response(
+#             success=0,
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             message=f"操作失败：{str(e)}"
+#         )
 
-async def common_call_dbprocdure(db_name: str, procedure_name: str, params_list: List[List[Any]] = [[]]):
-    """
-    调用数据库存储过程
-    :param db_name: 数据库名称
-    :param procedure_name: 存储过程名称
-    :param params_list: 存储过程参数列表，每个元素是一个参数列表
-    :return: 操作结果
-    """
-    affect_count = 0
-    try:
-        async with in_transaction(db_name) as db:
-            for params in params_list:
-                count, data = await db.execute_query(
-                    f'CALL {procedure_name}({", ".join(["%s"] * len(params))})', 
-                    params
-                )
-                affect_count += data[0].get('t_supply_updated', 0)
-            return standard_response(
-                message=f"调用存储过程`{procedure_name}`成功，影响{affect_count}条记录",
-                meta={"affect": affect_count}
-            )
-    except Exception as e:
-        return standard_response(
-            success=0,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message=f"操作失败：{str(e)}"
-        )
-
-
-async def common_read_by_sql(db_name: str, table_name: str, filter_string: str = '', order_string: str = ''):
-    try:
-        valid_dbs = validate_databases(db_name)
-        assert valid_dbs, "未指定账套或账套不存在"
-        
-        # 使用异步上下文管理器管理连接
-        async with get_tortoise_connection(valid_dbs[0]) as db:
-            where = f" WHERE {filter_string}" if filter_string else ''
-            order = f" ORDER BY {order_string}" if order_string else ''
-            
-            # 先获取数据总条数
-            count_sql = f'SELECT COUNT(*) as total FROM `{table_name}` {where}'
-            count_result = await db.execute_query(count_sql)
-            total = count_result[1][0].get('total', 0)
-            
-            # 定义批次大小
-            batch_size = 1000
-            all_data = []
-            
-            if total <= batch_size:
-                # 数据量不大，直接查询全部
-                sql = f'SELECT * FROM `{table_name}` {where} {order}'
-                _, data = await db.execute_query(sql)
-                all_data.extend(data)
-            else:
-                # 数据量过大，分批次查询
-                offset = 0
-                while offset < total:
-                    # 构建带LIMIT和OFFSET的分页查询SQL
-                    sql = f'SELECT * FROM `{table_name}` {where} {order} LIMIT {batch_size} OFFSET {offset}'
-                    _, batch_data = await db.execute_query(sql)
-                    all_data.extend(batch_data)
-                    offset += batch_size
-                    
-                    # 如果当前批次数据不足batch_size，说明已经获取完所有数据
-                    if len(batch_data) < batch_size:
-                        break
-            
-            # 将所有数据的键转换为小写
-            lower_keys_data = [dict_to_lower_keys(row) for row in all_data]
-        
-        return standard_response(
-            data=lower_keys_data,
-            meta={"total": total}
-        )
-    except Exception as e:
-        return standard_response(
-            success=0,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message=f"操作失败：{str(e)}"
-        )
-
-
-async def common_delete_by_sql(db_name: str, table_name: str, filter_string: str):
-    """
-    执行SQL删除操作
-    :param db_name: 账套名称，多个可用半角逗号分隔
-    :param table_name: 表名称
-    :param filter_string: WHERE子句，用于指定删除条件
-    :return: 操作结果
-    """
-    try:
-        where = f" WHERE {filter_string}" if filter_string else ''
-        sql = f'DELETE FROM `{table_name}` {where}'
-        valid_dbs = validate_databases(db_name)
-        assert valid_dbs, "未指定账套或账套不存在"
-        total_count = 0
-        for valid_db in valid_dbs:
-            count = 0
-            async with get_tortoise_connection(valid_db) as db:
-            # db = Tortoise.get_connection(valid_db)
-                count, data = await db.execute_query(sql)
-                total_count += count
-            # await db.close()
-            file_logger.info(f"✅执行SQL删除操作成功，{table_name}@{valid_db}，条件：{filter_string}，删除{count}条记录")
-        file_logger.info(f"✅执行SQL删除操作成功，共删除{total_count}条记录，{table_name}@[{','.join(valid_dbs)}]")
-        return standard_response(
-            data=data,
-            meta={"affect_count": total_count, "affect_dbs": ", ".join(valid_dbs)}
-        )
-        
-    except Exception as e:
-        file_logger.error(f"❌执行SQL删除操作失败，{table_name}@{db_name}，条件：{filter_string}，错误信息：{str(e)}")
-        return standard_response(
-            success=0,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message=f"操作失败：{str(e)}"
-        )
 
 
 ################################################################

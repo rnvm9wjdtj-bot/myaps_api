@@ -112,7 +112,7 @@ class AcceptMaterial(BaseModel):
         if values.get("price") in gc.NONE_AND_EMPTY:
             values["price"] = 0.00
         _cache_raw_input_data(cls, values)
-        if values.get("fifo", "") == "":  # ，
+        if values.get("fifo", "") == "":
             values["fifo"] = pdv.MAT_FIFO
         if values.get("expday", "") == "":
             values["expday"] = pdv.MAT_EXPDAY

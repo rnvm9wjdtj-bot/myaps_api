@@ -1,8 +1,8 @@
 from tortoise import fields
 # from tortoise.signals import post_save
 
+from globalobjects.db_manager import db_managers
 from . import protomodels as pm
-from .utils.common import common_write
 from apps.data_opt.project_files import project_default_value as pdv
 
 
@@ -56,7 +56,10 @@ class TMatVer(pm.ProtoMatVer):
         """
         若不存在则创建
         """
-        await common_write(db_name=db_name, mdl=cls, data=[{
+        db_manager = db_managers.get(db_name)
+        db_manager._bulk_upsert_orm(
+            model_class=cls,
+            data_list=[{
                 "materialno": materialno,
                 "matver": matver,
                 "lotfrom": lotfrom,

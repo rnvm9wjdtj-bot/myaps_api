@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta
 # from this import d
 from typing import List#, Dict, Any, Literal
 import inspect, functools, pandas as pd
-import httpx
+# import httpx
 
 from fastapi import APIRouter, Query, Body, status#, Request, Path
 # from tortoise import Tortoise
@@ -16,10 +16,9 @@ from .schemas import (
     ConvertPl
     #DeleteSupply
     )
-from .utils.common import (
-    common_params, get_tortoise_connection,
-    common_read_by_orm, common_write, common_delete_by_orm, common_read_by_sql, common_delete_by_sql, common_call_dbprocdure,
-    standard_response)
+
+from .utils.common import common_params, get_tortoise_connection, standard_response
+from .utils.db_operation import db_query, db_write, db_delete, call_dbprocdure
 from apps.data_opt.project_files import hap_conn
 
 
@@ -150,19 +149,6 @@ async def get_meta():
         },
     )
     
-    
-# @rt.get(
-#     "/t_material",
-#     tags=["主数据 - 物料"],
-#     summary="获取物料信息",
-#     description="获取物料信息"
-# )
-# async def get_material(
-#     db_name: str = common_params["db_name"],
-#     page_size: int = common_params["page_size"],
-#     page_index: int = common_params["page_index"]
-# ):
-#     return await common_read_by_orm(db_name=db_name, mdl=TMaterial, page_size=page_size, page_index=page_index)
 
 @rt.post(
     "/t_material",
@@ -176,21 +162,8 @@ async def post_material(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await common_write(db_name=db_name, mdl=TMaterial, data=data)
+    return await db_write(db_name=db_name, mdl=TMaterial, data=data)
 
-
-# @rt.get(
-#     "/t_workcenter",
-#     tags=["主数据 - 工作中心"],
-#     summary="获取工作中心信息",
-#     description="获取工作中心信息"
-# )
-# async def get_workcenter(
-#     db_name: str = common_params["db_name"],
-#     page_size: int = common_params["page_size"],
-#     page_index: int = common_params["page_index"]
-# ):
-#     return await common_read_by_orm(db_name=db_name, mdl=TWorkcenter, page_size=page_size, page_index=page_index)
 
 @rt.post(
     "/t_workcenter",
@@ -204,21 +177,9 @@ async def post_workcenter(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await common_write(db_name=db_name, mdl=TWorkcenter, data=data)
+    return await db_write(db_name=db_name, mdl=TWorkcenter, data=data)
 
-# @rt.get(
-#     "/t_mat_wc",
-#     tags=["主数据 - 工序"],
-#     summary="获取工序信息",
-#     description="获取工序信息"
-# )
-# async def get_mat_wc(
-#     db_name: str = common_params["db_name"],
-#     page_size: int = common_params["page_size"],
-#     page_index: int = common_params["page_index"]
-# ):
-#     return await common_read_by_orm(db_name=db_name, mdl=TMatWc, page_size=page_size, page_index=page_index)
-    
+   
 @rt.post(
     "/t_mat_wc",
     tags=["主数据 - 工序"],
@@ -231,20 +192,8 @@ async def post_mat_wc(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await common_write(db_name=db_name, mdl=TMatWc, data=data)
+    return await db_write(db_name=db_name, mdl=TMatWc, data=data)
 
-# @rt.get(
-#     "/t_mat_ver",
-#     tags=["主数据 - 产线版本"],
-#     summary="获取产线版本信息",
-#     description="获取产线版本信息"
-# )
-# async def get_mat_ver(
-#     db_name: str = common_params["db_name"],
-#     page_size: int = common_params["page_size"],
-#     page_index: int = common_params["page_index"]
-# ):
-#     return await common_read_by_orm(db_name=db_name, mdl=TMatVer, page_size=page_size, page_index=page_index)
 
 @rt.post(
     "/t_mat_ver",
@@ -258,20 +207,8 @@ async def post_mat_ver(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await common_write(db_name=db_name, mdl=TMatVer, data=data)
+    return await db_write(db_name=db_name, mdl=TMatVer, data=data)
 
-# @rt.get(
-#     "/t_mat_wc_bom",
-#     tags=["主数据 - BOM"],
-#     summary="获取BOM信息",
-#     description="获取BOM信息"
-# )
-# async def get_mat_wc_bom(
-#     db_name: str = common_params["db_name"],
-#     page_size: int = common_params["page_size"],
-#     page_index: int = common_params["page_index"]
-# ):
-#     return await common_read_by_orm(db_name=db_name, mdl=TMatWcBom, page_size=page_size, page_index=page_index)
 
 @rt.post(
     "/t_mat_wc_bom",
@@ -285,7 +222,7 @@ async def post_mat_wc_bom(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await common_write(db_name=db_name, mdl=TMatWcBom, data=data)
+    return await db_write(db_name=db_name, mdl=TMatWcBom, data=data)
 
 
 @rt.post(
@@ -300,7 +237,7 @@ async def post_mold(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await common_write(db_name=db_name, mdl=TMold, data=data)
+    return await db_write(db_name=db_name, mdl=TMold, data=data)
 
 
 @rt.post(
@@ -315,7 +252,7 @@ async def post_mat_wc_mold(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await common_write(db_name=db_name, mdl=TMatWcMold, data=data)
+    return await db_write(db_name=db_name, mdl=TMatWcMold, data=data)
 
 
 ########################################################################
@@ -333,7 +270,7 @@ async def get_supply(
     page_index: int = common_params["page_index"],
     # x_api_key: str = common_params["x_api_key"]
 ):
-    return await common_read_by_orm(db_name=db_name, mdl=TSupply, page_size=page_size, page_index=page_index)
+    return await db_query(db_name=db_name, table_name="t_supply", page_size=page_size, page_index=page_index)
 
 @rt.post(
     "/t_supply",
@@ -346,7 +283,7 @@ async def post_supply(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await common_write(db_name=db_name, mdl=TSupply, data=data)
+    return await db_write(db_name=db_name, mdl=TSupply, data=data)
 
 @rt.patch(
     "/t_supply/pl",
@@ -361,7 +298,7 @@ async def convert_pl_to_mo_by_dbprocdure(
     ):
     # 调用存储过程SupplyConvertMOByE2A，将PL转为MO
     params_list = [[item.plno, item.mono, item.status, item.memo, item.is_execute_updates] for item in data]
-    return await common_call_dbprocdure(db_name=db_name, procedure_name="SupplyConvertMOByE2A", params_list=params_list)
+    return await call_dbprocdure(db_names=db_name, procedure_name="SupplyConvertMOByE2A", params_list=params_list)
 
 
 @rt.delete(
@@ -400,9 +337,9 @@ async def delete_supply(
     if supplyno:
         filter_conditions.append(f"SupplyNo='{supplyno}'")
     filter_string = " AND ".join(filter_conditions)
-    result = await common_delete_by_sql(db_name=db_name, table_name="t_supply", filter_string=filter_string)
+    result = await db_delete(db_names=db_name, table_name="t_supply", filter_string=filter_string)
     if del_relation and supply_type_param in ['PL', 'MO'] and supplyno and result["success"]: # 删除关联的工序记录
-        await common_delete_by_sql(db_name=db_name, table_name="t_orderwc", filter_string=f"SupplyNo='{supplyno}'")
+        await db_delete(db_names=db_name, table_name="t_orderwc", filter_string=f"SupplyNo='{supplyno}'")
     return result
 
 
@@ -415,10 +352,10 @@ async def delete_supply(
 )
 async def get_demand(
     db_name: str = common_params["db_name"],
-    page_size: int = common_params["page_size"],
-    page_index: int = common_params["page_index"]
+    # page_size: int = common_params["page_size"],
+    # page_index: int = common_params["page_index"]
 ):
-    return await common_read_by_orm(db_name=db_name, mdl=TDemand, page_size=page_size, page_index=page_index)
+    return await db_query(db_name=db_name, table_name="t_demand")
 
 @rt.post(
     "/t_demand",
@@ -431,7 +368,7 @@ async def post_demand(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await common_write(db_name=db_name, mdl=TDemand, data=data)
+    return await db_write(db_name=db_name, mdl=TDemand, data=data)
 
 ########################################################################
 # 报表接口
@@ -455,7 +392,7 @@ async def get_supply_mo(
         starttime = starttime or date.today()
         endtime = endtime or starttime + timedelta(days=7)
         filter_string = f"DT_OrdStart >= '{starttime}' AND DT_OrdEnd <= '{endtime}'"
-    result = await common_read_by_sql(db_name=db_name, table_name="v_supply_mo", filter_string=filter_string)
+    result = await db_query(db_name=db_name, table_name="v_supply_mo", filter_string=filter_string)
     if result['success'] and result['meta']['total'] == 1:  # 筛选到唯一的工单，则补充工序信息（v_orderwc）
         orderwc = await common_read_by_sql(db_name=db_name, table_name="v_orderwc", filter_string=f"SupplyNo = '{supplyno}'", order_string="SortNo ASC")
         result['data'][0]['orderwc'] = orderwc['data']
@@ -480,7 +417,7 @@ async def get_orderwc(
         starttime = starttime or date.today()
         endtime = endtime or starttime + timedelta(days=7)
         filter_string = f"DT_Start >= '{starttime}' AND DT_End <= '{endtime}'"
-    return await common_read_by_sql(db_name=db_name, table_name="v_orderwc", filter_string=filter_string)
+    return await db_query(db_name=db_name, table_name="v_orderwc", filter_string=filter_string)
 
 
 @rt.get(
@@ -591,4 +528,4 @@ async def create_workreport(
                     d.itemno = itemno
             d.workcenter = None
     
-    return await common_write(db_name=db_name, mdl=TConfirm, data=data)
+    return await db_write(db_name=db_name, mdl=TConfirm, data=data)

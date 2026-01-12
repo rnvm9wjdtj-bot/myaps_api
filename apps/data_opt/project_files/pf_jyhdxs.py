@@ -12,7 +12,7 @@ from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL
 from ._base import (
     ProjectParamBase, DefaultValueBase, ApsBaseAction, 
     file_log, console_log, standard_response, get_session, HapConnection,
-    cron_task, add_basic_auth_requests
+    cron_task, add_basic_auth_requests, db_delete, db_write
     )
 
 #################################################################################
@@ -89,7 +89,7 @@ schedule_task_minute = 55
 
 
 @cron_task(hour=schedule_task_hour, minute=f"{schedule_task_minute + 0}")
-def refresh_stock(db: str = ProjectParam.SCHEDULED_DBS):
+def refresh_stock(dbs: str = ProjectParam.SCHEDULED_DBS):
     """
     刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据
     db: 对哪些账套生效，多个账套用逗号分隔
@@ -136,10 +136,10 @@ def refresh_stock(db: str = ProjectParam.SCHEDULED_DBS):
         })
         stock_data = stock.to_dict(orient='records')
 
-        sap_session.delete(f"{THIS_BASE_URL}/api/t_supply?db_name={db}&type=ST")
-        sap_session.post(f"{THIS_BASE_URL}/api/t_supply?db_name={db}", json=stock_data)
-        console_log.info(f"刷新库存任务执行完成，账套：{db}")
-        response = standard_response(message=f"刷新库存任务执行完成，账套：{db}")
+        db_delete(db_name=dbs, table_name='t_supply', filter_string=f"type='ST'")
+        db_write(db_name=dbs, table_name='t_supply', data=stock_data)
+        console_log.info(f"刷新库存任务执行完成，账套：{dbs}")
+        response = standard_response(message=f"刷新库存任务执行完成，账套：{dbs}")
         
     except Exception as e:
         console_log.error(f"刷新库存任务执行失败: {str(e)}")
