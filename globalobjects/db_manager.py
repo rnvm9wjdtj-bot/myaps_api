@@ -5,7 +5,7 @@ from datetime import datetime
 from tortoise import Tortoise, transactions
 from tortoise.exceptions import IntegrityError
 
-
+from config.settings import MYAPS_DBSET_LIST
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -740,3 +740,12 @@ class DbManager:
         """
         self.connection_name = connection_name
         logger.info(f"已切换数据库连接至: {connection_name}")
+
+
+def get_db_managers():
+    db_managers = {}
+    for db in MYAPS_DBSET_LIST:
+        db_managers[db] = DbManager(db)
+    return db_managers
+
+db_managers = get_db_managers()
