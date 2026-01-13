@@ -162,7 +162,7 @@ async def post_material(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_name=db_name, mdl=TMaterial, data=data)
+    return await db_write(db_names=db_name, mdl=TMaterial, data=data)
 
 
 @rt.post(
@@ -177,7 +177,7 @@ async def post_workcenter(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_name=db_name, mdl=TWorkcenter, data=data)
+    return await db_write(db_names=db_name, mdl=TWorkcenter, data=data)
 
    
 @rt.post(
@@ -192,7 +192,7 @@ async def post_mat_wc(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_name=db_name, mdl=TMatWc, data=data)
+    return await db_write(db_names=db_name, mdl=TMatWc, data=data)
 
 
 @rt.post(
@@ -207,7 +207,7 @@ async def post_mat_ver(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_name=db_name, mdl=TMatVer, data=data)
+    return await db_write(db_names=db_name, mdl=TMatVer, data=data)
 
 
 @rt.post(
@@ -222,7 +222,7 @@ async def post_mat_wc_bom(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_name=db_name, mdl=TMatWcBom, data=data)
+    return await db_write(db_names=db_name, mdl=TMatWcBom, data=data)
 
 
 @rt.post(
@@ -237,7 +237,7 @@ async def post_mold(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_name=db_name, mdl=TMold, data=data)
+    return await db_write(db_names=db_name, mdl=TMold, data=data)
 
 
 @rt.post(
@@ -252,7 +252,7 @@ async def post_mat_wc_mold(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_name=db_name, mdl=TMatWcMold, data=data)
+    return await db_write(db_names=db_name, mdl=TMatWcMold, data=data)
 
 
 ########################################################################
@@ -283,7 +283,7 @@ async def post_supply(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_name=db_name, mdl=TSupply, data=data)
+    return await db_write(db_names=db_name, mdl=TSupply, data=data)
 
 @rt.patch(
     "/t_supply/pl",
@@ -368,7 +368,7 @@ async def post_demand(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_name=db_name, mdl=TDemand, data=data)
+    return await db_write(db_names=db_name, mdl=TDemand, data=data)
 
 ########################################################################
 # 报表接口
@@ -381,20 +381,25 @@ async def post_demand(
 )
 async def get_supply_mo(
     db_name: str = common_params["db_name"],
-    starttime: datetime = Query(date.today(), description="工单开工时间"),
-    endtime: datetime = Query(date.today() + timedelta(days=7), description="工单完工时间"),
+    starttime: datetime = Query(None, description="工单开工时间"),
+    endtime: datetime = Query(None, description="工单完工时间"),
     supplyno: str = Query(None, description="工单（供应）号"),
     # x_api_key: str = common_params["x_api_key"]
 ):
     if supplyno:
         filter_string = f"SupplyNo = '{supplyno}'"
     else:
-        starttime = starttime or date.today()
-        endtime = endtime or starttime + timedelta(days=7)
-        filter_string = f"DT_OrdStart >= '{starttime}' AND DT_OrdEnd <= '{endtime}'"
+        # starttime = starttime or date.today()
+        # endtime = endtime or starttime + timedelta(days=7)
+        filter_strings = []
+        if starttime:
+            filter_strings.append(f"DT_OrdStart >= '{starttime}'")  
+        if endtime:
+            filter_strings.append(f"DT_OrdEnd <= '{endtime}'")
+        filter_string = " AND ".join(filter_strings)
     result = await db_query(db_name=db_name, table_name="v_supply_mo", filter_string=filter_string)
     if result['success'] and result['meta']['total'] == 1:  # 筛选到唯一的工单，则补充工序信息（v_orderwc）
-        orderwc = await common_read_by_sql(db_name=db_name, table_name="v_orderwc", filter_string=f"SupplyNo = '{supplyno}'", order_string="SortNo ASC")
+        orderwc = await db_query(db_name=db_name, table_name="v_orderwc", filter_string=f"SupplyNo = '{supplyno}'", order_string="SortNo ASC")
         result['data'][0]['orderwc'] = orderwc['data']
     return result
 
@@ -406,17 +411,22 @@ async def get_supply_mo(
 )
 async def get_orderwc(
     db_name: str = common_params["db_name"],
-    starttime: datetime = Query(date.today(), description="工序开工时间"),
-    endtime: datetime = Query(date.today() + timedelta(days=7), description="工序完工时间"),
+    starttime: datetime = Query(None, description="工序开工时间"),
+    endtime: datetime = Query(None, description="工序完工时间"),
     supplyno: str = Query(None, description="工单（供应）号"),
     # x_api_key: str = common_params["x_api_key"]
 ):
     if supplyno:
         filter_string = f"SupplyNo = '{supplyno}'"
     else:
-        starttime = starttime or date.today()
-        endtime = endtime or starttime + timedelta(days=7)
-        filter_string = f"DT_Start >= '{starttime}' AND DT_End <= '{endtime}'"
+        # starttime = starttime or date.today()
+        # endtime = endtime or starttime + timedelta(days=7)
+        filter_strings = []
+        if starttime:
+            filter_strings.append(f"DT_Start >= '{starttime}'")  
+        if endtime:
+            filter_strings.append(f"DT_End <= '{endtime}'")
+        filter_string = " AND ".join(filter_strings)
     return await db_query(db_name=db_name, table_name="v_orderwc", filter_string=filter_string)
 
 
@@ -440,19 +450,19 @@ async def get_matdailyqtyreport(
     filter_string = f"DateStr >= '{start_date}' AND DateStr <= '{end_date}'"
     order_string = "MaterialNo, DateStr"
     if materialno:
-        filter_string += f" AND MaterialNo IN ({materialno})"
-    query_result = await common_read_by_sql(db_name=db_name, table_name="v_matdailyqtyreport", filter_string=filter_string, order_string=order_string)
+        sql_matno = ','.join([f"'{matno.strip()}'" for matno in materialno.split(',')])
+        filter_string += f" AND MaterialNo IN ({sql_matno})"
+    query_result = await db_query(db_name=db_name, table_name="v_matdailyqtyreport", filter_string=filter_string, order_string=order_string)
     if data := query_result.get('data'):
         request_result.extend(data)
 
     if not request_result:
         return standard_response(status_code=status.HTTP_204_NO_CONTENT, message="No data available", meta={'total': 0}, data=request_result)
-    
-    # if not groupdates:
-    #     return standard_response(meta={'total': len(request_result)}, data=request_result)
+
     # 转换为DataFrame并过滤
     df = pd.DataFrame(request_result)
-    df = df[df['type'] == 'F'].sort_values(by=['materialno', 'datestr'], ascending=[True, True])
+    df = df.sort_values(by=['materialno', 'datestr'], ascending=[True, True])
+    # df = df[df['type'] == 'F'].sort_values(by=['materialno', 'datestr'], ascending=[True, True])
 
     df['original_datestr'] = df['datestr']
     # 日期映射
@@ -528,4 +538,4 @@ async def create_workreport(
                     d.itemno = itemno
             d.workcenter = None
     
-    return await db_write(db_name=db_name, mdl=TConfirm, data=data)
+    return await db_write(db_names=db_name, mdl=TConfirm, data=data)

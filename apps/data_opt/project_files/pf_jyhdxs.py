@@ -9,6 +9,7 @@ from dateutil.relativedelta import relativedelta
 
 
 from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL
+from apps.io_api.models import TSupply
 from ._base import (
     ProjectParamBase, DefaultValueBase, ApsBaseAction, 
     file_log, console_log, standard_response, get_session, HapConnection,
@@ -136,8 +137,8 @@ def refresh_stock(dbs: str = ProjectParam.SCHEDULED_DBS):
         })
         stock_data = stock.to_dict(orient='records')
 
-        db_delete(db_name=dbs, table_name='t_supply', filter_string=f"type='ST'")
-        db_write(db_name=dbs, table_name='t_supply', data=stock_data)
+        db_delete(db_names=dbs, table_name='t_supply', filter_string=f"type='ST'")
+        db_write(db_names=dbs, mdl=TSupply, data=stock_data)
         console_log.info(f"刷新库存任务执行完成，账套：{dbs}")
         response = standard_response(message=f"刷新库存任务执行完成，账套：{dbs}")
         

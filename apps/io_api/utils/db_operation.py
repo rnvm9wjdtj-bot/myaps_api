@@ -102,7 +102,7 @@ async def preprocess_data(data: List[PydanticSchema | Dict[str, Any]]) -> List[P
     return processed_data_list
 
 
-async def db_write(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticSchema | Dict[str, Any]]):
+async def db_write(db_names: str, mdl: TortoiseBaseModel, data: List[PydanticSchema | Dict[str, Any]]):
     """
     通用写入操作，支持创建和更新
     融合了common.py的多账套处理逻辑与db_manager.py的高效数据库操作
@@ -120,10 +120,10 @@ async def db_write(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticSche
     origin_total = len(data)
     
     # 记录日志
-    file_logger.info(f"ℹ️↓接收到{origin_total}条数据，拟写入{mdl._meta.db_table}@[{db_name}] —— common_write\n{[item.raw_input_data for item in processed_data_list]}")
+    file_logger.info(f"ℹ️↓接收到{origin_total}条数据，拟写入{mdl._meta.db_table}@[{db_names}] —— common_write\n{[item.raw_input_data for item in processed_data_list]}")
     
     # 验证账套
-    valid_dbs = validate_databases(db_name)
+    valid_dbs = validate_databases(db_names)
     if not valid_dbs:
         file_logger.error(f"❌↑未找到有效账套（available_dbs：{MYAPS_DB_SET}），禁止写入 —— common_write")
         return standard_response(
@@ -131,7 +131,7 @@ async def db_write(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticSche
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message="操作失败：未找到有效账套",
             meta={
-                "input_db_name": db_name,
+                "input_db_name": db_names,
                 "available_dbs": MYAPS_DB_SET,
             },
             data=[item.processed_data for item in processed_data_list]
@@ -178,9 +178,9 @@ async def db_write(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticSche
 
     try:
         # 处理每个账套，使用专属的DbManager实例
-        for db_name in valid_dbs:
+        for db_names in valid_dbs:
             # 获取该账套的专属DbManager实例
-            db_manager = db_managers[db_name]
+            db_manager = db_managers[db_names]
             
             # 执行批量upsert
             result = await db_manager.bulk_upsert(
@@ -196,9 +196,9 @@ async def db_write(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticSche
             update_count = result.get("updated", 0)
             create_count_total += create_count
             update_count_total += update_count
-            file_logger.info(f"✅生效账套@{db_name}，新增{create_count}条，修改{update_count}条")
+            file_logger.info(f"✅生效账套@{db_names}，新增{create_count}条，修改{update_count}条")
             # 记录成功的账套
-            success_db.append({"db_name": db_name, "create": create_count, "update": update_count})
+            success_db.append({"db_name": db_names, "create": create_count, "update": update_count})
         
         # 记录总日志
         file_logger.info(f"✅生效{len(success_db)}个账套，总计新增{create_count_total}条，修改{update_count_total}条")
