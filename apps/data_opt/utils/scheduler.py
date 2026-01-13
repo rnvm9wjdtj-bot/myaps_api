@@ -128,18 +128,14 @@ class SchedulerManager:
             # 为异步函数创建同步包装器
             @wraps(func)
             def wrapper():
+                # 确保为每个异步任务创建一个新的事件循环
+                # 这样可以避免与主应用事件循环的冲突
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
                 try:
-                    # 使用事件循环运行异步函数
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        # 如果事件循环正在运行（如在FastAPI应用中），创建任务
-                        loop.create_task(async_wrapper())
-                    else:
-                        # 否则直接运行
-                        loop.run_until_complete(async_wrapper())
-                except RuntimeError:
-                    # 如果没有事件循环，创建一个新的
-                    asyncio.run(async_wrapper())
+                    loop.run_until_complete(async_wrapper())
+                finally:
+                    loop.close()
             return wrapper
         else:
             # 原有的同步函数处理逻辑

@@ -138,7 +138,7 @@ async def refresh_stock(dbs: str = None):
         stock['itemno'] = DefaultValue.ITEMNO
         stock_data = stock.to_dict(orient='records')
 
-        delete_result = await db_delete(db_names=dbs, table_name='t_supply', filter_string=f"Type='ST'")
+        delete_result = await db_delete(db_names=dbs, model_or_tablename='t_supply', filter_string=f"Type='ST'")
         write_result = await db_write(db_names=dbs, model_or_tablename='t_supply', data=stock_data)
         console_log.info(f"刷新库存任务执行完成，账套：{dbs}")
         response = standard_response(message=f"刷新库存任务执行完成，账套：{dbs}")
