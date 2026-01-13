@@ -3,7 +3,6 @@ from tortoise import fields
 
 from globalobjects.db_manager import db_managers
 from . import protomodels as pm
-from apps.data_opt.project_files import project_default_value as pdv
 
 
 class TMaterial(pm.ProtoMaterial):
@@ -16,6 +15,7 @@ class TMaterial(pm.ProtoMaterial):
 
     @classmethod
     async def create(cls, using_db, update_fields=None, force_create=False, force_update=False, *args, **kwargs):
+        from apps.data_opt.project_files import project_default_value as pdv
         if pdv.auto_matver and kwargs.get("type") == "E":
             await TMatVer.create_if_not_exists(db_name=using_db.connection_name, materialno=kwargs.get("materialno"))
         return await super().create(using_db=using_db, update_fields=update_fields, force_create=force_create, force_update=force_update, *args, **kwargs)
@@ -52,10 +52,21 @@ class TMatVer(pm.ProtoMatVer):
         unique_together = [("materialno", "matver")]
 
     @classmethod
-    async def create_if_not_exists(cls, db_name: str, materialno: str, matver: str = pdv.MATVER, lotfrom: int = pdv.MATVER_LOTFROM, lotto: int = pdv.MATVER_LOTTO, priority: int = pdv.MATVER_PRIORITY):
+    async def create_if_not_exists(cls, db_name: str, materialno: str, matver: str = None, lotfrom: int = None, lotto: int = None, priority: int = None):
         """
         若不存在则创建
         """
+        from apps.data_opt.project_files import project_default_value as pdv
+        # 设置默认值
+        if matver is None:
+            matver = pdv.MATVER
+        if lotfrom is None:
+            lotfrom = pdv.MATVER_LOTFROM
+        if lotto is None:
+            lotto = pdv.MATVER_LOTTO
+        if priority is None:
+            priority = pdv.MATVER_PRIORITY
+            
         db_manager = db_managers.get(db_name)
         db_manager._bulk_upsert_orm(
             model_class=cls,
@@ -158,3 +169,31 @@ class TConfirm(pm.ProtoConfirm):
         managed = False
         abstract = False
         table = "t_confirm"
+
+
+
+
+
+def get_table_model_mapping():
+    """
+    获取当前模块中所有非抽象类、有Meta属性、有table属性的类，
+    并将其映射关系存储在TABLE_MODEL_MAPPING中
+    """
+    import inspect
+    # 获取当前模块
+    current_module = __import__(__name__)
+    table_model_mapping = {}
+    # 遍历当前模块中的所有属性
+    for name in dir(current_module):
+        
+        cls = getattr(current_module, name)
+        # 检查是否是类、是否有Meta属性、是否有table属性、是否不是抽象类
+        if (inspect.isclass(cls) and 
+            hasattr(cls, "Meta") and 
+            hasattr(cls.Meta, "table") and 
+            not cls.Meta.abstract):
+            table_model_mapping[cls.Meta.table] = cls
+    return table_model_mapping
+
+# 动态生成表与模型的映射关系
+TABLE_MODEL_MAPPING = get_table_model_mapping()

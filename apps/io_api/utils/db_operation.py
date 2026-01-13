@@ -10,6 +10,7 @@ from config.settings import MYAPS_DB_SET
 from globalobjects.db_manager import db_managers, DbManager
 from globalobjects import file_timed_logger
 from .common import standard_response, dict_to_lower_keys
+from ..models import TABLE_MODEL_MAPPING
 
 
 file_logger = file_timed_logger.setup_logging(__name__)
@@ -102,7 +103,7 @@ async def preprocess_data(data: List[PydanticSchema | Dict[str, Any]]) -> List[P
     return processed_data_list
 
 
-async def db_write(db_names: str, mdl: TortoiseBaseModel, data: List[PydanticSchema | Dict[str, Any]]):
+async def db_write(db_names: str, model_or_tablename: TortoiseBaseModel | str, data: List[PydanticSchema | Dict[str, Any]]):
     """
     通用写入操作，支持创建和更新
     融合了common.py的多账套处理逻辑与db_manager.py的高效数据库操作
@@ -115,6 +116,24 @@ async def db_write(db_names: str, mdl: TortoiseBaseModel, data: List[PydanticSch
     Returns:
         标准响应格式
     """
+    if isinstance(model_or_tablename, str):
+        table_name = model_or_tablename
+        mdl = TABLE_MODEL_MAPPING.get(table_name)
+        if not mdl:
+            file_logger.error(f"❌↑未找到对应模型（table_name：{table_name}），禁止写入 —— common_write")
+            return standard_response(
+                success=0,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                message="操作失败：未找到对应模型",
+                meta={
+                    "input_table_name": table_name,
+                    "available_tables": list(TABLE_MODEL_MAPPING.keys()),
+                },
+                data=[item.processed_data for item in processed_data_list]
+            )
+    else:
+        mdl = model_or_tablename
+        table_name = mdl._meta.db_table
     # 预处理数据
     processed_data_list = await preprocess_data(data)
     origin_total = len(data)

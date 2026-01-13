@@ -9,7 +9,6 @@ from dateutil.relativedelta import relativedelta
 
 
 from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL
-from apps.io_api.models import TSupply
 from ._base import (
     ProjectParamBase, DefaultValueBase, ApsBaseAction, 
     file_log, console_log, standard_response, get_session, HapConnection,
@@ -90,12 +89,13 @@ schedule_task_minute = 55
 
 
 @cron_task(hour=schedule_task_hour, minute=f"{schedule_task_minute + 0}")
-def refresh_stock(dbs: str = ProjectParam.SCHEDULED_DBS):
+def refresh_stock(dbs: str = None):
     """
     刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据
     db: 对哪些账套生效，多个账套用逗号分隔
     """
     console_log.info("开始执行刷新库存任务")
+    dbs = dbs or ProjectParam.SCHEDULED_DBS
     response = None
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     try:
@@ -137,8 +137,8 @@ def refresh_stock(dbs: str = ProjectParam.SCHEDULED_DBS):
         })
         stock_data = stock.to_dict(orient='records')
 
-        db_delete(db_names=dbs, table_name='t_supply', filter_string=f"type='ST'")
-        db_write(db_names=dbs, mdl=TSupply, data=stock_data)
+        db_delete(db_names=dbs, table_name='t_supply', filter_string=f"Type='ST'")
+        db_write(db_names=dbs, model_or_tablename='t_supply', data=stock_data)
         console_log.info(f"刷新库存任务执行完成，账套：{dbs}")
         response = standard_response(message=f"刷新库存任务执行完成，账套：{dbs}")
         

@@ -10,7 +10,7 @@ from fastapi import APIRouter, Query, Body, status#, Request, Path
 
 from config.settings import MYAPS_DB_SET, MYAPS_DBSET_LIST, MYAPS_MAIN_DB, THIS_BASE_URL
 from globalobjects import globalconst as gc
-from .models import TMaterial, TWorkcenter, TMatWc, TMatVer, TMatWcBom, TSupply, TDemand, TMold, TMatWcMold, TConfirm#,TortoiseBaseModel
+# from .models import TMaterial, TWorkcenter, TMatWc, TMatVer, TMatWcBom, TSupply, TDemand, TMold, TMatWcMold, TConfirm#,TortoiseBaseModel
 from .schemas import (
     AcceptMaterial, AcceptWorkcenter, AcceptMatWc, AcceptMatVer, AcceptMatWcBom, AcceptSupply, AcceptDemand, AcceptMold, AcceptMatWcMold, AcceptConfirm,
     ConvertPl
@@ -162,7 +162,7 @@ async def post_material(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, mdl=TMaterial, data=data)
+    return await db_write(db_names=db_name, model_or_tablename="t_material", data=data)
 
 
 @rt.post(
@@ -177,7 +177,7 @@ async def post_workcenter(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, mdl=TWorkcenter, data=data)
+    return await db_write(db_names=db_name, model_or_tablename="t_workcenter", data=data)
 
    
 @rt.post(
@@ -192,7 +192,7 @@ async def post_mat_wc(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, mdl=TMatWc, data=data)
+    return await db_write(db_names=db_name, model_or_tablename="t_mat_wc", data=data)
 
 
 @rt.post(
@@ -207,7 +207,7 @@ async def post_mat_ver(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, mdl=TMatVer, data=data)
+    return await db_write(db_names=db_name, model_or_tablename="t_mat_ver", data=data)
 
 
 @rt.post(
@@ -222,7 +222,7 @@ async def post_mat_wc_bom(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, mdl=TMatWcBom, data=data)
+    return await db_write(db_names=db_name, model_or_tablename="t_mat_wc_bom", data=data)
 
 
 @rt.post(
@@ -237,7 +237,7 @@ async def post_mold(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, mdl=TMold, data=data)
+    return await db_write(db_names=db_name, model_or_tablename="t_mold", data=data)
 
 
 @rt.post(
@@ -252,7 +252,7 @@ async def post_mat_wc_mold(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, mdl=TMatWcMold, data=data)
+    return await db_write(db_names=db_name, model_or_tablename="t_mat_wc_mold", data=data)
 
 
 ########################################################################
@@ -283,7 +283,7 @@ async def post_supply(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, mdl=TSupply, data=data)
+    return await db_write(db_names=db_name, model_or_tablename="t_supply", data=data)
 
 @rt.patch(
     "/t_supply/pl",
@@ -368,7 +368,7 @@ async def post_demand(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, mdl=TDemand, data=data)
+    return await db_write(db_names=db_name, model_or_tablename="t_demand", data=data)
 
 ########################################################################
 # 报表接口
@@ -538,4 +538,4 @@ async def create_workreport(
                     d.itemno = itemno
             d.workcenter = None
     
-    return await db_write(db_names=db_name, mdl=TConfirm, data=data)
+    return await db_write(db_names=db_name, model_or_tablename="t_confirm", data=data)
