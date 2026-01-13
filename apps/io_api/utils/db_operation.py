@@ -150,6 +150,7 @@ async def db_write(db_names: str, model_or_tablename: TortoiseBaseModel | str, d
                     "available_tables": list(TABLE_MODEL_MAPPING.keys()),
                 },
                 data=[item.processed_data for item in processed_data_list]
+                # data=data
             )
 
     else:

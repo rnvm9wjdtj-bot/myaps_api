@@ -204,9 +204,15 @@ register_tortoise(
 
 
 # 初始化定时任务管理器
-from apps.data_opt.utils.scheduler import initialize_scheduler, get_scheduler_status
+from apps.data_opt.utils.scheduler import initialize_scheduler, get_scheduler_status, scheduler_manager
+import asyncio
+
 initialize_scheduler()
 print(f"定时任务管理器状态: {get_scheduler_status()}")
+
+# 将主应用事件循环传递给调度器
+main_loop = asyncio.get_event_loop()
+scheduler_manager.set_main_loop(main_loop)
 
 
 # 启动说明：

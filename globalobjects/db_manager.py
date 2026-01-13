@@ -10,8 +10,33 @@ from tortoise.exceptions import IntegrityError
 from config.settings import MYAPS_DBSET_LIST
 
 # 配置日志
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
+def with_transaction(func):
+    """
+    事务装饰器，根据实例配置或方法参数决定是否使用事务
+    
+    Args:
+        func: 要装饰的异步方法
+        
+    Returns:
+        装饰后的方法
+    """
+    async def wrapper(self, *args, **kwargs):
+        # 检查是否有use_transaction参数，如果有则使用，否则使用实例默认值
+        transaction_mode = kwargs.pop('use_transaction', self.use_transaction)
+        
+        if transaction_mode:
+            # 使用事务
+            async with in_transaction(self.connection_name):
+                return await func(self, *args, **kwargs)
+        else:
+            # 不使用事务
+            return await func(self, *args, **kwargs)
+    
+    return wrapper
 
 
 class DbManager:
@@ -62,6 +87,7 @@ class DbManager:
                     raise ValueError(f"模型 {model_class.__name__} 没有定义主键或唯一约束")
         return conflict_fields
     
+    @with_transaction
     async def call_stored_procedure(
         self,
         procedure_name: str,
@@ -85,8 +111,6 @@ class DbManager:
         if params_list is None:
             params_list = [[]]
             
-        # 如果未指定事务选项，使用实例配置的默认值
-        transaction_mode = self.use_transaction if use_transaction is None else use_transaction
         start_time = datetime.now()
         
         try:
@@ -96,25 +120,15 @@ class DbManager:
             affect_count = 0
             results = []
             
-            if transaction_mode:
-                async with in_transaction(self.connection_name):
-                    for params in params_list:
-                        result = await conn.execute_query(
-                            f'CALL {procedure_name}({", ".join(["%s"] * len(params))})', 
-                            params
-                        )
-                        count = result[0] if result else 0
-                        affect_count += count
-                        results.append(result)
-            else:
-                for params in params_list:
-                    result = await conn.execute_query(
-                        f'CALL {procedure_name}({", ".join(["%s"] * len(params))})', 
-                        params
-                    )
-                    count = result[0] if result else 0
-                    affect_count += count
-                    results.append(result)
+            # 移除事务分支，统一执行核心逻辑
+            for params in params_list:
+                result = await conn.execute_query(
+                    f'CALL {procedure_name}({", ".join(["%s"] * len(params))})', 
+                    params
+                )
+                count = result[0] if result else 0
+                affect_count += count
+                results.append(result)
             
             execution_time = (datetime.now() - start_time).total_seconds()
             
@@ -224,6 +238,7 @@ class DbManager:
             logger.error(f"数据查询失败: {e}")
             raise
     
+    @with_transaction
     async def delete_data(
         self,
         table_name: str,
@@ -246,9 +261,6 @@ class DbManager:
         """
         start_time = datetime.now()
         
-        # 如果未指定事务选项，使用实例配置的默认值
-        transaction_mode = self.use_transaction if use_transaction is None else use_transaction
-        
         try:
             # 使用Tortoise的连接池机制，不需要手动关闭连接
             # Tortoise会自动管理连接的获取和释放
@@ -260,13 +272,8 @@ class DbManager:
             # 构建DELETE SQL语句
             delete_sql = f'DELETE FROM `{table_name}` {where}'
             
-            affected_rows = 0
-            
-            if transaction_mode:
-                async with in_transaction(self.connection_name):
-                    affected_rows, data = await conn.execute_query(delete_sql)
-            else:
-                affected_rows, data = await conn.execute_query(delete_sql)
+            # 移除事务分支，统一执行核心逻辑
+            affected_rows, data = await conn.execute_query(delete_sql)
             
             execution_time = (datetime.now() - start_time).total_seconds()
             
@@ -542,6 +549,7 @@ class DbManager:
             'total': inserted_count + updated_count
         }
     
+    @with_transaction
     async def bulk_upsert(
         self,
         model_class,
@@ -549,7 +557,8 @@ class DbManager:
         update_fields: Optional[List[str]] = None,
         exclude_fields: Optional[List[str]] = None,
         conflict_fields: Optional[Tuple[str, ...]] = None,
-        force_use_orm: bool = False
+        force_use_orm: bool = False,
+        use_transaction: Optional[bool] = None
     ) -> Dict[str, Any]:
         """
         批量 upsert 主方法
@@ -561,6 +570,7 @@ class DbManager:
             update_fields: 冲突时更新的字段列表（可选，默认使用所有非冲突非排除字段）
             exclude_fields: 要排除的字段列表（可选，默认使用conflict_fields作为排除字段）
             force_use_orm: 强制使用 ORM 执行批量 upsert
+            use_transaction: 是否使用事务（可选，默认使用实例配置的use_transaction）
             
         Returns:
             执行统计信息
@@ -586,39 +596,20 @@ class DbManager:
                 # 计算默认更新字段：所有非冲突非排除字段
                 update_fields = list(all_fields - excluded_set)
             
-            if self.use_transaction:
-                # 使用指定连接的事务
-                async with in_transaction(self.connection_name):
-                    # 选择执行策略
-                    if not force_use_orm and len(data_list) > 50:
-                        method = "native_sql"
-                        result = await self._bulk_upsert_native_sql(
-                            model_class, data_list, update_fields, 
-                            exclude_fields, conflict_fields
-                        )
-                    else:
-                        method = "orm"
-                        result = await self._bulk_upsert_orm(
-                            model_class, data_list, update_fields,
-                            exclude_fields, conflict_fields
-                        )
+            # 移除事务分支，统一执行核心逻辑
+            # 选择执行策略
+            if not force_use_orm and len(data_list) > 50:
+                method = "native_sql"
+                result = await self._bulk_upsert_native_sql(
+                    model_class, data_list, update_fields, 
+                    exclude_fields, conflict_fields
+                )
             else:
-                # 无事务模式
-                # 选择执行策略
-                if not force_use_orm and len(data_list) > 50:
-                    # 大批量数据或强制使用原生 SQL
-                    method = "native_sql"
-                    result = await self._bulk_upsert_native_sql(
-                        model_class, data_list, update_fields, 
-                        exclude_fields, conflict_fields
-                    )
-                else:
-                    # 小批量数据使用 ORM
-                    method = "orm"
-                    result = await self._bulk_upsert_orm(
-                        model_class, data_list, update_fields,
-                        exclude_fields, conflict_fields
-                    )
+                method = "orm"
+                result = await self._bulk_upsert_orm(
+                    model_class, data_list, update_fields,
+                    exclude_fields, conflict_fields
+                )
             
             execution_time = (datetime.now() - start_time).total_seconds()
             
@@ -647,7 +638,9 @@ class DbManager:
             raise
         except Exception as e:
             logger.error(f"批量 upsert 失败: {e}")
-            if self.use_transaction:
+            # 保留异常处理的特殊逻辑，因为它涉及到不同的异常处理策略
+            transaction_mode = self.use_transaction if use_transaction is None else use_transaction
+            if transaction_mode:
                 # 事务会自动回滚
                 raise
             else:
@@ -659,6 +652,7 @@ class DbManager:
                     "updated": 0
                 }
     
+    @with_transaction
     async def conditional_bulk_upsert(
         self,
         model_class,
@@ -666,7 +660,8 @@ class DbManager:
         update_rules: Dict[str, str],
         condition_field: str,
         condition_value: Any,
-        conflict_fields: Optional[Tuple[str, ...]] = None
+        conflict_fields: Optional[Tuple[str, ...]] = None,
+        use_transaction: Optional[bool] = None
     ) -> Dict[str, int]:
         """
         条件批量 upsert
@@ -679,6 +674,7 @@ class DbManager:
                 例如: {'quantity': 'quantity + VALUES(quantity)', 'price': 'VALUES(price)'}
             condition_field: 条件字段（必需）
             condition_value: 条件值（必需）
+            use_transaction: 是否使用事务（可选，默认使用实例配置的use_transaction）
             
         Returns:
             包含新增和更新数量的字典: {'inserted': int, 'updated': int, 'total': int}
@@ -694,9 +690,6 @@ class DbManager:
         
         total_inserted = 0
         total_updated = 0
-        
-        # 使用事务处理
-        transaction_context = in_transaction(self.connection_name) if self.use_transaction else None
         
         async def execute_batch():
             nonlocal total_inserted, total_updated
@@ -777,12 +770,8 @@ class DbManager:
                 total_inserted += inserted
                 total_updated += updated
         
-        # 执行批次处理
-        if transaction_context:
-            async with transaction_context:
-                await execute_batch()
-        else:
-            await execute_batch()
+        # 移除事务分支，直接执行批次处理
+        await execute_batch()
         
         return {
             'inserted': total_inserted,

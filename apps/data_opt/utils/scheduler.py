@@ -1,4 +1,5 @@
 import os, asyncio, inspect, logging, atexit
+from fastapi import FastAPI
 
 from typing import Dict, List, Callable, Any, Optional
 from functools import wraps
@@ -44,6 +45,12 @@ class SchedulerManager:
     def __init__(self):
         self.scheduler: Optional[BackgroundScheduler] = None
         self._initialized = False
+        self.main_loop: Optional[asyncio.AbstractEventLoop] = None
+        
+    def set_main_loop(self, loop: asyncio.AbstractEventLoop):
+        """设置主应用事件循环"""
+        self.main_loop = loop
+        logger.info("已设置主应用事件循环")
         
     def init_scheduler(self) -> bool:
         """初始化调度器并添加所有注册的任务"""
@@ -128,14 +135,19 @@ class SchedulerManager:
             # 为异步函数创建同步包装器
             @wraps(func)
             def wrapper():
-                # 确保为每个异步任务创建一个新的事件循环
-                # 这样可以避免与主应用事件循环的冲突
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
                 try:
-                    loop.run_until_complete(async_wrapper())
-                finally:
-                    loop.close()
+                    # 尝试使用主应用事件循环执行任务
+                    if scheduler_manager.main_loop and scheduler_manager.main_loop.is_running():
+                        # 主应用事件循环正在运行，使用它来执行任务
+                        logger.debug("使用主应用事件循环执行异步任务")
+                        return asyncio.run_coroutine_threadsafe(async_wrapper(), scheduler_manager.main_loop).result()
+                    else:
+                        # 主应用事件循环不可用，使用 asyncio.run 创建新循环
+                        logger.debug("使用新的事件循环执行异步任务")
+                        return asyncio.run(async_wrapper())
+                except Exception as e:
+                    logger.error(f"执行异步任务时发生错误: {str(e)}", exc_info=True)
+                    raise
             return wrapper
         else:
             # 原有的同步函数处理逻辑
