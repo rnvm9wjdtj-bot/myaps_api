@@ -501,19 +501,10 @@ class DbManager:
         # 如果没有update_fields，不执行更新操作（仅插入）
         if existing_records:# update_fields:
             # 使用指定的数据库连接执行bulk_create
-            await model_class.bulk_create(
-                instances,
-                on_conflict=conflict_fields,
-                update_fields=update_fields,
-                using_db=Tortoise.get_connection(self.connection_name)
-            )
+            await model_class.bulk_create(instances, on_conflict=conflict_fields, update_fields=update_fields, using_db=db)
         else:
             # 只执行插入操作，忽略冲突
-            await model_class.bulk_create(
-                instances,
-                ignore_conflicts=True,
-                using_db=Tortoise.get_connection(self.connection_name)
-            )
+            await model_class.bulk_create(instances, ignore_conflicts=True, using_db=db)
         
         # 计算新增和更新数量
         # 创建现有记录的冲突字段值的集合，用于快速查找

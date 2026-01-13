@@ -156,167 +156,167 @@ async def preprocess_data(data: List[PydanticSchema | Dict[str, Any]]) -> List[P
     return processed_list
 
 
-async def process_overwrite_operation(
-    db, mdl, match_on: dict, new_value: dict, create_data: dict, only_fields: List[str],
-    db_name: str
-) -> Tuple[int, int]:
-    """
-    处理覆盖操作
+# async def process_overwrite_operation(
+#     db, mdl, match_on: dict, new_value: dict, create_data: dict, only_fields: List[str],
+#     db_name: str
+# ) -> Tuple[int, int]:
+#     """
+#     处理覆盖操作
     
-    Args:
-        db: 数据库连接
-        mdl: 模型类
-        match_on: 匹配条件
-        new_value: 新值
-        create_data: 创建数据
-        only_fields: 仅查询的字段
-        db_name: 账套名称
+#     Args:
+#         db: 数据库连接
+#         mdl: 模型类
+#         match_on: 匹配条件
+#         new_value: 新值
+#         create_data: 创建数据
+#         only_fields: 仅查询的字段
+#         db_name: 账套名称
         
-    Returns:
-        (创建数量, 更新数量)
-    """
-    create_count = 0
-    update_count = 0
+#     Returns:
+#         (创建数量, 更新数量)
+#     """
+#     create_count = 0
+#     update_count = 0
     
-    # 检查记录是否存在
-    if await mdl.filter(**match_on).only(*only_fields).using_db(db).exists():
-        # 构建参数化查询
-        set_clauses = []
-        params = []
+#     # 检查记录是否存在
+#     if await mdl.filter(**match_on).only(*only_fields).using_db(db).exists():
+#         # 构建参数化查询
+#         set_clauses = []
+#         params = []
         
-        for k, v in new_value.items():
-            if k != "vid":
-                set_clauses.append(f"{k} = ?")
-                params.append(v)
+#         for k, v in new_value.items():
+#             if k != "vid":
+#                 set_clauses.append(f"{k} = ?")
+#                 params.append(v)
         
-        # 构建WHERE条件
-        where_clauses = []
-        for k, v in match_on.items():
-            where_clauses.append(f"{k} = ?")
-            params.append(v)
+#         # 构建WHERE条件
+#         where_clauses = []
+#         for k, v in match_on.items():
+#             where_clauses.append(f"{k} = ?")
+#             params.append(v)
         
-        # 执行更新
-        sql = f"""
-            UPDATE {mdl._meta.db_table}
-            SET {', '.join(set_clauses)}
-            WHERE {' AND '.join(where_clauses)}
-        """
+#         # 执行更新
+#         sql = f"""
+#             UPDATE {mdl._meta.db_table}
+#             SET {', '.join(set_clauses)}
+#             WHERE {' AND '.join(where_clauses)}
+#         """
         
-        await db.execute_query(sql, params)
-        update_count += 1
-        # file_logger.info(f"✅↑UPDATE @{db_name}")
-    else:
-        # 创建新记录
-        await mdl.create(**create_data, using_db=db)
-        create_count += 1
-        # file_logger.info(f"✅↑CREATE @{db_name}")
+#         await db.execute_query(sql, params)
+#         update_count += 1
+#         # file_logger.info(f"✅↑UPDATE @{db_name}")
+#     else:
+#         # 创建新记录
+#         await mdl.create(**create_data, using_db=db)
+#         create_count += 1
+#         # file_logger.info(f"✅↑CREATE @{db_name}")
     
-    return create_count, update_count
+#     return create_count, update_count
 
 
-async def process_normal_operation(
-    db, mdl, match_on: dict, update_data: dict, create_data: dict, only_fields: List[str],
-    db_name: str, is_compound_key: bool
-) -> Tuple[int, int]:
-    """
-    处理正常操作（非覆盖）
+# async def process_normal_operation(
+#     db, mdl, match_on: dict, update_data: dict, create_data: dict, only_fields: List[str],
+#     db_name: str, is_compound_key: bool
+# ) -> Tuple[int, int]:
+#     """
+#     处理正常操作（非覆盖）
     
-    Args:
-        db: 数据库连接
-        mdl: 模型类
-        match_on: 匹配条件
-        update_data: 更新数据
-        create_data: 创建数据
-        only_fields: 仅查询的字段
-        db_name: 账套名称
-        is_compound_key: 是否为联合主键
+#     Args:
+#         db: 数据库连接
+#         mdl: 模型类
+#         match_on: 匹配条件
+#         update_data: 更新数据
+#         create_data: 创建数据
+#         only_fields: 仅查询的字段
+#         db_name: 账套名称
+#         is_compound_key: 是否为联合主键
         
-    Returns:
-        (创建数量, 更新数量)
-    """
-    create_count = 0
-    update_count = 0
+#     Returns:
+#         (创建数量, 更新数量)
+#     """
+#     create_count = 0
+#     update_count = 0
     
-    if is_compound_key:
-        # 联合主键处理
-        if await mdl.filter(**match_on).only(*only_fields).using_db(db).exists():
-            # 更新记录
-            await mdl.filter(**match_on).only(*only_fields).first().using_db(db).update(**update_data)
-            update_count += 1
-            # file_logger.info(f"✅↑UPDATE @{db_name}")
-        else:
-            # 创建新记录
-            await mdl.create(**create_data, using_db=db)
-            create_count += 1
-            # file_logger.info(f"✅↑CREATE @{db_name}")
-    else:
-        # 单一主键处理
-        exist = await mdl.get_or_none(Q(**match_on), using_db=db)
-        if exist:
-            # 更新记录
-            await exist.update_from_dict(update_data).save(using_db=db)
-            update_count += 1
-            # file_logger.info(f"✅↑UPDATE @{db_name}")
-        else:
-            # 创建新记录
-            await mdl.create(**create_data, using_db=db)
-            create_count += 1
-            # file_logger.info(f"✅↑CREATE @{db_name}")
+#     if is_compound_key:
+#         # 联合主键处理
+#         if await mdl.filter(**match_on).only(*only_fields).using_db(db).exists():
+#             # 更新记录
+#             await mdl.filter(**match_on).only(*only_fields).first().using_db(db).update(**update_data)
+#             update_count += 1
+#             # file_logger.info(f"✅↑UPDATE @{db_name}")
+#         else:
+#             # 创建新记录
+#             await mdl.create(**create_data, using_db=db)
+#             create_count += 1
+#             # file_logger.info(f"✅↑CREATE @{db_name}")
+#     else:
+#         # 单一主键处理
+#         exist = await mdl.get_or_none(Q(**match_on), using_db=db)
+#         if exist:
+#             # 更新记录
+#             await exist.update_from_dict(update_data).save(using_db=db)
+#             update_count += 1
+#             # file_logger.info(f"✅↑UPDATE @{db_name}")
+#         else:
+#             # 创建新记录
+#             await mdl.create(**create_data, using_db=db)
+#             create_count += 1
+#             # file_logger.info(f"✅↑CREATE @{db_name}")
     
-    return create_count, update_count
+#     return create_count, update_count
 
 
-async def process_single_database(
-    db_name: str, mdl: TortoiseBaseModel, processed_data_list: List[ProcessedData],
-    only_fields: List[str], model_key: List[str]
-) -> Tuple[int, int]:
-    """
-    处理单个数据库的操作
+# async def process_single_database(
+#     db_name: str, mdl: TortoiseBaseModel, processed_data_list: List[ProcessedData],
+#     only_fields: List[str], model_key: List[str]
+# ) -> Tuple[int, int]:
+    # """
+    # 处理单个数据库的操作
     
-    Args:
-        db_name: 数据库名称
-        mdl: 模型类
-        processed_data_list: 预处理后的数据列表
-        only_fields: 仅查询的字段
-        model_key: 模型主键
+    # Args:
+    #     db_name: 数据库名称
+    #     mdl: 模型类
+    #     processed_data_list: 预处理后的数据列表
+    #     only_fields: 仅查询的字段
+    #     model_key: 模型主键
         
-    Returns:
-        (创建数量, 更新数量)
-    """
-    create_count = 0
-    update_count = 0
-    match_on = None
-    new_value = None
+    # Returns:
+    #     (创建数量, 更新数量)
+    # """
+    # create_count = 0
+    # update_count = 0
+    # match_on = None
+    # new_value = None
     
-    async with in_transaction(db_name) as db:
-        for i, processed_data in enumerate(processed_data_list):
-            # 检查是否需要覆盖操作
-            if "_overwrite" in processed_data.processed_data:
-                if i == 0:
-                    match_on = processed_data.processed_data["_overwrite"]["match_on"]
-                    new_value = processed_data.processed_data["_overwrite"]["new_value"]
+    # async with in_transaction(db_name) as db:
+    #     for i, processed_data in enumerate(processed_data_list):
+    #         # 检查是否需要覆盖操作
+    #         if "_overwrite" in processed_data.processed_data:
+    #             if i == 0:
+    #                 match_on = processed_data.processed_data["_overwrite"]["match_on"]
+    #                 new_value = processed_data.processed_data["_overwrite"]["new_value"]
                 
-                # 处理覆盖操作
-                create, update = await process_overwrite_operation(
-                    db, mdl, match_on, new_value, processed_data.create_data, only_fields,
-                    db_name
-                )
-                create_count += create
-                update_count += update
-            else:
-                # 构建匹配条件
-                match_on = {k: processed_data.create_data.get(k) for k in model_key}
+    #             # 处理覆盖操作
+    #             create, update = await process_overwrite_operation(
+    #                 db, mdl, match_on, new_value, processed_data.create_data, only_fields,
+    #                 db_name
+    #             )
+    #             create_count += create
+    #             update_count += update
+    #         else:
+    #             # 构建匹配条件
+    #             match_on = {k: processed_data.create_data.get(k) for k in model_key}
                 
-                is_compound_key = len(model_key) > 1
-                # 处理正常操作
-                create, update = await process_normal_operation(
-                    db=db, mdl=mdl, match_on=match_on, update_data=processed_data.raw_input_data, create_data=processed_data.create_data,
-                    only_fields=only_fields, db_name=db_name, is_compound_key=is_compound_key
-                )
-                create_count += create
-                update_count += update
+    #             is_compound_key = len(model_key) > 1
+    #             # 处理正常操作
+    #             create, update = await process_normal_operation(
+    #                 db=db, mdl=mdl, match_on=match_on, update_data=processed_data.raw_input_data, create_data=processed_data.create_data,
+    #                 only_fields=only_fields, db_name=db_name, is_compound_key=is_compound_key
+    #             )
+    #             create_count += create
+    #             update_count += update
     
-    return create_count, update_count
+    # return create_count, update_count
 
 
 ################################################################
