@@ -1,4 +1,4 @@
-import os, uvicorn#, hashlib
+import os, uvicorn, asyncio#, hashlib
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
@@ -25,6 +25,11 @@ from apps.data_opt.utils.scheduler import scheduler_manager
 async def lifespan(app: FastAPI):
     """应用生命周期管理器"""
     # 应用启动时执行的操作
+    # 将主应用事件循环传递给调度器（在 uvicorn 启动后获取正确的事件循环）
+    main_loop = asyncio.get_running_loop()
+    scheduler_manager.set_main_loop(main_loop)
+    print(f"✅ 已将主应用事件循环传递给调度器: {main_loop}")
+
     await mysql_monitor.start_monitoring()
     print("✅ MySQL Binlog监控已启动")
 
@@ -205,14 +210,9 @@ register_tortoise(
 
 # 初始化定时任务管理器
 from apps.data_opt.utils.scheduler import initialize_scheduler, get_scheduler_status, scheduler_manager
-import asyncio
 
 initialize_scheduler()
 print(f"定时任务管理器状态: {get_scheduler_status()}")
-
-# 将主应用事件循环传递给调度器
-main_loop = asyncio.get_event_loop()
-scheduler_manager.set_main_loop(main_loop)
 
 
 # 启动说明：

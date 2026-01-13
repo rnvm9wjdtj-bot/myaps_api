@@ -2,7 +2,7 @@ from typing import List, Dict, Any, Tuple, Optional, Union, Literal
 import logging
 from datetime import datetime
 
-from tortoise import Tortoise, transactions
+from tortoise import Tortoise
 from tortoise.expressions import Q
 from tortoise.transactions import in_transaction
 from tortoise.exceptions import IntegrityError
@@ -60,6 +60,7 @@ class DbManager:
             'last_execution_time': None
         }
     
+
     @classmethod
     def _get_conflict_fields(cls, model_class, conflict_fields: Optional[Tuple[str, ...]]=None) -> Tuple[str, ...]:
         """
@@ -87,13 +88,9 @@ class DbManager:
                     raise ValueError(f"模型 {model_class.__name__} 没有定义主键或唯一约束")
         return conflict_fields
     
+
     @with_transaction
-    async def call_stored_procedure(
-        self,
-        procedure_name: str,
-        params_list: List[List[Any]] = None,
-        use_transaction: Optional[bool] = None
-    ) -> Dict[str, Any]:
+    async def call_stored_procedure(self, procedure_name: str, params_list: List[List[Any]] = None, use_transaction: Optional[bool] = None) -> Dict[str, Any]:
         """
         调用数据库存储过程
         
@@ -153,13 +150,8 @@ class DbManager:
             logger.error(f"存储过程调用失败: {e}")
             raise
     
-    async def query_data(
-        self,
-        table_name: str,
-        filter_string: str = '',
-        order_string: str = '',
-        batch_size: int = 1000
-    ) -> Dict[str, Any]:
+
+    async def query_data(self, table_name: str, filter_string: str = '', order_string: str = '', batch_size: int = 1000) -> Dict[str, Any]:
         """
         查询数据库表数据
         
@@ -238,13 +230,9 @@ class DbManager:
             logger.error(f"数据查询失败: {e}")
             raise
     
+
     @with_transaction
-    async def delete_data(
-        self,
-        table_name: str,
-        filter_string: str = '',
-        use_transaction: Optional[bool] = None
-    ) -> Dict[str, Any]:
+    async def delete_data(self, table_name: str, filter_string: str = '', use_transaction: Optional[bool] = None) -> Dict[str, Any]:
         """
         删除数据库表数据
         
@@ -298,6 +286,7 @@ class DbManager:
             logger.error(f"数据删除失败: {e}")
             raise
     
+
     async def _execute_native_sql(self, sql: str, params: List[Any], description: str = "") -> int:
         """
         执行原生 SQL 查询
@@ -462,9 +451,7 @@ class DbManager:
             
         Returns:
             包含新增和更新数量的字典: {'inserted': int, 'updated': int, 'total': int}
-        """
-        
-        
+        """        
         # 获取冲突字段
         conflict_fields = self._get_conflict_fields(model_class, conflict_fields)
 
@@ -571,7 +558,6 @@ class DbManager:
             exclude_fields: 要排除的字段列表（可选，默认使用conflict_fields作为排除字段）
             force_use_orm: 强制使用 ORM 执行批量 upsert
             use_transaction: 是否使用事务（可选，默认使用实例配置的use_transaction）
-            
         Returns:
             执行统计信息
         """
@@ -679,8 +665,6 @@ class DbManager:
         Returns:
             包含新增和更新数量的字典: {'inserted': int, 'updated': int, 'total': int}
         """
-        
-        
         # 获取冲突字段
         conflict_fields = self._get_conflict_fields(model_class, conflict_fields)
 
@@ -779,10 +763,12 @@ class DbManager:
             'total': total_inserted + total_updated
         }
     
+
     def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""
         return self.stats.copy()
     
+
     def reset_stats(self):
         """重置统计信息"""
         self.stats = {
@@ -791,6 +777,7 @@ class DbManager:
             'last_execution_time': None
         }
     
+
     def switch_connection(self, connection_name: str):
         """
         切换数据库连接
