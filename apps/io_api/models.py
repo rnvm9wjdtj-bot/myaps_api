@@ -180,8 +180,9 @@ def get_table_model_mapping():
     并将其映射关系存储在TABLE_MODEL_MAPPING中
     """
     import inspect
+    import sys
     # 获取当前模块
-    current_module = __import__(__name__)
+    current_module = sys.modules[__name__]
     table_model_mapping = {}
     # 遍历当前模块中的所有属性
     for name in dir(current_module):

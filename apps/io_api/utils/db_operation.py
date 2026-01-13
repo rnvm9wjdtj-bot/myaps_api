@@ -38,8 +38,29 @@ def validate_databases(db_name: str) -> List[str]:
     valid_dbs = [db for db in db_names if db in MYAPS_DB_SET]
     return valid_dbs
 
+
+def tablename_to_model(table_name: str) -> TortoiseBaseModel:
+    """
+    将数据库表名转换为模型类
     
-async def db_query(db_name: str, table_name: str, filter_string: str = '', order_string: str = ''):
+    Args:
+        table_name: 数据库表名（例如：t_material）
+        
+    Returns:
+        对应的模型类（例如：TMaterial）
+    """
+    # 检查是否存在对应模型
+    if table_name not in TABLE_MODEL_MAPPING:
+        file_logger.error(f"❌↑未找到对应模型（table_name：{table_name}），禁止查询 —— db_query")
+        return None
+    return TABLE_MODEL_MAPPING[table_name]
+
+    
+async def db_query(db_name: str, model_or_tablename: TortoiseBaseModel | str, filter_string: str = '', order_string: str = ''):
+    if isinstance(model_or_tablename, TortoiseBaseModel):
+        table_name = model_or_tablename._meta.db_table
+    else:
+        table_name = model_or_tablename
     try:
         valid_db = validate_databases(db_name)[0]
         assert valid_db, "未指定账套或账套不存在"
@@ -118,9 +139,8 @@ async def db_write(db_names: str, model_or_tablename: TortoiseBaseModel | str, d
     """
     if isinstance(model_or_tablename, str):
         table_name = model_or_tablename
-        mdl = TABLE_MODEL_MAPPING.get(table_name)
+        mdl = tablename_to_model(table_name)
         if not mdl:
-            file_logger.error(f"❌↑未找到对应模型（table_name：{table_name}），禁止写入 —— common_write")
             return standard_response(
                 success=0,
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -131,6 +151,7 @@ async def db_write(db_names: str, model_or_tablename: TortoiseBaseModel | str, d
                 },
                 data=[item.processed_data for item in processed_data_list]
             )
+
     else:
         mdl = model_or_tablename
         table_name = mdl._meta.db_table
@@ -139,12 +160,12 @@ async def db_write(db_names: str, model_or_tablename: TortoiseBaseModel | str, d
     origin_total = len(data)
     
     # 记录日志
-    file_logger.info(f"ℹ️↓接收到{origin_total}条数据，拟写入{mdl._meta.db_table}@[{db_names}] —— common_write\n{[item.raw_input_data for item in processed_data_list]}")
+    file_logger.info(f"ℹ️↓接收到{origin_total}条数据，拟写入{mdl._meta.db_table}@[{db_names}] —— db_write\n{[item.raw_input_data for item in processed_data_list]}")
     
     # 验证账套
     valid_dbs = validate_databases(db_names)
     if not valid_dbs:
-        file_logger.error(f"❌↑未找到有效账套（available_dbs：{MYAPS_DB_SET}），禁止写入 —— common_write")
+        file_logger.error(f"❌↑未找到有效账套（available_dbs：{MYAPS_DB_SET}），禁止写入 —— db_write")
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -229,7 +250,7 @@ async def db_write(db_names: str, model_or_tablename: TortoiseBaseModel | str, d
         )
         
     except Exception as e:
-        file_logger.error(f"❌↑操作失败：{str(e)} —— common_write")
+        file_logger.error(f"❌↑操作失败：{str(e)} —— db_write")
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -239,14 +260,18 @@ async def db_write(db_names: str, model_or_tablename: TortoiseBaseModel | str, d
         )
 
 
-async def db_delete(db_names: str, table_name: str, filter_string: str):
+async def db_delete(db_names: str, model_or_tablename: TortoiseBaseModel | str, filter_string: str):
     """
     执行SQL删除操作
     :param db_names: 账套名称，多个可用半角逗号分隔
-    :param table_name: 表名称
+    :param model_or_tablename: 模型类或表名
     :param filter_string: WHERE子句，用于指定删除条件
     :return: 操作结果
     """
+    if isinstance(model_or_tablename, TortoiseBaseModel):
+        table_name = model_or_tablename._meta.db_table
+    else:
+        table_name = model_or_tablename
     try:
         valid_dbs = validate_databases(db_names)
         assert valid_dbs, "未指定账套或账套不存在"

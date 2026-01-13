@@ -103,7 +103,7 @@ class DbManager:
                             f'CALL {procedure_name}({", ".join(["%s"] * len(params))})', 
                             params
                         )
-                        count = result[1] if result else 0
+                        count = result[0] if result else 0
                         affect_count += count
                         results.append(result)
             else:
@@ -112,7 +112,7 @@ class DbManager:
                         f'CALL {procedure_name}({", ".join(["%s"] * len(params))})', 
                         params
                     )
-                    count = result[1] if result else 0
+                    count = result[0] if result else 0
                     affect_count += count
                     results.append(result)
             
@@ -291,12 +291,7 @@ class DbManager:
             logger.error(f"数据删除失败: {e}")
             raise
     
-    async def _execute_native_sql(
-        self,
-        sql: str,
-        params: List[Any],
-        description: str = ""
-    ) -> int:
+    async def _execute_native_sql(self, sql: str, params: List[Any], description: str = "") -> int:
         """
         执行原生 SQL 查询
         """
@@ -311,7 +306,7 @@ class DbManager:
             if description:
                 logger.info(f"{description} - 执行时间: {execution_time:.3f}秒")
             
-            return result[1] if result else 0
+            return result[0] if result else 0
         except Exception as e:
             logger.error(f"SQL 执行失败: {e}")
             logger.error(f"SQL: {sql[:200]}...")

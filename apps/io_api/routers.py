@@ -270,7 +270,7 @@ async def get_supply(
     page_index: int = common_params["page_index"],
     # x_api_key: str = common_params["x_api_key"]
 ):
-    return await db_query(db_name=db_name, table_name="t_supply", page_size=page_size, page_index=page_index)
+    return await db_query(db_name=db_name, model_or_tablename="t_supply", page_size=page_size, page_index=page_index)
 
 @rt.post(
     "/t_supply",
@@ -337,9 +337,9 @@ async def delete_supply(
     if supplyno:
         filter_conditions.append(f"SupplyNo='{supplyno}'")
     filter_string = " AND ".join(filter_conditions)
-    result = await db_delete(db_names=db_name, table_name="t_supply", filter_string=filter_string)
+    result = await db_delete(db_names=db_name, model_or_tablename="t_supply", filter_string=filter_string)
     if del_relation and supply_type_param in ['PL', 'MO'] and supplyno and result["success"]: # 删除关联的工序记录
-        await db_delete(db_names=db_name, table_name="t_orderwc", filter_string=f"SupplyNo='{supplyno}'")
+        await db_delete(db_names=db_name, model_or_tablename="t_orderwc", filter_string=f"SupplyNo='{supplyno}'")
     return result
 
 
@@ -355,7 +355,7 @@ async def get_demand(
     # page_size: int = common_params["page_size"],
     # page_index: int = common_params["page_index"]
 ):
-    return await db_query(db_name=db_name, table_name="t_demand")
+    return await db_query(db_name=db_name, model_or_tablename="t_demand")
 
 @rt.post(
     "/t_demand",
@@ -397,9 +397,9 @@ async def get_supply_mo(
         if endtime:
             filter_strings.append(f"DT_OrdEnd <= '{endtime}'")
         filter_string = " AND ".join(filter_strings)
-    result = await db_query(db_name=db_name, table_name="v_supply_mo", filter_string=filter_string)
+    result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=filter_string)
     if result['success'] and result['meta']['total'] == 1:  # 筛选到唯一的工单，则补充工序信息（v_orderwc）
-        orderwc = await db_query(db_name=db_name, table_name="v_orderwc", filter_string=f"SupplyNo = '{supplyno}'", order_string="SortNo ASC")
+        orderwc = await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=f"SupplyNo = '{supplyno}'", order_string="SortNo ASC")
         result['data'][0]['orderwc'] = orderwc['data']
     return result
 
@@ -427,7 +427,7 @@ async def get_orderwc(
         if endtime:
             filter_strings.append(f"DT_End <= '{endtime}'")
         filter_string = " AND ".join(filter_strings)
-    return await db_query(db_name=db_name, table_name="v_orderwc", filter_string=filter_string)
+    return await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=filter_string)
 
 
 @rt.get(
@@ -452,7 +452,7 @@ async def get_matdailyqtyreport(
     if materialno:
         sql_matno = ','.join([f"'{matno.strip()}'" for matno in materialno.split(',')])
         filter_string += f" AND MaterialNo IN ({sql_matno})"
-    query_result = await db_query(db_name=db_name, table_name="v_matdailyqtyreport", filter_string=filter_string, order_string=order_string)
+    query_result = await db_query(db_name=db_name, model_or_tablename="v_matdailyqtyreport", filter_string=filter_string, order_string=order_string)
     if data := query_result.get('data'):
         request_result.extend(data)
 

@@ -116,7 +116,7 @@ def convert_to_dict(data_item: PydanticSchema | Dict[str, Any], exclude_none: bo
     return data_item
 
 
-def validate_databases(db_name: str) -> List[str]:
+# def validate_databases(db_name: str) -> List[str]:
     """
     验证并返回有效的账套列表
     
@@ -317,112 +317,6 @@ async def process_single_database(
                 update_count += update
     
     return create_count, update_count
-
-
-async def common_write(db_name: str, mdl: TortoiseBaseModel, data: List[PydanticSchema | Dict[str, Any]]):
-    """
-    通用写入操作，支持创建和更新
-    
-    Args:
-        db_name: 账套名称，支持逗号分隔的多个账套
-        mdl: Tortoise模型类
-        data: 数据列表，可以是PydanticSchema对象或字典
-        
-    Returns:
-        标准响应格式
-    """
-    # 预处理数据
-    processed_data_list = await preprocess_data(data)
-    origin_total = len(data)
-    
-    # 记录日志
-    file_logger.info(f"ℹ️↓接收到{origin_total}条数据，拟写入{mdl._meta.db_table}@[{db_name}] —— common_write\n{[i.raw_input_data for i in processed_data_list]}")
-    
-    # 验证账套
-    valid_dbs = validate_databases(db_name)
-    if not valid_dbs:
-        file_logger.error(f"❌↑未找到有效账套（available_dbs：{MYAPS_DB_SET}），禁止写入 —— common_write")
-        return standard_response(
-            success=0,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="操作失败：未找到有效账套",
-            meta={
-                "input_db_name": db_name,
-                "available_dbs": MYAPS_DB_SET,
-            },
-            data=[item.processed_data for item in processed_data_list]
-        )
-    
-    # 获取模型信息
-    unique_together = mdl._meta.unique_together
-    model_key = unique_together[0] if unique_together else [mdl._meta.pk_attr]
-    is_compound_key = len(model_key) > 1
-    only_fields = [f for f in mdl._meta.fields if f != "vid"] if is_compound_key else None
-    
-    # 初始化统计信息
-    success_db = []
-    create_count_total = 0
-    update_count_total = 0
-    
-    try:
-        # 处理每个账套
-        for db_name in valid_dbs:
-            # 处理单个账套
-            create_count, update_count = await process_single_database(
-                db_name=db_name, mdl=mdl, processed_data_list=processed_data_list, only_fields=only_fields, model_key=model_key
-            )
-            
-            # 更新统计
-            create_count_total += create_count
-            update_count_total += update_count
-            file_logger.info(f"✅生效账套@{db_name}，新增{create_count}条，修改{update_count}条")
-            # 记录成功的账套
-            success_db.append({"db_name": db_name, "create": create_count, "update": update_count})
-        
-        # 记录总日志
-        file_logger.info(f"✅生效{len(success_db)}个账套，总计新增{create_count_total}条，修改{update_count_total}条")
-        
-        return standard_response(
-            data=[item.create_data for item in processed_data_list],
-            message=f"生效{len(success_db)}个账套，总计新增{create_count_total}条，修改{update_count_total}条",
-            meta={"origin_total": origin_total, "success_db": success_db}
-        )
-    except Exception as e:
-        file_logger.error(f"❌↑操作失败：{str(e)} —— common_write")
-        return standard_response(
-            success=0,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message=f"操作失败：{str(e)} —— common_write",
-            meta={"origin_total": origin_total, "success_db": success_db, "error_db": db_name},
-            data=[item.processed_data for item in processed_data_list]
-        )
-
-
-# 路由公共方法
-
-
-
-# # 路由公共方法 - delete
-# async def common_delete_by_orm(db_name: str, mdl: TortoiseBaseModel, targets: List[dict]):
-#     delete_count = 0
-#     try:
-#         async with in_transaction(db_name) as db:
-#             for target in targets:
-#                 exist = await mdl.get_or_none(**target, using_db=db)
-#                 if exist:
-#                     await exist.delete(using_db=db)
-#                     delete_count += 1
-#         return standard_response(
-#             message=f"删除{delete_count}条",
-#             meta={"delete": delete_count}
-#             )
-#     except Exception as e:
-#         return standard_response(
-#             success=0,
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             message=f"操作失败：{str(e)}"
-#         )
-
 
 
 ################################################################

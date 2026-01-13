@@ -84,12 +84,12 @@ async def sap_post(url: str, session: requests.Session, interface_id: str, data:
 #################################################################################
 # ⬇️定时任务设置
 #################################################################################
-schedule_task_hour = '6,8,10,12,14,16'
-schedule_task_minute = 55
+schedule_task_hour = '13,14,15'#'6,8,10,12,14,16'
+schedule_task_minute = '0,5,10,15,20,25,30,35,40,45,50,55'#'55'
 
 
-@cron_task(hour=schedule_task_hour, minute=f"{schedule_task_minute + 0}")
-def refresh_stock(dbs: str = None):
+@cron_task(hour=schedule_task_hour, minute=f"{schedule_task_minute}")
+async def refresh_stock(dbs: str = None):
     """
     刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据
     db: 对哪些账套生效，多个账套用逗号分隔
@@ -135,10 +135,11 @@ def refresh_stock(dbs: str = None):
         stock = stock.rename(columns={
             'matnr': 'materialno',
         })
+        stock['itemno'] = DefaultValue.ITEMNO
         stock_data = stock.to_dict(orient='records')
 
-        db_delete(db_names=dbs, table_name='t_supply', filter_string=f"Type='ST'")
-        db_write(db_names=dbs, model_or_tablename='t_supply', data=stock_data)
+        delete_result = await db_delete(db_names=dbs, table_name='t_supply', filter_string=f"Type='ST'")
+        write_result = await db_write(db_names=dbs, model_or_tablename='t_supply', data=stock_data)
         console_log.info(f"刷新库存任务执行完成，账套：{dbs}")
         response = standard_response(message=f"刷新库存任务执行完成，账套：{dbs}")
         
@@ -149,21 +150,21 @@ def refresh_stock(dbs: str = None):
 
 
 @cron_task(hour=23, minute=50)
-def push_weekpr_to_srm():
+async def push_weekpr_to_srm():
     # 推送周要货计划到SRM
-    pr_data = ApsBaseAction.get_dategrouped_pr()
+    pr_data = await ApsBaseAction.get_dategrouped_pr()
     file_log.info(f"从账套{MYAPS_MAIN_DB}获取到周要货计划：\n{pr_data}")
 
 
 @cron_task(day=1, hour=0, minute=5)
-def push_seasonpr_to_srm():
+async def push_seasonpr_to_srm():
     # 每月初推送季度要货计划到SRM
     # 生成下三个月的月底日期列表
     date_list = [
         (datetime.now().replace(day=1) + relativedelta(months=i + 1) - relativedelta(days=1)).strftime('%Y-%m-%d')
         for i in range(3)
     ]
-    pr_data = ApsBaseAction.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=90, groupdates=','.join(date_list))
+    pr_data = await ApsBaseAction.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=90, groupdates=','.join(date_list))
     file_log.info(f"从账套{MYAPS_MAIN_DB}获取到季度要货计划：\n{pr_data}")
 
   
