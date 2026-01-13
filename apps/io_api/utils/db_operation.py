@@ -179,10 +179,6 @@ async def db_write(db_names: str, model_or_tablename: TortoiseBaseModel | str, d
         )
     
     model_key = DbManager._get_conflict_fields(mdl)
-    # # 获取模型信息
-    # unique_together = getattr(mdl._meta, 'unique_together', [])
-    # model_key = unique_together[0] if unique_together else [mdl._meta.pk_attr]
-    # is_compound_key = len(model_key) > 1
     
     # 准备upsert数据
     upsert_data_list = []
@@ -219,9 +215,9 @@ async def db_write(db_names: str, model_or_tablename: TortoiseBaseModel | str, d
 
     try:
         # 处理每个账套，使用专属的DbManager实例
-        for db_names in valid_dbs:
+        for db_name in valid_dbs:
             # 获取该账套的专属DbManager实例
-            db_manager = db_managers[db_names]
+            db_manager = db_managers[db_name]
             
             # 执行批量upsert
             result = await db_manager.bulk_upsert(
@@ -237,9 +233,9 @@ async def db_write(db_names: str, model_or_tablename: TortoiseBaseModel | str, d
             update_count = result.get("updated", 0)
             create_count_total += create_count
             update_count_total += update_count
-            file_logger.info(f"✅生效账套@{db_names}，新增{create_count}条，修改{update_count}条")
+            file_logger.info(f"✅生效账套@{db_name}，新增{create_count}条，修改{update_count}条")
             # 记录成功的账套
-            success_db.append({"db_name": db_names, "create": create_count, "update": update_count})
+            success_db.append({"db_name": db_name, "create": create_count, "update": update_count})
         
         # 记录总日志
         file_logger.info(f"✅生效{len(success_db)}个账套，总计新增{create_count_total}条，修改{update_count_total}条")

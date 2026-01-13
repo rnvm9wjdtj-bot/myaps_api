@@ -2,7 +2,7 @@ from typing import List, Dict, Any, Tuple, Optional, Union, Literal
 import logging
 from datetime import datetime
 
-from tortoise import Tortoise
+from tortoise import Tortoise#, connections
 from tortoise.expressions import Q
 from tortoise.transactions import in_transaction
 from tortoise.exceptions import IntegrityError
@@ -499,17 +499,20 @@ class DbManager:
         
         # 使用 bulk_create
         # 如果没有update_fields，不执行更新操作（仅插入）
-        if update_fields:
+        if existing_records:# update_fields:
+            # 使用指定的数据库连接执行bulk_create
             await model_class.bulk_create(
                 instances,
                 on_conflict=conflict_fields,
-                update_fields=update_fields
+                update_fields=update_fields,
+                using_db=Tortoise.get_connection(self.connection_name)
             )
         else:
             # 只执行插入操作，忽略冲突
             await model_class.bulk_create(
                 instances,
-                ignore_conflicts=True
+                ignore_conflicts=True,
+                using_db=Tortoise.get_connection(self.connection_name)
             )
         
         # 计算新增和更新数量

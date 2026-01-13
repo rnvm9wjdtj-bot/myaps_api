@@ -84,8 +84,8 @@ async def sap_post(url: str, session: requests.Session, interface_id: str, data:
 #################################################################################
 # ⬇️定时任务设置
 #################################################################################
-schedule_task_hour = '6,8,10,12,14,16'
-schedule_task_minute = '55'
+schedule_task_hour = '13,14,15,16,17,18,19,20,21,22,23'#'6,8,10,12,14,16'
+schedule_task_minute = '0,5,10,15,20,25,30,35,40,45,50,55'#'55'
 
 
 @cron_task(hour=schedule_task_hour, minute=f"{schedule_task_minute}")
