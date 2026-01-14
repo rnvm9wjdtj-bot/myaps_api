@@ -5,7 +5,7 @@ from typing import List#, Dict, Any, Literal
 import inspect, functools, pandas as pd
 # import httpx
 
-from fastapi import APIRouter, Query, Body, status#, Request, Path
+from fastapi import APIRouter, Path, Query, Body, status#, Request
 # from tortoise import Tortoise
 
 from config.settings import MYAPS_DB_SET, MYAPS_DBSET_LIST, MYAPS_MAIN_DB, THIS_BASE_URL
@@ -13,7 +13,7 @@ from globalobjects import globalconst as gc
 # from .models import TMaterial, TWorkcenter, TMatWc, TMatVer, TMatWcBom, TSupply, TDemand, TMold, TMatWcMold, TConfirm#,TortoiseBaseModel
 from .schemas import (
     AcceptMaterial, AcceptWorkcenter, AcceptMatWc, AcceptMatVer, AcceptMatWcBom, AcceptSupply, AcceptDemand, AcceptMold, AcceptMatWcMold, AcceptConfirm,
-    ConvertPl
+    ModifySupply
     #DeleteSupply
     )
 
@@ -285,20 +285,72 @@ async def post_supply(
     ):
     return await db_write(db_names=db_name, model_or_tablename="t_supply", data=data)
 
+
+# @rt.patch(
+#     "/t_supply/pl",
+#     tags=["生产数据 - 供应"],
+#     summary="将生产计划PL转为MO",
+#     description="根据供应号更新PL记录，与POST方法的区别是：POST方法以【料号+供应号】为联合索引，且不会修改供应号；而PATCH方法以供应号为索引，且允许修改供应号"
+#     )
+# async def convert_pl_to_mo_by_dbprocdure(
+#     data: List[ModifySupply] = Body(..., description="更新PL记录的列表"),
+#     db_name: str = common_params["db_name"],
+#     x_api_key: str = common_params["x_api_key"]
+#     ):
+#     # 调用存储过程SupplyConvertMOByE2A，将PL转为MO
+#     params_list = [[item.plno, item.mono, item.status, item.memo, item.is_execute_updates] for item in data]
+#     return await call_dbprocdure(db_names=db_name, procedure_name="SupplyConvertMOByE2A", params_list=params_list)
+
+
 @rt.patch(
-    "/t_supply/pl",
+    "/t_supply/{path_targetsupply}",
     tags=["生产数据 - 供应"],
-    summary="将生产计划PL转为MO",
+    summary="修改供应记录",
     description="根据供应号更新PL记录，与POST方法的区别是：POST方法以【料号+供应号】为联合索引，且不会修改供应号；而PATCH方法以供应号为索引，且允许修改供应号"
     )
 async def convert_pl_to_mo_by_dbprocdure(
-    data: List[ConvertPl] = Body(..., description="更新PL记录的列表"),
+    path_targetsupply: str = Path(..., description="要修改的供应记录的供应号"),
+    data: ModifySupply = Body(..., description="修改为这些信息"),
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    # 调用存储过程SupplyConvertMOByE2A，将PL转为MO
-    params_list = [[item.plno, item.mono, item.status, item.memo, item.is_execute_updates] for item in data]
-    return await call_dbprocdure(db_names=db_name, procedure_name="SupplyConvertMOByE2A", params_list=params_list)
+    if data.action == "pl_to_mo":
+        # 调用存储过程SupplyConvertMOByE2A，将PL转为MO
+        query_result = await db_query(db_name=db_name, model_or_tablename="t_supply", filter_string=f"SupplyNo='{path_targetsupply}'")
+        if query_result['success'] == 0:
+            return standard_response(
+                status_code=query_result['status_code'],
+                success=0,
+                message=query_result['message'])
+
+        query_data = query_result['data']
+        if not query_data or len(query_data) > 1:
+            return standard_response(
+                success=0,
+                message=f"PL {path_targetsupply} not found or multiple records matched.")
+
+        if query_data[0]["type"] != "PL":
+            return standard_response(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                success=0,
+                message=f"SupplyNo {path_targetsupply} is not a PL.")
+
+        # 如果未指定供应号，则延用
+        if not data.supplyno:
+            data.supplyno = path_targetsupply
+
+        params_list = [[path_targetsupply, data.supplyno, data.status, data.memo, True]]
+        return await call_dbprocdure(db_names=db_name, procedure_name="SupplyConvertMOByE2A", params_list=params_list)
+    elif data.action == "modify_fields":
+        # 普通更新
+        # TODO 
+
+        pass
+    else:
+        return standard_response(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            success=0,
+            message="Invalid action. Expected 'pl_to_mo' or 'modify_fields'.")
 
 
 @rt.delete(

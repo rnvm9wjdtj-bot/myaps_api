@@ -525,22 +525,24 @@ class AcceptSupply(BaseModel):
         _set_raw_input_data(self)
         return self
 
-class ConvertPl(BaseModel):
-    type: str = Field(..., example="MO", description='类型 PL-生产计划 MO-生产工单 ST-库存 PO-采购订单')
-    plno: str = Field(..., max_length=64, description='PL号', example="PL123456")
-    mono: str = Field(None, max_length=64, description='MO号', example="MO123456")
+
+
+class ModifySupply(BaseModel):
+    action: str = Field(..., example="pl_to_mo", enum=["pl_to_mo", "modify_fields"], description='操作 convert-转换为MO')
+    # type: str = Field(..., example="MO", description='类型 PL-生产计划 MO-生产工单 ST-库存 PO-采购订单')
+    # plno: str = Field(..., max_length=64, description='PL号', example="PL123456")
+    supplyno: str = Field(None, max_length=64, description='供应单号（若需要修改则传，否则无需传入）', example="MO123456")
     status: str = Field(None, enum=list(gc.ORDER_STATUS.keys()), example="CRE", description=f'状态 {gc.ORDER_STATUS}')
     memo: str = Field(None, max_length=255, description='备注', example="标准生产工单")
-    is_execute_updates: bool = Field(True, description='是否执行更新操作')
+    # is_execute_updates: bool = Field(True, description='是否执行更新操作')
 
     class Config:
         title = "验证规则 - 生产计划"
         extra = "ignore"
         json_schema_extra = {
             "example": {
-                "type": "MO",
-                "plno": "PL123456",
-                "mono": "MO123456",
+                "action": "pl_to_mo",
+                "supplyno": "MO123456",
                 "status": "CRE"
             }
         }
@@ -548,8 +550,10 @@ class ConvertPl(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values):
-        if values.get("mono") in gc.NONE_AND_EMPTY:
-            values["mono"] = values["plno"]
+        # if values.get("action") == "pl_to_mo" and not values.get("supplyno"):
+        #     values["supplyno"] = values["plno"]
+        # if values.get("mono") in gc.NONE_AND_EMPTY:
+        #     values["mono"] = values["plno"]
         if values.get("status") not in gc.ORDER_STATUS.keys():
             values["status"] = "CRE"
         return values

@@ -20,7 +20,7 @@ from apps.data_opt.utils.common import get_session
 from globalobjects import file_timed_logger
 # from apps.io_api.models import TSupply # 循环引用
 from apps.io_api.utils.common import standard_response
-from apps.io_api.utils.db_operation import db_delete, db_write
+from apps.io_api.utils.db_operation import db_delete, db_write, call_dbprocdure
 from apps.data_opt.components.hap import HapConnection
 from ..utils.scheduler import cron_task
 from ..utils.common import add_basic_auth_requests
@@ -135,14 +135,12 @@ class ApsBaseAction(ABC):
         log_msg = f"✅推送计划任务执行成功，账套：{cls.main_db}，PL单号：{plno}，MO单号：{mono or plno}"
         console_log.info(log_msg)
         file_log.info(log_msg)
-        response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/pl?db_name={cls.main_db}', json=[{
-            'type': 'MO',
-            'plno': plno,
+        response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}?db_name={cls.main_db}', json={
+            'action': 'pl_to_mo',
             'status': to_status,
-            'mono': mono,
+            'supplyno': mono,
             'memo': json.dumps({"msg": f"✅{msg}", "from": msg_from, "success": True, "datetime": now, "plno": plno}, ensure_ascii=False),
-            'is_execute_updates': True,
-            }])
+            })
         return response
 
     @classmethod
@@ -151,14 +149,11 @@ class ApsBaseAction(ABC):
         log_msg = f"🚫 推送计划任务执行失败，账套：{cls.main_db}，PL单号：{plno}"
         console_log.error(log_msg)
         file_log.error(log_msg)
-        response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/pl?db_name={cls.main_db}', json=[{
-            'type': 'PL',
-            'plno': plno,
+        response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}?db_name={cls.main_db}', json={
+            'action': 'modify_fields',
             'status': to_status,    # ❗❗失败情况下，状态务必回撤为 CRE 或 NEW ，否则后续无法再次下达
-            'mono': None,
             'memo': json.dumps({"msg": f"🚫{msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False),
-            'is_execute_updates': False,
-            }])
+            })
         return response
 
     @classmethod
