@@ -17,8 +17,8 @@ from .schemas import (
     #DeleteSupply
     )
 
-from .utils.common import common_params, get_tortoise_connection, standard_response
-from .utils.db_operation import db_query, db_write, db_delete, call_dbprocdure
+from .utils.common import common_params, standard_response
+from .utils.db_operation import db_managers, db_query, db_write, db_delete, call_dbprocdure
 from apps.data_opt.project_files import hap_conn
 
 
@@ -162,7 +162,7 @@ async def post_material(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, model_or_tablename="t_material", data=data)
+    return await db_write(db_names=db_name, model_or_tablename="t_material", data_list=data, method=True) # 强制使用ORM操作，确保create时触发orm事件
 
 
 @rt.post(
@@ -177,7 +177,7 @@ async def post_workcenter(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, model_or_tablename="t_workcenter", data=data)
+    return await db_write(db_names=db_name, model_or_tablename="t_workcenter", data_list=data)
 
    
 @rt.post(
@@ -192,7 +192,7 @@ async def post_mat_wc(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, model_or_tablename="t_mat_wc", data=data)
+    return await db_write(db_names=db_name, model_or_tablename="t_mat_wc", data_list=data)
 
 
 @rt.post(
@@ -207,7 +207,7 @@ async def post_mat_ver(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, model_or_tablename="t_mat_ver", data=data)
+    return await db_write(db_names=db_name, model_or_tablename="t_mat_ver", data_list=data)
 
 
 @rt.post(
@@ -222,7 +222,7 @@ async def post_mat_wc_bom(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, model_or_tablename="t_mat_wc_bom", data=data)
+    return await db_write(db_names=db_name, model_or_tablename="t_mat_wc_bom", data_list=data)
 
 
 @rt.post(
@@ -237,7 +237,7 @@ async def post_mold(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, model_or_tablename="t_mold", data=data)
+    return await db_write(db_names=db_name, model_or_tablename="t_mold", data_list=data)
 
 
 @rt.post(
@@ -252,25 +252,25 @@ async def post_mat_wc_mold(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, model_or_tablename="t_mat_wc_mold", data=data)
+    return await db_write(db_names=db_name, model_or_tablename="t_mat_wc_mold", data_list=data)
 
 
 ########################################################################
 # 生产数据接口
 ########################################################################
-@rt.get(
-    "/t_supply",
-    tags=["生产数据 - 供应"],
-    summary="获取供应记录",
-    description="获取供应记录"
-)
-async def get_supply(
-    db_name: str = common_params["db_name"],
-    page_size: int = common_params["page_size"],
-    page_index: int = common_params["page_index"],
-    # x_api_key: str = common_params["x_api_key"]
-):
-    return await db_query(db_name=db_name, model_or_tablename="t_supply", page_size=page_size, page_index=page_index)
+# @rt.get(
+#     "/t_supply",
+#     tags=["生产数据 - 供应"],
+#     summary="获取供应记录",
+#     description="获取供应记录"
+# )
+# async def get_supply(
+#     db_name: str = common_params["db_name"],
+#     page_size: int = common_params["page_size"],
+#     page_index: int = common_params["page_index"],
+#     # x_api_key: str = common_params["x_api_key"]
+# ):
+#     return await db_query(db_name=db_name, model_or_tablename="t_supply", page_size=page_size, page_index=page_index)
 
 @rt.post(
     "/t_supply",
@@ -283,74 +283,61 @@ async def post_supply(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, model_or_tablename="t_supply", data=data)
+    return await db_write(db_names=db_name, model_or_tablename="t_supply", data_list=data)
 
-
-# @rt.patch(
-#     "/t_supply/pl",
-#     tags=["生产数据 - 供应"],
-#     summary="将生产计划PL转为MO",
-#     description="根据供应号更新PL记录，与POST方法的区别是：POST方法以【料号+供应号】为联合索引，且不会修改供应号；而PATCH方法以供应号为索引，且允许修改供应号"
-#     )
-# async def convert_pl_to_mo_by_dbprocdure(
-#     data: List[ModifySupply] = Body(..., description="更新PL记录的列表"),
-#     db_name: str = common_params["db_name"],
-#     x_api_key: str = common_params["x_api_key"]
-#     ):
-#     # 调用存储过程SupplyConvertMOByE2A，将PL转为MO
-#     params_list = [[item.plno, item.mono, item.status, item.memo, item.is_execute_updates] for item in data]
-#     return await call_dbprocdure(db_names=db_name, procedure_name="SupplyConvertMOByE2A", params_list=params_list)
 
 
 @rt.patch(
-    "/t_supply/{path_targetsupply}",
+    "/t_supply/{path_targetsupply}/{action}",
     tags=["生产数据 - 供应"],
     summary="修改供应记录",
     description="根据供应号更新PL记录，与POST方法的区别是：POST方法以【料号+供应号】为联合索引，且不会修改供应号；而PATCH方法以供应号为索引，且允许修改供应号"
     )
-async def convert_pl_to_mo_by_dbprocdure(
+async def patch_supply(
     path_targetsupply: str = Path(..., description="要修改的供应记录的供应号"),
+    action: str = Path(..., enum=["pltomo", "edit"], description="要执行的操作，pltomo：将PL转为MO，edit：普通更新"),
     data: ModifySupply = Body(..., description="修改为这些信息"),
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    if data.action == "pl_to_mo":
-        # 调用存储过程SupplyConvertMOByE2A，将PL转为MO
-        query_result = await db_query(db_name=db_name, model_or_tablename="t_supply", filter_string=f"SupplyNo='{path_targetsupply}'")
-        if query_result['success'] == 0:
-            return standard_response(
-                status_code=query_result['status_code'],
-                success=0,
-                message=query_result['message'])
+    query_result = await db_query(db_name=db_name, model_or_tablename="t_supply", filter_string=f"`SupplyNo`='{path_targetsupply}'")
+    if query_result['success'] == 0:
+        return standard_response(
+            status_code=query_result['status_code'],
+            success=0,
+            message=query_result['message'])
 
-        query_data = query_result['data']
-        if not query_data or len(query_data) > 1:
-            return standard_response(
-                success=0,
-                message=f"PL {path_targetsupply} not found or multiple records matched.")
+    query_data = query_result['data']
+    if not query_data or len(query_data) > 1:
+        return standard_response(
+            success=0,
+            message=f"PL {path_targetsupply} not found or multiple records matched.")
 
+    if action == "pltomo":
         if query_data[0]["type"] != "PL":
             return standard_response(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 success=0,
-                message=f"SupplyNo {path_targetsupply} is not a PL.")
-
+                message=f"Supply {path_targetsupply} is not a PL.")
         # 如果未指定供应号，则延用
         if not data.supplyno:
             data.supplyno = path_targetsupply
-
+        # 调用存储过程SupplyConvertMOByE2A，将PL转为MO
         params_list = [[path_targetsupply, data.supplyno, data.status, data.memo, True]]
         return await call_dbprocdure(db_names=db_name, procedure_name="SupplyConvertMOByE2A", params_list=params_list)
-    elif data.action == "modify_fields":
-        # 普通更新
-        # TODO 
-
-        pass
+    elif action == "edit":
+        # TODO  普通更新
+        data.supplyno = path_targetsupply   # 供应号不能修改，将目标供应号重新赋值给data，以便后续 orm 时能正确索引到记录
+        data = dict(data)
+        # 回填数据库必填字段，确保 orm 正确索引 或 保留原值
+        for key in ("materialno", "itemno", "priority", "avail_date", "avail_qty"):
+            data[key] = data.get(key) or query_data[0].get(key)
+        return await db_write(db_names=db_name, model_or_tablename="t_supply", data_list=[data])
     else:
         return standard_response(
             status_code=status.HTTP_400_BAD_REQUEST,
             success=0,
-            message="Invalid action. Expected 'pl_to_mo' or 'modify_fields'.")
+            message="Invalid action. Expected 'pltomo' or 'edit'.")
 
 
 @rt.delete(
@@ -364,7 +351,7 @@ async def delete_supply(
     type: str = common_params["supply_type"],
     materialno: str | None = Query(None, description="料号"),
     supplyno: str | None = Query(None, description="供应号"),
-    del_relation: bool | None = Query(True, description="是否删除关联的工序记录（仅对PL、MO类型有效）"),
+    delrelation: bool | None = Query(True, description="是否删除关联的工序记录（仅对PL、MO类型有效）"),
     x_api_key: str = common_params["x_api_key"]
     ):
     # 使用一个更具描述性的变量名替换内置函数名
@@ -383,31 +370,31 @@ async def delete_supply(
             success=0,
             message=f"Invalid input type. Expected list of DeleteSupply or dict with 'bytype' in {all_supply_type}.")
 
-    filter_conditions = [f"Type='{supply_type_param}'", ]
+    filter_conditions = [f"`Type`='{supply_type_param}'", ]
     if materialno:
-        filter_conditions.append(f"MaterialNo='{materialno}'")
+        filter_conditions.append(f"`MaterialNo`='{materialno}'")
     if supplyno:
-        filter_conditions.append(f"SupplyNo='{supplyno}'")
+        filter_conditions.append(f"`SupplyNo`='{supplyno}'")
     filter_string = " AND ".join(filter_conditions)
     result = await db_delete(db_names=db_name, model_or_tablename="t_supply", filter_string=filter_string)
-    if del_relation and supply_type_param in ['PL', 'MO'] and supplyno and result["success"]: # 删除关联的工序记录
-        await db_delete(db_names=db_name, model_or_tablename="t_orderwc", filter_string=f"SupplyNo='{supplyno}'")
+    if delrelation and supply_type_param in ['PL', 'MO'] and supplyno and result["success"]: # 删除关联的工序记录
+        await db_delete(db_names=db_name, model_or_tablename="t_orderwc", filter_string=f"`SupplyNo`='{supplyno}'")
     return result
 
 
 # 需求
-@rt.get(
-    "/t_demand",
-    tags=["生产数据 - 需求"],
-    summary="获取需求记录",
-    description="获取需求记录"
-)
-async def get_demand(
-    db_name: str = common_params["db_name"],
-    # page_size: int = common_params["page_size"],
-    # page_index: int = common_params["page_index"]
-):
-    return await db_query(db_name=db_name, model_or_tablename="t_demand")
+# @rt.get(
+#     "/t_demand",
+#     tags=["生产数据 - 需求"],
+#     summary="获取需求记录",
+#     description="获取需求记录"
+# )
+# async def get_demand(
+#     db_name: str = common_params["db_name"],
+#     # page_size: int = common_params["page_size"],
+#     # page_index: int = common_params["page_index"]
+# ):
+#     return await db_query(db_name=db_name, model_or_tablename="t_demand")
 
 @rt.post(
     "/t_demand",
@@ -420,7 +407,7 @@ async def post_demand(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, model_or_tablename="t_demand", data=data)
+    return await db_write(db_names=db_name, model_or_tablename="t_demand", data_list=data)
 
 ########################################################################
 # 报表接口
@@ -439,19 +426,19 @@ async def get_supply_mo(
     # x_api_key: str = common_params["x_api_key"]
 ):
     if supplyno:
-        filter_string = f"SupplyNo = '{supplyno}'"
+        filter_string = f"`SupplyNo` = '{supplyno}'"
     else:
         # starttime = starttime or date.today()
         # endtime = endtime or starttime + timedelta(days=7)
         filter_strings = []
         if starttime:
-            filter_strings.append(f"DT_OrdStart >= '{starttime}'")  
+            filter_strings.append(f"`DT_OrdStart` >= '{starttime}'")  
         if endtime:
-            filter_strings.append(f"DT_OrdEnd <= '{endtime}'")
+            filter_strings.append(f"`DT_OrdEnd` <= '{endtime}'")
         filter_string = " AND ".join(filter_strings)
     result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=filter_string)
     if result['success'] and result['meta']['total'] == 1:  # 筛选到唯一的工单，则补充工序信息（v_orderwc）
-        orderwc = await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=f"SupplyNo = '{supplyno}'", order_string="SortNo ASC")
+        orderwc = await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=f"`SupplyNo` = '{supplyno}'", order_string="`SortNo` ASC")
         result['data'][0]['orderwc'] = orderwc['data']
     return result
 
@@ -469,15 +456,15 @@ async def get_orderwc(
     # x_api_key: str = common_params["x_api_key"]
 ):
     if supplyno:
-        filter_string = f"SupplyNo = '{supplyno}'"
+        filter_string = f"`SupplyNo` = '{supplyno}'"
     else:
         # starttime = starttime or date.today()
         # endtime = endtime or starttime + timedelta(days=7)
         filter_strings = []
         if starttime:
-            filter_strings.append(f"DT_Start >= '{starttime}'")  
+            filter_strings.append(f"`DT_Start` >= '{starttime}'")  
         if endtime:
-            filter_strings.append(f"DT_End <= '{endtime}'")
+            filter_strings.append(f"`DT_End` <= '{endtime}'")   
         filter_string = " AND ".join(filter_strings)
     return await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=filter_string)
 
@@ -499,11 +486,11 @@ async def get_matdailyqtyreport(
     request_result = []
     dates = groupdates.split(',') if groupdates else None
 
-    filter_string = f"DateStr >= '{start_date}' AND DateStr <= '{end_date}'"
-    order_string = "MaterialNo, DateStr"
+    filter_string = f"`DateStr` >= '{start_date}' AND `DateStr` <= '{end_date}'"
+    order_string = "`MaterialNo`, `DateStr`"
     if materialno:
         sql_matno = ','.join([f"'{matno.strip()}'" for matno in materialno.split(',')])
-        filter_string += f" AND MaterialNo IN ({sql_matno})"
+        filter_string += f" AND `MaterialNo` IN ({sql_matno})"
     query_result = await db_query(db_name=db_name, model_or_tablename="v_matdailyqtyreport", filter_string=filter_string, order_string=order_string)
     if data := query_result.get('data'):
         request_result.extend(data)
@@ -565,6 +552,7 @@ async def get_matdailyqtyreport(
     return standard_response(status_code=status.HTTP_200_OK, meta={'total': len(result)}, data=result)
 
 
+
 @rt.post(
     "/t_confirm",
     tags=["生产数据 - 报工"],
@@ -576,18 +564,20 @@ async def create_workreport(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    # 使用异步上下文管理器自动管理连接
-    async with get_tortoise_connection(db_name) as db:
-        for d in data:
-            if not hasattr(d, "itemno") or d.itemno in gc.NONE_AND_EMPTY:
-                workcenter = d.workcenter if hasattr(d, "workcenter") else None
-                assert workcenter not in gc.NONE_AND_EMPTY, "workcenter cannot be empty when itemno is empty"
-                
-                query = f"SELECT ItemNo FROM t_orderwc WHERE `SupplyNo` = '{d.supplyno}' AND `WorkCenter` = '{workcenter}'"
-                record_count, result = await db.execute_query(query)
-                if record_count == 1:
-                    itemno = result[0]['ItemNo']
-                    d.itemno = itemno
-            d.workcenter = None
+    """
+    新增报工记录
+    db_name: str，数据库名称，多个数据库名称用逗号分隔
+    """
+    for d in data:
+        if not hasattr(d, "itemno") or d.itemno in gc.NONE_AND_EMPTY:
+            workcenter = d.workcenter if hasattr(d, "workcenter") else None
+            assert workcenter not in gc.NONE_AND_EMPTY, "workcenter cannot be empty when itemno is empty"
+
+            orderwc_query_result = await db_query(db_name=db_name, model_or_tablename="t_orderwc", filter_string=f"`SupplyNo` = '{d.supplyno}' AND `WorkCenter` = '{workcenter}'")
+            
+            orderwc_data = orderwc_query_result.get('data', [])
+            if orderwc_query_result['success'] and len(orderwc_data) == 1:
+                d.itemno = orderwc_data[0]['itemno']
+        d.workcenter = None
     
-    return await db_write(db_names=db_name, model_or_tablename="t_confirm", data=data)
+    return await db_write(db_names=db_name, model_or_tablename="t_confirm", data_list=data)

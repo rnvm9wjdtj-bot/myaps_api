@@ -1,4 +1,5 @@
 from typing import List, Dict, Any, Tuple, Optional, Union, Literal
+from contextlib import asynccontextmanager
 import logging
 from datetime import datetime
 
@@ -59,7 +60,21 @@ class DbManager:
             'batches_executed': 0,
             'last_execution_time': None
         }
-    
+
+    @asynccontextmanager
+    async def get_connection(self):
+        """
+        异步上下文管理器，用于安全地获取和自动释放Tortoise ORM的数据库连接
+        
+        Yields:
+            Tortoise数据库连接对象
+        """
+        try:
+            connection = Tortoise.get_connection(self.connection_name)
+            yield connection
+        finally:
+            connection.close()
+
 
     @classmethod
     def _get_conflict_fields(cls, model_class, conflict_fields: Optional[Tuple[str, ...]]=None) -> Tuple[str, ...]:
@@ -120,7 +135,7 @@ class DbManager:
             # 移除事务分支，统一执行核心逻辑
             for params in params_list:
                 result = await conn.execute_query(
-                    f'CALL {procedure_name}({", ".join(["%s"] * len(params))})', 
+                    f'CALL `{procedure_name}`({", ".join(["%s"] * len(params))})', 
                     params
                 )
                 count = result[0] if result else 0
@@ -360,7 +375,8 @@ class DbManager:
                 if field not in all_fields:
                     raise ValueError(f"字段 {field} 不在数据字段中")
         
-        fields_str = ', '.join(all_fields)
+        # 构建字段字符串，使用反引号包裹字段名
+        fields_str = ', '.join([f"`{field}`" for field in all_fields])
         total_inserted = 0
         total_updated = 0
         
@@ -382,19 +398,19 @@ class DbManager:
             if update_fields:
                 # 如果有update_fields，构建完整的UPSERT语句
                 # 构建 ON DUPLICATE KEY UPDATE 部分
-                update_parts = [f"{field} = VALUES({field})" for field in update_fields]
-                conflict_fields_str = ', '.join(conflict_fields)
+                update_parts = [f"`{field}` = VALUES(`{field}`)" for field in update_fields]
+                conflict_fields_str = ', '.join([f"`{field}`" for field in conflict_fields])
                 update_str = ', '.join(update_parts)
                 
                 sql = f"""
-                INSERT INTO {table_name} ({fields_str}) 
+                INSERT INTO `{table_name}` ({fields_str}) 
                 VALUES {', '.join(placeholders)}
                 ON DUPLICATE KEY UPDATE
                 {update_str}
                 """
             else:
                 # 如果没有update_fields，只执行INSERT IGNORE
-                sql = f"INSERT IGNORE INTO {table_name} ({fields_str}) VALUES {', '.join(placeholders)}"
+                sql = f"INSERT IGNORE INTO `{table_name}` ({fields_str}) VALUES {', '.join(placeholders)}"
             
             # 执行 SQL
             affected = await self._execute_native_sql(
@@ -453,7 +469,9 @@ class DbManager:
             包含新增和更新数量的字典: {'inserted': int, 'updated': int, 'total': int}
         """        
         # 获取冲突字段
-        conflict_fields = self._get_conflict_fields(model_class, conflict_fields)
+        # 获取数据库连接对象
+        db = Tortoise.get_connection(self.connection_name)
+        conflict_fields = conflict_fields if conflict_fields is not None else self._get_conflict_fields(model_class)
 
         # 如果未提供exclude_fields，则使用conflict_fields作为默认排除字段
         if exclude_fields is None:
@@ -473,8 +491,10 @@ class DbManager:
             for data in filtered_data:
                 condition = {}  # 将条件改为字典类型
                 for field in conflict_fields:
-                    condition[field] = data[field]
-                conditions.append(condition)
+                    if field in data:
+                        condition[field] = data[field]
+                if condition:
+                    conditions.append(condition)
             
             # 查询所有满足冲突条件的记录
             # 使用 Q 对象构建 OR 查询
@@ -485,12 +505,7 @@ class DbManager:
                 for condition in conditions[1:]:
                     query |= Q(**condition)
                 
-                # 获取数据库连接对象
-                db = Tortoise.get_connection(self.connection_name)
-                
-                existing_records = await model_class.filter(
-                    query
-                ).using_db(db).all()
+                existing_records = await model_class.filter(query).only(*conflict_fields).using_db(db).all()
             else:
                 existing_records = []
         
@@ -501,7 +516,12 @@ class DbManager:
         # 如果没有update_fields，不执行更新操作（仅插入）
         if existing_records:# update_fields:
             # 使用指定的数据库连接执行bulk_create
-            await model_class.bulk_create(instances, on_conflict=conflict_fields, update_fields=update_fields, using_db=db)
+            if len(filtered_data) == 1:
+                await existing_records[0].update_from_dict(filtered_data[0])
+                # await model_class.filter(query).only(*conflict_fields).using_db(db).all().update_from_dict(filtered_data[0])
+            else:
+                await model_class.bulk_create(instances, on_conflict=conflict_fields, update_fields=update_fields, using_db=db)
+            
         else:
             # 只执行插入操作，忽略冲突
             await model_class.bulk_create(instances, ignore_conflicts=True, using_db=db)
@@ -518,7 +538,7 @@ class DbManager:
         inserted_count = 0
         
         for data in filtered_data:
-            key = tuple(data[field] for field in conflict_fields)
+            key = tuple(data.get(field) for field in conflict_fields)
             if key in existing_keys:
                 updated_count += 1
             else:
@@ -538,7 +558,7 @@ class DbManager:
         update_fields: Optional[List[str]] = None,
         exclude_fields: Optional[List[str]] = None,
         conflict_fields: Optional[Tuple[str, ...]] = None,
-        force_use_orm: bool = False,
+        use_orm_or_sql: Literal["orm", "sql"] = "sql",
         use_transaction: Optional[bool] = None
     ) -> Dict[str, Any]:
         """
@@ -550,7 +570,7 @@ class DbManager:
             conflict_fields: 冲突检测字段（必须为元组形式，可省略，默认自动从model_class._meta.unique_together或model_class._meta.pk_attr获取）
             update_fields: 冲突时更新的字段列表（可选，默认使用所有非冲突非排除字段）
             exclude_fields: 要排除的字段列表（可选，默认使用conflict_fields作为排除字段）
-            force_use_orm: 强制使用 ORM 执行批量 upsert
+            use_orm_or_sql: 显式指定使用 ORM 或 SQL 执行批量 upsert，默认使用 SQL
             use_transaction: 是否使用事务（可选，默认使用实例配置的use_transaction）
         Returns:
             执行统计信息
@@ -578,7 +598,7 @@ class DbManager:
             
             # 移除事务分支，统一执行核心逻辑
             # 选择执行策略
-            if not force_use_orm and len(data_list) > 50:
+            if use_orm_or_sql == "sql":
                 method = "native_sql"
                 result = await self._bulk_upsert_native_sql(
                     model_class, data_list, update_fields, 
@@ -631,7 +651,66 @@ class DbManager:
                     "inserted": 0,
                     "updated": 0
                 }
-    
+
+    @with_transaction
+    async def upsert_single(
+        self,
+        model_class,
+        data: Dict[str, Any],
+        conflict_fields: Optional[Tuple[str, ...]] = None,
+        update_fields: Optional[List[str]] = None,
+        exclude_fields: Optional[List[str]] = None,
+        use_orm_or_sql: Literal["orm", "sql"] = "sql",
+        use_transaction: Optional[bool] = None
+    ) -> Dict[str, Any]:
+        """
+        单条记录 upsert 操作
+        
+        Args:
+            model_class: Tortoise 模型类
+            data: 单条数据字典
+            conflict_fields: 冲突检测字段（必须为元组形式，可省略，默认自动从model_class._meta.unique_together或model_class._meta.pk_attr获取）
+            update_fields: 冲突时更新的字段列表（可选，默认使用所有非冲突非排除字段）
+            exclude_fields: 要排除的字段列表（可选，默认使用conflict_fields作为排除字段）
+            use_orm_or_sql: 显式指定使用 ORM 或 SQL 执行 upsert，默认使用 SQL
+            use_transaction: 是否使用事务（可选，默认使用实例配置的use_transaction）
+            
+        Returns:
+            执行结果字典，包含操作类型、影响行数等信息
+        """
+        if conflict_fields is None:
+            conflict_fields = conflict_fields or self._get_conflict_fields(model_class)
+        # 快速取字段交集：只保留 data 中也在 conflict_fields 里的键，为什么要这样做？
+        # 因为如果 data 中包含了不在 conflict_fields 里的字段，那么在 upsert 时就会报错
+        # 具体应用场景：t_supply 联合主键（默认冲突字段）是 supplyno + materialno
+        # 而 patch supply 时（单条），前端只提供 supplyno，而 materialno 是不会变化的
+        # 此时按联合主键索引，一则可能 raise materialno 不存在；其次，就算不报错，因为缺少 materialno，也无法索引出目标记录
+        conflict_fields = tuple(set(conflict_fields) & set(data.keys()))
+        # 复用 bulk_upsert 的逻辑，只需将单条数据包装成列表
+        bulk_result = await self.bulk_upsert(
+            model_class,
+            [data],  # 将单条数据包装成列表
+            conflict_fields=conflict_fields,
+            update_fields=update_fields,
+            exclude_fields=exclude_fields,
+            use_orm_or_sql=use_orm_or_sql,
+            use_transaction=use_transaction
+        )
+        
+        # 转换为更适合单条记录的响应格式
+        if bulk_result['success']:
+            operation_type = 'updated' if bulk_result['updated'] == 1 else 'inserted'
+            return {
+                'success': True,
+                'operation_type': operation_type,
+                'affected_rows': bulk_result['affected_rows'],
+                'execution_time': bulk_result['execution_time'],
+                'conflict_fields': bulk_result['conflict_fields'],
+                'update_fields': bulk_result['update_fields']
+            }
+        else:
+            return bulk_result
+
     @with_transaction
     async def conditional_bulk_upsert(
         self,
@@ -664,7 +743,7 @@ class DbManager:
 
         table_name = model_class._meta.db_table
         all_fields = list(data_list[0].keys())
-        fields_str = ', '.join(all_fields)
+        fields_str = ', '.join([f"`{field}`" for field in all_fields])
         
         total_inserted = 0
         total_updated = 0
@@ -688,17 +767,19 @@ class DbManager:
                 for field, expression in update_rules.items():
                     if 'VALUES' not in expression:
                         raise ValueError(f"更新规则表达式必须包含VALUES: {field} = {expression}")
-                    update_parts.append(f"{field} = {expression}")
+                    update_parts.append(f"`{field}` = {expression}")
                 
                 # 添加条件
-                where_clause = f"WHERE {condition_field} = %s"
+                where_clause = f"WHERE `{condition_field}` = %s"
                 values.append(condition_value)
                 
-                conflict_fields_str = ', '.join(conflict_fields)
+                # 为冲突字段字符串添加反引号包裹
+                conflict_fields_str = ', '.join([f"`{field}`" for field in conflict_fields])
                 update_str = ', '.join(update_parts)
                 
+                # 构建 SQL 语句
                 sql = f"""
-                INSERT INTO {table_name} ({fields_str}) 
+                INSERT INTO `{table_name}` ({fields_str}) 
                 VALUES {', '.join(placeholders)}
                 ON DUPLICATE KEY UPDATE
                 {update_str}

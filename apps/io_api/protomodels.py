@@ -136,7 +136,7 @@ class ProtoCheckqtyRecord(TortoiseBaseModel):
 
 
 class ProtoConfirm(TortoiseBaseModel):
-    noid = fields.IntField(source_field='NoID', unique=True)  # Field name made lowercase.
+    noid = fields.IntField(source_field='NoID', primary_key=True, generated=True)  # Field name made lowercase.
     supplyno = fields.CharField(source_field='SupplyNo', max_length=64)  # Field name made lowercase.
     itemno = fields.CharField(source_field='ItemNo', max_length=32)  # Field name made lowercase.
     recordqty = fields.FloatField(source_field='RecordQty')  # Field name made lowercase.
@@ -1150,7 +1150,7 @@ class ProtoSupplyconfirmqty(TortoiseBaseModel):
 
 
 class ProtoSyslog(TortoiseBaseModel):
-    idno = fields.IntField(source_field='IDNo', unique=True)  # Field name made lowercase.
+    idno = fields.IntField(source_field='IDNo', primary_key=True, generated=True)  # Field name made lowercase.
     timeid = fields.DatetimeField(source_field='TimeID')  # Field name made lowercase.
     userid = fields.CharField(source_field='UserID', max_length=40)  # Field name made lowercase.
     action = fields.CharField(source_field='Action', max_length=255)  # Field name made lowercase.

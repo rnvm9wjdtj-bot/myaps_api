@@ -107,7 +107,7 @@ class ApsBaseAction(ABC):
         当按下工单管理的下达按钮（PL的Status变为'A2E'）时该方法将被自动调用
         - 各项目文件须声明子类并覆写该方法，注意要包含实现推送 PL 至 ERP 的逻辑：
             - 若 ERP 同步返回创建结果，则覆写方法需还需将 ERP 返回信息更新至原PL
-            - 若异步，则由 ERP 调用 api convert_pl_to_mo_by_dbprocdure() 更新 PL
+            - 若异步，则由 ERP 调用 api patch("/t_supply/{path_targetsupply}") 更新 PL
         - 若无需对接ERP，则无需覆写此方法
         """
         await cls._pl_release_success(plno=pl_data['supplyno'], to_status='REL')
@@ -135,8 +135,7 @@ class ApsBaseAction(ABC):
         log_msg = f"✅推送计划任务执行成功，账套：{cls.main_db}，PL单号：{plno}，MO单号：{mono or plno}"
         console_log.info(log_msg)
         file_log.info(log_msg)
-        response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}?db_name={cls.main_db}', json={
-            'action': 'pl_to_mo',
+        response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}/pltomo?db_name={cls.main_db}', json={
             'status': to_status,
             'supplyno': mono,
             'memo': json.dumps({"msg": f"✅{msg}", "from": msg_from, "success": True, "datetime": now, "plno": plno}, ensure_ascii=False),
@@ -149,8 +148,7 @@ class ApsBaseAction(ABC):
         log_msg = f"🚫 推送计划任务执行失败，账套：{cls.main_db}，PL单号：{plno}"
         console_log.error(log_msg)
         file_log.error(log_msg)
-        response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}?db_name={cls.main_db}', json={
-            'action': 'modify_fields',
+        response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}/edit?db_name={cls.main_db}', json={
             'status': to_status,    # ❗❗失败情况下，状态务必回撤为 CRE 或 NEW ，否则后续无法再次下达
             'memo': json.dumps({"msg": f"🚫{msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False),
             })

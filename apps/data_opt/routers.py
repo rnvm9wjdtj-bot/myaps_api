@@ -24,39 +24,6 @@ from apps.data_opt.utils.routechecker import RouteChecker#, HAP_CTRLID as HAP_CT
 rt = APIRouter()
 
 
-# supply_action = {
-#     "refresh_stock": "st.refresh",
-#     "close_mo": "mo.close",
-#     "pl_to_mo": "pl.to_mo",
-# }
-
-
-# @rt.post("/supply",
-#     tags=["数据操作 - 供应"],
-#     summary="供应数据操作",
-#     description="""
-#     执行供应数据操作，支持刷新库存。
-#     - **db_name**: 账套名称，默认为空，对所有账套生效
-#     - **action**: 操作类型，目前支持：
-#         - 刷新库存(st.refresh)
-#     """
-# )
-# async def opt_supply(
-#     body: SupplyOperationBody,
-#     db_name: str | None = None,
-#     x_api_key: str = common_params["x_api_key"]
-# ):
-#     if body.action == SupplyAction.REFRESH_STOCK:
-#         return await current_project.refresh_stock(db_name or None)
-    # elif body.action == SupplyAction.CLOSE_MO and body.type in ["MO", "PL"]:
-    #     return await TSupply.filter(
-    #         materialno=body.materialno,
-    #         supplyno=body.supplyno,
-    #     ).delete(using_db=db_name or None)
-    # elif body.action == SupplyAction.PL_TO_MO and body.type == "PL":
-    #     return await current_project.ApsAction.pl_to_mo(body.supplyno, body.mono, db_name or None)
-
-
 @rt.post("/generate/qrcode",
     tags=["数据操作 - 二维码生成"],
     summary="生成二维码",

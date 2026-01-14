@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Literal, Tuple
 from copy import deepcopy
 from dataclasses import dataclass
 
@@ -88,30 +88,26 @@ async def db_query(db_name: str, model_or_tablename: TortoiseBaseModel | str, fi
 
 
 
-async def preprocess_data(data: List[PydanticSchema | Dict[str, Any]]) -> List[ProcessedData]:
+async def preprocess_data(data_list: List[PydanticSchema | Dict[str, Any]]) -> List[ProcessedData]:
     """
     预处理数据，将Pydantic模型转换为字典
     
     Args:
-        data: 原始数据列表，可以是PydanticSchema对象或字典
+        data_list: 原始数据列表，可以是PydanticSchema对象或字典
         
     Returns:
         预处理后的数据列表
     """
     processed_data_list = []
     
-    for item in data:
+    for item in data_list:
         if hasattr(item, "dict"):
-            raw_data = item.dict()
+            raw_data = item.model_dump()
         else:
             raw_data = deepcopy(item)
         
         processed_data = deepcopy(raw_data)
         create_data = deepcopy(raw_data)
-        
-        # 处理特殊字段（如果有）
-        if "_overwrite" in processed_data:
-            create_data.pop("_overwrite", None)
         
         processed_data_list.append(
             ProcessedData(
@@ -124,7 +120,7 @@ async def preprocess_data(data: List[PydanticSchema | Dict[str, Any]]) -> List[P
     return processed_data_list
 
 
-async def db_write(db_names: str, model_or_tablename: TortoiseBaseModel | str, data: List[PydanticSchema | Dict[str, Any]]):
+async def db_write(db_names: str, model_or_tablename: TortoiseBaseModel | str, data_list: List[PydanticSchema | Dict[str, Any]], use_orm_or_sql: Literal["orm", "sql"] = "sql"):
     """
     通用写入操作，支持创建和更新
     融合了common.py的多账套处理逻辑与db_manager.py的高效数据库操作
@@ -133,6 +129,7 @@ async def db_write(db_names: str, model_or_tablename: TortoiseBaseModel | str, d
         db_name: 账套名称，支持逗号分隔的多个账套
         mdl: Tortoise模型类
         data: 数据列表，可以是PydanticSchema对象或字典
+        use_orm_or_sql
         
     Returns:
         标准响应格式
@@ -157,9 +154,9 @@ async def db_write(db_names: str, model_or_tablename: TortoiseBaseModel | str, d
         mdl = model_or_tablename
         table_name = mdl._meta.db_table
     # 预处理数据
-    processed_data_list = await preprocess_data(data)
-    origin_total = len(data)
-    
+    processed_data_list = await preprocess_data(data_list)
+
+    origin_total = len(data_list)
     # 记录日志
     file_logger.info(f"ℹ️↓接收到{origin_total}条数据，拟写入{mdl._meta.db_table}@[{db_names}] —— db_write\n{[item.raw_input_data for item in processed_data_list]}")
     
@@ -178,55 +175,56 @@ async def db_write(db_names: str, model_or_tablename: TortoiseBaseModel | str, d
             data=[item.processed_data for item in processed_data_list]
         )
     
-    model_key = DbManager._get_conflict_fields(mdl)
-    
-    # 准备upsert数据
-    upsert_data_list = []
-    for item in processed_data_list:
-        # 检查是否有覆盖操作
-        if "_overwrite" in item.processed_data:
-            # 处理覆盖操作
-            overwrite_info = item.processed_data.pop("_overwrite")
-            match_on = overwrite_info["match_on"]
-            new_value = overwrite_info["new_value"]
-            
-            # 更新数据中的字段
-            for field, value in new_value.items():
-                if field in item.processed_data:
-                    item.processed_data[field] = value
-        
-        upsert_data_list.append(item.processed_data)
-    
     # 初始化统计信息
     success_db = []
     create_count_total = 0
     update_count_total = 0
-    
+
+    # 准备upsert数据
+    upsert_data_list = []
+    for item in processed_data_list:
+        upsert_data_list.append(item.processed_data)
+
+    model_key = DbManager._get_conflict_fields(mdl)
     # 准备更新字段（排除主键字段）
     update_fields = [field for field in upsert_data_list[0].keys() if field not in model_key]
     
     # 排除字段（自增ID或不需要upsert的字段）
     exclude_fields = []
     if hasattr(mdl._meta, 'pk_attr') and mdl._meta.pk_attr in upsert_data_list[0]:
+        pk_attr = mdl._meta.pk_attr
         # 检查主键是否是自增类型
-        pk_field = mdl._meta.fields_map.get(mdl._meta.pk_attr)
-        if pk_field and hasattr(pk_field, 'auto_increment') and pk_field.auto_increment:
-            exclude_fields.append(mdl._meta.pk_attr)
-
+        pk_field = mdl._meta.fields_map.get(pk_attr)
+        if pk_field.generated:
+            exclude_fields.append(pk_attr)
+            if pk_attr in update_fields:
+                update_fields.remove(pk_attr)
     try:
         # 处理每个账套，使用专属的DbManager实例
         for db_name in valid_dbs:
             # 获取该账套的专属DbManager实例
             db_manager = db_managers[db_name]
             
-            # 执行批量upsert
-            result = await db_manager.bulk_upsert(
-                model_class=mdl,
-                data_list=upsert_data_list,
-                update_fields=update_fields,
-                exclude_fields=exclude_fields,
-                conflict_fields=tuple(model_key) if model_key else None
-            )
+            if origin_total > 1:
+                # 执行批量upsert
+                result = await db_manager.bulk_upsert(
+                    model_class=mdl,
+                    data_list=upsert_data_list,
+                    update_fields=update_fields,
+                    exclude_fields=exclude_fields,
+                    conflict_fields=tuple(model_key) if model_key else None,
+                    use_orm_or_sql=use_orm_or_sql
+                )
+            else:
+                # 执行单条upsert
+                result = await db_manager.upsert_single(
+                    model_class=mdl,
+                    data=upsert_data_list[0],
+                    update_fields=update_fields,
+                    exclude_fields=exclude_fields,
+                    conflict_fields=tuple(model_key) if model_key else None,
+                    use_orm_or_sql=use_orm_or_sql
+                )
             
             # 更新统计
             create_count = result.get("inserted", 0)

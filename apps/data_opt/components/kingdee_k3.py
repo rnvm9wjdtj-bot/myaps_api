@@ -274,7 +274,7 @@ class K3Connection(BaseConnection):
         filter_string = filter_string or "1=1"
         if only_today:
             today = datetime.now().strftime('%Y-%m-%d')
-            filter_string = f"{filter_string} AND (( fCreateDate >= '{today} 00:00:00' AND fCreateDate <= '{today} 23:59:59' ) OR ( fModifyDate >= '{today} 00:00:00' AND fModifyDate <= '{today} 23:59:59' ))"
+            filter_string = f"{filter_string} AND (( `fCreateDate` >= '{today} 00:00:00' AND `fCreateDate` <= '{today} 23:59:59' ) OR ( `fModifyDate` >= '{today} 00:00:00' AND `fModifyDate` <= '{today} 23:59:59' ))"
         k3_fields = set(field_mapper.keys())
         to_fields = [field_mapper[k] for k in k3_fields]
         # 发送请求
