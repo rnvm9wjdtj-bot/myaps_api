@@ -425,8 +425,9 @@ class DbManager:
                 # - 新增行：影响行数 = 1
                 # - 更新行：影响行数 = 2
                 # - 未改变：影响行数 = 0
-                inserted = batch_size
+                # inserted = batch_size
                 updated = max(0, affected - batch_size)
+                inserted = affected - updated
                 inserted -= updated
             else:
                 # 对于 INSERT IGNORE:
@@ -558,7 +559,7 @@ class DbManager:
         update_fields: Optional[List[str]] = None,
         exclude_fields: Optional[List[str]] = None,
         conflict_fields: Optional[Tuple[str, ...]] = None,
-        use_orm_or_sql: Literal["orm", "sql"] = "sql",
+        use_orm_or_sql: Literal["orm", "sql", "auto"] = "sql",
         use_transaction: Optional[bool] = None
     ) -> Dict[str, Any]:
         """
@@ -570,7 +571,7 @@ class DbManager:
             conflict_fields: 冲突检测字段（必须为元组形式，可省略，默认自动从model_class._meta.unique_together或model_class._meta.pk_attr获取）
             update_fields: 冲突时更新的字段列表（可选，默认使用所有非冲突非排除字段）
             exclude_fields: 要排除的字段列表（可选，默认使用conflict_fields作为排除字段）
-            use_orm_or_sql: 显式指定使用 ORM 或 SQL 执行批量 upsert，默认使用 SQL
+            use_orm_or_sql: 显式指定使用 ORM 或 SQL 执行批量 upsert，默认使用 SQL 执行 （auto时根据数据量自动选择）
             use_transaction: 是否使用事务（可选，默认使用实例配置的use_transaction）
         Returns:
             执行统计信息
@@ -596,21 +597,20 @@ class DbManager:
                 # 计算默认更新字段：所有非冲突非排除字段
                 update_fields = list(all_fields - excluded_set)
             
-            # 移除事务分支，统一执行核心逻辑
             # 选择执行策略
-            if use_orm_or_sql == "sql":
-                method = "native_sql"
-                result = await self._bulk_upsert_native_sql(
-                    model_class, data_list, update_fields, 
-                    exclude_fields, conflict_fields
-                )
-            else:
+            if use_orm_or_sql == "orm" or (use_orm_or_sql == "auto" and len(data_list) < 100):
                 method = "orm"
                 result = await self._bulk_upsert_orm(
                     model_class, data_list, update_fields,
                     exclude_fields, conflict_fields
                 )
-            
+            else:
+                method = "native_sql"
+                result = await self._bulk_upsert_native_sql(
+                    model_class, data_list, update_fields, 
+                    exclude_fields, conflict_fields
+                )
+
             execution_time = (datetime.now() - start_time).total_seconds()
             
             # 更新统计

@@ -185,22 +185,6 @@ class K3Config:
 
 
 
-# @dataclass
-# class K3ConnectionState:
-#     """连接状态管理"""
-#     cookie: Optional[str] = None
-#     cookie_expire: Optional[datetime] = None
-#     session = None
-    
-#     @property
-#     def is_authenticated(self) -> bool:
-#         """检查是否已认证且未过期"""
-#         if not self.cookie or not self.cookie_expire:
-#             return False
-#         return datetime.now() < self.cookie_expire - timedelta(minutes=15)
-
-
-
 class K3Connection(BaseConnection):
 
     def __init__(self, origin_url, acctid, username, password, lcid, config: K3Config=K3Config):

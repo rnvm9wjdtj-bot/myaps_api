@@ -206,7 +206,7 @@ async def db_supsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
     )
 
 
-async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str, data_list: List[PydanticSchema | Dict[str, Any]], use_orm_or_sql: Literal["orm", "sql"] = "sql"):
+async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str, data_list: List[PydanticSchema | Dict[str, Any]], use_orm_or_sql: Literal["orm", "sql", "auto"] = "sql"):
     """
     通用批量写入操作，支持创建和更新
     融合了多账套处理逻辑与db_manager.py的高效数据库操作
@@ -251,7 +251,6 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
 
     origin_total = len(data_list)
     # 记录日志
-    file_logger.info(f"ℹ️↓接收到{origin_total}条数据，拟写入{mdl._meta.db_table}@[{db_names}] —— db_bupsert\n{data_list}")
     
     # 预处理数据
     processed_data_list = await preprocess_data(data_list)
@@ -264,6 +263,8 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
     upsert_data_list = []
     for item in processed_data_list:
         upsert_data_list.append(item.processed_data)
+
+    file_logger.info(f"ℹ️↓接收到{origin_total}条数据，拟写入{mdl._meta.db_table}@[{db_names}] —— db_bupsert\n{upsert_data_list}")
 
     model_key = DbManager._get_conflict_fields(mdl)
     # 准备更新字段（排除主键字段）

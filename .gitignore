@@ -81,4 +81,8 @@ test/
 project_files/*_ed.py
 
 # 缓存文件
-_cache_.json
+_cache_.*
+cache/
+
+# 临时文件
+*.tmp
