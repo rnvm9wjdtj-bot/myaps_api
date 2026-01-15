@@ -20,7 +20,7 @@ from apps.data_opt.utils.common import get_session
 from globalobjects import file_timed_logger
 # from apps.io_api.models import TSupply # 循环引用
 from apps.io_api.utils.common import standard_response
-from apps.io_api.utils.db_operation import db_delete, db_write, call_dbprocdure
+from apps.io_api.utils.db_operation import db_delete, db_bupsert, call_dbprocdure
 from apps.data_opt.components.hap import HapConnection
 from ..utils.scheduler import cron_task
 from ..utils.common import add_basic_auth_requests

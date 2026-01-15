@@ -18,7 +18,7 @@ from .schemas import (
     )
 
 from .utils.common import common_params, standard_response
-from .utils.db_operation import db_managers, db_query, db_write, db_delete, call_dbprocdure
+from .utils.db_operation import db_managers, db_query, db_supsert, db_bupsert, db_delete, call_dbprocdure
 from apps.data_opt.project_files import hap_conn
 
 
@@ -162,7 +162,9 @@ async def post_material(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, model_or_tablename="t_material", data_list=data, method=True) # 强制使用ORM操作，确保create时触发orm事件
+    db_name = db_name.replace(" ", "")
+    return await db_bupsert(db_names=db_name, model_or_tablename="t_material", data_list=data, use_orm_or_sql="orm") # 强制使用ORM操作，确保create时触发orm事件
+
 
 
 @rt.post(
@@ -177,9 +179,15 @@ async def post_workcenter(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, model_or_tablename="t_workcenter", data_list=data)
+    # if len(data) > 1:
+    #     return await db_bupsert(db_names=db_name, model_or_tablename="t_workcenter", data_list=data)
+    # else:
+    #     return await db_supsert(db_names=db_name, model_or_tablename="t_workcenter", data_item=data[0])
+    db_name = db_name.replace(" ", "")
+    return await db_bupsert(db_names=db_name, model_or_tablename="t_workcenter", data_list=data)
 
-   
+
+
 @rt.post(
     "/t_mat_wc",
     tags=["主数据 - 工序"],
@@ -192,7 +200,8 @@ async def post_mat_wc(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, model_or_tablename="t_mat_wc", data_list=data)
+    db_name = db_name.replace(" ", "")
+    return await db_bupsert(db_names=db_name, model_or_tablename="t_mat_wc", data_list=data)
 
 
 @rt.post(
@@ -207,7 +216,8 @@ async def post_mat_ver(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, model_or_tablename="t_mat_ver", data_list=data)
+    db_name = db_name.replace(" ", "")
+    return await db_bupsert(db_names=db_name, model_or_tablename="t_mat_ver", data_list=data)
 
 
 @rt.post(
@@ -222,7 +232,8 @@ async def post_mat_wc_bom(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, model_or_tablename="t_mat_wc_bom", data_list=data)
+    db_name = db_name.replace(" ", "")
+    return await db_bupsert(db_names=db_name, model_or_tablename="t_mat_wc_bom", data_list=data)
 
 
 @rt.post(
@@ -237,7 +248,8 @@ async def post_mold(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, model_or_tablename="t_mold", data_list=data)
+    db_name = db_name.replace(" ", "")
+    return await db_bupsert(db_names=db_name, model_or_tablename="t_mold", data_list=data)
 
 
 @rt.post(
@@ -252,7 +264,8 @@ async def post_mat_wc_mold(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, model_or_tablename="t_mat_wc_mold", data_list=data)
+    db_name = db_name.replace(" ", "")
+    return await db_bupsert(db_names=db_name, model_or_tablename="t_mat_wc_mold", data_list=data)
 
 
 ########################################################################
@@ -283,7 +296,8 @@ async def post_supply(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, model_or_tablename="t_supply", data_list=data)
+    db_name = db_name.replace(" ", "")
+    return await db_bupsert(db_names=db_name, model_or_tablename="t_supply", data_list=data)
 
 
 
@@ -300,6 +314,7 @@ async def patch_supply(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
+    db_name = db_name.replace(" ", "")
     query_result = await db_query(db_name=db_name, model_or_tablename="t_supply", filter_string=f"`SupplyNo`='{path_targetsupply}'")
     if query_result['success'] == 0:
         return standard_response(
@@ -326,13 +341,9 @@ async def patch_supply(
         params_list = [[path_targetsupply, data.supplyno, data.status, data.memo, True]]
         return await call_dbprocdure(db_names=db_name, procedure_name="SupplyConvertMOByE2A", params_list=params_list)
     elif action == "edit":
-        # TODO  普通更新
         data.supplyno = path_targetsupply   # 供应号不能修改，将目标供应号重新赋值给data，以便后续 orm 时能正确索引到记录
         data = dict(data)
-        # 回填数据库必填字段，确保 orm 正确索引 或 保留原值
-        for key in ("materialno", "itemno", "priority", "avail_date", "avail_qty"):
-            data[key] = data.get(key) or query_data[0].get(key)
-        return await db_write(db_names=db_name, model_or_tablename="t_supply", data_list=[data])
+        return await db_supsert(db_names=db_name, model_or_tablename="t_supply", data_item=data)
     else:
         return standard_response(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -354,6 +365,7 @@ async def delete_supply(
     delrelation: bool | None = Query(True, description="是否删除关联的工序记录（仅对PL、MO类型有效）"),
     x_api_key: str = common_params["x_api_key"]
     ):
+    db_name = db_name.replace(" ", "")
     # 使用一个更具描述性的变量名替换内置函数名
     supply_type_param = type
     supply_type_param = supply_type_param.upper()
@@ -407,7 +419,8 @@ async def post_demand(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    return await db_write(db_names=db_name, model_or_tablename="t_demand", data_list=data)
+    db_name = db_name.replace(" ", "")
+    return await db_bupsert(db_names=db_name, model_or_tablename="t_demand", data_list=data)
 
 ########################################################################
 # 报表接口
@@ -425,6 +438,7 @@ async def get_supply_mo(
     supplyno: str = Query(None, description="工单（供应）号"),
     # x_api_key: str = common_params["x_api_key"]
 ):
+    db_name = db_name.replace(" ", "")
     if supplyno:
         filter_string = f"`SupplyNo` = '{supplyno}'"
     else:
@@ -455,6 +469,7 @@ async def get_orderwc(
     supplyno: str = Query(None, description="工单（供应）号"),
     # x_api_key: str = common_params["x_api_key"]
 ):
+    db_name = db_name.replace(" ", "")
     if supplyno:
         filter_string = f"`SupplyNo` = '{supplyno}'"
     else:
@@ -481,10 +496,11 @@ async def get_matdailyqtyreport(
         groupdates: str = Query(default=None, description="分组日期，逗号分隔"),
         materialno: str = Query(default=None, description="料号，多个料号用逗号分隔")
     ):
+    db_name = db_name.replace(" ", "")
     start_date: datetime.date = datetime.now().date()
     end_date = start_date + timedelta(days=period)
     request_result = []
-    dates = groupdates.split(',') if groupdates else None
+    dates = [_.strip() for _ in groupdates.split(',')] if groupdates else None
 
     filter_string = f"`DateStr` >= '{start_date}' AND `DateStr` <= '{end_date}'"
     order_string = "`MaterialNo`, `DateStr`"
@@ -568,6 +584,7 @@ async def create_workreport(
     新增报工记录
     db_name: str，数据库名称，多个数据库名称用逗号分隔
     """
+    db_name = db_name.replace(" ", "")
     for d in data:
         if not hasattr(d, "itemno") or d.itemno in gc.NONE_AND_EMPTY:
             workcenter = d.workcenter if hasattr(d, "workcenter") else None
@@ -580,4 +597,4 @@ async def create_workreport(
                 d.itemno = orderwc_data[0]['itemno']
         d.workcenter = None
     
-    return await db_write(db_names=db_name, model_or_tablename="t_confirm", data_list=data)
+    return await db_bupsert(db_names=db_name, model_or_tablename="t_confirm", data_list=data)

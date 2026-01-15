@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Literal, Tuple
+from typing import Dict, Any, List, Literal, Tuple, Optional
 from copy import deepcopy
 from dataclasses import dataclass
 
@@ -9,11 +9,32 @@ from pydantic import BaseModel as PydanticSchema
 from config.settings import MYAPS_DB_SET
 from globalobjects.db_manager import db_managers, DbManager
 from globalobjects import file_timed_logger
-from .common import standard_response, dict_to_lower_keys
+from .common import standard_response, dict_to_lower_keys, get_raw_input_data, convert_to_dict
 from ..models import TABLE_MODEL_MAPPING
 
 
+
+
 file_logger = file_timed_logger.setup_logging(__name__)
+
+
+def _process_model_or_tablename(model_or_tablename: TortoiseBaseModel | str) -> Tuple[Optional[TortoiseBaseModel], str]:
+    """
+    处理model_or_tablename参数，将其转换为模型类和表名
+    
+    Args:
+        model_or_tablename: 模型类或表名
+        
+    Returns:
+        Tuple[Optional[TortoiseBaseModel], str]: 模型类（如果是表名且存在对应模型）和表名
+    """
+    if isinstance(model_or_tablename, TortoiseBaseModel):
+        return model_or_tablename, model_or_tablename._meta.db_table
+    else:
+        table_name = model_or_tablename
+        mdl = tablename_to_model(table_name)
+        return mdl, table_name
+
 
 
 @dataclass
@@ -57,10 +78,7 @@ def tablename_to_model(table_name: str) -> TortoiseBaseModel:
 
     
 async def db_query(db_name: str, model_or_tablename: TortoiseBaseModel | str, filter_string: str = '', order_string: str = ''):
-    if isinstance(model_or_tablename, TortoiseBaseModel):
-        table_name = model_or_tablename._meta.db_table
-    else:
-        table_name = model_or_tablename
+    _, table_name = _process_model_or_tablename(model_or_tablename)
     try:
         valid_db = validate_databases(db_name)[0]
         assert valid_db, "未指定账套或账套不存在"
@@ -98,33 +116,100 @@ async def preprocess_data(data_list: List[PydanticSchema | Dict[str, Any]]) -> L
     Returns:
         预处理后的数据列表
     """
-    processed_data_list = []
-    
-    for item in data_list:
-        if hasattr(item, "dict"):
-            raw_data = item.model_dump()
-        else:
-            raw_data = deepcopy(item)
-        
-        processed_data = deepcopy(raw_data)
-        create_data = deepcopy(raw_data)
-        
-        processed_data_list.append(
-            ProcessedData(
-                processed_data=processed_data,
-                create_data=create_data,
-                raw_input_data=raw_data
-            )
-        )
-    
-    return processed_data_list
+    processed_list = []
+    for data_item in data:
+        # 获取原始输入数据
+        raw_input_data = get_raw_input_data(data_item)
+        # 转换为字典
+        processed_dict = convert_to_dict(data_item, exclude_none=True)
+        # 深拷贝用于创建操作
+        create_dict = deepcopy(processed_dict)
+        # 添加到处理列表
+        processed_list.append(ProcessedData(
+            processed_data=processed_dict,
+            create_data=create_dict,
+            raw_input_data=raw_input_data
+        ))
+    return processed_list
 
 
-async def db_write(db_names: str, model_or_tablename: TortoiseBaseModel | str, data_list: List[PydanticSchema | Dict[str, Any]], use_orm_or_sql: Literal["orm", "sql"] = "sql"):
+async def db_supsert(db_names: str, model_or_tablename: TortoiseBaseModel | str, data_item: PydanticSchema | Dict[str, Any], use_rawdata: bool = True):
     """
-    通用写入操作，支持创建和更新
-    融合了common.py的多账套处理逻辑与db_manager.py的高效数据库操作
+    通用单条数据写入操作，支持创建和更新，整体逻辑类似于旧版的逐条创建或更新。比 db_bupsert 颗粒度更细，但会损失一定性能
     
+    :param db_names: 账套名称，多个可用半角逗号分隔
+    :param model_or_tablename: 模型类或表名
+    :param data_item: 数据，字典或PydanticSchema对象
+    :param use_rawdata: 是否使用原始数据（若传入的数据为PydanticSchema对象，默认使用未被过度 validator 处理的数据）
+    :return: 操作结果
+    """
+    mdl, table_name = _process_model_or_tablename(model_or_tablename)
+    
+    if not mdl:
+        return standard_response(
+            success=0,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="操作失败：未找到对应模型",
+            meta={
+                "input_table_name": table_name,
+                "available_tables": list(TABLE_MODEL_MAPPING.keys()),
+            },
+            data=[data_item]
+        )
+
+    if isinstance(data_item, PydanticSchema):
+        if use_rawdata:
+            data = get_raw_input_data(data_item)
+        else:
+            data = data_item.model_dump(exclude_none=True)
+    else:
+        data = data_item    # 若为字典则直接使用
+
+    valid_dbs = validate_databases(db_names)
+    if not valid_dbs:
+        file_logger.error(f"❌↑未找到有效账套（available_dbs：{MYAPS_DB_SET}），禁止写入 —— db_write")
+        return standard_response(
+            success=0,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="操作失败：未找到有效账套",
+            meta={
+                "input_db_name": db_names,
+                "available_dbs": MYAPS_DB_SET,
+            },
+            data=[data_item]
+        )
+
+    success_db = []
+    create_count_total = 0
+    update_count_total = 0
+
+    for db_name in valid_dbs:
+        db_manager = db_managers[db_name]
+
+        result = await db_manager.single_upsert(
+            model_class=mdl,
+            data=data,
+        )
+
+        if result['success']:
+            success_db.append(db_name)
+            create_count_total += result['inserted']
+            update_count_total += result['updated']
+
+    return standard_response(
+        meta={
+            "success_db": success_db,
+            "create": create_count_total,
+            "update": update_count_total,
+        },
+        data=[data_item]
+    )
+
+
+async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str, data_list: List[PydanticSchema | Dict[str, Any]], use_orm_or_sql: Literal["orm", "sql"] = "sql"):
+    """
+    通用批量写入操作，支持创建和更新
+    融合了多账套处理逻辑与db_manager.py的高效数据库操作
     Args:
         db_name: 账套名称，支持逗号分隔的多个账套
         mdl: Tortoise模型类
@@ -134,32 +219,6 @@ async def db_write(db_names: str, model_or_tablename: TortoiseBaseModel | str, d
     Returns:
         标准响应格式
     """
-    if isinstance(model_or_tablename, str):
-        table_name = model_or_tablename
-        mdl = tablename_to_model(table_name)
-        if not mdl:
-            return standard_response(
-                success=0,
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="操作失败：未找到对应模型",
-                meta={
-                    "input_table_name": table_name,
-                    "available_tables": list(TABLE_MODEL_MAPPING.keys()),
-                },
-                data=[item.processed_data for item in processed_data_list]
-                # data=data
-            )
-
-    else:
-        mdl = model_or_tablename
-        table_name = mdl._meta.db_table
-    # 预处理数据
-    processed_data_list = await preprocess_data(data_list)
-
-    origin_total = len(data_list)
-    # 记录日志
-    file_logger.info(f"ℹ️↓接收到{origin_total}条数据，拟写入{mdl._meta.db_table}@[{db_names}] —— db_write\n{[item.raw_input_data for item in processed_data_list]}")
-    
     # 验证账套
     valid_dbs = validate_databases(db_names)
     if not valid_dbs:
@@ -172,9 +231,30 @@ async def db_write(db_names: str, model_or_tablename: TortoiseBaseModel | str, d
                 "input_db_name": db_names,
                 "available_dbs": MYAPS_DB_SET,
             },
-            data=[item.processed_data for item in processed_data_list]
+            # data=[item.processed_data for item in processed_data_list]
+            data=data_list
         )
+
+    mdl, table_name = _process_model_or_tablename(model_or_tablename)
     
+    if not mdl:
+        return standard_response(
+            success=0,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="操作失败：未找到对应模型",
+            meta={
+                "input_table_name": table_name,
+                "available_tables": list(TABLE_MODEL_MAPPING.keys()),
+            },
+            data=data_list
+        )
+
+    origin_total = len(data_list)
+    # 记录日志
+    file_logger.info(f"ℹ️↓接收到{origin_total}条数据，拟写入{mdl._meta.db_table}@[{db_names}] —— db_write\n{data_list}")
+    
+    # 预处理数据
+    processed_data_list = await preprocess_data(data_list)
     # 初始化统计信息
     success_db = []
     create_count_total = 0
@@ -205,27 +285,15 @@ async def db_write(db_names: str, model_or_tablename: TortoiseBaseModel | str, d
             # 获取该账套的专属DbManager实例
             db_manager = db_managers[db_name]
             
-            if origin_total > 1:
-                # 执行批量upsert
-                result = await db_manager.bulk_upsert(
-                    model_class=mdl,
-                    data_list=upsert_data_list,
-                    update_fields=update_fields,
-                    exclude_fields=exclude_fields,
-                    conflict_fields=tuple(model_key) if model_key else None,
-                    use_orm_or_sql=use_orm_or_sql
-                )
-            else:
-                # 执行单条upsert
-                result = await db_manager.upsert_single(
-                    model_class=mdl,
-                    data=upsert_data_list[0],
-                    update_fields=update_fields,
-                    exclude_fields=exclude_fields,
-                    conflict_fields=tuple(model_key) if model_key else None,
-                    use_orm_or_sql=use_orm_or_sql
-                )
-            
+            result = await db_manager.bulk_upsert(
+                model_class=mdl,
+                data_list=upsert_data_list,
+                update_fields=update_fields,
+                exclude_fields=exclude_fields,
+                conflict_fields=tuple(model_key) if model_key else None,
+                use_orm_or_sql=use_orm_or_sql
+            )
+
             # 更新统计
             create_count = result.get("inserted", 0)
             update_count = result.get("updated", 0)
@@ -239,7 +307,7 @@ async def db_write(db_names: str, model_or_tablename: TortoiseBaseModel | str, d
         file_logger.info(f"✅生效{len(success_db)}个账套，总计新增{create_count_total}条，修改{update_count_total}条")
         
         return standard_response(
-            data=[item.create_data for item in processed_data_list],
+            data=data_list,
             message=f"生效{len(success_db)}个账套，总计新增{create_count_total}条，修改{update_count_total}条",
             meta={"origin_total": origin_total, "success_db": success_db}
         )
@@ -251,7 +319,8 @@ async def db_write(db_names: str, model_or_tablename: TortoiseBaseModel | str, d
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message=f"操作失败：{str(e)}",
             meta={"origin_total": origin_total, "success_db": success_db},
-            data=[item.processed_data for item in processed_data_list]
+            # data=[item.processed_data for item in processed_data_list]
+            data=data_list
         )
 
 
@@ -263,10 +332,7 @@ async def db_delete(db_names: str, model_or_tablename: TortoiseBaseModel | str, 
     :param filter_string: WHERE子句，用于指定删除条件
     :return: 操作结果
     """
-    if isinstance(model_or_tablename, TortoiseBaseModel):
-        table_name = model_or_tablename._meta.db_table
-    else:
-        table_name = model_or_tablename
+    _, table_name = _process_model_or_tablename(model_or_tablename)
     try:
         valid_dbs = validate_databases(db_names)
         assert valid_dbs, "未指定账套或账套不存在"

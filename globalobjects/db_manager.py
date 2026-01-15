@@ -653,14 +653,13 @@ class DbManager:
                 }
 
     @with_transaction
-    async def upsert_single(
+    async def single_upsert(
         self,
         model_class,
         data: Dict[str, Any],
         conflict_fields: Optional[Tuple[str, ...]] = None,
-        update_fields: Optional[List[str]] = None,
-        exclude_fields: Optional[List[str]] = None,
-        use_orm_or_sql: Literal["orm", "sql"] = "sql",
+        # update_fields: Optional[List[str]] = None,
+        # exclude_fields: Optional[List[str]] = None,
         use_transaction: Optional[bool] = None
     ) -> Dict[str, Any]:
         """
@@ -672,44 +671,101 @@ class DbManager:
             conflict_fields: 冲突检测字段（必须为元组形式，可省略，默认自动从model_class._meta.unique_together或model_class._meta.pk_attr获取）
             update_fields: 冲突时更新的字段列表（可选，默认使用所有非冲突非排除字段）
             exclude_fields: 要排除的字段列表（可选，默认使用conflict_fields作为排除字段）
-            use_orm_or_sql: 显式指定使用 ORM 或 SQL 执行 upsert，默认使用 SQL
             use_transaction: 是否使用事务（可选，默认使用实例配置的use_transaction）
             
         Returns:
             执行结果字典，包含操作类型、影响行数等信息
+            
+        Raises:
+            ValueError: 如果存在多个与冲突字段匹配的记录
         """
+        # 获取冲突字段
         if conflict_fields is None:
             conflict_fields = conflict_fields or self._get_conflict_fields(model_class)
-        # 快速取字段交集：只保留 data 中也在 conflict_fields 里的键，为什么要这样做？
-        # 因为如果 data 中包含了不在 conflict_fields 里的字段，那么在 upsert 时就会报错
-        # 具体应用场景：t_supply 联合主键（默认冲突字段）是 supplyno + materialno
-        # 而 patch supply 时（单条），前端只提供 supplyno，而 materialno 是不会变化的
-        # 此时按联合主键索引，一则可能 raise materialno 不存在；其次，就算不报错，因为缺少 materialno，也无法索引出目标记录
-        conflict_fields = tuple(set(conflict_fields) & set(data.keys()))
-        # 复用 bulk_upsert 的逻辑，只需将单条数据包装成列表
-        bulk_result = await self.bulk_upsert(
-            model_class,
-            [data],  # 将单条数据包装成列表
-            conflict_fields=conflict_fields,
-            update_fields=update_fields,
-            exclude_fields=exclude_fields,
-            use_orm_or_sql=use_orm_or_sql,
-            use_transaction=use_transaction
-        )
-        
-        # 转换为更适合单条记录的响应格式
-        if bulk_result['success']:
-            operation_type = 'updated' if bulk_result['updated'] == 1 else 'inserted'
-            return {
-                'success': True,
-                'operation_type': operation_type,
-                'affected_rows': bulk_result['affected_rows'],
-                'execution_time': bulk_result['execution_time'],
-                'conflict_fields': bulk_result['conflict_fields'],
-                'update_fields': bulk_result['update_fields']
-            }
+            # 取字段交集：只保留既在 data 中也在 conflict_fields 里的键，为什么要这样做？
+            conflict_fields = tuple(set(conflict_fields) & set(data.keys()))
+            # 因为如果 data 中包含了不在 conflict_fields 里的字段，那么在 upsert 时就会报错
+            # 具体应用场景：t_supply 联合主键（默认冲突字段）是 supplyno + materialno
+            # 而 patch supply 时（单条），前端可能不传入 materialno
+            # 此时若按联合主键索引，一则可能 raise materialno 不存在；其次，就算不报错，因为缺少 materialno，也无法索引出目标记录
         else:
-            return bulk_result
+            # 检查数据中是否包含所有冲突字段
+            missing_fields = [field for field in conflict_fields if field not in data]
+            if missing_fields:
+                raise ValueError(f"数据中缺少必要的冲突字段: {', '.join(missing_fields)}")
+        
+        # 构建查询条件
+        query_conditions = {field: data[field] for field in conflict_fields}
+        
+        # 查询是否存在记录
+        conn = Tortoise.get_connection(self.connection_name)
+        conflict_check_sql = f"""
+        SELECT COUNT(*) as count FROM `{model_class._meta.db_table}`
+        WHERE {' AND '.join([f'`{field}` = %s' for field in conflict_fields])}
+        """
+        
+        # 执行查询
+        result = await conn.execute_query(conflict_check_sql, list(query_conditions.values()))
+        count = result[1][0]['count']
+        
+        # 如果存在多条冲突记录，抛出错误
+        if count > 1:
+            raise ValueError(f"检测到多个 {', '.join(conflict_fields)} 匹配的记录，无法执行单条 upsert 操作")
+        
+        # 计算更新字段
+        update_fields = tuple(set(data.keys()) - set(conflict_fields))
+        
+        # 根据记录是否存在，决定执行INSERT还是UPDATE
+        conn = Tortoise.get_connection(self.connection_name)
+        
+        if count == 0:
+            # 执行INSERT操作
+            fields = list(data.keys())
+            placeholders = ['%s'] * len(fields)
+            values = list(data.values())
+            
+            insert_sql = f"""
+            INSERT INTO `{model_class._meta.db_table}` ({', '.join([f'`{k}`' for k in fields])})
+            VALUES ({', '.join(placeholders)})
+            """
+            
+            result = await conn.execute_query(insert_sql, values)
+            affected_rows = result[0]
+            operation_type = 'inserted'
+        else:
+            # 执行UPDATE操作
+            if not update_fields:
+                # 没有需要更新的字段
+                affected_rows = 0
+                operation_type = 'no_change'
+            else:
+                update_parts = [f'`{field}` = %s' for field in update_fields]
+                where_parts = [f'`{field}` = %s' for field in conflict_fields]
+                
+                update_sql = f"""
+                UPDATE `{model_class._meta.db_table}`
+                SET {', '.join(update_parts)}
+                WHERE {' AND '.join(where_parts)}
+                """
+                
+                # 构建参数列表：先更新字段的值，再冲突字段的值
+                update_values = [data[field] for field in update_fields]
+                conflict_values = [data[field] for field in conflict_fields]
+                all_values = update_values + conflict_values
+                
+                result = await conn.execute_query(update_sql, all_values)
+                affected_rows = result[0]
+                operation_type = 'updated'
+        
+        return {
+            'success': True,
+            'operation_type': operation_type,
+            'affected_rows': affected_rows,
+            'conflict_fields': conflict_fields,
+            'update_fields': update_fields,
+            'inserted': 1 if operation_type == 'inserted' else 0,
+            'updated': 1 if operation_type == 'updated' else 0
+        }
 
     @with_transaction
     async def conditional_bulk_upsert(

@@ -44,7 +44,7 @@ common_params = {
 }
 
 
-def get_raw_input_data(data_item: PydanticSchema | Dict[str, Any]) -> Any:
+def get_raw_input_data(data_item: PydanticSchema | Dict[str, Any]) -> Dict:
     """
     获取model_validator之前的原始数据
     

@@ -30,7 +30,7 @@ def _set_raw_input_data(self):
         return
 
     raw_input_data = {}
-    valid_values = self.__dict__
+    valid_values = dict(self)   #self.__dict__
     for key, raw_value in self._cached_raw_input_data.items():
         valid_value = valid_values.get(key)
         value_type = type(valid_value)
@@ -531,14 +531,12 @@ class ModifySupply(BaseModel):
     supplyno: str = Field(None, max_length=64, description='供应单号改成（仅pltomo时传入有效）', example="MO123456")
     status: str = Field(None, enum=list(gc.ORDER_STATUS.keys()), example="CRE", description=f'状态 {gc.ORDER_STATUS}')
     memo: str = Field(None, max_length=255, description='备注', example="标准生产工单")
-    # is_execute_updates: bool = Field(True, description='是否执行更新操作')
 
     class Config:
         title = "验证规则 - 生产计划"
         extra = "ignore"
         json_schema_extra = {
             "example": {
-                "action": "pltomo",
                 "supplyno": "MO123456",
                 "status": "CRE"
             }

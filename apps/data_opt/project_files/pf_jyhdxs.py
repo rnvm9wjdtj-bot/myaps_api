@@ -84,8 +84,11 @@ async def sap_post(url: str, session: requests.Session, interface_id: str, data:
 #################################################################################
 # ⬇️定时任务设置
 #################################################################################
-schedule_task_hour = '13,14,15,16,17,18,19,20,21,22,23'#'6,8,10,12,14,16'
-schedule_task_minute = '0,5,10,15,20,25,30,35,40,45,50,55'#'55'
+# schedule_task_hour = '6,8,10,12,14,16'
+# schedule_task_minute = '55'
+
+schedule_task_hour = '8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23'
+schedule_task_minute = '0,5,10,15,20,25,30,35,40,45,50,55'
 
 
 @cron_task(hour=schedule_task_hour, minute=f"{schedule_task_minute}")
@@ -149,23 +152,23 @@ async def refresh_stock(dbs: str = None):
     return response
 
 
-@cron_task(hour=23, minute=50)
-async def push_weekpr_to_srm():
-    # 推送周要货计划到SRM
-    pr_data = await ApsBaseAction.get_dategrouped_pr()
-    file_log.info(f"从账套{MYAPS_MAIN_DB}获取到周要货计划：\n{pr_data}")
+# @cron_task(hour=23, minute=50)
+# async def push_weekpr_to_srm():
+#     # 推送周要货计划到SRM
+#     pr_data = await ApsBaseAction.get_dategrouped_pr()
+#     file_log.info(f"从账套{MYAPS_MAIN_DB}获取到周要货计划：\n{pr_data}")
 
 
-@cron_task(day=1, hour=0, minute=5)
-async def push_seasonpr_to_srm():
-    # 每月初推送季度要货计划到SRM
-    # 生成下三个月的月底日期列表
-    date_list = [
-        (datetime.now().replace(day=1) + relativedelta(months=i + 1) - relativedelta(days=1)).strftime('%Y-%m-%d')
-        for i in range(3)
-    ]
-    pr_data = await ApsBaseAction.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=90, groupdates=','.join(date_list))
-    file_log.info(f"从账套{MYAPS_MAIN_DB}获取到季度要货计划：\n{pr_data}")
+# @cron_task(day=1, hour=0, minute=5)
+# async def push_seasonpr_to_srm():
+#     # 每月初推送季度要货计划到SRM
+#     # 生成下三个月的月底日期列表
+#     date_list = [
+#         (datetime.now().replace(day=1) + relativedelta(months=i + 1) - relativedelta(days=1)).strftime('%Y-%m-%d')
+#         for i in range(3)
+#     ]
+#     pr_data = await ApsBaseAction.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=90, groupdates=','.join(date_list))
+#     file_log.info(f"从账套{MYAPS_MAIN_DB}获取到季度要货计划：\n{pr_data}")
 
   
 #################################################################################
