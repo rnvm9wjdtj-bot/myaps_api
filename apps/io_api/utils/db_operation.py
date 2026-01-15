@@ -117,7 +117,7 @@ async def preprocess_data(data_list: List[PydanticSchema | Dict[str, Any]]) -> L
         预处理后的数据列表
     """
     processed_list = []
-    for data_item in data:
+    for data_item in data_list:
         # 获取原始输入数据
         raw_input_data = get_raw_input_data(data_item)
         # 转换为字典
@@ -167,7 +167,7 @@ async def db_supsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
 
     valid_dbs = validate_databases(db_names)
     if not valid_dbs:
-        file_logger.error(f"❌↑未找到有效账套（available_dbs：{MYAPS_DB_SET}），禁止写入 —— db_write")
+        file_logger.error(f"❌↑未找到有效账套（available_dbs：{MYAPS_DB_SET}），禁止写入 —— db_supsert")
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -222,7 +222,7 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
     # 验证账套
     valid_dbs = validate_databases(db_names)
     if not valid_dbs:
-        file_logger.error(f"❌↑未找到有效账套（available_dbs：{MYAPS_DB_SET}），禁止写入 —— db_write")
+        file_logger.error(f"❌↑未找到有效账套（available_dbs：{MYAPS_DB_SET}），禁止写入 —— db_bupsert")
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -251,7 +251,7 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
 
     origin_total = len(data_list)
     # 记录日志
-    file_logger.info(f"ℹ️↓接收到{origin_total}条数据，拟写入{mdl._meta.db_table}@[{db_names}] —— db_write\n{data_list}")
+    file_logger.info(f"ℹ️↓接收到{origin_total}条数据，拟写入{mdl._meta.db_table}@[{db_names}] —— db_bupsert\n{data_list}")
     
     # 预处理数据
     processed_data_list = await preprocess_data(data_list)
@@ -313,7 +313,7 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
         )
         
     except Exception as e:
-        file_logger.error(f"❌↑操作失败：{str(e)} —— db_write")
+        file_logger.error(f"❌↑操作失败：{str(e)} —— db_bupsert")
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

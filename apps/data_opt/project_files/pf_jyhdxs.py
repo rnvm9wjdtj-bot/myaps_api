@@ -12,7 +12,7 @@ from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL
 from ._base import (
     ProjectParamBase, DefaultValueBase, ApsBaseAction, 
     file_log, console_log, standard_response, get_session, HapConnection,
-    cron_task, add_basic_auth_requests, db_delete, db_write
+    cron_task, add_basic_auth_requests, db_delete, db_bupsert
     )
 
 #################################################################################
@@ -142,7 +142,7 @@ async def refresh_stock(dbs: str = None):
         stock_data = stock.to_dict(orient='records')
 
         delete_result = await db_delete(db_names=dbs, model_or_tablename='t_supply', filter_string=f"`Type`='ST'")
-        write_result = await db_write(db_names=dbs, model_or_tablename='t_supply', data_list=stock_data)
+        write_result = await db_bupsert(db_names=dbs, model_or_tablename='t_supply', data_list=stock_data)
         console_log.info(f"刷新库存任务执行完成，账套：{dbs}")
         response = standard_response(message=f"刷新库存任务执行完成，账套：{dbs}")
         
