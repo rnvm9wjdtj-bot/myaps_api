@@ -7,13 +7,11 @@ import os, importlib, requests
 from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL
 from globalobjects import file_timed_logger
 from apps.io_api.utils.common import dict_to_lower_keys
-# from apps.io_api.schemas import (AcceptMaterial)
+
 
 
 project_name = os.getenv("PROJECT_FILE").replace('.py', '')
 current_project = importlib.import_module(f'apps.data_opt.project_files.{project_name}')
-project_default_value = current_project.DefaultValue
-project_params = current_project.ProjectParam
 
 
 try:

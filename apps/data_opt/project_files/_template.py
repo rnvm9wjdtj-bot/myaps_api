@@ -13,11 +13,12 @@ from datetime import datetime
 from fastapi import status
 
 from ._base import (
-    ProjectParamBase, DefaultValueBase, ApsBaseAction,
+    ApsBaseAction,
     file_log, console_log, standard_response, get_session, HapConnection
     )
 
-from ..components.yonyou_tplus import TplusConnection
+from ._defaults import ProjectValues
+
 #################################################################################
 # ⬇️ 项目对象及参数
 #################################################################################
@@ -29,11 +30,8 @@ hap_conn = HapConnection(
     sign='...'
 )
 
-class ProjectParam(ProjectParamBase):
-    pass
 
-
-class DefaultValue(DefaultValueBase):
+class DefaultValue(ProjectValues):
     MAT_PLANT = "..."   # 默认工厂
     MAT_PLANNER = "..."   # 默认计划员
     MAT_LOCATION = "..."  # 默认车间

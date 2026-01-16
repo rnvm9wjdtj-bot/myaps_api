@@ -3,6 +3,7 @@ from tortoise import fields
 
 from globalobjects.db_manager import db_managers
 from . import protomodels as pm
+from apps.data_opt.project_files._defaults import ProjectValues as pdv
 
 
 class TMaterial(pm.ProtoMaterial):
@@ -15,7 +16,6 @@ class TMaterial(pm.ProtoMaterial):
 
     @classmethod
     async def create(cls, using_db, update_fields=None, force_create=False, force_update=False, *args, **kwargs):
-        from apps.data_opt.project_files import project_default_value as pdv
         if pdv.auto_matver and kwargs.get("type") == "E":
             await TMatVer.create_if_not_exists(db_name=using_db.connection_name, materialno=kwargs.get("materialno"))
         return await super().create(using_db=using_db, update_fields=update_fields, force_create=force_create, force_update=force_update, *args, **kwargs)
@@ -56,7 +56,7 @@ class TMatVer(pm.ProtoMatVer):
         """
         若不存在则创建
         """
-        from apps.data_opt.project_files import project_default_value as pdv
+        
         # 设置默认值
         if matver is None:
             matver = pdv.MATVER

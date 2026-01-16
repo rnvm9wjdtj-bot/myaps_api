@@ -79,6 +79,7 @@ test/
 
 # 忽略project_files文件夹下以_ed为结尾的py文件
 project_files/*_ed.py
+project_files/_defaults.py
 
 # 缓存文件
 _cache_.*

@@ -6,7 +6,7 @@ from decimal import Decimal
 from pydantic import BaseModel, Field, model_validator, PrivateAttr#, ValidationError, field_validator
 
 from globalobjects import globalconst as gc
-from apps.data_opt.project_files import project_default_value as pdv
+from apps.data_opt.project_files._defaults import ProjectValues as pdv
 
 
 def _cache_raw_input_data(cls, values: Dict[str, Any]) -> Dict[str, Any]:

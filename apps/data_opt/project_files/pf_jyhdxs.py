@@ -8,12 +8,13 @@ from fastapi import status
 from dateutil.relativedelta import relativedelta
 
 
-from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL
+from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL
 from ._base import (
-    ProjectParamBase, DefaultValueBase, ApsBaseAction, 
+    ApsBaseAction, 
     file_log, console_log, standard_response, get_session, HapConnection,
     cron_task, add_basic_auth_requests, db_delete, db_bupsert
     )
+from ._defaults import ProjectValues
 
 #################################################################################
 # ⬇️对象及项目参数
@@ -24,15 +25,6 @@ hap_conn = HapConnection(
     sign='NjAwYzI5OWJlMTNhNTcwODM5ZTEwOWE2YjE3ZDZiNWRmYzk4NTJjNTZmODQ4N2EzNGNjNWM2ZGMzNTBlYjY0Ng=='
 )
 
-
-class ProjectParam(ProjectParamBase):
-    pass
-
-
-class DefaultValue(DefaultValueBase):
-    MAT_PLANT = "1600"   # 默认工厂
-    MAT_PLANNER = "haida"   # 默认计划员
-    MAT_LOCATION = "1600"  # 默认车间
  
 #################################################################################
 # ⬇️项目可复用逻辑
@@ -98,7 +90,7 @@ async def refresh_stock(dbs: str = None):
     db: 对哪些账套生效，多个账套用逗号分隔
     """
     console_log.info("开始执行刷新库存任务")
-    dbs = dbs or ProjectParam.SCHEDULED_DBS
+    dbs = dbs or MYAPS_DB_SET
     response = None
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     try:
@@ -138,7 +130,7 @@ async def refresh_stock(dbs: str = None):
         stock = stock.rename(columns={
             'matnr': 'materialno',
         })
-        stock['itemno'] = DefaultValue.ITEMNO
+        stock['itemno'] = ProjectValues.ITEMNO
         stock_data = stock.to_dict(orient='records')
 
         delete_result = await db_delete(db_names=dbs, model_or_tablename='t_supply', filter_string=f"`Type`='ST'")
