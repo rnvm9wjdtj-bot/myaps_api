@@ -56,7 +56,7 @@ class AcceptMaterial(BaseModel):
     grday: int = Field(..., ge=0, description="收货质检（天）", example=1)
     abc: str = Field(..., enum=["A", "B", "C"], example="A", description="ABC分类")
     unit: str = Field(..., description='单位', example="PCS")
-    price: Decimal = Field(0, description="价格", example=100.50)
+    price: Decimal = Field(0, description="价格", ge=0, example=100.50)
     groupno: str = Field(..., description="型号", example="G001")
     type: str = Field(... if pdv.myaps_is_pro else None, enum=["E", "F"], example="E", description="物料类型  E-自制件 F-采购件")
     phantom: str = Field(pdv.MAT_PHANTOM, enum=list(gc.YES_NO.keys()), example="N", description='虚拟件')
@@ -205,6 +205,8 @@ class AcceptWorkcenter(BaseModel):
             values["worker"] = pdv.WC_WORKER
         if values.get("pri_wc") in gc.NONE_AND_EMPTY:
             values["pri_wc"] = pdv.WC_PRIORITY
+        if values.get("capmax", 0) < values.get("capnum", 0):
+            values["capmax"] = values["capnum"]
         return values
 
     @model_validator(mode="after")
@@ -334,8 +336,8 @@ class AcceptMatWcBom(BaseModel):
     qty: float = Field(..., ge=0, description='数量', example=2.0)
     offsethour: int = Field(0, description='偏置+/-(小时)', example=0)
     treeno: int = Field(None, description='层级', example=1)
-    mto: str = Field("N", enum=list(gc.YES_NO.keys()), example="N", description='MTO')
-    scrap: float = Field(0, description='报废率%', example=0.0)
+    mto: str = Field("Y", enum=list(gc.YES_NO.keys()), example="N", description='MTO')
+    scrap: float = Field(0, ge=0, description='报废率%', example=0.0)
     alt: str = Field("N", enum=list(gc.YES_NO.keys()), example="N", description='Y/N是否是替代')
     memo: str = Field(None, max_length=255, description='备注', example="标准BOM组件")
     denominator: Optional[float | str] = Field(None, description='用量分母', example=1)

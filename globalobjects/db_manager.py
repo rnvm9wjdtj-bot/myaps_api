@@ -383,7 +383,6 @@ class DbManager:
         # 分批处理
         for i in range(0, len(data_list), self.batch_size):
             batch = data_list[i:i + self.batch_size]
-            batch_size = len(batch)
             
             # 构建 VALUES 占位符和参数
             placeholders = []
@@ -425,10 +424,12 @@ class DbManager:
                 # - 新增行：影响行数 = 1
                 # - 更新行：影响行数 = 2
                 # - 未改变：影响行数 = 0
-                # inserted = batch_size
-                updated = max(0, affected - batch_size)
-                inserted = affected - updated
-                inserted -= updated
+                # 使用实际处理的数据行数（len(batch)）代替batch_size，因为可能有重复数据
+                actual_size = len(batch)
+                updated = max(0, affected - actual_size)
+                inserted = affected - 2 * updated
+                # 确保插入数量为非负数
+                inserted = max(0, inserted)
             else:
                 # 对于 INSERT IGNORE:
                 # - 成功插入：影响行数 = 1

@@ -1,14 +1,16 @@
 import json
-# import os
+import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
-# from dataclasses import dataclass, asdict, field, is_dataclass
+from typing import Any, Dict, List, Optional, Union, TypeVar, Generic
+from dataclasses import dataclass, asdict, field, is_dataclass
 import logging
 from datetime import datetime
-# from contextlib import contextmanager
+from contextlib import contextmanager
 import threading
-# from enum import Enum
+from enum import Enum
 import hashlib
+
+T = TypeVar('T')
 
 class JSONManager:
     """基础的JSON文件管理器"""
@@ -42,58 +44,28 @@ class JSONManager:
         self._load()
     
     def _load(self) -> None:
-        """从文件加载数据，验证数据完整性"""
+        """从文件加载数据"""
         if not self.filepath.exists():
             self._data = {}
             return
         
         try:
             with self.filepath.open('r', encoding=self.encoding) as f:
-                content = json.load(f)
-            
-            # 验证内容格式和完整性
-            if isinstance(content, dict) and 'data' in content and 'hash' in content:
-                # 计算数据的哈希值
-                data_str = json.dumps(content['data'], indent=self.indent, ensure_ascii=False)
-                computed_hash = hashlib.sha256(data_str.encode(self.encoding)).hexdigest()
-                
-                if computed_hash == content['hash']:
-                    self._data = content['data']
-                else:
-                    logging.error(f"数据完整性验证失败：{self.filepath}")
-                    logging.error(f"计算的哈希值: {computed_hash}")
-                    logging.error(f"文件中的哈希值: {content['hash']}")
-                    self._data = {}
-            else:
-                logging.error(f"文件格式不正确：{self.filepath}")
-                self._data = {}
-                
+                self._data = json.load(f)
         except (json.JSONDecodeError, FileNotFoundError):
             logging.warning(f"无法加载 {self.filepath}，使用空数据")
             self._data = {}
-        except Exception as e:
-            logging.error(f"加载文件时发生错误：{e}")
-            self._data = {}
     
     def _save(self) -> None:
-        """保存数据到文件，包含数据完整性校验"""
+        """保存数据到文件"""
         with self._lock:
             try:
                 # 创建临时文件
                 temp_path = self.filepath.with_suffix('.tmp')
-                
-                # 计算数据的哈希值
-                data_str = json.dumps(self._data, indent=self.indent, ensure_ascii=False)
-                data_hash = hashlib.sha256(data_str.encode(self.encoding)).hexdigest()
-                
-                # 保存数据和哈希值
                 with temp_path.open('w', encoding=self.encoding) as f:
-                    json.dump({
-                        'data': self._data,
-                        'hash': data_hash
-                    }, f, 
-                    indent=self.indent, 
-                    ensure_ascii=False)
+                    json.dump(self._data, f, 
+                             indent=self.indent, 
+                             ensure_ascii=False)
                 
                 # 原子替换
                 temp_path.replace(self.filepath)
@@ -364,22 +336,15 @@ class JSONManager:
         backup_path = backup_dir / f"{self.filepath.stem}_{timestamp}.json"
         
         with self._lock:
-            # 计算数据的哈希值
-            data_str = json.dumps(self._data, indent=self.indent, ensure_ascii=False)
-            data_hash = hashlib.sha256(data_str.encode(self.encoding)).hexdigest()
-            
-            # 保存完整格式（包含哈希值）
             with backup_path.open('w', encoding=self.encoding) as f:
-                json.dump({
-                    'data': self._data,
-                    'hash': data_hash
-                }, f, indent=self.indent, ensure_ascii=False)
+                json.dump(self._data, f, indent=self.indent, ensure_ascii=False)
         
         return backup_path
 
 
+
 if __name__ == "__main__":
-    print("JSONManager 测试")
+    # 使用示例
     # 初始化
     db = JSONManager("cache/config.json")
 

@@ -1,4 +1,5 @@
 # import pandas as pd
+
 from dataclasses import dataclass
 import http.cookies
 
@@ -14,6 +15,7 @@ from apps.io_api.schemas import (
     BaseModel as PydanticModel,
     model_validator, AcceptMaterial, Field
 )
+
 
 
 class K3Material(AcceptMaterial):
@@ -95,7 +97,7 @@ class K3Config:
                 "fMaxStock": "最大库存", "fPlanSafeStockQty": "安全库存", "fReOrderGood": "再订货点",
                 "fEOQ": "固定/经济批量", "fRefCost": "参考成本", "fMaxQty": "最大批量", "fMinQty": "最小批量",
             },
-            'base_filterstring': 'fUserOrgId=1',
+            'base_filter': 'fUserOrgId=1',
             'pydantic_model': K3Material,
         },
 
@@ -188,7 +190,6 @@ class K3Config:
 class K3Connection(BaseConnection):
 
     def __init__(self, origin_url, acctid, username, password, lcid, config: K3Config=K3Config):
-        
         self.origin_url = origin_url
         self.acctid = acctid
         self.username = username
@@ -246,11 +247,11 @@ class K3Connection(BaseConnection):
         return self._cookie
 
 
-    def _get_paged_data(self, form_id: str, field_mapper: dict, filter_string: str=None, only_today: bool=False):
+    def _get_paged_data(self, form_id: str, field_map: dict, filter_string: str=None, only_today: bool=False):
         """
         分页获取数据
         form_id: 表单ID
-        field_mapper: 字段键映射，键为K3 字段名，值为映射成的段名
+        field_map: 字段键映射，键为K3 字段名，值为映射成的段名
         filter_string: 查询条件，格式为K3 格式
         only_today: 是否仅查询今天变动的数据
         """
@@ -259,8 +260,8 @@ class K3Connection(BaseConnection):
         if only_today:
             today = datetime.now().strftime('%Y-%m-%d')
             filter_string = f"{filter_string} AND (( `fCreateDate` >= '{today} 00:00:00' AND `fCreateDate` <= '{today} 23:59:59' ) OR ( `fModifyDate` >= '{today} 00:00:00' AND `fModifyDate` <= '{today} 23:59:59' ))"
-        k3_fields = set(field_mapper.keys())
-        to_fields = [field_mapper[k] for k in k3_fields]
+        k3_fields = set(field_map.keys())
+        to_fields = [field_map[k] for k in k3_fields]
         # 发送请求
         start_row = 0
         page_size = self.config.PAGE_SIZE
@@ -301,12 +302,12 @@ class K3Connection(BaseConnection):
 
     def data_list(self, form_name: str, filter_string: str=None, only_today: bool=False, pydantic_model: PydanticModel=None):
         filter_string = filter_string or "1=1"
-        base_filterstring = self.config.FORMS[form_name].get('base_filterstring', "1=1")
+        base_filterstring = self.config.FORMS[form_name].get('base_filter', "1=1")
         filter_string = f"{filter_string} AND {base_filterstring}"
 
         data_paged_data = self._get_paged_data(
             form_id=self.config.FORMS[form_name]['form_id'],
-            field_mapper=self.config.FORMS[form_name]['field_map'],
+            field_map=self.config.FORMS[form_name]['field_map'],
             filter_string=filter_string,
             only_today=only_today,
         )

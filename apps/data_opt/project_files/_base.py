@@ -164,10 +164,14 @@ class ApsBaseAction(ABC):
     @classmethod
     async def get_dategrouped_pr(cls, db_name: str=None, period: int=30, groupdates: str=None, field_mapper: dict=None):
         db_name = db_name or cls.main_db
-        response = await cls._session.get(f"{cls.this_base_url}/api/v_matdailyqtyreport?db_name={db_name}&period={period}&groupdates={groupdates}")
-        data = response['data']
-        if not data:
-            return []
-        if field_mapper:
-            return [{field_mapper.get(k, k): v for k, v in item.items()} for item in data]
-        return data
+        response = cls._session.get(f"{cls.this_base_url}/api/v_matdailyqtyreport?db_name={db_name}&period={period}&groupdates={groupdates}").json()
+        data = response.get('data', [])
+        field_mapper = field_mapper or {
+            'materialno': '料号',
+            'datestr': '交期',
+            'groupdate': '日期',
+            'qty': '数量',
+        }
+        if not field_mapper:
+            return data
+        return [{field_mapper.get(k, k): v for k, v in item.items()} for item in data]

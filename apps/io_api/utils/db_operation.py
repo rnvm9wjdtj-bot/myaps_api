@@ -106,12 +106,13 @@ async def db_query(db_name: str, model_or_tablename: TortoiseBaseModel | str, fi
 
 
 
-async def preprocess_data(data_list: List[PydanticSchema | Dict[str, Any]]) -> List[ProcessedData]:
+async def preprocess_data(data_list: List[PydanticSchema | Dict[str, Any]], conflict_fields: Optional[Tuple[str, ...]] = None) -> List[ProcessedData]:
     """
-    预处理数据，将Pydantic模型转换为字典
+    预处理数据，将Pydantic模型转换为字典，并可选地基于冲突字段去重
     
     Args:
         data_list: 原始数据列表，可以是PydanticSchema对象或字典
+        conflict_fields: 冲突字段元组，用于去重（可选）
         
     Returns:
         预处理后的数据列表
@@ -130,6 +131,19 @@ async def preprocess_data(data_list: List[PydanticSchema | Dict[str, Any]]) -> L
             create_data=create_dict,
             raw_input_data=raw_input_data
         ))
+    
+    # 如果提供了冲突字段，进行去重处理
+    if conflict_fields:
+        # 使用字典去重，保留最后出现的记录
+        unique_dict = {}
+        for item in processed_list:
+            # 创建冲突键
+            conflict_key = tuple(item.processed_data.get(field) for field in conflict_fields)
+            # 保留最后出现的记录
+            unique_dict[conflict_key] = item
+        # 转换回列表
+        processed_list = list(unique_dict.values())
+    
     return processed_list
 
 
@@ -252,8 +266,11 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
     origin_total = len(data_list)
     # 记录日志
     
-    # 预处理数据
-    processed_data_list = await preprocess_data(data_list)
+    # 获取冲突字段
+    model_key = DbManager._get_conflict_fields(mdl)
+    
+    # 预处理数据，并基于冲突字段去重
+    processed_data_list = await preprocess_data(data_list, conflict_fields=model_key)
     # 初始化统计信息
     success_db = []
     create_count_total = 0
@@ -264,9 +281,7 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
     for item in processed_data_list:
         upsert_data_list.append(item.processed_data)
 
-    file_logger.info(f"ℹ️↓接收到{origin_total}条数据，拟写入{mdl._meta.db_table}@[{db_names}] —— db_bupsert\n{upsert_data_list}")
-
-    model_key = DbManager._get_conflict_fields(mdl)
+    file_logger.info(f"ℹ️↓接收到{origin_total}条数据，去重后剩余{len(upsert_data_list)}条，拟写入{mdl._meta.db_table}@[{db_names}] —— db_bupsert\n{upsert_data_list}")
     # 准备更新字段（排除主键字段）
     update_fields = [field for field in upsert_data_list[0].keys() if field not in model_key]
     

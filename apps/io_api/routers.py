@@ -538,29 +538,42 @@ async def get_matdailyqtyreport(
         'original_datestr': lambda x: ','.join(sorted(set(dt.strftime('%Y-%m-%d') for dt in x))),
     }
     
-    df_grouped = df.groupby(group_fields).agg(agg_dict).reset_index()
+    df_grouped = (df.groupby(group_fields).agg(agg_dict).reset_index()
+                    .rename(columns={
+                            "original_datestr": "期间",
+                            "totaldemand": "期间需求",
+                            "totalsupply": "期间供应",
+                            "dailybalance": "期间盈余",
+                            "cumulativebalance": "累计盈余",
+                            "stockqty": "首期库存",
+                            "datestr": "要求交期",
+                            "name": "物料来源"
+                            })
+    )
     
     # 计算期初盈余和期末盈余
     result = []
     material_balances = {}
     
     for record in df_grouped.to_dict('records'):
-        mat_no = record['materialno']
+        mat_no = record["materialno"]
         if mat_no not in material_balances:
             # 首个日期组
-            opening_balance = record['stockqty']
-            closing_balance = opening_balance + record['totaldemand']
-            record['本期要货数'] = abs(min(0, record['totalsupply'] + record['totaldemand']))
+            opening_balance = record["首期库存"]
+            closing_balance = opening_balance + record["期间需求"]
+            record["本期要货数"] = abs(min(0, record["期间供应"] + record["期间需求"]))
         else:
             # 后续日期组
             opening_balance = material_balances[mat_no]
-            closing_balance = opening_balance + record['totaldemand'] + record['totalsupply']
-            record['本期要货数'] = abs(min(max(0, opening_balance) + record['totalsupply'] + record['totaldemand'], 0))
+            closing_balance = opening_balance + record["期间需求"] + record["期间供应"]
+            record["本期要货数"] = abs(min(max(0, opening_balance) + record["期间供应"] + record["期间需求"], 0))
         
+        date_range = record["期间"].split(',')
         # 更新记录
         record.update({
-            '期初盈余': opening_balance,
-            '期末盈余': closing_balance
+            "期初盈余": opening_balance,
+            "期末盈余": closing_balance,
+            "期间": f"{date_range[0]},{date_range[-1]}",
         })
         material_balances[mat_no] = closing_balance
         result.append(record)
