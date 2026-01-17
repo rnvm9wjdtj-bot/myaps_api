@@ -349,9 +349,10 @@ class DbManager:
         # 获取冲突字段
         conflict_fields = self._get_conflict_fields(model_class, conflict_fields)
 
-        # 如果未提供exclude_fields，则使用conflict_fields作为默认排除字段
+        # 如果未提供exclude_fields，则初始化为空列表
+        # 注意：不再默认排除冲突字段，因为它们可能是必需的主键字段
         if exclude_fields is None:
-            exclude_fields = list(conflict_fields)
+            exclude_fields = []
 
         # 获取表名
         table_name = model_class._meta.db_table
@@ -474,10 +475,17 @@ class DbManager:
         # 获取数据库连接对象
         db = Tortoise.get_connection(self.connection_name)
         conflict_fields = conflict_fields if conflict_fields is not None else self._get_conflict_fields(model_class)
+        
+        # 获取模型的主键字段
+        pk_field = getattr(model_class._meta, 'pk_attr', None)
 
-        # 如果未提供exclude_fields，则使用conflict_fields作为默认排除字段
+        # 如果未提供exclude_fields，则初始化为空列表
+        # 注意：不再默认排除冲突字段，因为它们可能是必需的主键字段
         if exclude_fields is None:
-            exclude_fields = list(conflict_fields)
+            exclude_fields = []
+        
+        # 注意：不要将冲突字段（包括主键）从数据中排除，它们是标识记录所必需的
+        # 只需要在后续更新操作中确保不更新主键字段即可
 
         # 过滤排除字段
         filtered_data = []
@@ -520,9 +528,16 @@ class DbManager:
             # 使用指定的数据库连接执行bulk_create
             if len(filtered_data) == 1:
                 await existing_records[0].update_from_dict(filtered_data[0])
+                # 获取需要更新的字段列表，确保不包含主键字段
+                update_fields_list = [field for field in filtered_data[0].keys() if field != pk_field]
+                await existing_records[0].save(update_fields=update_fields_list)
                 # await model_class.filter(query).only(*conflict_fields).using_db(db).all().update_from_dict(filtered_data[0])
             else:
-                await model_class.bulk_create(instances, on_conflict=conflict_fields, update_fields=update_fields, using_db=db)
+                # 确保update_fields不包含主键字段
+                filtered_update_fields = None
+                if update_fields:
+                    filtered_update_fields = [field for field in update_fields if field != pk_field]
+                await model_class.bulk_create(instances, on_conflict=conflict_fields, update_fields=filtered_update_fields, using_db=db)
             
         else:
             # 只执行插入操作，忽略冲突
@@ -585,15 +600,17 @@ class DbManager:
             if conflict_fields is None:
                 conflict_fields = self._get_conflict_fields(model_class, conflict_fields)
             
-            # 如果未提供exclude_fields，则使用conflict_fields作为默认排除字段
+            # 如果未提供exclude_fields，则初始化为空列表
+            # 注意：不再默认排除冲突字段，因为它们可能是必需的主键字段
             if exclude_fields is None:
-                exclude_fields = list(conflict_fields)
+                exclude_fields = []
             
             # 如果未提供update_fields，则自动使用所有非冲突非排除字段作为默认更新字段
             if update_fields is None and data_list:
                 # 获取所有字段
                 all_fields = set(data_list[0].keys())
                 # 获取冲突字段和排除字段的集合
+                # 注意：即使exclude_fields为空，也需要排除冲突字段，因为它们不应该被更新
                 excluded_set = set(conflict_fields) | set(exclude_fields)
                 # 计算默认更新字段：所有非冲突非排除字段
                 update_fields = list(all_fields - excluded_set)
