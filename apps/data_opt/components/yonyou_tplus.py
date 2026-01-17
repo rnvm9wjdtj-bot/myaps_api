@@ -16,19 +16,22 @@ from typing import Dict, Any
 from datetime import datetime, timedelta
 
 
-from ._base import BaseConnection, convert_timeunit, clean_value#, aes_decrypt
+from ._base import (
+    BaseConnection, convert_timeunit, clean_value,
+    BaseModel as PydanticModel, model_validator, Field,
+    AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
+    AcceptMold, AcceptMatWcMold
+)
 from globalobjects._defaults import ProjectDefaultValues as pdv
 from ..utils.json_manager import JSONManager
-from apps.io_api.schemas import (
-    BaseModel as PydanticModel,
-    model_validator, AcceptMaterial, Field
-)
+
 
 
 class TplusMaterial(AcceptMaterial):
     
     class Config:
         extra = 'allow'
+
 
     @model_validator(mode="before")
     @classmethod
@@ -37,10 +40,10 @@ class TplusMaterial(AcceptMaterial):
         cleaned_values['materialno'] = clean_value(values['编码'])
         cleaned_values['description'] = clean_value(values['名称'])
         cleaned_values['size'] = clean_value(values['规格型号'])
-        cleaned_values['plant'] = ProjectValues.MAT_PLANT
-        cleaned_values['planner'] = ProjectValues.MAT_PLANNER
-        cleaned_values['fifo'] = ProjectValues.MAT_FIFO
-        cleaned_values['leadday'] = ProjectValues.MAT_LEADDAY_E if values['是否需要检验'] == 'True' else ProjectValues.MAT_LEADDAY_F
+        cleaned_values['plant'] = pdv.MAT_PLANT
+        cleaned_values['planner'] = pdv.MAT_PLANNER
+        cleaned_values['fifo'] = pdv.MAT_FIFO
+        cleaned_values['leadday'] = pdv.MAT_LEADDAY_E if values['是否需要检验'] == 'True' else pdv.MAT_LEADDAY_F
         cleaned_values['expday'] = convert_timeunit(values.get('保质期', 0), values['保质期单位'], 'day')
         cleaned_values['grday'] = 1 if values['是否需要检验'] else 0
         cleaned_values['abc'] = 'A' if values['是否自制'] == 'True' else 'B'
@@ -69,6 +72,20 @@ class TplusMaterial(AcceptMaterial):
         # cleaned_values['free2'] = values['']
         # cleaned_values['free3'] = values['']
         return cleaned_values
+
+
+
+class TplusWorkcenter(AcceptWorkcenter):
+
+    class Config:
+        extra = 'allow'
+
+
+    @model_validator(mode="before")
+    @classmethod
+    def model_valid(cls, values: Dict[str, Any]):
+        pass
+
 
 
 class TplusConfig:
@@ -112,6 +129,16 @@ class TplusConfig:
                 "Disabled": False,
             },
             "pydantic_model": TplusMaterial,
+        },
+
+        "workcenter": {
+            "endpoint": "/tplus/api/v2/WorkCenter/Query",
+            "field_map": {
+                "ID":"ID", "Code":"编码", "Name":"名称", "Disabled":"是否停用",
+                "Capacity": "产量/小时", "Equipment.Code": "设备编码", "Equipment.Name": "设备名称",
+            },
+            "base_filter": {},
+            "pydantic_model": TplusWorkcenter,
         },
 
         "bom": {
@@ -264,7 +291,10 @@ class TplusConnection(BaseConnection):
         data_list = []
         while True:
             response = self._post(endpoint=endpoint, data={"param": params})
-            raw_data = response.json()['Data']
+            try:
+                raw_data = response.json()['Data']
+            except:
+                raw_data = response.json()
             if not raw_data:
                 break
             data_list.extend([{v: row.get(k) for k, v in field_map.items()} for row in raw_data])

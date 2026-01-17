@@ -8,14 +8,11 @@ from typing import Dict, Any#NamedTuple, List#, Callable, Literal,
 # import requests
 
 from ._base import (
-    BaseConnection, wrap_data_response, convert_timeunit, clean_value
+    BaseConnection, convert_timeunit, clean_value,
+    BaseModel as PydanticModel, model_validator, Field,
+    AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
+    AcceptMold, AcceptMatWcMold
 )
-
-from apps.io_api.schemas import (
-    BaseModel as PydanticModel,
-    model_validator, AcceptMaterial, Field
-)
-
 
 
 class K3Material(AcceptMaterial):

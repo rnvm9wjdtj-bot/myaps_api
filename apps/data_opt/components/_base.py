@@ -7,7 +7,11 @@ from Crypto.Util.Padding import unpad
 import pandas as pd
 
 from apps.data_opt.utils.common import get_session, convert_timeunit, clean_value
-# from apps.io_api.schemas import (AcceptMaterial) # 引起循环引用
+from apps.io_api.schemas import (
+    BaseModel, model_validator, Field,
+    AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
+    AcceptMold, AcceptMatWcMold
+    ) # 引起循环引用
 
 
 

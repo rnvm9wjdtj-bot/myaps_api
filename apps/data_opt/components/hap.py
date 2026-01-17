@@ -1,6 +1,8 @@
 """明道云 API v3 封装"""
 
 import json
+from pydantic import BaseModel
+
 
 from ._base import get_session
 
@@ -31,7 +33,7 @@ class HapConnection:
         
 
     @classmethod
-    def _rows_data_to_controls_list(cls, rows_data_list: list[dict], ignore_fields=[], controls_reflection={}, remain_irrelevant_fields=True):
+    def _rows_data_to_controls_list(cls, rows_data_list: list[dict | BaseModel], ignore_fields=[], controls_reflection={}, remain_irrelevant_fields=True):
         """
         将行数据字典转换为工作表API字段值list
         controls_reflection 是一个可选参数，用于将row_data_dict中的字段名称（键）映射为目标工作表control_id
@@ -41,6 +43,8 @@ class HapConnection:
         for data_dict in rows_data_list:
             row_controls_list = []
             controls_list.append({'fields': row_controls_list})
+            if isinstance(data_dict, BaseModel):
+                data_dict = data_dict.model_dump(exclude_unset=True)
             for k, v in data_dict.items():
                 if k in ignore_fields: 
                     continue
