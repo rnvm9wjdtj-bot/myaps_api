@@ -17,7 +17,6 @@ from ._base import (
     file_log, console_log, standard_response, get_session, HapConnection
     )
 
-from ._defaults import ProjectValues
 
 #################################################################################
 # ⬇️ 项目对象及参数
@@ -29,12 +28,6 @@ hap_conn = HapConnection(
     app_key='...',
     sign='...'
 )
-
-
-class DefaultValue(ProjectValues):
-    MAT_PLANT = "..."   # 默认工厂
-    MAT_PLANNER = "..."   # 默认计划员
-    MAT_LOCATION = "..."  # 默认车间
 
 #################################################################################
 # ⬇️ 项目可复用逻辑

@@ -150,7 +150,7 @@ def convert_timeunit(value, from_unit: str, to_unit: str = 'day'):
         value = float(value)
         if value == 0:
             return 0
-    except ValueError:
+    except Exception:
         if value in ('', None):
             return 0
     from_unit = str(from_unit).lower()

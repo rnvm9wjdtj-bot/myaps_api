@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 import http.cookies
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any#NamedTuple, List#, Callable, Literal, 
 # import requests
 
@@ -72,6 +72,12 @@ class K3Material(AcceptMaterial):
 
 class K3Config:
     """K3基础配置"""
+    BASE_URL = "http://129.211.172.205:12980"
+    ACCTID = "65a48b111c0197"
+    LCID = "2052"
+    USERNAME = "demo2"
+    PASSWORD = "88888888"
+
     AUTH_ENDPOINT = "/K3Cloud/Kingdee.BOS.WebApi.ServicesStub.AuthService.ValidateUser.common.kdsvc"
     QUERY_ENDPOINT = "/K3Cloud/Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.ExecuteBillQuery.common.kdsvc"
     
@@ -97,7 +103,7 @@ class K3Config:
                 "fMaxStock": "最大库存", "fPlanSafeStockQty": "安全库存", "fReOrderGood": "再订货点",
                 "fEOQ": "固定/经济批量", "fRefCost": "参考成本", "fMaxQty": "最大批量", "fMinQty": "最小批量",
             },
-            'base_filter': 'fUserOrgId=1',
+            'base_filter': '',#'fUserOrgId=1',
             'pydantic_model': K3Material,
         },
 
@@ -189,12 +195,12 @@ class K3Config:
 
 class K3Connection(BaseConnection):
 
-    def __init__(self, origin_url, acctid, username, password, lcid, config: K3Config=K3Config):
-        self.origin_url = origin_url
-        self.acctid = acctid
-        self.username = username
-        self.password = password
-        self.lcid = lcid
+    def __init__(self, config: K3Config=K3Config):
+        self.base_url = config.BASE_URL
+        self.acctid = config.ACCTID
+        self.username = config.USERNAME
+        self.password = config.PASSWORD
+        self.lcid = config.LCID
         self.config = config
         self._cookie = None
         self._cookie_expire = None
@@ -213,18 +219,39 @@ class K3Connection(BaseConnection):
             cookie_value = cookie_parts[0] + ';' + cookie_parts[3].split(',')[1].strip()
             # 解析过期时间
             expire_str = cookie_parts[1].split('=')[1]
-            expire_time = datetime.strptime(expire_str, "%a, %d-%b-%Y %H:%M:%S %Z")
-            print(f"Cookie解析成功，过期时间: {expire_time}")
+            # 解析为GMT时间
+            gmt_time = datetime.strptime(expire_str, "%a, %d-%b-%Y %H:%M:%S %Z")
+            # 添加GMT时区信息
+            gmt_timezone = timezone(timedelta(hours=0), name='GMT')
+            gmt_time = gmt_time.replace(tzinfo=gmt_timezone)
+            # 转换为系统默认时区时间
+            expire_time = gmt_time.astimezone()
+            print(f"Cookie解析成功，GMT过期时间: {gmt_time}, 系统时区过期时间: {expire_time}")
             return cookie_value, expire_time
         except (IndexError, ValueError, http.cookies.CookieError) as e:
             raise ConnectionError(f"Cookie解析失败: {e}")
 
+    
+    # def _post(self, endpoint: str, data: dict=None, params: dict=None, timeout: int=30):
+    #     """POST请求"""
+    #     self.auth()
+    #     response = self._session.post(
+    #         f"{self.base_url}{endpoint}",
+    #         json=data,
+    #         params=params,
+    #         timeout=timeout
+    #     )
+    #     response.raise_for_status()
+    #     return response.json()
+        
 
     def auth(self):
         try:
-            if self._cookie is None or self._cookie_expire is None or (datetime.now() + timedelta(minutes=15)) > self._cookie_expire:
+            # 获取当前系统时区时间
+            current_time = datetime.now().astimezone()
+            if self._cookie is None or self._cookie_expire is None or (current_time + timedelta(minutes=15)) > self._cookie_expire:
                 response = self._session.post(
-                    f"{self.origin_url}{self.config.AUTH_ENDPOINT}",
+                    f"{self.base_url}{self.config.AUTH_ENDPOINT}",
                     data={
                         "acctid": self.acctid,
                         "username": self.username,
@@ -267,7 +294,7 @@ class K3Connection(BaseConnection):
         page_size = self.config.PAGE_SIZE
         while True:
             response = self._session.post(
-                url=f"{self.origin_url}{self.config.QUERY_ENDPOINT}",
+                url=f"{self.base_url}{self.config.QUERY_ENDPOINT}",
                 json={
                     "data": {
                         "FormId": form_id,
@@ -301,9 +328,11 @@ class K3Connection(BaseConnection):
 
 
     def data_list(self, form_name: str, filter_string: str=None, only_today: bool=False, pydantic_model: PydanticModel=None):
-        filter_string = filter_string or "1=1"
-        base_filterstring = self.config.FORMS[form_name].get('base_filter', "1=1")
-        filter_string = f"{filter_string} AND {base_filterstring}"
+        base_filterstring = self.config.FORMS[form_name].get('base_filter') or "1=1"
+        if filter_string:
+            filter_string = f"{filter_string} AND {base_filterstring}"
+        else:
+            filter_string = base_filterstring
 
         data_paged_data = self._get_paged_data(
             form_id=self.config.FORMS[form_name]['form_id'],
@@ -320,5 +349,5 @@ class K3Connection(BaseConnection):
 
     def __repr__(self) -> str:
             """字符串表示"""
-            return (f"K3Connection(url='{self.origin_url}', "
+            return (f"K3Connection(url='{self.base_url}', "
                     f"user='{self.username}', acctid='{self.acctid}')")
