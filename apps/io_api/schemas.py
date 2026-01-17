@@ -54,17 +54,17 @@ class AcceptMaterial(BaseModel):
     leadday: int = Field(..., ge=0, description="交期（天）", example=10)
     expday: int = Field(pdv.MAT_EXPDAY, ge=0, description="保质期（天）", example=365)
     grday: int = Field(..., ge=0, description="收货质检（天）", example=1)
-    abc: str = Field(..., enum=["A", "B", "C"], example="A", description="ABC分类")
+    abc: gc.AbcEnum = Field(..., example=gc.AbcEnum.A, description="ABC分类")
     unit: str = Field(..., description='单位', example="PCS")
     price: Decimal = Field(0, description="价格", ge=0, example=100.50)
     groupno: str = Field(..., description="型号", example="G001")
-    type: str = Field(... if pdv.myaps_is_pro else None, enum=["E", "F"], example="E", description="物料类型  E-自制件 F-采购件")
-    phantom: str = Field(pdv.MAT_PHANTOM, enum=list(gc.YES_NO.keys()), example="N", description='虚拟件')
+    type: gc.EfEnum = Field(... if pdv.myaps_is_pro else None, example=gc.EfEnum.E, description="物料类型  E-自制件 F-采购件")
+    phantom: gc.YesNoEnum = Field(pdv.MAT_PHANTOM, example="N", description='虚拟件')
     phantommin: int = Field(pdv.MAT_PHANTOMMIN, ge=0, description='虚拟时间(Minute)', example=0)
     firmday: int = Field(pdv.MAT_FIRMDAY, ge=0, description="固定天数", example=0)
     daygap: int = Field(pdv.MAT_DAYGAP, ge=0, description='MTO拆分天数', example=1)
-    candelay: str = Field(pdv.MAT_CANDELAY, enum=list(gc.YES_NO.keys()), example="N", description='可否延迟')
-    lotsize: str = Field(pdv.MAT_LOTSIZE, enum=list(gc.LOT_SIZE.keys()), example="EX", description='批量')
+    candelay: gc.YesNoEnum = Field(pdv.MAT_CANDELAY, example=gc.YesNoEnum.NO, description='可否延迟')
+    lotsize: gc.LotSizeEnum = Field(pdv.MAT_LOTSIZE, example=gc.LotSizeEnum.EX, description='批量')
     lotfix: float = Field(pdv.MAT_LOTFIX, ge=0, description='固定批', example=0.0)
     lotmin: float = Field(pdv.MAT_LOTMIN, ge=0, description='最小批', example=0.0)
     lotmax: float = Field(pdv.MAT_LOTMAX, ge=0, description='最大批', example=0.0)
@@ -159,12 +159,12 @@ class AcceptWorkcenter(BaseModel):
     workcenter: str = Field(..., max_length=32, description="工作中心代码", example="WC001")
     workcentername: str = Field(..., max_length=255, description="工作中心名称", example="装配车间")
     pri_wc: int = Field(1, description='优先级', example=1)
-    bottleneck: str = Field(None, enum=list(gc.YES_NO.keys()), example="N", description='瓶颈')
+    bottleneck: gc.YesNoEnum = Field(None, example="N", description='瓶颈')
     sortno: str = Field(None, max_length=4, description="序号", example="0001")
     plant: str = Field(pdv.MAT_PLANT, max_length=32, description="工厂", example="1600")
     location: str = Field(None, max_length=32, description="车间", example="A区")
-    finite: str = Field("Y", enum=list(gc.YES_NO.keys()), example="N", description='有限')
-    type: str = Field("Y", enum=list(gc.YES_NO.keys()), example="N", description="首页显示")
+    finite: gc.YesNoEnum = Field(gc.YesNoEnum.YES, example="N", description='有限')
+    type: gc.YesNoEnum = Field(gc.YesNoEnum.YES, example="N", description="首页显示")
     capnum: int = Field(None, gt=0, description="默认机台数", example=6)
     capmax: int = Field(None, gt=0, description="最大机台数", example=10)
     worker: float = Field(None, ge=0, description='工时', example=8.0)
@@ -225,7 +225,7 @@ class AcceptMatWc(BaseModel):
     basesec: float = Field(..., ge=0, description='节拍T/T(秒/100)', example=600)
     fixqty: int = Field(0, ge=0, description='额定量', example=100)
     fixsec: int = Field(0, ge=0, description='额定时间(秒)', example=300)
-    sf: str = Field(None, enum=["S", "F"], example="F", description='并行S/串行F')
+    sf: gc.SfEnum = Field(gc.SfEnum.F, example=gc.SfEnum.F, description='并行S/串行F')
     offsetsec: int = Field(0, description='偏置+/-(秒)', example=0)
     rate: float = Field(pdv.MATWC_RATE, ge=0, description='配比', example=pdv.MATWC_RATE)
     memo: str = Field(None, max_length=255, description='备注', example="标准工序")
@@ -288,7 +288,7 @@ class AcceptMatVer(BaseModel):
     lotto: int = Field(pdv.MATVER_LOTTO, description='批量终点', example=9999999)
     priority: int = Field(pdv.MATVER_PRIORITY, description='优先级', example=1)
     refno: str = Field(None, max_length=64, description='MTO订单号/认证线', example="SO123456")
-    active: str = Field("Y", enum=list(gc.YES_NO.keys()), example="Y", description='生效')
+    active: gc.YesNoEnum = Field(gc.YesNoEnum.YES, example="Y", description='生效')
     memo: str = Field(None, max_length=255, description='备注', example="标准版本")
     _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
 
@@ -336,9 +336,9 @@ class AcceptMatWcBom(BaseModel):
     qty: float = Field(..., ge=0, description='数量', example=2.0)
     offsethour: int = Field(0, description='偏置+/-(小时)', example=0)
     treeno: int = Field(None, description='层级', example=1)
-    mto: str = Field("Y", enum=list(gc.YES_NO.keys()), example="N", description='MTO')
+    mto: gc.YesNoEnum = Field(gc.YesNoEnum.YES, example="N", description='MTO')
     scrap: float = Field(0, ge=0, description='报废率%', example=0.0)
-    alt: str = Field("N", enum=list(gc.YES_NO.keys()), example="N", description='Y/N是否是替代')
+    alt: gc.YesNoEnum = Field(gc.YesNoEnum.NO, example="N", description='Y/N是否是替代')
     memo: str = Field(None, max_length=255, description='备注', example="标准BOM组件")
     denominator: Optional[float | str] = Field(None, description='用量分母', example=1)
     _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
@@ -389,8 +389,8 @@ class AcceptMold(BaseModel):
     moldname: str = Field(..., max_length=64, description='模具名称', example="测试模具A")
     type: str = Field(..., example="T1", max_length=4, description='类型')
     status: str = Field(..., max_length=6, description='状态', example="AVL")
-    moldnum: int = Field(..., ge=0, description='模具穴数', example=4)
-    qty: int = Field(..., ge=0, description='模具台数', example=2)
+    moldnum: int = Field(..., ge=1, description='模具穴数', example=4)
+    qty: int = Field(..., gt=1, description='模具台数', example=2)
     memo: str = Field(None, max_length=255, description="备注", example="标准模具")
     _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
     
@@ -472,12 +472,11 @@ class AcceptSupply(BaseModel):
     supplyno: str = Field(..., max_length=64, description='供应单号', example="MO123456")
     matver: Optional[str] = Field(None, max_length=32, example=pdv.MATVER, description='产线版本')
     itemno: str = Field(None, max_length=6, description='项目号', example=pdv.ITEMNO)
-    type: str = Field(..., enum=list(gc.SUPPLY_TYPE.keys()), example="MO", description='类型 PL-生产计划 MO-生产工单 ST-库存 PO-采购订单')
-    category: str = Field(None, enum=list(gc.PRODUCT_CATEGORY.keys()), example="MTO", description='分类(MTO/MTS)')
+    type: gc.SupplyTypeEnum = Field(..., example=gc.SupplyTypeEnum.MO, description='类型 PL-生产计划 MO-生产工单 ST-库存 PO-采购订单')
+    category: gc.ProductCategoryEnum = Field(gc.ProductCategoryEnum.MTO, example=gc.ProductCategoryEnum.MTO, description='分类(MTO/MTS)')
     priority: int = Field(..., description='优先级', example=1)
-    status: str = Field(
-        None, enum=list(gc.ORDER_STATUS.keys()),
-        example="NEW", description='状态 NEW-新增 CRE-已创建 SCH-计划 REL-已发布 PNF-已报工, CMP-已完成')
+    status: gc.OrderStatusEnum = Field(None,
+        example=gc.OrderStatusEnum.NEW, description='状态 NEW-新增 CRE-已创建 SCH-计划 REL-已发布 PNF-已报工, CMP-已完成')
     avail_qty: float = Field(..., ge=0, description='可用数量', example=100.0)
     create_date: Optional[str] = Field(None, description='创建日期', example="2023-01-01")
     avail_date: str = Field(..., description='可用日期 / 开工日期', example="2023-01-01")
@@ -531,7 +530,8 @@ class AcceptSupply(BaseModel):
 
 class ModifySupply(BaseModel):
     supplyno: str = Field(None, max_length=64, description='供应单号改成（仅pltomo时传入有效）', example="MO123456")
-    status: str = Field(None, enum=list(gc.ORDER_STATUS.keys()), example="CRE", description=f'状态 {gc.ORDER_STATUS}')
+    status: gc.OrderStatusEnum = Field(None,
+        example=gc.OrderStatusEnum.CRE, description=f'状态 {gc.OrderStatusEnum.__members__}')
     memo: str = Field(None, max_length=255, description='备注', example="标准生产工单")
 
     class Config:
@@ -550,8 +550,8 @@ class ModifySupply(BaseModel):
         if values.get("action") != "pltomo" and values.get("supplyno"):
             raise ValueError("supplyno 仅在 pltomo 动作时有效")
             # values["supplyno"] = None
-        if values.get("status") not in gc.ORDER_STATUS.keys():
-            values["status"] = "CRE"
+        if values.get("status") not in gc.OrderStatusEnum.__members__:
+            values["status"] = gc.OrderStatusEnum.CRE
         return values
 
 
@@ -565,11 +565,11 @@ class AcceptDemand(BaseModel):
     materialno: str = Field(..., max_length=64, description='料号', example="M001")
     demandno: str = Field(..., max_length=64, description='需求单号', example="SO123456")
     itemno: str = Field(..., max_length=6, description='项目号（若类型为SO则可传入订单号或其他标识符，不超过6位）', example=pdv.ITEMNO)
-    type: str = Field(..., enum=list(gc.DEMAND_TYPE.keys()), example="SO", description='类型 SO-销售订单 DM-计划需求 RS-工单预留 FC-预测 SS-安全库存')
-    category: str = Field(..., enum=list(gc.PRODUCT_CATEGORY.keys()), example="MTO", description='分类(MTO/MTS)')
+    type: gc.DemandTypeEnum = Field(..., example=gc.DemandTypeEnum.SO, description='类型 SO-销售订单 DM-计划需求 RS-工单预留 FC-预测 SS-安全库存')
+    category: gc.ProductCategoryEnum = Field(gc.ProductCategoryEnum.MTO, example=gc.ProductCategoryEnum.MTO, description='分类(MTO/MTS)')
     priority: int = Field(..., description='优先级', example=1)
     workcenter: str = Field(None, max_length=32, description='工作中心', example="WC001")
-    status: str = Field(..., enum=list(gc.ORDER_STATUS.keys()), example="NEW", description='状态 NEW-新增 CRE-已创建 SCH-计划 REL-已发布 PNF-已报工, CMP-已完成')
+    status: gc.OrderStatusEnum = Field(..., example=gc.OrderStatusEnum.NEW, description=f'状态 {gc.OrderStatusEnum.__members__}')
     req_qty: float = Field(..., description='需求数量（须为负数，若输入正数则自动转为负数）', example=-100.0)
     req_date: datetime = Field(..., description='需求日期', example="2023-01-07T10:00:00")
     refno: Optional[str] = Field(None, max_length=64, description='MTO订单号', example="MTO123456")
@@ -633,7 +633,7 @@ class AcceptConfirm(BaseModel):
     workcenter: str = Field(None, max_length=32, description='工作中心', example="WC001")
     recordqty: float = Field(..., description='报工数量', gt=0, example=100)
     recorddt: datetime = Field(..., description='报工日期', example="2025-01-07 10:00:00")
-    status: str = Field("Y", enum=list(gc.YES_NO), example="Y", description='状态')
+    status: gc.YesNoEnum = Field(gc.YesNoEnum.YES, example="Y", description='状态')
     sysuser: str = Field(None, max_length=32, description='系统用户', example="张三")
     _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
 

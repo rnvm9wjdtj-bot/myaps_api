@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta
 # from re import S
 # from this import d
-from typing import List#, Dict, Any, Literal
+from typing import List, Dict#, Any, Literal
 import inspect, functools, pandas as pd
 # import httpx
 
@@ -23,6 +23,9 @@ from apps.data_opt.project_files import hap_conn
 
 
 def _check_db_name(hap_wsid: str = None):
+    """
+    检查函数是否有db_name参数，如果没有则调用 HAP API
+    """
     def decorator(func):
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
@@ -196,7 +199,7 @@ async def post_workcenter(
     )
 @_check_db_name(hap_wsid="t_mat_wc")
 async def post_mat_wc(
-    data: List[AcceptMatWc],
+    data: List[AcceptMatWc | Dict],
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
@@ -212,7 +215,7 @@ async def post_mat_wc(
     )
 @_check_db_name(hap_wsid="t_mat_ver")
 async def post_mat_ver(
-    data: List[AcceptMatVer],
+    data: List[AcceptMatVer | Dict],
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
@@ -228,7 +231,7 @@ async def post_mat_ver(
     )
 @_check_db_name(hap_wsid="t_mat_wc_bom")
 async def post_mat_wc_bom(
-    data: List[AcceptMatWcBom],
+    data: List[AcceptMatWcBom | Dict],
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
@@ -244,7 +247,7 @@ async def post_mat_wc_bom(
     )
 @_check_db_name(hap_wsid="t_mold")
 async def post_mold(
-    data: List[AcceptMold],
+    data: List[AcceptMold | Dict],
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
@@ -260,7 +263,7 @@ async def post_mold(
     )
 @_check_db_name(hap_wsid="t_mat_wc_mold")
 async def post_mat_wc_mold(
-    data: List[AcceptMatWcMold],
+    data: List[AcceptMatWcMold | Dict],
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
@@ -292,7 +295,7 @@ async def post_mat_wc_mold(
     description="根据🗝️【料号+供应号】新增或修改供应记录"
     )
 async def post_supply(
-    data: List[AcceptSupply],
+    data: List[AcceptSupply | Dict],
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
@@ -369,7 +372,7 @@ async def delete_supply(
     # 使用一个更具描述性的变量名替换内置函数名
     supply_type_param = type
     supply_type_param = supply_type_param.upper()
-    all_supply_type = list(gc.SUPPLY_TYPE.keys())
+    all_supply_type = list(gc.SupplyTypeEnum.__members__.keys())
     
     if not supply_type_param:
         return standard_response(
@@ -415,7 +418,7 @@ async def delete_supply(
     description="根据🗝️【料号+需求号+项目号】新增或修改需求记录"
     )
 async def post_demand(
-    data: List[AcceptDemand],
+    data: List[AcceptDemand | Dict],
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
@@ -589,7 +592,7 @@ async def get_matdailyqtyreport(
     description="新增报工记录"
     )
 async def create_workreport(
-    data: List[AcceptConfirm],
+    data: List[AcceptConfirm | Dict],
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):

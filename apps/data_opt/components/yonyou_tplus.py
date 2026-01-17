@@ -23,9 +23,23 @@ from apps.io_api.schemas import (
 )
 
 
+class TplusMaterial(AcceptMaterial):
+    
+    class Config:
+        extra = 'allow'
+
+    @model_validator(mode="before")
+    @classmethod
+    def model_valid(cls, values: Dict[str, Any]):
+        cleaned_values = {}
+
+        return cleaned_values
+
+
+
 FORMS = {
     "material": {
-        "endpoint": "tplus/api/v2/inventory/Query",
+        "endpoint": "/tplus/api/v2/inventory/Query",
         "field_map": {
             "ID":"ID", "Disabled":"是否停用", "Code":"编码", "Name":"名称",
             "Specification":"规格型号", "InventoryClassCode":"存货分类Code", "InventoryClassName":"存货分类Name",
@@ -40,6 +54,18 @@ FORMS = {
         "base_filter": {
             "Disabled": False,
         },
+        "pydantic_model": None,
+    },
+
+    "bom": {
+        "endpoint": "/tplus/api/v2/bom/Query",
+        "field_map": {
+            "ID":"ID", "Disabled":"是否停用", "Code":"编码", "Name":"名称",
+        },
+        "base_filter": {
+            "Disabled": False,
+        },
+        "pydantic_model": None,
     },
 }
 
@@ -105,7 +131,18 @@ class TplusConnection(BaseConnection):
         else:
             raise Exception(f"获取畅捷通token失败: {auth_response}")
 
-    
+
+    def _get(self, endpoint: str, params: dict=None):
+        self.auth()
+        response = self._session.get(f"{self.base_url}{endpoint}", headers={
+            "appKey": self.app_key,
+            "appSecret": self.app_secret,
+            "Content-Type": "application/json",
+        }, params=params)
+        response.raise_for_status()
+        return response.json()
+
+
     def _post(self, endpoint: str, data: dict):
         """
         发送POST请求到畅捷通API
@@ -122,10 +159,9 @@ class TplusConnection(BaseConnection):
             "openToken": self.access_token,
             "Content-Type": "application/json",
         }
-        response = self._session.post(f"{self.base_url}/{endpoint}", headers=headers, json=data)
+        response = self._session.post(f"{self.base_url}{endpoint}", headers=headers, json=data)
         response.raise_for_status()
         return response.json()
-
 
 
     def _get_paged_data(self, endpoint: str, field_map: dict=None, filter: dict=None, only_today: bool=False):

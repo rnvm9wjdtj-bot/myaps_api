@@ -12,9 +12,9 @@ class ProjectValues:
     itemno_prefix = "A" # 工序项目前缀字母
     itemno_width = 3    # 工序项目号宽度
     
-    MAT_PLANT = None   # 默认工厂
-    MAT_PLANNER = None   # 默认计划员
-    MAT_LOCATION = None  # 默认车间
+    MAT_PLANT = "None"   # 默认工厂
+    MAT_PLANNER = "None"   # 默认计划员
+    MAT_LOCATION = "None"  # 默认车间
 
     MAT_FIFO = 1   # 默认FIFO原则
     MAT_LEADDAY_E = 10  # 自制件默认提前期

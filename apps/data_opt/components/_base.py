@@ -30,6 +30,13 @@ class BaseConnection(ABC):
         """
         pass
 
+    @abstractmethod
+    def data_list(self, *args, **kwargs) -> Dict:
+        """
+        获取数据列表
+        """
+        pass
+
     @staticmethod
     def _merge_paged_data(paged_data_iter):
         """

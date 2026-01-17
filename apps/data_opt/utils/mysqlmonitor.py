@@ -466,7 +466,7 @@ class MySQLBinlogMonitor:
                     # 检查数据质量
                     self._check_data_quality(schema, table, mapped_data, "INSERT")
                     
-                    logger.info(f"📥 InsertTo {schema}.{table}: {mapped_data}")
+                    logger.info(f"📥 InsertTo {schema}.{table}: {self._format_dict_for_log(mapped_data)}")
                     
                     # 调用全局处理器
                     for handler in self._insert_handlers:
@@ -548,7 +548,7 @@ class MySQLBinlogMonitor:
                     # 检查数据质量
                     self._check_data_quality(schema, table, mapped_data, "DELETE")
                     
-                    logger.info(f"🗑️ DeleteFrom {schema}.{table}: {mapped_data}")
+                    logger.info(f"🗑️ DeleteFrom {schema}.{table}: {self._format_dict_for_log(mapped_data)}")
                     
                     # 调用全局处理器
                     for handler in self._delete_handlers:
@@ -581,6 +581,19 @@ class MySQLBinlogMonitor:
                 logger.warning("   建议设置MySQL变量:")
                 logger.warning("   SET GLOBAL binlog_row_metadata = 'FULL';")
                 logger.warning("   SET GLOBAL binlog_row_image = 'FULL';")
+
+    def _format_dict_for_log(self, data, max_length=500):
+        """格式化字典数据用于日志输出，避免显示过长的内容"""
+        if not data:
+            return "{}"
+        
+        if isinstance(data, dict):
+            data_str = str(data)
+            if len(data_str) > max_length:
+                truncated = data_str[:max_length]
+                return f"{truncated}... (truncated)"
+            return data_str
+        return str(data)
 
     def stop_monitoring(self):
         """停止监控"""
