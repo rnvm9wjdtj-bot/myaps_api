@@ -77,10 +77,6 @@ jspm_packages/
 
 test/
 
-
-# Project default configuration files
-apps/data_opt/project_files/_defaults.py
-
 # 忽略project_files文件夹下以_ed为结尾的py文件
 apps/data_opt/project_files/*_ed.py
 
@@ -91,3 +87,5 @@ cache/
 
 # 临时文件
 *.tmp
+
+globalobjects/_defaults.py

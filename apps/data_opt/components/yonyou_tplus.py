@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 
 
 from ._base import BaseConnection, convert_timeunit, clean_value#, aes_decrypt
-from ..project_files._defaults import ProjectValues
+from globalobjects._defaults import ProjectDefaultValues as pdv
 from ..utils.json_manager import JSONManager
 from apps.io_api.schemas import (
     BaseModel as PydanticModel,

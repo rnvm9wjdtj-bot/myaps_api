@@ -2,8 +2,9 @@ from tortoise import fields
 # from tortoise.signals import post_save
 
 from globalobjects.db_manager import db_managers
+from globalobjects._defaults import ProjectDefaultValues as pdv
 from . import protomodels as pm
-from apps.data_opt.project_files._defaults import ProjectValues as pdv
+# from apps.io_api.schemas import Values as pdv
 
 
 class TMaterial(pm.ProtoMaterial):
