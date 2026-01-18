@@ -11,7 +11,7 @@ from apps.io_api.schemas import (
     BaseModel, model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold
-    ) # 引起循环引用
+    )
 
 
 
@@ -25,7 +25,6 @@ class BaseConnection(ABC):
     def auth(self, *args, **kwargs):
         pass
 
-    @abstractmethod
     def _get_paged_data(self, *args, **kwargs) -> List[Dict]:
         """
         获取分页数据
@@ -42,7 +41,7 @@ class BaseConnection(ABC):
         pass
 
     @staticmethod
-    def _merge_paged_data(paged_data_iter):
+    def datapro_merge_paged_data(paged_data_iter):
         """
         合并分页数据
         """
@@ -64,7 +63,7 @@ class BaseConnection(ABC):
 
 
     @staticmethod
-    def flat_merge_parent_child_data(parent_data: List[Dict], child_data: List[Dict], 
+    def datapro_join_parent_child_data(parent_data: List[Dict], child_data: List[Dict], 
                                     parent_key_fields: str | list[str] = 'id', 
                                     child_match_key_fields: str | list[str] = 'parentid') -> List[Dict]:
         """
@@ -98,6 +97,95 @@ class BaseConnection(ABC):
         )
         
         return merged_df.to_dict(orient='records')
+
+
+    @staticmethod
+    def datapro_extract_nested_value(data: dict, path: str):
+        """
+        在多层嵌套字典中按路径提取值。
+        路径格式示例：
+            "RoutingDetails / Process / Code"
+            "Code"
+            "VoucherState / Name"
+        参数:
+            data: 原始字典
+            path: 以“(空格)/(空格)”分隔的字段路径
+        返回:
+            提取到的值；若路径不存在则返回None
+        """
+        if not isinstance(data, dict):
+            return None
+        keys = [k.strip() for k in path.split("/")]
+        current = data
+        for key in keys:
+            if isinstance(current, dict) and key in current:
+                current = current[key]
+            elif isinstance(current, list) and key.isdigit():
+                # 支持列表索引，如 RoutingDetails/0/Process/Code
+                idx = int(key)
+                if 0 <= idx < len(current):
+                    current = current[idx]
+                else:
+                    return None
+            else:
+                return None
+        return current
+
+    
+    @staticmethod
+    def datapro_flatten_dict(d: dict, parent_key: str = '', sep: str = ' / ') -> dict:
+        """
+        递归展平嵌套字典，将所有键路径合并为单级键。
+        参数:
+            d: 输入字典
+            parent_key: 父键前缀，用于递归调用
+            sep: 键路径分隔符
+        返回:
+            展平后的字典
+        """
+        items = []
+        for k, v in d.items():
+            new_key = f"{parent_key}{sep}{k}" if parent_key else k
+            if isinstance(v, dict):
+                items.extend(BaseConnection.datapro_flatten_dict(v, new_key, sep=sep).items())
+            else:
+                items.append((new_key, v))
+        return dict(items)
+
+
+    @staticmethod
+    def datapro_expand_parent_child_data(data: Dict, expand_key: str, sep: str = ' / ') -> List[Dict]:
+        """
+        展开父表和子表数据为扁平结构
+        将字典中包含的特定列表进行展开
+        例如: {'a':1,'b':2,'c':[{'d':4},{'e':5}]}，若按'c'列表展开，则得到[{'a':1,'b':2,'c / d':4},{'a':1,'b':2,'c / e':5}]
+        
+        参数:
+            data: 输入字典
+            expand_key: 要展开的列表键名
+        返回:
+            展开后的字典列表
+        """
+        result = []
+        # 获取要展开的列表
+        expand_list = data.get(expand_key, [])
+        
+        # 遍历列表中的每个元素
+        for item in expand_list:
+            # 创建新字典，包含原始字典中除了expand_key以外的所有键值对
+            new_dict = {k: v for k, v in data.items() if k != expand_key}
+            
+            # 展平当前列表项，并将键与expand_key用'/'连接
+            if isinstance(item, dict):
+                flattened_item = BaseConnection.datapro_flatten_dict(item, parent_key=expand_key, sep=sep)
+                new_dict.update(flattened_item)
+            else:
+                # 如果列表项不是字典，直接赋值
+                new_dict[expand_key] = item
+            
+            result.append(new_dict)
+        
+        return result
 
 
 def wrap_data_response(func):

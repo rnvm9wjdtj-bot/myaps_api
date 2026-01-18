@@ -337,7 +337,7 @@ class K3Connection(BaseConnection):
             filter_string=filter_string,
             only_today=only_today,
         )
-        data = self._merge_paged_data(data_paged_data)
+        data = self.datapro_merge_paged_data(data_paged_data)
         pydantic_model = pydantic_model or self.config.FORMS[form_name].get('pydantic_model')
         if not pydantic_model:
             return data

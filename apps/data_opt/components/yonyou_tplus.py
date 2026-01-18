@@ -88,6 +88,47 @@ class TplusWorkcenter(AcceptWorkcenter):
 
 
 
+class TplusMatWc(AcceptMatWc):
+
+    class Config:
+        extra = 'allow'
+
+    matver: str = Field(None)
+    itemno: str = Field(None)
+    basesec: str = Field(None)
+    workcenter: str = Field(None)
+
+
+    @model_validator(mode="before")
+    @classmethod
+    def model_valid(cls, values: Dict[str, Any]):
+        cleaned_values = {}
+        cleaned_values['materialno'] = values['料号']
+        # cleaned_values['matver'] = values['']
+        # cleaned_values['workcenter'] = values['']
+        # cleaned_values['itemno'] = clean_value(values['工序编码'])
+        cleaned_values['sortno'] = clean_value(values['加工顺序'])
+        # cleaned_values['basesec'] = clean_value(values[''])
+        # cleaned_values['fixqty'] = values['']
+        # cleaned_values['fixsec'] = values['']
+        # cleaned_values['sf'] = values['']
+        # cleaned_values['offsetsec'] = values['']
+        # cleaned_values['rate'] = values['']
+        return cleaned_values
+
+
+
+class TplusMatWcBom(AcceptMatWcBom):
+
+    class Config:
+        extra = 'allow'
+
+    # matver: str = Field(None)
+    # itemno: str = Field(None)
+    # basesec: str = Field(None)
+    # workcenter: str = Field(None)
+
+
 class TplusConfig:
 
     CREDENTIAL_FILE = "cache/T+.json"
@@ -113,7 +154,7 @@ class TplusConfig:
 
     FORMS = {
         "material": {
-            "endpoint": "/tplus/api/v2/inventory/QueryPage",
+            "endpoint": "/tplus/api/v2/inventory/Query",
             "field_map": {
                 "ID":"ID", "Disabled":"是否停用", "Code":"编码", "Name":"名称",
                 "Specification":"规格型号", "InventoryClassCode":"存货分类Code", "InventoryClassName":"存货分类Name",
@@ -124,9 +165,12 @@ class TplusConfig:
                 "IsSuite":"是否套件",   # 虚拟件？
                 "AvagCost":"平均成本", "Expired":"保质期", "ExpiredUnitName":"保质期单位",
                 "IsNeedQualityInspection":"是否需要检验",
+                "Ts": "时间戳",
             },
             "base_filter": {
                 "Disabled": False,
+                "IsMaterial": True,
+                "Ts": None
             },
             "pydantic_model": TplusMaterial,
         },
@@ -134,22 +178,31 @@ class TplusConfig:
         "workcenter": {
             "endpoint": "/tplus/api/v2/WorkCenter/Query",
             "field_map": {
-                "ID":"ID", "Code":"编码", "Name":"名称", "Disabled":"是否停用",
-                "Capacity": "产量/小时", "Equipment.Code": "设备编码", "Equipment.Name": "设备名称",
+                "ID":"ID", "Code":"产品编码", "Name":"产品名称", "Disabled":"是否停用",
+                "RoutingDetails": "详情"
             },
             "base_filter": {},
             "pydantic_model": TplusWorkcenter,
         },
 
+        "route": {
+            "endpoint": "/tplus/api/v2/routing/Query",
+            "field_map": {
+                "ID":"ID", "Disabled":"是否停用", "Code":"料号", "Name":"名称",
+                "RoutingDetails / JobSequence": "加工顺序",
+                "RoutingDetails / Process / Code": "工序编码", "RoutingDetails / Process / Name": "工序名称",
+            },
+            "base_filter": {},
+            "pydantic_model": TplusMatWc,
+        },
+
         "bom": {
-            "endpoint": "/tplus/api/v2/bom/Query",
+            "endpoint": "/tplus/api/v2/bom/QueryPage",
             "field_map": {
                 "ID":"ID", "Disabled":"是否停用", "Code":"编码", "Name":"名称",
             },
-            "base_filter": {
-                "Disabled": False,
-            },
-            "pydantic_model": None,
+            "base_filter": {},
+            "pydantic_model": TplusMatWcBom,
         },
     }
 
@@ -239,22 +292,22 @@ class TplusConnection(BaseConnection):
         return response
 
 
-    def _get_paged_data(self, endpoint: str, field_map: dict=None, filter: dict=None, only_today: bool=False):
-        params = {
-            "PageSize": self.config.PAGE_SIZE,
-            "Selectfields":",".join(field_map.keys()),
-        }
+    # def _get_paged_data(self, endpoint: str, field_map: dict=None, filter: dict=None, only_today: bool=False):
+    #     params = {
+    #         "PageSize": self.config.PAGE_SIZE,
+    #         "Selectfields":",".join(field_map.keys()),
+    #     }
 
-        filter = filter or {}
-        if only_today:
-            filter["UpdateDateBegin"] = datetime.now().strftime("%Y-%m-%d 00:00:00")
-            filter["UpdateDateEnd"] = datetime.now().strftime("%Y-%m-%d 23:59:59")
+    #     filter = filter or {}
+    #     if only_today:
+    #         filter["UpdateDateBegin"] = datetime.now().strftime("%Y-%m-%d 00:00:00")
+    #         filter["UpdateDateEnd"] = datetime.now().strftime("%Y-%m-%d 23:59:59")
 
-        params.update(filter)
+    #     params.update(filter)
 
-        # 调用POST方法发送请求
-        response = self._post(endpoint=endpoint, data={"param": params})
-        return response
+    #     # 调用POST方法发送请求
+    #     response = self._post(endpoint=endpoint, data={"param": params})
+    #     return response
 
 
     def data_list(self, form_name: str, filter: dict=None, only_today: bool=False, pydantic_model: PydanticModel=None):
@@ -262,8 +315,8 @@ class TplusConnection(BaseConnection):
         获取畅捷通数据列表
         Args:
             form_name: 表单名称
-            filter: 查询过滤条件
-            only_today: 是否仅获取今天更新的数据
+            filter: 查询过滤条件，默认None，仅在material、workcenter表单有效
+            only_today: 是否仅获取今天更新的数据，默认False，仅在material、workcenter表单有效
         Returns:
             数据列表
         """
@@ -271,35 +324,64 @@ class TplusConnection(BaseConnection):
         endpoint = self.config.FORMS[form_name]['endpoint']
         field_map = self.config.FORMS[form_name]['field_map']
         pydantic_model = pydantic_model or self.config.FORMS[form_name].get('pydantic_model')
-        base_filter = self.config.FORMS[form_name].get('base_filter', {})
 
-        params = {
-            "PageIndex": 1,
-            "PageSize": self.config.PAGE_SIZE,
-            "SelectFields": ",".join(field_map.keys()),
-        }
-        if filter:
-            filter.update(base_filter)
-        else:
-            filter = base_filter
-        if only_today:
-            today = datetime.now().strftime("%Y-%m-%d")
-            filter["UpdateDateBegin"] = f"{today} 00:00:00"
-            filter["UpdateDateEnd"] = f"{today} 23:59:59"
-        params.update(filter)
+        if form_name in ('material', 'workcenter'):
+            base_filter = self.config.FORMS[form_name].get('base_filter', {})
 
-        data_list = []
-        while True:
-            response = self._post(endpoint=endpoint, data={"param": params})
-            try:
-                raw_data = response.json()['Data']
-            except:
-                raw_data = response.json()
-            if not raw_data:
-                break
-            data_list.extend([{v: row.get(k) for k, v in field_map.items()} for row in raw_data])
-            params["PageIndex"] += 1        
+            params = {
+                "PageIndex": 1,
+                "PageSize": self.config.PAGE_SIZE,
+                "SelectFields": ",".join(field_map.keys()),
+            }
+            if filter:
+                filter.update(base_filter)
+            else:
+                filter = base_filter
+            if only_today:
+                today = datetime.now().strftime("%Y-%m-%d")
+                filter["UpdateDateBegin"] = f"{today} 00:00:00"
+                filter["UpdateDateEnd"] = f"{today} 23:59:59"
+            params.update(filter)
+
+            data_list = []
+            while True:
+                response = self._post(endpoint=endpoint, data={"param": params})
+                resp_json = response.json()
+                try:
+                    raw_data = resp_json['Data']
+                except:
+                    raw_data = resp_json
+                if not raw_data:
+                    break
+                params["PageIndex"] += 1
+                params["Ts"] = raw_data[-1]["Ts"]
+                data_list.extend([{v: row.get(k) for k, v in field_map.items()} for row in raw_data])
+
+        elif form_name == 'route':
+            response = self._post(endpoint=endpoint, data={"param": {}})
+            data_list = self._process_route_data(response.json())
+
+        elif form_name == 'bom':
+            pass
 
         if pydantic_model:
             data_list = [pydantic_model(**item) for item in data_list]
         return data_list
+
+
+    def _process_route_data(self, routedata_list: list):
+        """
+        处理路由数据，提取产品编码、产品名称、路由详情
+        Args:
+            route_data: 原始路由数据列表
+        Returns:
+            处理后的路由数据列表
+        """
+        field_map = self.config.FORMS['route']['field_map']
+        # reverse_field_map = {v: k for k, v in field_map.items()}
+        processed_data = []
+        for item in routedata_list:
+            flat_item = self.datapro_expand_parent_child_data(item, 'RoutingDetails')
+            for row in flat_item:
+                processed_data.append({v: row.get(k) for k, v in field_map.items()})
+        return processed_data
