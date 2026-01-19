@@ -453,6 +453,9 @@ class MySQLBinlogMonitor:
             logger.debug(f"处理事件: 数据库={schema}, 表={table}, 类型={type(event).__name__}")
             
             if isinstance(event, WriteRowsEvent):
+                batch_count = len(event.rows)
+                if batch_count > 1:
+                    logger.info(f"📥 InsertTo {schema}.{table}: 批量插入 {batch_count} 条记录")
                 for row in event.rows:
                     if hasattr(row, 'values'):
                         data = row.values
@@ -466,7 +469,8 @@ class MySQLBinlogMonitor:
                     # 检查数据质量
                     self._check_data_quality(schema, table, mapped_data, "INSERT")
                     
-                    logger.info(f"📥 InsertTo {schema}.{table}: {self._format_dict_for_log(mapped_data)}")
+                    if batch_count == 1:
+                        logger.info(f"📥 InsertTo {schema}.{table}: {self._format_dict_for_log(mapped_data)}")
                     
                     # 调用全局处理器
                     for handler in self._insert_handlers:
@@ -484,6 +488,9 @@ class MySQLBinlogMonitor:
                             await handler(schema, table, mapped_data)
                             
             elif isinstance(event, UpdateRowsEvent):
+                batch_count = len(event.rows)
+                if batch_count > 1:
+                    logger.info(f"🔄 Update {schema}.{table}: 批量更新 {batch_count} 条记录")
                 for row in event.rows:
                     if hasattr(row, 'before_values') and hasattr(row, 'after_values'):
                         old_data = row.before_values
@@ -503,21 +510,22 @@ class MySQLBinlogMonitor:
                     self._check_data_quality(schema, table, mapped_old_data, "UPDATE_OLD")
                     self._check_data_quality(schema, table, mapped_new_data, "UPDATE_NEW")
                     
-                    logger.info(f"🔄 Update {schema}.{table}:")
-                    # 显示变更的字段
-                    data_diff = {}
-                    for key in mapped_new_data:
-                        old_val = mapped_old_data.get(key)
-                        new_val = mapped_new_data.get(key)
-                        if old_val != new_val:
-                            data_diff[key] = (old_val, new_val)
+                    if batch_count == 1:
+                        logger.info(f"🔄 Update {schema}.{table}:")
+                        # 显示变更的字段
+                        data_diff = {}
+                        for key in mapped_new_data:
+                            old_val = mapped_old_data.get(key)
+                            new_val = mapped_new_data.get(key)
+                            if old_val != new_val:
+                                data_diff[key] = (old_val, new_val)
 
-                    
-                    if data_diff:
-                        for field, (old_val, new_val) in data_diff.items():
-                            logger.info(f"   {field}: {old_val} -> {new_val}")
-                    else:
-                        logger.info("   无字段变更")
+                        
+                        if data_diff:
+                            for field, (old_val, new_val) in data_diff.items():
+                                logger.info(f"   {field}: {old_val} -> {new_val}")
+                        else:
+                            logger.info("   无字段变更")
                     
                     # 调用全局处理器
                     for handler in self._update_handlers:
@@ -535,6 +543,9 @@ class MySQLBinlogMonitor:
                             await handler(schema, table, change_data, data_diff)
                             
             elif isinstance(event, DeleteRowsEvent):
+                batch_count = len(event.rows)
+                if batch_count > 1:
+                    logger.info(f"🗑️ DeleteFrom {schema}.{table}: 批量删除 {batch_count} 条记录")
                 for row in event.rows:
                     if hasattr(row, 'values'):
                         data = row.values
@@ -548,7 +559,8 @@ class MySQLBinlogMonitor:
                     # 检查数据质量
                     self._check_data_quality(schema, table, mapped_data, "DELETE")
                     
-                    logger.info(f"🗑️ DeleteFrom {schema}.{table}: {self._format_dict_for_log(mapped_data)}")
+                    if batch_count == 1:
+                        logger.info(f"🗑️ DeleteFrom {schema}.{table}: {self._format_dict_for_log(mapped_data)}")
                     
                     # 调用全局处理器
                     for handler in self._delete_handlers:

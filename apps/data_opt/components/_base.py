@@ -17,7 +17,7 @@ from apps.io_api.schemas import (
 
 class BaseConnection(ABC):
     
-    def __init__(self, *args, **kwargs):
+    def __init__(self, config, *args, **kwargs):
         self._session = get_session()
 
 
@@ -25,13 +25,6 @@ class BaseConnection(ABC):
     def auth(self, *args, **kwargs):
         pass
 
-    def _get_paged_data(self, *args, **kwargs) -> List[Dict]:
-        """
-        获取分页数据
-        url: 请求URL
-        params: 请求参数
-        """
-        pass
 
     @abstractmethod
     def data_list(self, *args, **kwargs) -> Dict:
@@ -39,6 +32,18 @@ class BaseConnection(ABC):
         获取数据列表
         """
         pass
+
+
+    def __enter__(self):
+        """上下文管理器入口"""
+        return self
+
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """上下文管理器出口"""
+        if hasattr(self, '_session') and self._session:
+            self._session.close()
+
 
     @staticmethod
     def datapro_merge_paged_data(paged_data_iter):
@@ -51,15 +56,6 @@ class BaseConnection(ABC):
             row_count += len(page)
             merged_data.extend(page)
         return merged_data
-
-    def __enter__(self):
-        """上下文管理器入口"""
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """上下文管理器出口"""
-        if hasattr(self, '_session') and self._session:
-            self._session.close()
 
 
     @staticmethod
@@ -188,18 +184,18 @@ class BaseConnection(ABC):
         return result
 
 
-def wrap_data_response(func):
-    """
-    装饰器：将数据列表封装为字典格式
-    返回格式: {'total': len(data), 'data': data}
-    """
-    def wrapper(*args, **kwargs):
-        data = func(*args, **kwargs)
-        return {
-            'total': len(data) if data else 0,
-            'data': data
-        }
-    return wrapper
+# def wrap_data_response(func):
+#     """
+#     装饰器：将数据列表封装为字典格式
+#     返回格式: {'total': len(data), 'data': data}
+#     """
+#     def wrapper(*args, **kwargs):
+#         data = func(*args, **kwargs)
+#         return {
+#             'total': len(data) if data else 0,
+#             'data': data
+#         }
+#     return wrapper
 
 
 

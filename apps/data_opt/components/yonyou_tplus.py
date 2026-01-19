@@ -123,14 +123,35 @@ class TplusMatWcBom(AcceptMatWcBom):
     class Config:
         extra = 'allow'
 
-    # matver: str = Field(None)
-    # itemno: str = Field(None)
-    # basesec: str = Field(None)
-    # workcenter: str = Field(None)
+    matver: str = Field(None)
+    itemno: str = Field(None)
+    pu: str = Field(None)
+    mu: str = Field(None)
+    
+
+    @model_validator(mode="before")
+    @classmethod
+    def model_valid(cls, values: Dict[str, Any]):
+        cleaned_values = {}
+        cleaned_values['productno'] = values['父件编码']
+        # cleaned_values['matver'] = values['']
+        # cleaned_values['itemno'] = values['']
+        cleaned_values['materialno'] = values['子件编码']
+        cleaned_values['qty'] = values['需用数量']
+        # cleaned_values['offsethour'] = values['']
+        # cleaned_values['mto'] = values['']
+        cleaned_values['scrap'] = values['损耗率']
+        # cleaned_values['alt'] = values['']
+        cleaned_values['denominator'] = values['生产数量']
+        cleaned_values['pu'] = values['计量单位'] or ''
+        cleaned_values['mu'] = values['子件计量单位'] or ''
+        # cleaned_values[''] = values['']
+        return cleaned_values
+
 
 
 class TplusConfig:
-
+    BASE_URL = "https://openapi.chanjet.com"
     CREDENTIAL_FILE = "cache/T+.json"
     """
     ⬆️credential JSON，用于存储畅捷通认证信息，存放在项目根目录下的cache文件夹中，文件名T+.json。文件结构如下：
@@ -144,10 +165,8 @@ class TplusConfig:
             "_auth_at_": "2023-12-01 00:00:00"
         }
     """
-
-    BASE_URL = "https://openapi.chanjet.com"
+    TOKEN_EXPIRE_SECONDS = 24 * 3600     # 设token有效期为1天，其实最长可达6天
     AUTH_ENDPOINT = "/auth/v2/refreshToken"
-
 
     # 默认分页大小，注意最大不得超过1000
     PAGE_SIZE = 1000
@@ -199,7 +218,11 @@ class TplusConfig:
         "bom": {
             "endpoint": "/tplus/api/v2/bom/QueryPage",
             "field_map": {
-                "ID":"ID", "Disabled":"是否停用", "Code":"编码", "Name":"名称",
+                "ID":"ID", "Disabled":"是否停用", "Code":"父件编码", "Name":"父件名称", "Version": "版本号",
+                "IsPhantom": "是否虚拟", "Unit / Name":"计量单位", "ProduceQuantity":"生产数量",
+                "BOMChilds / Code":"子件编码", "BOMChilds / Name":"子件名称",
+                "BOMChilds / Unit / Name":"子件计量单位", "BOMChilds / RequiredQuantity":"需用数量", 
+                "BOMChilds / WasteRate":"损耗率",
             },
             "base_filter": {},
             "pydantic_model": TplusMatWcBom,
@@ -219,13 +242,13 @@ class TplusConnection(BaseConnection):
         self.credential_keys = ("app_key", "app_secret", "access_token", "refresh_token", "org_id", "_auth_at_")
         for key in self.credential_keys:
             setattr(self, key, self.credential.get("auth", {}).get(key, ""))
-        super().__init__()
+        super().__init__(config)
 
 
     def auth(self):
         assert self.access_token and self.refresh_token, "畅捷通token缺失"
         if self._auth_at_:
-            expire_time = datetime.strptime(self._auth_at_, "%Y-%m-%d %H:%M:%S") + timedelta(days=1)  # 假设token有效期为1天，其实最长可达6天
+            expire_time = datetime.strptime(self._auth_at_, "%Y-%m-%d %H:%M:%S") + timedelta(seconds=self.config.TOKEN_EXPIRE_SECONDS)
             if datetime.now() < expire_time:
                 logger.info(f"畅捷通token未过期，有效期至: {expire_time.strftime('%Y-%m-%d %H:%M:%S')}")
                 return self.access_token
@@ -292,31 +315,13 @@ class TplusConnection(BaseConnection):
         return response
 
 
-    # def _get_paged_data(self, endpoint: str, field_map: dict=None, filter: dict=None, only_today: bool=False):
-    #     params = {
-    #         "PageSize": self.config.PAGE_SIZE,
-    #         "Selectfields":",".join(field_map.keys()),
-    #     }
-
-    #     filter = filter or {}
-    #     if only_today:
-    #         filter["UpdateDateBegin"] = datetime.now().strftime("%Y-%m-%d 00:00:00")
-    #         filter["UpdateDateEnd"] = datetime.now().strftime("%Y-%m-%d 23:59:59")
-
-    #     params.update(filter)
-
-    #     # 调用POST方法发送请求
-    #     response = self._post(endpoint=endpoint, data={"param": params})
-    #     return response
-
-
     def data_list(self, form_name: str, filter: dict=None, only_today: bool=False, pydantic_model: PydanticModel=None):
         """
         获取畅捷通数据列表
         Args:
             form_name: 表单名称
             filter: 查询过滤条件，默认None，仅在material、workcenter表单有效
-            only_today: 是否仅获取今天更新的数据，默认False，仅在material、workcenter表单有效
+            only_today: 是否仅获取今天更新的数据，默认False，对 route（工艺路线） 表单无效
         Returns:
             数据列表
         """
@@ -324,23 +329,24 @@ class TplusConnection(BaseConnection):
         endpoint = self.config.FORMS[form_name]['endpoint']
         field_map = self.config.FORMS[form_name]['field_map']
         pydantic_model = pydantic_model or self.config.FORMS[form_name].get('pydantic_model')
+        base_filter = self.config.FORMS[form_name].get('base_filter', {})
+
+        if filter:
+            filter.update(base_filter)
+        else:
+            filter = base_filter or {}
+
+        if only_today:
+            today = datetime.now().strftime("%Y-%m-%d")
+            filter["UpdateDateBegin"] = f"{today} 00:00:00"
+            filter["UpdateDateEnd"] = f"{today} 23:59:59"
 
         if form_name in ('material', 'workcenter'):
-            base_filter = self.config.FORMS[form_name].get('base_filter', {})
-
             params = {
                 "PageIndex": 1,
                 "PageSize": self.config.PAGE_SIZE,
                 "SelectFields": ",".join(field_map.keys()),
             }
-            if filter:
-                filter.update(base_filter)
-            else:
-                filter = base_filter
-            if only_today:
-                today = datetime.now().strftime("%Y-%m-%d")
-                filter["UpdateDateBegin"] = f"{today} 00:00:00"
-                filter["UpdateDateEnd"] = f"{today} 23:59:59"
             params.update(filter)
 
             data_list = []
@@ -359,17 +365,36 @@ class TplusConnection(BaseConnection):
 
         elif form_name == 'route':
             response = self._post(endpoint=endpoint, data={"param": {}})
-            data_list = self._process_route_data(response.json())
+            data_list = self._process_route_data(response.json(), field_map=field_map)
 
         elif form_name == 'bom':
-            pass
+            params = {
+                "PageIndex": 1,
+                "PageSize": 100,    # 数据量太大，单次不宜太多。官方默认值为20
+            }
+            params.update(filter)
+
+            data_list = []
+
+            while True:
+                response = self._post(endpoint=endpoint, data={"param": params})
+                resp_json = response.json()
+                try:
+                    raw_data = resp_json['Data']
+                except:
+                    raw_data = resp_json
+                if not raw_data:
+                    break
+                params["PageIndex"] += 1
+
+                data_list.extend(self._process_bomdata(raw_data, field_map=field_map))
 
         if pydantic_model:
-            data_list = [pydantic_model(**item) for item in data_list]
+            data_list = [pydantic_model(**item).model_dump() for item in data_list]
         return data_list
 
 
-    def _process_route_data(self, routedata_list: list):
+    def _process_route_data(self, routedata_list: list, field_map: dict):
         """
         处理路由数据，提取产品编码、产品名称、路由详情
         Args:
@@ -377,11 +402,25 @@ class TplusConnection(BaseConnection):
         Returns:
             处理后的路由数据列表
         """
-        field_map = self.config.FORMS['route']['field_map']
-        # reverse_field_map = {v: k for k, v in field_map.items()}
         processed_data = []
         for item in routedata_list:
             flat_item = self.datapro_expand_parent_child_data(item, 'RoutingDetails')
+            for row in flat_item:
+                processed_data.append({v: row.get(k) for k, v in field_map.items()})
+        return processed_data
+
+
+    def _process_bomdata(self, bomdata_list: list, field_map: dict):
+        """
+        处理BOM数据，提取产品编码、产品名称、组件编码、组件名称、组件数量
+        Args:
+            bom_data: 原始BOM数据列表
+        Returns:
+            处理后的BOM数据列表
+        """
+        processed_data = []
+        for item in bomdata_list:
+            flat_item = self.datapro_expand_parent_child_data(item, 'BOMChilds')
             for row in flat_item:
                 processed_data.append({v: row.get(k) for k, v in field_map.items()})
         return processed_data

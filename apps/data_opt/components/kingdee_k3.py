@@ -231,7 +231,6 @@ class K3Connection(BaseConnection):
     
     # def _post(self, endpoint: str, data: dict=None, params: dict=None, timeout: int=30):
     #     """POST请求"""
-    #     self.auth()
     #     response = self._session.post(
     #         f"{self.base_url}{endpoint}",
     #         json=data,
@@ -239,7 +238,7 @@ class K3Connection(BaseConnection):
     #         timeout=timeout
     #     )
     #     response.raise_for_status()
-    #     return response.json()
+    #     return response
         
 
     def auth(self):
@@ -271,30 +270,31 @@ class K3Connection(BaseConnection):
         return self._cookie
 
 
-    def _get_paged_data(self, form_id: str, field_map: dict, filter_string: str=None, only_today: bool=False):
-        """
-        分页获取数据
-        form_id: 表单ID
-        field_map: 字段键映射，键为K3 字段名，值为映射成的段名
-        filter_string: 查询条件，格式为K3 格式
-        only_today: 是否仅查询今天变动的数据
-        """
+    def data_list(self, form_name: str, filter_string: str=None, only_today: bool=False, pydantic_model: PydanticModel=None):
         self.auth()
-        filter_string = filter_string or "1=1"
+        base_filterstring = self.config.FORMS[form_name].get('base_filter') or "1=1"
+        pydantic_model = pydantic_model or self.config.FORMS[form_name].get('pydantic_model')
+        if filter_string:
+            filter_string = f"{filter_string} AND {base_filterstring}"
+        else:
+            filter_string = base_filterstring
+
         if only_today:
             today = datetime.now().strftime('%Y-%m-%d')
             filter_string = f"{filter_string} AND (( `fCreateDate` >= '{today} 00:00:00' AND `fCreateDate` <= '{today} 23:59:59' ) OR ( `fModifyDate` >= '{today} 00:00:00' AND `fModifyDate` <= '{today} 23:59:59' ))"
-        k3_fields = set(field_map.keys())
-        to_fields = [field_map[k] for k in k3_fields]
+        k3_fields = set(self.config.FORMS[form_name]['field_map'].keys())
+        to_fields = [self.config.FORMS[form_name]['field_map'][k] for k in k3_fields]
         # 发送请求
+
         start_row = 0
         page_size = self.config.PAGE_SIZE
+        data_list = []
         while True:
             response = self._session.post(
                 url=f"{self.base_url}{self.config.QUERY_ENDPOINT}",
                 json={
                     "data": {
-                        "FormId": form_id,
+                        "FormId": self.config.FORMS[form_name]['form_id'],
                         "FieldKeys": ",".join(k3_fields),
                         "FilterString": filter_string,
                         "StartRow": start_row,
@@ -305,12 +305,10 @@ class K3Connection(BaseConnection):
                 }
             )
             # 处理响应
-            data = []
             if 'ErrorCode' in response.text:
                 print(f"查询失败: {response.text}")
-                yield data
                 break
-
+            data = []
             raw_data = response.json()
             row_count = len(raw_data)
             for row in raw_data:
@@ -318,30 +316,14 @@ class K3Connection(BaseConnection):
                     to_fields[i]: row[i]
                     for i in range(len(k3_fields))
                 })
-            yield data
+            data_list.extend(data)
             if row_count < page_size:
                 break
             start_row += page_size
 
-
-    def data_list(self, form_name: str, filter_string: str=None, only_today: bool=False, pydantic_model: PydanticModel=None):
-        base_filterstring = self.config.FORMS[form_name].get('base_filter') or "1=1"
-        if filter_string:
-            filter_string = f"{filter_string} AND {base_filterstring}"
-        else:
-            filter_string = base_filterstring
-
-        data_paged_data = self._get_paged_data(
-            form_id=self.config.FORMS[form_name]['form_id'],
-            field_map=self.config.FORMS[form_name]['field_map'],
-            filter_string=filter_string,
-            only_today=only_today,
-        )
-        data = self.datapro_merge_paged_data(data_paged_data)
-        pydantic_model = pydantic_model or self.config.FORMS[form_name].get('pydantic_model')
-        if not pydantic_model:
-            return data
-        return [dict(pydantic_model(**item)) for item in data]
+        if pydantic_model:
+            data_list = [pydantic_model(**item).model_dump() for item in data_list]
+        return data_list
 
 
     def __repr__(self) -> str:

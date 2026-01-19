@@ -14,7 +14,7 @@ from ._base import (
     file_log, console_log, standard_response, get_session, HapConnection,
     cron_task, add_basic_auth_requests, db_delete, db_bupsert
     )
-from ._defaults import ProjectValues
+from globalobjects._defaults import ProjectDefaultValues
 
 #################################################################################
 # ⬇️对象及项目参数
@@ -130,7 +130,7 @@ async def refresh_stock(dbs: str = None):
         stock = stock.rename(columns={
             'matnr': 'materialno',
         })
-        stock['itemno'] = ProjectValues.ITEMNO
+        stock['itemno'] = ProjectDefaultValues.ITEMNO
         stock_data = stock.to_dict(orient='records')
 
         delete_result = await db_delete(db_names=dbs, model_or_tablename='t_supply', filter_string=f"`Type`='ST'")
