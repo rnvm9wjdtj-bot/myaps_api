@@ -32,9 +32,12 @@ def _process_model_or_tablename(model_or_tablename: TortoiseBaseModel | str) -> 
         return model_or_tablename, model_or_tablename._meta.db_table
     else:
         table_name = model_or_tablename
-        mdl = tablename_to_model(table_name)
-        return mdl, table_name
-
+        if table_name not in TABLE_MODEL_MAPPING:
+            if not table_name.lower().startswith('v_'):
+                file_logger.error(f"❌↑未找到对应模型（table_name：{table_name}），禁止查询 —— db_query")
+            return None, table_name
+        else:
+            return TABLE_MODEL_MAPPING[table_name], table_name
 
 
 @dataclass
@@ -59,22 +62,6 @@ def validate_databases(db_name: str) -> List[str]:
     valid_dbs = [db for db in db_names if db in MYAPS_DB_SET]
     return valid_dbs
 
-
-def tablename_to_model(table_name: str) -> TortoiseBaseModel:
-    """
-    将数据库表名转换为模型类
-    
-    Args:
-        table_name: 数据库表名（例如：t_material）
-        
-    Returns:
-        对应的模型类（例如：TMaterial）
-    """
-    # 检查是否存在对应模型
-    if table_name not in TABLE_MODEL_MAPPING:
-        file_logger.error(f"❌↑未找到对应模型（table_name：{table_name}），禁止查询 —— db_query")
-        return None
-    return TABLE_MODEL_MAPPING[table_name]
 
     
 async def db_query(db_name: str, model_or_tablename: TortoiseBaseModel | str, filter_string: str = '', order_string: str = ''):

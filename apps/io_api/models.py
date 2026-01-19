@@ -164,7 +164,11 @@ def get_table_model_mapping():
     import sys
     # 获取当前模块
     current_module = sys.modules[__name__]
-    table_model_mapping = {}
+    table_model_mapping = {
+        'v_supply_mo': None,#TSupply,
+        'v_orderwc': None,
+        'v_matdailyqtyreport': None,
+    }
     # 遍历当前模块中的所有属性
     for name in dir(current_module):
         
