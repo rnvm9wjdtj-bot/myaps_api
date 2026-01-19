@@ -270,7 +270,7 @@ class BOMChecker:
                 has_parent_unit_data = not bom_df[self.parentunit_col].isnull().all() and not bom_df[self.parentunit_col].astype(str).str.strip().eq('').all()
                 has_child_unit_data = not bom_df[self.childunit_col].isnull().all() and not bom_df[self.childunit_col].astype(str).str.strip().eq('').all()
                 
-                if has_parent_unit_data and has_child_unit_data:
+                if has_parent_unit_data or has_child_unit_data:
                     # 自动执行单位检查
                     self._unit_check(
                         input_data=input_data
@@ -803,7 +803,10 @@ class BOMChecker:
         将BOM检查结果和单位检查结果传输至 HAP
         """
         marked_data = self.bom_result['marked_data']
-        material_units_map_list = self.unit_result['material_units_map_list']
+        if self.unit_result:
+            material_units_map_list = self.unit_result['material_units_map_list']
+        else:
+            material_units_map_list = []
         markdown_result = self.output_results_as_markdown()
         try:
             hap_conn.add_rows(worksheet_id='bom_check_summary', rows=[markdown_result])

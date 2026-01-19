@@ -36,6 +36,7 @@ class TplusMaterial(AcceptMaterial):
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values: Dict[str, Any]):
+        # values = super().model_valid(values)
         cleaned_values = {}
         cleaned_values['materialno'] = clean_value(values['编码'])
         cleaned_values['description'] = clean_value(values['名称'])
@@ -55,7 +56,7 @@ class TplusMaterial(AcceptMaterial):
         # cleaned_values['phantommin'] = values['']
         # cleaned_values['firmday'] = values['']
         # cleaned_values['daygap'] = values['']
-        # cleaned_values['candelay'] = 'Y' if values.get('', 0) > 0 else 'N'
+        # cleaned_values['candelay'] = values['']
         # cleaned_values['lotsize'] = values['']
         # cleaned_values['lotfix'] = values['']
         # cleaned_values['lotmin'] = values['']
@@ -84,7 +85,22 @@ class TplusWorkcenter(AcceptWorkcenter):
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values: Dict[str, Any]):
-        pass
+        cleaned_values = {}
+        cleaned_values['workcenter'] = values['编码']
+        cleaned_values['workcentername'] = values['名称']
+        # cleaned_values['pri_wc'] = values['']
+        # cleaned_values['bottleneck'] = values['']
+        # cleaned_values['sortno'] = values['']
+        # cleaned_values['plant'] = values['']
+        # cleaned_values['location'] = values['']
+        # cleaned_values['finite'] = values['']
+        # cleaned_values['type'] = values['']
+        # cleaned_values['capnum'] = values['']
+        # cleaned_values['capmax'] = values['']
+        # cleaned_values['worker'] = values['']
+        # cleaned_values['setupno'] = values['']
+        # cleaned_values['grpno'] = values['']
+        return cleaned_values
 
 
 
@@ -197,8 +213,7 @@ class TplusConfig:
         "workcenter": {
             "endpoint": "/tplus/api/v2/WorkCenter/Query",
             "field_map": {
-                "ID":"ID", "Code":"产品编码", "Name":"产品名称", "Disabled":"是否停用",
-                "RoutingDetails": "详情"
+                "ID":"ID", "Code":"编码", "Name":"名称", "Disabled":"是否停用"
             },
             "base_filter": {},
             "pydantic_model": TplusWorkcenter,

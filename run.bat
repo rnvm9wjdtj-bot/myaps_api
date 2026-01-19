@@ -1,15 +1,17 @@
 @echo off
 chcp 65001 >nul
 
-echo FastAPI Simple Health Monitor Starting...
-echo.
-
-REM Setup
+REM Configuration
 set PORT=8000
 set HOST=0.0.0.0
 set APP=main:app
-set CHECK_INTERVAL=30
-REM No lock file needed - using port-based locking
+set LOG_FILE=fastapi_server.log
+
+REM Command line arguments support
+if not "%~1"=="" set PORT=%~1
+
+REM Set PORT as environment variable so the application uses it
+set "PORT=%PORT%"
 
 REM Find Python
 if exist "venv\Scripts\python.exe" (
@@ -20,103 +22,65 @@ if exist "venv\Scripts\python.exe" (
     echo Using system Python
 )
 
-echo Starting FastAPI with health monitoring...
-echo Port: %PORT%, Check every %CHECK_INTERVAL% seconds
+REM Display configuration
+echo FastAPI Server Starting...
+echo Port: %PORT%, Host: %HOST%
 echo Press Ctrl+C to stop gracefully
 echo.
 
-REM Port-based Lock Check
-echo Checking if port %PORT% is already in use...
-netstat -ano | findstr ":%PORT%" | findstr "LISTENING" >nul
-if %ERRORLEVEL% EQU 0 (
-    echo [ERROR] Port %PORT% is already in use
-    echo Please stop existing server or kill the process manually
-    echo.
-    netstat -ano | findstr ":%PORT%" | findstr "LISTENING"
-    echo.
-    pause
-    exit /b 1
-) else (
-    echo [INFO] Port %PORT% is available for use
-)
+REM Setup logging
+echo %date% %time% - Server starting on port %PORT% >> %LOG_FILE%
 
-REM Clean up existing processes
-echo Cleaning up existing processes...
-for /f "tokens=5" %%i in ('netstat -ano ^| findstr ":%PORT%" ^| findstr "LISTENING"') do (
+REM Port check and cleanup
+echo Checking if port %PORT% is already in use...
+for /f "tokens=5" %%i in ('netstat -ano ^| findstr "LISTENING" ^| findstr ":%PORT%"') do (
+    echo [WARNING] Found process %%i using port %PORT%
+    echo %date% %time% - Found process %%i using port %PORT% >> %LOG_FILE%
+    echo Killing process %%i...
     taskkill /F /PID %%i >nul 2>&1
-    echo Killed process %%i
+    echo %date% %time% - Killed process %%i >> %LOG_FILE%
 )
 timeout /t 2 /nobreak >nul
 
-REM Start application
-echo Starting application...
-start "FastAPI Server" /min cmd /c "%PYTHON% -m uvicorn %APP% --host %HOST% --port %PORT%"
+echo [INFO] Port %PORT% is available for use
+echo %date% %time% - Port %PORT% is available >> %LOG_FILE%
 
-REM Wait for startup
-echo Waiting for startup...
-timeout /t 15 /nobreak >nul
+REM Set environment variables
+set "ENV_FILE=.env"
+set "PYTHONPATH=%CD%"
 
-echo.
-echo ========================================
-echo Server started - Entering health check loop
-echo ========================================
-echo.
-
-REM Simple monitoring loop
-:CHECK
-
-echo [%time%] Health check...
-
-REM Check if port is listening
-netstat -ano | findstr ":%PORT%" | findstr "LISTENING" >nul
-if %ERRORLEVEL% NEQ 0 (
-    echo [ERROR] Port %PORT% not listening - restarting...
-    taskkill /F /IM uvicorn.exe >nul 2>&1
-    timeout /t 3 /nobreak >nul
-    start "FastAPI Server" cmd /c "%PYTHON% -m uvicorn %APP% --host %HOST% --port %PORT%"
-    timeout /t 15 /nobreak >nul
-    goto CHECK
+REM Load .env file if it exists, but preserve PORT from command line
+set "SAVED_PORT=%PORT%"
+if exist %ENV_FILE% (
+    echo Loading environment variables from .env file...
+    for /f "tokens=1,2 delims==" %%a in (%ENV_FILE%) do (
+        if not "%%a"=="PORT" set "%%a=%%b"
+    )
 )
 
-REM Check HTTP response
-powershell -Command "try { Invoke-WebRequest -Uri 'http://localhost:%PORT%/' -TimeoutSec 3 -UseBasicParsing | Out-Null; exit 0 } catch { exit 1 }" >nul 2>&1
-if %ERRORLEVEL% EQU 0 (
-    echo [OK] Service responding
-) else (
-    echo [WARNING] HTTP check failed - restarting...
-    taskkill /F /IM uvicorn.exe >nul 2>&1
-    timeout /t 3 /nobreak >nul
-    start "FastAPI Server" cmd /c "%PYTHON% -m uvicorn %APP% --host %HOST% --port %PORT%"
-    timeout /t 15 /nobreak >nul
-)
+REM Restore PORT from command line
+set "PORT=%SAVED_PORT%"
 
-echo Next check in %CHECK_INTERVAL% seconds...
+REM Start the application using uvicorn with explicit parameters
+echo Starting uvicorn server with host %HOST% and port %PORT%...
+echo %date% %time% - Starting uvicorn server with host %HOST% and port %PORT% >> %LOG_FILE%
+
+REM Run the application with explicit parameters to override any environment settings
+%PYTHON% -m uvicorn main:app --host 0.0.0.0 --port %PORT%
+
+REM Handle cleanup after Ctrl+C
 echo.
+echo Server shutting down...
+echo %date% %time% - Server shutting down >> %LOG_FILE%
 
-REM Wait loop
-set /a counter=0
-:WAIT
-timeout /t 1 /nobreak >nul 2>&1
-if %ERRORLEVEL% NEQ 0 goto CLEANUP
-set /a counter+=1
-if %counter% GEQ %CHECK_INTERVAL% goto CHECK
-goto WAIT
-
-:CLEANUP
-echo.
-echo ========================================
-echo Ctrl+C detected - Shutting down
-echo ========================================
-echo.
-
-REM Kill processes
-taskkill /F /IM uvicorn.exe >nul 2>&1
+echo Cleaning up any remaining processes on port %PORT%...
 for /f "tokens=5" %%i in ('netstat -ano ^| findstr ":%PORT%"') do (
     taskkill /F /PID %%i >nul 2>&1
+    echo Killed process %%i
+    echo %date% %time% - Killed process %%i during cleanup >> %LOG_FILE%
 )
 
-REM No lock file to remove - using port-based locking
-
 echo Shutdown complete.
+echo %date% %time% - Server shutdown complete >> %LOG_FILE%
 echo.
 exit /b 0
