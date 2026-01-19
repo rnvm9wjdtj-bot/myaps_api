@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 # from tortoise import Tortoise
 
 from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET
+from globalobjects.globalconst import OrderStatusEnum
 from apps.data_opt.utils.common import get_session
 
 
@@ -59,7 +60,7 @@ class ApsBaseAction(ABC):
 
 
     @classmethod
-    async def _pl_release_success(cls, plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None):
+    async def _pl_release_success(cls, plno: str, mono: str=None, to_status: Literal[OrderStatusEnum.E2A, OrderStatusEnum.REL]='E2A', msg: str=None, msg_from: str=None):
         """
         通过调用自路由修改PL的Type、Status、SupplyNo、Memo等字段，作为私有方法在 def press_release_button() 中被直接调用
         🅰 supplyno: PL计划单编号
@@ -80,7 +81,7 @@ class ApsBaseAction(ABC):
         return response
 
     @classmethod
-    async def _pl_release_failed(cls, plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, msg_from: str=None):
+    async def _pl_release_failed(cls, plno: str, to_status: Literal[OrderStatusEnum.NEW, OrderStatusEnum.CRE]='CRE', msg: str=None, msg_from: str=None):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_msg = f"🚫 推送计划任务执行失败，账套：{cls.main_db}，PL单号：{plno}"
         console_log.error(log_msg)
@@ -101,8 +102,9 @@ class ApsBaseAction(ABC):
     @classmethod
     async def get_dategrouped_pr(cls, db_name: str=None, period: int=30, groupdates: str=None, field_mapper: dict=None):
         db_name = db_name or cls.main_db
-        response = cls._session.get(f"{cls.this_base_url}/api/v_matdailyqtyreport?db_name={db_name}&period={period}&groupdates={groupdates}").json()
-        data = response.get('data', [])
+        response = cls._session.get(f"{cls.this_base_url}/api/v_matdailyqtyreport?db_name={db_name}&period={period}&groupdates={groupdates}")
+        response.raise_for_status()
+        data = response.json().get('data', [])
         field_mapper = field_mapper or {
             'materialno': '料号',
             'datestr': '交期',

@@ -32,9 +32,9 @@ def _process_model_or_tablename(model_or_tablename: TortoiseBaseModel | str) -> 
         return model_or_tablename, model_or_tablename._meta.db_table
     else:
         table_name = model_or_tablename
-        if table_name not in TABLE_MODEL_MAPPING:
-            if not table_name.lower().startswith('v_'):
-                file_logger.error(f"❌↑未找到对应模型（table_name：{table_name}），禁止查询 —— db_query")
+        if table_name not in TABLE_MODEL_MAPPING.keys():
+            # if not table_name.lower().startswith('v_'):
+            #     file_logger.error(f"❌↑未找到对应模型（table_name：{table_name}），禁止查询 —— db_query")
             return None, table_name
         else:
             return TABLE_MODEL_MAPPING[table_name], table_name

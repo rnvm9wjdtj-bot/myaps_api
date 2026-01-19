@@ -605,9 +605,6 @@ class ModifySupply(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values):
-        if values.get("action") != "pltomo" and values.get("supplyno"):
-            raise ValueError("supplyno 仅在 pltomo 动作时有效")
-            # values["supplyno"] = None
         if values.get("status") not in gc.OrderStatusEnum.__members__:
             values["status"] = gc.OrderStatusEnum.CRE
         return values

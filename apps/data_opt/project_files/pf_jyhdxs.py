@@ -16,6 +16,7 @@ from ._base import (
     )
 from globalobjects._defaults import ProjectDefaultValues
 
+
 #################################################################################
 # ⬇️对象及项目参数
 #################################################################################
@@ -194,9 +195,9 @@ class ApsAction(ApsBaseAction):
             sap_mo_data = sap_response_json['BODY'][0]
             
             if sap_mo_data['STATUS'] == 'S':
-                cls._pl_release_success(plno=pl_data['supplyno'], mono=sap_mo_data['AUFNR'], msg=sap_mo_data['MESSAGE'], msg_from='ERP')
+                await cls._pl_release_success(plno=pl_data['supplyno'], mono=sap_mo_data['AUFNR'], msg=sap_mo_data['MESSAGE'], msg_from='ERP')
             else:
-                cls._pl_release_failed(plno=pl_data['supplyno'], to_status=pl_data.get('status', 'CRE'), msg=sap_mo_data['MESSAGE'], msg_from='ERP')
+                await cls._pl_release_failed(plno=pl_data['supplyno'], to_status=pl_data.get('status', 'CRE'), msg=sap_mo_data['MESSAGE'], msg_from='ERP')
         except Exception as e:
-            cls._pl_release_failed(plno=pl_data['supplyno'], to_status=pl_data.get('status', 'CRE'), msg=str(e), msg_from='API')
+            await cls._pl_release_failed(plno=pl_data['supplyno'], to_status=pl_data.get('status', 'CRE'), msg=str(e), msg_from='API')
 

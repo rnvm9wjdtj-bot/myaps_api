@@ -58,6 +58,8 @@ class OrderStatusEnum(str, Enum):
     REL = "REL"   # 释放
     CNF = "CNF"   # 报工
     CMP = "CMP"   # 已完成
+    A2E = "A2E"   
+    E2A = "E2A"   
 
 
 class AbcEnum(str, Enum):
