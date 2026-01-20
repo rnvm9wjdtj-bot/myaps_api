@@ -485,7 +485,7 @@ class AcceptMatWcMold(BaseModel):
     itemno: str = Field(..., max_length=6, description='工序项目', example=pdv.ITEMNO)
     moldno: str = Field('', max_length=64, description='模具编号', example="MOLD001")
     basesec: float = Field(..., ge=0, description='节拍T/T(秒/100)', example=600)
-    fixsec: int = Field(..., ge=0, description='额定时间(秒)', example=300)
+    fixsec: int = Field(0, ge=0, description='额定时间(秒)', example=300)
     priority: int = Field(..., description='优先级', example=1)
     memo: str = Field(None, max_length=255, description='备注', example="标准机台模具配置")
     _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
@@ -510,6 +510,10 @@ class AcceptMatWcMold(BaseModel):
     @classmethod
     def model_valid(cls, values):
         _cache_raw_input_data(cls, values)
+        try:
+            values["fixsec"] = int(values["fixsec"])  # 数据库该字段为整形
+        except:
+            values["fixsec"] = 0
         try:
             values["basesec"] = int(values["basesec"])  # 数据库该字段为整形
         except:

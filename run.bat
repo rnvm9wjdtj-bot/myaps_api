@@ -5,7 +5,7 @@ REM Configuration
 set PORT=8000
 set HOST=0.0.0.0
 set APP=main:app
-set LOG_FILE=fastapi_server.log
+set LOG_FILE=logs\fastapi_server.log
 
 REM Command line arguments support
 if not "%~1"=="" set PORT=%~1
@@ -21,6 +21,10 @@ if exist "venv\Scripts\python.exe" (
     set PYTHON=python
     echo Using system Python
 )
+
+REM Create logs directory if it doesn't exist
+mkdir logs 2>nul
+echo [INFO] Logs directory ensured
 
 REM Display configuration
 echo FastAPI Server Starting...

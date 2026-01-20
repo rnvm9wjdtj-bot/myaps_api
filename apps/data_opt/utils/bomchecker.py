@@ -798,7 +798,7 @@ class BOMChecker:
         return result
 
 
-    def output_results_to_hap(self, hap_conn) -> Dict[str, str]:
+    def output_results_to_hap(self, hap_conn) -> dict:
         """
         将BOM检查结果和单位检查结果传输至 HAP
         """
@@ -809,9 +809,14 @@ class BOMChecker:
             material_units_map_list = []
         markdown_result = self.output_results_as_markdown()
         try:
-            hap_conn.add_rows(worksheet_id='bom_check_summary', rows=[markdown_result])
-            hap_conn.add_rows(worksheet_id="transit_bom_structure", rows=marked_data)
-            hap_conn.add_rows(worksheet_id='material_units_map', rows=material_units_map_list)
+            # hap_conn.add_rows(worksheet_id='bom_check_summary', rows=[markdown_result])
+            # hap_conn.add_rows(worksheet_id="transit_bom_structure", rows=marked_data)
+            # hap_conn.add_rows(worksheet_id='material_units_map', rows=material_units_map_list)
+
+            hap_conn.worksheet('bom_check_summary').create_rows(data_list=[markdown_result])
+            hap_conn.worksheet('transit_bom_structure').create_rows(data_list=marked_data)
+            hap_conn.worksheet('material_units_map').create_rows(data_list=material_units_map_list)
+
             return {'status_code': 200, 'success': 1, 'message': '数据成功传输至 HAP'}
         except Exception as e:
             return {'status_code': 500, 'success': 0, 'message': str(e)}

@@ -506,21 +506,20 @@ class MySQLBinlogMonitor:
                     mapped_new_data = self._map_data_with_column_names(schema, table, new_data)
                     change_data = {"old": mapped_old_data, "new": mapped_new_data}
                     
+                    # 计算变更的字段
+                    data_diff = {}
+                    for key in mapped_new_data:
+                        old_val = mapped_old_data.get(key)
+                        new_val = mapped_new_data.get(key)
+                        if old_val != new_val:
+                            data_diff[key] = (old_val, new_val)
+                    
                     # 检查数据质量
                     self._check_data_quality(schema, table, mapped_old_data, "UPDATE_OLD")
                     self._check_data_quality(schema, table, mapped_new_data, "UPDATE_NEW")
                     
                     if batch_count == 1:
                         logger.info(f"🔄 Update {schema}.{table}:")
-                        # 显示变更的字段
-                        data_diff = {}
-                        for key in mapped_new_data:
-                            old_val = mapped_old_data.get(key)
-                            new_val = mapped_new_data.get(key)
-                            if old_val != new_val:
-                                data_diff[key] = (old_val, new_val)
-
-                        
                         if data_diff:
                             for field, (old_val, new_val) in data_diff.items():
                                 logger.info(f"   {field}: {old_val} -> {new_val}")

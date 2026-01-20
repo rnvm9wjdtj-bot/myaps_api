@@ -101,17 +101,14 @@ def _check_db_name(hap_wsid: str = None):
                 
                 try:
                     if hap_conn is not None:
-
-                        # 调用 add_rows()方法，传入原函数的data
-                        result = hap_conn.add_rows(
-                            worksheet_id=hap_wsid, 
-                            rows=processed_data,
+                        result = hap_conn.worksheet(hap_wsid).create_rows(
+                            data_list=processed_data,
                             trigger_workflow=True
                         )
                         return standard_response(
                             status_code=status.HTTP_200_OK,
                             success=1,
-                            message="call hap.add_rows success",
+                            message="HAP create rows success",
                             data=result
                         )
                     else:
@@ -124,7 +121,7 @@ def _check_db_name(hap_wsid: str = None):
                     return standard_response(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         success=0,
-                        message=f"failed to call hap.add_rows: {str(e)}"
+                        message=f"HAP create rows failed: {str(e)}"
                     )
             
             # db_name有效，正常执行原函数

@@ -18,7 +18,7 @@ from ..models import TABLE_MODEL_MAPPING
 file_logger = file_timed_logger.setup_logging(__name__)
 
 
-def _process_model_or_tablename(model_or_tablename: TortoiseBaseModel | str) -> Tuple[Optional[TortoiseBaseModel], str]:
+def process_model_or_tablename(model_or_tablename: TortoiseBaseModel | str) -> Tuple[Optional[TortoiseBaseModel], str]:
     """
     处理model_or_tablename参数，将其转换为模型类和表名
     
@@ -65,7 +65,7 @@ def validate_databases(db_name: str) -> List[str]:
 
     
 async def db_query(db_name: str, model_or_tablename: TortoiseBaseModel | str, filter_string: str = '', order_string: str = ''):
-    _, table_name = _process_model_or_tablename(model_or_tablename)
+    _, table_name = process_model_or_tablename(model_or_tablename)
     try:
         valid_db = validate_databases(db_name)[0]
         assert valid_db, "未指定账套或账套不存在"
@@ -144,7 +144,7 @@ async def db_supsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
     :param use_rawdata: 是否使用原始数据（若传入的数据为PydanticSchema对象，默认使用未被过度 validator 处理的数据）
     :return: 操作结果
     """
-    mdl, table_name = _process_model_or_tablename(model_or_tablename)
+    mdl, table_name = process_model_or_tablename(model_or_tablename)
     
     if not mdl:
         return standard_response(
@@ -236,7 +236,7 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
             data=data_list
         )
 
-    mdl, table_name = _process_model_or_tablename(model_or_tablename)
+    mdl, table_name = process_model_or_tablename(model_or_tablename)
     
     if not mdl:
         return standard_response(
@@ -335,7 +335,7 @@ async def db_delete(db_names: str, model_or_tablename: TortoiseBaseModel | str, 
     :param filter_string: WHERE子句，用于指定删除条件
     :return: 操作结果
     """
-    _, table_name = _process_model_or_tablename(model_or_tablename)
+    _, table_name = process_model_or_tablename(model_or_tablename)
     try:
         valid_dbs = validate_databases(db_names)
         assert valid_dbs, "未指定账套或账套不存在"
