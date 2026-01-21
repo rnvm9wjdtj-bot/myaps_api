@@ -6,6 +6,8 @@ from typing import List, Dict, Any, Optional, Union, Literal, Generator
 from pydantic import BaseModel as PydanticModel
 from decimal import Decimal
 
+from ._base import get_session
+
 
 
 # 自定义JSON编码器，用于处理Decimal类型
@@ -14,10 +16,6 @@ class DecimalEncoder(json.JSONEncoder):
         if isinstance(obj, Decimal):
             return float(obj)
         return super(DecimalEncoder, self).default(obj)
-
-
-
-from ._base import get_session
 
 
 
@@ -68,6 +66,7 @@ class HapUtils:
         
         return controls
     
+
     @staticmethod
     def expression_to_filter_condition(expression: str) -> dict:
         """
@@ -213,19 +212,22 @@ class HapUtils:
                                 pass
                     
                     # 处理普通运算符，去除字符串值的双引号
-                    stripped_value = value.strip()
-                    if stripped_value.startswith('"') and stripped_value.endswith('"'):
-                        stripped_value = stripped_value[1:-1]
-                    return {
-                        "type": "condition",
-                        "field": field.strip(),
-                        "operator": operator,
+                    if operator not in array_operators:
+                        # 移除字符串值的双引号
+                        stripped_value = value.strip()
+                        if stripped_value.startswith('"') and stripped_value.endswith('"'):
+                            stripped_value = stripped_value[1:-1]
+                        return {
+                            "type": "condition",
+                            "field": field.strip(),
+                            "operator": operator,
                         "value": [stripped_value]
                     }
                 return {}
         
         return parse(expression)
     
+
     @staticmethod
     def str_to_sort_list(sorts: str) -> list:
         """
@@ -259,6 +261,7 @@ class HapUtils:
                 sort_list.append({"field": field, "isAsc": is_asc})
         return sort_list
     
+
     @staticmethod
     def exclude_sys_fields(data: dict) -> dict:
         """
@@ -276,6 +279,7 @@ class HapUtils:
                 filtered_data[k] = v
         return filtered_data
     
+
     @staticmethod
     def exclude_unamed_fields(data: dict) -> dict:
         """
@@ -322,20 +326,18 @@ def get_worksheet_config() -> dict:
         mdl, table_name = process_model_or_tablename(mdl_name)
         worksheet_config[mdl_name] = {
             "conflict_fields": DbManager._get_conflict_fields(mdl),
-            "model": mdl
+            # "model": mdl
         }
     
     return worksheet_config
     
 
-
-
 class HapConnection:
-    def __init__(self, app_key: str, sign: str, base_url: str=hap_example_url[0], worksheet_config: dict=get_worksheet_config()):
+    def __init__(self, app_key: str, sign: str, base_url: str=hap_example_url[0], worksheet_config: callable=get_worksheet_config):
         self.base_url = base_url
         self.api_key = app_key
         self.sign = sign
-        self.worksheet_config = worksheet_config
+        self.worksheet_config = worksheet_config()
         self.headers = {
             'HAP-Appkey': app_key,
             'HAP-Sign': sign,
@@ -1011,13 +1013,15 @@ class HapRowsQuery:
                                 pass
                     
                     # 处理普通运算符，去除字符串值的双引号
-                    stripped_value = value.strip()
-                    if stripped_value.startswith('"') and stripped_value.endswith('"'):
-                        stripped_value = stripped_value[1:-1]
-                    return {
-                        "type": "condition",
-                        "field": field.strip(),
-                        "operator": operator,
+                    if operator not in array_operators:
+                        # 移除字符串值的双引号
+                        stripped_value = value.strip()
+                        if stripped_value.startswith('"') and stripped_value.endswith('"'):
+                            stripped_value = stripped_value[1:-1]
+                        return {
+                            "type": "condition",
+                            "field": field.strip(),
+                            "operator": operator,
                         "value": [stripped_value]
                     }
                 return {}

@@ -12,9 +12,10 @@ from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL
 from ._base import (
     ApsBaseAction, 
     file_log, console_log, standard_response, get_session, HapConnection,
-    cron_task, add_basic_auth_requests, db_delete, db_bupsert
+    cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query
     )
 from globalobjects._defaults import ProjectDefaultValues
+from ..utils.json_manager import JSONManager
 
 
 #################################################################################
@@ -30,11 +31,17 @@ hap_conn = HapConnection(
 #################################################################################
 # ⬇️项目可复用逻辑
 #################################################################################
-sap_url1 = 'http://192.168.201.2:8000/zrestful_test2?sap-client=800'  # 库存
-sap_url2 = 'http://192.168.201.2:8000/zrestful_plan?sap-client=800'  # 计划
-werks = "1600"
-sap_username = 'T058'
-sap_password = '123456'
+json_cache = JSONManager('cache/jyhdxs.json')
+erp_auth = json_cache.get("erp_auth", {})
+erp = json_cache.get("erp", {})
+sap_url1 = erp.get("base_url", "") + '/zrestful_test2?sap-client=800'  # 库存
+sap_url2 = erp.get("base_url", "") + '/zrestful_plan?sap-client=800'  # 计划
+werks = erp.get("werks", "")
+sap_username = erp_auth.get("username", "")
+sap_password = erp_auth.get("password", "")
+
+mes = json_cache.get("mes", {})
+mes_url = mes.get("base_url", "")
 # 创建requests会话
 sap_session = get_session(allowed_methods=["GET", "POST"])
 # 添加Basic认证
@@ -74,6 +81,19 @@ async def sap_post(url: str, session: requests.Session, interface_id: str, data:
     }
 
 
+async def refresh_workreport(supplyno: str):
+    """
+    刷新单条报工数据
+    """
+    response = requests.get(f"{mes_url}/business/productionDetail/detailApsVo?orderNos={supplyno}")
+    response.raise_for_status()
+    response_json = response.json()
+    workreport_data = response_json['data']
+
+    await db_delete(db_name=MYAPS_MAIN_DB, table_name='t_confirm', filter=f"`SupplyNo` = '{supplyno}'")
+    await db_bupsert(db_name=MYAPS_MAIN_DB, table_name='t_confirm', data=workreport_data)
+    return workreport_data
+
 #################################################################################
 # ⬇️定时任务设置
 #################################################################################
@@ -83,8 +103,21 @@ schedule_task_minute = '55'
 # schedule_task_hour = '8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23'
 # schedule_task_minute = '0,5,10,15,20,25,30,35,40,45,50,55'
 
+@cron_task(hour=schedule_task_hour, minute=','.join([f"{int(m) + 1}" for m in schedule_task_minute.split(',')]))
+async def refresh_all_mo_workreport():
+    """
+    刷新所有报工数据
+    """
+    db = MYAPS_MAIN_DB
+    query_response = await db_query(db_name=db, model_or_tablename='v_supply_mo', filter="`Status` in ('CNF','REL','CNF')")
+    if not query_response['success']:
+        return
+    supplynos_list = [item['supplyno'] for item in query_response['data']]
+    for supplyno in supplynos_list:
+        await refresh_workreport(supplyno)
 
-@cron_task(hour=schedule_task_hour, minute=f"{schedule_task_minute}")
+
+@cron_task(hour=schedule_task_hour, minute=','.join([f"{int(m) + 0}" for m in schedule_task_minute.split(',')]))
 async def refresh_stock(dbs: str = None):
     """
     刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据
@@ -171,7 +204,7 @@ async def refresh_stock(dbs: str = None):
 class ApsAction(ApsBaseAction):
 
     @classmethod
-    async def press_release_button(cls, pl_data: dict):
+    async def click_release_button(cls, pl_data: dict):
         try:
             supplymo_detaildata = cls._get_supplymo_detaildata(pl_data['supplyno'])
             start_datetime: str = supplymo_detaildata['dt_ordstart'].split('T')[0]
@@ -201,3 +234,11 @@ class ApsAction(ApsBaseAction):
         except Exception as e:
             await cls._pl_release_failed(plno=pl_data['supplyno'], to_status=pl_data.get('status', 'CRE'), msg=str(e), msg_from='API')
 
+
+    @classmethod
+    async def when_mo_close(cls, mo_data: dict):
+        """
+        当工单管理的状态变为'CMP'（完成）时该方法将被自动调用
+        🅰 mono: MO号
+        """
+        refresh_workreport(supplyno=mo_data['supplyno'])

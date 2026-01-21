@@ -39,8 +39,10 @@ class ApsBaseAction(ABC):
     main_db = MYAPS_MAIN_DB
     _session = get_session()
     
+
+    @abstractmethod
     @classmethod
-    async def press_release_button(cls, pl_data: dict, *args, **kwargs):
+    async def click_release_button(cls, pl_data: dict, *args, **kwargs):
         """
         当按下工单管理的下达按钮（PL的Status变为'A2E'）时该方法将被自动调用
         - 各项目文件须声明子类并覆写该方法，注意要包含实现推送 PL 至 ERP 的逻辑：
@@ -62,7 +64,7 @@ class ApsBaseAction(ABC):
     @classmethod
     async def _pl_release_success(cls, plno: str, mono: str=None, to_status: Literal[OrderStatusEnum.E2A, OrderStatusEnum.REL]='E2A', msg: str=None, msg_from: str=None):
         """
-        通过调用自路由修改PL的Type、Status、SupplyNo、Memo等字段，作为私有方法在 def press_release_button() 中被直接调用
+        通过调用自路由修改PL的Type、Status、SupplyNo、Memo等字段，作为私有方法在 def click_release_button() 中被直接调用
         🅰 supplyno: PL计划单编号
         🅰 mono: MO号，可选，若非None则更改PL的SupplyNo
         🅰 to_status: 转化成MO后，Status设为哪个状态，默认'REL'
@@ -101,6 +103,13 @@ class ApsBaseAction(ABC):
 
     @classmethod
     async def get_dategrouped_pr(cls, db_name: str=None, period: int=30, groupdates: str=None, field_mapper: dict=None):
+        """
+        从数据库获取按日期分组的计划任务数据
+        🅰 db_name: 账套名称，默认cls.main_db
+        🅰 period: 时间周期，默认30天
+        🅰 groupdates: 日期范围，默认None
+        🅰 field_mapper: 字段映射，默认None
+        """
         db_name = db_name or cls.main_db
         response = cls._session.get(f"{cls.this_base_url}/api/v_matdailyqtyreport?db_name={db_name}&period={period}&groupdates={groupdates}")
         response.raise_for_status()
@@ -114,3 +123,13 @@ class ApsBaseAction(ABC):
         if not field_mapper:
             return data
         return [{field_mapper.get(k, k): v for k, v in item.items()} for item in data]
+
+
+    @abstractmethod
+    @classmethod
+    async def when_mo_close(cls, mo_data: dict, *args, **kwargs):
+        """
+        当MO关闭时该方法将被自动调用
+        🅰 mo_data: MO数据
+        """
+        pass

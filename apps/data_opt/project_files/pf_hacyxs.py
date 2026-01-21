@@ -1,15 +1,8 @@
 """
 淮安超越橡塑项目文件
 """
-"""
-项目文件要声明 ApsBaseAction 子类，并根据项目实际情况继承或覆写其中的方法
 
-class ApsAction(ApsBaseAction):
-    def press_release_button(self, pl_data: dict) -> None:
-        pass
-"""
-
-import requests, logging#, os, atexit
+import requests, logging, os#, atexit
 import pandas as pd
 from datetime import datetime
 
@@ -30,12 +23,11 @@ from ..components import yonyou_tplus
 hap_conn = None
 
 hap_conn = HapConnection(
-    base_url='https://api.mingdao.com',
     app_key='601ae007d84ca95a',
     sign='ODVlMzNjYzA1ZTg1Yzg3YjI0NmQ5NTFmZGQ3OTk1MWYzMjE4M2JiMzYyNDEzMGU3NTY5YzI0YzEzYTYyYTExZA=='
 )
 
-tp_conn = yonyou_tplus.TplusConnection()
+tplus_conn = yonyou_tplus.TplusConnection()
 
 
 #################################################################################
@@ -56,3 +48,20 @@ tp_conn = yonyou_tplus.TplusConnection()
 #################################################################################
 class ApsAction(ApsBaseAction):
     pass
+
+    @classmethod
+    async def click_release_button(cls, pl_data: dict, *args, **kwargs):
+        """
+        当按下工单管理的下达按钮（PL的Status变为'A2E'）时该方法将被自动调用
+        🅰 supplyno: PL计划单编号
+        🅰 mono: MO号，可选，若非None则更改PL的SupplyNo
+        """
+        pass
+
+    @classmethod
+    async def when_mo_close(cls, mo_data: dict, *args, **kwargs):
+        """
+        当工单管理的状态变为'CMP'（完成）时该方法将被自动调用
+        🅰 mono: MO号
+        """
+        pass

@@ -6,6 +6,7 @@ import os, importlib, requests
 
 from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL
 from globalobjects import file_timed_logger
+from globalobjects.globalconst import OrderStatusEnum
 from apps.io_api.utils.common import dict_to_lower_keys
 
 
@@ -30,16 +31,19 @@ from apps.data_opt.utils.mysqlmonitor import mysql_monitor
 @mysql_monitor.on_update_for_table("t_supply", database=MYAPS_MAIN_DB)
 async def handle_update_supply(database: str, table: str, data: dict, data_diff: dict):
     """处理t_supply表的更新事件"""
-    supply_type = data['new']['Type']
+    data_before = dict_to_lower_keys(data['old'])
+    status_before = data_before['status']
+
+    data_now = dict_to_lower_keys(data['new'])
+    type_now = data_now['type']
+    status_now = data_now['status']
+    no_now = data_now['supplyno']
 
     # 确认/下达生产计划单PL
-    if supply_type == 'PL':
-        supply_old_status = data['old']['Status']
-        supply_new_status = data['new']['Status']
-        if supply_old_status in ["NEW", "CRE"] and supply_new_status == 'A2E':
-            pl_data = dict_to_lower_keys(data['new'])
-            await current_project.ApsAction.press_release_button(pl_data)
-            
-            
-    # print(f"更新到 {table}@{database}: {data}")
-    # print(f"数据变更: {data_diff}")
+    if type_now == 'PL' and status_now == OrderStatusEnum.A2E.value and status_before in ["NEW", "CRE"]:
+        await current_project.ApsAction.click_release_button(data_now)
+        return
+
+    # 工单关闭
+    if type_now == 'MO' and status_now == OrderStatusEnum.CMP.value:
+        await current_project.ApsAction.when_mo_close(data_now)

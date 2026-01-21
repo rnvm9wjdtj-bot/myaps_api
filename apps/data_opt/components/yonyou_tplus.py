@@ -168,11 +168,11 @@ class TplusMatWcBom(AcceptMatWcBom):
 
 class TplusConfig:
     BASE_URL = "https://openapi.chanjet.com"
-    CREDENTIAL_FILE = "cache/T+.json"
+    CREDENTIAL_FILE = f"cache/{os.getenv("CACHE_FILE")}"
     """
-    ⬆️credential JSON，用于存储畅捷通认证信息，存放在项目根目录下的cache文件夹中，文件名T+.json。文件结构如下：
+    ⬆️credential JSON，用于存储畅捷通认证信息，存放在项目根目录下的cache文件夹中，文件名在环境变量CACHE_FILE中指定。文件包含如下结构用于T+的认证：
     {
-        "auth": {
+        "erp_auth": {
             "app_key": "...",
             "app_secret": "...",
             "access_token": "...",
@@ -246,7 +246,7 @@ class TplusConfig:
 
 class TplusConnection(BaseConnection):
     
-    def __init__(self, config: TplusConfig=TplusConfig()):
+    def __init__(self, config: TplusConfig=TplusConfig):
         """
         初始化畅捷通连接
         """
@@ -256,7 +256,7 @@ class TplusConnection(BaseConnection):
         # 从缓存文件中读取认证信息，并将其设置为类实例属性
         self.credential_keys = ("app_key", "app_secret", "access_token", "refresh_token", "org_id", "_auth_at_")
         for key in self.credential_keys:
-            setattr(self, key, self.credential.get("auth", {}).get(key, ""))
+            setattr(self, key, self.credential.get("erp_auth", {}).get(key, ""))
         super().__init__(config)
 
 
@@ -288,7 +288,7 @@ class TplusConnection(BaseConnection):
             self.access_token = auth_result["access_token"]
             self.refresh_token = auth_result["refresh_token"]
             # 保存更新后的认证信息到缓存文件
-            self.credential.update("auth", {
+            self.credential.update("erp_auth", {
                 "_auth_at_": self._auth_at_,
                 "access_token": self.access_token,
                 "refresh_token": self.refresh_token})
