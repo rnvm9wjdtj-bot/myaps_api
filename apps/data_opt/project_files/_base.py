@@ -7,7 +7,7 @@
 import logging, json, requests, pandas as pd
 from socket import MsgFlag
 from typing import Literal, List, Dict, Any, Optional
-from abc import ABC#, abstractmethod
+from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 
 # from tortoise import Tortoise
@@ -40,8 +40,8 @@ class ApsBaseAction(ABC):
     _session = get_session()
     
 
-    @abstractmethod
     @classmethod
+    @abstractmethod
     async def click_release_button(cls, pl_data: dict, *args, **kwargs):
         """
         当按下工单管理的下达按钮（PL的Status变为'A2E'）时该方法将被自动调用
@@ -125,8 +125,8 @@ class ApsBaseAction(ABC):
         return [{field_mapper.get(k, k): v for k, v in item.items()} for item in data]
 
 
-    @abstractmethod
     @classmethod
+    @abstractmethod
     async def when_mo_close(cls, mo_data: dict, *args, **kwargs):
         """
         当MO关闭时该方法将被自动调用
