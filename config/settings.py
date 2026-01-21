@@ -9,6 +9,7 @@ BASE_DIR = os.getcwd()
 load_dotenv(os.getenv('ENV_FILE', os.path.join(BASE_DIR, '.env')))
 
 # 从环境变量读取配置
+MYAPS_VERSION = os.getenv("MYAPS_VERSION", "P").upper()
 MYAPS_BASE_URL = os.getenv("MYAPS_BASE_URL")
 MYAPS_DB_HOST = os.getenv("MYAPS_DB_HOST")
 MYAPS_DB_PORT = int(os.getenv("MYAPS_DB_PORT"))

@@ -809,10 +809,6 @@ class BOMChecker:
             material_units_map_list = []
         markdown_result = self.output_results_as_markdown()
         try:
-            # hap_conn.add_rows(worksheet_id='bom_check_summary', rows=[markdown_result])
-            # hap_conn.add_rows(worksheet_id="transit_bom_structure", rows=marked_data)
-            # hap_conn.add_rows(worksheet_id='material_units_map', rows=material_units_map_list)
-
             hap_conn.worksheet('bom_check_summary').create_rows(data_list=[markdown_result])
             hap_conn.worksheet('transit_bom_structure').create_rows(data_list=marked_data)
             hap_conn.worksheet('material_units_map').create_rows(data_list=material_units_map_list)

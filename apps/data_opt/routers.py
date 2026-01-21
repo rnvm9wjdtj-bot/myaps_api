@@ -15,8 +15,8 @@ from .project_files import  current_project, hap_conn
 # from apps.io_api.models import TSupply
 from .utils.barcode_qrcode_generator import generate_qrcode, generate_barcode
 from apps.io_api.utils.common import standard_response, common_params
-from apps.data_opt.utils.bomchecker import BOMChecker#, HAP_CTRLID as HAP_CTRLID_BOM
-from apps.data_opt.utils.routechecker import RouteChecker#, HAP_CTRLID as HAP_CTRLID_ROUTE
+from apps.data_opt.utils.bomchecker import BOMChecker
+from apps.data_opt.utils.routechecker import RouteChecker
 
 
 

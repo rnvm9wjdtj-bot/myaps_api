@@ -458,11 +458,13 @@ class HapWorksheet:
         )
 
 
-    def create_rows(self, data_list: List[Dict[str, Any] | PydanticModel], trigger_workflow: bool = True) -> 'HapWorksheetRowSet':
+    def create_rows(self, data_list: List[Dict[str, Any] | PydanticModel], trigger_workflow: bool = True, refresh_immediately: bool = False) -> 'HapWorksheetRowSet':
         """创建新行
         
         Args:
             data_list: 行数据字典或 PydanticModel 列表
+            trigger_workflow: 是否触发工作流
+            refresh_immediately: 是否立即刷新数据，默认False
             
         Returns:
             HapWorksheetRowSet: 新创建的行对象集合
@@ -475,31 +477,52 @@ class HapWorksheet:
             else:
                 processed_data_list.append(data)
         
-        # 构建创建请求
-        endpoint = f"/v3/app/worksheets/{self.worksheet_id}/rows/batch"
-        # 转换数据为API要求的格式
-        rows_data = []
-        for data_dict in processed_data_list:
-            row_controls = HapUtils.convert_data_to_controls(data_dict)
-            rows_data.append({'fields': row_controls})
-        payload = {
-            "rows": rows_data,  
-            "triggerWorkflow": trigger_workflow
-        }
-        response = self.hap_conn._post(endpoint, payload)
+        # 分批处理，每批最多100条
+        batch_size = 100
+        total_rows = len(processed_data_list)
+        all_row_ids = []
+        all_rows = []
         
-        row_ids = response.get('data', {}).get('rowIds', [])
-        rows = [
-            HapWorksheetRow(
-                row_data=processed_data_list[i], 
-                row_id=row_id, 
-                worksheet=self, 
-                hap_conn=self.hap_conn
-            )
-            for i, (data, row_id) in enumerate(zip(processed_data_list, row_ids))
-        ]
-        return HapWorksheetRowSet(rows=rows, worksheet=self, hap_conn=self.hap_conn)
+        for i in range(0, total_rows, batch_size):
+            # 获取当前批次的数据
+            batch_start = i
+            batch_end = i + batch_size
+            batch_data = processed_data_list[batch_start:batch_end]
+            
+            # 构建创建请求
+            endpoint = f"/v3/app/worksheets/{self.worksheet_id}/rows/batch"
+            # 转换数据为API要求的格式
+            rows_data = []
+            for data_dict in batch_data:
+                row_controls = HapUtils.convert_data_to_controls(data_dict)
+                rows_data.append({'fields': row_controls})
+            payload = {
+                "rows": rows_data,  
+                "triggerWorkflow": trigger_workflow
+            }
+            response = self.hap_conn._post(endpoint, payload)
+            
+            # 获取当前批次的row_ids
+            batch_row_ids = response.get('data', {}).get('rowIds', [])
+            all_row_ids.extend(batch_row_ids)
+            
+            # 创建当前批次的行对象
+            for j, row_id in enumerate(batch_row_ids):
+                if batch_start + j < total_rows:
+                    row = HapWorksheetRow(
+                        row_data=processed_data_list[batch_start + j], 
+                        row_id=row_id, 
+                        worksheet=self, 
+                        hap_conn=self.hap_conn
+                    )
+                    all_rows.append(row)
+        
+        worksheet_rowset = HapWorksheetRowSet(rows=all_rows, worksheet=self, hap_conn=self.hap_conn)
+        if refresh_immediately:
+            worksheet_rowset.refresh_all()
+        return worksheet_rowset
     
+
     def upsert(self, data_list: List[Dict[str, Any] | PydanticModel], trigger_workflow: bool = True) -> 'HapWorksheetRowSet':
         """批量 upsert 操作
         
@@ -1263,6 +1286,18 @@ class HapWorksheetRowSet:
         return self.rows
                 
     
+    def refresh_all(self) -> List['HapWorksheetRow']:
+        """批量刷新所有行对象
+        
+        Returns:
+            List[HapWorksheetRow]: 刷新后的行对象列表
+        """
+        # endpoint = f"/v3/app/worksheets/{self.worksheet.worksheet_id}/rows/list"
+        # self.hap_conn.
+        for row in self.rows:
+            row.refresh()
+        return self.rows
+
 
     def delete_all(self, trigger_workflow: bool = True, permanent: bool = False) -> List[bool]:
         """批量删除所有行对象

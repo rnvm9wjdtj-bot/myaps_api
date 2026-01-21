@@ -160,7 +160,7 @@ class TplusMatWcBom(AcceptMatWcBom):
         # cleaned_values['alt'] = values['']
         cleaned_values['denominator'] = values['生产数量']
         cleaned_values['pu'] = values['计量单位'] or ''
-        cleaned_values['mu'] = values['子件计量单位'] or ''
+        cleaned_values['cu'] = values['子件计量单位'] or ''
         # cleaned_values[''] = values['']
         return cleaned_values
 
@@ -265,7 +265,7 @@ class TplusConnection(BaseConnection):
         if self._auth_at_:
             expire_time = datetime.strptime(self._auth_at_, "%Y-%m-%d %H:%M:%S") + timedelta(seconds=self.config.TOKEN_EXPIRE_SECONDS)
             if datetime.now() < expire_time:
-                logger.info(f"畅捷通token未过期，有效期至: {expire_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                logger.info(f"✅ 畅捷通 token 仍在有效期内，有效期至: {expire_time.strftime('%Y-%m-%d %H:%M:%S')}")
                 return self.access_token
 
         auth_response = self._session.get(
