@@ -7,11 +7,6 @@ from pydantic import BaseModel as PydanticSchema
 
 from config.settings import MYAPS_MAIN_DB
 from globalobjects.globalconst import SupplyTypeEnum
-from globalobjects import file_timed_logger
-
-
-
-file_logger = file_timed_logger.setup_logging(__name__)
 
 
 

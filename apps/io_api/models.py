@@ -141,7 +141,7 @@ class TMatWcMold(pm.ProtoMatWcMold):
         managed = False
         abstract = False
         table = "t_mat_wc_mold"
-        unique_together = [("materialno", "workcenter", "moldno")]
+        unique_together = [("materialno", "workcenter", "moldno", "itemno")]
 
 
 

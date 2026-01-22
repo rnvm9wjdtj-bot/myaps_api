@@ -209,7 +209,7 @@ register_tortoise(
 from apps.data_opt.utils.scheduler import initialize_scheduler, get_scheduler_status, scheduler_manager
 
 initialize_scheduler()
-print(f"定时任务管理器状态: {get_scheduler_status()}")
+print(f"✅ 定时任务管理器状态: {get_scheduler_status()}")
 
 
 # 启动说明：

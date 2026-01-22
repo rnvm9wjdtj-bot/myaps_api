@@ -168,10 +168,10 @@ class MySQLBinlogMonitor:
                                 self._table_schemas[database][table] = columns
                                 logger.debug(f"预加载表结构: {database}.{table} -> {len(columns)}列")
                             except Exception as e:
-                                logger.warning(f"无法获取表 {database}.{table} 结构: {e}")
+                                logger.warning(f"🚫 无法获取表 {database}.{table} 结构: {e}")
                                 
                 except Exception as e:
-                    logger.warning(f"预加载数据库 {database} 表结构失败: {e}")
+                    logger.warning(f"🚫 预加载数据库 {database} 表结构失败: {e}")
             
             total_tables = sum(len(tables) for tables in self._table_schemas.values())
             logger.info(f"✅ 成功预加载 {len(self._table_schemas)} 个数据库，共 {total_tables} 个表的结构")
@@ -230,17 +230,17 @@ class MySQLBinlogMonitor:
                         self._table_schemas[database] = {}
                     self._table_schemas[database][correct_table_name] = columns
                     
-                    logger.info(f"实时获取表结构成功: {database}.{correct_table_name} -> {len(columns)}列")
+                    logger.info(f"✅ 实时获取表结构成功: {database}.{correct_table_name} -> {len(columns)}列")
                     return columns
                 except Exception as e:
-                    logger.warning(f"获取表 {database}.{correct_table_name} 结构失败: {e}")
+                    logger.warning(f"🚫 获取表 {database}.{correct_table_name} 结构失败: {e}")
             
             conn.close()
                 
         except Exception as e:
-            logger.warning(f"连接数据库 {database} 失败: {e}")
+            logger.warning(f"🚫 连接数据库 {database} 失败: {e}")
         
-        logger.warning(f"无法获取表 {database}.{correct_table_name} 的列结构")
+        logger.warning(f"🚫 无法获取表 {database}.{correct_table_name} 的列结构")
         return None
 
     def _map_data_with_column_names(self, database, table_name, data):
@@ -376,7 +376,7 @@ class MySQLBinlogMonitor:
                     break
                     
                 wait_time = min(2 ** retry_count, 60)
-                logger.error(f"Binlog连接失败，{wait_time}秒后重试 ({retry_count}/{max_retries}): {e}")
+                logger.error(f"🚫 Binlog连接失败，{wait_time}秒后重试 ({retry_count}/{max_retries}): {e}")
                 
                 for _ in range(wait_time * 10):
                     if not self.running:
@@ -384,7 +384,7 @@ class MySQLBinlogMonitor:
                     time.sleep(0.1)
         
         if retry_count >= max_retries:
-            logger.error("达到最大重试次数，停止监控")
+            logger.error("🚫 达到最大重试次数，停止监控")
 
     def _start_binlog_stream(self):
         """启动Binlog流 - 支持多数据库"""
@@ -411,11 +411,11 @@ class MySQLBinlogMonitor:
             stream_config["only_schemas"] = self.mysql_settings["databases"]
             logger.info(f"🔭 监控数据库: {', '.join(self.mysql_settings['databases'])}")
         else:
-            logger.info("监控所有数据库")
+            logger.info("✅ 监控所有数据库")
         
         try:
             stream = BinLogStreamReader(**stream_config)
-            logger.info("开始监控MySQL Binlog...")
+            logger.info("✅ 开始监控MySQL Binlog...")
             
             for binlogevent in stream:
                 if not self.running:
@@ -426,12 +426,12 @@ class MySQLBinlogMonitor:
                     future.result()
 
         except Exception as e:
-            logger.error(f"Binlog流处理错误: {e}")
+            logger.error(f"🚫 Binlog流处理错误: {e}")
             raise
         finally:
             if 'stream' in locals():
                 stream.close()
-                logger.info("Binlog流已关闭")
+                logger.info("✅ Binlog流已关闭")
 
     def _run_async_event(self, event):
         """在新线程中运行异步事件"""
@@ -440,7 +440,7 @@ class MySQLBinlogMonitor:
         try:
             loop.run_until_complete(self.process_binlog_event(event))
         except Exception as e:
-            logger.error(f"处理异步事件时出错: {e}")
+            logger.error(f"🚫 处理异步事件时出错: {e}")
         finally:
             loop.close()
 
@@ -450,7 +450,7 @@ class MySQLBinlogMonitor:
             table = getattr(event, 'table', 'unknown_table')
             schema = getattr(event, 'schema', 'unknown_database')  # 数据库名称
             
-            logger.debug(f"处理事件: 数据库={schema}, 表={table}, 类型={type(event).__name__}")
+            logger.debug(f"✅ 处理事件: 数据库={schema}, 表={table}, 类型={type(event).__name__}")
             
             if isinstance(event, WriteRowsEvent):
                 batch_count = len(event.rows)
@@ -577,7 +577,7 @@ class MySQLBinlogMonitor:
                             await handler(schema, table, mapped_data)
                             
         except Exception as e:
-            logger.error(f"处理Binlog事件错误: {e}")
+            logger.error(f"🚫 处理Binlog事件错误: {e}")
 
     def _check_data_quality(self, database, table, data, event_type):
         """检查数据质量，检测是否有UNKNOWN_COL"""
@@ -609,7 +609,7 @@ class MySQLBinlogMonitor:
     def stop_monitoring(self):
         """停止监控"""
         self.running = False
-        logger.info("Binlog监控已停止")
+        logger.info("✅ Binlog监控已停止")
 
     @staticmethod
     def get_mysql_config(is_single_db=True):

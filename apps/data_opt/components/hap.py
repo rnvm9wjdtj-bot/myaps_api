@@ -2,7 +2,8 @@
 
 import json
 import re
-from typing import List, Dict, Any, Optional, Union, Literal, Generator
+from typing import List, Dict, Any, Optional, Union, Literal, Generator, NamedTuple
+from tortoise.models import Model as DbModel
 from pydantic import BaseModel as PydanticModel
 from decimal import Decimal
 
@@ -17,6 +18,14 @@ class DecimalEncoder(json.JSONEncoder):
             return float(obj)
         return super(DecimalEncoder, self).default(obj)
 
+
+
+class WorksheetInfo(NamedTuple):
+    worksheet_id: str
+    display_name: Optional[str] = None
+    db_model: Optional[DbModel] = None
+    conflict_fields: Optional[List[str]] = None
+    
 
 
 # 工具类，包含通用方法
@@ -302,12 +311,12 @@ class HapUtils:
 
 
 
-hap_example_url = ('https://api.mingdao.com', 'http://127.0.0.1:8080/api')
+HAP_BASEURL_EXAMPLE = ('https://api.mingdao.com', 'http://127.0.0.1:8080/api')
 
 
 
-def get_worksheet_config() -> dict:
-    """获取工作表配置
+def get_maindata_worksheetinfo() -> dict:
+    """获取MYAPS主数据对应的工作表基本信息
     
     Args:
         worksheet_id: 工作表ID或名称
@@ -320,24 +329,27 @@ def get_worksheet_config() -> dict:
     
     worksheet_ids = {'t_material', 't_workcenter', 't_mat_ver', 't_mat_wc', 't_mat_wc_bom', 't_mold', 't_mat_wc_mold'}
 
-    worksheet_config = {}
+    maindata_worksheetinfo = []
 
     for mdl_name in worksheet_ids:
         mdl, table_name = process_model_or_tablename(mdl_name)
-        worksheet_config[mdl_name] = {
-            "conflict_fields": DbManager._get_conflict_fields(mdl),
-            # "model": mdl
-        }
+        maindata_worksheetinfo.append(WorksheetInfo(
+            worksheet_id=mdl_name,
+            db_model=mdl,
+            conflict_fields=DbManager._get_conflict_fields(mdl)
+        ))
     
-    return worksheet_config
-    
+    return maindata_worksheetinfo
+
+
 
 class HapConnection:
-    def __init__(self, app_key: str, sign: str, base_url: str=hap_example_url[0], worksheet_config: callable=get_worksheet_config):
+    allowed_worksheets: Dict[str, WorksheetInfo] = {}
+
+    def __init__(self, app_key: str, sign: str, base_url: str=HAP_BASEURL_EXAMPLE[0]):
         self.base_url = base_url
         self.api_key = app_key
         self.sign = sign
-        self.worksheet_config = worksheet_config()
         self.headers = {
             'HAP-Appkey': app_key,
             'HAP-Sign': sign,
@@ -393,7 +405,19 @@ class HapConnection:
         Returns:
             HapWorksheet: 工作表对象
         """
+        assert worksheet_id in self.allowed_worksheets, f"Worksheet {worksheet_id} is not registered."
         return HapWorksheet(worksheet_id=worksheet_id, hap_conn=self)
+
+
+    @classmethod
+    def regist_worksheet(cls, worksheet_info: WorksheetInfo | List[WorksheetInfo]):
+        """注册工作表
+        """
+        if isinstance(worksheet_info, list):
+            for ws_info in worksheet_info:
+                cls.allowed_worksheets[ws_info.worksheet_id] = ws_info
+        else:
+            cls.allowed_worksheets[worksheet_info.worksheet_id] = worksheet_info
 
 
 
@@ -402,7 +426,7 @@ class HapWorksheet:
     def __init__(self, worksheet_id: str, hap_conn: HapConnection):
         self.worksheet_id = worksheet_id
         try:
-            self.conflict_fields = hap_conn.worksheet_config[worksheet_id]['conflict_fields']
+            self.conflict_fields = hap_conn.allowed_worksheets[worksheet_id].conflict_fields
         except KeyError:
             self.conflict_fields = None
         self.hap_conn = hap_conn

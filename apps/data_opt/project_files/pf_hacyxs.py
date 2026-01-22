@@ -10,7 +10,7 @@ from fastapi import status
 
 from globalobjects._defaults import ProjectDefaultValues as pdv
 from ._base import (
-    ApsBaseAction,
+    ApsBaseAction, JSONManager,
     file_log, console_log, standard_response, get_session, HapConnection
     )
 
@@ -20,7 +20,7 @@ from ..components import yonyou_tplus
 #################################################################################
 # ⬇️ 项目对象及参数
 #################################################################################
-hap_conn = None
+
 
 hap_conn = HapConnection(
     app_key='601ae007d84ca95a',

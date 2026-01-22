@@ -21,11 +21,7 @@ from ..utils.json_manager import JSONManager
 #################################################################################
 # ⬇️对象及项目参数
 #################################################################################
-hap_conn = HapConnection(
-    base_url='https://api.mingdao.com',
-    app_key='d519a8ea60f9efa6',
-    sign='NjAwYzI5OWJlMTNhNTcwODM5ZTEwOWE2YjE3ZDZiNWRmYzk4NTJjNTZmODQ4N2EzNGNjNWM2ZGMzNTBlYjY0Ng=='
-)
+hap_conn = None
 
  
 #################################################################################
@@ -71,9 +67,9 @@ async def sap_post(url: str, session: requests.Session, interface_id: str, data:
     response_json = {}
     if response.status_code == status.HTTP_200_OK:
         response_json = response.json()
-        console_log.info(f"POST请求成功，状态码：{response.status_code}，响应内容：{response_json}")
+        console_log.info(f"✅ POST请求成功，状态码：{response.status_code}，响应内容：{response_json}")
     else:
-        console_log.error(f"POST请求失败，状态码：{response.status_code}，响应内容：{response.text}")
+        console_log.error(f"🚫 POST请求失败，状态码：{response.status_code}，响应内容：{response.text}")
     return {
         'status_code': response.status_code,
         'response_text': response.text,
@@ -90,7 +86,7 @@ async def refresh_workreport(supplyno: str):
     response_json = response.json()
     workreport_data = response_json['data']
 
-    await db_delete(db_name=MYAPS_MAIN_DB, table_name='t_confirm', filter=f"`SupplyNo` = '{supplyno}'")
+    await db_delete(db_name=MYAPS_MAIN_DB, table_name='t_confirm', filter_string=f"`SupplyNo` = '{supplyno}'")
     await db_bupsert(db_name=MYAPS_MAIN_DB, table_name='t_confirm', data=workreport_data)
     return workreport_data
 
@@ -108,13 +104,15 @@ async def refresh_all_mo_workreport():
     """
     刷新所有报工数据
     """
+    console_log.info("⏰ 开始执行刷新所有报工数据任务")
     db = MYAPS_MAIN_DB
-    query_response = await db_query(db_name=db, model_or_tablename='v_supply_mo', filter="`Status` in ('CNF','REL','CNF')")
+    query_response = await db_query(db_name=db, model_or_tablename='v_supply_mo', filter_string="`Status` in ('CNF','REL','CNF')")
     if not query_response['success']:
         return
     supplynos_list = [item['supplyno'] for item in query_response['data']]
     for supplyno in supplynos_list:
         await refresh_workreport(supplyno)
+        console_log.info(f"✅ 已刷新报工数据: {supplyno}")
 
 
 @cron_task(hour=schedule_task_hour, minute=','.join([f"{int(m) + 0}" for m in schedule_task_minute.split(',')]))
@@ -123,7 +121,7 @@ async def refresh_stock(dbs: str = None):
     刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据
     db: 对哪些账套生效，多个账套用逗号分隔
     """
-    console_log.info("开始执行刷新库存任务")
+    console_log.info("⏰ 开始执行刷新库存任务")
     dbs = dbs or MYAPS_DB_SET
     response = None
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -169,11 +167,11 @@ async def refresh_stock(dbs: str = None):
 
         delete_result = await db_delete(db_names=dbs, model_or_tablename='t_supply', filter_string=f"`Type`='ST'")
         write_result = await db_bupsert(db_names=dbs, model_or_tablename='t_supply', data_list=stock_data)
-        console_log.info(f"刷新库存任务执行完成，账套：{dbs}")
+        console_log.info(f"✅ 刷新库存任务执行完成，账套：{dbs}")
         response = standard_response(message=f"刷新库存任务执行完成，账套：{dbs}")
         
     except Exception as e:
-        console_log.error(f"刷新库存任务执行失败: {str(e)}")
+        console_log.error(f"🚫 刷新库存任务执行失败: {str(e)}")
         response = standard_response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, success=0, message=f"刷新库存任务执行失败: {str(e)}")
     return response
 

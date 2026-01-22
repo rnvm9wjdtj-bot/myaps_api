@@ -22,112 +22,112 @@ from .utils.db_operation import db_managers, db_query, db_supsert, db_bupsert, d
 from apps.data_opt.project_files import hap_conn
 
 
-def _check_db_name(hap_wsid: str = None):
-    """
-    检查函数是否有db_name参数，如果没有则调用 HAP API
-    """
-    def decorator(func):
-        @functools.wraps(func)
-        async def wrapper(*args, **kwargs):
-            # 获取函数签名
-            sig = inspect.signature(func)
+# def _check_db_name(hap_wsid: str = None):
+#     """
+#     检查函数是否有db_name参数，如果没有则调用 HAP API
+#     """
+#     def decorator(func):
+#         @functools.wraps(func)
+#         async def wrapper(*args, **kwargs):
+#             # 获取函数签名
+#             sig = inspect.signature(func)
             
-            # 查找db_name参数
-            db_name_param = None
-            db_name_index = None
-            for i, (param_name, param) in enumerate(sig.parameters.items()):
-                if param_name == 'db_name':
-                    db_name_param = param
-                    db_name_index = i
-                    break
+#             # 查找db_name参数
+#             db_name_param = None
+#             db_name_index = None
+#             for i, (param_name, param) in enumerate(sig.parameters.items()):
+#                 if param_name == 'db_name':
+#                     db_name_param = param
+#                     db_name_index = i
+#                     break
             
-            # 获取db_name的值
-            db_name = None
+#             # 获取db_name的值
+#             db_name = None
             
-            if db_name_param is not None:
-                if db_name_index is not None and db_name_index < len(args):
-                    # db_name作为位置参数传递
-                    db_name = args[db_name_index]
-                elif 'db_name' in kwargs:
-                    # db_name作为关键字参数传递
-                    db_name = kwargs['db_name']
-                else:
-                    # 使用默认值
-                    db_name = db_name_param.default
+#             if db_name_param is not None:
+#                 if db_name_index is not None and db_name_index < len(args):
+#                     # db_name作为位置参数传递
+#                     db_name = args[db_name_index]
+#                 elif 'db_name' in kwargs:
+#                     # db_name作为关键字参数传递
+#                     db_name = kwargs['db_name']
+#                 else:
+#                     # 使用默认值
+#                     db_name = db_name_param.default
             
-            # 如果没有db_name参数或db_name为None或空，调用 HAP API
-            if db_name_param is None or db_name is None or db_name == "":
-                # 获取原函数的data参数
-                data_param = None
-                data_index = None
-                for i, (param_name, param) in enumerate(sig.parameters.items()):
-                    if param_name == 'data':
-                        data_param = param
-                        data_index = i
-                        break
+#             # 如果没有db_name参数或db_name为None或空，调用 HAP API
+#             if db_name_param is None or db_name is None or db_name == "":
+#                 # 获取原函数的data参数
+#                 data_param = None
+#                 data_index = None
+#                 for i, (param_name, param) in enumerate(sig.parameters.items()):
+#                     if param_name == 'data':
+#                         data_param = param
+#                         data_index = i
+#                         break
                 
-                # 获取data的值
-                data_value = None
-                if data_param is not None:
-                    if data_index is not None and data_index < len(args):
-                        # data作为位置参数传递
-                        data_value = args[data_index]
-                    elif 'data' in kwargs:
-                        # data作为关键字参数传递
-                        data_value = kwargs['data']
-                    else:
-                        # 使用默认值
-                        data_value = data_param.default
+#                 # 获取data的值
+#                 data_value = None
+#                 if data_param is not None:
+#                     if data_index is not None and data_index < len(args):
+#                         # data作为位置参数传递
+#                         data_value = args[data_index]
+#                     elif 'data' in kwargs:
+#                         # data作为关键字参数传递
+#                         data_value = kwargs['data']
+#                     else:
+#                         # 使用默认值
+#                         data_value = data_param.default
                 
-                # 处理pydantic对象列表到字典列表的转换
-                processed_data = None
-                if data_value is not None:
-                    if hasattr(data_value, '__iter__') and not isinstance(data_value, (str, bytes)):
-                        # 处理列表或可迭代对象
-                        processed_data = []
-                        for item in data_value:
-                            processed_data.append(item._cached_raw_input_data)
-                    else:
-                        # 单个对象
-                        if hasattr(data_value, 'dict'):
-                            # pydantic v1 model
-                            processed_data = data_value.dict()
-                        elif hasattr(data_value, 'model_dump'):
-                            # pydantic v2 model
-                            processed_data = data_value.model_dump()
-                        else:
-                            # 普通对象
-                            processed_data = data_value
+#                 # 处理pydantic对象列表到字典列表的转换
+#                 processed_data = None
+#                 if data_value is not None:
+#                     if hasattr(data_value, '__iter__') and not isinstance(data_value, (str, bytes)):
+#                         # 处理列表或可迭代对象
+#                         processed_data = []
+#                         for item in data_value:
+#                             processed_data.append(item._cached_raw_input_data)
+#                     else:
+#                         # 单个对象
+#                         if hasattr(data_value, 'dict'):
+#                             # pydantic v1 model
+#                             processed_data = data_value.dict()
+#                         elif hasattr(data_value, 'model_dump'):
+#                             # pydantic v2 model
+#                             processed_data = data_value.model_dump()
+#                         else:
+#                             # 普通对象
+#                             processed_data = data_value
                 
-                try:
-                    if hap_conn is not None:
-                        result = hap_conn.worksheet(hap_wsid).create_rows(
-                            data_list=processed_data,
-                            trigger_workflow=True
-                        )
-                        return standard_response(
-                            status_code=status.HTTP_200_OK,
-                            success=1,
-                            message="HAP create rows success",
-                            data=result
-                        )
-                    else:
-                        return standard_response(
-                            status_code=status.HTTP_400_BAD_REQUEST,
-                            success=0,
-                            message="no db_name parameter or db_name is empty, trigger hap call"
-                        )
-                except Exception as e:
-                    return standard_response(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        success=0,
-                        message=f"HAP create rows failed: {str(e)}"
-                    )
+#                 try:
+#                     if hap_conn is not None:
+#                         result = hap_conn.worksheet(hap_wsid).create_rows(
+#                             data_list=processed_data,
+#                             trigger_workflow=True
+#                         )
+#                         return standard_response(
+#                             status_code=status.HTTP_200_OK,
+#                             success=1,
+#                             message="HAP create rows success",
+#                             data=result
+#                         )
+#                     else:
+#                         return standard_response(
+#                             status_code=status.HTTP_400_BAD_REQUEST,
+#                             success=0,
+#                             message="no db_name parameter or db_name is empty, trigger hap call"
+#                         )
+#                 except Exception as e:
+#                     return standard_response(
+#                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#                         success=0,
+#                         message=f"HAP create rows failed: {str(e)}"
+#                     )
             
-            # db_name有效，正常执行原函数
-            return await func(*args, **kwargs)
-        return wrapper
-    return decorator
+#             # db_name有效，正常执行原函数
+#             return await func(*args, **kwargs)
+#         return wrapper
+#     return decorator
 
 
 ########################################################################
@@ -156,7 +156,6 @@ async def get_meta():
     summary="新增或修改物料",
     description="根据🗝️【料号】新增或修改物料"
     )
-@_check_db_name(hap_wsid="t_material")
 async def post_material(
     data: List[AcceptMaterial] = Body(..., description="新增或修改的物料数据"),
     db_name: str = common_params["db_name"],
@@ -173,7 +172,6 @@ async def post_material(
     summary="新增或修改工作中心",
     description="根据🗝️【工作中心编号】新增或修改工作中心"
     )
-@_check_db_name(hap_wsid="t_workcenter")
 async def post_workcenter(
     data: List[AcceptWorkcenter],
     db_name: str = common_params["db_name"],
@@ -194,7 +192,6 @@ async def post_workcenter(
     summary="新增或修改工序",
     description="根据🗝️【料号+产线版本号+工序项目】形成的联合索引新增或修改工序记录"
     )
-@_check_db_name(hap_wsid="t_mat_wc")
 async def post_mat_wc(
     data: List[AcceptMatWc | Dict],
     db_name: str = common_params["db_name"],
@@ -210,7 +207,6 @@ async def post_mat_wc(
     summary="新增或修改产线版本",
     description="根据🗝️【料号+产线版本号】形成的联合索引新增或修改产线版本记录"
     )
-@_check_db_name(hap_wsid="t_mat_ver")
 async def post_mat_ver(
     data: List[AcceptMatVer | Dict],
     db_name: str = common_params["db_name"],
@@ -226,7 +222,6 @@ async def post_mat_ver(
     summary="新增或修改BOM",
     description="根据🗝️【产品料号+子件料号+产线版本号+工序项目】形成的联合索引新增或修改BOM记录"
     )
-@_check_db_name(hap_wsid="t_mat_wc_bom")
 async def post_mat_wc_bom(
     data: List[AcceptMatWcBom | Dict],
     db_name: str = common_params["db_name"],
@@ -242,7 +237,6 @@ async def post_mat_wc_bom(
     summary="新增或修改模具",
     description="根据🗝️【模具编号】新增或修改模具"
     )
-@_check_db_name(hap_wsid="t_mold")
 async def post_mold(
     data: List[AcceptMold | Dict],
     db_name: str = common_params["db_name"],
@@ -258,7 +252,6 @@ async def post_mold(
     summary="新增或修改机台模具",
     description="根据🗝️【料号+工作中心+工序项目+模具编号】形成的联合索引新增或修改机台模具记录"
     )
-@_check_db_name(hap_wsid="t_mat_wc_mold")
 async def post_mat_wc_mold(
     data: List[AcceptMatWcMold | Dict],
     db_name: str = common_params["db_name"],

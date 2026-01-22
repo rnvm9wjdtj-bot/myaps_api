@@ -5,7 +5,6 @@
 import os, importlib, requests
 
 from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL
-from globalobjects import file_timed_logger
 from globalobjects.globalconst import OrderStatusEnum
 from apps.io_api.utils.common import dict_to_lower_keys
 

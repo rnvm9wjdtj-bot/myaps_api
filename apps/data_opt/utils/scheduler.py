@@ -33,7 +33,7 @@ class TaskRegistry:
             'func_name': func.__name__
         }
         self.tasks.append(task_info)
-        logger.info(f"注册定时任务: {task_info['module']}.{task_info['func_name']}")
+        logger.info(f"✅ 注册定时任务: {task_info['module']}.{task_info['func_name']}")
         return func
 
 # 全局任务注册表
@@ -50,7 +50,7 @@ class SchedulerManager:
     def set_main_loop(self, loop: asyncio.AbstractEventLoop):
         """设置主应用事件循环"""
         self.main_loop = loop
-        logger.info("已设置主应用事件循环")
+        logger.info("✅ 已设置主应用事件循环")
         
     def init_scheduler(self) -> bool:
         """初始化调度器并添加所有注册的任务"""
@@ -82,11 +82,11 @@ class SchedulerManager:
             self._add_registered_jobs()
             
             self._initialized = True
-            logger.info(f"调度器初始化完成，共注册 {len(task_registry.tasks)} 个定时任务")
+            logger.info(f"✅ 调度器初始化完成，共注册 {len(task_registry.tasks)} 个定时任务")
             return True
             
         except Exception as e:
-            logger.error(f"调度器初始化失败: {str(e)}", exc_info=True)
+            logger.error(f"🚫 调度器初始化失败: {str(e)}", exc_info=True)
             return False
     
     def _add_registered_jobs(self):
@@ -111,10 +111,10 @@ class SchedulerManager:
                     **task_info['trigger_args']
                 )
                 
-                logger.info(f"已添加定时任务: {job_id}")
+                logger.info(f"✅ 已添加定时任务: {job_id}")
                 
             except Exception as e:
-                logger.error(f"添加任务失败 {task_info['func_name']}: {str(e)}")
+                logger.error(f"🚫 添加任务失败 {task_info['func_name']}: {str(e)}")
     
     def _create_safe_function(self, func: Callable) -> Callable:
         """创建安全的任务执行函数（包含异常处理）"""
@@ -124,12 +124,12 @@ class SchedulerManager:
             @wraps(func)
             async def async_wrapper():
                 try:
-                    logger.info(f"开始执行异步任务: {func.__module__}.{func.__name__}")
+                    logger.info(f"🚀 开始执行异步任务: {func.__module__}.{func.__name__}")
                     result = await func()
-                    logger.info(f"异步任务执行完成: {func.__module__}.{func.__name__}")
+                    logger.info(f"✅ 异步任务执行完成: {func.__module__}.{func.__name__}")
                     return result
                 except Exception as e:
-                    logger.error(f"异步任务执行失败: {func.__module__}.{func.__name__}, 错误: {str(e)}", 
+                    logger.error(f"🚫 异步任务执行失败: {func.__module__}.{func.__name__}, 错误: {str(e)}", 
                             exc_info=True)
                     return None
             # 为异步函数创建同步包装器
@@ -146,7 +146,7 @@ class SchedulerManager:
                         logger.debug("使用新的事件循环执行异步任务")
                         return asyncio.run(async_wrapper())
                 except Exception as e:
-                    logger.error(f"执行异步任务时发生错误: {str(e)}", exc_info=True)
+                    logger.error(f"🚫 执行异步任务时发生错误: {str(e)}", exc_info=True)
                     raise
             return wrapper
         else:
@@ -154,12 +154,12 @@ class SchedulerManager:
             @wraps(func)
             def wrapper():
                 try:
-                    logger.info(f"开始执行任务: {func.__module__}.{func.__name__}")
+                    logger.info(f"🚀 开始执行任务: {func.__module__}.{func.__name__}")
                     result = func()
-                    logger.info(f"任务执行完成: {func.__module__}.{func.__name__}")
+                    logger.info(f"✅ 任务执行完成: {func.__module__}.{func.__name__}")
                     return result
                 except Exception as e:
-                    logger.error(f"任务执行失败: {func.__module__}.{func.__name__}, 错误: {str(e)}", 
+                    logger.error(f"🚫 任务执行失败: {func.__module__}.{func.__name__}, 错误: {str(e)}", 
                             exc_info=True)
                     return None
             return wrapper
@@ -167,26 +167,26 @@ class SchedulerManager:
     def _job_error_listener(self, event):
         """任务错误监听器"""
         if event.exception:
-            logger.error(f"任务执行异常: 任务ID={event.job_id}, 异常={event.exception}")
+            logger.error(f"🚫 任务执行异常: 任务ID={event.job_id}, 异常={event.exception}")
         else:
-            logger.warning(f"任务错过执行: 任务ID={event.job_id}")
+            logger.warning(f"🚫 任务错过执行: 任务ID={event.job_id}")
     
     def start(self) -> bool:
         """启动调度器"""
         if not self._initialized:
-            logger.error("调度器未初始化")
+            logger.error("🚫 调度器未初始化")
             return False
             
         try:
             if self.scheduler and not self.scheduler.running:
                 self.scheduler.start()
-                logger.info("调度器已启动")
+                logger.info("✅ 调度器已启动")
                 return True
             else:
-                logger.info("调度器已经在运行中")
+                logger.info("✅ 调度器已经在运行中")
                 return True
         except Exception as e:
-            logger.error(f"调度器启动失败: {str(e)}")
+            logger.error(f"🚫 调度器启动失败: {str(e)}")
             return False
     
     def shutdown(self):
@@ -194,9 +194,9 @@ class SchedulerManager:
         try:
             if self.scheduler and self.scheduler.running:
                 self.scheduler.shutdown(wait=True)
-                logger.info("调度器已关闭")
+                logger.info("✅ 调度器已关闭")
         except Exception as e:
-            logger.error(f"调度器关闭失败: {str(e)}")
+            logger.error(f"🚫 调度器关闭失败: {str(e)}")
     
     def get_jobs_info(self) -> List[Dict]:
         """获取所有任务信息"""
@@ -260,9 +260,9 @@ def initialize_scheduler():
     if scheduler_manager.init_scheduler():
         scheduler_manager.start()
         atexit.register(scheduler_manager.shutdown)
-        logger.info("定时任务系统启动完成")
+        logger.info("✅ 定时任务系统启动完成")
     else:
-        logger.error("定时任务系统启动失败")
+        logger.error("🚫 定时任务系统启动失败")
 
 
 def get_scheduler_status() -> Dict:

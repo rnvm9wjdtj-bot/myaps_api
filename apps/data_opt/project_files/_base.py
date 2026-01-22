@@ -25,6 +25,7 @@ from apps.io_api.utils.db_operation import db_delete, db_bupsert, call_dbprocdur
 from apps.data_opt.components.hap import HapConnection
 from ..utils.scheduler import cron_task
 from ..utils.common import add_basic_auth_requests
+from ..utils.json_manager import JSONManager
 
 
 # 配置日志
