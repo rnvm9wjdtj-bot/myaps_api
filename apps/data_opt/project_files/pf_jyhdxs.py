@@ -86,8 +86,11 @@ async def refresh_workreport(supplyno: str):
     response_json = response.json()
     workreport_data = response_json['data']
 
-    await db_delete(db_name=MYAPS_MAIN_DB, table_name='t_confirm', filter_string=f"`SupplyNo` = '{supplyno}'")
-    await db_bupsert(db_name=MYAPS_MAIN_DB, table_name='t_confirm', data=workreport_data)
+    await db_delete(db_names=MYAPS_MAIN_DB, model_or_tablename='t_confirm', filter_string=f"`SupplyNo` = '{supplyno}'")
+    if not workreport_data:
+        return
+    [d.pop('workcenter') for d in workreport_data]
+    await db_bupsert(db_names=MYAPS_MAIN_DB, model_or_tablename='t_confirm', data_list=workreport_data)
     return workreport_data
 
 #################################################################################
@@ -99,14 +102,14 @@ schedule_task_minute = '55'
 # schedule_task_hour = '8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23'
 # schedule_task_minute = '0,5,10,15,20,25,30,35,40,45,50,55'
 
-@cron_task(hour=schedule_task_hour, minute=','.join([f"{int(m) + 1}" for m in schedule_task_minute.split(',')]))
+@cron_task(hour='8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23', minute='0,5,10,15,20,25,30,35,40,45,50,55')
 async def refresh_all_mo_workreport():
     """
     刷新所有报工数据
     """
     console_log.info("⏰ 开始执行刷新所有报工数据任务")
     db = MYAPS_MAIN_DB
-    query_response = await db_query(db_name=db, model_or_tablename='v_supply_mo', filter_string="`Status` in ('CNF','REL','CNF')")
+    query_response = await db_query(db_name=db, model_or_tablename='v_supply_mo', filter_string="`Status` in ('E2A','REL','CNF')")
     if not query_response['success']:
         return
     supplynos_list = [item['supplyno'] for item in query_response['data']]

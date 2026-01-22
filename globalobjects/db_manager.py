@@ -367,7 +367,14 @@ class DbManager:
         # 验证字段
         # 只验证冲突字段，update_fields可能为空
         for field in conflict_fields:
-            if field not in all_fields:
+            # 检查字段是否是自增主键
+            is_auto_increment_pk = False
+            if hasattr(model_class._meta, 'pk_attr') and field == model_class._meta.pk_attr:
+                pk_field = model_class._meta.fields_map.get(field)
+                if pk_field and pk_field.generated:
+                    is_auto_increment_pk = True
+            # 跳过自增主键的验证
+            if not is_auto_increment_pk and field not in all_fields:
                 raise ValueError(f"字段 {field} 不在数据字段中")
         
         # 如果有update_fields，验证其是否在数据字段中
