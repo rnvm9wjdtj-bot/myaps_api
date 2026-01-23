@@ -1,13 +1,4 @@
 """
-用友T+接口组件
-文档：
-所需接口和消息https://open.chanjet.com/docs/file/guide/commonContent/jcwd-yykt/yykt-sxjkhxx
-https://open.chanjet.com/docs/file/learning
-https://open.chanjet.com/docs/file/apiFile/tcloud/tjrzy/tplusguide
-
-获取token-v2版本 /financial/v2/auth/getUserToken
-刷新开放平台token-新版 /auth/v2/refreshToken
-物料清单查询/tplus/api/v2/bom/Query
 
 """
 import json
@@ -17,7 +8,9 @@ from datetime import datetime, timedelta
 
 
 from ._base import (
-    BaseConnection, convert_timeunit, clean_value,
+    console_log,
+    DataProcessor,
+    BaseConnection, convert_timeunit, clean_value, reset_default_values,
     BaseModel as PydanticModel, model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold
@@ -27,11 +20,17 @@ from ..utils.json_manager import JSONManager
 
 
 
+"""
+以下模型适用于 清洗转换 从T+获取的数据
+用于向HAP发送
+在 @model_validator 中需要将：
+无法通过处理原生数据获取的联合索引字段设为  "🈳❗"  占位，以保证能构成完整的联合索引
+非必填（数据库可空）字段（类变量）的默认值统一设为None，由客户在HAP中填写。
+"""
 class TplusMaterial(AcceptMaterial):
     
     class Config:
         extra = 'allow'
-
 
     @model_validator(mode="before")
     @classmethod
@@ -44,7 +43,7 @@ class TplusMaterial(AcceptMaterial):
         cleaned_values['plant'] = pdv.MAT_PLANT
         cleaned_values['planner'] = pdv.MAT_PLANNER
         cleaned_values['fifo'] = pdv.MAT_FIFO
-        cleaned_values['leadday'] = pdv.MAT_LEADDAY_E if values['是否需要检验'] == 'True' else pdv.MAT_LEADDAY_F
+        cleaned_values['leadday'] = pdv.MAT_LEADDAY_E if values['是否需要检验'] else pdv.MAT_LEADDAY_F
         cleaned_values['expday'] = convert_timeunit(values.get('保质期', 0), values['保质期单位'], 'day')
         cleaned_values['grday'] = 1 if values['是否需要检验'] else 0
         cleaned_values['abc'] = 'A' if values['是否自制'] == 'True' else 'B'
@@ -52,7 +51,7 @@ class TplusMaterial(AcceptMaterial):
         cleaned_values['price'] = values['平均成本']
         cleaned_values['groupno'] = str(values['存货分类Name'])
         cleaned_values['type'] = 'E' if values['是否自制'] == 'True' else 'F'
-        cleaned_values['phantom'] = 'Y' if values['是否套件'] == 'True' else 'N'
+        cleaned_values['phantom'] = 'Y' if values['是否虚拟件'] else 'N'
         # cleaned_values['phantommin'] = values['']
         # cleaned_values['firmday'] = values['']
         # cleaned_values['daygap'] = values['']
@@ -73,6 +72,7 @@ class TplusMaterial(AcceptMaterial):
         # cleaned_values['free2'] = values['']
         # cleaned_values['free3'] = values['']
         return cleaned_values
+reset_default_values(TplusMaterial, required_fields=('materialno', 'description'))
 
 
 
@@ -101,6 +101,7 @@ class TplusWorkcenter(AcceptWorkcenter):
         # cleaned_values['setupno'] = values['']
         # cleaned_values['grpno'] = values['']
         return cleaned_values
+reset_default_values(TplusWorkcenter, required_fields=('workcenter', 'workcentername'))
 
 
 
@@ -114,15 +115,14 @@ class TplusMatWc(AcceptMatWc):
     basesec: str = Field(None)
     workcenter: str = Field(None)
 
-
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values: Dict[str, Any]):
         cleaned_values = {}
         cleaned_values['materialno'] = values['料号']
-        # cleaned_values['matver'] = values['']
-        # cleaned_values['workcenter'] = values['']
-        # cleaned_values['itemno'] = clean_value(values['工序编码'])
+        cleaned_values['matver'] = "🈳❗"
+        cleaned_values['workcenter'] = "🈳❗"
+        cleaned_values['itemno'] = values['工序编码']
         cleaned_values['sortno'] = clean_value(values['加工顺序'])
         # cleaned_values['basesec'] = clean_value(values[''])
         # cleaned_values['fixqty'] = values['']
@@ -136,22 +136,19 @@ class TplusMatWc(AcceptMatWc):
 
 class TplusMatWcBom(AcceptMatWcBom):
 
-    class Config:
-        extra = 'allow'
-
     matver: str = Field(None)
     itemno: str = Field(None)
-    pu: str = Field(None)
-    mu: str = Field(None)
-    
+
+    class Config:
+        extra = 'allow'
 
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values: Dict[str, Any]):
         cleaned_values = {}
         cleaned_values['productno'] = values['父件编码']
-        # cleaned_values['matver'] = values['']
-        # cleaned_values['itemno'] = values['']
+        cleaned_values['matver'] = "🈳❗"
+        cleaned_values['itemno'] = "🈳❗"
         cleaned_values['materialno'] = values['子件编码']
         cleaned_values['qty'] = values['需用数量']
         # cleaned_values['offsethour'] = values['']
@@ -183,21 +180,21 @@ class TplusConfig:
     """
     TOKEN_EXPIRE_SECONDS = 24 * 3600     # 设token有效期为1天，其实最长可达6天
     AUTH_ENDPOINT = "/auth/v2/refreshToken"
-
     # 默认分页大小，注意最大不得超过1000
     PAGE_SIZE = 1000
 
-    FORMS = {
+
+    SOURCE = {
         "material": {
             "endpoint": "/tplus/api/v2/inventory/Query",
             "field_map": {
                 "ID":"ID", "Disabled":"是否停用", "Code":"编码", "Name":"名称",
                 "Specification":"规格型号", "InventoryClassCode":"存货分类Code", "InventoryClassName":"存货分类Name",
                 "UnitName":"单位Name", "BaseUnitName":"主计量单位Name",
-                "UnitByManufactureName":"生产常用单位Name",
+                "UnitByManufactureName": "生产常用单位Name",
                 "IsMaterial":"是否物料", "IsPurchase":"是否采购",
                 "IsMadeSelf":"是否自制", "IsMadeRequest":"是否委外",
-                "IsSuite":"是否套件",   # 虚拟件？
+                "IsSuite":"是否套件", "IsPhantom":"是否虚拟件",
                 "AvagCost":"平均成本", "Expired":"保质期", "ExpiredUnitName":"保质期单位",
                 "IsNeedQualityInspection":"是否需要检验",
                 "Ts": "时间戳",
@@ -213,7 +210,7 @@ class TplusConfig:
         "workcenter": {
             "endpoint": "/tplus/api/v2/WorkCenter/Query",
             "field_map": {
-                "ID":"ID", "Code":"编码", "Name":"名称", "Disabled":"是否停用"
+                "ID": "ID", "Code": "编码", "Name": "名称", "Disabled": "是否停用"
             },
             "base_filter": {},
             "pydantic_model": TplusWorkcenter,
@@ -222,7 +219,7 @@ class TplusConfig:
         "route": {
             "endpoint": "/tplus/api/v2/routing/Query",
             "field_map": {
-                "ID":"ID", "Disabled":"是否停用", "Code":"料号", "Name":"名称",
+                "ID": "ID", "Disabled": "是否停用", "Code": "料号", "Name": "名称",
                 "RoutingDetails / JobSequence": "加工顺序",
                 "RoutingDetails / Process / Code": "工序编码", "RoutingDetails / Process / Name": "工序名称",
             },
@@ -233,16 +230,46 @@ class TplusConfig:
         "bom": {
             "endpoint": "/tplus/api/v2/bom/QueryPage",
             "field_map": {
-                "ID":"ID", "Disabled":"是否停用", "Code":"父件编码", "Name":"父件名称", "Version": "版本号",
-                "IsPhantom": "是否虚拟", "Unit / Name":"计量单位", "ProduceQuantity":"生产数量",
-                "BOMChilds / Code":"子件编码", "BOMChilds / Name":"子件名称",
-                "BOMChilds / Unit / Name":"子件计量单位", "BOMChilds / RequiredQuantity":"需用数量", 
-                "BOMChilds / WasteRate":"损耗率",
+                "ID": "ID", "Disabled": "是否停用", "Code": "父件编码", "Name": "父件名称", "Version": "版本号",
+                "IsPhantom": "是否虚拟", "Unit / Name": "计量单位", "ProduceQuantity": "生产数量",
+                "BOMChilds / Code": "子件编码", "BOMChilds / Name": "子件名称",
+                "BOMChilds / Unit / Name": "子件计量单位", "BOMChilds / RequiredQuantity": "需用数量", 
+                "BOMChilds / WasteRate": "损耗率",
             },
             "base_filter": {},
             "pydantic_model": TplusMatWcBom,
         },
+
+        "stock": {  # 现存量查询 https://open.chanjet.com/docs/file/apiFile/tcloud/tjqt/xcl?id=30875，以 现存量字段 为库存数导入
+            "endpoint": "/tplus/api/v2/currentStock/Query",
+            "field_map": {
+                
+            },
+            "base_filter": {},
+            "pydantic_model": None,
+        },
+
+        "workreport": { # 工序汇报单列表查询 https://open.chanjet.com/docs/file/apiFile/tcloud/t+dj/t+gxhbd?id=32107
+            "endpoint": "/tplus/api/v2/workReport/Query",
+            "field_map": {
+
+            },
+            "base_filter": {},
+            "pydantic_model": None,
+        },
     }
+
+
+    TARGET = {
+        "mo": { # 生产加工单创建 https://open.chanjet.com/docs/file/apiFile/tcloud/t+dj/t+scjgd?id=31949
+            "endpoint": "/tplus/api/v2/ManufactureOrderOpenApi/Create",
+            "field_map": {
+                "supplyno": "",
+            },
+        }
+    }
+
+
 
 class TplusConnection(BaseConnection):
     
@@ -250,9 +277,9 @@ class TplusConnection(BaseConnection):
         """
         初始化畅捷通连接
         """
-        self.credential = JSONManager(config.CREDENTIAL_FILE)
-        self.base_url = config.BASE_URL
         self.config = config
+        self.base_url = config.BASE_URL
+        self.credential = JSONManager(config.CREDENTIAL_FILE)
         # 从缓存文件中读取认证信息，并将其设置为类实例属性
         self.credential_keys = ("app_key", "app_secret", "access_token", "refresh_token", "org_id", "_auth_at_")
         for key in self.credential_keys:
@@ -265,7 +292,7 @@ class TplusConnection(BaseConnection):
         if self._auth_at_:
             expire_time = datetime.strptime(self._auth_at_, "%Y-%m-%d %H:%M:%S") + timedelta(seconds=self.config.TOKEN_EXPIRE_SECONDS)
             if datetime.now() < expire_time:
-                logger.info(f"✅ 畅捷通 token 仍在有效期内，有效期至: {expire_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                console_log.info(f"✅ 畅捷通 token 仍在有效期内，有效期至: {expire_time.strftime('%Y-%m-%d %H:%M:%S')}")
                 return self.access_token
 
         auth_response = self._session.get(
@@ -293,7 +320,7 @@ class TplusConnection(BaseConnection):
                 "access_token": self.access_token,
                 "refresh_token": self.refresh_token})
             self.credential.save()
-            logger.info(f"畅捷通token刷新成功")
+            console_log.info(f"畅捷通token刷新成功")
             return self.access_token
         else:
             raise Exception(f"获取畅捷通token失败: {auth_response}")
@@ -330,21 +357,21 @@ class TplusConnection(BaseConnection):
         return response
 
 
-    def data_list(self, form_name: str, filter: dict=None, only_today: bool=False, pydantic_model: PydanticModel=None):
+    def data_list(self, source_name: str, filter: dict=None, only_today: bool=False, pydantic_model: PydanticModel=None):
         """
         获取畅捷通数据列表
         Args:
-            form_name: 表单名称
+            source_name: 表单名称
             filter: 查询过滤条件，默认None，仅在material、workcenter表单有效
             only_today: 是否仅获取今天更新的数据，默认False，对 route（工艺路线） 表单无效
         Returns:
             数据列表
         """
         self.auth()
-        endpoint = self.config.FORMS[form_name]['endpoint']
-        field_map = self.config.FORMS[form_name]['field_map']
-        pydantic_model = pydantic_model or self.config.FORMS[form_name].get('pydantic_model')
-        base_filter = self.config.FORMS[form_name].get('base_filter', {})
+        endpoint = self.config.SOURCE[source_name]['endpoint']
+        field_map = self.config.SOURCE[source_name]['field_map']
+        pydantic_model = pydantic_model or self.config.SOURCE[source_name].get('pydantic_model')
+        base_filter = self.config.SOURCE[source_name].get('base_filter', {})
 
         if filter:
             filter.update(base_filter)
@@ -356,7 +383,7 @@ class TplusConnection(BaseConnection):
             filter["UpdateDateBegin"] = f"{today} 00:00:00"
             filter["UpdateDateEnd"] = f"{today} 23:59:59"
 
-        if form_name in ('material', 'workcenter'):
+        if source_name in ('material', 'workcenter'):
             params = {
                 "PageIndex": 1,
                 "PageSize": self.config.PAGE_SIZE,
@@ -378,11 +405,11 @@ class TplusConnection(BaseConnection):
                 params["Ts"] = raw_data[-1]["Ts"]
                 data_list.extend([{v: row.get(k) for k, v in field_map.items()} for row in raw_data])
 
-        elif form_name == 'route':
+        elif source_name == 'route':
             response = self._post(endpoint=endpoint, data={"param": {}})
             data_list = self._process_route_data(response.json(), field_map=field_map)
 
-        elif form_name == 'bom':
+        elif source_name == 'bom':
             params = {
                 "PageIndex": 1,
                 "PageSize": 100,    # 数据量太大，单次不宜太多。官方默认值为20
@@ -419,7 +446,7 @@ class TplusConnection(BaseConnection):
         """
         processed_data = []
         for item in routedata_list:
-            flat_item = self.datapro_expand_parent_child_data(item, 'RoutingDetails')
+            flat_item = DataProcessor.expand_parent_child_data(item, 'RoutingDetails')
             for row in flat_item:
                 processed_data.append({v: row.get(k) for k, v in field_map.items()})
         return processed_data
@@ -435,7 +462,7 @@ class TplusConnection(BaseConnection):
         """
         processed_data = []
         for item in bomdata_list:
-            flat_item = self.datapro_expand_parent_child_data(item, 'BOMChilds')
+            flat_item = DataProcessor.expand_parent_child_data(item, 'BOMChilds')
             for row in flat_item:
                 processed_data.append({v: row.get(k) for k, v in field_map.items()})
         return processed_data

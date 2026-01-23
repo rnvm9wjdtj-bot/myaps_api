@@ -8,7 +8,7 @@ from typing import Dict, Any#NamedTuple, List#, Callable, Literal,
 # import requests
 
 from ._base import (
-    BaseConnection, convert_timeunit, clean_value,
+    BaseConnection, convert_timeunit, clean_value, reset_default_values,
     BaseModel as PydanticModel, model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold
@@ -16,11 +16,6 @@ from ._base import (
 
 
 class K3Material(AcceptMaterial):
-
-    leadday: int = Field(None, ge=0, description="交期（天）")
-    grday: int = Field(None, ge=0, description="收货质检（天）")
-    groupno: str = Field(None, description="型号")
-    fifo: int = Field(None, description="先进先出")
 
     class Config:
         extra = 'allow'
@@ -64,7 +59,7 @@ class K3Material(AcceptMaterial):
         # cleaned_values['free2'] = values['']
         # cleaned_values['free3'] = values['']
         return cleaned_values
-
+reset_default_values(K3Material, required_fields=('materialno', 'description'))
 
 
 class K3Config:
@@ -85,7 +80,7 @@ class K3Config:
     TOP_ROW_COUNT = 100000
 
     # 表单ID及字段映射
-    FORMS = {
+    SOURCE = {
         'material': {
             'form_id': 'BD_MATERIAL',
             'field_map': {
@@ -177,16 +172,10 @@ class K3Config:
                 "fBaseQty": "库存量(基本单位)", "fQty": "库存量(主单位)", "fSecQty": "库存量(库存辅单位)",
                 "fAvbQty": "可用量(主单位)", "fBaseAvbQty": "可用量(基本单位)", "fSecAVBQty": "可用量(库存辅单位)",
                 "fUpdateTime": "最后更新时间",
-                
             },
             'pydantic_model': None,
         },
     }
-
-    @classmethod
-    def regist_pydantic_model(cls, form_name: str, pydantic_model: PydanticModel):
-        """注册Pydantic模型"""
-        cls.FORMS[form_name]['pydantic_model'] = pydantic_model
 
 
 
@@ -270,10 +259,10 @@ class K3Connection(BaseConnection):
         return self._cookie
 
 
-    def data_list(self, form_name: str, filter_string: str=None, only_today: bool=False, pydantic_model: PydanticModel=None):
+    def data_list(self, source_name: str, filter_string: str=None, only_today: bool=False, pydantic_model: PydanticModel=None):
         self.auth()
-        base_filterstring = self.config.FORMS[form_name].get('base_filter') or "1=1"
-        pydantic_model = pydantic_model or self.config.FORMS[form_name].get('pydantic_model')
+        base_filterstring = self.config.SOURCE[source_name].get('base_filter') or "1=1"
+        pydantic_model = pydantic_model or self.config.SOURCE[source_name].get('pydantic_model')
         if filter_string:
             filter_string = f"{filter_string} AND {base_filterstring}"
         else:
@@ -282,8 +271,8 @@ class K3Connection(BaseConnection):
         if only_today:
             today = datetime.now().strftime('%Y-%m-%d')
             filter_string = f"{filter_string} AND (( `fCreateDate` >= '{today} 00:00:00' AND `fCreateDate` <= '{today} 23:59:59' ) OR ( `fModifyDate` >= '{today} 00:00:00' AND `fModifyDate` <= '{today} 23:59:59' ))"
-        k3_fields = set(self.config.FORMS[form_name]['field_map'].keys())
-        to_fields = [self.config.FORMS[form_name]['field_map'][k] for k in k3_fields]
+        k3_fields = set(self.config.SOURCE[source_name]['field_map'].keys())
+        to_fields = [self.config.SOURCE[source_name]['field_map'][k] for k in k3_fields]
         # 发送请求
 
         start_row = 0
@@ -294,7 +283,7 @@ class K3Connection(BaseConnection):
                 url=f"{self.base_url}{self.config.QUERY_ENDPOINT}",
                 json={
                     "data": {
-                        "FormId": self.config.FORMS[form_name]['form_id'],
+                        "FormId": self.config.SOURCE[source_name]['form_id'],
                         "FieldKeys": ",".join(k3_fields),
                         "FilterString": filter_string,
                         "StartRow": start_row,

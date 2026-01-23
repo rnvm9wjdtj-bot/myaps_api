@@ -22,6 +22,7 @@ class TMaterial(pm.ProtoMaterial):
         return await super().create(using_db=using_db, update_fields=update_fields, force_create=force_create, force_update=force_update, *args, **kwargs)
 
 
+
 class TWorkcenter(pm.ProtoWorkcenter):
     workcenter = fields.CharField(source_field='WorkCenter', primary_key=True, max_length=32)
 
@@ -39,7 +40,8 @@ class TMatWc(pm.ProtoMatWc):
         managed = False
         abstract = False
         table = "t_mat_wc"
-        unique_together = [("materialno", "matver", "itemno")]
+        # unique_together = [("materialno", "matver", "itemno")]
+        unique_together = pm.ProtoMatWc.Meta.unique_together
 
 
 
@@ -50,7 +52,8 @@ class TMatVer(pm.ProtoMatVer):
         managed = False
         abstract = False
         table = "t_mat_ver"
-        unique_together = [("materialno", "matver")]
+        # unique_together = [("materialno", "matver")]
+        unique_together = pm.ProtoMatVer.Meta.unique_together
 
     @classmethod
     async def create_if_not_exists(cls, db_name: str, materialno: str, matver: str = None, lotfrom: int = None, lotto: int = None, priority: int = None):
@@ -81,6 +84,7 @@ class TMatVer(pm.ProtoMatVer):
             }])
 
 
+
 class TMatWcBom(pm.ProtoMatWcBom):
     vid = fields.IntField(primary_key=True)
 
@@ -88,7 +92,8 @@ class TMatWcBom(pm.ProtoMatWcBom):
         managed = False
         abstract = False
         table = "t_mat_wc_bom"
-        unique_together = [("productno", "matver", "itemno", "materialno")]
+        # unique_together = [("productno", "matver", "itemno", "materialno")]
+        unique_together = pm.ProtoMatWcBom.Meta.unique_together
 
 
 
@@ -99,7 +104,8 @@ class TSupply(pm.ProtoSupply):
         managed = False
         abstract = False
         table = "t_supply"
-        unique_together = [("materialno", "supplyno")]
+        # unique_together = [("materialno", "supplyno")]
+        unique_together = pm.ProtoSupply.Meta.unique_together
 
 
 
@@ -120,7 +126,8 @@ class TDemand(pm.ProtoDemand):
         managed = False
         abstract = False
         table = "t_demand"
-        unique_together = [("materialno", "demandno", "itemno")]
+        # unique_together = [("materialno", "demandno", "itemno")]
+        unique_together = pm.ProtoDemand.Meta.unique_together
 
 
 
@@ -141,7 +148,8 @@ class TMatWcMold(pm.ProtoMatWcMold):
         managed = False
         abstract = False
         table = "t_mat_wc_mold"
-        unique_together = [("materialno", "workcenter", "moldno", "itemno")]
+        # unique_together = [("materialno", "workcenter", "moldno", "itemno")]
+        unique_together = pm.ProtoMatWcMold.Meta.unique_together
 
 
 

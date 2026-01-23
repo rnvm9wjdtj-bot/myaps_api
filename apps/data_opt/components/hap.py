@@ -7,8 +7,11 @@ from tortoise.models import Model as DbModel
 from pydantic import BaseModel as PydanticModel
 from decimal import Decimal
 
+from globalobjects import file_timed_logger
 from ._base import get_session
 
+
+file_logger = file_timed_logger.setup_logging(__name__)
 
 
 # 自定义JSON编码器，用于处理Decimal类型
@@ -558,6 +561,7 @@ class HapWorksheet:
             HapWorksheetRowSet: 处理后的行对象集合
         """
         result_rows = []
+        create_list = []  # 存储需要创建的数据
         
         # 检查是否有冲突字段
         has_conflict_fields = bool(self.conflict_fields)
@@ -569,10 +573,9 @@ class HapWorksheet:
             else:
                 data_dict = data.copy()
             
-            # 如果没有冲突字段，直接创建
+            # 如果没有冲突字段，直接添加到创建列表
             if not has_conflict_fields:
-                created_rows = self.create_rows([data_dict], trigger_workflow=trigger_workflow)
-                result_rows.extend(created_rows.all())
+                create_list.append(data_dict)
                 continue
             
             # 构建查询条件
@@ -582,10 +585,9 @@ class HapWorksheet:
                     value = data_dict[field]
                     filter_conditions.append(f'{field}__eq=\"{value}\"')
 
-            # 如果没有有效的冲突字段值，直接创建
+            # 如果没有有效的冲突字段值，添加到创建列表
             if not filter_conditions:
-                created_rows = self.create_rows([data_dict], trigger_workflow=trigger_workflow)
-                result_rows.extend(created_rows.all())
+                create_list.append(data_dict)
                 continue
             
             # 执行查询
@@ -599,9 +601,13 @@ class HapWorksheet:
                 updated_row = existing_row.update(data_dict, trigger_workflow=trigger_workflow)
                 result_rows.append(updated_row)
             else:
-                # 不存在，执行创建
-                created_rows = self.create_rows([data_dict], trigger_workflow=trigger_workflow)
-                result_rows.extend(created_rows.all())
+                # 不存在，添加到创建列表
+                create_list.append(data_dict)
+        
+        # 批量创建需要新增的行
+        if create_list:
+            created_rows = self.create_rows(create_list, trigger_workflow=trigger_workflow)
+            result_rows.extend(created_rows.all())
         
         return HapWorksheetRowSet(rows=result_rows, worksheet=self, hap_conn=self.hap_conn)
 

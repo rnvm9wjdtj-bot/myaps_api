@@ -8,13 +8,14 @@ from datetime import datetime
 
 from fastapi import status
 
-from globalobjects._defaults import ProjectDefaultValues as pdv
+# from globalobjects._defaults import ProjectDefaultValues as pdv
 from ._base import (
+    cron_task,
     ApsBaseAction, JSONManager,
-    file_log, console_log, standard_response, get_session, HapConnection
+    file_log, console_log, standard_response, get_session, 
     )
 
-from ..components import yonyou_tplus
+from ..components import yonyou_tplus, hap
 
 
 #################################################################################
@@ -22,25 +23,43 @@ from ..components import yonyou_tplus
 #################################################################################
 
 
-hap_conn = HapConnection(
+hap_conn = hap.HapConnection(
     app_key='601ae007d84ca95a',
     sign='ODVlMzNjYzA1ZTg1Yzg3YjI0NmQ5NTFmZGQ3OTk1MWYzMjE4M2JiMzYyNDEzMGU3NTY5YzI0YzEzYTYyYTExZA=='
 )
+hap_conn.regist_worksheet(hap.get_maindata_worksheetinfo())
+
 
 tplus_conn = yonyou_tplus.TplusConnection()
+tplus_conn.auth()
 
 
 #################################################################################
 # ⬇️ 项目可复用逻辑
 #################################################################################
-...
+def get_maindata_from_erp_to_hap():
+    material = tplus_conn.data_list(source_name='material')
+    hap_conn.worksheet('t_material').upsert(material)
+
+    workcenter = tplus_conn.data_list(source_name='workcenter')
+    hap_conn.worksheet('t_workcenter').upsert(workcenter)
+
+    route = tplus_conn.data_list(source_name='route')
+    hap_conn.worksheet('t_mat_wc').upsert(route)
+
+    bom = tplus_conn.data_list(source_name='bom')
+    hap_conn.worksheet('t_mat_wc_bom').upsert(bom)
 
 
 
 #################################################################################
 # ⬇️ 定时任务
 #################################################################################
-...
+@cron_task(hour="8,10,12,14,16",minute="55")
+def get_maindata_from_erp_to_hap_task(*args, **kwargs):
+    console_log.info("⏰ 开始执行定时任务")
+    get_maindata_from_erp_to_hap()
+    console_log.info("⏰ 定时任务执行完成")
 
 
 #################################################################################

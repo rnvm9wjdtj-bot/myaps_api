@@ -166,7 +166,7 @@ def convert_timeunit(value, from_unit: str, to_unit: str = 'day'):
     return value * unit_factors[from_unit] / unit_factors[to_unit]
 
 
-def clean_value(value: Union[str, int, float, None], if_none_return=''):
+def clean_value(value: Union[str, int, float, None], if_none_return='🈳❗'):
     if value is None:
         return if_none_return
     value_type = type(value)
