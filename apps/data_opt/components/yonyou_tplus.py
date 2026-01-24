@@ -72,7 +72,7 @@ class TplusMaterial(AcceptMaterial):
         # cleaned_values['free2'] = values['']
         # cleaned_values['free3'] = values['']
         return cleaned_values
-reset_default_values(TplusMaterial, required_fields=('materialno', 'description'))
+# reset_default_values(TplusMaterial, required_fields=('materialno', 'description'))
 
 
 
@@ -101,7 +101,7 @@ class TplusWorkcenter(AcceptWorkcenter):
         # cleaned_values['setupno'] = values['']
         # cleaned_values['grpno'] = values['']
         return cleaned_values
-reset_default_values(TplusWorkcenter, required_fields=('workcenter', 'workcentername'))
+# reset_default_values(TplusWorkcenter, required_fields=('workcenter', 'workcentername'))
 
 
 

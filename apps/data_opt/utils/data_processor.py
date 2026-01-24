@@ -19,7 +19,7 @@ class DataProcessor:
         # 处理枚举值对象，转换为字符串
         def handle_enum(val):
             if isinstance(val, enum.Enum):
-                return str(val)
+                return val.value
             return val
         
         # 处理枚举值

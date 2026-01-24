@@ -318,6 +318,27 @@ class HapUtils:
             if not re.match(uuid_pattern, k.lower()):
                 filtered_data[k] = v
         return filtered_data
+    
+    @staticmethod
+    def process_choice_fields(data: dict) -> dict:
+        """
+        处理选项字段，将选项字段（list of dict with key and value）转换为逗号分隔的字符串
+        
+        Args:
+            data: 数据字典
+            
+        Returns:
+            dict: 处理后的数据字典
+        """
+        processed_data = {}
+        for k, v in data.items():
+            if isinstance(v, list) and v and isinstance(v[0], dict) and 'key' in v[0] and 'value' in v[0]:
+                # 选项字段，提取 value 并用逗号连接
+                picked_options = [item['value'] for item in v]
+                processed_data[k] = ','.join(picked_options)
+            else:
+                processed_data[k] = v
+        return processed_data
 
 
 
@@ -474,13 +495,8 @@ class HapWorksheet:
         row_dict = {}
         if response['success']:
             data = response['data']
-            for k, v in data.items():
-                # if k not in ('rowid', 'ctime', 'utime', 'caid', 'uaid', 'ownerid'):
-                    if type(v) == list:
-                        v = [item['value'] for item in v]
-                        row_dict[k] = ','.join(v)
-                    else:
-                        row_dict[k] = v
+            # 使用 HapUtils.process_choice_fields 处理选项字段
+            row_dict = HapUtils.process_choice_fields(data)
 
             if exclude_unamed_fields:
                 row_dict = HapUtils.exclude_unamed_fields(row_dict)
@@ -1165,7 +1181,10 @@ class HapRowsQuery:
 class HapWorksheetRow:
     """工作表行类，代表单行数据并提供操作方法"""
     def __init__(self, row_data: dict, row_id: str = None, worksheet: HapWorksheet = None, hap_conn: HapConnection = None):
-        self.row_data = row_data
+        # 使用 HapUtils.process_choice_fields 处理选项字段
+        processed_row_data = HapUtils.process_choice_fields(row_data)
+        
+        self.row_data = processed_row_data
         self.worksheet = worksheet
         self.row_id = row_id
         self.hap_conn = hap_conn
@@ -1203,12 +1222,6 @@ class HapWorksheetRow:
         endpoint = f"/v3/app/worksheets/{self.worksheet.worksheet_id}/rows/{self.row_id}"
         # self.refresh()
 
-        # TODO 将传入的 data 与当前的 worksheetrow 数据进行比对，只更新有变化的字段
-        # 比对逻辑：
-        # 1. 遍历 data 中的每个键值对
- 
-
-        # 4. 如果键在 worksheetrow 中不存在且值为 None，则根据 exclude_none 参数判断是否添加到更新字段列表中
         update_fields = {}
         
         for k, v in data.items():
