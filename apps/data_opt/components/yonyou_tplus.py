@@ -3,14 +3,14 @@
 """
 import json
 import os
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 
 
 from ._base import (
     console_log,
     DataProcessor, globalconst,
-    BaseConnection, convert_timeunit, clean_value, reset_default_values,
+    BaseConnection, convert_timeunit, clean_value, #reset_default_values,
     BaseModel as PydanticModel, model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold
@@ -25,9 +25,12 @@ from ..utils.json_manager import JSONManager
 用于向HAP发送
 在 @model_validator 中需要将：
 无法通过处理原生数据获取的联合索引字段设为  "🈳❗"  占位，以保证能构成完整的联合索引
-非必填（数据库可空）字段（类变量）的默认值统一设为None，由客户在HAP中填写。
+非必填（数据库可空）字段（类变量）的默认值统一设为 None ，由客户在HAP中填写。
 """
 class TplusMaterial(AcceptMaterial):
+
+    candelay: Optional[str] = Field(None)   # 非必填（数据库可空）字段（类变量）的默认值统一设为 None ，由客户在HAP中填写。
+    lotsize: Optional[str] = Field(None)
     
     class Config:
         extra = 'allow'
@@ -55,7 +58,7 @@ class TplusMaterial(AcceptMaterial):
         # cleaned_values['phantommin'] = values['']
         # cleaned_values['firmday'] = values['']
         # cleaned_values['daygap'] = values['']
-        # cleaned_values['candelay'] = values['']
+        # cleaned_values['candelay'] = globalconst.YesNoEnum.YES
         # cleaned_values['lotsize'] = values['']
         # cleaned_values['lotfix'] = values['']
         # cleaned_values['lotmin'] = values['']
@@ -71,7 +74,8 @@ class TplusMaterial(AcceptMaterial):
         # cleaned_values['free1'] = values['']
         # cleaned_values['free2'] = values['']
         # cleaned_values['free3'] = values['']
-        return cleaned_values
+        values = cleaned_values
+        return values
 # reset_default_values(TplusMaterial, required_fields=('materialno', 'description'))
 
 

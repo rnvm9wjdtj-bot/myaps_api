@@ -8,7 +8,7 @@ from typing import Dict, Any#NamedTuple, List#, Callable, Literal,
 # import requests
 
 from ._base import (
-    BaseConnection, convert_timeunit, clean_value, reset_default_values,
+    BaseConnection, convert_timeunit, clean_value, #reset_default_values,
     BaseModel as PydanticModel, model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold
@@ -59,7 +59,7 @@ class K3Material(AcceptMaterial):
         # cleaned_values['free2'] = values['']
         # cleaned_values['free3'] = values['']
         return cleaned_values
-reset_default_values(K3Material, required_fields=('materialno', 'description'))
+# reset_default_values(K3Material, required_fields=('materialno', 'description'))
 
 
 class K3Config:

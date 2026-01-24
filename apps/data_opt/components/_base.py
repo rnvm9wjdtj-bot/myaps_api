@@ -20,21 +20,21 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 console_log = logging.getLogger(__name__)
 
 
-def reset_default_values(model: PydanticModel, required_fields: list[str] = None, default_fields: Dict[str, Any] = None):
-    """
-    重置模型字段的必填、选填和默认值
-    :param model: 要重置默认值的模型类
-    :param required_fields: 重置为必填的字段
-    :param default_fields: 重置字段的默认值
-    其余字段默认值为None
-    """
-    required_fields = required_fields or []
-    default_fields = default_fields or {}
-    for field_name, field in model.model_fields.items():
-        if field_name in required_fields:
-            field.default = ...
-            continue
-        field.default = default_fields.get(field_name, None)
+# def reset_default_values(model: PydanticModel, required_fields: list[str] = None, default_fields: Dict[str, Any] = None):
+#     """
+#     重置模型字段的必填、选填和默认值
+#     :param model: 要重置默认值的模型类
+#     :param required_fields: 重置为必填的字段
+#     :param default_fields: 重置字段的默认值
+#     其余字段默认值为None
+#     """
+#     required_fields = required_fields or []
+#     default_fields = default_fields or {}
+#     for field_name, field in model.model_fields.items():
+#         if field_name in required_fields:
+#             field.default = ...
+#             continue
+#         field.default = default_fields.get(field_name, None)
 
 
 class BaseConnection(ABC):

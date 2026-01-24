@@ -81,7 +81,12 @@ class HapUtils:
             elif v_type == str:
                 fieldlist.append({'id': control_id, 'value': v, 'type': 2})
             else:
-                pass
+                # 处理枚举类型
+                if hasattr(v, 'value'):
+                    fieldlist.append({'id': control_id, 'value': v.value, 'type': 2})
+                else:
+                    # 其他类型，尝试转换为字符串
+                    fieldlist.append({'id': control_id, 'value': str(v), 'type': 2})
         
         return fieldlist
     
