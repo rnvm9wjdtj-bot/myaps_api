@@ -80,7 +80,7 @@ class K3Config:
     TOP_ROW_COUNT = 100000
 
     # 表单ID及字段映射
-    SOURCE = {
+    PULL_SOURCE = {
         'material': {
             'form_id': 'BD_MATERIAL',
             'field_map': {
@@ -178,6 +178,11 @@ class K3Config:
     }
 
 
+    PUSH_TARGET = {
+
+
+    }
+
 
 class K3Connection(BaseConnection):
 
@@ -259,10 +264,10 @@ class K3Connection(BaseConnection):
         return self._cookie
 
 
-    def data_list(self, source_name: str, filter_string: str=None, only_today: bool=False, pydantic_model: PydanticModel=None):
+    def pull_from_source(self, source_name: str, filter_string: str=None, only_today: bool=False, pydantic_model: PydanticModel=None):
         self.auth()
-        base_filterstring = self.config.SOURCE[source_name].get('base_filter') or "1=1"
-        pydantic_model = pydantic_model or self.config.SOURCE[source_name].get('pydantic_model')
+        base_filterstring = self.config.PULL_SOURCE[source_name].get('base_filter') or "1=1"
+        pydantic_model = pydantic_model or self.config.PULL_SOURCE[source_name].get('pydantic_model')
         if filter_string:
             filter_string = f"{filter_string} AND {base_filterstring}"
         else:
@@ -271,8 +276,8 @@ class K3Connection(BaseConnection):
         if only_today:
             today = datetime.now().strftime('%Y-%m-%d')
             filter_string = f"{filter_string} AND (( `fCreateDate` >= '{today} 00:00:00' AND `fCreateDate` <= '{today} 23:59:59' ) OR ( `fModifyDate` >= '{today} 00:00:00' AND `fModifyDate` <= '{today} 23:59:59' ))"
-        k3_fields = set(self.config.SOURCE[source_name]['field_map'].keys())
-        to_fields = [self.config.SOURCE[source_name]['field_map'][k] for k in k3_fields]
+        k3_fields = set(self.config.PULL_SOURCE[source_name]['field_map'].keys())
+        to_fields = [self.config.PULL_SOURCE[source_name]['field_map'][k] for k in k3_fields]
         # 发送请求
 
         start_row = 0
@@ -283,7 +288,7 @@ class K3Connection(BaseConnection):
                 url=f"{self.base_url}{self.config.QUERY_ENDPOINT}",
                 json={
                     "data": {
-                        "FormId": self.config.SOURCE[source_name]['form_id'],
+                        "FormId": self.config.PULL_SOURCE[source_name]['form_id'],
                         "FieldKeys": ",".join(k3_fields),
                         "FilterString": filter_string,
                         "StartRow": start_row,
@@ -313,6 +318,10 @@ class K3Connection(BaseConnection):
         if pydantic_model:
             data_list = [pydantic_model(**item).model_dump() for item in data_list]
         return data_list
+
+
+    def push_into_target(self, target_name: str, data_list: list, pydantic_model: PydanticModel=None):
+        pass
 
 
     def __repr__(self) -> str:

@@ -38,7 +38,7 @@ tplus_conn.auth()
 # ⬇️ 项目可复用逻辑
 #################################################################################
 def get_maindata_from_erp_to_hap():
-    material = tplus_conn.data_list(source_name='material')
+    material = tplus_conn.pull_from_source(source_name='material')
     hap_conn.worksheet('t_material').upsert(material)
 
     # workcenter = tplus_conn.data_list(source_name='workcenter')

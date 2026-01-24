@@ -184,7 +184,7 @@ class TplusConfig:
     PAGE_SIZE = 1000
 
 
-    SOURCE = {
+    PULL_SOURCE = {
         "material": {
             "endpoint": "/tplus/api/v2/inventory/Query",
             "field_map": {
@@ -260,7 +260,7 @@ class TplusConfig:
     }
 
 
-    TARGET = {
+    PUSH_TARGET = {
         "mo": { # 生产加工单创建 https://open.chanjet.com/docs/file/apiFile/tcloud/t+dj/t+scjgd?id=31949
             "endpoint": "/tplus/api/v2/ManufactureOrderOpenApi/Create",
             "field_map": {
@@ -357,7 +357,7 @@ class TplusConnection(BaseConnection):
         return response
 
 
-    def data_list(self, source_name: str, filter: dict=None, only_today: bool=False, pydantic_model: PydanticModel=None):
+    def pull_from_source(self, source_name: str, filter: dict=None, only_today: bool=False, pydantic_model: PydanticModel=None):
         """
         获取畅捷通数据列表
         Args:
@@ -368,10 +368,10 @@ class TplusConnection(BaseConnection):
             数据列表
         """
         self.auth()
-        endpoint = self.config.SOURCE[source_name]['endpoint']
-        field_map = self.config.SOURCE[source_name]['field_map']
-        pydantic_model = pydantic_model or self.config.SOURCE[source_name].get('pydantic_model')
-        base_filter = self.config.SOURCE[source_name].get('base_filter', {})
+        endpoint = self.config.PULL_SOURCE[source_name]['endpoint']
+        field_map = self.config.PULL_SOURCE[source_name]['field_map']
+        pydantic_model = pydantic_model or self.config.PULL_SOURCE[source_name].get('pydantic_model')
+        base_filter = self.config.PULL_SOURCE[source_name].get('base_filter', {})
 
         if filter:
             filter.update(base_filter)
@@ -438,7 +438,7 @@ class TplusConnection(BaseConnection):
 
     def _process_route_data(self, routedata_list: list, field_map: dict):
         """
-        处理路由数据，提取产品编码、产品名称、路由详情
+        处理工艺路线数据，提取产品编码、产品名称、详情
         Args:
             route_data: 原始路由数据列表
         Returns:
@@ -466,3 +466,7 @@ class TplusConnection(BaseConnection):
             for row in flat_item:
                 processed_data.append({v: row.get(k) for k, v in field_map.items()})
         return processed_data
+
+
+    def push_into_target(self, target_name: str, data_list: list, pydantic_model: PydanticModel=None):
+        pass
