@@ -1,10 +1,96 @@
 from typing import List, Dict#, Optional, Callable, Union
+import enum
 
-import pandas as pd
+import pandas as pd, json
 
 
 
 class DataProcessor:
+
+    @staticmethod
+    def is_equal(val1, val2):
+        """判断两个值是否不同，处理不同类型之间的比较"""
+        # 处理 None 值情况
+        if val1 is None and val2 is None:
+            return True
+        if val1 is None or val2 is None:
+            return False
+        
+        # 处理枚举值对象，转换为字符串
+        def handle_enum(val):
+            if isinstance(val, enum.Enum):
+                return str(val)
+            return val
+        
+        # 处理枚举值
+        enum_val1 = handle_enum(val1)
+        enum_val2 = handle_enum(val2)
+        
+        # 如果处理后值不同，使用处理后的值重新比较
+        if enum_val1 is not val1 or enum_val2 is not val2:
+            return DataProcessor.is_equal(enum_val1, enum_val2)
+        
+        # 处理 JSON 字符串与字典/列表的比较
+        def try_parse_json(s):
+            if isinstance(s, str):
+                try:
+                    return json.loads(s)
+                except (json.JSONDecodeError, ValueError, TypeError):
+                    return s
+            return s
+        
+        # 尝试解析 JSON 字符串
+        parsed_val1 = try_parse_json(val1)
+        parsed_val2 = try_parse_json(val2)
+        
+        # 如果解析后类型不同，使用解析后的值重新比较
+        if parsed_val1 is not val1 or parsed_val2 is not val2:
+            return DataProcessor.is_equal(parsed_val1, parsed_val2)
+        
+        # 处理列表与逗号分隔字符串的比较
+        if isinstance(val1, list) and isinstance(val2, str):
+            val1_str = ','.join(str(item) for item in val1)
+            return val1_str == val2
+        if isinstance(val1, str) and isinstance(val2, list):
+            val2_str = ','.join(str(item) for item in val2)
+            return val1 == val2_str
+        
+        # 处理数值字符串的比较
+        def is_numeric(s):
+            if isinstance(s, str):
+                try:
+                    float(s)
+                    return True
+                except (ValueError, TypeError):
+                    return False
+            return False
+        
+        if isinstance(val1, str) and isinstance(val2, str):
+            if is_numeric(val1) and is_numeric(val2):
+                try:
+                    return float(val1) == float(val2)
+                except (ValueError, TypeError):
+                    pass
+        
+        # 处理数字与字符串的比较
+        if isinstance(val1, (int, float)) and isinstance(val2, str):
+            try:
+                return val1 == type(val1)(val2)
+            except (ValueError, TypeError):
+                return False
+        if isinstance(val1, str) and isinstance(val2, (int, float)):
+            try:
+                return type(val2)(val1) == val2
+            except (ValueError, TypeError):
+                return False
+        
+        # 处理布尔值与其他类型的比较
+        if isinstance(val1, bool) != isinstance(val2, bool):
+            return False
+        
+        # 其他情况直接比较
+        return val1 == val2
+
     
     @staticmethod
     def merge_paged_data(paged_data_iter):

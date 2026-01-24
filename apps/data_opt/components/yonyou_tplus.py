@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 from ._base import (
     console_log,
-    DataProcessor,
+    DataProcessor, globalconst,
     BaseConnection, convert_timeunit, clean_value, reset_default_values,
     BaseModel as PydanticModel, model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
@@ -46,12 +46,12 @@ class TplusMaterial(AcceptMaterial):
         cleaned_values['leadday'] = pdv.MAT_LEADDAY_E if values['是否需要检验'] else pdv.MAT_LEADDAY_F
         cleaned_values['expday'] = convert_timeunit(values.get('保质期', 0), values['保质期单位'], 'day')
         cleaned_values['grday'] = 1 if values['是否需要检验'] else 0
-        cleaned_values['abc'] = 'A' if values['是否自制'] == 'True' else 'B'
+        cleaned_values['abc'] = globalconst.AbcEnum.A if values['是否自制'] == 'True' else globalconst.AbcEnum.B
         cleaned_values['unit'] = clean_value(values['主计量单位Name'])
         cleaned_values['price'] = values['平均成本']
         cleaned_values['groupno'] = str(values['存货分类Name'])
-        cleaned_values['type'] = 'E' if values['是否自制'] == 'True' else 'F'
-        cleaned_values['phantom'] = 'Y' if values['是否虚拟件'] else 'N'
+        cleaned_values['type'] = globalconst.EfEnum.E if values['是否自制'] == 'True' else globalconst.EfEnum.F
+        cleaned_values['phantom'] = globalconst.YesNoEnum.YES if values['是否虚拟件'] else globalconst.YesNoEnum.NO
         # cleaned_values['phantommin'] = values['']
         # cleaned_values['firmday'] = values['']
         # cleaned_values['daygap'] = values['']

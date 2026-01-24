@@ -41,14 +41,14 @@ def get_maindata_from_erp_to_hap():
     material = tplus_conn.data_list(source_name='material')
     hap_conn.worksheet('t_material').upsert(material)
 
-    workcenter = tplus_conn.data_list(source_name='workcenter')
-    hap_conn.worksheet('t_workcenter').upsert(workcenter)
+    # workcenter = tplus_conn.data_list(source_name='workcenter')
+    # hap_conn.worksheet('t_workcenter').upsert(workcenter)
 
-    route = tplus_conn.data_list(source_name='route')
-    hap_conn.worksheet('t_mat_wc').upsert(route)
+    # route = tplus_conn.data_list(source_name='route')
+    # hap_conn.worksheet('t_mat_wc').upsert(route)
 
-    bom = tplus_conn.data_list(source_name='bom')
-    hap_conn.worksheet('t_mat_wc_bom').upsert(bom)
+    # bom = tplus_conn.data_list(source_name='bom')
+    # hap_conn.worksheet('t_mat_wc_bom').upsert(bom)
 
 
 

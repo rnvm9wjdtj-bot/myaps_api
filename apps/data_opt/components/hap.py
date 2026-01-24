@@ -1,13 +1,13 @@
 """明道云 API v3 封装为 ORM """
 
-import json
-import re
+import os, re, json
 from typing import List, Dict, Any, Optional, Union, Literal, Generator, NamedTuple
 from tortoise.models import Model as DbModel
 from pydantic import BaseModel as PydanticModel
 from decimal import Decimal
 
 from globalobjects import file_timed_logger
+from ..utils.data_processor import DataProcessor
 from ._base import get_session
 
 
@@ -38,45 +38,52 @@ class HapUtils:
     """
     
     @staticmethod
-    def convert_data_to_controls(data: Dict[str, Any] | PydanticModel, ignore_fields=[], controls_reflection={}, remain_irrelevant_fields=True) -> List[Dict[str, Any]]:
+    def convert_data_to_fieldslist(data: Dict[str, Any] | PydanticModel, exclude_none: bool = True, ignore_fields=[], field_map={}, remain_irrelevant_fields=True) -> List[Dict[str, Any]]:
         """
         将单个数据字典转换为工作表API字段值list
         
         Args:
             data: 行数据字典或 PydanticModel
+            exclude_none: 是否排除值为None的字段
             ignore_fields: 忽略的字段列表
-            controls_reflection: 字段名称映射到控件ID的字典
-            remain_irrelevant_fields: 是否保留 controls_reflection 未提及的字段
+            field_map: 字段名称映射规则，将row_data_dict中的字段名称（键）映射为目标工作表control_id
+            remain_irrelevant_fields: 是否保留 field_map 未提及的字段
             
         Returns:
             List[Dict[str, Any]]: 字段值列表
         """
-        if isinstance(data, PydanticModel):
-            data = data.model_dump(exclude_unset=True)
         
-        controls = []
+        if isinstance(data, PydanticModel):
+            data = data.model_dump(exclude_unset=True, exclude_none=exclude_none)
+        else:
+            if exclude_none:
+                data = {k: v for k, v in data.items() if v is not None}
+            else:
+                data = data
+        
+        fieldlist = []
         for k, v in data.items():
             if k in ignore_fields: 
                 continue
             try:
-                control_id = controls_reflection[k]
+                control_id = field_map[k]
             except:
                 if remain_irrelevant_fields:
                     control_id = k
                 else:
                     continue
-            # control_id = controls_reflection.get(k, k)
+
             v_type = type(v)
             if v_type in (dict, list):
-                controls.append({'id': control_id, 'value': json.dumps(v, ensure_ascii=False, cls=DecimalEncoder)})
+                fieldlist.append({'id': control_id, 'value': json.dumps(v, ensure_ascii=False, cls=DecimalEncoder)})
             elif v_type in (int, float, Decimal):
-                controls.append({'id': control_id, 'value': float(v), 'type': 2})
+                fieldlist.append({'id': control_id, 'value': float(v), 'type': 2})
             elif v_type == str:
-                controls.append({'id': control_id, 'value': v, 'type': 2})
+                fieldlist.append({'id': control_id, 'value': v, 'type': 2})
             else:
                 pass
         
-        return controls
+        return fieldlist
     
 
     @staticmethod
@@ -349,10 +356,11 @@ def get_maindata_worksheetinfo() -> dict:
 class HapConnection:
     allowed_worksheets: Dict[str, WorksheetInfo] = {}
 
-    def __init__(self, app_key: str, sign: str, base_url: str=HAP_BASEURL_EXAMPLE[0]):
+    def __init__(self, app_key: str, sign: str, base_url: str=HAP_BASEURL_EXAMPLE[0], max_workers: int=os.cpu_count() * 3):
         self.base_url = base_url
         self.api_key = app_key
         self.sign = sign
+        self.max_workers = max_workers
         self.headers = {
             'HAP-Appkey': app_key,
             'HAP-Sign': sign,
@@ -360,14 +368,16 @@ class HapConnection:
             "Accept-Encoding": "gzip, deflate"  # 启用压缩
         }
         
+        # 根据 max_workers 动态调整 session 参数，确保至少 20 个连接
+        session_pool_size = max(self.max_workers, 20)
         # 初始化Session并配置性能参数
         self.session = get_session(
             retries=3,
-            allowed_methods=["GET", "POST"],
-            pool_connections=20,
-            pool_maxsize=20,
-            connect_timeout=3.0,
-            read_timeout=30.0,
+            allowed_methods=["GET", "POST", "PATCH", "DELETE"],
+            pool_connections=session_pool_size,  # 根据并发度动态调整连接池数量
+            pool_maxsize=session_pool_size,     # 根据并发度动态调整最大连接数  
+            connect_timeout=5.0,  # 增加连接超时时间
+            read_timeout=60.0,    # 增加读取超时时间
         )
 
 
@@ -510,10 +520,10 @@ class HapWorksheet:
         all_row_ids = []
         all_rows = []
         
-        for i in range(0, total_rows, batch_size):
-            # 获取当前批次的数据
-            batch_start = i
-            batch_end = i + batch_size
+        import concurrent.futures
+        
+        # 定义批次创建函数
+        def create_batch(batch_start, batch_end):
             batch_data = processed_data_list[batch_start:batch_end]
             
             # 构建创建请求
@@ -521,8 +531,8 @@ class HapWorksheet:
             # 转换数据为API要求的格式
             rows_data = []
             for data_dict in batch_data:
-                row_controls = HapUtils.convert_data_to_controls(data_dict)
-                rows_data.append({'fields': row_controls})
+                row_fields = HapUtils.convert_data_to_fieldslist(data_dict)
+                rows_data.append({'fields': row_fields})
             payload = {
                 "rows": rows_data,  
                 "triggerWorkflow": trigger_workflow
@@ -531,9 +541,9 @@ class HapWorksheet:
             
             # 获取当前批次的row_ids
             batch_row_ids = response.get('data', {}).get('rowIds', [])
-            all_row_ids.extend(batch_row_ids)
             
             # 创建当前批次的行对象
+            batch_rows = []
             for j, row_id in enumerate(batch_row_ids):
                 if batch_start + j < total_rows:
                     row = HapWorksheetRow(
@@ -542,7 +552,23 @@ class HapWorksheet:
                         worksheet=self, 
                         hap_conn=self.hap_conn
                     )
-                    all_rows.append(row)
+                    batch_rows.append(row)
+            
+            return batch_row_ids, batch_rows
+        
+        # 使用线程池并发执行批次创建
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.hap_conn.max_workers) as executor:
+            futures = []
+            for i in range(0, total_rows, batch_size):
+                batch_start = i
+                batch_end = i + batch_size
+                futures.append(executor.submit(create_batch, batch_start, batch_end))
+            
+            # 收集结果
+            for future in concurrent.futures.as_completed(futures):
+                batch_row_ids, batch_rows = future.result()
+                all_row_ids.extend(batch_row_ids)
+                all_rows.extend(batch_rows)
         
         worksheet_rowset = HapWorksheetRowSet(rows=all_rows, worksheet=self, hap_conn=self.hap_conn)
         if refresh_immediately:
@@ -550,11 +576,12 @@ class HapWorksheet:
         return worksheet_rowset
     
 
-    def upsert(self, data_list: List[Dict[str, Any] | PydanticModel], trigger_workflow: bool = True) -> 'HapWorksheetRowSet':
+    def upsert(self, data_list: List[Dict[str, Any] | PydanticModel], exclude_none: bool = True, trigger_workflow: bool = True) -> 'HapWorksheetRowSet':
         """批量 upsert 操作
         
         Args:
             data_list: 行数据字典或 PydanticModel 列表
+            exclude_none: 是否排除 data_list None 值字段
             trigger_workflow: 是否触发工作流
             
         Returns:
@@ -566,18 +593,23 @@ class HapWorksheet:
         # 检查是否有冲突字段
         has_conflict_fields = bool(self.conflict_fields)
         
+        # 如果没有冲突字段，直接批量创建
+        if not has_conflict_fields:
+            created_rows = self.create_rows(data_list, trigger_workflow=trigger_workflow)
+            return HapWorksheetRowSet(rows=created_rows.all(), worksheet=self, hap_conn=self.hap_conn)
+        
+        import concurrent.futures
+        
+        # 处理数据列表，转换为字典格式
+        processed_data_list = []
         for data in data_list:
-            # 处理 PydanticModel
             if isinstance(data, PydanticModel):
-                data_dict = data.model_dump()
+                processed_data_list.append(data.model_dump(exclude_none=exclude_none))
             else:
-                data_dict = data.copy()
-            
-            # 如果没有冲突字段，直接添加到创建列表
-            if not has_conflict_fields:
-                create_list.append(data_dict)
-                continue
-            
+                processed_data_list.append(data.copy())
+        
+        # 定义查询和更新函数
+        def process_item(data_dict):
             # 构建查询条件
             filter_conditions = []
             for field in self.conflict_fields:
@@ -585,24 +617,36 @@ class HapWorksheet:
                     value = data_dict[field]
                     filter_conditions.append(f'{field}__eq=\"{value}\"')
 
-            # 如果没有有效的冲突字段值，添加到创建列表
+            # 如果没有有效的冲突字段值，返回需要创建
             if not filter_conditions:
-                create_list.append(data_dict)
-                continue
+                return (None, data_dict)
             
             # 执行查询
             filter_expression = " && ".join(filter_conditions)
-            existing_rows = self.rows(filter_expression).all()
+            existing_rows = self.rows(filter_expression=filter_expression).all()
+            rows_count = existing_rows.count()
             
-            # 如果存在，执行更新
-            if existing_rows.count() > 0:
-                # 更新第一条匹配的记录
+            if rows_count == 1:
+                # 若有且仅有1条则执行更新
                 existing_row = existing_rows.first()
-                updated_row = existing_row.update(data_dict, trigger_workflow=trigger_workflow)
-                result_rows.append(updated_row)
-            else:
-                # 不存在，添加到创建列表
-                create_list.append(data_dict)
+                updated_row = existing_row.update(data_dict, exclude_none=exclude_none, trigger_workflow=trigger_workflow)
+                return (updated_row, None)
+            if rows_count > 1:
+                # 存在多条，则先删除所有匹配行
+                existing_rows.delete_all(trigger_workflow=trigger_workflow)
+            return (None, data_dict)
+        
+        # 使用线程池并发处理
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.hap_conn.max_workers) as executor:
+            futures = [executor.submit(process_item, data_dict) for data_dict in processed_data_list]
+            
+            # 收集结果
+            for future in concurrent.futures.as_completed(futures):
+                result = future.result()
+                if result[0]:  # 更新成功的行
+                    result_rows.append(result[0])
+                elif result[1]:  # 需要创建的行
+                    create_list.append(result[1])
         
         # 批量创建需要新增的行
         if create_list:
@@ -613,17 +657,17 @@ class HapWorksheet:
 
 
     @classmethod
-    def _rows_data_to_controls_list(cls, rows_data_list: list[dict | PydanticModel], ignore_fields=[], controls_reflection={}, remain_irrelevant_fields=True):
+    def _rows_data_to_fieldslist(cls, rows_data_list: list[dict | PydanticModel], ignore_fields=[], field_map={}, remain_irrelevant_fields=True):
         """
         将行数据字典列表转换为工作表API字段值list
-        controls_reflection 是一个可选参数，用于将row_data_dict中的字段名称（键）映射为目标工作表control_id
-        remain_irrelevant_fields 是否保留 controls_reflection 未提及的字段
+        field_map 将row_data_dict中的字段名称（键）映射规则，将其转换为目标工作表control_id
+        remain_irrelevant_fields 是否保留 field_map 未提及的字段
         """
-        controls_list = []
+        fields_list = []
         for data_dict in rows_data_list:
-            row_controls = HapUtils.convert_data_to_controls(data_dict, ignore_fields, controls_reflection, remain_irrelevant_fields)
-            controls_list.append({'fields': row_controls})
-        return controls_list
+            row_fields = HapUtils.convert_data_to_fieldslist(data_dict, ignore_fields, field_map, remain_irrelevant_fields)
+            fields_list.append({'fields': row_fields})
+        return fields_list
 
     
 
@@ -899,6 +943,8 @@ class HapRowsQuery:
     #         return response.get('data', {}).get('total', 0)
     #     return 0
 
+
+
     @classmethod
     def _exclude_sys_fields(cls, data: dict) -> dict:
         """排除系统字段"""
@@ -1134,12 +1180,12 @@ class HapWorksheetRow:
         return self.row_id is not None
 
         
-    def update(self, data: Dict[str, Any], none_exist_then: str = Literal['error', 'ignore', 'create'], trigger_workflow: bool = True) -> 'HapWorksheetRow':
+    def update(self, data: Dict[str, Any], none_exist_then: Literal['error', 'ignore', 'create'] = 'error', exclude_none: bool = True, trigger_workflow: bool = True) -> 'HapWorksheetRow':
         """更新行数据
         
         Args:
             data: 要更新的数据字典
-            none_exist_then: 当行不存在时的处理方式，可选值为'error'（抛出异常）、'ignore'（忽略更新）、'create'（创建新行）
+            none_exist_then: 当行不存在时的处理方式，可选值为'error'（抛出异常）、'ignore'（无视跳过）、'create'（创建新行）
             
         Returns:
             HapWorksheetRow: 更新后的行对象
@@ -1153,13 +1199,28 @@ class HapWorksheetRow:
                 # 使用 worksheet 对象创建新行
                 return self.worksheet.create_rows([data])[0]
         
-        # 更新本地数据
-        self.row_data.update(data)
-        
         # 构建更新请求
         endpoint = f"/v3/app/worksheets/{self.worksheet.worksheet_id}/rows/{self.row_id}"
+        # self.refresh()
+
+        # TODO 将传入的 data 与当前的 worksheetrow 数据进行比对，只更新有变化的字段
+        # 比对逻辑：
+        # 1. 遍历 data 中的每个键值对
+ 
+
+        # 4. 如果键在 worksheetrow 中不存在且值为 None，则根据 exclude_none 参数判断是否添加到更新字段列表中
+        update_fields = {}
+        
+        for k, v in data.items():
+            if v is None and exclude_none:
+                continue
+            if k not in self.row_data:
+                update_fields[k] = v
+            elif not DataProcessor.is_equal(self.row_data[k], v):
+                update_fields[k] = v
+
         payload = {
-            "fields": self._data_dict_to_controls_list(data),
+            "fields": self._data_dict_to_fields_list(data=update_fields, exclude_none=exclude_none),
             "triggerWorkflow": trigger_workflow
         }
         
@@ -1223,13 +1284,15 @@ class HapWorksheetRow:
 
 
     @classmethod
-    def _data_dict_to_controls_list(cls, data: Dict[str, Any] | PydanticModel, ignore_fields=[], controls_reflection={}, remain_irrelevant_fields=True) -> List[Dict[str, Any]]:
+    def _data_dict_to_fields_list(cls, data: Dict[str, Any] | PydanticModel, exclude_none: bool = True, ignore_fields=[], field_map={}, remain_irrelevant_fields=True) -> List[Dict[str, Any]]:
         """
         将行数据字典转换为工作表API字段值list [{'id': ..., 'value': ...}, {'id': ..., 'value': ...}]
-        controls_reflection 是一个可选参数，用于将row_data_dict中的字段名称（键）映射为目标工作表control_id
-        remain_irrelevant_fields 是否保留 controls_reflection 未提及的字段
+        exclude_none 是否排除值为None的字段
+        ignore_fields 要忽略的字段列表
+        field_map 将row_data_dict中的字段名称（键）映射规则 {'row_data_dict_key': 'worksheet_field_id'}
+        remain_irrelevant_fields 是否保留 field_map 未提及的字段
         """
-        return HapUtils.convert_data_to_controls(data, ignore_fields, controls_reflection, remain_irrelevant_fields)
+        return HapUtils.convert_data_to_fieldslist(data=data, exclude_none=exclude_none, ignore_fields=ignore_fields, field_map=field_map, remain_irrelevant_fields=remain_irrelevant_fields)    
 
 
 class HapWorksheetRowSet:
@@ -1247,33 +1310,26 @@ class HapWorksheetRowSet:
         self.worksheet = worksheet
         self.hap_conn = hap_conn
     
+
     def all(self) -> List['HapWorksheetRow']:
-        """获取所有行对象
-        
-        Returns:
-            List[HapWorksheetRow]: 行对象列表
-        """
         return self.rows
+
     
     def first(self) -> Optional['HapWorksheetRow']:
-        """获取第一条行对象
-        
-        Returns:
-            Optional[HapWorksheetRow]: 第一条行对象，如果列表为空则返回 None
-        """
         return self.rows[0] if self.rows else None
+
+
+    def last(self) -> Optional['HapWorksheetRow']:
+        return self.rows[-1] if self.rows else None
+
     
     def count(self) -> int:
-        """获取行对象数量
-        
-        Returns:
-            int: 行对象数量
-        """
         return len(self.rows)
     
 
     def update_all(self, data: Dict[str, Any], trigger_workflow: bool = True) -> List['HapWorksheetRow']:
-        """批量更新所有行对象
+        """批量更新所有行对象，不比对是否与当前行一致，都强制更新为 data参数 中对应字段的值
+        未在data参数中提及的字段将保持不变。
         
         Args:
             data: 要更新的数据字典
@@ -1282,16 +1338,16 @@ class HapWorksheetRowSet:
         Returns:
             List[HapWorksheetRow]: 更新后的行对象列表
         """
-        fields = HapWorksheetRow._data_dict_to_controls_list(data)
+        fields = HapWorksheetRow._data_dict_to_fields_list(data, exclude_none=True)
         
         # 分批处理，每批最多100条
         batch_size = 100
         total_rows = len(self.row_ids)
         
-        for i in range(0, total_rows, batch_size):
-            # 获取当前批次的row_ids和对应的本地行
-            batch_start = i
-            batch_end = i + batch_size
+        import concurrent.futures
+        
+        # 定义批次更新函数
+        def update_batch(batch_start, batch_end):
             batch_row_ids = self.row_ids[batch_start:batch_end]
             batch_rows = self.rows[batch_start:batch_end]
             
@@ -1307,12 +1363,24 @@ class HapWorksheetRowSet:
 
             # 如果批次更新失败，抛出异常
             if not response.get('success'):
-                raise Exception(f"Batch update failed at batch {i//batch_size + 1}: {response.get('message', 'Unknown error')}")
+                raise Exception(f"Batch update failed at batch {batch_start//batch_size + 1}: {response.get('message', 'Unknown error')}")
 
             # 批次更新成功，更新对应的本地数据
             for row in batch_rows:
                 row.row_data.update(data)
+        
+        # 使用线程池并发执行批次更新
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.hap_conn.max_workers) as executor:
+            futures = []
+            for i in range(0, total_rows, batch_size):
+                batch_start = i
+                batch_end = i + batch_size
+                futures.append(executor.submit(update_batch, batch_start, batch_end))
             
+            # 等待所有任务完成
+            for future in concurrent.futures.as_completed(futures):
+                future.result()  # 抛出可能的异常
+        
         return self.rows
                 
     
@@ -1322,10 +1390,14 @@ class HapWorksheetRowSet:
         Returns:
             List[HapWorksheetRow]: 刷新后的行对象列表
         """
-        # endpoint = f"/v3/app/worksheets/{self.worksheet.worksheet_id}/rows/list"
-        # self.hap_conn.
-        for row in self.rows:
-            row.refresh()
+        import concurrent.futures
+        # 使用线程池并发执行刷新操作
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.hap_conn.max_workers) as executor:
+            # 提交所有刷新任务
+            futures = [executor.submit(row.refresh) for row in self.rows]
+            # 等待所有任务完成
+            concurrent.futures.wait(futures)
+        
         return self.rows
 
 
@@ -1348,10 +1420,10 @@ class HapWorksheetRowSet:
         batch_size = 100
         total_rows = len(self.row_ids)
         
-        for i in range(0, total_rows, batch_size):
-            # 获取当前批次的row_ids和对应的索引范围
-            batch_start = i
-            batch_end = i + batch_size
+        import concurrent.futures
+        
+        # 定义批次删除函数
+        def delete_batch(batch_start, batch_end):
             batch_row_ids = self.row_ids[batch_start:batch_end]
             
             # 发送API请求
@@ -1366,23 +1438,26 @@ class HapWorksheetRowSet:
 
             # 检查批次删除是否成功
             if response.get('success'):
-                # 检查响应中是否包含每个行的具体删除结果
-                # 如果明道云API返回了详细的删除结果，使用它
-                # 否则，假设批次中的所有行都删除成功
-                if 'data' in response and isinstance(response['data'], dict):
-                    # 假设data中包含每个rowId的删除结果
-                    # 具体格式需要根据明道云API的实际响应来调整
-                    for j, row_id in enumerate(batch_row_ids):
-                        if row_id in response['data']:
-                            results[batch_start + j] = response['data'][row_id]
-                        else:
-                            results[batch_start + j] = True
-                else:
-                    # 如果没有详细结果，标记该批次所有行为删除成功
-                    for j in range(batch_start, min(batch_end, total_rows)):
-                        results[j] = True
+                # 由于 HAP 返回的 data 为空没有详细结果，标记该批次所有行为删除成功
+                for j in range(batch_start, min(batch_end, total_rows)):
+                    results[j] = True
+        
+        # 使用线程池并发执行批次删除
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.hap_conn.max_workers) as executor:
+            futures = []
+            for i in range(0, total_rows, batch_size):
+                batch_start = i
+                batch_end = i + batch_size
+                futures.append(executor.submit(delete_batch, batch_start, batch_end))
+            
+            # 等待所有任务完成
+            for future in concurrent.futures.as_completed(futures):
+                future.result()  # 抛出可能的异常
 
         return results
+
+
+
 
 if __name__ == "__main__":
     """使用示例"""
