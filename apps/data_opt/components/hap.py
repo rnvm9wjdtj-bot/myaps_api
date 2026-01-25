@@ -28,7 +28,7 @@ class WorksheetInfo(NamedTuple):
     display_name: Optional[str] = None
     db_model: Optional[DbModel] = None
     conflict_fields: Optional[List[str]] = None
-    
+    children: Optional[Dict[str, WorksheetInfo]] = None
 
 
 # 工具类，包含通用方法
@@ -365,6 +365,16 @@ def get_maindata_worksheetinfo() -> dict:
     
     worksheet_ids = {'t_material', 't_workcenter', 't_mat_ver', 't_mat_wc', 't_mat_wc_bom', 't_mold', 't_mat_wc_mold'}
 
+    worksheet_children = {
+        't_material': ['t_mat_ver', 't_mat_wc', 't_mat_wc_bom'],
+        't_workcenter': ['t_mat_wc', 't_mat_wc_mold'],
+        't_mat_ver': ['t_mat_wc_bom'],
+        't_mat_wc': ['t_mat_wc_bom', 't_mat_wc_mold'],
+        't_mat_wc_bom': [],
+        't_mold': ['t_mat_wc_mold'],
+        't_mat_wc_mold': []
+    }
+
     maindata_worksheetinfo = []
 
     for mdl_name in worksheet_ids:
@@ -376,6 +386,22 @@ def get_maindata_worksheetinfo() -> dict:
         ))
     
     return maindata_worksheetinfo
+
+
+# def get_maindata_worksheetinfo() -> dict:
+#     from apps.io_api.utils.db_operation import process_model_or_tablename
+#     from globalobjects.db_manager import DbManager
+
+
+
+
+
+#     material = WorksheetInfo(
+#         worksheet_id='t_material',
+#         display_name='物料',
+#         db_model=process_model_or_tablename('t_material'),
+#         conflict_fields=DbManager._get_conflict_fields(process_model_or_tablename('t_material'))
+#     )
 
 
 
@@ -471,7 +497,7 @@ class HapWorksheet:
         self.hap_conn = hap_conn
         
 
-    def rows(self, filter_expression: Optional[str] = None, sort_str: Optional[str] = None) -> 'HapRowsQuery':
+    def rows(self, filter_expression: Optional[str] = None, sort_str: Optional[str] = None, parent_row: Optional['HapWorksheetRow'] = None) -> 'HapRowsQuery':
         """获取行查询对象
         
         Args:
@@ -481,7 +507,7 @@ class HapWorksheet:
         Returns:
             HapRowsQuery: 行查询对象，支持链式调用
         """
-        return HapRowsQuery(worksheet=self, hap_conn=self.hap_conn, filter_expression=filter_expression, sort_str=sort_str)
+        return HapRowsQuery(worksheet=self, hap_conn=self.hap_conn, filter_expression=filter_expression, sort_str=sort_str, parent_row=parent_row)
         
 
     def row(self, row_id: str, exclude_unamed_fields: bool = True, exclude_sys_fields: bool = True) -> 'HapWorksheetRow':
@@ -694,7 +720,7 @@ class HapWorksheet:
 
 class HapRowsQuery:
     """行查询类，支持链式查询操作"""
-    def __init__(self, worksheet: HapWorksheet, hap_conn: HapConnection, filter_expression: str = None, sort_str: str = None, page_size: int = 1000):
+    def __init__(self, worksheet: HapWorksheet, hap_conn: HapConnection, filter_expression: str = None, sort_str: str = None, page_size: int = 1000, parent_row: Optional['HapWorksheetRow'] = None):
         self.worksheet = worksheet
         self.hap_conn = hap_conn
         self.filter_expression = filter_expression
@@ -704,6 +730,7 @@ class HapRowsQuery:
         self.sort_str = sort_str
         self.sorts = HapUtils.str_to_sort_list(sort_str)
         self.limit = None
+        self.parent_row = parent_row
         
 
     def filter(self, filter_expression: str) -> 'HapRowsQuery':
@@ -792,7 +819,8 @@ class HapRowsQuery:
                     row_data=row_dict,
                     row_id=row_dict.get('rowId'),
                     worksheet=self.worksheet,
-                    hap_conn=self.hap_conn
+                    hap_conn=self.hap_conn,
+                    parent_row=self.parent_row
                 ))
         
         return HapWorksheetRowSet(rows=rows, worksheet=self.worksheet, hap_conn=self.hap_conn)
@@ -867,7 +895,8 @@ class HapRowsQuery:
                         row_data=row_dict,
                         row_id=row_dict.get('rowId'),
                         worksheet=self.worksheet,
-                        hap_conn=self.hap_conn
+                        hap_conn=self.hap_conn,
+                        parent_row=self.parent_row
                     ))
             
             # 应用 limit
@@ -875,7 +904,7 @@ class HapRowsQuery:
                 all_rows = all_rows[:self.limit]
                 break
         
-        return HapWorksheetRowSet(rows=all_rows, worksheet=self.worksheet, hap_conn=self.hap_conn)
+        return HapWorksheetRowSet(rows=all_rows, worksheet=self.worksheet, hap_conn=self.hap_conn, parent_row=self.parent_row)
     
     def stream(self) -> 'Generator[HapWorksheetRow, None, None]':
         """流式获取所有匹配的记录
@@ -931,7 +960,8 @@ class HapRowsQuery:
                         row_data=row_dict,
                         row_id=row_dict.get('rowId'),
                         worksheet=self.worksheet,
-                        hap_conn=self.hap_conn
+                        hap_conn=self.hap_conn,
+                        parent_row=self.parent_row
                     )
                     yield row
                     fetched_count += 1
@@ -1185,7 +1215,7 @@ class HapRowsQuery:
 
 class HapWorksheetRow:
     """工作表行类，代表单行数据并提供操作方法"""
-    def __init__(self, row_data: dict, row_id: str = None, worksheet: HapWorksheet = None, hap_conn: HapConnection = None):
+    def __init__(self, row_data: dict, row_id: str = None, worksheet: HapWorksheet = None, hap_conn: HapConnection = None, parent_row: Optional['HapWorksheetRow'] = None):
         # 使用 HapUtils.process_choice_fields 处理选项字段
         processed_row_data = HapUtils.process_choice_fields(row_data)
         
@@ -1193,6 +1223,7 @@ class HapWorksheetRow:
         self.worksheet = worksheet
         self.row_id = row_id
         self.hap_conn = hap_conn
+        self.parent_row = parent_row
         
         
     def exists(self) -> bool:
@@ -1301,6 +1332,29 @@ class HapWorksheetRow:
         return self
 
 
+    def children(self, child_fieldname: str, child_worksheet_id: str) -> 'HapWorksheetRowSet':
+        """获取子表行集合
+        
+        Returns:
+            HapWorksheetRowSet: 子表行集合对
+        """
+        child_worksheet = self.hap_conn.worksheet(child_worksheet_id)
+        children_rowids = self.row_data[child_fieldname]
+        if not children_rowids:
+            return HapWorksheetRowSet(
+                rows=[],
+                worksheet=child_worksheet,
+                hap_conn=self.hap_conn,
+            )
+        
+        return HapWorksheetRowSet(
+            rows=children_rowids,
+            worksheet=child_worksheet,
+            hap_conn=self.hap_conn,
+            parent_row=self,
+        )
+
+
     @classmethod
     def _data_dict_to_fields_list(cls, data: Dict[str, Any] | PydanticModel, exclude_none: bool = True, ignore_fields=[], field_map={}, remain_irrelevant_fields=True) -> List[Dict[str, Any]]:
         """
@@ -1313,20 +1367,31 @@ class HapWorksheetRow:
         return HapUtils.convert_data_to_fieldslist(data=data, exclude_none=exclude_none, ignore_fields=ignore_fields, field_map=field_map, remain_irrelevant_fields=remain_irrelevant_fields)    
 
 
+
 class HapWorksheetRowSet:
     """HapWorksheetRow 集合类，用于管理多个行对象"""
-    def __init__(self, rows: List['HapWorksheetRow'], worksheet: 'HapWorksheet', hap_conn: 'HapConnection'):
+    def __init__(self, rows: List['HapWorksheetRow'] | List[str], worksheet: 'HapWorksheet', hap_conn: 'HapConnection', parent_row: Optional['HapWorksheetRow'] = None):
         """初始化 HapWorksheetRowSet
         
         Args:
-            rows: HapWorksheetRow 对象的列表
+            rows: HapWorksheetRow 对象的列表 或 行ID字符串列表
             worksheet: 关联的 HapWorksheet 对象
             hap_conn: 关联的 HapConnection 对象
+            parent_row: 父行对象，可选
         """
-        self.rows = rows
-        self.row_ids = [row.row_id for row in rows]
+        # 处理字符串类型的 row_id
+        if isinstance(rows[0], str):
+            self.row_ids = rows
+            filter_expression = f"rowId__in={json.dumps(rows)}"
+            self.rows = worksheet.rows(filter_expression=filter_expression, parent_row=parent_row).all()
+        else:
+            self.rows = rows
+            for row in rows:
+                row.parent_row = parent_row
+            self.row_ids = [row.row_id for row in rows]
         self.worksheet = worksheet
         self.hap_conn = hap_conn
+        self.parent_row = parent_row
     
 
     def all(self) -> List['HapWorksheetRow']:
@@ -1475,6 +1540,48 @@ class HapWorksheetRowSet:
         return results
 
 
+    def upsert_row_by_row(self, data_list: List[dict], conflict_fields: List[str] = None):
+        """
+        逐行处理数据列表，根据 conflict_fields 策略处理重复行
+        Args:
+            data_list: 包含多个行数据的列表，每个元素为一个字典
+            conflict_fields: 冲突字段列表，用于判断是否为重复行，默认使用工作表的冲突字段
+        """
+        self.refresh_all()
+        conflict_fields = conflict_fields or self.worksheet.conflict_fields
+        create_rows = []
+        for data in data_list:
+            # 检查是否为重复行
+            is_conflict, existing_row = self.is_data_conflict_in(data, conflict_fields)
+            if is_conflict:
+                # 更新重复行
+                existing_row.update(data)
+            else:
+                if self.parent_row:
+                    # TODO 如果当前行记录集是通过子表方式获取的，则需要在data中添加 parent 行
+                    create_rows.append(data)
+                else:
+                    # 插入新行
+                    create_rows.append(data)
+        if create_rows:
+            self.worksheet.create_rows(create_rows)
+        
+
+    def is_data_conflict_in(self, data: dict, conflict_fields: List[str]) -> tuple[bool, 'HapWorksheetRow']:
+        """检查数据是否在当前行数据集中有冲突
+        
+        Args:
+            data: 要检查的行数据字典
+            conflict_fields: 冲突字段列表，用于判断是否为重复行，默认使用工作表的冲突字段
+        
+        Returns:
+            tuple: (是否为冲突行, 冲突行对象)
+        """
+        if set(conflict_fields) <= set(data.keys()):
+            for row in self.rows:
+                if all(row[field] == data[field] for field in conflict_fields):
+                    return True, row
+        return False, None
 
 
 if __name__ == "__main__":
