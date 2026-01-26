@@ -42,7 +42,7 @@ class TplusMaterial(AcceptMaterial):
         cleaned_values = {}
         cleaned_values['materialno'] = clean_value(values['编码'])
         cleaned_values['description'] = clean_value(values['名称'])
-        cleaned_values['size'] = clean_value(values['规格型号'])
+        cleaned_values['size'] = values['规格型号']
         cleaned_values['plant'] = pdv.MAT_PLANT
         cleaned_values['planner'] = pdv.MAT_PLANNER
         cleaned_values['fifo'] = pdv.MAT_FIFO
