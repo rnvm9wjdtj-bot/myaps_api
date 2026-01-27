@@ -485,13 +485,28 @@ async def get_orderwc(
 )
 async def get_matdailyqtyreport(
         db_name: str = common_params["db_name"],
-        period: int = Query(default=30, description="查询时间范围（天）"),
+        period: int | str = Query(default=30, description="查询时间范围（天）"),
         groupdates: str = Query(default=None, description="分组日期，逗号分隔"),
         materialno: str = Query(default=None, description="料号，多个料号用逗号分隔")
     ):
-    db_name = db_name.replace(" ", "")
+    """
+    获取按日期分组的库存动态报表，用于指导采购决策。
+    period: 查询时间范围（天）或截止日期字符串，默认30天。
+    groupdates: 分组日期，逗号分隔，默认空。
+    materialno: 料号，多个料号用逗号分隔，默认空。
+    """
     start_date: datetime.date = datetime.now().date()
-    end_date = start_date + timedelta(days=period)
+
+    try:
+        period = int(period)
+        end_date = start_date + timedelta(days=period)
+    except ValueError:
+        try:
+            end_date = datetime.strptime(period, '%Y-%m-%d').date()
+        except ValueError:
+            return standard_response(status_code=status.HTTP_400_BAD_REQUEST, success=0, message="Invalid date format for period. Use YYYY-MM-DD.")
+
+    db_name = db_name.replace(" ", "")
     request_result = []
     dates = [_.strip() for _ in groupdates.split(',')] if groupdates else None
 
@@ -534,8 +549,8 @@ async def get_matdailyqtyreport(
     df_grouped = (df.groupby(group_fields).agg(agg_dict).reset_index()
                     .rename(columns={
                             "original_datestr": "期间",
-                            "totaldemand": "期间需求",
-                            "totalsupply": "期间供应",
+                            "totaldemand": "期间合计需求",
+                            "totalsupply": "期间合计供应",
                             "dailybalance": "期间盈余",
                             "cumulativebalance": "累计盈余",
                             "stockqty": "首期库存",
@@ -553,13 +568,13 @@ async def get_matdailyqtyreport(
         if mat_no not in material_balances:
             # 首个日期组
             opening_balance = record["首期库存"]
-            closing_balance = opening_balance + record["期间需求"]
-            record["本期要货数"] = abs(min(0, record["期间供应"] + record["期间需求"]))
+            closing_balance = opening_balance + record["期间合计需求"]
+            record["期间要货数"] = abs(min(0, record["期间合计供应"] + record["期间合计需求"]))
         else:
             # 后续日期组
             opening_balance = material_balances[mat_no]
-            closing_balance = opening_balance + record["期间需求"] + record["期间供应"]
-            record["本期要货数"] = abs(min(max(0, opening_balance) + record["期间供应"] + record["期间需求"], 0))
+            closing_balance = opening_balance + record["期间合计需求"] + record["期间合计供应"]
+            record["期间要货数"] = abs(min(max(0, opening_balance) + record["期间合计供应"] + record["期间合计需求"], 0))
         
         date_range = record["期间"].split(',')
         # 更新记录

@@ -28,20 +28,21 @@ hap_conn = None
 # ⬇️项目可复用逻辑
 #################################################################################
 json_cache = JSONManager('cache/jyhdxs.json')
-erp_auth = json_cache.get("erp_auth", {})
+
 erp = json_cache.get("erp", {})
 sap_url1 = erp.get("base_url", "") + '/zrestful_test2?sap-client=800'  # 库存
 sap_url2 = erp.get("base_url", "") + '/zrestful_plan?sap-client=800'  # 计划
 werks = erp.get("werks", "")
-sap_username = erp_auth.get("username", "")
-sap_password = erp_auth.get("password", "")
-
-mes = json_cache.get("mes", {})
-mes_url = mes.get("base_url", "")
+sap_username = erp.get("username", "")
+sap_password = erp.get("password", "")
 # 创建requests会话
 sap_session = get_session(allowed_methods=["GET", "POST"])
 # 添加Basic认证
 add_basic_auth_requests(sap_session, sap_username, sap_password)
+
+mes = json_cache.get("mes", {})
+mes_url = mes.get("base_url", "")
+
 
 
 async def sap_post(url: str, session: requests.Session, interface_id: str, data: dict):
@@ -176,23 +177,65 @@ async def refresh_stock(dbs: str = None):
     return response
 
 
+
+
+srm = json_cache.get("srm", {})
+srm_url = srm.get("base_url", "")
+srm_headers = {
+    "Authorization": srm.get("Authorization", ""),
+    "Content-Type": "application/json",
+}
+srm_field_map = {
+    "materialno": "material_no",
+    "description": "description",
+    "size": "size",
+    "type": "type",
+    "abc": "abc",
+    "planner": "planner",
+    "datestr": "datestr",
+    "物料来源": "name",
+    "首期库存": "stock_qty",
+    "累计盈余": "cumulative_balance",
+    "期间合计需求": "total_demand",
+    "期间合计供应": "total_supply",
+    "期间盈余": "daily_balance",
+    "期间": "original_datestr",
+    "期间要货数": "current_order_quantity",
+    "期初盈余": "initial_surplus",
+    "期末盈余": "last_surplus",
+    "要求交期": "datestr",
+}
+
 # @cron_task(hour=23, minute=50)
-# async def push_weekpr_to_srm():
-#     # 推送周要货计划到SRM
-#     pr_data = await ApsBaseAction.get_dategrouped_pr()
-#     file_log.info(f"从账套{MYAPS_MAIN_DB}获取到周要货计划：\n{pr_data}")
+@cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23", minute="0,5,10,15,20,25,30,35,40,45,50,55")
+async def push_weekpr_to_srm():
+    # 推送周要货计划到SRM
+    pr_data = await ApsBaseAction.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=30, field_map=srm_field_map)
+    file_log.info(f"从账套{MYAPS_MAIN_DB}获取到周要货计划：\n{pr_data}")
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    for item in pr_data:
+        item["plant"] = werks
+        item["version"] = timestamp
+    response = requests.post(
+        url=f"{srm_url}/jbl/service/execute/SRM_RECEIVE_PUSHED_DEMAND_PLAN_SERVICE",
+        headers=srm_headers, json={"demand_plan": pr_data})
+    if response.json().get("body", {}).get("status", "").lower() == "success":
+        file_log.info(f"推送周要货计划到SRM：\n{pr_data}")
+    else:
+        file_log.error(f"推送周要货计划到SRM失败：\n{response.json()}")
 
 
-# @cron_task(day=1, hour=0, minute=5)
-# async def push_seasonpr_to_srm():
-#     # 每月初推送季度要货计划到SRM
-#     # 生成下三个月的月底日期列表
-#     date_list = [
-#         (datetime.now().replace(day=1) + relativedelta(months=i + 1) - relativedelta(days=1)).strftime('%Y-%m-%d')
-#         for i in range(3)
-#     ]
-#     pr_data = await ApsBaseAction.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=90, groupdates=','.join(date_list))
-#     file_log.info(f"从账套{MYAPS_MAIN_DB}获取到季度要货计划：\n{pr_data}")
+
+@cron_task(day=1, hour=0, minute=5)
+async def push_seasonpr_to_srm():
+    # 每月初推送季度要货计划到SRM
+    # 生成下三个月的月底日期列表
+    date_list = [
+        (datetime.now().replace(day=1) + relativedelta(months=i + 1) - relativedelta(days=1)).strftime('%Y-%m-%d')
+        for i in range(3)
+    ]
+    pr_data = await ApsBaseAction.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=90, groupdates=','.join(date_list))
+    file_log.info(f"从账套{MYAPS_MAIN_DB}获取到季度要货计划：\n{pr_data}")
 
   
 #################################################################################

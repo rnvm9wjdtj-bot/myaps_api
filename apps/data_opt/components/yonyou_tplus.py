@@ -25,11 +25,12 @@ from ..utils.json_manager import JSONManager
 用于向HAP发送
 在 @model_validator 中需要将：
 无法通过处理原生数据获取的联合索引字段设为  "🈳❗"  占位，以保证能构成完整的联合索引
-非必填（数据库可空）字段（类变量）的默认值统一设为 None ，由客户在HAP中填写。
+需要客户在HAP中填写的字段统一设为 None。
 """
 class TplusMaterial(AcceptMaterial):
 
-    candelay: Optional[str] = Field(None)   # 非必填（数据库可空）字段（类变量）的默认值统一设为 None ，由客户在HAP中填写。
+    size: Optional[str] = Field(None)   # 需要客户在HAP中填写的字段统一设为 None。
+    candelay: Optional[str] = Field(None)   # 需要客户在HAP中填写的字段统一设为 None。
     lotsize: Optional[str] = Field(None)
     
     class Config:
@@ -173,7 +174,7 @@ class TplusConfig:
     """
     ⬆️credential JSON，用于存储畅捷通认证信息，存放在项目根目录下的cache文件夹中，文件名在环境变量CACHE_FILE中指定。文件包含如下结构用于T+的认证：
     {
-        "erp_auth": {
+        "erp": {
             "app_key": "...",
             "app_secret": "...",
             "access_token": "...",
@@ -268,7 +269,7 @@ class TplusConfig:
         "mo": { # 生产加工单创建 https://open.chanjet.com/docs/file/apiFile/tcloud/t+dj/t+scjgd?id=31949
             "endpoint": "/tplus/api/v2/ManufactureOrderOpenApi/Create",
             "field_map": {
-                "supplyno": "",
+                "supplyno": "ExternalCode",
             },
         }
     }
@@ -287,7 +288,7 @@ class TplusConnection(BaseConnection):
         # 从缓存文件中读取认证信息，并将其设置为类实例属性
         self.credential_keys = ("app_key", "app_secret", "access_token", "refresh_token", "org_id", "_auth_at_")
         for key in self.credential_keys:
-            setattr(self, key, self.credential.get("erp_auth", {}).get(key, ""))
+            setattr(self, key, self.credential.get("erp", {}).get(key, ""))
         super().__init__(config)
 
 
@@ -319,7 +320,7 @@ class TplusConnection(BaseConnection):
             self.access_token = auth_result["access_token"]
             self.refresh_token = auth_result["refresh_token"]
             # 保存更新后的认证信息到缓存文件
-            self.credential.update("erp_auth", {
+            self.credential.update("erp", {
                 "_auth_at_": self._auth_at_,
                 "access_token": self.access_token,
                 "refresh_token": self.refresh_token})

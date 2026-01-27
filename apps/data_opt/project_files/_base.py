@@ -80,8 +80,9 @@ class ApsBaseAction(ABC):
             'status': to_status,
             'supplyno': mono,
             'memo': json.dumps({"msg": f"✅{msg}", "from": msg_from, "success": True, "datetime": now, "plno": plno}, ensure_ascii=False),
-            })
+        })
         return response
+
 
     @classmethod
     async def _pl_release_failed(cls, plno: str, to_status: Literal[OrderStatusEnum.NEW, OrderStatusEnum.CRE]='CRE', msg: str=None, msg_from: str=None):
@@ -92,8 +93,9 @@ class ApsBaseAction(ABC):
         response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}/edit?db_name={cls.main_db}', json={
             'status': to_status,    # ❗❗失败情况下，状态务必回撤为 CRE 或 NEW ，否则后续无法再次下达
             'memo': json.dumps({"msg": f"🚫{msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False),
-            })
+        })
         return response
+
 
     @classmethod
     def _fetch_data(cls, url: str) -> List[Dict]:
@@ -102,28 +104,32 @@ class ApsBaseAction(ABC):
         response.raise_for_status()
         return response.json().get('data', [])
 
+
     @classmethod
-    async def get_dategrouped_pr(cls, db_name: str=None, period: int=30, groupdates: str=None, field_mapper: dict=None):
+    async def get_dategrouped_pr(cls, db_name: str=None, period: int|str=30, groupdates: str=None, field_map: dict=None):
         """
         从数据库获取按日期分组的计划任务数据
         🅰 db_name: 账套名称，默认cls.main_db
         🅰 period: 时间周期，默认30天
         🅰 groupdates: 日期范围，默认None
-        🅰 field_mapper: 字段映射，默认None
+        🅰 field_map: 字段映射，默认None
         """
+        from apps.io_api.routers import get_matdailyqtyreport
         db_name = db_name or cls.main_db
-        response = cls._session.get(f"{cls.this_base_url}/api/v_matdailyqtyreport?db_name={db_name}&period={period}&groupdates={groupdates}")
-        response.raise_for_status()
-        data = response.json().get('data', [])
-        field_mapper = field_mapper or {
+        response = await get_matdailyqtyreport(db_name=db_name, period=period, groupdates=groupdates, materialno=None)
+        data = response.get('data', [])
+        # response = cls._session.get(f"{cls.this_base_url}/api/v_matdailyqtyreport?db_name={db_name}&period={period}&groupdates={groupdates}")
+        # response.raise_for_status()
+        # data = response.json().get('data', [])
+        field_map = field_map or {
             'materialno': '料号',
             'datestr': '交期',
             'groupdate': '日期',
             'qty': '数量',
         }
-        if not field_mapper:
+        if not field_map:
             return data
-        return [{field_mapper.get(k, k): v for k, v in item.items()} for item in data]
+        return [{field_map.get(k, k): v for k, v in item.items()} for item in data]
 
 
     @classmethod
