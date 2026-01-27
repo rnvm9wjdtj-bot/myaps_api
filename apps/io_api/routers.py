@@ -543,7 +543,8 @@ async def get_matdailyqtyreport(
     agg_dict = {
         **{col: 'last' for col in df.columns if col not in group_fields + sum_fields + ['original_datestr']},
         **{f: 'sum' for f in sum_fields},
-        'original_datestr': lambda x: ','.join(sorted(set(dt.strftime('%Y-%m-%d') for dt in x))),
+        # 'original_datestr': lambda x: ','.join(sorted(set(dt.strftime('%Y-%m-%d') for dt in x))),
+        'original_datestr': lambda x: ','.join(sorted(set(str(dt) for dt in x))),
     }
     
     df_grouped = (df.groupby(group_fields).agg(agg_dict).reset_index()

@@ -207,35 +207,50 @@ srm_field_map = {
 }
 
 # @cron_task(hour=23, minute=50)
-@cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23", minute="0,5,10,15,20,25,30,35,40,45,50,55")
-async def push_weekpr_to_srm():
-    # 推送周要货计划到SRM
-    pr_data = await ApsBaseAction.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=30, field_map=srm_field_map)
-    file_log.info(f"从账套{MYAPS_MAIN_DB}获取到周要货计划：\n{pr_data}")
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    for item in pr_data:
-        item["plant"] = werks
-        item["version"] = timestamp
-    response = requests.post(
-        url=f"{srm_url}/jbl/service/execute/SRM_RECEIVE_PUSHED_DEMAND_PLAN_SERVICE",
-        headers=srm_headers, json={"demand_plan": pr_data})
-    if response.json().get("body", {}).get("status", "").lower() == "success":
-        file_log.info(f"推送周要货计划到SRM：\n{pr_data}")
-    else:
-        file_log.error(f"推送周要货计划到SRM失败：\n{response.json()}")
+# @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23", minute="0,5,10,15,20,25,30,35,40,45,50,55")
+# @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23", minute="0,10,20,30,40,50")
+# async def push_weekpr_to_srm():
+#     # 推送周要货计划到SRM
+#     pr_data = await ApsBaseAction.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=30, field_map=srm_field_map)
+#     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+#     for item in pr_data:
+#         item["plant"] = "1000"
+#         item["bu_code"] = werks
+#         item["version"] = timestamp
+#     file_log.info(f"推送周要货计划到SRM：\n{pr_data}")
+    # response = requests.post(
+    #     url=f"{srm_url}/jbl/service/execute/SRM_RECEIVE_PUSHED_DEMAND_PLAN_SERVICE",
+    #     headers=srm_headers, json={"demand_plan": pr_data})
+    # if response.json().get("body", {}).get("status", "").lower() == "success":
+    #     file_log.info(f"推送周要货计划到SRM：\n{pr_data}")
+    # else:
+    #     file_log.error(f"推送周要货计划到SRM失败：\n{response.json()}")
 
 
 
-@cron_task(day=1, hour=0, minute=5)
-async def push_seasonpr_to_srm():
-    # 每月初推送季度要货计划到SRM
-    # 生成下三个月的月底日期列表
-    date_list = [
-        (datetime.now().replace(day=1) + relativedelta(months=i + 1) - relativedelta(days=1)).strftime('%Y-%m-%d')
-        for i in range(3)
-    ]
-    pr_data = await ApsBaseAction.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=90, groupdates=','.join(date_list))
-    file_log.info(f"从账套{MYAPS_MAIN_DB}获取到季度要货计划：\n{pr_data}")
+# @cron_task(day=27, hour=12, minute=55)
+# @cron_task(day=1, hour=0, minute=5)
+# async def push_seasonpr_to_srm():
+#     # 每月初推送季度要货计划到SRM
+#     # 生成下三个月的月底日期列表
+#     date_list = [
+#         (datetime.now().replace(day=1) + relativedelta(months=i + 1) - relativedelta(days=1)).strftime('%Y-%m-%d')
+#         for i in range(3)
+#     ]
+#     pr_data = await ApsBaseAction.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=90, groupdates=','.join(date_list), field_map=srm_field_map)
+#     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+#     for item in pr_data:
+#         item["plant"] = "1000"
+#         item["bu_code"] = werks
+#         item["version"] = timestamp
+#     response = requests.post(
+#         url=f"{srm_url}/jbl/service/execute/SRM_RECEIVE_PUSHED_DEMAND_PLAN_SERVICE",
+#         headers=srm_headers, json={"demand_plan": pr_data})
+#     if response.json().get("body", {}).get("status", "").lower() == "success":
+#         file_log.info(f"推送季度要货计划到SRM：\n{pr_data}")
+#     else:
+#         file_log.error(f"推送季度要货计划到SRM失败：\n{response.json()}")
+
 
   
 #################################################################################

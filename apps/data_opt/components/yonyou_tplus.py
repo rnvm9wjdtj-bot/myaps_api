@@ -270,6 +270,14 @@ class TplusConfig:
             "endpoint": "/tplus/api/v2/ManufactureOrderOpenApi/Create",
             "field_map": {
                 "supplyno": "ExternalCode",
+                "dt_ordstart": "StartDate",
+                "dt_ordend": "FinishDate",
+                "AAAAA": "BusiType / Code",
+                "BBBBB": "Department / Code",
+                "create_date": "VoucherDate",
+                "materialno": "ManufactureOrderDetails / Inventory / Code",
+                "unit": "ManufactureOrderDetails / Unit / Name",
+                "avail_qty": "ManufactureOrderDetails / Quantity"
             },
         }
     }

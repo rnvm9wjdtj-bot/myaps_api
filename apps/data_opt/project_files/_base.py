@@ -115,6 +115,7 @@ class ApsBaseAction(ABC):
         🅰 field_map: 字段映射，默认None
         """
         from apps.io_api.routers import get_matdailyqtyreport
+        from datetime import date, datetime
         db_name = db_name or cls.main_db
         response = await get_matdailyqtyreport(db_name=db_name, period=period, groupdates=groupdates, materialno=None)
         data = response.get('data', [])
@@ -129,7 +130,17 @@ class ApsBaseAction(ABC):
         }
         if not field_map:
             return data
-        return [{field_map.get(k, k): v for k, v in item.items()} for item in data]
+        # 转换数据，确保所有日期对象都被转换为字符串
+        result = []
+        for item in data:
+            mapped_item = {}
+            for k, v in item.items():
+                # 转换日期对象为字符串
+                if isinstance(v, (date, datetime)):
+                    v = str(v)
+                mapped_item[field_map.get(k, k)] = v
+            result.append(mapped_item)
+        return result
 
 
     @classmethod

@@ -21,7 +21,7 @@ from ..components import yonyou_tplus, hap
 #################################################################################
 # ⬇️ 项目对象及参数
 #################################################################################
-
+hap_conn = None
 
 hap_conn = hap.HapConnection(
     app_key='601ae007d84ca95a',
@@ -38,6 +38,8 @@ tplus_conn.auth()
 # ⬇️ 项目可复用逻辑
 #################################################################################
 def get_maindata_from_erp_to_hap():
+    if not hap_conn:
+        return
     material = tplus_conn.pull_from_source(source_name='material')
     hap_conn.worksheet('t_material').upsert(material)
 
@@ -51,6 +53,28 @@ def get_maindata_from_erp_to_hap():
     hap_conn.worksheet('t_mat_wc_bom').upsert(bom)
 
 
+def make_tplus_mo(supplyno: str):
+    """
+    根据 APS supply 构造 T+ 生产订单
+    """
+
+    # 创建新工单
+    data = {
+        "ExternalCode": supplyno,
+        "BusiType": {"Code": "AAAAA"},
+        "Department": {"Code": "BBBBB"},
+        "StartDate": datetime.now().strftime("%Y-%m-%d"),
+        "FinishDate": datetime.now().strftime("%Y-%m-%d"),
+        "ManufactureOrderDetails": [
+            {
+                "Inventory": {"Code": "MATERIALNO"},
+                "Unit": {"Name": "UNIT"},
+                "Quantity": 100
+            }
+        ]
+    }
+    response = tplus_conn.push_to_source(source_name='material', data=data)
+    response.raise_for_status()
 
 #################################################################################
 # ⬇️ 定时任务
