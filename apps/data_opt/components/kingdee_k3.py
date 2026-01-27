@@ -13,6 +13,8 @@ from ._base import (
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold
 )
+from ..utils.json_manager import JSONManager
+
 
 
 class K3Material(AcceptMaterial):
@@ -64,6 +66,7 @@ class K3Material(AcceptMaterial):
 
 class K3Config:
     """K3基础配置"""
+    CACHE_FILE = JSONManager(f"cache/{os.getenv("CACHE_FILE")}")
     BASE_URL = "http://129.211.172.205:12980"
     ACCTID = "65a48b111c0197"
     LCID = "2052"

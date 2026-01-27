@@ -11,16 +11,21 @@ from fastapi import status
 # from globalobjects._defaults import ProjectDefaultValues as pdv
 from ._base import (
     cron_task,
-    ApsBaseAction, JSONManager,
+    ApsBaseAction, JSONManager, DataProcessor,
     file_log, console_log, standard_response, get_session, 
     )
 
+from globalobjects import file_timed_logger
 from ..components import yonyou_tplus, hap
+
 
 
 #################################################################################
 # ⬇️ 项目对象及参数
 #################################################################################
+file_logger = file_timed_logger.setup_logging(__name__, log_filename='project.log')
+
+
 hap_conn = None
 
 hap_conn = hap.HapConnection(
@@ -53,28 +58,11 @@ def get_maindata_from_erp_to_hap():
     hap_conn.worksheet('t_mat_wc_bom').upsert(bom)
 
 
-def make_tplus_mo(supplyno: str):
-    """
-    根据 APS supply 构造 T+ 生产订单
-    """
+def push_pl_into_tplus_as_mo(pl_data: dict):
+    supplymo_detaildata = ApsBaseAction._get_supplymo_detaildata(pl_data['supplyno'])
+    response = tplus_conn.push_into_target(target_name='mo', data_list=[supplymo_detaildata])
+    return response
 
-    # 创建新工单
-    data = {
-        "ExternalCode": supplyno,
-        "BusiType": {"Code": "AAAAA"},
-        "Department": {"Code": "BBBBB"},
-        "StartDate": datetime.now().strftime("%Y-%m-%d"),
-        "FinishDate": datetime.now().strftime("%Y-%m-%d"),
-        "ManufactureOrderDetails": [
-            {
-                "Inventory": {"Code": "MATERIALNO"},
-                "Unit": {"Name": "UNIT"},
-                "Quantity": 100
-            }
-        ]
-    }
-    response = tplus_conn.push_to_source(source_name='material', data=data)
-    response.raise_for_status()
 
 #################################################################################
 # ⬇️ 定时任务
@@ -90,7 +78,6 @@ def get_maindata_from_erp_to_hap_task(*args, **kwargs):
 # ⬇️ 数据库事件
 #################################################################################
 class ApsAction(ApsBaseAction):
-    pass
 
     @classmethod
     async def click_release_button(cls, pl_data: dict, *args, **kwargs):
@@ -99,7 +86,9 @@ class ApsAction(ApsBaseAction):
         🅰 supplyno: PL计划单编号
         🅰 mono: MO号，可选，若非None则更改PL的SupplyNo
         """
-        pass
+        # try:
+        return push_pl_into_tplus_as_mo(pl_data)
+
 
     @classmethod
     async def when_mo_close(cls, mo_data: dict, *args, **kwargs):

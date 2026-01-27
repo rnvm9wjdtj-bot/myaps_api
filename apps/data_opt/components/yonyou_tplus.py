@@ -8,16 +8,17 @@ from datetime import datetime, timedelta
 
 
 from ._base import (
-    console_log,
+    console_log, file_logger,
     DataProcessor, globalconst,
     BaseConnection, convert_timeunit, clean_value, #reset_default_values,
     BaseModel as PydanticModel, model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold
 )
+
+from globalobjects import file_timed_logger
 from globalobjects._defaults import ProjectDefaultValues as pdv
 from ..utils.json_manager import JSONManager
-
 
 
 """
@@ -169,10 +170,9 @@ class TplusMatWcBom(AcceptMatWcBom):
 
 
 class TplusConfig:
-    BASE_URL = "https://openapi.chanjet.com"
-    CREDENTIAL_FILE = f"cache/{os.getenv("CACHE_FILE")}"
+    CACHE_FILE = JSONManager(f"cache/{os.getenv("CACHE_FILE")}")
     """
-    ⬆️credential JSON，用于存储畅捷通认证信息，存放在项目根目录下的cache文件夹中，文件名在环境变量CACHE_FILE中指定。文件包含如下结构用于T+的认证：
+    ⬆️缓存文件用于存储畅捷通认证信息，存放在项目根目录下的cache文件夹中，文件名在环境变量CACHE_FILE中指定。文件包含如下结构用于T+的认证：
     {
         "erp": {
             "app_key": "...",
@@ -183,6 +183,7 @@ class TplusConfig:
             "_auth_at_": "2023-12-01 00:00:00"
         }
     """
+    BASE_URL = "https://openapi.chanjet.com"
     TOKEN_EXPIRE_SECONDS = 24 * 3600     # 设token有效期为1天，其实最长可达6天
     AUTH_ENDPOINT = "/auth/v2/refreshToken"
     # 默认分页大小，注意最大不得超过1000
@@ -269,15 +270,18 @@ class TplusConfig:
         "mo": { # 生产加工单创建 https://open.chanjet.com/docs/file/apiFile/tcloud/t+dj/t+scjgd?id=31949
             "endpoint": "/tplus/api/v2/ManufactureOrderOpenApi/Create",
             "field_map": {
-                "supplyno": "ExternalCode",
-                "dt_ordstart": "StartDate",
-                "dt_ordend": "FinishDate",
-                "AAAAA": "BusiType / Code",
-                "BBBBB": "Department / Code",
-                "create_date": "VoucherDate",
-                "materialno": "ManufactureOrderDetails / Inventory / Code",
-                "unit": "ManufactureOrderDetails / Unit / Name",
-                "avail_qty": "ManufactureOrderDetails / Quantity"
+                "ExternalCode": "supplyno",
+                "Code": "supplyno",
+                "StartDate": "dt_ordstart",
+                "FinishDate": "dt_ordend",
+                "BusiType / Code": "*MoBusiType", # 标星号是因为APS提供的原生数据没有，需要从配置文件中获取
+                "Department / Code": "*MoDepartment",
+                "VoucherDate": "create_date",
+                "ManufactureOrderDetails / Inventory / Code": "materialno",
+                "ManufactureOrderDetails / Unit / Name": "unit",
+                "ManufactureOrderDetails / Quantity": "avail_qty",
+                "ManufactureOrderDetails / PreStartDate": "dt_ordstart",
+                "ManufactureOrderDetails / PreFinishDate": "dt_ordend",
             },
         }
     }
@@ -292,11 +296,11 @@ class TplusConnection(BaseConnection):
         """
         self.config = config
         self.base_url = config.BASE_URL
-        self.credential = JSONManager(config.CREDENTIAL_FILE)
+        self.cache_file = config.CACHE_FILE
         # 从缓存文件中读取认证信息，并将其设置为类实例属性
         self.credential_keys = ("app_key", "app_secret", "access_token", "refresh_token", "org_id", "_auth_at_")
         for key in self.credential_keys:
-            setattr(self, key, self.credential.get("erp", {}).get(key, ""))
+            setattr(self, key, self.cache_file.get("erp", {}).get(key, ""))
         super().__init__(config)
 
 
@@ -328,11 +332,11 @@ class TplusConnection(BaseConnection):
             self.access_token = auth_result["access_token"]
             self.refresh_token = auth_result["refresh_token"]
             # 保存更新后的认证信息到缓存文件
-            self.credential.update("erp", {
+            self.cache_file.update("erp", {
                 "_auth_at_": self._auth_at_,
                 "access_token": self.access_token,
                 "refresh_token": self.refresh_token})
-            self.credential.save()
+            self.cache_file.save()
             console_log.info(f"畅捷通token刷新成功")
             return self.access_token
         else:
@@ -381,6 +385,7 @@ class TplusConnection(BaseConnection):
             数据列表
         """
         self.auth()
+        source_name = source_name.lower()
         endpoint = self.config.PULL_SOURCE[source_name]['endpoint']
         field_map = self.config.PULL_SOURCE[source_name]['field_map']
         pydantic_model = pydantic_model or self.config.PULL_SOURCE[source_name].get('pydantic_model')
@@ -481,5 +486,49 @@ class TplusConnection(BaseConnection):
         return processed_data
 
 
-    def push_into_target(self, target_name: str, data_list: list, pydantic_model: PydanticModel=None):
-        pass
+    def push_into_target(self, target_name: str, data_list: list):
+        """
+        推送数据到T+
+        Args:
+            target_name: 目标名称
+            data_list: APS数据库查询结果列表
+        Returns:
+            无
+        """
+        import requests
+
+        def _is_push_success(response: requests.Response) -> bool:
+            """
+            判断推送是否成功
+            Args:
+                response: 推送响应
+            Returns:
+                是否成功
+            """
+            resp_json = response.json()
+            try:
+                return (resp_json['code'] == 0, resp_json['message'])
+            except:
+                return (False, response.text)
+
+        self.auth()
+        target_name = target_name.lower()
+        endpoint = self.config.PUSH_TARGET[target_name]['endpoint']
+        field_map = self.config.PUSH_TARGET[target_name]['field_map']
+        
+        for item in data_list:
+            if target_name == 'mo':
+                item['*MoBusiType'] = self.cache_file.get("erp")["*MoBusiType"]
+                item['*MoDepartment'] = self.cache_file.get("erp")["*MoDepartment"]
+                tplus_format_data = DataProcessor.generate_hierarchy_dict(origin_data=item, field_map=field_map)
+                payload = {
+                    "dto": tplus_format_data
+                }
+                response = self._post(endpoint=endpoint, data=payload)
+                is_success, message = _is_push_success(response)
+                if is_success:
+                    console_log.info(f"✅ 成功推送 {len(data_list)} 条数据到 {target_name}")
+                    file_logger.info(f"✅ 成功推送 {len(data_list)} 条数据到 {target_name}")
+                else:
+                    console_log.error(f"❌ 推送 {len(data_list)} 条数据到 {target_name} 失败，消息：{message}")
+                    file_logger.error(f"❌ 推送 {len(data_list)} 条数据到 {target_name} 失败，消息：{message}")

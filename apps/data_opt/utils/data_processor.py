@@ -275,7 +275,7 @@ class DataProcessor:
         
         Args:
             origin_data: 原始数据字典，包含需要转换的键值对
-            field_map: 字段映射字典，键是原始数据中的键，值是目标层次路径
+            field_map: 字段映射字典，键是目标层次路径，值是原始数据中的键
             separator: 层次路径的分隔符，默认为 " / "
         
         Returns:
@@ -299,78 +299,156 @@ class DataProcessor:
                 current = current[part]
             return current
         
+        # 分析字段映射，识别可能需要作为列表的字段
+        # 统计每个路径段的出现次数和子路径模式
+        path_analysis = {}
+        
+        for value_path, key in field_map.items():
+            parts = _split_path(value_path)
+            if not parts:
+                continue
+            
+            # 分析路径的每个级别
+            for i, part in enumerate(parts):
+                if part not in path_analysis:
+                    path_analysis[part] = {
+                        "occurrences": 0,
+                        "parent_paths": set(),
+                        "child_patterns": set(),
+                        "full_paths": set()
+                    }
+                
+                path_analysis[part]["occurrences"] += 1
+                
+                # 记录父路径
+                if i > 0:
+                    parent_path = separator.join(parts[:i])
+                    path_analysis[part]["parent_paths"].add(parent_path)
+                
+                # 记录子路径模式
+                if i < len(parts) - 1:
+                    child_pattern = parts[i+1]
+                    path_analysis[part]["child_patterns"].add(child_pattern)
+                
+                # 记录完整路径
+                path_analysis[part]["full_paths"].add(value_path)
+        
+        # 识别需要作为列表的字段
+        # 规则：
+        # 1. 如果多个不同的完整路径都包含同一个父路径段，并且这些路径的下一级路径段不同，那么该父路径段应该是列表
+        # 例如：ManufactureOrderDetails / Inventory / Code 和 ManufactureOrderDetails / Unit / Name
+        list_candidates = set()
+        
+        # 首先，收集所有可能的父路径段
+        parent_segments = {}
+        for value_path, key in field_map.items():
+            parts = _split_path(value_path)
+            if len(parts) >= 2:
+                # 对于每个路径，检查其所有可能的父路径段
+                for i in range(1, len(parts)):
+                    parent_segment = parts[i-1]
+                    child_segment = parts[i]
+                    
+                    if parent_segment not in parent_segments:
+                        parent_segments[parent_segment] = set()
+                    
+                    # 记录该父路径段的所有子路径段
+                    parent_segments[parent_segment].add(child_segment)
+        
+        # 然后，检查每个父路径段是否有多个不同的子路径段
+        for parent_segment, child_segments in parent_segments.items():
+            # 如果一个父路径段有多个不同的子路径段，那么它应该是列表
+            if len(child_segments) > 1:
+                list_candidates.add(parent_segment)
+        
+        # 特殊处理：如果一个字段在多个完整路径中出现，并且这些路径的深度相同，那么它可能是列表
+        for part, analysis in path_analysis.items():
+            # 检查该字段是否在多个完整路径中出现
+            if len(analysis["full_paths"]) > 1:
+                # 检查这些路径的深度是否相同
+                depths = set()
+                for full_path in analysis["full_paths"]:
+                    depths.add(len(_split_path(full_path)))
+                
+                # 如果所有路径的深度相同，那么该字段可能是列表
+                if len(depths) == 1:
+                    list_candidates.add(part)
+        
         # 首先收集所有列表字段的映射
         list_field_mappings = {}
         regular_mappings = []
         
-        for key, value_path in field_map.items():
-            if separator in key:
-                # 处理列表字段的映射
-                list_key, sub_key = [k.strip() for k in key.split(separator)]
-                if list_key not in list_field_mappings:
-                    list_field_mappings[list_key] = {}
-                
-                # 分割目标路径
-                parts = _split_path(value_path)
-                
-                # 确保路径长度至少为 2
-                if len(parts) < 2:
-                    raise ValueError(f"Invalid path for list field mapping: {value_path}")
-                
-                # 动态获取目标路径的父路径和字段名
-                # 对于列表字段的映射，目标路径格式为：[父路径 /] 列表字段名 [/ 目标字段 [/ 子字段]]
-                # 例如：ManufactureOrderDetails / ManufactureOrderProcessDetails / Workcenter / Code
-                # 或者：ManufactureOrderDetails / ManufactureOrderProcessDetails / SortNo
-                # 或者：Fields / StringField
-                # 或者：StringField
-                
-                # 根据路径长度决定处理方式
-                if len(parts) == 1:
-                    # 只有一个部分，直接作为列表字段名
-                    target_parent_parts = []
-                    target_field_name = parts[0]
-                    target_field = parts[0]
-                    target_subfield = None
-                elif len(parts) == 2:
-                    # 两个部分，第一部分是父路径，第二部分是列表字段名
-                    target_parent_parts = parts[:-1]
-                    target_field_name = parts[-1]
-                    target_field = parts[-1]
-                    target_subfield = None
+        for value_path, key in field_map.items():
+            # 检查目标路径是否包含分隔符，判断是否为列表字段映射
+            # 列表字段映射的目标路径格式：[父路径 /] 列表字段名 [/ 目标字段 [/ 子字段]]
+            # 例如：ManufactureOrderDetails / ManufactureOrderProcessDetails / Workcenter / Code
+            parts = _split_path(value_path)
+            
+            if len(parts) >= 2:
+                # 检查原始数据键是否对应列表字段
+                # 列表字段的原始数据键格式：list_key[separator]sub_key
+                if separator in key:
+                    list_key, sub_key = [k.strip() for k in key.split(separator)]
+                    if list_key not in list_field_mappings:
+                        list_field_mappings[list_key] = {}
+                    
+                    # 动态获取目标路径的父路径和字段名
+                    # 对于列表字段的映射，目标路径格式为：[父路径 /] 列表字段名 [/ 目标字段 [/ 子字段]]
+                    # 例如：ManufactureOrderDetails / ManufactureOrderProcessDetails / Workcenter / Code
+                    # 或者：ManufactureOrderDetails / ManufactureOrderProcessDetails / SortNo
+                    # 或者：Fields / StringField
+                    # 或者：StringField
+                    
+                    # 根据路径长度决定处理方式
+                    if len(parts) == 1:
+                        # 只有一个部分，直接作为列表字段名
+                        target_parent_parts = []
+                        target_field_name = parts[0]
+                        target_field = parts[0]
+                        target_subfield = None
+                    elif len(parts) == 2:
+                        # 两个部分，第一部分是父路径，第二部分是列表字段名
+                        target_parent_parts = parts[:-1]
+                        target_field_name = parts[-1]
+                        target_field = parts[-1]
+                        target_subfield = None
+                    else:
+                        # 三个或更多部分，按照正常方式处理
+                        # 列表字段名（ManufactureOrderProcessDetails）
+                        target_field_name = parts[-2]
+                        
+                        # 目标字段（如 Workcenter 或 SortNo）
+                        target_field = parts[-1]
+                        
+                        # 子字段（如 Code），如果有的话
+                        target_subfield = None
+                        
+                        # 检查是否有子字段（路径长度大于 3）
+                        if len(parts) > 3:
+                            # 有子字段，调整字段名和子字段
+                            target_field_name = parts[-3]
+                            target_field = parts[-2]
+                            target_subfield = parts[-1]
+                        
+                        # 获取目标路径的父路径
+                        # 父路径是除了最后两部分（或三部分，如果有子字段）之外的所有部分
+                        parent_parts_count = len(parts) - (3 if target_subfield else 2)
+                        target_parent_parts = parts[:parent_parts_count]
+                    
+                    if target_field not in list_field_mappings[list_key]:
+                        list_field_mappings[list_key][target_field] = {
+                            "sub_key": sub_key,
+                            "target_parent_parts": target_parent_parts,
+                            "target_field_name": target_field_name,
+                            "target_field": target_field,
+                            "target_subfield": target_subfield
+                        }
                 else:
-                    # 三个或更多部分，按照正常方式处理
-                    # 列表字段名（ManufactureOrderProcessDetails）
-                    target_field_name = parts[-2]
-                    
-                    # 目标字段（如 Workcenter 或 SortNo）
-                    target_field = parts[-1]
-                    
-                    # 子字段（如 Code），如果有的话
-                    target_subfield = None
-                    
-                    # 检查是否有子字段（路径长度大于 3）
-                    if len(parts) > 3:
-                        # 有子字段，调整字段名和子字段
-                        target_field_name = parts[-3]
-                        target_field = parts[-2]
-                        target_subfield = parts[-1]
-                    
-                    # 获取目标路径的父路径
-                    # 父路径是除了最后两部分（或三部分，如果有子字段）之外的所有部分
-                    parent_parts_count = len(parts) - (3 if target_subfield else 2)
-                    target_parent_parts = parts[:parent_parts_count]
-                
-                if target_field not in list_field_mappings[list_key]:
-                    list_field_mappings[list_key][target_field] = {
-                        "sub_key": sub_key,
-                        "target_parent_parts": target_parent_parts,
-                        "target_field_name": target_field_name,
-                        "target_field": target_field,
-                        "target_subfield": target_subfield
-                    }
+                    # 处理常规字段，存储为 (key, value_path, depth) 元组
+                    depth = len(parts)  # 路径深度，顶层为 1
+                    regular_mappings.append((key, value_path, depth))
             else:
                 # 处理常规字段，存储为 (key, value_path, depth) 元组
-                parts = _split_path(value_path)
                 depth = len(parts)  # 路径深度，顶层为 1
                 regular_mappings.append((key, value_path, depth))
         
@@ -423,15 +501,50 @@ class DataProcessor:
                         # 非字典元素直接添加
                         current[target_field].append(item)
             else:
-                    # 处理非列表类型字段
-                    current = result
-                    for i, part in enumerate(parts):
-                        if i == len(parts) - 1:
-                            current[part] = origin_data.get(key, "N/A")
-                        else:
+                # 处理非列表类型字段
+                current = result
+                i = 0
+                while i < len(parts):
+                    part = parts[i]
+                    if i == len(parts) - 1:
+                        # 检查是否需要作为列表
+                        # 特殊处理：如果原始值是列表，或者该字段是列表候选
+                        if isinstance(original_value, list):
                             if part not in current:
-                                current[part] = {}
-                            current = current[part]
+                                current[part] = []
+                            current[part].append(original_value)
+                        else:
+                            current[part] = origin_data.get(key, "N/A")
+                        i += 1
+                    else:
+                        # 检查当前字段是否需要作为列表
+                        if part in list_candidates:
+                            # 如果当前字段是列表候选，确保其存在且是列表
+                            if part not in current:
+                                current[part] = []
+                            
+                            # 检查是否已经有列表元素，如果没有，创建一个
+                            if not current[part]:
+                                current[part].append({})
+                            
+                            # 移动到列表的第一个元素
+                            current = current[part][0]
+                            i += 1
+                        else:
+                            # 检查下一级字段是否需要作为列表
+                            next_part = parts[i+1]
+                            if next_part in list_candidates:
+                                # 如果下一级字段是列表候选，确保当前字段存在
+                                if part not in current:
+                                    current[part] = {}
+                                current = current[part]
+                                i += 1
+                            else:
+                                # 正常处理
+                                if part not in current:
+                                    current[part] = {}
+                                current = current[part]
+                                i += 1
         
         # 处理列表字段的映射
         for list_key, mappings in list_field_mappings.items():
@@ -444,12 +557,36 @@ class DataProcessor:
                 target_parent_parts = sample_mapping["target_parent_parts"]
                 
                 # 构建父路径结构
-                current = _build_parent_structure(target_parent_parts)
+                current = result
+                
+                # 遍历父路径部分，确保每个部分都存在
+                for part in target_parent_parts:
+                    if isinstance(current, list):
+                        # 如果当前是列表，使用第一个元素
+                        if current:
+                            current = current[0]
+                        else:
+                            # 如果列表为空，创建一个新元素
+                            current.append({})
+                            current = current[0]
+                    
+                    if part not in current:
+                        current[part] = {}
+                    current = current[part]
                 
                 # 目标字段名（ManufactureOrderProcessDetails）
                 target_field_name = sample_mapping["target_field_name"]
                 
                 # 确保目标字段是列表
+                if isinstance(current, list):
+                    # 如果当前是列表，使用第一个元素
+                    if current:
+                        current = current[0]
+                    else:
+                        # 如果列表为空，创建一个新元素
+                        current.append({})
+                        current = current[0]
+                
                 if target_field_name not in current:
                     current[target_field_name] = []
                 
@@ -483,19 +620,20 @@ class DataProcessor:
 if __name__ == "__main__":
     # 测试代码
     def test_generate_hierarchy_dict():
+        # 调整 field_map 结构为 {目标路径: 原始数据键}
         field_map = {
-            "supplyno": "ExternalCode",
-            "dt_ordstart": "StartDate",
-            "dt_ordend": "FinishDate",
-            "AAAAA": "BusiType / Code",
-            "BBBBB": "Department / Code",
-            "create_date": "VoucherDate",
-            "materialno": "ManufactureOrderDetails / Inventory / Code",
-            "unit": "ManufactureOrderDetails / Unit / Name",
-            "avail_qty": "ManufactureOrderDetails / Quantity",
-            "orderwc / workcenter": "ManufactureOrderDetails / ManufactureOrderProcessDetails / Workcenter / Code",
-            "orderwc / itemno": "ManufactureOrderDetails / ManufactureOrderProcessDetails / ItemNo / Code",
-            "orderwc / sortno": "ManufactureOrderDetails / ManufactureOrderProcessDetails / SortNo"
+            "ExternalCode": "supplyno",
+            "StartDate": "dt_ordstart",
+            "FinishDate": "dt_ordend",
+            "BusiType / Code": "AAAAA",
+            "Department / Code": "BBBBB",
+            "VoucherDate": "create_date",
+            "ManufactureOrderDetails / Inventory / Code": "materialno",
+            "ManufactureOrderDetails / Unit / Name": "unit",
+            "ManufactureOrderDetails / Quantity": "avail_qty",
+            "ManufactureOrderDetails / ManufactureOrderProcessDetails / Workcenter / Code": "orderwc / workcenter",
+            "ManufactureOrderDetails / ManufactureOrderProcessDetails / ItemNo / Code": "orderwc / itemno",
+            "ManufactureOrderDetails / ManufactureOrderProcessDetails / SortNo": "orderwc / sortno"
         }
 
 
@@ -538,8 +676,8 @@ if __name__ == "__main__":
         }
 
         deep_field_map = {
-            "supplyno": "ExternalCode",
-            "deep_list / level1": "Level1 / Level2 / Level3 / Value"
+            "ExternalCode": "supplyno",
+            "Level1 / Level2 / Level3 / Value": "deep_list / level1"
         }
 
         deep_result = DataProcessor.generate_hierarchy_dict(deep_origin_data, deep_field_map)
@@ -557,11 +695,12 @@ if __name__ == "__main__":
             ]
         }
 
+        # 调整 type_field_map 结构为 {目标路径: 原始数据键}
         type_field_map = {
-            "supplyno": "ExternalCode",
-            "mixed_list / string_field": "Fields / StringField",
-            "mixed_list / int_field": "Fields / IntField",
-            "mixed_list / bool_field": "Fields / BoolField"
+            "ExternalCode": "supplyno",
+            "Fields / StringField": "mixed_list / string_field",
+            "Fields / IntField": "mixed_list / int_field",
+            "Fields / BoolField": "mixed_list / bool_field"
         }
 
         type_result = DataProcessor.generate_hierarchy_dict(type_origin_data, type_field_map)
@@ -577,11 +716,12 @@ if __name__ == "__main__":
             ]
         }
 
+        # 调整 missing_field_map 结构为 {目标路径: 原始数据键}
         missing_field_map = {
-            "supplyno": "ExternalCode",
-            "orderwc / workcenter": "ManufactureOrderDetails / ManufactureOrderProcessDetails / Workcenter / Code",
-            "orderwc / itemno": "ManufactureOrderDetails / ManufactureOrderProcessDetails / ItemNo / Code",
-            "orderwc / sortno": "ManufactureOrderDetails / ManufactureOrderProcessDetails / SortNo"
+            "ExternalCode": "supplyno",
+            "ManufactureOrderDetails / ManufactureOrderProcessDetails / Workcenter / Code": "orderwc / workcenter",
+            "ManufactureOrderDetails / ManufactureOrderProcessDetails / ItemNo / Code": "orderwc / itemno",
+            "ManufactureOrderDetails / ManufactureOrderProcessDetails / SortNo": "orderwc / sortno"
         }
 
         missing_result = DataProcessor.generate_hierarchy_dict(missing_origin_data, missing_field_map)
@@ -590,3 +730,43 @@ if __name__ == "__main__":
 
 
     test_generate_hierarchy_dict()
+
+    # 测试 ManufactureOrderDetails 应该是列表的情况
+    print("\n=== 测试 ManufactureOrderDetails 列表情况 ===")
+    
+    # 模拟 yonyou_tplus.py 中的字段映射结构
+    yonyou_field_map = {
+        "ExternalCode": "supplyno",
+        "StartDate": "dt_ordstart",
+        "FinishDate": "dt_ordend",
+        "BusiType / Code": "AAAAA",
+        "Department / Code": "BBBBB",
+        "VoucherDate": "create_date",
+        "ManufactureOrderDetails / Inventory / Code": "materialno",
+        "ManufactureOrderDetails / Unit / Name": "unit",
+        "ManufactureOrderDetails / Quantity": "avail_qty"
+    }
+    
+    yonyou_origin_data = {
+        "supplyno": "123456",
+        "dt_ordstart": "2023-01-01",
+        "dt_ordend": "2023-01-31",
+        "AAAAA": "1001",
+        "BBBBB": "2001",
+        "create_date": "2023-01-15",
+        "materialno": "M001",
+        "unit": "个",
+        "avail_qty": 100
+    }
+    
+    yonyou_result = DataProcessor.generate_hierarchy_dict(yonyou_origin_data, yonyou_field_map)
+    print("ManufactureOrderDetails 列表测试:")
+    print(json.dumps(yonyou_result, indent=2, ensure_ascii=False))
+    
+    # 检查 ManufactureOrderDetails 是否为列表
+    if "ManufactureOrderDetails" in yonyou_result:
+        print(f"\nManufactureOrderDetails 类型: {type(yonyou_result['ManufactureOrderDetails'])}")
+        if isinstance(yonyou_result['ManufactureOrderDetails'], list):
+            print("✓ ManufactureOrderDetails 正确识别为列表")
+        else:
+            print("✗ ManufactureOrderDetails 未识别为列表")

@@ -263,8 +263,8 @@ class ApsAction(ApsBaseAction):
     async def click_release_button(cls, pl_data: dict):
         try:
             supplymo_detaildata = cls._get_supplymo_detaildata(pl_data['supplyno'])
-            start_datetime: str = supplymo_detaildata['dt_ordstart'].split('T')[0]
-            end_datetime: str = supplymo_detaildata['dt_ordend'].split('T')[0]
+            start_datetime: str = supplymo_detaildata['dt_ordstart'].split(" ")[0]
+            end_datetime: str = supplymo_detaildata['dt_ordend'].split(" ")[0]
             orderwc: list = supplymo_detaildata['orderwc']
 
             data = {

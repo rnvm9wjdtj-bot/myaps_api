@@ -9,7 +9,7 @@ from pydantic import BaseModel as PydanticSchema
 from config.settings import MYAPS_DB_SET
 from globalobjects.db_manager import db_managers, DbManager
 from globalobjects import file_timed_logger
-from .common import standard_response, dict_to_lower_keys, get_raw_input_data, convert_to_dict
+from .common import standard_response, format_query_result, get_raw_input_data, convert_to_dict
 from ..models import TABLE_MODEL_MAPPING
 
 
@@ -77,11 +77,11 @@ async def db_query(db_name: str, model_or_tablename: TortoiseBaseModel | str, fi
             filter_string=filter_string,
             order_string=order_string,
         )
-        lower_keys_data = [dict_to_lower_keys(row) for row in query_result['data']]
+        formatted_data = [format_query_result(row) for row in query_result['data']]
         total = query_result['total']
         
         return standard_response(
-            data=lower_keys_data,
+            data=formatted_data,
             meta={"total": total}
         )
     except Exception as e:

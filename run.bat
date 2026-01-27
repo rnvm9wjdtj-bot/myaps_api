@@ -36,7 +36,7 @@ REM Setup logging
 echo %date% %time% - Server starting on port %PORT% >> %LOG_FILE%
 
 REM Port check and cleanup
-echo Checking if port %PORT% is already in use...
+echo Checking if port %PORT% is available...
 for /f "tokens=5" %%i in ('netstat -ano ^| findstr "LISTENING" ^| findstr ":%PORT%"') do (
     echo [WARNING] Found process %%i using port %PORT%
     echo %date% %time% - Found process %%i using port %PORT% >> %LOG_FILE%

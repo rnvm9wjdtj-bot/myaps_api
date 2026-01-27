@@ -10,8 +10,40 @@ from globalobjects.globalconst import SupplyTypeEnum
 
 
 
+from datetime import datetime
+
 def dict_to_lower_keys(d: dict) -> dict:
     return {k.lower(): v for k, v in d.items()}
+
+def format_query_result(d: dict) -> dict:
+    """
+    格式化查询结果
+    1. 将字典的键转换为小写
+    2. 格式化字典中的日期时间字段（支持datetime对象和ISO 8601字符串格式）
+    """
+    result = {}
+    for k, v in d.items():
+        # 将键转换为小写
+        lower_key = k.lower()
+        # 格式化日期时间字段
+        if isinstance(v, datetime):
+            result[lower_key] = v.strftime("%Y-%m-%d %H:%M:%S")
+        # elif isinstance(v, str) and 'T' in v:
+        #     # 尝试解析ISO 8601格式的字符串
+        #     try:
+        #         # 移除可能的时区信息
+        #         if '+' in v or '-' in v:
+        #             v = v.split('+')[0].split('-')[0]
+        #         # 解析字符串为datetime对象
+        #         dt = datetime.fromisoformat(v)
+        #         # 格式化为目标格式
+        #         result[lower_key] = dt.strftime("%Y-%m-%d %H:%M:%S")
+        #     except ValueError:
+        #         # 如果解析失败，保留原始值
+        #         result[lower_key] = v
+        else:
+            result[lower_key] = v
+    return result
 
 # 路由相关公共格式
 def standard_response(

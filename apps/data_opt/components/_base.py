@@ -13,11 +13,14 @@ from apps.io_api.schemas import (
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold
     )
-from globalobjects import globalconst
+from globalobjects import globalconst, file_timed_logger
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 console_log = logging.getLogger(__name__)
+
+# TODO 文件日志不好用
+file_logger = file_timed_logger.setup_logging(__name__, log_filename='project.log')
 
 
 # def reset_default_values(model: PydanticModel, required_fields: list[str] = None, default_fields: Dict[str, Any] = None):
