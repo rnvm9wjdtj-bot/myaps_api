@@ -9,11 +9,11 @@ from datetime import datetime, timedelta
 
 from ._base import (
     console_log, filelog_normal, filelog_error,
-    DataProcessor, globalconst,
+    DataProcessor, globalconst, _defaults,
     BaseConnection, convert_timeunit, clean_value,
     BaseModel as PydanticModel, model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
-    AcceptMold, AcceptMatWcMold
+    AcceptMold, AcceptMatWcMold, AcceptSupply, AcceptConfirm
 )
 
 from globalobjects._defaults import ProjectDefaultValues as pdv
@@ -168,6 +168,31 @@ class TplusMatWcBom(AcceptMatWcBom):
 
 
 
+class TplusStock(AcceptSupply):
+
+    type: str = Field('ST')
+    priority: int = Field(0)
+    status: str = Field('CRE')
+
+    class Config:
+        extra = 'allow'
+
+    @model_validator(mode="before")
+    @classmethod
+    def model_valid(cls, values: Dict[str, Any]):
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cleaned_values = {}
+        cleaned_values['materialno'] = values['存货编码']
+        cleaned_values['supplyno'] = values['存货编码']
+        cleaned_values['itemno'] = "stock"
+        cleaned_values['avail_qty'] = values['现存量']
+        cleaned_values['create_date'] = now
+        cleaned_values['avail_date'] = now
+        cleaned_values['dt_req'] = now
+        return cleaned_values
+
+
+
 class TplusConfig:
     CACHE_FILE = JSONManager(f"cache/{os.getenv("CACHE_FILE")}")
     """
@@ -193,15 +218,15 @@ class TplusConfig:
         "material": {
             "endpoint": "/tplus/api/v2/inventory/Query",
             "field_map": {
-                "ID":"ID", "Disabled":"是否停用", "Code":"编码", "Name":"名称",
-                "Specification":"规格型号", "InventoryClassCode":"存货分类Code", "InventoryClassName":"存货分类Name",
-                "UnitName":"单位Name", "BaseUnitName":"主计量单位Name",
+                "ID": "ID", "Disabled": "是否停用", "Code": "编码", "Name": "名称",
+                "Specification": "规格型号", "InventoryClassCode": "存货分类Code", "InventoryClassName": "存货分类Name",
+                "UnitName": "单位Name", "BaseUnitName": "主计量单位Name",
                 "UnitByManufactureName": "生产常用单位Name",
-                "IsMaterial":"是否物料", "IsPurchase":"是否采购",
-                "IsMadeSelf":"是否自制", "IsMadeRequest":"是否委外",
-                "IsSuite":"是否套件", "IsPhantom":"是否虚拟件",
-                "AvagCost":"平均成本", "Expired":"保质期", "ExpiredUnitName":"保质期单位",
-                "IsNeedQualityInspection":"是否需要检验",
+                "IsMaterial": "是否物料", "IsPurchase": "是否采购",
+                "IsMadeSelf": "是否自制", "IsMadeRequest": "是否委外",
+                "IsSuite": "是否套件", "IsPhantom": "是否虚拟件",
+                "AvagCost": "平均成本", "Expired": "保质期", "ExpiredUnitName": "保质期单位",
+                "IsNeedQualityInspection": "是否需要检验",
                 "Ts": "时间戳",
             },
             "base_filter": {
@@ -248,16 +273,21 @@ class TplusConfig:
         "stock": {  # 现存量查询 https://open.chanjet.com/docs/file/apiFile/tcloud/tjqt/xcl?id=30875，以 现存量字段 为库存数导入
             "endpoint": "/tplus/api/v2/currentStock/Query",
             "field_map": {
-                
+                "InventoryCode": "存货编码",
+                # "AvailableQuantity": "可用量",
+                "ExistingQuantity": "现存量",
+                "TS": "时间戳",
             },
-            "base_filter": {},
-            "pydantic_model": None,
+            "base_filter": {
+                "IsIncludeZero": True
+            },
+            "pydantic_model": TplusStock,
         },
 
         "workreport": { # 工序汇报单列表查询 https://open.chanjet.com/docs/file/apiFile/tcloud/t+dj/t+gxhbd?id=32107
             "endpoint": "/tplus/api/v2/workReport/Query",
             "field_map": {
-
+                
             },
             "base_filter": {},
             "pydantic_model": None,
@@ -270,7 +300,7 @@ class TplusConfig:
             "endpoint": "/tplus/api/v2/ManufactureOrderOpenApi/Create",
             "field_map": {
                 "[]": "ManufactureOrderDetails",
-                
+
                 "ExternalCode": "supplyno",
                 "Code": "supplyno",
                 "StartDate": "dt_ordstart",
@@ -404,7 +434,7 @@ class TplusConnection(BaseConnection):
             filter["UpdateDateBegin"] = f"{today} 00:00:00"
             filter["UpdateDateEnd"] = f"{today} 23:59:59"
 
-        if source_name in ('material', 'workcenter'):
+        if source_name in ('material', 'workcenter', 'stock'):
             params = {
                 "PageIndex": 1,
                 "PageSize": self.config.PAGE_SIZE,
@@ -423,7 +453,8 @@ class TplusConnection(BaseConnection):
                 if not raw_data:
                     break
                 params["PageIndex"] += 1
-                params["Ts"] = raw_data[-1]["Ts"]
+                ts_value = raw_data[-1].get("Ts") or raw_data[-1].get("TS")
+                params["Ts"] = ts_value
                 data_list.extend([{v: row.get(k) for k, v in field_map.items()} for row in raw_data])
 
         elif source_name == 'route':
@@ -451,6 +482,13 @@ class TplusConnection(BaseConnection):
                 params["PageIndex"] += 1
 
                 data_list.extend(self._process_bomdata(raw_data, field_map=field_map))
+
+        elif source_name == 'workreport':
+            params = {
+                "pageIndex": 0,     # 也是醉了，这个接口的第一页是0，不是1，哪个奇葩设计的规范，全局都没个统一标准
+                "pageSize": 1000,   # TMD 就你特殊，还得用小驼峰，大驼峰居然会报错，泥马
+                "selectFields": ",".join(field_map.keys()),
+            }
 
         if pydantic_model:
             data_list = [pydantic_model(**item).model_dump() for item in data_list]

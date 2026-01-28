@@ -11,9 +11,9 @@ from apps.data_opt.utils.data_processor import DataProcessor
 from apps.io_api.schemas import (
     BaseModel, model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
-    AcceptMold, AcceptMatWcMold
-    )
-from globalobjects import globalconst, file_timed_logger
+    AcceptMold, AcceptMatWcMold, AcceptSupply, AcceptConfirm
+)
+from globalobjects import globalconst, file_timed_logger, _defaults
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

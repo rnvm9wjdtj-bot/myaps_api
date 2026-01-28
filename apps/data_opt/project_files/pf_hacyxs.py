@@ -8,11 +8,15 @@ from datetime import datetime
 
 from fastapi import status
 
+
+
 # from globalobjects._defaults import ProjectDefaultValues as pdv
 from ._base import (
+    MYAPS_DB_SET,
     cron_task, filelog_normal, filelog_error,
     ApsBaseAction, JSONManager, DataProcessor,
     filelog_normal, console_log, standard_response, get_session, 
+    db_delete, db_bupsert
     )
 
 # from globalobjects import file_timed_logger
@@ -48,30 +52,48 @@ def get_maindata_from_erp_to_hap():
     material = tplus_conn.pull_from_source(source_name='material')
     hap_conn.worksheet('t_material').upsert(material)
 
-    workcenter = tplus_conn.pull_from_source(source_name='workcenter')
-    hap_conn.worksheet('t_workcenter').upsert(workcenter)
+    # workcenter = tplus_conn.pull_from_source(source_name='workcenter')
+    # hap_conn.worksheet('t_workcenter').upsert(workcenter)
 
-    route = tplus_conn.pull_from_source(source_name='route')
-    hap_conn.worksheet('t_mat_wc').upsert(route)
+    # route = tplus_conn.pull_from_source(source_name='route')
+    # hap_conn.worksheet('t_mat_wc').upsert(route)
 
-    bom = tplus_conn.pull_from_source(source_name='bom')
-    hap_conn.worksheet('t_mat_wc_bom').upsert(bom)
+    # bom = tplus_conn.pull_from_source(source_name='bom')
+    # hap_conn.worksheet('t_mat_wc_bom').upsert(bom)
 
 
-def push_pl_into_tplus_as_mo(pl_data: dict):
+async def refresh_stock():
+    delete_result = await db_delete(db_names=MYAPS_DB_SET, model_or_tablename='t_supply', filter_string=f"`Type`='ST'")
+    stock = tplus_conn.pull_from_source(source_name='stock')
+    bupsurt_result = await db_bupsert(db_names=MYAPS_DB_SET, model_or_tablename='t_supply', data_list=stock)
+    return stock
+    # TODO 库存数据要根据料号汇总
+
+
+
+async def push_pl_into_tplus_as_mo(pl_data: dict):
     supplymo_detaildata = ApsBaseAction._get_supplymo_detaildata(pl_data['supplyno'])
-    response = tplus_conn.push_into_target(target_name='mo', data_list=[supplymo_detaildata])
+    response = await tplus_conn.push_into_target(target_name='mo', data_list=[supplymo_detaildata])
     return response
 
 
 #################################################################################
 # ⬇️ 定时任务
 #################################################################################
+# @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22",minute="0,5,10,15,20,25,30,35,40,45,50,55")
+# @cron_task(hour="8,10,12,14,16",minute="55")
+async def get_maindata_from_erp_to_hap_task(*args, **kwargs):
+    console_log.info("⏰ 开始执行获取主数据定时任务")
+    await get_maindata_from_erp_to_hap()
+    console_log.info("⏰ 获取主数据定时任务执行完成")
+
+
+# @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22",minute="0,5,10,15,20,25,30,35,40,45,50,55")
 @cron_task(hour="8,10,12,14,16",minute="55")
-def get_maindata_from_erp_to_hap_task(*args, **kwargs):
-    console_log.info("⏰ 开始执行定时任务")
-    get_maindata_from_erp_to_hap()
-    console_log.info("⏰ 定时任务执行完成")
+async def refresh_stock_task(*args, **kwargs):
+    console_log.info("⏰ 开始执行刷新库存定时任务")
+    stock = await refresh_stock()
+    console_log.info("⏰ 刷新库存定时任务执行完成")
 
 
 #################################################################################
@@ -87,7 +109,7 @@ class ApsAction(ApsBaseAction):
         🅰 mono: MO号，可选，若非None则更改PL的SupplyNo
         """
         # try:
-        return push_pl_into_tplus_as_mo(pl_data)
+        return await push_pl_into_tplus_as_mo(pl_data)
 
 
     @classmethod

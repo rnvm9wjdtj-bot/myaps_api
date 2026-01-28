@@ -397,9 +397,12 @@ async def delete_supply(
 async def get_demand(
     db_name: str = common_params["db_name"],
     demandno: str = Query(..., description="需求号"),
-
+    type: str = Query(None, enum=[gc.DemandTypeEnum.DM.value, gc.DemandTypeEnum.RS.value], description="需求类型"),
 ):
-    return await db_query(db_name=db_name, model_or_tablename="t_demand", filter_string=f"`DemandNo`='{demandno}'")
+    filter_string = f"`DemandNo`='{demandno}'"
+    if type:
+        filter_string += f" AND `Type`='{type}'"
+    return await db_query(db_name=db_name, model_or_tablename="t_demand", filter_string=filter_string)
 
 
 @rt.post(

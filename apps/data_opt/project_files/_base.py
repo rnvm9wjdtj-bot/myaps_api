@@ -19,7 +19,6 @@ from apps.data_opt.utils.common import get_session
 
 # ❗❗❗❗❗❗❗❗❗❗❗❗⬇️不要删掉，便于各项目文件引用 ❗❗❗❗❗❗❗❗❗❗❗❗
 from globalobjects import file_timed_logger
-# from apps.io_api.models import TSupply # 循环引用
 from apps.io_api.utils.common import standard_response
 from apps.io_api.utils.db_operation import db_delete, db_bupsert, call_dbprocdure, db_query, db_bupsert, db_supsert
 from apps.data_opt.components.hap import HapConnection
@@ -27,6 +26,7 @@ from ..utils.scheduler import cron_task
 from ..utils.common import add_basic_auth_requests
 from ..utils.json_manager import JSONManager
 from ..utils.data_processor import DataProcessor
+from apps.io_api.utils.db_operation import db_delete, db_bupsert
 
 
 # 配置日志
