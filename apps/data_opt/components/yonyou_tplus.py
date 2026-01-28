@@ -269,6 +269,8 @@ class TplusConfig:
         "mo": { # 生产加工单创建 https://open.chanjet.com/docs/file/apiFile/tcloud/t+dj/t+scjgd?id=31949
             "endpoint": "/tplus/api/v2/ManufactureOrderOpenApi/Create",
             "field_map": {
+                "[]": "ManufactureOrderDetails",
+                
                 "ExternalCode": "supplyno",
                 "Code": "supplyno",
                 "StartDate": "dt_ordstart",

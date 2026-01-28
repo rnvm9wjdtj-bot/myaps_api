@@ -532,9 +532,23 @@ async def get_matdailyqtyreport(
     # 日期映射
     if dates:
         sorted_dates = sorted([datetime.strptime(d, '%Y-%m-%d').date() for d in dates])
-        df['datestr'] = pd.to_datetime(df['datestr']).dt.date.apply(
-            lambda x: next((d for d in sorted_dates if d >= x), sorted_dates[-1])
-        ).astype(str)
+        # 为每个原始日期找到对应的分组区间，并使用区间左端点作为要求交期
+        def get_group_start_date(x):
+            x_date = x
+            # 遍历排序后的分组日期
+            for i in range(len(sorted_dates)):
+                # 对于最后一个分组，所有大于等于它的日期都属于这个分组
+                if i == len(sorted_dates) - 1:
+                    if x_date >= sorted_dates[i]:
+                        return str(sorted_dates[i])
+                # 对于其他分组，判断日期是否在当前分组和下一个分组之间
+                else:
+                    if sorted_dates[i] <= x_date < sorted_dates[i+1]:
+                        return str(sorted_dates[i])
+            # 如果日期小于第一个分组日期，返回第一个分组日期
+            return str(sorted_dates[0])
+        
+        df['datestr'] = pd.to_datetime(df['datestr']).dt.date.apply(get_group_start_date)
     
     # 分组汇总
     group_fields = ['materialno', 'datestr']

@@ -7,12 +7,12 @@ from tortoise.models import Model as DbModel
 from pydantic import BaseModel as PydanticModel
 from decimal import Decimal
 
-from globalobjects import file_timed_logger
+# from globalobjects import file_timed_logger
 from ..utils.data_processor import DataProcessor
-from ._base import get_session
+from ._base import get_session, filelog_normal, filelog_error, console_log
 
 
-file_logger = file_timed_logger.setup_logging(__name__)
+# file_logger = file_timed_logger.setup_logging(__name__)
 
 # 调用刷新函数时，距离上次刷新超过这个秒数，才会刷新行数据，否则直接返回缓存数据
 REFRESH_INTERVAL_SECONDS = 5

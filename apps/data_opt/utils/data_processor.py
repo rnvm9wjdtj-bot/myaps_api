@@ -276,6 +276,8 @@ class DataProcessor:
         Args:
             origin_data: 原始数据字典，包含需要转换的键值对
             field_map: 字段映射字典，键是目标层次路径，值是原始数据中的键
+                      支持显式类型声明：{"[]": "A,B,C", "{}": "D,E,F", ...正常映射关系...}
+                      "[]" 表示列表类型，"{}" 表示字典类型
             separator: 层次路径的分隔符，默认为 " / "
         
         Returns:
@@ -284,6 +286,25 @@ class DataProcessor:
         Raises:
             ValueError: 当field_map中的路径为空或无效时
         """
+        # 解析显式类型声明
+        explicit_list_types = set()
+        explicit_dict_types = set()
+        
+        # 从field_map中提取显式类型声明
+        processed_field_map = {}
+        for key, value in field_map.items():
+            if key == "[]":
+                # 解析列表类型声明
+                explicit_list_types = set([item.strip() for item in value.split(",") if item.strip()])
+            elif key == "{}":
+                # 解析字典类型声明
+                explicit_dict_types = set([item.strip() for item in value.split(",") if item.strip()])
+            else:
+                # 保留正常映射关系
+                processed_field_map[key] = value
+        
+        # 使用处理后的field_map
+        field_map = processed_field_map
         result = {}
         
         # 辅助函数：分割路径并清理空白字符
@@ -337,7 +358,35 @@ class DataProcessor:
         # 规则：
         # 1. 如果多个不同的完整路径都包含同一个父路径段，并且这些路径的下一级路径段不同，那么该父路径段应该是列表
         # 例如：ManufactureOrderDetails / Inventory / Code 和 ManufactureOrderDetails / Unit / Name
+        # 2. 结合启发式规则，考虑字段名称语义、路径结构和原始数据类型
         list_candidates = set()
+        dict_candidates = set()
+        
+        # 启发式规则：字段名称语义分析
+        def is_list_name(name):
+            """根据字段名称判断是否可能是列表"""
+            list_indicators = [
+                'list', 'items', 'details', 'records', 'rows', 'entries',
+                'orders', 'products', 'materials', 'components', 'parts',
+                'processes', 'steps', 'tasks', 'lines', 'set'
+            ]
+            name_lower = name.lower()
+            return any(indicator in name_lower for indicator in list_indicators)
+        
+        def is_dict_name(name):
+            """根据字段名称判断是否可能是字典"""
+            dict_indicators = [
+                'info', 'data', 'detail', 'record', 'item', 'entry',
+                'order', 'product', 'material', 'component', 'part',
+                'process', 'step', 'task', 'line', 'item',
+                'busi', 'busitype', 'department', 'inventory', 'unit',
+                'workcenter', 'itemno', 'sortno', 'code', 'name',
+                'person', 'user', 'customer', 'client', 'supplier',
+                'vendor', 'company', 'organization', 'org', 'address',
+                'contact', 'phone', 'email', 'gender', 'age'
+            ]
+            name_lower = name.lower()
+            return any(indicator in name_lower for indicator in dict_indicators)
         
         # 首先，收集所有可能的父路径段
         parent_segments = {}
@@ -357,9 +406,18 @@ class DataProcessor:
         
         # 然后，检查每个父路径段是否有多个不同的子路径段
         for parent_segment, child_segments in parent_segments.items():
-            # 如果一个父路径段有多个不同的子路径段，那么它应该是列表
+            # 如果一个父路径段有多个不同的子路径段
             if len(child_segments) > 1:
-                list_candidates.add(parent_segment)
+                # 启发式规则 1：考虑字段名称语义
+                if is_list_name(parent_segment):
+                    # 如果字段名称暗示是列表，添加到列表候选
+                    list_candidates.add(parent_segment)
+                elif is_dict_name(parent_segment):
+                    # 如果字段名称暗示是字典，添加到字典候选
+                    dict_candidates.add(parent_segment)
+                else:
+                    # 默认规则：有多个不同的子路径段，视为列表
+                    list_candidates.add(parent_segment)
         
         # 特殊处理：如果一个字段在多个完整路径中出现，并且这些路径的深度相同，那么它可能是列表
         for part, analysis in path_analysis.items():
@@ -370,9 +428,54 @@ class DataProcessor:
                 for full_path in analysis["full_paths"]:
                     depths.add(len(_split_path(full_path)))
                 
-                # 如果所有路径的深度相同，那么该字段可能是列表
+                # 如果所有路径的深度相同
                 if len(depths) == 1:
-                    list_candidates.add(part)
+                    # 启发式规则 2：考虑字段名称语义
+                    if is_list_name(part):
+                        list_candidates.add(part)
+                    elif is_dict_name(part):
+                        dict_candidates.add(part)
+        
+        # 启发式规则 3：结合原始数据类型
+        # 检查原始数据中对应字段的类型
+        for part in parent_segments:
+            # 查找原始数据中是否有对应字段
+            for value_path, key in field_map.items():
+                parts = _split_path(value_path)
+                if part in parts:
+                    # 检查原始数据中对应字段的类型
+                    if key in origin_data:
+                        original_value = origin_data.get(key)
+                        if isinstance(original_value, list):
+                            # 如果原始数据中对应字段是列表，添加到列表候选
+                            list_candidates.add(part)
+                        elif isinstance(original_value, dict):
+                            # 如果原始数据中对应字段是字典，添加到字典候选
+                            dict_candidates.add(part)
+        
+        # 启发式规则 4：路径结构分析
+        # 分析路径的整体结构，区分层级扩展和元素扩展
+        for value_path, key in field_map.items():
+            parts = _split_path(value_path)
+            if len(parts) >= 3:
+                # 对于深度大于等于 3 的路径，分析其结构
+                # 例如：A / B / C / D，检查 B 是否可能是列表
+                for i in range(1, len(parts) - 1):
+                    current_part = parts[i]
+                    # 检查当前路径段的前后路径段
+                    prev_part = parts[i-1]
+                    next_part = parts[i+1]
+                    
+                    # 如果当前路径段有多个不同的子路径段，且前后路径段名称暗示层级关系
+                    if current_part in parent_segments and len(parent_segments[current_part]) > 1:
+                        # 检查前后路径段的名称
+                        if is_dict_name(prev_part) and is_dict_name(next_part):
+                            # 如果前后都是字典名称，当前可能是列表
+                            list_candidates.add(current_part)
+        
+        # 最后，从列表候选中移除字典候选
+        # 如果一个字段同时被识别为列表候选和字典候选，优先视为字典
+        list_candidates = list_candidates - dict_candidates
         
         # 首先收集所有列表字段的映射
         list_field_mappings = {}
@@ -478,7 +581,19 @@ class DataProcessor:
                 parent_parts = parts[:-1]
                 target_field = parts[-1]
                 
-                current = _build_parent_structure(parent_parts)
+                # 检查父路径中是否有显式声明为列表的字段
+                current = result
+                for parent_part in parent_parts:
+                    if parent_part in explicit_list_types:
+                        if parent_part not in current:
+                            current[parent_part] = []
+                        if not current[parent_part]:
+                            current[parent_part].append({})
+                        current = current[parent_part][0]
+                    else:
+                        if parent_part not in current:
+                            current[parent_part] = {}
+                        current = current[parent_part]
                 
                 # 确保目标字段是列表
                 if target_field not in current:
@@ -508,17 +623,36 @@ class DataProcessor:
                     part = parts[i]
                     if i == len(parts) - 1:
                         # 检查是否需要作为列表
-                        # 特殊处理：如果原始值是列表，或者该字段是列表候选
-                        if isinstance(original_value, list):
+                        # 特殊处理：如果原始值是列表，或者该字段是列表候选，或者有显式列表声明
+                        if isinstance(original_value, list) or part in explicit_list_types:
                             if part not in current:
                                 current[part] = []
-                            current[part].append(original_value)
+                            if isinstance(original_value, list):
+                                current[part].append(original_value)
+                            else:
+                                # 如果是显式声明为列表，将单个值包装为列表
+                                current[part].append(origin_data.get(key, "N/A"))
                         else:
                             current[part] = origin_data.get(key, "N/A")
                         i += 1
                     else:
                         # 检查当前字段是否需要作为列表
-                        if part in list_candidates:
+                        # 优先检查显式声明
+                        is_list = False
+                        if part in explicit_list_types:
+                            # 检查是否与原始数据结构冲突
+                            if part in origin_data:
+                                value = origin_data[part]
+                                if not isinstance(value, dict):
+                                    is_list = True
+                            else:
+                                is_list = True
+                        elif part in explicit_dict_types:
+                            is_list = False
+                        else:
+                            is_list = part in list_candidates
+                        
+                        if is_list:
                             # 如果当前字段是列表候选，确保其存在且是列表
                             if part not in current:
                                 current[part] = []
@@ -533,7 +667,22 @@ class DataProcessor:
                         else:
                             # 检查下一级字段是否需要作为列表
                             next_part = parts[i+1]
-                            if next_part in list_candidates:
+                            # 优先检查显式声明
+                            next_is_list = False
+                            if next_part in explicit_list_types:
+                                # 检查是否与原始数据结构冲突
+                                if next_part in origin_data:
+                                    value = origin_data[next_part]
+                                    if not isinstance(value, dict):
+                                        next_is_list = True
+                                else:
+                                    next_is_list = True
+                            elif next_part in explicit_dict_types:
+                                next_is_list = False
+                            else:
+                                next_is_list = next_part in list_candidates
+                            
+                            if next_is_list:
                                 # 如果下一级字段是列表候选，确保当前字段存在
                                 if part not in current:
                                     current[part] = {}
@@ -728,6 +877,86 @@ if __name__ == "__main__":
         print("\n缺少字段的情况测试:")
         print(json.dumps(missing_result, indent=2, ensure_ascii=False))
 
+        # 测试混合显式声明的情况
+        print("\n=== 测试混合显式声明的情况 ===")
+        
+        mixed_explicit_field_map = {
+            "[]": "Orders,Items",
+            "{}": "Customer,Product",
+            "Customer / Name": "customer_name",
+            "Customer / Email": "customer_email",
+            "Orders / OrderNo": "order_nos",
+            "Orders / Amount": "order_amounts",
+            "Product / Code": "product_code",
+            "Product / Name": "product_name",
+            "Items / ItemCode": "item_codes",
+            "Items / Quantity": "item_quantities"
+        }
+        
+        mixed_explicit_origin_data = {
+            "customer_name": "张三",
+            "customer_email": "zhangsan@example.com",
+            "order_nos": ["ORD001", "ORD002"],
+            "order_amounts": [100, 200],
+            "product_code": "P001",
+            "product_name": "产品1",
+            "item_codes": ["I001", "I002"],
+            "item_quantities": [5, 10]
+        }
+        
+        mixed_explicit_result = DataProcessor.generate_hierarchy_dict(mixed_explicit_origin_data, mixed_explicit_field_map)
+        print("混合显式声明测试:")
+        print(json.dumps(mixed_explicit_result, indent=2, ensure_ascii=False))
+        
+        # 检查类型
+        if "Customer" in mixed_explicit_result:
+            print(f"Customer 类型: {type(mixed_explicit_result['Customer'])}")
+            if isinstance(mixed_explicit_result['Customer'], dict):
+                print("✓ Customer 被正确声明为字典")
+        if "Orders" in mixed_explicit_result:
+            print(f"Orders 类型: {type(mixed_explicit_result['Orders'])}")
+            if isinstance(mixed_explicit_result['Orders'], list):
+                print("✓ Orders 被正确声明为列表")
+        if "Product" in mixed_explicit_result:
+            print(f"Product 类型: {type(mixed_explicit_result['Product'])}")
+            if isinstance(mixed_explicit_result['Product'], dict):
+                print("✓ Product 被正确声明为字典")
+        if "Items" in mixed_explicit_result:
+            print(f"Items 类型: {type(mixed_explicit_result['Items'])}")
+            if isinstance(mixed_explicit_result['Items'], list):
+                print("✓ Items 被正确声明为列表")
+
+        # 测试空路径和无效路径的情况
+        print("\n=== 测试空路径和无效路径的情况 ===")
+        
+        # 测试空路径
+        try:
+            empty_path_field_map = {
+                "": "supplyno"
+            }
+            empty_path_origin_data = {
+                "supplyno": "123456"
+            }
+            empty_path_result = DataProcessor.generate_hierarchy_dict(empty_path_origin_data, empty_path_field_map)
+            print("空路径测试结果:")
+            print(json.dumps(empty_path_result, indent=2, ensure_ascii=False))
+        except ValueError as e:
+            print(f"空路径测试异常: {e}")
+        
+        # 测试无效路径
+        try:
+            invalid_path_field_map = {
+                " / ": "supplyno"
+            }
+            invalid_path_origin_data = {
+                "supplyno": "123456"
+            }
+            invalid_path_result = DataProcessor.generate_hierarchy_dict(invalid_path_origin_data, invalid_path_field_map)
+            print("无效路径测试结果:")
+            print(json.dumps(invalid_path_result, indent=2, ensure_ascii=False))
+        except ValueError as e:
+            print(f"无效路径测试异常: {e}")
+
 
     test_generate_hierarchy_dict()
 
@@ -770,3 +999,83 @@ if __name__ == "__main__":
             print("✓ ManufactureOrderDetails 正确识别为列表")
         else:
             print("✗ ManufactureOrderDetails 未识别为列表")
+
+    # 测试 Person 字典情况
+    print("\n=== 测试 Person 字典情况 ===")
+    
+    person_field_map = {
+        "Person / Name": "name",
+        "Person / Age": "age",
+        "Person / Gender": "gender"
+    }
+    
+    person_origin_data = {
+        "name": "张三",
+        "age": 30,
+        "gender": "男"
+    }
+    
+    person_result = DataProcessor.generate_hierarchy_dict(person_origin_data, person_field_map)
+    print("Person 字典测试:")
+    print(json.dumps(person_result, indent=2, ensure_ascii=False))
+    
+    # 检查 Person 是否为字典
+    if "Person" in person_result:
+        print(f"\nPerson 类型: {type(person_result['Person'])}")
+        if isinstance(person_result['Person'], dict):
+            print("✓ Person 正确识别为字典")
+        else:
+            print("✗ Person 被误判为列表")
+
+    # 测试显式声明 Person 为列表的情况（直接在 field_map 中声明）
+    print("\n=== 测试显式声明 Person 为列表（直接在 field_map 中声明）===")
+    
+    person_field_map_with_explicit = {
+        "[]": "Person",
+        "Person / Name": "name",
+        "Person / Age": "age",
+        "Person / Gender": "gender"
+    }
+    
+    person_list_result = DataProcessor.generate_hierarchy_dict(person_origin_data, person_field_map_with_explicit)
+    print("Person 显式声明为列表测试:")
+    print(json.dumps(person_list_result, indent=2, ensure_ascii=False))
+    
+    # 检查 Person 是否为列表
+    if "Person" in person_list_result:
+        print(f"\nPerson 类型: {type(person_list_result['Person'])}")
+        if isinstance(person_list_result['Person'], list):
+            print("✓ Person 被显式声明为列表")
+        else:
+            print("✗ Person 未被显式声明为列表")
+
+    # 测试显式声明 ManufactureOrderDetails 为字典的情况（直接在 field_map 中声明）
+    print("\n=== 测试显式声明 ManufactureOrderDetails 为字典（直接在 field_map 中声明）===")
+    
+    yonyou_field_map_with_explicit = {
+        "{}": "ManufactureOrderDetails",
+        "ExternalCode": "supplyno",
+        "StartDate": "dt_ordstart",
+        "FinishDate": "dt_ordend",
+        "BusiType / Code": "AAAAA",
+        "Department / Code": "BBBBB",
+        "VoucherDate": "create_date",
+        "ManufactureOrderDetails / Inventory / Code": "materialno",
+        "ManufactureOrderDetails / Unit / Name": "unit",
+        "ManufactureOrderDetails / Quantity": "avail_qty",
+        "ManufactureOrderDetails / ManufactureOrderProcessDetails / Workcenter / Code": "orderwc / workcenter",
+        "ManufactureOrderDetails / ManufactureOrderProcessDetails / ItemNo / Code": "orderwc / itemno",
+        "ManufactureOrderDetails / ManufactureOrderProcessDetails / SortNo": "orderwc / sortno"
+    }
+    
+    yonyou_dict_result = DataProcessor.generate_hierarchy_dict(yonyou_origin_data, yonyou_field_map_with_explicit)
+    print("ManufactureOrderDetails 显式声明为字典测试:")
+    print(json.dumps(yonyou_dict_result, indent=2, ensure_ascii=False))
+    
+    # 检查 ManufactureOrderDetails 是否为字典
+    if "ManufactureOrderDetails" in yonyou_dict_result:
+        print(f"\nManufactureOrderDetails 类型: {type(yonyou_dict_result['ManufactureOrderDetails'])}")
+        if isinstance(yonyou_dict_result['ManufactureOrderDetails'], dict):
+            print("✓ ManufactureOrderDetails 被显式声明为字典")
+        else:
+            print("✗ ManufactureOrderDetails 未被显式声明为字典")

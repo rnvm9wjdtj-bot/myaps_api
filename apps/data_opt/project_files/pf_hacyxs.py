@@ -10,12 +10,12 @@ from fastapi import status
 
 # from globalobjects._defaults import ProjectDefaultValues as pdv
 from ._base import (
-    cron_task,
+    cron_task, filelog_normal, filelog_error,
     ApsBaseAction, JSONManager, DataProcessor,
     filelog_normal, console_log, standard_response, get_session, 
     )
 
-from globalobjects import file_timed_logger
+# from globalobjects import file_timed_logger
 from ..components import yonyou_tplus, hap
 
 
@@ -23,7 +23,7 @@ from ..components import yonyou_tplus, hap
 #################################################################################
 # ⬇️ 项目对象及参数
 #################################################################################
-file_logger = file_timed_logger.setup_logging(__name__, log_filename='project.log')
+# file_logger = file_timed_logger.setup_logging(__name__, log_filename='project.log')
 
 
 hap_conn = None
