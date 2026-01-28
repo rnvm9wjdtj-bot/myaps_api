@@ -41,25 +41,37 @@ class DatePrefixRotatingFileHandler(TimedRotatingFileHandler):
         self.mode = 'a'
         self.stream = self._open()
 
-global_logger = None
-_listener = None
+# 存储多个logger实例和对应的listener
+logger_instances = {}
+listeners = {}
 
 def setup_logging(log_name: str, log_filename='app.log'):
-    global _listener  # 引用全局的 listener
-    global global_logger  # 引用全局的 logger
-
-    if global_logger is not None:# 如果已经配置过，则直接返回，不做任何操作
-        return global_logger
-
+    """
+    设置日志配置
+    支持多个不同文件名的logger实例
     
-    global_logger = logging.getLogger(log_name)
-    # 防止重复添加处理器
-    if global_logger.handlers:
-        return global_logger
+    Args:
+        log_name: 日志名称
+        log_filename: 日志文件名
+    
+    Returns:
+        logging.Logger: 配置好的logger实例
+    """
+    # 使用log_filename作为key，确保不同文件名有不同的logger
+    logger_key = f"{log_name}:{log_filename}"
+    
+    if logger_key in logger_instances:
+        return logger_instances[logger_key]
 
-    global_logger.setLevel(logging.DEBUG)
+    logger = logging.getLogger(f"{log_name}_{log_filename}")
+    # 防止重复添加处理器
+    if logger.handlers:
+        logger_instances[logger_key] = logger
+        return logger
+
+    logger.setLevel(logging.DEBUG)
     # 关闭日志传播，防止重复输出
-    global_logger.propagate = False
+    logger.propagate = False
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
     log_dir = "logs"
@@ -80,39 +92,106 @@ def setup_logging(log_name: str, log_filename='app.log'):
     log_queue = queue.Queue(-1)
     listener = QueueListener(log_queue, timed_handler, respect_handler_level=True)
     
-    # 将 listener 赋值给全局变量
-    _listener = listener
+    # 存储listener
+    listeners[logger_key] = listener
 
     # 创建 QueueHandler 并添加到 logger
     queue_handler = QueueHandler(log_queue)
-    global_logger.addHandler(queue_handler)
+    logger.addHandler(queue_handler)
+
+    # 存储logger实例
+    logger_instances[logger_key] = logger
 
     # 注意：这里不在这里启动 listener，而是在 lifespan 的启动阶段启动
-    return global_logger
+    return logger
+
+
+def start_all_listeners():
+    """启动所有存储的listener"""
+    for key, listener in listeners.items():
+        try:
+            listener.start()
+            print(f"✅ 已启动日志监听器: {key}")
+        except Exception as e:
+            print(f"❌ 启动日志监听器失败 {key}: {e}")
 
 
 def close_logging():
-    global _listener, global_logger
-    
-    # 停止并清理监听器
-    if _listener is not None:
+    """关闭所有日志系统"""
+    # 停止并清理所有listener
+    for key, listener in listeners.items():
         try:
-            _listener.stop()
+            listener.stop()
         except AttributeError:
             # 处理listener未启动的情况
             pass
-        _listener = None
+    listeners.clear()
     
-    # 清理logger实例和其handlers
-    if global_logger is not None:
+    # 清理所有logger实例和其handlers
+    for key, logger in logger_instances.items():
         # 移除所有handlers
-        for handler in global_logger.handlers[:]:
+        for handler in logger.handlers[:]:
             # 关闭handler
             if hasattr(handler, 'close'):
                 handler.close()
             # 移除handler
-            global_logger.removeHandler(handler)
-        # 将全局logger设为None
-        global_logger = None
+            logger.removeHandler(handler)
+    logger_instances.clear()
 
 
+
+if __name__ == "__main__":
+    """
+    使用方法示例
+    """
+    print("=== file_timed_logger 使用方法示例 ===")
+    
+    # 1. 创建不同文件名的logger实例
+    print("\n1. 创建不同文件名的logger实例:")
+    app_logger = setup_logging("app", "app.log")
+    project_logger = setup_logging("project", "project.log")
+    error_logger = setup_logging("error", "error.log")
+    print("   ✅ 已创建3个不同文件名的logger实例")
+    
+    # 2. 启动所有日志监听器
+    print("\n2. 启动所有日志监听器:")
+    start_all_listeners()
+    
+    # 3. 测试不同级别的日志
+    print("\n3. 测试不同级别的日志:")
+    # 测试 app.log
+    app_logger.debug("app.log - DEBUG 级别的日志")
+    app_logger.info("app.log - INFO 级别的日志")
+    # 测试 project.log
+    project_logger.warning("project.log - WARNING 级别的日志")
+    project_logger.error("project.log - ERROR 级别的日志")
+    # 测试 error.log
+    error_logger.critical("error.log - CRITICAL 级别的日志")
+    print("   ✅ 已写入测试日志到各个文件")
+    
+    # 4. 等待日志处理完成
+    print("\n4. 等待日志处理完成...")
+    import time
+    time.sleep(2)
+    
+    # 5. 检查日志文件是否生成
+    print("\n5. 检查日志文件是否生成:")
+    log_dir = "logs"
+    if os.path.exists(log_dir):
+        log_files = [f for f in os.listdir(log_dir) if f.endswith('.log')]
+        print(f"   ✅ 日志目录存在，生成的文件: {log_files}")
+    else:
+        print("   ❌ 日志目录不存在")
+    
+    # 6. 关闭日志系统
+    print("\n6. 关闭日志系统:")
+    close_logging()
+    print("   ✅ 已关闭所有日志系统")
+    
+    print("\n=== 使用方法示例结束 ===")
+    print("\n完整使用流程:")
+    print("1. 导入: from globalobjects import file_timed_logger")
+    print("2. 创建logger: logger = file_timed_logger.setup_logging(__name__, log_filename='your_log.log')")
+    print("3. 启动监听器: file_timed_logger.start_all_listeners() (在应用启动时执行一次)")
+    print("4. 写入日志: logger.info('日志内容')")
+    print("5. 关闭日志: file_timed_logger.close_logging() (在应用关闭时执行一次)")

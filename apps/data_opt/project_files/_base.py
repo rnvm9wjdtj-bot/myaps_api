@@ -30,7 +30,10 @@ from ..utils.data_processor import DataProcessor
 
 
 # 配置日志
-file_log = file_timed_logger.setup_logging(__name__)
+project_filelog_normal = file_timed_logger.setup_logging(__name__, log_filename='project.log')
+project_filelog_error = file_timed_logger.setup_logging(__name__, log_filename='error.log')
+
+
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 console_log = logging.getLogger(__name__)
@@ -83,7 +86,7 @@ class ApsBaseAction(ABC):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_msg = f"✅推送计划任务执行成功，账套：{cls.main_db}，PL单号：{plno}，MO单号：{mono or plno}"
         console_log.info(log_msg)
-        file_log.info(log_msg)
+        project_filelog_normal.info(log_msg)
         response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}/pltomo?db_name={cls.main_db}', json={
             'status': to_status,
             'supplyno': mono,
@@ -97,7 +100,7 @@ class ApsBaseAction(ABC):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_msg = f"🚫 推送计划任务执行失败，账套：{cls.main_db}，PL单号：{plno}"
         console_log.error(log_msg)
-        file_log.error(log_msg)
+        project_filelog_normal.error(log_msg)
         response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}/edit?db_name={cls.main_db}', json={
             'status': to_status,    # ❗❗失败情况下，状态务必回撤为 CRE 或 NEW ，否则后续无法再次下达
             'memo': json.dumps({"msg": f"🚫{msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False),

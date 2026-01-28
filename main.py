@@ -33,10 +33,8 @@ async def lifespan(app: FastAPI):
     print("✅ MySQL Binlog监控已启动")
 
     file_timed_logger.setup_logging(__name__)
-    # 启动日志队列监听器
-    if file_timed_logger._listener is not None:
-        file_timed_logger._listener.start()
-        print("✅ 日志队列监听器已启动")
+    # 启动所有日志队列监听器
+    file_timed_logger.start_all_listeners()
     
     yield  # 应用运行期间
     

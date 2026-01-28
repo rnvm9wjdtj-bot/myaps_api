@@ -12,7 +12,7 @@ from fastapi import status
 from ._base import (
     cron_task,
     ApsBaseAction, JSONManager, DataProcessor,
-    file_log, console_log, standard_response, get_session, 
+    project_filelog_normal, console_log, standard_response, get_session, 
     )
 
 from globalobjects import file_timed_logger

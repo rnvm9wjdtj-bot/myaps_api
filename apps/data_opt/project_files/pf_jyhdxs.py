@@ -10,8 +10,7 @@ from dateutil.relativedelta import relativedelta
 
 from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL
 from ._base import (
-    ApsBaseAction, 
-    file_log, console_log, standard_response, get_session, HapConnection,
+    ApsBaseAction, project_filelog_error, project_filelog_normal, console_log, standard_response, get_session, HapConnection,
     cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query
     )
 from globalobjects._defaults import ProjectDefaultValues
@@ -68,9 +67,9 @@ async def sap_post(url: str, session: requests.Session, interface_id: str, data:
     response_json = {}
     if response.status_code == status.HTTP_200_OK:
         response_json = response.json()
-        console_log.info(f"✅ POST请求成功，状态码：{response.status_code}，响应内容：{response_json}")
+        project_filelog_normal.info(f"✅ POST请求成功，状态码：{response.status_code}，响应内容：{response_json}")
     else:
-        console_log.error(f"🚫 POST请求失败，状态码：{response.status_code}，响应内容：{response.text}")
+        project_filelog_error.error(f"🚫 POST请求失败，状态码：{response.status_code}，响应内容：{response.text}")
     return {
         'status_code': response.status_code,
         'response_text': response.text,
@@ -104,7 +103,7 @@ async def refresh_all_mo_workreport():
     """
     刷新所有报工数据
     """
-    console_log.info("⏰ 开始执行刷新所有报工数据任务")
+    project_filelog_normal.info("⏰ 开始执行刷新所有报工数据任务")
     db = MYAPS_MAIN_DB
     query_response = await db_query(db_name=db, model_or_tablename='v_supply_mo', filter_string="`Status` in ('E2A','REL','CNF')")
     if not query_response['success']:
@@ -112,7 +111,7 @@ async def refresh_all_mo_workreport():
     supplynos_list = [item['supplyno'] for item in query_response['data']]
     for supplyno in supplynos_list:
         await refresh_workreport(supplyno)
-        console_log.info(f"✅ 已刷新报工数据: {supplyno}")
+        project_filelog_normal.info(f"✅ 已刷新报工数据: {supplyno}")
 
 
 # @cron_task(hour='8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23', minute='0,5,10,15,20,25,30,35,40,45,50,55')
@@ -122,7 +121,7 @@ async def refresh_stock(dbs: str = None):
     刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据
     db: 对哪些账套生效，多个账套用逗号分隔
     """
-    console_log.info("⏰ 开始执行刷新库存任务")
+    project_filelog_normal.info("⏰ 开始执行刷新库存任务")
     dbs = dbs or MYAPS_DB_SET
     response = None
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -168,11 +167,11 @@ async def refresh_stock(dbs: str = None):
 
         delete_result = await db_delete(db_names=dbs, model_or_tablename='t_supply', filter_string=f"`Type`='ST'")
         write_result = await db_bupsert(db_names=dbs, model_or_tablename='t_supply', data_list=stock_data)
-        console_log.info(f"✅ 刷新库存任务执行完成，账套：{dbs}")
+        project_filelog_normal.info(f"✅ 刷新库存任务执行完成，账套：{dbs}")
         response = standard_response(message=f"刷新库存任务执行完成，账套：{dbs}")
         
     except Exception as e:
-        console_log.error(f"🚫 刷新库存任务执行失败: {str(e)}")
+        project_filelog_error.error(f"🚫 刷新库存任务执行失败: {str(e)}")
         response = standard_response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, success=0, message=f"刷新库存任务执行失败: {str(e)}")
     return response
 
