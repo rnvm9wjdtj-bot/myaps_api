@@ -20,8 +20,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 console_log = logging.getLogger(__name__)
 
 # TODO 文件日志不好用
-project_filelog_normal = file_timed_logger.setup_logging(__name__, log_filename='project.log')
-project_filelog_error = file_timed_logger.setup_logging(__name__, log_filename='error.log')
+filelog_normal = file_timed_logger.setup_logging(__name__, log_filename='normal.log')
+filelog_error = file_timed_logger.setup_logging(__name__, log_filename='error.log')
 
 
 

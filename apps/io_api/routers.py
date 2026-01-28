@@ -388,18 +388,19 @@ async def delete_supply(
 
 
 # 需求
-# @rt.get(
-#     "/t_demand",
-#     tags=["生产数据 - 需求"],
-#     summary="获取需求记录",
-#     description="获取需求记录"
-# )
-# async def get_demand(
-#     db_name: str = common_params["db_name"],
-#     # page_size: int = common_params["page_size"],
-#     # page_index: int = common_params["page_index"]
-# ):
-#     return await db_query(db_name=db_name, model_or_tablename="t_demand")
+@rt.get(
+    "/t_demand",
+    tags=["生产数据 - 需求"],
+    summary="获取需求记录",
+    description="获取需求记录"
+)
+async def get_demand(
+    db_name: str = common_params["db_name"],
+    demandno: str = Query(..., description="需求号"),
+
+):
+    return await db_query(db_name=db_name, model_or_tablename="t_demand", filter_string=f"`DemandNo`='{demandno}'")
+
 
 @rt.post(
     "/t_demand",

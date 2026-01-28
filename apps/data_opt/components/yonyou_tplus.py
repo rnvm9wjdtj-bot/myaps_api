@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 
 
 from ._base import (
-    console_log, project_filelog_normal, project_filelog_error,
+    console_log, filelog_normal, filelog_error,
     DataProcessor, globalconst,
     BaseConnection, convert_timeunit, clean_value,
     BaseModel as PydanticModel, model_validator, Field,
@@ -339,7 +339,7 @@ class TplusConnection(BaseConnection):
             console_log.info(f"✅ 畅捷通token刷新成功")
             return self.access_token
         else:
-            project_filelog_error.error(f"🚫 获取畅捷通token失败: {auth_response}")
+            filelog_error.error(f"🚫 获取畅捷通token失败: {auth_response}")
             raise Exception(f"🚫 获取畅捷通token失败: {auth_response}")
 
 
@@ -528,6 +528,6 @@ class TplusConnection(BaseConnection):
                 response = self._post(endpoint=endpoint, data=payload)
                 is_success, message = _is_push_success(response)
                 if is_success:
-                    project_filelog_normal.info(f"✅ 成功推送 {len(data_list)} 条数据到 {target_name}")
+                    filelog_normal.info(f"✅ 成功推送 {len(data_list)} 条数据到 {target_name}")
                 else:
-                    project_filelog_error.error(f"❌ 推送 {len(data_list)} 条数据到 {target_name} 失败，消息：{message}")
+                    filelog_error.error(f"❌ 推送 {len(data_list)} 条数据到 {target_name} 失败，消息：{message}")
