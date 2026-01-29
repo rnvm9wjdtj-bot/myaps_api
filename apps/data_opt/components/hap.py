@@ -1472,7 +1472,7 @@ class HapWorksheetRowSet:
             relation_origin_row: 父行对象，可选
         """
         # 处理字符串类型的 row_id
-        if isinstance(rows[0], str):
+        if rows and isinstance(rows[0], str):
             self.row_ids = rows
             filter_expression = f"rowId__in={json.dumps(rows)}"
             self.rows: List['HapWorksheetRow'] = worksheet.rows(filter_expression=filter_expression, relation_origin_row=relation_origin_row, relation_field_name=relation_field_name).all()

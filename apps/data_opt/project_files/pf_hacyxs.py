@@ -46,29 +46,71 @@ tplus_conn.auth()
 #################################################################################
 # ⬇️ 项目可复用逻辑
 #################################################################################
-def get_maindata_from_erp_to_hap():
+async def get_maindata_from_erp_to_hap():
     if not hap_conn:
         return
-    material = tplus_conn.pull_from_source(source_name='material')
-    hap_conn.worksheet('t_material').upsert(material)
+    # material = tplus_conn.pull_from_source(source_name='material')
+    # hap_conn.worksheet('t_material').upsert(material)
 
     # workcenter = tplus_conn.pull_from_source(source_name='workcenter')
     # hap_conn.worksheet('t_workcenter').upsert(workcenter)
 
-    # route = tplus_conn.pull_from_source(source_name='route')
-    # hap_conn.worksheet('t_mat_wc').upsert(route)
-
-    # bom = tplus_conn.pull_from_source(source_name='bom')
+    bom = tplus_conn.pull_from_source(source_name='bom')      # 先拉BOM，顺便获取BOM CODES，以便后续获取工艺路线
     # hap_conn.worksheet('t_mat_wc_bom').upsert(bom)
+
+    route = tplus_conn.pull_from_source(source_name='route')
+    hap_conn.worksheet('t_mat_wc').upsert(route)
+
+    pass
 
 
 async def refresh_stock():
-    delete_result = await db_delete(db_names=MYAPS_DB_SET, model_or_tablename='t_supply', filter_string=f"`Type`='ST'")
+    import pandas as pd
+    from datetime import datetime
+    
+    # 获取当前时间并格式化为ddhhmm
+    current_time = datetime.now()
+    timestamp = current_time.strftime('%d%H%M')
+    
+    # 获取原始库存数据
     stock = tplus_conn.pull_from_source(source_name='stock')
-    bupsurt_result = await db_bupsert(db_names=MYAPS_DB_SET, model_or_tablename='t_supply', data_list=stock)
-    return stock
-    # TODO 库存数据要根据料号汇总
-
+    
+    # 使用pandas进行数据汇总
+    if stock:
+        df = pd.DataFrame(stock)
+        # 按materialno分组，avail_qty求和，其他字段取first
+        grouped = df.groupby('materialno').agg(
+            avail_qty=('avail_qty', 'sum'),
+            matver=('matver', 'first'),
+            itemno=('itemno', 'first'),
+            type=('type', 'first'),
+            category=('category', 'first'),
+            priority=('priority', 'first'),
+            status=('status', 'first'),
+            create_date=('create_date', 'first'),
+            avail_date=('avail_date', 'first'),
+            dt_req=('dt_req', 'first'),
+            avail_end_date=('avail_end_date', 'first'),
+            batchno=('batchno', 'first'),
+            vendorno=('vendorno', 'first'),
+            partnerno=('partnerno', 'first'),
+            partnername=('partnername', 'first'),
+            free1=('free1', 'first'),
+            free2=('free2', 'first'),
+            free3=('free3', 'first'),
+            memo=('memo', 'first')
+        ).reset_index()
+        # 生成supplyno字段为materialno@timestamp
+        grouped['supplyno'] = grouped['materialno'] + '@' + timestamp
+        # 转换为字典列表
+        aggregated_stock = grouped.to_dict('records')
+    else:
+        aggregated_stock = []
+    # 删除旧库存数据
+    delete_result = await db_delete(db_names=MYAPS_DB_SET, model_or_tablename='t_supply', filter_string=f"`Type`='ST'")
+    # 插入汇总后的数据
+    bupsurt_result = await db_bupsert(db_names=MYAPS_DB_SET, model_or_tablename='t_supply', data_list=aggregated_stock)
+    return aggregated_stock
 
 
 async def push_pl_into_tplus_as_mo(pl_data: dict):
@@ -80,7 +122,7 @@ async def push_pl_into_tplus_as_mo(pl_data: dict):
 #################################################################################
 # ⬇️ 定时任务
 #################################################################################
-# @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22",minute="0,5,10,15,20,25,30,35,40,45,50,55")
+@cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22",minute="0,5,10,15,20,25,30,35,40,45,50,55")
 # @cron_task(hour="8,10,12,14,16",minute="55")
 async def get_maindata_from_erp_to_hap_task(*args, **kwargs):
     console_log.info("⏰ 开始执行获取主数据定时任务")
@@ -89,7 +131,7 @@ async def get_maindata_from_erp_to_hap_task(*args, **kwargs):
 
 
 # @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22",minute="0,5,10,15,20,25,30,35,40,45,50,55")
-@cron_task(hour="8,10,12,14,16",minute="55")
+# @cron_task(hour="8,10,12,14,16",minute="55")
 async def refresh_stock_task(*args, **kwargs):
     console_log.info("⏰ 开始执行刷新库存定时任务")
     stock = await refresh_stock()

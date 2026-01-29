@@ -112,21 +112,21 @@ class TplusWorkcenter(AcceptWorkcenter):
 
 class TplusMatWc(AcceptMatWc):
 
+    matver: Optional[str] = Field(None)
+    itemno: Optional[str] = Field(None)
+    basesec: Optional[int] = Field(None)
+    workcenter: Optional[str] = Field(None)
+
     class Config:
         extra = 'allow'
-
-    matver: str = Field(None)
-    itemno: str = Field(None)
-    basesec: str = Field(None)
-    workcenter: str = Field(None)
 
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values: Dict[str, Any]):
         cleaned_values = {}
-        cleaned_values['materialno'] = values['料号']
+        cleaned_values['materialno'] = values['父件编码']
         cleaned_values['matver'] = "🈳❗"
-        cleaned_values['workcenter'] = "🈳❗"
+        cleaned_values['workcenter'] = values['工作中心']
         cleaned_values['itemno'] = values['工序编码']
         cleaned_values['sortno'] = clean_value(values['加工顺序'])
         # cleaned_values['basesec'] = clean_value(values[''])
@@ -141,8 +141,8 @@ class TplusMatWc(AcceptMatWc):
 
 class TplusMatWcBom(AcceptMatWcBom):
 
-    matver: str = Field(None)
-    itemno: str = Field(None)
+    matver: Optional[str] = Field(None)
+    itemno: Optional[str] = Field(None)
 
     class Config:
         extra = 'allow'
@@ -208,11 +208,12 @@ class TplusConfig:
         }
     """
     BASE_URL = "https://openapi.chanjet.com"
-    TOKEN_EXPIRE_SECONDS = 24 * 3600     # 设token有效期为1天，其实最长可达6天
+    TOKEN_EXPIRE_SECONDS = 24 * 3600     # 设token有效期为1天
     AUTH_ENDPOINT = "/auth/v2/refreshToken"
     # 默认分页大小，注意最大不得超过1000
     PAGE_SIZE = 1000
 
+    _BOM_CODES = None  # 缓存已处理的BOM编码，用于取工艺路线（因为 T+ 的工艺路线是抽象的，具体到物料的工艺路线是在 BOM 中定义的，而只有通过具体BOM编号查询BOM时，才会展示工艺路线详情
 
     PULL_SOURCE = {
         "material": {
@@ -238,7 +239,7 @@ class TplusConfig:
         },
 
         "workcenter": {
-            "endpoint": "/tplus/api/v2/WorkCenter/Query",
+            "endpoint": "/tplus/api/v2/WorkCenter/QueryPage",
             "field_map": {
                 "ID": "ID", "Code": "编码", "Name": "名称", "Disabled": "是否停用"
             },
@@ -247,15 +248,29 @@ class TplusConfig:
         },
 
         "route": {
-            "endpoint": "/tplus/api/v2/routing/Query",
+            "endpoint": "/tplus/api/v2/bom/Query",  # 不用 "/tplus/api/v2/routing/Query", 因为 T+ 的工艺路线是抽象的，具体到物料的工艺路线是在 BOM 中定义的
             "field_map": {
-                "ID": "ID", "Disabled": "是否停用", "Code": "料号", "Name": "名称",
-                "RoutingDetails / JobSequence": "加工顺序",
-                "RoutingDetails / Process / Code": "工序编码", "RoutingDetails / Process / Name": "工序名称",
+                "ID": "ID", "Inventory / Code": "父件编码", "Inventory / Name": "名父件称",
+                "BOMProcessDTOs / SequenceNumber": "加工顺序",
+                "BOMProcessDTOs / Process / Code": "工序编码", "BOMProcessDTOs / Process / Name": "工序名称",
+                "BOMProcessDTOs / Process / KeyProcess": "是否关键工序",
+                "BOMProcessDTOs / Process / Workshop": "生产车间", "BOMProcessDTOs / Process / WorkCenter": "工作中心",
+                "BOMProcessDTOs / Process / Equipment": "生产设备", "BOMProcessDTOs / Process / StandardWorkingHours": "标准工时",
             },
             "base_filter": {},
             "pydantic_model": TplusMatWc,
         },
+
+        # "route": {
+        #     "endpoint": "/tplus/api/v2/routing/Query",
+        #     "field_map": {
+        #         "ID": "ID", "Disabled": "是否停用", "Code": "料号", "Name": "名称",
+        #         "RoutingDetails / JobSequence": "加工顺序",
+        #         "RoutingDetails / Process / Code": "工序编码", "RoutingDetails / Process / Name": "工序名称",
+        #     },
+        #     "base_filter": {},
+        #     "pydantic_model": TplusMatWc,
+        # },
 
         "bom": {
             "endpoint": "/tplus/api/v2/bom/QueryPage",
@@ -412,7 +427,7 @@ class TplusConnection(BaseConnection):
         获取畅捷通数据列表
         Args:
             source_name: 表单名称
-            filter: 查询过滤条件，默认None，仅在material、workcenter表单有效
+            filter: 查询过滤条件，默认None，仅在material、workcenter、bom表单有效
             only_today: 是否仅获取今天更新的数据，默认False，对 route（工艺路线） 表单无效
         Returns:
             数据列表
@@ -457,14 +472,10 @@ class TplusConnection(BaseConnection):
                 params["Ts"] = ts_value
                 data_list.extend([{v: row.get(k) for k, v in field_map.items()} for row in raw_data])
 
-        elif source_name == 'route':
-            response = self._post(endpoint=endpoint, data={"param": {}})
-            data_list = self._process_route_data(response.json(), field_map=field_map)
-
         elif source_name == 'bom':
             params = {
                 "PageIndex": 1,
-                "PageSize": 100,    # 数据量太大，单次不宜太多。官方默认值为20
+                "PageSize": 100,    # 数据量太大，单次不宜太多。官方默认值为20，最大支持500
             }
             params.update(filter)
 
@@ -483,10 +494,23 @@ class TplusConnection(BaseConnection):
 
                 data_list.extend(self._process_bomdata(raw_data, field_map=field_map))
 
+        elif source_name == 'route':
+            bom_codes = self.config._BOM_CODES
+            data_list = []
+            assert bom_codes, "请先拉取BOM数据，获取BOM CODES"
+            for bom_code in bom_codes:
+                payload = {
+                    "dto": {"code": bom_code}
+                }
+                response = self._post(endpoint=endpoint, data=payload)
+                bom_data = response.json()[0]     # 变量名没错，确实是 bom
+                data_list.extend(self._process_route_data(bom_data, field_map=field_map))
+            self.config._BOM_CODES = None
+            
         elif source_name == 'workreport':
             params = {
-                "pageIndex": 0,     # 也是醉了，这个接口的第一页是0，不是1，哪个奇葩设计的规范，全局都没个统一标准
-                "pageSize": 1000,   # TMD 就你特殊，还得用小驼峰，大驼峰居然会报错，泥马
+                "pageIndex": 0,     # 这个接口的第一页是0，不是1。。。
+                "pageSize": 1000,   # 这里必须用小驼峰，大驼峰会报错
                 "selectFields": ",".join(field_map.keys()),
             }
 
@@ -495,7 +519,7 @@ class TplusConnection(BaseConnection):
         return data_list
 
 
-    def _process_route_data(self, routedata_list: list, field_map: dict):
+    def _process_route_data(self, data: dict, field_map: dict):
         """
         处理工艺路线数据，提取产品编码、产品名称、详情
         Args:
@@ -503,11 +527,10 @@ class TplusConnection(BaseConnection):
         Returns:
             处理后的路由数据列表
         """
+        flat_item = DataProcessor.expand_parent_child_data(data, 'BOMProcessDTOs')
         processed_data = []
-        for item in routedata_list:
-            flat_item = DataProcessor.expand_parent_child_data(item, 'RoutingDetails')
-            for row in flat_item:
-                processed_data.append({v: row.get(k) for k, v in field_map.items()})
+        for row in flat_item:
+            processed_data.append({v: row.get(k) for k, v in field_map.items()})
         return processed_data
 
 
@@ -519,8 +542,10 @@ class TplusConnection(BaseConnection):
         Returns:
             处理后的BOM数据列表
         """
+        self.config._BOM_CODES = set[str]()
         processed_data = []
         for item in bomdata_list:
+            self.config._BOM_CODES.add(item['Code'])
             flat_item = DataProcessor.expand_parent_child_data(item, 'BOMChilds')
             for row in flat_item:
                 processed_data.append({v: row.get(k) for k, v in field_map.items()})

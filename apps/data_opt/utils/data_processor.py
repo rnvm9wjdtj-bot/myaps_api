@@ -202,6 +202,7 @@ class DataProcessor:
         展开父表和子表数据为扁平结构
         将字典中包含的特定列表进行展开
         例如: {'a':1,'b':2,'c':[{'d':4},{'e':5}]}，若按'c'列表展开，则得到[{'a':1,'b':2,'c / d':4},{'a':1,'b':2,'c / e':5}]
+        例如: {'a':{'x': 8,'y':9},'b':2,'c':[{'d':4},{'e':5}]}，若按'c'列表展开，则得到[{'a / x':8, 'a / y':9,'b':2,'c / d':4},{'a / x':8, 'a / y':9,'b':2,'c / e':5}]
         
         参数:
             data: 输入字典
@@ -215,8 +216,16 @@ class DataProcessor:
         
         # 遍历列表中的每个元素
         for item in expand_list:
-            # 创建新字典，包含原始字典中除了expand_key以外的所有键值对
-            new_dict = {k: v for k, v in data.items() if k != expand_key}
+            # 创建新字典，包含原始字典中除了expand_key以外的所有键值对，并展平其中的字典
+            new_dict = {}
+            for k, v in data.items():
+                if k == expand_key:
+                    continue
+                if isinstance(v, dict):
+                    flattened_parent = DataProcessor.flatten_dict(v, parent_key=k, sep=sep)
+                    new_dict.update(flattened_parent)
+                else:
+                    new_dict[k] = v
             
             # 展平当前列表项，并将键与expand_key用'/'连接
             if isinstance(item, dict):
