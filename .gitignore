@@ -83,9 +83,7 @@ apps/data_opt/project_files/*_ed.py
 
 # 缓存文件
 _cache_.*
-cache/
+cache/*.json
 
 # 临时文件
 *.tmp
-
-globalobjects/_defaults.py

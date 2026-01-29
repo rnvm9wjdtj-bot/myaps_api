@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, model_validator, PrivateAttr#, Validation
 
 from config.settings import MYAPS_VERSION
 from globalobjects import globalconst as gc
-from globalobjects._defaults import ProjectDefaultValues as pdv
+from cache import ProjectDefaultValues as pdv
 
 
 

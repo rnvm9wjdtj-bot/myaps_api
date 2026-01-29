@@ -11,10 +11,8 @@ from dateutil.relativedelta import relativedelta
 from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL
 from ._base import (
     ApsBaseAction, filelog_error, filelog_normal, console_log, standard_response, get_session, HapConnection,
-    cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query
-    )
-from globalobjects._defaults import ProjectDefaultValues
-from ..utils.json_manager import JSONManager
+    cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, cache_file, pdv
+)
 
 
 #################################################################################
@@ -26,9 +24,8 @@ hap_conn = None
 #################################################################################
 # ⬇️项目可复用逻辑
 #################################################################################
-json_cache = JSONManager('cache/jyhdxs.json')
 
-erp = json_cache.get("erp", {})
+erp = cache_file.get("erp", {})
 sap_url1 = erp.get("base_url", "") + '/zrestful_test2?sap-client=800'  # 库存
 sap_url2 = erp.get("base_url", "") + '/zrestful_plan?sap-client=800'  # 计划
 werks = erp.get("werks", "")
@@ -39,7 +36,7 @@ sap_session = get_session(allowed_methods=["GET", "POST"])
 # 添加Basic认证
 add_basic_auth_requests(sap_session, sap_username, sap_password)
 
-mes = json_cache.get("mes", {})
+mes = cache_file.get("mes", {})
 mes_url = mes.get("base_url", "")
 
 
@@ -178,7 +175,7 @@ async def refresh_stock(dbs: str = None):
 
 
 
-srm = json_cache.get("srm", {})
+srm = cache_file.get("srm", {})
 srm_url = srm.get("base_url", "")
 srm_headers = {
     "Authorization": srm.get("Authorization", ""),

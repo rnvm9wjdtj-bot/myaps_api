@@ -10,16 +10,14 @@ from fastapi import status
 
 
 
-# from globalobjects._defaults import ProjectDefaultValues as pdv
 from ._base import (
     MYAPS_DB_SET,
-    cron_task, filelog_normal, filelog_error,
+    cron_task, filelog_normal, filelog_error, cache_file,
     ApsBaseAction, JSONManager, DataProcessor,
     filelog_normal, console_log, standard_response, get_session, 
-    db_delete, db_bupsert
-    )
+    db_delete, db_bupsert,
+)
 
-# from globalobjects import file_timed_logger
 from ..components import yonyou_tplus, hap
 
 
@@ -122,7 +120,7 @@ async def push_pl_into_tplus_as_mo(pl_data: dict):
 #################################################################################
 # ⬇️ 定时任务
 #################################################################################
-@cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22",minute="0,5,10,15,20,25,30,35,40,45,50,55")
+# @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22",minute="0,5,10,15,20,25,30,35,40,45,50,55")
 # @cron_task(hour="8,10,12,14,16",minute="55")
 async def get_maindata_from_erp_to_hap_task(*args, **kwargs):
     console_log.info("⏰ 开始执行获取主数据定时任务")

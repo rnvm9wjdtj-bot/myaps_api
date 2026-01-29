@@ -1,14 +1,10 @@
 import json
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, TypeVar, Generic
-from dataclasses import dataclass, asdict, field, is_dataclass
 import logging
 from datetime import datetime
-from contextlib import contextmanager
 import threading
-from enum import Enum
-import hashlib
+
 
 T = TypeVar('T')
 
@@ -77,29 +73,26 @@ class JSONManager:
     
     def get(self, 
             key: str, 
-            default: Any = None, 
-            *subkeys: str) -> Any:
+            default: Any = None) -> Any:
         """
         获取值
         
         Args:
-            key: 主键
+            key: 键路径，使用 ' / ' 分隔表示嵌套层级（如 "user / name"）
             default: 默认值
-            *subkeys: 子键（支持嵌套）
             
         Returns:
             对应的值或默认值
         """
         with self._lock:
-            if key not in self._data:
-                return default
+            # 分割键路径（支持 ' / ' 格式）
+            keys = [k.strip() for k in key.split('/')]
             
-            value = self._data[key]
-            
-            # 支持嵌套获取
-            for subkey in subkeys:
-                if isinstance(value, dict) and subkey in value:
-                    value = value[subkey]
+            # 从根开始获取
+            value = self._data
+            for k in keys:
+                if isinstance(value, dict) and k in value:
+                    value = value[k]
                 else:
                     return default
             
@@ -108,33 +101,37 @@ class JSONManager:
     def set(self, 
             key: str, 
             value: Any, 
-            *subkeys: str,
             save: Optional[bool] = None) -> None:
         """
         设置值
         
         Args:
-            key: 主键
+            key: 键路径，使用 ' / ' 分隔表示嵌套层级（如 "user / name"）
             value: 值
-            *subkeys: 子键（支持嵌套设置）
             save: 是否保存（None使用auto_save设置）
         """
         with self._lock:
-            if subkeys:
+            # 分割键路径（支持 ' / ' 格式）
+            keys = [k.strip() for k in key.split('/')]
+            
+            if len(keys) > 1:
                 # 嵌套设置
-                if key not in self._data or not isinstance(self._data[key], dict):
-                    self._data[key] = {}
+                # 获取主键
+                main_key = keys[0]
                 
-                current = self._data[key]
-                for i, subkey in enumerate(subkeys[:-1]):
+                if main_key not in self._data or not isinstance(self._data[main_key], dict):
+                    self._data[main_key] = {}
+                
+                current = self._data[main_key]
+                for subkey in keys[1:-1]:
                     if subkey not in current or not isinstance(current[subkey], dict):
                         current[subkey] = {}
                     current = current[subkey]
                 
-                current[subkeys[-1]] = value
+                current[keys[-1]] = value
             else:
                 # 直接设置
-                self._data[key] = value
+                self._data[keys[0]] = value
             
             self._modified = True
             
@@ -145,37 +142,46 @@ class JSONManager:
     
     def delete(self, 
                key: str, 
-               *subkeys: str,
                save: Optional[bool] = None) -> bool:
         """
         删除键
         
         Args:
-            key: 主键
-            *subkeys: 子键
+            key: 键路径，使用 ' / ' 分隔表示嵌套层级（如 "user / city"）
             save: 是否保存
             
         Returns:
             是否成功删除
         """
         with self._lock:
-            if key not in self._data:
-                return False
+            # 分割键路径（支持 ' / ' 格式）
+            keys = [k.strip() for k in key.split('/')]
             
-            if not subkeys:
-                # 删除整个键
-                del self._data[key]
-                deleted = True
-            else:
-                # 删除嵌套键
-                current = self._data[key]
-                for i, subkey in enumerate(subkeys[:-1]):
+            if len(keys) > 1:
+                # 嵌套删除
+                # 获取主键
+                main_key = keys[0]
+                
+                if main_key not in self._data:
+                    return False
+                
+                current = self._data[main_key]
+                for subkey in keys[1:-1]:
                     if not isinstance(current, dict) or subkey not in current:
                         return False
                     current = current[subkey]
                 
-                if isinstance(current, dict) and subkeys[-1] in current:
-                    del current[subkeys[-1]]
+                last_key = keys[-1]
+                if isinstance(current, dict) and last_key in current:
+                    del current[last_key]
+                    deleted = True
+                else:
+                    deleted = False
+            else:
+                # 直接删除
+                main_key = keys[0]
+                if main_key in self._data:
+                    del self._data[main_key]
                     deleted = True
                 else:
                     deleted = False
@@ -191,37 +197,44 @@ class JSONManager:
     def update(self, 
                key: str, 
                updates: Dict[str, Any], 
-               *subkeys: str,
                save: Optional[bool] = None) -> None:
         """
         更新字典（合并）
         
         Args:
-            key: 主键
+            key: 键路径，使用 ' / ' 分隔表示嵌套层级（如 "user / profile"）
             updates: 要更新的字典
-            *subkeys: 子键
             save: 是否保存
         """
         with self._lock:
-            if not subkeys:
-                if key not in self._data or not isinstance(self._data[key], dict):
-                    self._data[key] = {}
-                self._data[key].update(updates)
-            else:
-                # 获取目标字典
-                if key not in self._data:
-                    self._data[key] = {}
+            # 分割键路径（支持 ' / ' 格式）
+            keys = [k.strip() for k in key.split('/')]
+            
+            if len(keys) > 1:
+                # 嵌套更新
+                # 获取主键
+                main_key = keys[0]
                 
-                current = self._data[key]
-                for subkey in subkeys[:-1]:
+                if main_key not in self._data:
+                    self._data[main_key] = {}
+                
+                current = self._data[main_key]
+                for subkey in keys[1:-1]:
                     if subkey not in current or not isinstance(current[subkey], dict):
                         current[subkey] = {}
                     current = current[subkey]
                 
-                if subkeys[-1] not in current or not isinstance(current[subkeys[-1]], dict):
-                    current[subkeys[-1]] = {}
+                last_key = keys[-1]
+                if last_key not in current or not isinstance(current[last_key], dict):
+                    current[last_key] = {}
                 
-                current[subkeys[-1]].update(updates)
+                current[last_key].update(updates)
+            else:
+                # 直接更新
+                main_key = keys[0]
+                if main_key not in self._data or not isinstance(self._data[main_key], dict):
+                    self._data[main_key] = {}
+                self._data[main_key].update(updates)
             
             self._modified = True
             save = self.auto_save if save is None else save
@@ -353,20 +366,20 @@ if __name__ == "__main__":
     db.set("settings", {"theme": "dark", "language": "zh"})
 
     # 嵌套设置
-    db.set("app", "v1.0", "version")
-    db.set("app", True, "auto_update")
+    db.set("app / version", "v1.0")
+    db.set("app / auto_update", True)
 
     # 改
     db.update("user", {"age": 26, "city": "北京"})
-    db.set("user", "李四", "name")  # 修改名字
+    db.set("user / name", "李四")  # 修改名字
 
     # 查
-    name = db.get("user", "name")  # 获取嵌套值
-    age = db.get("user", "age")
-    version = db.get("app", "version")
+    name = db.get("user / name")  # 获取嵌套值
+    age = db.get("user / age")
+    version = db.get("app / version")
 
     # 删
-    db.delete("user", "city")  # 删除嵌套字段
+    db.delete("user / city")  # 删除嵌套字段
     db.delete("settings")  # 删除整个键
 
     # 列表操作

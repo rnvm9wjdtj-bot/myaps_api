@@ -9,14 +9,13 @@ from datetime import datetime, timedelta
 
 from ._base import (
     console_log,
-    DataProcessor, globalconst,
+    DataProcessor, globalconst, cache_file,
     BaseConnection, convert_timeunit, clean_value, #reset_default_values,
     BaseModel as PydanticModel, model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold
 )
-from globalobjects._defaults import ProjectDefaultValues as pdv
-from ..utils.json_manager import JSONManager
+
 
 
 
@@ -26,7 +25,7 @@ class JkyConfig():
 
     API_VERSION = "V1.0"
 
-    CREDENTIAL_FILE = f"cache/{os.getenv("CACHE_FILE")}"
+    CREDENTIAL_FILE = cache_file
     """
     ⬆️credential JSON，用于存储吉客云认证信息，存放在项目根目录下的cache文件夹中，文件名在环境变量CACHE_FILE中指定。文件包含如下结构用于吉客云的认证：
     {
@@ -158,10 +157,10 @@ class JkyConnection(BaseConnection):
     def __init__(self, config: JkyConfig=JkyConfig):
         self.config = config
         self.base_url = config.BASE_URL
-        self.credential = JSONManager(config.CREDENTIAL_FILE)
+        self.credential = config.CREDENTIAL_FILE.get("erp", {})
         self.credential_keys = ("app_key", "app_secret")
         for key in self.credential_keys:
-            setattr(self, key, self.credential.get("erp", {}).get(key, ""))
+            setattr(self, key, self.credential.get(key, ""))
         super().__init__()
 
 

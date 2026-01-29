@@ -11,9 +11,9 @@ from ._base import (
     BaseConnection, convert_timeunit, clean_value, #reset_default_values,
     BaseModel as PydanticModel, model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
-    AcceptMold, AcceptMatWcMold
+    AcceptMold, AcceptMatWcMold,
+    cache_file
 )
-from ..utils.json_manager import JSONManager
 
 
 
@@ -66,7 +66,7 @@ class K3Material(AcceptMaterial):
 
 class K3Config:
     """K3基础配置"""
-    CACHE_FILE = JSONManager(f"cache/{os.getenv("CACHE_FILE")}")
+    CACHE_FILE = cache_file
     BASE_URL = "http://129.211.172.205:12980"
     ACCTID = "65a48b111c0197"
     LCID = "2052"

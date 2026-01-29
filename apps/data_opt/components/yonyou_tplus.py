@@ -9,23 +9,20 @@ from datetime import datetime, timedelta
 
 from ._base import (
     console_log, filelog_normal, filelog_error,
-    DataProcessor, globalconst, _defaults,
+    DataProcessor, globalconst, cache_file, pdv,
     BaseConnection, convert_timeunit, clean_value,
     BaseModel as PydanticModel, model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold, AcceptSupply, AcceptConfirm
 )
 
-from globalobjects._defaults import ProjectDefaultValues as pdv
-from ..utils.json_manager import JSONManager
 
 
 """
-以下模型适用于 清洗转换 从T+获取的数据
-用于向HAP发送
+以下模型适用于 清洗转换 从T+获取的数据用于向HAP发送
+需要客户在HAP中填写的字段统一设为 Optional[str/int/...] = Field(None)。
 在 @model_validator 中需要将：
 无法通过处理原生数据获取的联合索引字段设为  "🈳❗"  占位，以保证能构成完整的联合索引
-需要客户在HAP中填写的字段统一设为 None。
 """
 class TplusMaterial(AcceptMaterial):
 
@@ -194,7 +191,7 @@ class TplusStock(AcceptSupply):
 
 
 class TplusConfig:
-    CACHE_FILE = JSONManager(f"cache/{os.getenv("CACHE_FILE")}")
+    CACHE_FILE = cache_file
     """
     ⬆️缓存文件用于存储畅捷通认证信息，存放在项目根目录下的cache文件夹中，文件名在环境变量CACHE_FILE中指定。文件包含如下结构用于T+的认证：
     {
@@ -496,15 +493,32 @@ class TplusConnection(BaseConnection):
 
         elif source_name == 'route':
             bom_codes = self.config._BOM_CODES
-            data_list = []
             assert bom_codes, "请先拉取BOM数据，获取BOM CODES"
-            for bom_code in bom_codes:
+            data_list = []
+            # 使用线程池并行处理POST请求
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            
+            def get_route_by_bomcode(bom_code):
                 payload = {
                     "dto": {"code": bom_code}
                 }
                 response = self._post(endpoint=endpoint, data=payload)
                 bom_data = response.json()[0]     # 变量名没错，确实是 bom
-                data_list.extend(self._process_route_data(bom_data, field_map=field_map))
+                return self._process_route_data(bom_data, field_map=field_map)
+            
+            # 创建线程池，最大线程数为10
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                # 提交所有任务
+                future_to_bom = {executor.submit(get_route_by_bomcode, bom_code): bom_code for bom_code in bom_codes}
+                # 收集结果
+                for future in as_completed(future_to_bom):
+                    bom_code = future_to_bom[future]
+                    try:
+                        result = future.result()
+                        data_list.extend(result)
+                    except Exception as exc:
+                        console_log.error(f"处理BOM编码 {bom_code} 时出错: {exc}")
+            
             self.config._BOM_CODES = None
             
         elif source_name == 'workreport':
