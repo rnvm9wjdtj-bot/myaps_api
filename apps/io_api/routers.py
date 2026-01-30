@@ -402,22 +402,19 @@ async def get_demand(
     filter_string = f"`DemandNo`='{demandno}'"
     if type:
         filter_string += f" AND `Type`='{type}'"
-    query_result_demand = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=filter_string)
+    else:   # 默认查找生产相关的全部类型需求
+        filter_string += f" AND `Type` IN ('{gc.DemandTypeEnum.DM.value}', '{gc.DemandTypeEnum.RS.value}')"
 
+    query_result_demand = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=filter_string)
     if query_result_demand["success"] == 0:
         return query_result_demand
-        
     query_result_supply = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=f"`SupplyNo`='{demandno}'")
-
-    demand_data = DataProcessor.group_by_common_field(
-        data=query_result_demand['data'],
-        group_keys=["demandno", "type", "status", "create_date"],
-        details_key="details"
-    )
-    demand_data['_related_supply'] = query_result_supply['data']
-    return standard_response(
-        data=[demand_data]
-    )
+    if query_result_supply["success"] == 0:
+        return query_result_demand
+    if query_result_supply["data"]:
+        # 合并需求和供应数据
+        query_result_demand["meta"]["related_supply"] = query_result_supply["data"][0]
+    return query_result_demand
 
 
 @rt.post(

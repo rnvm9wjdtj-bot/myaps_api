@@ -1402,38 +1402,39 @@ class DataProcessor:
         
         return result
 
+
     @staticmethod
-    def group_by_common_field(data: List[Dict], group_keys: List[str], details_key: str = "details") -> Dict:
+    def merge_common_fields(data: List[Dict], merge_with: List[str], entries_key: str = "ENTRIES") -> Dict:
         """
         将扁平数据列表按照共同字段分组并整理为父子结构
         
         Args:
             data: 扁平数据列表，每个元素是一个字典
-            group_keys: 用于分组的共同字段名列表
-            details_key: 子结构的键名，默认为 "details"
+            merge_with: 用于合并的共同字段名列表
+            entries_key: 合并后，子结构（列表）归于该键下，默认为 "ENTRIES"
         
         Returns:
-            父子结构的字典，父结构包含 group_keys 中的字段，子结构包含其他字段
+            父子结构的字典，父结构包含 merge_with 中的字段，子结构包含其他字段
         
         Raises:
-            ValueError: 当 group_keys 为空时
+            ValueError: 当 merge_with 为空时
         """
         if not data:
             return {}
         
-        if not group_keys:
-            raise ValueError("Group keys list cannot be empty")
+        if not merge_with:
+            raise ValueError("Merge with list cannot be empty")
         
         # 按分组字段组合分组数据
         grouped_data = {}
         for item in data:
             # 检查所有分组字段是否存在
-            for key in group_keys:
+            for key in merge_with:
                 if key not in item:
-                    raise ValueError(f"Group key '{key}' not found in data item")
+                    raise ValueError(f"Merge with key '{key}' not found in data item")
             
             # 生成组合键
-            key_values = tuple(item[key] for key in group_keys)
+            key_values = tuple(item[key] for key in merge_with)
             if key_values not in grouped_data:
                 grouped_data[key_values] = []
             grouped_data[key_values].append(item)
@@ -1443,7 +1444,7 @@ class DataProcessor:
         for key_values, items in grouped_data.items():
             # 构建父结构
             parent = {}
-            for i, key in enumerate(group_keys):
+            for i, key in enumerate(merge_with):
                 parent[key] = key_values[i]
             
             # 构建子结构
@@ -1452,12 +1453,12 @@ class DataProcessor:
                 # 子结构包含除分组字段外的所有字段
                 detail = {}
                 for field, value in item.items():
-                    if field not in group_keys:
+                    if field not in merge_with:
                         detail[field] = value
                 details.append(detail)
             
             # 添加子结构到父结构
-            parent[details_key] = details
+            parent[entries_key] = details
             result[key_values] = parent
         
         # 如果只有一个分组，直接返回该分组
@@ -1469,7 +1470,7 @@ class DataProcessor:
 
 if __name__ == "__main__":
     # 测试代码
-    def test_group_by_common_field():
+    def test_merge_common_fields():
         # 测试数据
         test_data = [{
             "materialno": "10002714",
@@ -1495,15 +1496,15 @@ if __name__ == "__main__":
         ]
         
         # 测试方法
-        result = DataProcessor.group_by_common_field(
+        result = DataProcessor.merge_common_fields(
             data=test_data,
-            group_keys=["demandno", "type", "status"],
-            details_key="details"
+            merge_with=["demandno", "type", "status"],
+            entries_key="details"
         )
         
         # 打印结果
         import json
-        print("=== 测试 group_by_common_field 方法 ===")
+        print("=== 测试 merge_common_fields 方法 ===")
         print(json.dumps(result, indent=2, ensure_ascii=False))
 
     def test_generate_hierarchy_dict():
@@ -2057,7 +2058,7 @@ if __name__ == "__main__":
                 print("✗ MaterialRequestDetails 未识别为列表")
 
     # 运行测试
-    test_group_by_common_field()
+    test_merge_common_fields()
     test_generate_hierarchy_dict()
     test_edge_cases()
 

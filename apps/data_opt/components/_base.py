@@ -6,6 +6,7 @@ from Crypto.Util.Padding import unpad
 import pandas as pd
 from pydantic import BaseModel as PydanticModel
 
+from config.settings import THIS_BASE_URL, MYAPS_MAIN_DB
 from apps.data_opt.utils.common import get_session, convert_timeunit, clean_value
 from apps.data_opt.utils.data_processor import DataProcessor
 from apps.io_api.schemas import (
@@ -64,6 +65,42 @@ class BaseConnection(ABC):
         """上下文管理器出口"""
         if hasattr(self, '_session') and self._session:
             self._session.close()
+
+
+# class ApsConnection():
+#     this_base_url = THIS_BASE_URL
+#     main_db = MYAPS_MAIN_DB
+#     session = get_session()
+
+#     @classmethod
+#     def _get_supplymo_detaildata(cls, supplyno: str):
+#         """
+#         获取工单计划单详情
+#         Args:
+#             supplyno: 工单号
+#         Returns:
+#             工单计划单详情
+#         """
+#         supply_response = cls.session.get(f"{cls.this_base_url}/api/v_supply_mo?db_name={cls.main_db}&supplyno={supplyno}")
+#         supply_response_json = supply_response.json()
+#         supplymo_detaildata = supply_response_json['data'][0]
+#         return supplymo_detaildata
+    
+
+#     @classmethod
+#     def _get_demand_datalist(cls, demandno: str):
+#         """
+#         获取工单原料需求
+#         Args:
+#             demandno: 需求编号，根据 APS pegging 算法，也即供应号
+#         Returns:
+#             工单原料需求详情
+#         """
+#         demand_response = cls.session.get(f"{cls.this_base_url}/api/t_demand?db_name={cls.main_db}&demandno={demandno}")
+#         demand_response_json = demand_response.json()
+#         demand_detaildata = demand_response_json['data'][0]
+#         return demand_detaildata
+
 
 
 

@@ -295,19 +295,25 @@ class TplusConfig:
             "pydantic_model": None,
         },
 
-        "mo": {
+        "mo_single": {
             "endpoint": "/tplus/api/v2/ManufactureOrderOpenApi/GetVoucherDTO",
             "field_map": {
-                "ID": "ID", "Code": "编码", "ExternalCode": "外部编码", # 这两个编码对应我们传过去的 supplyno
+                "ID": "ID", "Code": "编码", "ExternalCode": "外部编码",
             },
             "base_filter": {},
             "pydantic_model": None,
-        }
+        },
+        # "mo_batch": {
+        #     "endpoint": "/tplus/api/v2/ManufactureOrderOpenApi/FindVoucherList",
+        #     "field_map": {},
+        #     "base_filter": {},
+        #     "pydantic_model": None,
+        # }
     }
 
 
     PUSH_TARGET = {
-        "mo": {
+        "mo_single": {
             "endpoint": "/tplus/api/v2/ManufactureOrderOpenApi/Create",
             "field_map": {
                 "[]": "ManufactureOrderDetails",
@@ -344,10 +350,10 @@ class TplusConfig:
                 "Department / Code": "$Department",
 
                 "MaterialRequestDetails / IdSourceVoucherType": "$IdSourceVoucherType",
-                "MaterialRequestDetails / SourceVoucherId": "mo_id_in_tplus",
-                "MaterialRequestDetails / SourceVoucherDetailId": "modetail_id_in_tplus",
-                "MaterialRequestDetails / Inventory / Code": "details / materialno",
-                "MaterialRequestDetails / BaseQuantity": "(details / req_qty) × -1",
+                "MaterialRequestDetails / SourceVoucherId": "tplus_mo_id",
+                "MaterialRequestDetails / SourceVoucherDetailId": "tplus_mo_entryid",
+                "MaterialRequestDetails / Inventory / Code": "_entries_ / materialno",
+                "MaterialRequestDetails / BaseQuantity": "(_entries_ / req_qty) × -1",
             },
             "static_values": {
                 "BusiType": "MR01",     # 业务类型 MR01 自制领料申请  MR02 委外领料申请  MR03 其他领料申请
@@ -579,7 +585,7 @@ class TplusConnection(BaseConnection):
                 "selectFields": ",".join(field_map.keys()),
             }
 
-        elif source_name == 'mo':
+        elif source_name == 'mo_single':
             # 这是查询单个mo的接口
             response = self._post(endpoint=endpoint, data={"param": filter})
             # filter 的值可以是：
@@ -628,7 +634,7 @@ class TplusConnection(BaseConnection):
         return processed_data
 
 
-    async def push_into_target(self, target_name: str, push_data: dict):
+    async def push_into_target(self, target_name: str, push_data: dict, **kwargs):
         """
         推送数据到T+
         Args:
@@ -644,34 +650,30 @@ class TplusConnection(BaseConnection):
         static_values = self.config.PUSH_TARGET[target_name].get('static_values')
         
         if target_name == 'rs':
-            mo_query_result = await db_query(db_name=MYAPS_MAIN_DB, model_or_tablename="t_supply", filter_string=f"`SupplyNo`='{push_data['demandno']}'")
-            mo_data = mo_query_result['data'][0]
-            mo_memo = mo_data['memo']
-            mo_id_in_tplus = None
-            modetail_id_in_tplus = None
-            if mo_memo:
+            # 先合并一下表头，以适配 T+ 数据结构
+            push_data = DataProcessor.merge_common_fields(data=push_data, merge_with=["demandno", "type", "status", "create_date"], entries_key="_entries_")  
+
+            tplus_mo_id = kwargs['tplus_mo_id'] # 这个一定会有
+            # 尝试从 kwargs 中提取 tplus_mo_entryid
+            tplus_mo_entryid = kwargs.get('tplus_mo_entryid')
+            # 如果提取不到，就尝试调用 T+ 接口查询 MO 记录
+            if not (tplus_mo_id and tplus_mo_entryid):
                 try:
-                    mo_memo_json = json.loads(mo_memo)
-                    mo_id_in_tplus = mo_memo_json.get('_id')
-                    modetail_id_in_tplus = mo_memo_json.get('_entryid')
-                except json.JSONDecodeError:
-                    pass
-            if not (mo_id_in_tplus and modetail_id_in_tplus):
-                # 如果从备注字段提取不到，就尝试调用接口查询
-                try:
-                    mo_in_tplus = await self.pull_from_source(source_name='mo', filter={"voucherCode": push_data['demandno']})[0]
-                    mo_id_in_tplus = mo_in_tplus['ID']
-                    modetail_id_in_tplus = mo_in_tplus['ManufactureOrderDetails'][0]['ID']
+                    # mo_in_tplus = await self.pull_from_source(source_name='mo_single', filter={"externalCode": push_data['demandno']})[0]     通过 外部单号（supplyno）查询 MO 记录，不够稳定，因为 supplyno 可能会被改写
+                    mo_in_tplus = await self.pull_from_source(source_name='mo_single', filter={"voucherID": tplus_mo_id})[0]
+                    tplus_mo_id = mo_in_tplus['ID']
+                    tplus_mo_entryid = mo_in_tplus['ManufactureOrderDetails'][0]['ID']
                 except:
                     pass
-            if not (mo_id_in_tplus and modetail_id_in_tplus):
+            if not (tplus_mo_id and tplus_mo_entryid):
                 # 如果调用接口查询也没有结果，就报错
-                filelog_error.error(f"❌ 未在 T+ 中找到对应 MO 记录，demandno: {push_data['demandno']}")
+                filelog_error.error(f"❌ 未在 T+ 中找到对应 MO 记录，demandno: {push_data['demandno']}，领料申请推送失败，对应工单：{push_data['demandno']}")
                 return
-            push_data['mo_id_in_tplus'] = mo_id_in_tplus
-            push_data['modetail_id_in_tplus'] = modetail_id_in_tplus
+            # 结果计入推送数据，以便后续通过字段映射的配置直接取值
+            push_data['tplus_mo_id'] = tplus_mo_id
+            push_data['tplus_mo_entryid'] = tplus_mo_entryid
 
-        if target_name in ('mo', 'rs'):
+        if target_name in ('mo_single', 'rs'):
             tplus_format_data = DataProcessor.generate_hierarchy_dict(origin_data=push_data, field_map=field_map, static_values=static_values)
             payload = {
                 "dto": tplus_format_data

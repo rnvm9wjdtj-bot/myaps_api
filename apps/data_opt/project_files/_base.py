@@ -40,12 +40,6 @@ console_log = logging.getLogger(__name__)
 
 
 
-# class ProjectBaseConfig:
-#     pass
-
-
-
-
 class ApsBaseAction(ABC):
     this_base_url = THIS_BASE_URL
     main_db = MYAPS_MAIN_DB
@@ -81,7 +75,7 @@ class ApsBaseAction(ABC):
 
     
     @classmethod
-    def _get_modemand_detaildata(cls, demandno: str):
+    def _get_demand_datalist(cls, demandno: str) -> List[Dict]:
         """
         获取工单原料需求
         Args:
@@ -91,7 +85,7 @@ class ApsBaseAction(ABC):
         """
         demand_response = cls._session.get(f"{cls.this_base_url}/api/t_demand?db_name={cls.main_db}&demandno={demandno}")
         demand_response_json = demand_response.json()
-        demand_detaildata = demand_response_json['data'][0]
+        demand_detaildata = demand_response_json['data']
         return demand_detaildata
 
 
@@ -132,16 +126,40 @@ class ApsBaseAction(ABC):
         return response
 
 
-    @classmethod
-    def _rs_push_success(cls, demandno: str, msg: str=None, msg_from: str=None, _id: str=None):
-        
-        pass
+    # @classmethod
+    # async def _rs_push_success(cls, rsno: str, msg: str=None, msg_from: str=None, _id: str=None):
+    #     """
+    #     当推送 RS 至 ERP 成功时，调用该方法更新 RS 状态
+    #     Args:
+    #         rsno: RS 号
+    #         msg: 外部系统返回信息
+    #         msg_from: 外部系统名称
+    #         _id: 外部系统返回的 RS ID
+    #     """
+    #     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    #     await db_bupsert(
+    #         db_name=cls.main_db,
+    #         model_or_tablename='t_demand',
+    #         data={
+    #         #     'rsno': rsno,
+    #         #     'status': 'E2A',
+    #         #     'memo': json.dumps({"msg": f"✅{msg}", "from": msg_from, "success": True, "datetime": now, "native_no": rsno, "_id": _id}, ensure_ascii=False),
+    #         # },
+    #         # unique_keys=['rsno'],
+    #     )
+    #     pass
 
 
-    @classmethod
-    def _rs_push_failed(cls):
-
-        pass
+    # @classmethod
+    # async def _rs_push_failed(cls, rsno: str, msg: str=None, msg_from: str=None):
+    #     """
+    #     当推送 RS 至 ERP 失败时，调用该方法更新 RS 状态
+    #     Args:
+    #         rsno: RS 号
+    #         msg: 外部系统返回信息
+    #         msg_from: 外部系统名称
+    #     """
+    #     pass
 
 
 

@@ -135,7 +135,7 @@ async def refresh_stock_task(*args, **kwargs):
 
 # 测试用完删
 async def push_rs_to_tplus(mono: str):
-    rs_data = ApsBaseAction._get_modemand_detaildata(demandno=mono)
+    rs_data = ApsBaseAction._get_demand_datalist(demandno=mono)
     response = await tplus_conn.push_into_target(target_name='rs', push_data=rs_data)
     return response
 
@@ -150,28 +150,31 @@ class ApsAction(ApsBaseAction):
         """
         supplymo_detaildata = ApsBaseAction._get_supplymo_detaildata(supplyno=supplyno)
         mo_push_response = await tplus_conn.push_into_target(target_name='mo', push_data=supplymo_detaildata)
-        
         mo_push_response_json = mo_push_response.json()
-        if mo_push_response_json['code'] == 0: # 推送成功
+
+        if mo_push_response_json['code'] == 0: # 响应错误码为0，MO 创建成功
             # 从响应中提取 data
             response_data = mo_push_response_json['data']
-            # 查询一下 T+ 中的 MO 及详情
-            # 这是查询单个mo的接口
-            mo_in_tplus = await tplus_conn.pull_from_source(source_name='mo', filter={"voucherID": response_data['ID']})[0]
-            # 从 T+ 中提取 MO 详情中的第一个详情记录的 ID 作为 _entryid
-            await cls._pl_release_success(plno=supplyno, msg=mo_push_response_json['message'], msg_from='T+', mono=mo_in_tplus['Code'], _id=mo_in_tplus['ID'], _entryid=mo_in_tplus['ManufactureOrderDetails'][0]['ID'])
+            # 查询一下刚刚推送成功的 MO 在 T+ 中详情， 这是查询单个mo的接口
+            tplus_mo_id = response_data['ID']
 
-
+            try:
+                mo_in_tplus = await tplus_conn.pull_from_source(source_name='mo_single', filter={"voucherID": tplus_mo_id})[0]
+                tplus_mo_code = mo_in_tplus['Code']
+                # 从 T+ 中提取 MO 详情中的第一个详情记录的 ID 作为 _entryid
+                tplus_mo_entryid = mo_in_tplus['ManufactureOrderDetails'][0]['ID']
+            except:
+                tplus_mo_entryid = None
+                
             # 推送 领料申请 到 T+
-            rs_data = ApsBaseAction._get_modemand_detaildata(demandno=response_data['Code'])
-            rs_push_response = await tplus_conn.push_into_target(target_name='rs', push_data=rs_data)
+            rs_data = ApsBaseAction._get_demand_datalist(demandno=supplyno)     # 从 APS 查询 RS 领料数据，以工单号 supplyno 为依据查找
+            rs_push_response = await tplus_conn.push_into_target(target_name='rs', push_data=rs_data, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid)
             rs_push_response_json = rs_push_response.json()
+            # TODO ?推送 领料申请 到 T+ 后，更新 RS 状态为已完成，
+            # await cls._rs_release_success(rsno=supplyno, msg=rs_push_response_json['message'], msg_from='T+')
 
-            if rs_push_response_json['code'] == 0: # TODO 推送成功
-                await cls._rs_push_success(rsno=response_data['Code'], msg=rs_push_response_json['message'], msg_from='T+', _id=response_data['ID'])
-            else:
-                await cls._rs_push_failed(rsno=response_data['Code'], msg=rs_push_response_json['message'], msg_from='T+')
-            
+            # 最后再更改工单信息，一定放在最后一步，否则工单号变更太早，前面所有相关查询都会失败
+            await cls._pl_release_success(plno=supplyno, msg=mo_push_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
 
         else:
             await cls._pl_release_failed(plno=supplyno, msg=mo_push_response_json['message'], msg_from='T+')

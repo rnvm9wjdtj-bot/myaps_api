@@ -61,6 +61,7 @@ class DbManager:
             'last_execution_time': None
         }
 
+
     @asynccontextmanager
     async def get_connection(self):
         """
@@ -323,6 +324,7 @@ class DbManager:
             logger.error(f"SQL: {sql[:200]}...")
             raise
     
+
     async def _bulk_upsert_native_sql(
         self,
         model_class,
@@ -344,7 +346,6 @@ class DbManager:
         Returns:
             包含新增和更新数量的字典: {'inserted': int, 'updated': int, 'total': int}
         """
-        
         
         # 获取冲突字段
         conflict_fields = self._get_conflict_fields(model_class, conflict_fields)
@@ -455,6 +456,7 @@ class DbManager:
             'updated': total_updated,
             'total': total_inserted + total_updated
         }
+    
     
     async def _bulk_upsert_orm(
         self,
@@ -574,6 +576,7 @@ class DbManager:
             'total': inserted_count + updated_count
         }
     
+
     @with_transaction
     async def bulk_upsert(
         self,
@@ -676,6 +679,7 @@ class DbManager:
                     "inserted": 0,
                     "updated": 0
                 }
+
 
     @with_transaction
     async def single_upsert(
@@ -791,6 +795,7 @@ class DbManager:
             'inserted': 1 if operation_type == 'inserted' else 0,
             'updated': 1 if operation_type == 'updated' else 0
         }
+
 
     @with_transaction
     async def conditional_bulk_upsert(
