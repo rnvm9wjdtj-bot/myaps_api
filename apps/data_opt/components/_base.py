@@ -13,14 +13,13 @@ from apps.io_api.schemas import (
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold, AcceptSupply, AcceptConfirm
 )
+from apps.io_api.utils.db_operation import db_query
 from globalobjects import globalconst, file_timed_logger
 from cache import cache_file, ProjectDefaultValues as pdv
-
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 console_log = logging.getLogger(__name__)
 
-# TODO 文件日志不好用
 filelog_normal = file_timed_logger.setup_logging(__name__, log_filename='normal.log')
 filelog_error = file_timed_logger.setup_logging(__name__, log_filename='error.log')
 
@@ -41,7 +40,7 @@ class BaseConnection(ABC):
 
 
     @abstractmethod
-    def pull_from_source(self, *args, **kwargs):
+    async def pull_from_source(self, *args, **kwargs):
         """
         从目标系统获取数据
         """
@@ -49,7 +48,7 @@ class BaseConnection(ABC):
 
 
     @abstractmethod
-    def push_into_target(self, *args, **kwargs):
+    async def push_into_target(self, *args, **kwargs):
         """
         推送数据到目标系统
         """

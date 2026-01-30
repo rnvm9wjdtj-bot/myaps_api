@@ -207,7 +207,7 @@ class JkyConnection(BaseConnection):
         return response_json
 
 
-    def pull_from_source(self, source_name: str):
+    async def pull_from_source(self, source_name: str):
         source = self.config.PULL_SOURCE[source_name]
         method = source["method"]
         biz_content = source["biz_content"]
@@ -248,5 +248,5 @@ class JkyConnection(BaseConnection):
             page_index += 1
 
 
-    def push_into_target(self, *args, **kwargs):
+    async def push_into_target(self, *args, **kwargs):
         return super().push_to_target(*args, **kwargs)

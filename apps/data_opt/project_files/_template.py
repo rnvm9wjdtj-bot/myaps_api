@@ -2,7 +2,7 @@
 项目文件要声明 ApsBaseAction 子类，并根据项目实际情况继承或覆写其中的方法
 
 class ApsAction(ApsBaseAction):
-    def click_release_button(self, pl_data: dict) -> None:
+    def click_release_button(self, supplyno: str):
         pass
 """
 
@@ -48,11 +48,10 @@ class ApsAction(ApsBaseAction):
     pass
 
     @classmethod
-    async def click_release_button(cls, pl_data: dict, *args, **kwargs):
+    async def click_release_button(cls, supplyno: str, *args, **kwargs):
         """
         当按下工单管理的下达按钮（PL的Status变为'A2E'）时该方法将被自动调用
         🅰 supplyno: PL计划单编号
-        🅰 mono: MO号，可选，若非None则更改PL的SupplyNo
         """
         pass
 

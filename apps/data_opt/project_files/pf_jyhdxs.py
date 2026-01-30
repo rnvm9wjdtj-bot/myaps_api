@@ -256,21 +256,21 @@ srm_field_map = {
 class ApsAction(ApsBaseAction):
 
     @classmethod
-    async def click_release_button(cls, pl_data: dict):
+    async def click_release_button(cls, supplyno: str):
+        supplymo_detaildata = cls._get_supplymo_detaildata(supplyno=supplyno)
         try:
-            supplymo_detaildata = cls._get_supplymo_detaildata(supplyno=pl_data['supplyno'])
             start_datetime: str = supplymo_detaildata['dt_ordstart'].split(" ")[0]
             end_datetime: str = supplymo_detaildata['dt_ordend'].split(" ")[0]
             orderwc: list = supplymo_detaildata['orderwc']
 
             data = {
                 "WERKS": werks,  # 工厂
-                "MATNR": pl_data['materialno'],
+                "MATNR": supplymo_detaildata['materialno'],
                 "AUART": "ZP01",  # 订单类型
                 "VERID": "SAP",    # 生产版本
                 "GSTRP": start_datetime,  # 基本开始日期
                 "GLTRP": end_datetime,  # 基本完成日期
-                "GAMNG": pl_data['avail_qty'],  # 总订单数量
+                "GAMNG": supplymo_detaildata['avail_qty'],  # 总订单数量
                 "WEMPF": "SAP",  # 产线代码
                 "BACKUP1": ','.join([i['workcenter'] for i in orderwc])
             }
@@ -280,17 +280,17 @@ class ApsAction(ApsBaseAction):
             sap_mo_data = sap_response_json['BODY'][0]
             
             if sap_mo_data['STATUS'] == 'S':
-                await cls._pl_release_success(plno=pl_data['supplyno'], mono=sap_mo_data['AUFNR'], msg=sap_mo_data['MESSAGE'], msg_from='ERP')
+                await cls._pl_release_success(plno=supplyno, mono=sap_mo_data['AUFNR'], msg=sap_mo_data['MESSAGE'], msg_from='ERP')
             else:
-                await cls._pl_release_failed(plno=pl_data['supplyno'], to_status=pl_data.get('status', 'CRE'), msg=sap_mo_data['MESSAGE'], msg_from='ERP')
+                await cls._pl_release_failed(plno=supplyno, to_status=supplymo_detaildata.get('status', 'CRE'), msg=sap_mo_data['MESSAGE'], msg_from='ERP')
         except Exception as e:
-            await cls._pl_release_failed(plno=pl_data['supplyno'], to_status=pl_data.get('status', 'CRE'), msg=str(e), msg_from='API')
+            await cls._pl_release_failed(plno=supplyno, to_status=supplymo_detaildata.get('status', 'CRE'), msg=str(e), msg_from='API')
 
 
     @classmethod
-    async def when_mo_close(cls, mo_data: dict):
+    async def when_mo_close(cls, supplyno: str):
         """
         当工单管理的状态变为'CMP'（完成）时该方法将被自动调用
-        🅰 mono: MO号
+        🅰 supplyno: PL计划单编号
         """
-        refresh_workreport(supplyno=mo_data['supplyno'])
+        refresh_workreport(supplyno=supplyno)

@@ -267,7 +267,7 @@ class K3Connection(BaseConnection):
         return self._cookie
 
 
-    def pull_from_source(self, source_name: str, filter_string: str=None, only_today: bool=False, pydantic_model: PydanticModel=None):
+    async def pull_from_source(self, source_name: str, filter_string: str=None, only_today: bool=False, pydantic_model: PydanticModel=None):
         self.auth()
         base_filterstring = self.config.PULL_SOURCE[source_name].get('base_filter') or "1=1"
         pydantic_model = pydantic_model or self.config.PULL_SOURCE[source_name].get('pydantic_model')
@@ -323,7 +323,7 @@ class K3Connection(BaseConnection):
         return data_list
 
 
-    def push_into_target(self, target_name: str, data_list: list, pydantic_model: PydanticModel=None):
+    async def push_into_target(self, target_name: str, push_data: dict, pydantic_model: PydanticModel=None):
         pass
 
 

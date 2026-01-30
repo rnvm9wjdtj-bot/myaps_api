@@ -402,20 +402,20 @@ async def get_demand(
     filter_string = f"`DemandNo`='{demandno}'"
     if type:
         filter_string += f" AND `Type`='{type}'"
-    query_result = await db_query(db_name=db_name, model_or_tablename="t_demand", filter_string=filter_string)
+    query_result_demand = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=filter_string)
 
-    if query_result["success"] == 0:
-        return query_result
+    if query_result_demand["success"] == 0:
+        return query_result_demand
+        
+    query_result_supply = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=f"`SupplyNo`='{demandno}'")
 
     demand_data = DataProcessor.group_by_common_field(
-        data=query_result['data'],
-        group_keys=["demandno", "type", "status"],
+        data=query_result_demand['data'],
+        group_keys=["demandno", "type", "status", "create_date"],
         details_key="details"
     )
+    demand_data['_related_supply'] = query_result_supply['data']
     return standard_response(
-        status_code=status.HTTP_200_OK,
-        success=1,
-        message="Success",
         data=[demand_data]
     )
 

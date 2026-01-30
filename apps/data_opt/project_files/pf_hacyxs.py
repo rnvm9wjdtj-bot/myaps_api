@@ -5,7 +5,7 @@
 import requests, logging, os#, atexit
 import pandas as pd
 from datetime import datetime
-
+from typing import Callable
 from fastapi import status
 
 
@@ -53,10 +53,10 @@ async def get_maindata_from_erp_to_hap():
     # workcenter = tplus_conn.pull_from_source(source_name='workcenter')
     # hap_conn.worksheet('t_workcenter').upsert(workcenter)
 
-    bom = tplus_conn.pull_from_source(source_name='bom')      # 先拉BOM，顺便获取BOM CODES，以便后续获取工艺路线
+    bom = await tplus_conn.pull_from_source(source_name='bom')      # 先拉BOM，顺便获取BOM CODES，以便后续获取工艺路线
     # hap_conn.worksheet('t_mat_wc_bom').upsert(bom)
 
-    route = tplus_conn.pull_from_source(source_name='route')
+    route = await tplus_conn.pull_from_source(source_name='route')
     hap_conn.worksheet('t_mat_wc').upsert(route)
 
     pass
@@ -71,7 +71,7 @@ async def refresh_stock():
     timestamp = current_time.strftime('%d%H%M')
     
     # 获取原始库存数据
-    stock = tplus_conn.pull_from_source(source_name='stock')
+    stock = await tplus_conn.pull_from_source(source_name='stock')
     
     # 使用pandas进行数据汇总
     if stock:
@@ -110,17 +110,6 @@ async def refresh_stock():
     bupsurt_result = await db_bupsert(db_names=MYAPS_DB_SET, model_or_tablename='t_supply', data_list=aggregated_stock)
     return aggregated_stock
 
-
-async def push_pl_into_tplus_as_mo(supplyno: str):
-    supplymo_detaildata = ApsBaseAction._get_supplymo_detaildata(supplyno=supplyno)
-    response = await tplus_conn.push_into_target(target_name='mo', data_list=[supplymo_detaildata])
-    return response
-
-
-async def push_rs_to_tplus(mono: str):
-    rs_data = await db_query(db_name=MYAPS_MAIN_DB, model_or_tablename='t_demand', filter_string=f"`DemandNo`='{mono}'")
-    response = await tplus_conn.push_into_target(target_name='rs', data_list=[rs_data])
-    return response
 #################################################################################
 # ⬇️ 定时任务
 #################################################################################
@@ -143,17 +132,50 @@ async def refresh_stock_task(*args, **kwargs):
 #################################################################################
 # ⬇️ 数据库事件
 #################################################################################
+
+# 测试用完删
+async def push_rs_to_tplus(mono: str):
+    rs_data = ApsBaseAction._get_modemand_detaildata(demandno=mono)
+    response = await tplus_conn.push_into_target(target_name='rs', push_data=rs_data)
+    return response
+
+
 class ApsAction(ApsBaseAction):
 
     @classmethod
-    async def click_release_button(cls, supplyno: str, *args, **kwargs):
+    async def click_release_button(cls, supplyno: str):
         """
         当按下工单管理的下达按钮（PL的Status变为'A2E'）时该方法将被自动调用
         🅰 supplyno: PL计划单编号
         """
-        # try:
-        return await push_pl_into_tplus_as_mo(supplyno)
+        supplymo_detaildata = ApsBaseAction._get_supplymo_detaildata(supplyno=supplyno)
+        mo_push_response = await tplus_conn.push_into_target(target_name='mo', push_data=supplymo_detaildata)
+        
+        mo_push_response_json = mo_push_response.json()
+        if mo_push_response_json['code'] == 0: # 推送成功
+            # 从响应中提取 data
+            response_data = mo_push_response_json['data']
+            # 查询一下 T+ 中的 MO 及详情
+            # 这是查询单个mo的接口
+            mo_in_tplus = await tplus_conn.pull_from_source(source_name='mo', filter={"voucherID": response_data['ID']})[0]
+            # 从 T+ 中提取 MO 详情中的第一个详情记录的 ID 作为 _entryid
+            await cls._pl_release_success(plno=supplyno, msg=mo_push_response_json['message'], msg_from='T+', mono=mo_in_tplus['Code'], _id=mo_in_tplus['ID'], _entryid=mo_in_tplus['ManufactureOrderDetails'][0]['ID'])
 
+
+            # 推送 领料申请 到 T+
+            rs_data = ApsBaseAction._get_modemand_detaildata(demandno=response_data['Code'])
+            rs_push_response = await tplus_conn.push_into_target(target_name='rs', push_data=rs_data)
+            rs_push_response_json = rs_push_response.json()
+
+            if rs_push_response_json['code'] == 0: # TODO 推送成功
+                await cls._rs_push_success(rsno=response_data['Code'], msg=rs_push_response_json['message'], msg_from='T+', _id=response_data['ID'])
+            else:
+                await cls._rs_push_failed(rsno=response_data['Code'], msg=rs_push_response_json['message'], msg_from='T+')
+            
+
+        else:
+            await cls._pl_release_failed(plno=supplyno, msg=mo_push_response_json['message'], msg_from='T+')
+            
 
     @classmethod
     async def when_mo_close(cls, mo_data: dict, *args, **kwargs):

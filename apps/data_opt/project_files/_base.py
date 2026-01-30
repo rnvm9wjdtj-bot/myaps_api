@@ -54,7 +54,7 @@ class ApsBaseAction(ABC):
 
     @classmethod
     @abstractmethod
-    async def click_release_button(cls, pl_data: dict, *args, **kwargs):
+    async def click_release_button(cls, supplyno: str, *args, **kwargs):
         """
         当按下工单管理的下达按钮（PL的Status变为'A2E'）时该方法将被自动调用
         - 各项目文件须声明子类并覆写该方法，注意要包含实现推送 PL 至 ERP 的逻辑：
@@ -62,7 +62,7 @@ class ApsBaseAction(ABC):
             - 若异步，则由 ERP 调用 api patch("/t_supply/{path_targetsupply}") 更新 PL
         - 若无需对接ERP，则无需覆写此方法
         """
-        await cls._pl_release_success(plno=pl_data['supplyno'], to_status='REL')
+        await cls._pl_release_success(plno=supplyno, to_status='REL')
 
 
     @classmethod
@@ -96,14 +96,16 @@ class ApsBaseAction(ABC):
 
 
     @classmethod
-    async def _pl_release_success(cls, plno: str, mono: str=None, to_status: Literal[OrderStatusEnum.E2A, OrderStatusEnum.REL]='E2A', msg: str=None, msg_from: str=None):
+    async def _pl_release_success(cls, plno: str, mono: str=None, to_status: Literal[OrderStatusEnum.E2A, OrderStatusEnum.REL]='E2A', msg: str=None, msg_from: str=None, _id: str=None, _entryid: str=None):
         """
         通过调用自路由修改PL的Type、Status、SupplyNo、Memo等字段，作为私有方法在 def click_release_button() 中被直接调用
-        🅰 supplyno: PL计划单编号
+        🅰 plno: PL计划单编号
         🅰 mono: MO号，可选，若非None则更改PL的SupplyNo
         🅰 to_status: 转化成MO后，Status设为哪个状态，默认'REL'
         🅰 msg: 外部系统返回信息
         🅰 msg_from: 外部系统名称
+        🅰 _id: 外部系统返回的 MO ID
+        🅰 _entryid: 外部系统返回的 MO 详情 ID（对于某些有表头的ERP，具体的 MO 是存在于子表中的，有单独的行记录id
         """
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_msg = f"✅推送计划任务执行成功，账套：{cls.main_db}，PL单号：{plno}，MO单号：{mono or plno}"
@@ -112,7 +114,7 @@ class ApsBaseAction(ABC):
         response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}/pltomo?db_name={cls.main_db}', json={
             'status': to_status,
             'supplyno': mono,
-            'memo': json.dumps({"msg": f"✅{msg}", "from": msg_from, "success": True, "datetime": now, "plno": plno}, ensure_ascii=False),
+            'memo': json.dumps({"msg": f"✅{msg}", "from": msg_from, "success": True, "datetime": now, "native_no": plno, "_code": mono, "_id": _id, "_entryid": _entryid}, ensure_ascii=False),
         })
         return response
 
@@ -128,6 +130,21 @@ class ApsBaseAction(ABC):
             'memo': json.dumps({"msg": f"🚫{msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False),
         })
         return response
+
+
+    @classmethod
+    def _rs_push_success(cls, demandno: str, msg: str=None, msg_from: str=None, _id: str=None):
+        
+        pass
+
+
+    @classmethod
+    def _rs_push_failed(cls):
+
+        pass
+
+
+
 
 
     @classmethod

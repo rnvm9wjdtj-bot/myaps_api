@@ -6,6 +6,8 @@ import os
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 
+from config.settings import MYAPS_MAIN_DB
+
 
 from ._base import (
     console_log, filelog_normal, filelog_error,
@@ -13,7 +15,8 @@ from ._base import (
     BaseConnection, convert_timeunit, clean_value,
     BaseModel as PydanticModel, model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
-    AcceptMold, AcceptMatWcMold, AcceptSupply, AcceptConfirm
+    AcceptMold, AcceptMatWcMold, AcceptSupply, AcceptConfirm,
+    db_query
 )
 
 
@@ -205,7 +208,7 @@ class TplusConfig:
         }
     """
     BASE_URL = "https://openapi.chanjet.com"
-    TOKEN_EXPIRE_SECONDS = 24 * 3600     # 设token有效期为1天
+    TOKEN_EXPIRE_SECONDS = 12 * 3600     # 设token有效期为12hr
     AUTH_ENDPOINT = "/auth/v2/refreshToken"
     # 默认分页大小，注意最大不得超过1000
     PAGE_SIZE = 1000
@@ -287,12 +290,19 @@ class TplusConfig:
 
         "workreport": { # 工序汇报单列表查询 https://open.chanjet.com/docs/file/apiFile/tcloud/t+dj/t+gxhbd?id=32107
             "endpoint": "/tplus/api/v2/reportQuery/GetReportData",
-            "field_map": {
-                
-            },
+            "field_map": {},
             "base_filter": {},
             "pydantic_model": None,
         },
+
+        "mo": {
+            "endpoint": "/tplus/api/v2/ManufactureOrderOpenApi/GetVoucherDTO",
+            "field_map": {
+                "ID": "ID", "Code": "编码", "ExternalCode": "外部编码", # 这两个编码对应我们传过去的 supplyno
+            },
+            "base_filter": {},
+            "pydantic_model": None,
+        }
     }
 
 
@@ -303,7 +313,7 @@ class TplusConfig:
                 "[]": "ManufactureOrderDetails",
 
                 "ExternalCode": "supplyno",
-                "Code": "supplyno",
+                # "Code": "supplyno",   # 注释掉，Code 字段不传，用 T+ 生成的编码
                 "StartDate": "dt_ordstart",
                 "FinishDate": "dt_ordend",
                 "BusiType / Code": "$MoBusiType", # 标$是因为APS提供的原生数据没有，需要从配置文件中获取
@@ -316,8 +326,8 @@ class TplusConfig:
                 "ManufactureOrderDetails / PreFinishDate": "dt_ordend",
             },
             "static_values": {
-                "MoBusiType": self.cache_file.get("erp")["$MoBusiType"],
-                "MoDepartment": self.cache_file.get("erp")["$MoDepartment"],
+                "MoBusiType": cache_file.get("erp")["$MoBusiType"],
+                "MoDepartment": cache_file.get("erp")["$MoDepartment"],
             },
         },
 
@@ -326,16 +336,24 @@ class TplusConfig:
             "field_map": {
                 "[]": "MaterialRequestDetails",
 
-                "ExternalCode": "supplyno",
-                "Code": "supplyno",
-                "VoucherType / Code": "'ST1039'",
+                "ExternalCode": "demandno",
+                # "Code": "demandno",   # 注释掉，Code 字段不传，让 T+ 自行生成领料单编码
+                "VoucherType / Code": "$VoucherType",
                 "VoucherDate": "create_date",
-                "BusiType / Code": "'MR01'",
-                "Department / Code": "$MoDepartment",
+                "BusiType / Code": "$BusiType",
+                "Department / Code": "$Department",
 
-                "MaterialRequestDetails / Code": "details / itemno",
+                "MaterialRequestDetails / IdSourceVoucherType": "$IdSourceVoucherType",
+                "MaterialRequestDetails / SourceVoucherId": "mo_id_in_tplus",
+                "MaterialRequestDetails / SourceVoucherDetailId": "modetail_id_in_tplus",
                 "MaterialRequestDetails / Inventory / Code": "details / materialno",
                 "MaterialRequestDetails / BaseQuantity": "(details / req_qty) × -1",
+            },
+            "static_values": {
+                "BusiType": "MR01",     # 业务类型 MR01 自制领料申请  MR02 委外领料申请  MR03 其他领料申请
+                "VoucherType": "ST1039",    # 单据类型。固定值
+                "Department": cache_file.get("erp")["$MoDepartment"],
+                "IdSourceVoucherType": "69",    # 来源单据的单据类型ID  69：生产加工单  21：材料出库单
             },
         },
 
@@ -354,6 +372,10 @@ class TplusConfig:
                 "PurchaseOrderDetails / Quantity": "avail_qty",
                 "PurchaseOrderDetails / PreStartDate": "dt_ordstart",
                 "PurchaseOrderDetails / PreFinishDate": "dt_ordend",
+            },
+            "static_values": {
+                "MoBusiType": cache_file.get("erp")["$MoBusiType"],
+                "MoDepartment": cache_file.get("erp")["$MoDepartment"],
             },
         },
     }
@@ -448,7 +470,7 @@ class TplusConnection(BaseConnection):
         return response
 
 
-    def pull_from_source(self, source_name: str, filter: dict=None, only_today: bool=False, pydantic_model: PydanticModel=None):
+    async def pull_from_source(self, source_name: str, filter: dict=None, only_today: bool=False, pydantic_model: PydanticModel=None, **kwargs):
         """
         获取畅捷通数据列表
         Args:
@@ -557,6 +579,17 @@ class TplusConnection(BaseConnection):
                 "selectFields": ",".join(field_map.keys()),
             }
 
+        elif source_name == 'mo':
+            # 这是查询单个mo的接口
+            response = self._post(endpoint=endpoint, data={"param": filter})
+            # filter 的值可以是：
+            # filter = { "voucherID": 1 }
+            # filter = { "voucherCode": "MO-2026-01-0008" }
+            # filter = { "externalCode": "1464077493719531520" }
+            resp_json = response.json()
+            mo_data = resp_json['data']
+            data_list = [mo_data]
+
         if pydantic_model:
             data_list = [pydantic_model(**item).model_dump() for item in data_list]
         return data_list
@@ -595,68 +628,53 @@ class TplusConnection(BaseConnection):
         return processed_data
 
 
-    def push_into_target(self, target_name: str, data_list: list):
+    async def push_into_target(self, target_name: str, push_data: dict):
         """
         推送数据到T+
         Args:
             target_name: 目标名称
-            data_list: APS数据库查询结果列表
+            push_data: APS数据库查询结果
         Returns:
-            无
+
         """
-        import requests
-
-        def _is_push_success(response: requests.Response) -> bool:
-            """
-            判断推送是否成功
-            Args:
-                response: 推送响应
-            Returns:
-                是否成功
-            """
-            resp_json = response.json()
-            try:
-                return (resp_json['code'] == 0, resp_json['message'])
-            except:
-                return (False, response.text)
-
         self.auth()
         target_name = target_name.lower()
         endpoint = self.config.PUSH_TARGET[target_name]['endpoint']
         field_map = self.config.PUSH_TARGET[target_name]['field_map']
         static_values = self.config.PUSH_TARGET[target_name].get('static_values')
         
-        # for item in data_list:
-        #     if target_name == 'mo':
-        #         tplus_format_data = DataProcessor.generate_hierarchy_dict(origin_data=item, field_map=field_map, static_values=static_values)
-        #         payload = {
-        #             "dto": tplus_format_data
-        #         }
-        #         response = self._post(endpoint=endpoint, data=payload)
-        #         is_success, message = _is_push_success(response)
-        #         if is_success:
-        #             filelog_normal.info(f"✅ 成功推送 {item}  {target_name}")
-        #         else:
-        #             filelog_error.error(f"❌ 推送 {item} 到 {target_name} 失败，消息：{message}")
-        #     elif target_name == 'rs':
-        #         tplus_format_data = DataProcessor.generate_hierarchy_dict(origin_data=item, field_map=field_map, static_values=static_values)
-        #         payload = {
-        #             "dto": tplus_format_data
-        #         }
-        #         response = self._post(endpoint=endpoint, data=payload)
-        #         is_success, message = _is_push_success(response)
-        #         if is_success:
-        #             filelog_normal.info(f"✅ 成功推送 {item}  {target_name}")
-        #         else:
-        #             filelog_error.error(f"❌ 推送 {item} 到 {target_name} 失败，消息：{message}")
-        for item in data_list:
-            tplus_format_data = DataProcessor.generate_hierarchy_dict(origin_data=item, field_map=field_map, static_values=static_values)
+        if target_name == 'rs':
+            mo_query_result = await db_query(db_name=MYAPS_MAIN_DB, model_or_tablename="t_supply", filter_string=f"`SupplyNo`='{push_data['demandno']}'")
+            mo_data = mo_query_result['data'][0]
+            mo_memo = mo_data['memo']
+            mo_id_in_tplus = None
+            modetail_id_in_tplus = None
+            if mo_memo:
+                try:
+                    mo_memo_json = json.loads(mo_memo)
+                    mo_id_in_tplus = mo_memo_json.get('_id')
+                    modetail_id_in_tplus = mo_memo_json.get('_entryid')
+                except json.JSONDecodeError:
+                    pass
+            if not (mo_id_in_tplus and modetail_id_in_tplus):
+                # 如果从备注字段提取不到，就尝试调用接口查询
+                try:
+                    mo_in_tplus = await self.pull_from_source(source_name='mo', filter={"voucherCode": push_data['demandno']})[0]
+                    mo_id_in_tplus = mo_in_tplus['ID']
+                    modetail_id_in_tplus = mo_in_tplus['ManufactureOrderDetails'][0]['ID']
+                except:
+                    pass
+            if not (mo_id_in_tplus and modetail_id_in_tplus):
+                # 如果调用接口查询也没有结果，就报错
+                filelog_error.error(f"❌ 未在 T+ 中找到对应 MO 记录，demandno: {push_data['demandno']}")
+                return
+            push_data['mo_id_in_tplus'] = mo_id_in_tplus
+            push_data['modetail_id_in_tplus'] = modetail_id_in_tplus
+
+        if target_name in ('mo', 'rs'):
+            tplus_format_data = DataProcessor.generate_hierarchy_dict(origin_data=push_data, field_map=field_map, static_values=static_values)
             payload = {
                 "dto": tplus_format_data
             }
             response = self._post(endpoint=endpoint, data=payload)
-            is_success, message = _is_push_success(response)
-            if is_success:
-                filelog_normal.info(f"✅ 成功推送 {item}  {target_name}")
-            else:
-                filelog_error.error(f"❌ 推送 {item} 到 {target_name} 失败，消息：{message}")
+            return response

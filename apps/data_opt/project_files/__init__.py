@@ -38,9 +38,9 @@ async def handle_update_supply(database: str, table: str, data: dict, data_diff:
     status_now = data_now['status']
     no_now = data_now['supplyno']
 
-    # 确认/下达生产计划单PL
+    # 确认/下达生产计划单PL (当PL状态从NEW或CRE变为A2E时)
     if type_now == 'PL' and status_now == OrderStatusEnum.A2E.value and status_before in ["NEW", "CRE"]:
-        await current_project.ApsAction.click_release_button(data_now)
+        await current_project.ApsAction.click_release_button(no_now)
         return
 
     # 工单关闭
