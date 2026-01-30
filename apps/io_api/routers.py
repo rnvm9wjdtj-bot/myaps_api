@@ -15,12 +15,12 @@ from .schemas import (
     AcceptMaterial, AcceptWorkcenter, AcceptMatWc, AcceptMatVer, AcceptMatWcBom, AcceptSupply, AcceptDemand, AcceptMold, AcceptMatWcMold, AcceptConfirm,
     ModifySupply
     #DeleteSupply
-    )
+)
 
 from .utils.common import common_params, standard_response
 from .utils.db_operation import db_managers, db_query, db_supsert, db_bupsert, db_delete, call_dbprocdure
 from apps.data_opt.project_files import hap_conn
-
+from apps.data_opt.utils.data_processor import DataProcessor
 
 # def _check_db_name(hap_wsid: str = None):
 #     """
@@ -391,8 +391,8 @@ async def delete_supply(
 @rt.get(
     "/t_demand",
     tags=["生产数据 - 需求"],
-    summary="获取需求记录",
-    description="获取需求记录"
+    summary="根据需求号获取物料需求详情",
+    description="根据 APS pegging 算法，需求号与供应号一致，所以该接口也即是：根据生产工单号获取原料需求"
 )
 async def get_demand(
     db_name: str = common_params["db_name"],
@@ -402,7 +402,22 @@ async def get_demand(
     filter_string = f"`DemandNo`='{demandno}'"
     if type:
         filter_string += f" AND `Type`='{type}'"
-    return await db_query(db_name=db_name, model_or_tablename="t_demand", filter_string=filter_string)
+    query_result = await db_query(db_name=db_name, model_or_tablename="t_demand", filter_string=filter_string)
+
+    if query_result["success"] == 0:
+        return query_result
+
+    demand_data = DataProcessor.group_by_common_field(
+        data=query_result['data'],
+        group_keys=["demandno", "type", "status"],
+        details_key="details"
+    )
+    return standard_response(
+        status_code=status.HTTP_200_OK,
+        success=1,
+        message="Success",
+        data=[demand_data]
+    )
 
 
 @rt.post(

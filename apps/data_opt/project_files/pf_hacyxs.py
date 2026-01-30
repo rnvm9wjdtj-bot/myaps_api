@@ -11,11 +11,11 @@ from fastapi import status
 
 
 from ._base import (
-    MYAPS_DB_SET,
+    MYAPS_DB_SET, MYAPS_MAIN_DB,
     cron_task, filelog_normal, filelog_error, cache_file,
-    ApsBaseAction, JSONManager, DataProcessor,
+    ApsBaseAction, DataProcessor,
     filelog_normal, console_log, standard_response, get_session, 
-    db_delete, db_bupsert,
+    db_delete, db_bupsert, db_query
 )
 
 from ..components import yonyou_tplus, hap
@@ -111,12 +111,16 @@ async def refresh_stock():
     return aggregated_stock
 
 
-async def push_pl_into_tplus_as_mo(pl_data: dict):
-    supplymo_detaildata = ApsBaseAction._get_supplymo_detaildata(pl_data['supplyno'])
+async def push_pl_into_tplus_as_mo(supplyno: str):
+    supplymo_detaildata = ApsBaseAction._get_supplymo_detaildata(supplyno=supplyno)
     response = await tplus_conn.push_into_target(target_name='mo', data_list=[supplymo_detaildata])
     return response
 
 
+async def push_rs_to_tplus(mono: str):
+    rs_data = await db_query(db_name=MYAPS_MAIN_DB, model_or_tablename='t_demand', filter_string=f"`DemandNo`='{mono}'")
+    response = await tplus_conn.push_into_target(target_name='rs', data_list=[rs_data])
+    return response
 #################################################################################
 # ⬇️ 定时任务
 #################################################################################
@@ -142,14 +146,13 @@ async def refresh_stock_task(*args, **kwargs):
 class ApsAction(ApsBaseAction):
 
     @classmethod
-    async def click_release_button(cls, pl_data: dict, *args, **kwargs):
+    async def click_release_button(cls, supplyno: str, *args, **kwargs):
         """
         当按下工单管理的下达按钮（PL的Status变为'A2E'）时该方法将被自动调用
         🅰 supplyno: PL计划单编号
-        🅰 mono: MO号，可选，若非None则更改PL的SupplyNo
         """
         # try:
-        return await push_pl_into_tplus_as_mo(pl_data)
+        return await push_pl_into_tplus_as_mo(supplyno)
 
 
     @classmethod

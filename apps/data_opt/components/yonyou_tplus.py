@@ -258,17 +258,6 @@ class TplusConfig:
             "pydantic_model": TplusMatWc,
         },
 
-        # "route": {
-        #     "endpoint": "/tplus/api/v2/routing/Query",
-        #     "field_map": {
-        #         "ID": "ID", "Disabled": "是否停用", "Code": "料号", "Name": "名称",
-        #         "RoutingDetails / JobSequence": "加工顺序",
-        #         "RoutingDetails / Process / Code": "工序编码", "RoutingDetails / Process / Name": "工序名称",
-        #     },
-        #     "base_filter": {},
-        #     "pydantic_model": TplusMatWc,
-        # },
-
         "bom": {
             "endpoint": "/tplus/api/v2/bom/QueryPage",
             "field_map": {
@@ -297,7 +286,7 @@ class TplusConfig:
         },
 
         "workreport": { # 工序汇报单列表查询 https://open.chanjet.com/docs/file/apiFile/tcloud/t+dj/t+gxhbd?id=32107
-            "endpoint": "/tplus/api/v2/workReport/Query",
+            "endpoint": "/tplus/api/v2/reportQuery/GetReportData",
             "field_map": {
                 
             },
@@ -308,7 +297,7 @@ class TplusConfig:
 
 
     PUSH_TARGET = {
-        "mo": { # 生产加工单创建 https://open.chanjet.com/docs/file/apiFile/tcloud/t+dj/t+scjgd?id=31949
+        "mo": {
             "endpoint": "/tplus/api/v2/ManufactureOrderOpenApi/Create",
             "field_map": {
                 "[]": "ManufactureOrderDetails",
@@ -317,8 +306,8 @@ class TplusConfig:
                 "Code": "supplyno",
                 "StartDate": "dt_ordstart",
                 "FinishDate": "dt_ordend",
-                "BusiType / Code": "*MoBusiType", # 标星号是因为APS提供的原生数据没有，需要从配置文件中获取
-                "Department / Code": "*MoDepartment",
+                "BusiType / Code": "$MoBusiType", # 标$是因为APS提供的原生数据没有，需要从配置文件中获取
+                "Department / Code": "$MoDepartment",
                 "VoucherDate": "create_date",
                 "ManufactureOrderDetails / Inventory / Code": "materialno",
                 "ManufactureOrderDetails / Unit / Name": "unit",
@@ -326,7 +315,47 @@ class TplusConfig:
                 "ManufactureOrderDetails / PreStartDate": "dt_ordstart",
                 "ManufactureOrderDetails / PreFinishDate": "dt_ordend",
             },
-        }
+            "static_values": {
+                "MoBusiType": self.cache_file.get("erp")["$MoBusiType"],
+                "MoDepartment": self.cache_file.get("erp")["$MoDepartment"],
+            },
+        },
+
+        "rs": { # 领料申请，supply RS
+            "endpoint": "/tplus/api/v2/MaterialRequestOpenApi/Create",
+            "field_map": {
+                "[]": "MaterialRequestDetails",
+
+                "ExternalCode": "supplyno",
+                "Code": "supplyno",
+                "VoucherType / Code": "'ST1039'",
+                "VoucherDate": "create_date",
+                "BusiType / Code": "'MR01'",
+                "Department / Code": "$MoDepartment",
+
+                "MaterialRequestDetails / Code": "details / itemno",
+                "MaterialRequestDetails / Inventory / Code": "details / materialno",
+                "MaterialRequestDetails / BaseQuantity": "(details / req_qty) × -1",
+            },
+        },
+
+        "pr": { # 采购申请 supply PR
+            "endpoint": "/tplus/api/v2/PurchaseRequisitionOpenApi/Create",
+            "field_map": {
+                "ExternalCode": "supplyno",
+                "Code": "supplyno",
+                "StartDate": "dt_ordstart",
+                "FinishDate": "dt_ordend",
+                "BusiType / Code": "$MoBusiType", # 标$是因为APS提供的原生数据没有，需要从配置文件中获取
+                "Department / Code": "$MoDepartment",
+                "VoucherDate": "create_date",
+                "PurchaseOrderDetails / Inventory / Code": "materialno",
+                "PurchaseOrderDetails / Unit / Name": "unit",
+                "PurchaseOrderDetails / Quantity": "avail_qty",
+                "PurchaseOrderDetails / PreStartDate": "dt_ordstart",
+                "PurchaseOrderDetails / PreFinishDate": "dt_ordend",
+            },
+        },
     }
 
 
@@ -595,18 +624,39 @@ class TplusConnection(BaseConnection):
         target_name = target_name.lower()
         endpoint = self.config.PUSH_TARGET[target_name]['endpoint']
         field_map = self.config.PUSH_TARGET[target_name]['field_map']
+        static_values = self.config.PUSH_TARGET[target_name].get('static_values')
         
+        # for item in data_list:
+        #     if target_name == 'mo':
+        #         tplus_format_data = DataProcessor.generate_hierarchy_dict(origin_data=item, field_map=field_map, static_values=static_values)
+        #         payload = {
+        #             "dto": tplus_format_data
+        #         }
+        #         response = self._post(endpoint=endpoint, data=payload)
+        #         is_success, message = _is_push_success(response)
+        #         if is_success:
+        #             filelog_normal.info(f"✅ 成功推送 {item}  {target_name}")
+        #         else:
+        #             filelog_error.error(f"❌ 推送 {item} 到 {target_name} 失败，消息：{message}")
+        #     elif target_name == 'rs':
+        #         tplus_format_data = DataProcessor.generate_hierarchy_dict(origin_data=item, field_map=field_map, static_values=static_values)
+        #         payload = {
+        #             "dto": tplus_format_data
+        #         }
+        #         response = self._post(endpoint=endpoint, data=payload)
+        #         is_success, message = _is_push_success(response)
+        #         if is_success:
+        #             filelog_normal.info(f"✅ 成功推送 {item}  {target_name}")
+        #         else:
+        #             filelog_error.error(f"❌ 推送 {item} 到 {target_name} 失败，消息：{message}")
         for item in data_list:
-            if target_name == 'mo':
-                item['*MoBusiType'] = self.cache_file.get("erp")["*MoBusiType"]
-                item['*MoDepartment'] = self.cache_file.get("erp")["*MoDepartment"]
-                tplus_format_data = DataProcessor.generate_hierarchy_dict(origin_data=item, field_map=field_map)
-                payload = {
-                    "dto": tplus_format_data
-                }
-                response = self._post(endpoint=endpoint, data=payload)
-                is_success, message = _is_push_success(response)
-                if is_success:
-                    filelog_normal.info(f"✅ 成功推送 {len(data_list)} 条数据到 {target_name}")
-                else:
-                    filelog_error.error(f"❌ 推送 {len(data_list)} 条数据到 {target_name} 失败，消息：{message}")
+            tplus_format_data = DataProcessor.generate_hierarchy_dict(origin_data=item, field_map=field_map, static_values=static_values)
+            payload = {
+                "dto": tplus_format_data
+            }
+            response = self._post(endpoint=endpoint, data=payload)
+            is_success, message = _is_push_success(response)
+            if is_success:
+                filelog_normal.info(f"✅ 成功推送 {item}  {target_name}")
+            else:
+                filelog_error.error(f"❌ 推送 {item} 到 {target_name} 失败，消息：{message}")

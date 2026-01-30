@@ -9,6 +9,7 @@ from decimal import Decimal
 
 # from globalobjects import file_timed_logger
 from ..utils.data_processor import DataProcessor
+from ..utils.common import parallel_executor
 from ._base import get_session, filelog_normal, filelog_error, console_log
 
 

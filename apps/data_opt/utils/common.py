@@ -2,6 +2,7 @@ import base64, requests, json, ast, re#,os,
 from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
 from typing import Optional, Dict, Union
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 
@@ -173,3 +174,34 @@ def clean_value(value: Union[str, int, float, None], if_none_return='🈳❗'):
     if value_type == str:
         return value.strip()
     return value
+
+
+def parallel_executor(max_workers=10):
+    """
+    并行执行装饰器，用于将函数应用到多个项目上
+    
+    Args:
+        max_workers: 线程池最大线程数
+    
+    Returns:
+        装饰器函数
+    """
+    def decorator(func):
+        def wrapper(items, *args, **kwargs):
+
+            results = []
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_item = {executor.submit(func, item, *args, **kwargs): item for item in items}
+                for future in as_completed(future_to_item):
+                    item = future_to_item[future]
+                    try:
+                        result = future.result()
+                        if isinstance(result, list):
+                            results.extend(result)
+                        else:
+                            results.append(result)
+                    except Exception as exc:
+                        print(f"处理 {item} 时出错: {exc}")
+            return results
+        return wrapper
+    return decorator

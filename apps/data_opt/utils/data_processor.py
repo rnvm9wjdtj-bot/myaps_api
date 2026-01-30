@@ -277,7 +277,7 @@ class DataProcessor:
 
  
     @staticmethod
-    def generate_hierarchy_dict(origin_data: Dict[str, Any], field_map: Dict[str, str], separator: str = " / ") -> Dict[str, Any]:
+    def generate_hierarchy_dict(origin_data: Dict[str, Any], field_map: Dict[str, str], separator: str = " / ", static_values: dict = None) -> Dict[str, Any]:
         """
         根据字段映射关系，将扁平的原始数据字典转换为具有层次结构的嵌套字典
         支持处理原始数据中的列表类型字段，生成对应的列表形式层次结构
@@ -287,7 +287,10 @@ class DataProcessor:
             field_map: 字段映射字典，键是目标层次路径，值是原始数据中的键
                       支持显式类型声明：{"[]": "A,B,C", "{}": "D,E,F", ...正常映射关系...}
                       "[]" 表示列表类型，"{}" 表示字典类型
+                      支持表达式：如 "x + y", "(x * y) / z"
+                      支持 $ 开头的变量：如 "$x + 1"，会从 static_values 中查找
             separator: 层次路径的分隔符，默认为 " / "
+            static_values: 静态值字典，当 field_map 中出现 $ 开头的变量时，优先从这里查找
         
         Returns:
             具有层次结构的嵌套字典
@@ -490,7 +493,7 @@ class DataProcessor:
         list_field_mappings = {}
         regular_mappings = []
         
-        for value_path, key in field_map.items():
+        for value_path, expr in field_map.items():
             # 检查目标路径是否包含分隔符，判断是否为列表字段映射
             # 列表字段映射的目标路径格式：[父路径 /] 列表字段名 [/ 目标字段 [/ 子字段]]
             # 例如：ManufactureOrderDetails / ManufactureOrderProcessDetails / Workcenter / Code
@@ -499,8 +502,8 @@ class DataProcessor:
             if len(parts) >= 2:
                 # 检查原始数据键是否对应列表字段
                 # 列表字段的原始数据键格式：list_key[separator]sub_key
-                if separator in key:
-                    list_key, sub_key = [k.strip() for k in key.split(separator)]
+                if separator in expr:
+                    list_key, sub_key = [k.strip() for k in expr.split(separator)]
                     if list_key not in list_field_mappings:
                         list_field_mappings[list_key] = {}
                     
@@ -556,32 +559,328 @@ class DataProcessor:
                             "target_subfield": target_subfield
                         }
                 else:
-                    # 处理常规字段，存储为 (key, value_path, depth) 元组
+                    # 处理常规字段，存储为 (expr, value_path, depth) 元组
                     depth = len(parts)  # 路径深度，顶层为 1
-                    regular_mappings.append((key, value_path, depth))
+                    regular_mappings.append((expr, value_path, depth))
             else:
-                # 处理常规字段，存储为 (key, value_path, depth) 元组
+                # 处理常规字段，存储为 (expr, value_path, depth) 元组
                 depth = len(parts)  # 路径深度，顶层为 1
-                regular_mappings.append((key, value_path, depth))
+                regular_mappings.append((expr, value_path, depth))
         
         # 按路径深度排序，深度小的（顶层）先处理
         regular_mappings.sort(key=lambda x: x[2])
         
+        # 解析表达式并计算值
+        def evaluate_expression(expr):
+            # 确保 static_values 不为 None
+            local_static_values = static_values if static_values is not None else {}
+            """
+            评估表达式，支持多种运算逻辑
+            支持的运算符：
+            +: 数值求和（不能转为数值的视为0）
+            -: 值相减（不能转为数值的视为0）
+            ×: 乘法（不能转为数值的视为1）
+            ÷: 除法（不能转为数值的视为1）
+            @: 字符串拼接
+            支持括号优先级
+            
+            Args:
+                expr: 表达式字符串，如 "x + y + z" 或 "(a × b) ÷ c"
+                
+            Returns:
+                表达式的计算结果
+            """
+            import re
+            
+            # 递归解析表达式
+            def parse_expression(expression):
+                # 处理括号
+                while '(' in expression:
+                    # 找到最内层的括号
+                    match = re.search(r'\(([^()]+)\)', expression)
+                    if not match:
+                        break
+                    inner_expr = match.group(1)
+                    result = parse_expression(inner_expr)
+                    # 替换括号内容为计算结果
+                    expression = expression.replace(f'({inner_expr})', str(result))
+                
+                # 处理字符串拼接
+                if '@' in expression:
+                    parts = expression.split('@')
+                    result = ''
+                    for part in parts:
+                        # 去除两端空格
+                        part = part.strip()
+                        # 检查是否为字面量字符串
+                        if (part.startswith("'") and part.endswith("'") or 
+                            part.startswith('"') and part.endswith('"')):
+                            # 去除引号，保留字符串内容
+                            result += part[1:-1]
+                        elif separator in part:
+                            # 处理路径表达式，如 "details / req_qty"
+                            path_parts = _split_path(part)
+                            path_value = origin_data
+                            for path_part in path_parts:
+                                if isinstance(path_value, dict) and path_part in path_value:
+                                    path_value = path_value[path_part]
+                                else:
+                                    # 路径不存在，视为空字符串
+                                    path_value = ''
+                                    break
+                            result += str(path_value)
+                        elif part.startswith('$'):
+                            # 从 local_static_values 中查找 $ 开头的变量
+                            var_name = part[1:]
+                            if var_name in local_static_values:
+                                value = local_static_values[var_name]
+                                result += str(value)
+                            else:
+                                # 变量不存在，视为空字符串
+                                result += ''
+                        elif part in origin_data:
+                            value = origin_data[part]
+                            result += str(value)
+                        else:
+                            # 变量不存在，视为空字符串
+                            result += ''
+                    return result
+                
+                # 处理乘除法
+                if '×' in expression or '÷' in expression:
+                    # 分割表达式为数字和运算符，考虑空格
+                    tokens = re.findall(r'[×÷]|[^×÷]+', expression)
+                    result = None
+                    op = None
+                    
+                    for token in tokens:
+                        # 去除空格
+                        token = token.strip()
+                        if not token:
+                            continue
+                        
+                        if token in ('×', '÷'):
+                            op = token
+                        else:
+                            # 处理变量或数字
+                            if separator in token:
+                                # 处理路径表达式，如 "details / req_qty"
+                                path_parts = _split_path(token)
+                                path_value = origin_data
+                                for path_part in path_parts:
+                                    if isinstance(path_value, dict) and path_part in path_value:
+                                        path_value = path_value[path_part]
+                                    else:
+                                        # 路径不存在，视为1
+                                        path_value = 1
+                                        break
+                                # 尝试转换为数值
+                                try:
+                                    if isinstance(path_value, str):
+                                        path_value = path_value.replace(',', '').strip()
+                                    num = float(path_value)
+                                except (ValueError, TypeError):
+                                    # 乘除法中，无法转换为数值的视为1
+                                    num = 1
+                            elif token.startswith('$'):
+                                # 从 local_static_values 中查找 $ 开头的变量
+                                var_name = token[1:]
+                                if var_name in local_static_values:
+                                    value = local_static_values[var_name]
+                                    # 尝试转换为数值
+                                    try:
+                                        if isinstance(value, str):
+                                            value = value.replace(',', '').strip()
+                                        num = float(value)
+                                    except (ValueError, TypeError):
+                                        # 乘除法中，无法转换为数值的视为1
+                                        num = 1
+                                else:
+                                    # 变量不存在，视为1
+                                    num = 1
+                            elif token in origin_data:
+                                value = origin_data[token]
+                                # 尝试转换为数值
+                                try:
+                                    if isinstance(value, str):
+                                        value = value.replace(',', '').strip()
+                                    num = float(value)
+                                except (ValueError, TypeError):
+                                    # 乘除法中，无法转换为数值的视为1
+                                    num = 1
+                            else:
+                                # 尝试解析为数字
+                                try:
+                                    num = float(token)
+                                except ValueError:
+                                    # 不是数字也不是变量，视为1
+                                    num = 1
+                            
+                            if result is None:
+                                result = num
+                            else:
+                                if op == '×':
+                                    result *= num
+                                elif op == '÷':
+                                    if num != 0:
+                                        result /= num
+                    return result
+                
+                # 处理加减法
+                if '+' in expression or '-' in expression:
+                    # 分割表达式为数字和运算符，考虑空格
+                    tokens = re.findall(r'[+-]|[^+-]+', expression)
+                    result = None
+                    op = None
+                    
+                    for token in tokens:
+                        # 去除空格
+                        token = token.strip()
+                        if not token:
+                            continue
+                        
+                        if token in ('+', '-'):
+                            op = token
+                        else:
+                            # 处理变量或数字
+                            if separator in token:
+                                # 处理路径表达式，如 "details / req_qty"
+                                path_parts = _split_path(token)
+                                path_value = origin_data
+                                for path_part in path_parts:
+                                    if isinstance(path_value, dict) and path_part in path_value:
+                                        path_value = path_value[path_part]
+                                    else:
+                                        # 路径不存在，视为0
+                                        path_value = 0
+                                        break
+                                # 尝试转换为数值
+                                try:
+                                    if isinstance(path_value, str):
+                                        path_value = path_value.replace(',', '').strip()
+                                    num = float(path_value)
+                                except (ValueError, TypeError):
+                                    # 加减法中，无法转换为数值的视为0
+                                    num = 0
+                            elif token.startswith('$'):
+                                # 从 local_static_values 中查找 $ 开头的变量
+                                var_name = token[1:]
+                                if var_name in local_static_values:
+                                    value = local_static_values[var_name]
+                                    # 尝试转换为数值
+                                    try:
+                                        if isinstance(value, str):
+                                            value = value.replace(',', '').strip()
+                                        num = float(value)
+                                    except (ValueError, TypeError):
+                                        # 加减法中，无法转换为数值的视为0
+                                        num = 0
+                                else:
+                                    # 变量不存在，视为0
+                                    num = 0
+                            elif token in origin_data:
+                                value = origin_data[token]
+                                # 尝试转换为数值
+                                try:
+                                    if isinstance(value, str):
+                                        value = value.replace(',', '').strip()
+                                    num = float(value)
+                                except (ValueError, TypeError):
+                                    # 加减法中，无法转换为数值的视为0
+                                    num = 0
+                            else:
+                                # 尝试解析为数字
+                                try:
+                                    num = float(token)
+                                except ValueError:
+                                    # 不是数字也不是变量，视为0
+                                    num = 0
+                            
+                            if result is None:
+                                result = num
+                            else:
+                                if op == '+':
+                                    result += num
+                                elif op == '-':
+                                    result -= num
+                    return result
+                
+                # 处理单个变量或数字
+                if separator in expression:
+                    # 处理路径表达式，如 "details / req_qty"
+                    path_parts = _split_path(expression)
+                    path_value = origin_data
+                    for path_part in path_parts:
+                        if isinstance(path_value, dict) and path_part in path_value:
+                            path_value = path_value[path_part]
+                        else:
+                            # 路径不存在，返回空字符串
+                            path_value = ''
+                            break
+                    # 尝试转换为数值
+                    try:
+                        if isinstance(path_value, str):
+                            path_value = path_value.replace(',', '').strip()
+                        return float(path_value)
+                    except (ValueError, TypeError):
+                        # 无法转换为数值，返回原值
+                        return path_value
+                elif expression.startswith('$'):
+                    # 从 local_static_values 中查找 $ 开头的变量
+                    var_name = expression[1:]
+                    if var_name in local_static_values:
+                        value = local_static_values[var_name]
+                        # 尝试转换为数值
+                        try:
+                            if isinstance(value, str):
+                                value = value.replace(',', '').strip()
+                            return float(value)
+                        except (ValueError, TypeError):
+                            # 无法转换为数值，返回原值
+                            return value
+                    else:
+                        # 变量不存在，返回空字符串
+                        return ''
+                elif expression in origin_data:
+                    value = origin_data[expression]
+                    # 尝试转换为数值
+                    try:
+                        if isinstance(value, str):
+                            value = value.replace(',', '').strip()
+                        return float(value)
+                    except (ValueError, TypeError):
+                        # 无法转换为数值，返回原值
+                        return value
+                else:
+                    # 尝试解析为数字
+                    try:
+                        return float(expression)
+                    except ValueError:
+                        # 不是数字也不是变量，返回空字符串
+                        return ''
+            
+            return parse_expression(expr)
+        
         # 处理常规字段的映射
-        for key, value_path, depth in regular_mappings:
+        for expr, value_path, depth in regular_mappings:
             # 验证路径
             if not value_path:
-                raise ValueError(f"Empty path for key: {key}")
+                raise ValueError(f"Empty path for expr: {expr}")
             
             # 分割路径
             parts = _split_path(value_path)
             
             # 验证分割后的路径
             if not parts:
-                raise ValueError(f"Invalid path for key: {key}")
+                raise ValueError(f"Invalid path for expr: {expr}")
             
-            # 获取原始值
-            original_value = origin_data.get(key)
+            # 检查是否为表达式
+            if any(op in expr for op in ['+', '-', '×', '÷', '@', '(', ')']):
+                # 计算表达式的值
+                original_value = evaluate_expression(expr)
+            else:
+                # 获取原始值
+                original_value = origin_data.get(expr)
             
             # 处理常规字段
             if isinstance(original_value, list):
@@ -640,9 +939,9 @@ class DataProcessor:
                                 current[part].append(original_value)
                             else:
                                 # 如果是显式声明为列表，将单个值包装为列表
-                                current[part].append(origin_data.get(key, "N/A"))
+                                current[part].append(original_value if original_value is not None else "N/A")
                         else:
-                            current[part] = origin_data.get(key, "N/A")
+                            current[part] = original_value if original_value is not None else "N/A"
                         i += 1
                     else:
                         # 检查当前字段是否需要作为列表
@@ -774,9 +1073,110 @@ class DataProcessor:
         
         return result
 
+    @staticmethod
+    def group_by_common_field(data: List[Dict], group_keys: List[str], details_key: str = "details") -> Dict:
+        """
+        将扁平数据列表按照共同字段分组并整理为父子结构
+        
+        Args:
+            data: 扁平数据列表，每个元素是一个字典
+            group_keys: 用于分组的共同字段名列表
+            details_key: 子结构的键名，默认为 "details"
+        
+        Returns:
+            父子结构的字典，父结构包含 group_keys 中的字段，子结构包含其他字段
+        
+        Raises:
+            ValueError: 当数据为空或 group_keys 为空时
+        """
+        if not data:
+            raise ValueError("Data list cannot be empty")
+        
+        if not group_keys:
+            raise ValueError("Group keys list cannot be empty")
+        
+        # 按分组字段组合分组数据
+        grouped_data = {}
+        for item in data:
+            # 检查所有分组字段是否存在
+            for key in group_keys:
+                if key not in item:
+                    raise ValueError(f"Group key '{key}' not found in data item")
+            
+            # 生成组合键
+            key_values = tuple(item[key] for key in group_keys)
+            if key_values not in grouped_data:
+                grouped_data[key_values] = []
+            grouped_data[key_values].append(item)
+        
+        # 处理每个分组
+        result = {}
+        for key_values, items in grouped_data.items():
+            # 构建父结构
+            parent = {}
+            for i, key in enumerate(group_keys):
+                parent[key] = key_values[i]
+            
+            # 构建子结构
+            details = []
+            for item in items:
+                # 子结构包含除分组字段外的所有字段
+                detail = {}
+                for field, value in item.items():
+                    if field not in group_keys:
+                        detail[field] = value
+                details.append(detail)
+            
+            # 添加子结构到父结构
+            parent[details_key] = details
+            result[key_values] = parent
+        
+        # 如果只有一个分组，直接返回该分组
+        if len(result) == 1:
+            return next(iter(result.values()))
+        
+        return result
+
 
 if __name__ == "__main__":
     # 测试代码
+    def test_group_by_common_field():
+        # 测试数据
+        test_data = [{
+            "materialno": "10002714",
+            "demandno": "1466623325815701538",
+            "itemno": "A001",
+            "type": "DM",
+            "category": "MTS",
+            "priority": 999,
+            "workcenter": "JP-11",
+            "status": "CRE",
+            "req_qty": -70,
+        }, {
+            "materialno": "10004116",
+            "demandno": "1466623325815701538",
+            "itemno": "A001",
+            "type": "DM",
+            "category": "MTS",
+            "priority": 999,
+            "workcenter": "JP-11",
+            "status": "CRE",
+            "req_qty": -0.079,
+        }
+        ]
+        
+        # 测试方法
+        result = DataProcessor.group_by_common_field(
+            data=test_data,
+            group_keys=["demandno", "type", "status"],
+            details_key="details"
+        )
+        
+        # 打印结果
+        import json
+        print("=== 测试 group_by_common_field 方法 ===")
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+
     def test_generate_hierarchy_dict():
         # 调整 field_map 结构为 {目标路径: 原始数据键}
         field_map = {
@@ -935,6 +1335,10 @@ if __name__ == "__main__":
             if isinstance(mixed_explicit_result['Items'], list):
                 print("✓ Items 被正确声明为列表")
 
+    def test_edge_cases():
+        """
+        测试边缘情况
+        """
         # 测试空路径和无效路径的情况
         print("\n=== 测试空路径和无效路径的情况 ===")
         
@@ -966,8 +1370,262 @@ if __name__ == "__main__":
         except ValueError as e:
             print(f"无效路径测试异常: {e}")
 
+        # 测试表达式求值功能
+        print("\n=== 测试表达式求值功能 ===")
+        
+        # 测试基本加法表达式
+        expr_field_map = {
+            "TotalAmount": "x + y + z",
+            "ValidAmount": "a + b + c",
+            "MixedAmount": "num1 + num2 + text",
+            # 测试减法
+            "SubtractAmount": "x - y - z",
+            "MixedSubtract": "num1 - num2 - text",
+            # 测试乘法和除法
+            "MultiplyAmount": "x × y × z",
+            "DivideAmount": "x ÷ y",
+            "MixedMultiplyDivide": "(x + y) × z ÷ 2",
+            # 测试字符串拼接
+            "FullName": "first_name @ ' ' @ last_name",
+            "MixedConcat": "'ID: ' @ id @ ', Name: ' @ name",
+            # 测试括号优先级
+            "PriorityAmount": "(x + y) × (z - 10) ÷ 2",
+            "ComplexExpression": "(a × b) + (c ÷ d) - (e + f)"
+        }
+        
+        expr_origin_data = {
+            "x": 10,
+            "y": 20,
+            "z": 30,
+            "a": "100",
+            "b": "200",
+            "c": "300",
+            "d": "2",
+            "e": 50,
+            "f": "20",
+            "num1": 50,
+            "num2": "60",
+            "text": "abc",
+            "first_name": "张",
+            "last_name": "三",
+            "id": "1001",
+            "name": "张三"
+        }
+        
+        expr_result = DataProcessor.generate_hierarchy_dict(expr_origin_data, expr_field_map)
+        print("表达式求值测试:")
+        print(json.dumps(expr_result, indent=2, ensure_ascii=False))
+        
+        # 验证结果
+        if "TotalAmount" in expr_result:
+            print(f"TotalAmount: {expr_result['TotalAmount']}")
+            if expr_result['TotalAmount'] == 60:
+                print("✓ TotalAmount 计算正确")
+            else:
+                print("✗ TotalAmount 计算错误")
+        
+        if "ValidAmount" in expr_result:
+            print(f"ValidAmount: {expr_result['ValidAmount']}")
+            if expr_result['ValidAmount'] == 600:
+                print("✓ ValidAmount 计算正确")
+            else:
+                print("✗ ValidAmount 计算错误")
+        
+        if "MixedAmount" in expr_result:
+            print(f"MixedAmount: {expr_result['MixedAmount']}")
+            if expr_result['MixedAmount'] == 110:
+                print("✓ MixedAmount 计算正确（text 视为 0）")
+            else:
+                print("✗ MixedAmount 计算错误")
+        
+        if "SubtractAmount" in expr_result:
+            print(f"SubtractAmount: {expr_result['SubtractAmount']}")
+            if expr_result['SubtractAmount'] == -40:
+                print("✓ SubtractAmount 计算正确")
+            else:
+                print("✗ SubtractAmount 计算错误")
+        
+        if "MixedSubtract" in expr_result:
+            print(f"MixedSubtract: {expr_result['MixedSubtract']}")
+            if expr_result['MixedSubtract'] == -10:
+                print("✓ MixedSubtract 计算正确（text 视为 0）")
+            else:
+                print("✗ MixedSubtract 计算错误")
+        
+        if "MultiplyAmount" in expr_result:
+            print(f"MultiplyAmount: {expr_result['MultiplyAmount']}")
+            if expr_result['MultiplyAmount'] == 6000:
+                print("✓ MultiplyAmount 计算正确")
+            else:
+                print("✗ MultiplyAmount 计算错误")
+        
+        if "DivideAmount" in expr_result:
+            print(f"DivideAmount: {expr_result['DivideAmount']}")
+            if expr_result['DivideAmount'] == 0.5:
+                print("✓ DivideAmount 计算正确")
+            else:
+                print("✗ DivideAmount 计算错误")
+        
+        if "MixedMultiplyDivide" in expr_result:
+            print(f"MixedMultiplyDivide: {expr_result['MixedMultiplyDivide']}")
+            if expr_result['MixedMultiplyDivide'] == 450:
+                print("✓ MixedMultiplyDivide 计算正确")
+            else:
+                print("✗ MixedMultiplyDivide 计算错误")
+        
+        if "FullName" in expr_result:
+            print(f"FullName: {expr_result['FullName']}")
+            if expr_result['FullName'] == "张 三":
+                print("✓ FullName 计算正确")
+            else:
+                print("✗ FullName 计算错误")
+        
+        if "MixedConcat" in expr_result:
+            print(f"MixedConcat: {expr_result['MixedConcat']}")
+            if expr_result['MixedConcat'] == "ID: 1001, Name: 张三":
+                print("✓ MixedConcat 计算正确")
+            else:
+                print("✗ MixedConcat 计算错误")
+        
+        if "PriorityAmount" in expr_result:
+            print(f"PriorityAmount: {expr_result['PriorityAmount']}")
+            if expr_result['PriorityAmount'] == 300:
+                print("✓ PriorityAmount 计算正确")
+            else:
+                print("✗ PriorityAmount 计算错误")
+        
+        if "ComplexExpression" in expr_result:
+            print(f"ComplexExpression: {expr_result['ComplexExpression']}")
+            if expr_result['ComplexExpression'] == 20000 + 150 - 70:
+                print("✓ ComplexExpression 计算正确")
+            else:
+                print("✗ ComplexExpression 计算错误")
+        
+        # 测试路径表达式功能
+        print("\n=== 测试路径表达式功能 ===")
+        path_origin_data = {
+            "details": {
+                "req_qty": 5,
+                "name": "测试商品",
+                "price": 100
+            },
+            "user": {
+                "info": {
+                    "name": "张三",
+                    "age": 30
+                }
+            }
+        }
+        path_field_map = {
+            "Result1": "(details / req_qty) × -1",
+            "Result2": "details / price + 10",
+            "Result3": "user / info / name @ ' - ' @ user / info / age",
+            "Result4": "details / non_existent + 5",
+            "Result5": "details / req_qty × details / price"
+        }
+        path_result = DataProcessor.generate_hierarchy_dict(path_origin_data, path_field_map)
+        print("路径表达式测试:")
+        print(json.dumps(path_result, indent=2, ensure_ascii=False))
+        
+        # 验证结果
+        if "Result1" in path_result:
+            print(f"Result1: {path_result['Result1']}")
+            if path_result['Result1'] == -5:
+                print("✓ Result1 计算正确")
+            else:
+                print("✗ Result1 计算错误")
+        
+        if "Result2" in path_result:
+            print(f"Result2: {path_result['Result2']}")
+            if path_result['Result2'] == 110:
+                print("✓ Result2 计算正确")
+            else:
+                print("✗ Result2 计算错误")
+        
+        if "Result3" in path_result:
+            print(f"Result3: {path_result['Result3']}")
+            if path_result['Result3'] == "张三 - 30":
+                print("✓ Result3 计算正确")
+            else:
+                print("✗ Result3 计算错误")
+        
+        if "Result4" in path_result:
+            print(f"Result4: {path_result['Result4']}")
+            if path_result['Result4'] == 5:
+                print("✓ Result4 计算正确（路径不存在视为0）")
+            else:
+                print("✗ Result4 计算错误")
+        
+        if "Result5" in path_result:
+            print(f"Result5: {path_result['Result5']}")
+            if path_result['Result5'] == 500:
+                print("✓ Result5 计算正确")
+            else:
+                print("✗ Result5 计算错误")
+        
+        # 测试 static_values 功能
+        print("\n=== 测试 static_values 功能 ===")
+        static_origin_data = {
+            "x": 10,
+            "y": 20
+        }
+        static_field_map = {
+            "Result1": "$x + 1",
+            "Result2": "$y × 2",
+            "Result3": "$x + y",
+            "Result4": "$z + 5",  # 不存在的静态变量
+            "Result5": "$name @ ' ' @ $age"
+        }
+        static_values = {
+            "x": 100,
+            "y": 200,
+            "name": "张三",
+            "age": 30
+        }
+        static_result = DataProcessor.generate_hierarchy_dict(static_origin_data, static_field_map, static_values=static_values)
+        print("static_values 测试:")
+        print(json.dumps(static_result, indent=2, ensure_ascii=False))
+        
+        # 验证结果
+        if "Result1" in static_result:
+            print(f"Result1: {static_result['Result1']}")
+            if static_result['Result1'] == 101:
+                print("✓ Result1 计算正确")
+            else:
+                print("✗ Result1 计算错误")
+        
+        if "Result2" in static_result:
+            print(f"Result2: {static_result['Result2']}")
+            if static_result['Result2'] == 400:
+                print("✓ Result2 计算正确")
+            else:
+                print("✗ Result2 计算错误")
+        
+        if "Result3" in static_result:
+            print(f"Result3: {static_result['Result3']}")
+            if static_result['Result3'] == 120:
+                print("✓ Result3 计算正确")
+            else:
+                print("✗ Result3 计算错误")
+        
+        if "Result4" in static_result:
+            print(f"Result4: {static_result['Result4']}")
+            if static_result['Result4'] == 5:
+                print("✓ Result4 计算正确（不存在的静态变量视为0）")
+            else:
+                print("✗ Result4 计算错误")
+        
+        if "Result5" in static_result:
+            print(f"Result5: {static_result['Result5']}")
+            if static_result['Result5'] == "张三 30":
+                print("✓ Result5 计算正确")
+            else:
+                print("✗ Result5 计算错误")
 
+    # 运行测试
+    test_group_by_common_field()
     test_generate_hierarchy_dict()
+    test_edge_cases()
 
     # 测试 ManufactureOrderDetails 应该是列表的情况
     print("\n=== 测试 ManufactureOrderDetails 列表情况 ===")

@@ -67,10 +67,32 @@ class ApsBaseAction(ABC):
 
     @classmethod
     def _get_supplymo_detaildata(cls, supplyno: str):
+        """
+        获取工单计划单详情
+        Args:
+            supplyno: 工单号
+        Returns:
+            工单计划单详情
+        """
         supply_response = cls._session.get(f"{cls.this_base_url}/api/v_supply_mo?db_name={cls.main_db}&supplyno={supplyno}")
         supply_response_json = supply_response.json()
         supplymo_detaildata = supply_response_json['data'][0]
         return supplymo_detaildata
+
+    
+    @classmethod
+    def _get_modemand_detaildata(cls, demandno: str):
+        """
+        获取工单原料需求
+        Args:
+            demandno: 需求编号，根据 APS pegging 算法，也即供应号
+        Returns:
+            工单原料需求详情
+        """
+        demand_response = cls._session.get(f"{cls.this_base_url}/api/t_demand?db_name={cls.main_db}&demandno={demandno}")
+        demand_response_json = demand_response.json()
+        demand_detaildata = demand_response_json['data'][0]
+        return demand_detaildata
 
 
     @classmethod
