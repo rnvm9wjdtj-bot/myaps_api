@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 from ._base import (
     console_log,
-    DataProcessor, globalconst, cache_file,
+    DataProcessor, globalconst, CACHE_JSON,
     BaseConnection, convert_timeunit, clean_value, #reset_default_values,
     BaseModel as PydanticModel, model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
@@ -25,9 +25,9 @@ class JkyConfig():
 
     API_VERSION = "V1.0"
 
-    CREDENTIAL_FILE = cache_file
+    CREDENTIAL_FILE = CACHE_JSON
     """
-    ⬆️credential JSON，用于存储吉客云认证信息，存放在项目根目录下的cache文件夹中，文件名在环境变量CACHE_FILE中指定。文件包含如下结构用于吉客云的认证：
+    ⬆️credential JSON，用于存储吉客云认证信息。文件包含如下结构用于吉客云的认证：
     {
         "erp": {
             "app_key": "...",

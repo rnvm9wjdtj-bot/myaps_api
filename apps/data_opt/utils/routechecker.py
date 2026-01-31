@@ -69,9 +69,9 @@ class RouteChecker:
 
         # 从项目配置获取 ItemNo 前缀和宽度
         try:
-            from project_files import current_project
-            itemno_prefix = current_project.itemno_prefix
-            itemno_width = current_project.itemno_width
+            from project_files import project_client
+            itemno_prefix = project_client.itemno_prefix
+            itemno_width = project_client.itemno_width
         except:
             itemno_prefix = 'P'
             itemno_width = 2
@@ -128,9 +128,9 @@ class RouteChecker:
         if self.itemno_col in df.columns:
             # 从项目配置获取 ItemNo 前缀和宽度
             try:
-                from project_files import current_project
-                itemno_prefix = current_project.itemno_prefix
-                itemno_width = current_project.itemno_width
+                from project_files import project_client
+                itemno_prefix = project_client.itemno_prefix
+                itemno_width = project_client.itemno_width
             except:
                 itemno_prefix = 'P'
                 itemno_width = 2

@@ -10,7 +10,7 @@ from fastapi import APIRouter, Query, Body, File, UploadFile#, HTTPException
 from fastapi.responses import HTMLResponse#, StreamingResponse
 
 from config.settings import BASE_DIR
-from .project_files import  current_project, hap_conn
+from project_files import  project_client, hap_conn
 # from .schemas import SupplyOperationBody, SupplyAction
 # from apps.io_api.models import TSupply
 from .utils.barcode_qrcode_generator import generate_qrcode, generate_barcode
@@ -204,7 +204,7 @@ async def get_bom_check_result_api(
     x_api_key: str = common_params["x_api_key"]
 ):
     try:
-        bom_json_data = await current_project.ScheduleTasks.get_bom()
+        bom_json_data = await project_client.ScheduleTasks.get_bom()
 
         mainfield_mapper = {
             "id": None,

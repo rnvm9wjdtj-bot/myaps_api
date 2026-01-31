@@ -11,7 +11,7 @@ from config.settings import MYAPS_MAIN_DB
 
 from ._base import (
     console_log, filelog_normal, filelog_error,
-    DataProcessor, globalconst, cache_file, pdv,
+    DataProcessor, globalconst, CACHE_JSON, pdv,
     BaseConnection, convert_timeunit, clean_value,
     BaseModel as PydanticModel, model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
@@ -194,9 +194,9 @@ class TplusStock(AcceptSupply):
 
 
 class TplusConfig:
-    CACHE_FILE = cache_file
+    CACHE_FILE = CACHE_JSON
     """
-    ⬆️缓存文件用于存储畅捷通认证信息，存放在项目根目录下的cache文件夹中，文件名在环境变量CACHE_FILE中指定。文件包含如下结构用于T+的认证：
+    ⬆️缓存文件用于存储畅捷通认证信息。文件包含如下结构用于T+的认证：
     {
         "erp": {
             "app_key": "...",
@@ -332,8 +332,8 @@ class TplusConfig:
                 "ManufactureOrderDetails / PreFinishDate": "dt_ordend",
             },
             "static_values": {
-                "MoBusiType": cache_file.get("erp")["$MoBusiType"],
-                "MoDepartment": cache_file.get("erp")["$MoDepartment"],
+                "MoBusiType": CACHE_JSON.get("erp")["$MoBusiType"],
+                "MoDepartment": CACHE_JSON.get("erp")["$MoDepartment"],
             },
         },
 
@@ -358,7 +358,7 @@ class TplusConfig:
             "static_values": {
                 "BusiType": "MR01",     # 业务类型 MR01 自制领料申请  MR02 委外领料申请  MR03 其他领料申请
                 "VoucherType": "ST1039",    # 单据类型。固定值
-                "Department": cache_file.get("erp")["$MoDepartment"],
+                "Department": CACHE_JSON.get("erp")["$MoDepartment"],
                 "IdSourceVoucherType": "69",    # 来源单据的单据类型ID  69：生产加工单  21：材料出库单
             },
         },
@@ -366,22 +366,22 @@ class TplusConfig:
         "pr": { # 采购申请 supply PR
             "endpoint": "/tplus/api/v2/PurchaseRequisitionOpenApi/Create",
             "field_map": {
+                "[]": "PurchaseRequisitionDetails",
+
                 "ExternalCode": "supplyno",
-                "Code": "supplyno",
-                "StartDate": "dt_ordstart",
-                "FinishDate": "dt_ordend",
-                "BusiType / Code": "$MoBusiType", # 标$是因为APS提供的原生数据没有，需要从配置文件中获取
-                "Department / Code": "$MoDepartment",
-                "VoucherDate": "create_date",
-                "PurchaseOrderDetails / Inventory / Code": "materialno",
-                "PurchaseOrderDetails / Unit / Name": "unit",
-                "PurchaseOrderDetails / Quantity": "avail_qty",
-                "PurchaseOrderDetails / PreStartDate": "dt_ordstart",
-                "PurchaseOrderDetails / PreFinishDate": "dt_ordend",
+                # "Code": "supplyno",   # 注释掉，Code 字段不传，让 T+ 自行生成编码
+                "RequisitionPerson / Code": "$RequisitionPerson",
+                "PurchaseRequisitionDetails / Inventory / Code": "materialno",
+                "PurchaseRequisitionDetails / Unit / Name": "unit",
+                "PurchaseRequisitionDetails / Quantity": "avail_qty",
+                "PurchaseRequisitionDetails / RequireDate": "avail_date",
+                # "PurchaseRequisitionDetails / IdSourceVoucherType": "$IdSourceVoucherType",
+                # "PurchaseRequisitionDetails / SourceVoucherCode": "dt_ordend",
+                # "PurchaseRequisitionDetails / SourceVoucherDetailId": "dt_ordend",
             },
             "static_values": {
-                "MoBusiType": cache_file.get("erp")["$MoBusiType"],
-                "MoDepartment": cache_file.get("erp")["$MoDepartment"],
+                "RequisitionPerson": CACHE_JSON.get("erp")["$PrRequisitionPerson"],
+                "IdSourceVoucherType": "43",    # 来源单据的单据类型ID  43：销售订单  预测单：68
             },
         },
     }

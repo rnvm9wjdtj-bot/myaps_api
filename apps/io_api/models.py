@@ -2,7 +2,7 @@ from tortoise import fields
 # from tortoise.signals import post_save
 
 from globalobjects.db_manager import db_managers
-from cache import ProjectDefaultValues as pdv
+from globalobjects import globalconst as gc, ProjectDefaultValues as pdv
 from . import protomodels as pm
 # from apps.io_api.schemas import Values as pdv
 

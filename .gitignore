@@ -77,13 +77,6 @@ jspm_packages/
 
 test/
 
-# 忽略project_files文件夹下以_ed为结尾的py文件
-apps/data_opt/project_files/*_ed.py
-
-
-# 缓存文件
-_cache_.*
-cache/*.json
 
 # 临时文件
 *.tmp

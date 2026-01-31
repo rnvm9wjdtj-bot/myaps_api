@@ -12,7 +12,7 @@ from ._base import (
     BaseModel as PydanticModel, model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold,
-    cache_file
+    CACHE_JSON
 )
 
 
@@ -66,7 +66,7 @@ class K3Material(AcceptMaterial):
 
 class K3Config:
     """K3基础配置"""
-    CACHE_FILE = cache_file
+    CACHE_FILE = CACHE_JSON
     BASE_URL = "http://129.211.172.205:12980"
     ACCTID = "65a48b111c0197"
     LCID = "2052"

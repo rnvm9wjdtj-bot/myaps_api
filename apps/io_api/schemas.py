@@ -6,8 +6,7 @@ from decimal import Decimal
 from pydantic import BaseModel, Field, model_validator, PrivateAttr#, ValidationError, field_validator
 
 from config.settings import MYAPS_VERSION
-from globalobjects import globalconst as gc
-from cache import ProjectDefaultValues as pdv
+from globalobjects import globalconst as gc, ProjectDefaultValues as pdv
 
 
 

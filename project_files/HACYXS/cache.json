@@ -1,0 +1,27 @@
+{
+  "erp": {
+    "app_key": "UG69s1P1",
+    "app_secret": "F1A51CB0AD5275BF6FAA46270AF1CF37",
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJpc3YiLCJpc3MiOiJjaGFuamV0IiwidXNlcklkIjoiMzk2MjUxNzMxNzA5OTU0Iiwib3JnSWQiOiIxMjQxNzU3OTMzNjA5NDUzIiwiYWNjZXNzX3Rva2VuIjoiYmMtZjhlMmU1MTEtNGQ4ZS00ZWNjLTg2OGQtNmU5YjNhMDYyMmM0IiwiYXVkIjoiaXN2IiwibmJmIjoxNzY5ODA4OTQwLCJhcHBJZCI6IjU4Iiwic2NvcGUiOiJhdXRoX2FsbCIsImFwcEtleSI6IlVHNjlzMVAxIiwiaWQiOiI1ODU4ZGY1Ni02NDEyLTQxYmQtOTIxYy1iNGMxODMyZDUzYmMiLCJleHAiOjE3NzAzMjczNDAsImlhdCI6MTc2OTgwODk0MCwib3JnQWNjb3VudCI6InV3aWF4ZnVlc2E2OCJ9.ikTgKjydT9O3Ovz6rJ1_7jNry8P2kEmBllS2BT2ciG8",
+    "refresh_token": "cc4a6cf8b4f34ee2ad9350f2a4dd75b2",
+    "org_id": "",
+    "_auth_at_": "2026-01-31 05:35:40",
+    "$MoBusiType": "PT01",
+    "$MoDepartment": "001",
+    "$PrRequisitionPerson": "001"
+  },
+  "hap": {
+    "app_key": "601ae007d84ca95a",
+    "app_secret": "ODVlMzNjYzA1ZTg1Yzg3YjI0NmQ5NTFmZGQ3OTk1MWYzMjE4M2JiMzYyNDEzMGU3NTY5YzI0YzEzYTYyYTExZA=="
+  },
+  "defaults": {
+    "auto_matver": true,
+    "matver_prefix": "A",
+    "matver_width": 2,
+    "matver": "A01",
+    "itemno_prefix": "P",
+    "itemno": "P01",
+    "plant": "chaoyue",
+    "planner": "chaoyue"
+  }
+}

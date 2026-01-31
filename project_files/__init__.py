@@ -10,12 +10,12 @@ from apps.io_api.utils.common import dict_to_lower_keys
 
 
 
-project_name = os.getenv("PROJECT_FILE").replace('.py', '')
-current_project = importlib.import_module(f'apps.data_opt.project_files.{project_name}')
+project_dir = os.getenv("PROJECT_DIR")
+project_client = importlib.import_module(f'project_files.{project_dir}.client')
 
 
 try:
-    hap_conn = current_project.hap_conn
+    hap_conn = project_client.hap_conn
 except:
     hap_conn = None
 
@@ -40,9 +40,9 @@ async def handle_update_supply(database: str, table: str, data: dict, data_diff:
 
     # 确认/下达生产计划单PL (当PL状态从NEW或CRE变为A2E时)
     if type_now == 'PL' and status_now == OrderStatusEnum.A2E.value and status_before in ["NEW", "CRE"]:
-        await current_project.ApsAction.click_release_button(no_now)
+        await project_client.ApsAction.click_release_button(no_now)
         return
 
     # 工单关闭
     if type_now == 'MO' and status_now == OrderStatusEnum.CMP.value:
-        await current_project.ApsAction.when_mo_close(data_now)
+        await project_client.ApsAction.when_mo_close(data_now)

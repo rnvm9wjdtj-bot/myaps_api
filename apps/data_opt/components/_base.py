@@ -15,8 +15,7 @@ from apps.io_api.schemas import (
     AcceptMold, AcceptMatWcMold, AcceptSupply, AcceptConfirm
 )
 from apps.io_api.utils.db_operation import db_query
-from globalobjects import globalconst, file_timed_logger
-from cache import cache_file, ProjectDefaultValues as pdv
+from globalobjects import globalconst, file_timed_logger, CACHE_JSON, ProjectDefaultValues as pdv
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 console_log = logging.getLogger(__name__)

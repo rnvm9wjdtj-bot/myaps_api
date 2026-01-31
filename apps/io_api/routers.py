@@ -19,7 +19,7 @@ from .schemas import (
 
 from .utils.common import common_params, standard_response
 from .utils.db_operation import db_managers, db_query, db_supsert, db_bupsert, db_delete, call_dbprocdure
-from apps.data_opt.project_files import hap_conn
+from project_files import hap_conn
 from apps.data_opt.utils.data_processor import DataProcessor
 
 # def _check_db_name(hap_wsid: str = None):
@@ -264,22 +264,21 @@ async def post_mat_wc_mold(
 ########################################################################
 # 生产数据接口
 ########################################################################
-# @rt.get(
-#     "/t_supply",
-#     tags=["生产数据 - 供应"],
-#     summary="获取供应记录",
-#     description="获取供应记录"
-# )
+# @rt.get("/t_supply", tags=["生产数据 - 供应"], summary="获取供应记录", description="获取供应记录")
 # async def get_supply(
 #     db_name: str = common_params["db_name"],
-#     page_size: int = common_params["page_size"],
-#     page_index: int = common_params["page_index"],
+#     supplyno: str = Query(..., description="供应号"),
+#     type: str = Query(None, enum=['PL', 'MO', 'PR', 'PO'], description="供应类型"),
 #     # x_api_key: str = common_params["x_api_key"]
 # ):
-#     return await db_query(db_name=db_name, model_or_tablename="t_supply", page_size=page_size, page_index=page_index)
+#     filter_string = f"`SupplyNo`='{supplyno}'"
+#     if type:
+#         filter_string += f" AND `Type`='{type}'"
+#     return await db_query(db_name=db_name, model_or_tablename="v_supply", filter_string=filter_string)
+#   TODO 如果 vendorno 不为空，则尝试查询一下 销售订单 demand
 
-@rt.post(
-    "/t_supply",
+
+@rt.post("/t_supply",
     tags=["生产数据 - 供应"],
     summary="新增或修改供应记录（供应来源包含：生产生产计划PL、生产工单MO、库存ST、采购订单PO）",
     description="根据🗝️【料号+供应号】新增或修改供应记录"
@@ -291,7 +290,6 @@ async def post_supply(
     ):
     db_name = db_name.replace(" ", "")
     return await db_bupsert(db_names=db_name, model_or_tablename="t_supply", data_list=data)
-
 
 
 @rt.patch(
