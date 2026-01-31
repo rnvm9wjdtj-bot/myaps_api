@@ -4,6 +4,12 @@ from logging.handlers import TimedRotatingFileHandler, QueueHandler, QueueListen
 class DatePrefixRotatingFileHandler(TimedRotatingFileHandler):
     """自定义的按时间轮转的文件处理器，支持日期前缀"""
     
+    def __init__(self, *args, **kwargs):
+        """初始化方法，确保编码参数被正确处理"""
+        super().__init__(*args, **kwargs)
+        # 确保编码参数被正确存储
+        self.encoding = kwargs.get('encoding', 'utf-8')
+    
     def doRollover(self):
         """重写轮转方法，实现日期前缀"""
         if self.stream:

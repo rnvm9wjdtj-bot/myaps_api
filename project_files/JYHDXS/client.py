@@ -159,7 +159,7 @@ async def refresh_stock(dbs: str = None):
         stock = stock.rename(columns={
             'matnr': 'materialno',
         })
-        stock['itemno'] = ProjectDefaultValues.ITEMNO
+        stock['itemno'] = pdv.ITEMNO
         stock_data = stock.to_dict(orient='records')
 
         delete_result = await db_delete(db_names=dbs, model_or_tablename='t_supply', filter_string=f"`Type`='ST'")
@@ -171,8 +171,6 @@ async def refresh_stock(dbs: str = None):
         filelog_error.error(f"🚫 刷新库存任务执行失败: {str(e)}")
         response = standard_response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, success=0, message=f"刷新库存任务执行失败: {str(e)}")
     return response
-
-
 
 
 srm = CACHE_JSON.get("srm", {})
