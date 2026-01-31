@@ -950,6 +950,128 @@ class DbManager:
         logger.info(f"已切换数据库连接至: {connection_name}")
 
 
+    @with_transaction
+    async def update_by_index(
+        self,
+        model_class,
+        index_dict: Dict[str, Any],
+        new_values_dict: Dict[str, Any],
+        not_found_behavior: Literal["insert", "error", "skip"] = "error",
+        use_transaction: Optional[bool] = None
+    ) -> Dict[str, Any]:
+        """
+        基于索引更新记录，支持更新联合主键字段
+        
+        Args:
+            model_class: Tortoise 模型类
+            index_dict: 用于索引记录的字典，包含旧的键值
+            new_values_dict: 新值构成的字典，可包含联合主键字段
+            not_found_behavior: 找不到记录时的行为："insert" 新增，"error" 报错，"skip" 略过
+            use_transaction: 是否使用事务（可选，默认使用实例配置的use_transaction）
+            
+        Returns:
+            执行结果字典，包含操作类型、影响行数等信息
+            
+        Raises:
+            ValueError: 当 not_found_behavior 为 "error" 且找不到记录时
+        """
+        start_time = datetime.now()
+        
+        try:
+            table_name = model_class._meta.db_table
+            conn = Tortoise.get_connection(self.connection_name)
+            
+            # 构建 WHERE 子句（使用旧值）
+            where_parts = []
+            where_values = []
+            for field, value in index_dict.items():
+                where_parts.append(f"`{field}` = %s")
+                where_values.append(value)
+            
+            where_clause = " WHERE " + " AND ".join(where_parts) if where_parts else ""
+            
+            # 检查记录是否存在
+            check_sql = f"SELECT COUNT(*) as count FROM `{table_name}`{where_clause}"
+            result = await conn.execute_query(check_sql, where_values)
+            count = result[1][0]['count']
+            
+            if count == 0:
+                if not_found_behavior == "error":
+                    raise ValueError(f"未找到匹配记录: {index_dict}")
+                elif not_found_behavior == "insert":
+                    # 执行插入操作
+                    all_fields = list(index_dict.keys()) + list(new_values_dict.keys())
+                    all_fields = list(set(all_fields))  # 去重
+                    
+                    fields_str = ', '.join([f"`{field}`" for field in all_fields])
+                    placeholders = ', '.join(['%s'] * len(all_fields))
+                    
+                    values = []
+                    for field in all_fields:
+                        if field in new_values_dict:
+                            values.append(new_values_dict[field])
+                        elif field in index_dict:
+                            values.append(index_dict[field])
+                    
+                    insert_sql = f"INSERT INTO `{table_name}` ({fields_str}) VALUES ({placeholders})"
+                    affected_rows = await self._execute_native_sql(
+                        insert_sql, 
+                        values,
+                        description="基于索引更新 - 新增记录"
+                    )
+                    
+                    operation_type = 'inserted'
+                else:  # skip
+                    affected_rows = 0
+                    operation_type = 'skipped'
+            else:
+                # 执行更新操作
+                # 构建 SET 子句（使用新值）
+                set_parts = []
+                set_values = []
+                for field, value in new_values_dict.items():
+                    set_parts.append(f"`{field}` = %s")
+                    set_values.append(value)
+                
+                if not set_parts:
+                    affected_rows = 0
+                    operation_type = 'no_change'
+                else:
+                    set_clause = " SET " + ", ".join(set_parts)
+                    update_sql = f"UPDATE `{table_name}`{set_clause}{where_clause}"
+                    
+                    affected_rows = await self._execute_native_sql(
+                        update_sql, 
+                        set_values + where_values,
+                        description="基于索引更新 - 更新记录"
+                    )
+                    
+                    operation_type = 'updated'
+            
+            execution_time = (datetime.now() - start_time).total_seconds()
+            
+            # 更新统计信息
+            self.stats['total_processed'] += 1
+            self.stats['batches_executed'] += 1
+            self.stats['last_execution_time'] = execution_time
+            
+            response = {
+                "success": True,
+                "operation_type": operation_type,
+                "affected_rows": affected_rows,
+                "index_dict": index_dict,
+                "updated_fields": list(new_values_dict.keys()),
+                "execution_time": execution_time
+            }
+            
+            logger.info(f"基于索引更新完成: {response}")
+            return response
+            
+        except Exception as e:
+            logger.error(f"基于索引更新失败: {e}")
+            raise
+
+
 def get_db_managers():
     db_managers = {}
     for db in MYAPS_DBSET_LIST:

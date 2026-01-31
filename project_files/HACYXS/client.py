@@ -170,8 +170,8 @@ class ApsAction(ApsBaseAction):
             rs_data = ApsBaseAction._get_demand_datalist(demandno=supplyno)     # 从 APS 查询 RS 领料数据，以工单号 supplyno 为依据查找
             rs_push_response = await tplus_conn.push_into_target(target_name='rs', push_data=rs_data, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid)
             rs_push_response_json = rs_push_response.json()
-            # TODO ?推送 领料申请 到 T+ 后，更新 RS 状态为已完成，
-            # await cls._rs_release_success(rsno=supplyno, msg=rs_push_response_json['message'], msg_from='T+')
+            # TODO ?推送 领料申请 到 T+ 后，更新 RS 状态为已完成， 并更新 RS 中的 memo 字段
+            await cls._rs_push_success(rsno=supplyno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
 
             # 最后再更改工单信息，一定放在最后一步，否则工单号变更太早，前面所有相关查询都会失败
             await cls._pl_release_success(plno=supplyno, msg=mo_push_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)

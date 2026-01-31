@@ -143,7 +143,7 @@ async def db_supsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
     :param db_names: 账套名称，多个可用半角逗号分隔
     :param model_or_tablename: 模型类或表名
     :param data_item: 数据，字典或PydanticSchema对象
-    :param use_rawdata: 是否使用原始数据（若传入的数据为PydanticSchema对象，默认使用未被过度 validator 处理的数据）
+    :param use_rawdata: 是否使用原始数据（若传入的数据为PydanticSchema对象，默认使用未被 validator 处理的数据）
     :return: 操作结果
     """
     mdl, table_name = process_model_or_tablename(model_or_tablename)
@@ -393,4 +393,89 @@ async def call_dbprocdure(db_names: str, procedure_name: str, params_list: List[
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message=f"操作失败：{str(e)}"
+        )
+
+
+async def db_update_by_index(
+    db_names: str,
+    model_or_tablename: TortoiseBaseModel | str,
+    index_dict: Dict[str, Any],
+    new_values_dict: Dict[str, Any],
+    not_found_behavior: Literal["insert", "error", "skip"] = "error"
+):
+    """
+    基于索引更新记录，支持更新联合主键字段
+    
+    Args:
+        db_names: 账套名称，多个可用半角逗号分隔
+        model_or_tablename: 模型类或表名
+        index_dict: 用于索引记录的字典，包含旧的键值
+        new_values_dict: 新值构成的字典，可包含联合主键字段
+        not_found_behavior: 找不到记录时的行为："insert" 新增，"error" 报错，"skip" 略过
+        
+    Returns:
+        标准响应格式
+    """
+    mdl, table_name = process_model_or_tablename(model_or_tablename)
+    
+    if not mdl:
+        return standard_response(
+            success=0,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="操作失败：未找到对应模型",
+            meta={
+                "input_table_name": table_name,
+                "available_tables": list(TABLE_MODEL_MAPPING.keys()),
+            },
+            data=[index_dict, new_values_dict]
+        )
+
+    valid_dbs = validate_databases(db_names)
+    if not valid_dbs:
+        filelog_normal.error(f"❌↑未找到有效账套（available_dbs：{MYAPS_DB_SET}），禁止写入 —— db_update_by_index")
+        return standard_response(
+            success=0,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="操作失败：未找到有效账套",
+            meta={
+                "input_db_name": db_names,
+                "available_dbs": MYAPS_DB_SET,
+            },
+            data=[index_dict, new_values_dict]
+        )
+
+    success_db = []
+    affect_count_total = 0
+
+    try:
+        for db_name in valid_dbs:
+            db_manager = db_managers[db_name]
+
+            result = await db_manager.update_by_index(
+                model_class=mdl,
+                index_dict=index_dict,
+                new_values_dict=new_values_dict,
+                not_found_behavior=not_found_behavior
+            )
+
+            if result['success']:
+                success_db.append(db_name)
+                affect_count_total += result['affected_rows']
+                filelog_normal.info(f"✅ 基于索引更新操作成功，{table_name}@{db_name}，操作类型：{result['operation_type']}，影响{result['affected_rows']}条记录")
+
+        return standard_response(
+            meta={
+                "success_db": success_db,
+                "affect_count": affect_count_total,
+                "operation_type": result.get('operation_type')
+            },
+            data=[index_dict, new_values_dict]
+        )
+    except Exception as e:
+        filelog_error.error(f"❌ 基于索引更新操作失败，{table_name}@[{db_names}]，错误信息：{str(e)}")
+        return standard_response(
+            success=0,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message=f"操作失败：{str(e)}",
+            data=[index_dict, new_values_dict]
         )

@@ -20,7 +20,7 @@ from apps.data_opt.utils.common import get_session
 # ❗❗❗❗❗❗❗❗❗❗❗❗⬇️不要删掉，便于各项目文件引用 ❗❗❗❗❗❗❗❗❗❗❗❗
 from globalobjects import file_timed_logger, CACHE_JSON, ProjectDefaultValues as pdv
 from apps.io_api.utils.common import standard_response
-from apps.io_api.utils.db_operation import db_delete, db_bupsert, call_dbprocdure, db_query, db_bupsert, db_supsert
+from apps.io_api.utils.db_operation import db_delete, db_bupsert, call_dbprocdure, db_query, db_bupsert, db_supsert, db_update_by_index
 from apps.data_opt.components.hap import HapConnection
 from apps.data_opt.utils.scheduler import cron_task
 from apps.data_opt.utils.common import add_basic_auth_requests
@@ -107,7 +107,7 @@ class ApsBaseAction(ABC):
         response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}/pltomo?db_name={cls.main_db}', json={
             'status': to_status,
             'supplyno': mono,
-            'memo': json.dumps({"msg": f"✅{msg}", "from": msg_from, "success": True, "datetime": now, "native_no": plno, "_code": mono, "_id": _id, "_entryid": _entryid}, ensure_ascii=False),
+            'memo': json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": plno, "_code": mono, "_id": _id, "_entryid": _entryid}, ensure_ascii=False),
         })
         return response
 
@@ -120,34 +120,36 @@ class ApsBaseAction(ABC):
         filelog_normal.error(log_msg)
         response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}/edit?db_name={cls.main_db}', json={
             'status': to_status,    # ❗❗失败情况下，状态务必回撤为 CRE 或 NEW ，否则后续无法再次下达
-            'memo': json.dumps({"msg": f"🚫{msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False),
+            'memo': json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False),
         })
         return response
 
 
-    # @classmethod
-    # async def _rs_push_success(cls, rsno: str, msg: str=None, msg_from: str=None, _id: str=None):
-    #     """
-    #     当推送 RS 至 ERP 成功时，调用该方法更新 RS 状态
-    #     Args:
-    #         rsno: RS 号
-    #         msg: 外部系统返回信息
-    #         msg_from: 外部系统名称
-    #         _id: 外部系统返回的 RS ID
-    #     """
-    #     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    #     await db_bupsert(
-    #         db_name=cls.main_db,
-    #         model_or_tablename='t_demand',
-    #         data={
-    #         #     'rsno': rsno,
-    #         #     'status': 'E2A',
-    #         #     'memo': json.dumps({"msg": f"✅{msg}", "from": msg_from, "success": True, "datetime": now, "native_no": rsno, "_id": _id}, ensure_ascii=False),
-    #         # },
-    #         # unique_keys=['rsno'],
-    #     )
-    #     pass
-
+    @classmethod
+    async def _rs_push_success(cls, rsno: str, to_status: Literal[OrderStatusEnum.E2A, OrderStatusEnum.REL]='E2A', msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
+        """
+        当推送 领料申请 RS 至 ERP 成功时，调用该方法更新 RS
+        Args:
+            rsno: RS 号
+            msg: 外部系统返回信息
+            msg_from: 外部系统名称
+            _code: 外部系统返回的 领料单 编号
+            _id: 外部系统返回的 领料单 ID
+            _entryid: 外部系统返回的 领料单 详情 ID（对于某些有表头的ERP，具体的 领料申请 是存在于子表中的，有单独的行记录id
+        """
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        response = await db_update_by_index(
+            db_name=cls.main_db,
+            model_or_tablename='t_demand',
+            index_dict={"demandno": rsno},
+            new_value={     # 注意不能更新 demandno ，因为会在推送工单成功后，调用 数据库存储过程 修改 RS demand 编号
+                "status": to_status,
+                'memo': json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": rsno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
+            },
+            not_found_action="skip",
+        )
+        return response
 
     # @classmethod
     # async def _rs_push_failed(cls, rsno: str, msg: str=None, msg_from: str=None):
