@@ -329,10 +329,11 @@ async def patch_supply(
         if not data.supplyno:
             data.supplyno = path_targetsupply
         # 调用存储过程SupplyConvertMOByE2A，将PL转为MO
-        params_list = [[path_targetsupply, data.supplyno, data.status, data.memo, True]]
+        params_list = [[path_targetsupply, data.supplyno, data.status, data.apiex_code, data.apiex_id, data.apiex_entryid, data.memo, data.change_supplyno]]
         return await call_dbprocdure(db_names=db_name, procedure_name="SupplyConvertMOByE2A", params_list=params_list)
     elif action == "edit":
         data.supplyno = path_targetsupply   # 供应号不能修改，将目标供应号重新赋值给data，以便后续 orm 时能正确索引到记录
+        data.change_supplyno = False
         data = dict(data)
         return await db_supsert(db_names=db_name, model_or_tablename="t_supply", data_item=data)
     else:

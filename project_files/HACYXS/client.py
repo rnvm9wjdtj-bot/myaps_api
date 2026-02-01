@@ -148,6 +148,9 @@ class ApsAction(ApsBaseAction):
         当按下工单管理的下达按钮（PL的Status变为'A2E'）时该方法将被自动调用
         🅰 supplyno: PL计划单编号
         """
+        # supply_record = await TSupply.get_or_none(supplyno=supplyno)
+        # if not supply_record:
+        #     raise Exception(f"supplyno {supplyno} not found in t_supply")
         supplymo_detaildata = ApsBaseAction._get_supplymo_detaildata(supplyno=supplyno)
         mo_push_response = await tplus_conn.push_into_target(target_name='mo', push_data=supplymo_detaildata)
         mo_push_response_json = mo_push_response.json()
@@ -165,16 +168,16 @@ class ApsAction(ApsBaseAction):
                 tplus_mo_entryid = mo_in_tplus['ManufactureOrderDetails'][0]['ID']
             except:
                 tplus_mo_entryid = None
-                
+               
             # 推送 领料申请 到 T+
             rs_data = ApsBaseAction._get_demand_datalist(demandno=supplyno)     # 从 APS 查询 RS 领料数据，以工单号 supplyno 为依据查找
             rs_push_response = await tplus_conn.push_into_target(target_name='rs', push_data=rs_data, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid)
             rs_push_response_json = rs_push_response.json()
-            # TODO ?推送 领料申请 到 T+ 后，更新 RS 状态为已完成， 并更新 RS 中的 memo 字段
+            
             await cls._rs_push_success(rsno=supplyno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
 
-            # 最后再更改工单信息，一定放在最后一步，否则工单号变更太早，前面所有相关查询都会失败
-            await cls._pl_release_success(plno=supplyno, msg=mo_push_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
+            # 最后再更改工单信息，一定放在最后一步，否则如果变更工单号变更太早，前面所有相关查询都会失败
+            await cls._pl_release_success(plno=supplyno, msg=mo_push_response_json['message'], change_supplyno=False, msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
 
         else:
             await cls._pl_release_failed(plno=supplyno, msg=mo_push_response_json['message'], msg_from='T+')

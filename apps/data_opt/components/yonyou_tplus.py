@@ -16,7 +16,7 @@ from ._base import (
     BaseModel as PydanticModel, model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold, AcceptSupply, AcceptConfirm,
-    db_query
+    db_query, TSupply, TDemand
 )
 
 

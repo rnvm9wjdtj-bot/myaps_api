@@ -14,6 +14,7 @@ from apps.io_api.schemas import (
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold, AcceptSupply, AcceptConfirm
 )
+from apps.io_api.models import TSupply, TDemand
 from apps.io_api.utils.db_operation import db_query
 from globalobjects import globalconst, file_timed_logger, CACHE_JSON, ProjectDefaultValues as pdv
 

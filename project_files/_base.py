@@ -89,12 +89,13 @@ class ApsBaseAction(ABC):
 
 
     @classmethod
-    async def _pl_release_success(cls, plno: str, mono: str=None, to_status: Literal[OrderStatusEnum.E2A, OrderStatusEnum.REL]='E2A', msg: str=None, msg_from: str=None, _id: str=None, _entryid: str=None):
+    async def _pl_release_success(cls, plno: str, mono: str=None, to_status: Literal[OrderStatusEnum.E2A, OrderStatusEnum.REL]='E2A', change_supplyno: bool=True, msg: str=None, msg_from: str=None, _id: str=None, _entryid: str=None):
         """
         通过调用自路由修改PL的Type、Status、SupplyNo、Memo等字段，作为私有方法在 def click_release_button() 中被直接调用
         🅰 plno: PL计划单编号
         🅰 mono: MO号，可选，若非None则更改PL的SupplyNo
         🅰 to_status: 转化成MO后，Status设为哪个状态，默认'REL'
+        🅰 change_supplyno: 是否更改PL的SupplyNo，默认True
         🅰 msg: 外部系统返回信息
         🅰 msg_from: 外部系统名称
         🅰 _id: 外部系统返回的 MO ID
@@ -106,6 +107,9 @@ class ApsBaseAction(ABC):
         filelog_normal.info(log_msg)
         response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}/pltomo?db_name={cls.main_db}', json={
             'status': to_status,
+            'apiex_code': mono,
+            'apiex_id': _id,
+            'apiex_entryid': _entryid,
             'supplyno': mono,
             'memo': json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": plno, "_code": mono, "_id": _id, "_entryid": _entryid}, ensure_ascii=False),
         })
@@ -145,6 +149,9 @@ class ApsBaseAction(ABC):
             index_dict={"demandno": rsno},
             new_value={     # 注意不能更新 demandno ，因为会在推送工单成功后，调用 数据库存储过程 修改 RS demand 编号
                 "status": to_status,
+                "apiex_code": _code,
+                "apiex_id": _id,
+                "apiex_entryid": _entryid,
                 'memo': json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": rsno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
             },
             not_found_action="skip",

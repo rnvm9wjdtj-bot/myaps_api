@@ -494,6 +494,9 @@ class AcceptSupply(BaseModel):
     free1: Optional[str] = Field(None, max_length=255, description='自定义1', example="自定义内容。。。")
     free2: Optional[str] = Field(None, max_length=255, description='自定义2', example="自定义内容。。。")
     free3: Optional[str] = Field(None, max_length=255, description='自定义3', example="自定义内容。。。")
+    apiex_code: Optional[str] = Field(None, max_length=32, description='外部系统单据编号', example="MO123456")
+    apiex_id: Optional[str] = Field(None, max_length=32, description='外部系统单据ID', example="1")
+    apiex_entryid: Optional[str] = Field(None, max_length=32, description='外部系统单据条目ID', example="1")
     memo: Optional[str] = Field(None, max_length=255, description='备注', example="标准供应单")
     # plno: Optional[str] = Field(None, max_length=64, description='原PL（若传入此值则将对应的PL号改写成MO号，若索引不到原PL则新增MO）', example="PL123456")
     _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)     # 使用PrivateAttr定义一个不参与序列化和验证的私有属性来保存原始值
@@ -521,6 +524,8 @@ class AcceptSupply(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values):
+        if values.get("apiex_id") not in gc.NONE_AND_EMPTY and values.get("apiex_entryid") in gc.NONE_AND_EMPTY:
+            values["apiex_entryid"] = values["apiex_id"]
         _cache_raw_input_data(cls, values)
         if values.get('itemno') in gc.NONE_AND_EMPTY:
             values['itemno'] = pdv.ITEMNO
@@ -534,9 +539,13 @@ class AcceptSupply(BaseModel):
 
 
 class ModifySupply(BaseModel):
-    supplyno: str = Field(None, max_length=64, description='供应单号改成（仅pltomo时传入有效）', example="MO123456")
+    supplyno: str = Field(None, max_length=64, description='新MO号（仅pltomo时传入有效）', example="MO123456")
     status: gc.OrderStatusEnum = Field(None,
         example=gc.OrderStatusEnum.CRE, description=f'状态 {gc.OrderStatusEnum.__members__}')
+    apiex_code: Optional[str] = Field(None, max_length=32, description='外部系统单据编号', example="MO123456")
+    apiex_id: Optional[str] = Field(None, max_length=32, description='外部系统单据ID', example="1")
+    apiex_entryid: Optional[str] = Field(None, max_length=32, description='外部系统单据条目ID', example="1")
+    change_supplyno: bool = Field(True, description='是否更改供应单号（仅pltomo时传入有效）')
     memo: str = Field(None, max_length=255, description='备注', example="标准生产工单")
 
     class Config:
@@ -578,6 +587,9 @@ class AcceptDemand(BaseModel):
     partnerno: Optional[str] = Field(None, max_length=64, description='合作商编号', example="P001")
     partnername: Optional[str] = Field(None, max_length=255, description='合作商名称', example="客户A")
     ori_qty: Optional[float] = Field(None, ge=0, description='原始需求数量', example=100.0)
+    apiex_code: Optional[str] = Field(None, max_length=32, description='外部系统单据编号', example="SO123456")
+    apiex_id: Optional[str] = Field(None, max_length=32, description='外部系统单据ID', example="1")
+    apiex_entryid: Optional[str] = Field(None, max_length=32, description='外部系统单据条目ID', example="1")
     memo: Optional[str] = Field(None, max_length=255, description='备注', example="标准销售订单")
     free1: Optional[str] = Field(None, max_length=255, description='自定义字段1', example="自定义字段1")
     free2: Optional[str] = Field(None, max_length=255, description='自定义字段2', example="自定义字段2")
@@ -608,6 +620,8 @@ class AcceptDemand(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values):
+        if values.get("apiex_id") not in gc.NONE_AND_EMPTY and values.get("apiex_entryid") in gc.NONE_AND_EMPTY:
+            values["apiex_entryid"] = values["apiex_id"]
         _cache_raw_input_data(cls, values)
         try:
             req_qty = float(values.get("req_qty"))
