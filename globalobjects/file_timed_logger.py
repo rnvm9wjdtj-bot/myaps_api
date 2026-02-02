@@ -84,6 +84,7 @@ def setup_logging(log_name: str, log_filename='app.log'):
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
     # 创建按时间轮替的 FileHandler（支持日期前缀）
+    # TODO 日期轮替功能失效，待修复
     timed_handler = DatePrefixRotatingFileHandler(
         filename=os.path.join(log_dir, log_filename),
         when='midnight',

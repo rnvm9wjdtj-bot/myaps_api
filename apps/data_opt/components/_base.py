@@ -28,7 +28,7 @@ filelog_error = file_timed_logger.setup_logging(__name__, log_filename='error.lo
 
 class BaseConnection(ABC):
     
-    def __init__(self, config, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         self._session = get_session()
 
 

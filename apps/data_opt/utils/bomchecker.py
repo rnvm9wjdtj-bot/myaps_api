@@ -929,7 +929,7 @@ if __name__ == '__main__':
 def run_example_from_erp():
     """运行BOMChecker的完整示例"""
     from apps.data_opt.components.yonyou_tplus import TplusConnection, TplusConfig
-    from apps.data_opt.components.hap import HapConnection, get_maindata_worksheetinfo, WorksheetInfo
+    from apps.data_opt.components.hap import HapConnection, get_maindata_worksheetinfo, WorksheetProperty
 
 
     hap_conn = HapConnection(
@@ -941,9 +941,9 @@ def run_example_from_erp():
 
     hap_conn.regist_worksheet(
             [
-                WorksheetInfo(worksheet_id='bom_check_summary'),
-                WorksheetInfo(worksheet_id='transit_bom_structure'),
-                WorksheetInfo(worksheet_id='material_units_map'),
+                WorksheetProperty(worksheet_id='bom_check_summary'),
+                WorksheetProperty(worksheet_id='transit_bom_structure'),
+                WorksheetProperty(worksheet_id='material_units_map'),
             ]
         )
 

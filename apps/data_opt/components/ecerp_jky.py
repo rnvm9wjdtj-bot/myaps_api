@@ -16,7 +16,7 @@ from ._base import (
     AcceptMold, AcceptMatWcMold
 )
 
-
+from .hap import HapConnection
 
 
 class JkyConfig():
@@ -25,7 +25,7 @@ class JkyConfig():
 
     API_VERSION = "V1.0"
 
-    CREDENTIAL_FILE = CACHE_JSON
+    CACHE_FILE = CACHE_JSON
     """
     ⬆️credential JSON，用于存储吉客云认证信息。文件包含如下结构用于吉客云的认证：
     {
@@ -41,6 +41,11 @@ class JkyConfig():
         "全量公司信息": {
             "method": "erp.company.query",
             "biz_content": "{{'pageIndex': '{page_index}','pageSize': '{page_size}'}}",
+            "field_map": {
+                "groupId": ["groupId", "group"],
+                "currencyCode": ["currencyCode", "currency"],
+            },
+
             "hap_worksheet": "company",
             "conflict_fields": ("companyCode", ),
             "data_node": None
@@ -157,12 +162,15 @@ class JkyConnection(BaseConnection):
     def __init__(self, config: JkyConfig=JkyConfig):
         self.config = config
         self.base_url = config.BASE_URL
-        self.credential = config.CREDENTIAL_FILE.get("erp", {})
+        self.cache_file = config.CACHE_FILE.get("erp", {})
         self.credential_keys = ("app_key", "app_secret")
         for key in self.credential_keys:
-            setattr(self, key, self.credential.get(key, ""))
+            setattr(self, key, self.cache_file.get(key, ""))
         super().__init__()
 
+
+    def auth(self):
+        pass
 
     def sign_payload(self, payload: Dict[str, Any]) -> str:
         s = ''
@@ -197,7 +205,7 @@ class JkyConnection(BaseConnection):
         base_url = f"{base_url}?{encoded_params}"
         headers = {'Content-Type': 'application/json', 'Accept':'application/json'}
 
-        response = requests.post(
+        response = self._session.post(
             url=base_url,
             json=payload,
             headers=headers
@@ -207,46 +215,53 @@ class JkyConnection(BaseConnection):
         return response_json
 
 
-    async def pull_from_source(self, source_name: str):
+    def pull_from_source(self, source_name: str):
         source = self.config.PULL_SOURCE[source_name]
         method = source["method"]
+        field_map = source.get("field_map", {})
         biz_content = source["biz_content"]
-        version = source["version"]
+        version = source.get("version", "v1.0")
         data_node = source["data_node"]
-        conflict_fields = source["conflict_fields"]
-        hap_worksheet = source["hap_worksheet"]
+        # conflict_fields = source["conflict_fields"]
+        # hap_worksheetid = source["hap_worksheet"]
 
         page_size = 200
         page_index = 0
 
-
-
         while True:
-            biz_content = biz_content.format(
-                start=self.start,
-                end=self.end,
-                page_size=page_size,
-                page_index=page_index
-            )
             response_json = self.call_api(
                 base_url=self.base_url,
-                biz_content=biz_content,
+                biz_content=biz_content.format(
+                    # start=self.start,
+                    # end=self.end,
+                    page_size=page_size,
+                    page_index=page_index
+                ),
                 method=method,
                 version=version
             )
             if data_node:
-                data = response_json[data_node]
+                result_data = response_json['result'][data_node]
             else:
-                data = response_json
-            if not data:
+                result_data = response_json['result']['data']
+            if not result_data:
                 break
-            self.write_to_hap(
-                data=data,
-                worksheet=hap_worksheet,
-                conflict_fields=conflict_fields
-            )
+            data_list = []
+            for row in result_data:
+                data = {}
+                for k, v in row.items():
+                    if k in field_map:
+                        if isinstance(field_map[k], str):
+                            data[field_map[k]] = v
+                        else:
+                            for f in field_map[k]:
+                                data[f] = v
+                    else:
+                        data[k] = v
+                data_list.append(data)
             page_index += 1
+            yield data_list
 
 
-    async def push_into_target(self, *args, **kwargs):
+    def push_into_target(self, *args, **kwargs):
         return super().push_to_target(*args, **kwargs)

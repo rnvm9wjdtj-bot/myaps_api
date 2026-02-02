@@ -1,7 +1,7 @@
 """明道云 API v3 封装为 ORM """
 
 import os, re, json
-from typing import List, Dict, Any, Optional, Union, Literal, Generator, NamedTuple
+from typing import List, Dict, Any, Optional, Union, Literal, Generator, NamedTuple, Callable
 from datetime import datetime
 from tortoise.models import Model as DbModel
 from pydantic import BaseModel as PydanticModel
@@ -27,12 +27,19 @@ class DecimalEncoder(json.JSONEncoder):
 
 
 
-class WorksheetInfo(NamedTuple):
+class WorksheetProperty(NamedTuple):
     worksheet_id: str
     display_name: Optional[str] = None
     db_model: Optional[DbModel] = None
     conflict_fields: Optional[List[str]] = None
     related_sheets: Optional[Dict[str, str]] = None  # 关联表字段名 -> 关联表ID
+    passive_fields: Optional[List[str]] = None  # 被动更新字段，当新增记录或某些字段变化时，自动计算这些字段的值
+    cache: Optional[Dict[str, list[str]]] = None  # 将该表所有数据存入缓存，需要保留哪些字段，键为缓存后用于索引的字段，值为字段名
+
+
+class PassiveFieldProperty(NamedTuple):
+    field_name: str
+    calc_expr: str  # 计算表达式，使用Python的eval()函数执行，支持使用其他被动字段
 
 
 # 工具类，包含通用方法
@@ -379,12 +386,12 @@ def get_maindata_worksheetinfo() -> dict:
         't_mat_wc_mold': None
     }
 
-    maindata_worksheetinfo: List[WorksheetInfo] = []
+    maindata_worksheetinfo: List[WorksheetProperty] = []
 
     for mdl_name, relation_dict in worksheet_relations.items():
         
         mdl, table_name = process_model_or_tablename(mdl_name)
-        maindata_worksheetinfo.append(WorksheetInfo(
+        maindata_worksheetinfo.append(WorksheetProperty(
             worksheet_id=mdl_name,
             db_model=mdl,
             conflict_fields=DbManager._get_conflict_fields(mdl),
@@ -396,9 +403,9 @@ def get_maindata_worksheetinfo() -> dict:
 
 
 class HapConnection:
-    allowed_worksheets: Dict[str, WorksheetInfo] = {}
-
     def __init__(self, app_key: str, sign: str, base_url: str=HAP_BASEURL_EXAMPLE[0], max_workers: int=os.cpu_count() * 3):
+        self.worksheets_info: Dict[str, WorksheetProperty] = {}
+        self.worksheets_obj: Dict[str, 'HapWorksheet'] = {}
         self.base_url = base_url
         self.api_key = app_key
         self.sign = sign
@@ -460,19 +467,19 @@ class HapConnection:
         Returns:
             HapWorksheet: 工作表对象
         """
-        assert worksheet_id in self.allowed_worksheets, f"Worksheet {worksheet_id} is not registered."
+        assert worksheet_id in self.worksheets_info, f"Worksheet {worksheet_id} is not registered."
         return HapWorksheet(worksheet_id=worksheet_id, hap_conn=self)
 
 
-    @classmethod
-    def regist_worksheet(cls, worksheet_info: WorksheetInfo | List[WorksheetInfo]):
+    def regist_worksheet(self, worksheet_info: WorksheetProperty | List[WorksheetProperty]):
         """注册工作表
         """
-        if isinstance(worksheet_info, WorksheetInfo):
+        if isinstance(worksheet_info, WorksheetProperty):
             worksheet_info = [worksheet_info]
         
         for ws_info in worksheet_info:
-            cls.allowed_worksheets[ws_info.worksheet_id] = ws_info
+            self.worksheets_info[ws_info.worksheet_id] = ws_info
+            self.worksheets_obj[ws_info.worksheet_id] = HapWorksheet(worksheet_id=ws_info.worksheet_id, hap_conn=self)
 
 
 
@@ -480,11 +487,23 @@ class HapWorksheet:
     """工作表类，代表一个明道云工作表"""
     def __init__(self, worksheet_id: str, hap_conn: HapConnection):
         self.worksheet_id = worksheet_id
+        self.hap_conn = hap_conn
         try:
-            self.conflict_fields = hap_conn.allowed_worksheets[worksheet_id].conflict_fields
+            self.conflict_fields = hap_conn.worksheets_info[worksheet_id].conflict_fields
         except KeyError:
             self.conflict_fields = None
-        self.hap_conn = hap_conn
+
+        relatedsheets_dict = hap_conn.worksheets_info[worksheet_id].related_sheets
+        
+        try:
+            self.related_sheets = {
+                rel_sheet_as_field: hap_conn.worksheets_obj[rel_sheet_id]
+                for rel_sheet_as_field, rel_sheet_id in relatedsheets_dict.items()
+            }
+
+        except:
+            self.related_sheets = None
+
         
 
     def rows(self, filter_expression: Optional[str] = None, sort_str: Optional[str] = None, relation_origin_row: Optional['HapWorksheetRow'] = None, relation_field_name: Optional[str] = None) -> 'HapRowsQuery':
@@ -877,7 +896,7 @@ class HapRowsQuery:
             for row_dict in response.get('data', {}).get('rows', []):
                 rows.append(HapWorksheetRow(
                     row_data=row_dict,
-                    row_id=row_dict.get('rowId'),
+                    row_id=row_dict.get('rowid') or row_dict.get('rowId'),
                     worksheet=self.worksheet,
                     hap_conn=self.hap_conn,
                     relation_origin_row=self.relation_origin_row,
@@ -955,7 +974,7 @@ class HapRowsQuery:
                 for row_dict in response.get('data', {}).get('rows', []):
                     all_rows.append(HapWorksheetRow(
                         row_data=row_dict,
-                        row_id=row_dict.get('rowId'),
+                        row_id=row_dict.get('rowid') or row_dict.get('rowId'),
                         worksheet=self.worksheet,
                         hap_conn=self.hap_conn,
                         relation_origin_row=self.relation_origin_row,
@@ -1022,7 +1041,7 @@ class HapRowsQuery:
                 for row_dict in response.get('data', {}).get('rows', []):
                     row = HapWorksheetRow(
                         row_data=row_dict,
-                        row_id=row_dict.get('rowId'),
+                        row_id=row_dict.get('rowid') or row_dict.get('rowId'),
                         worksheet=self.worksheet,
                         hap_conn=self.hap_conn,
                         relation_origin_row=self.relation_origin_row,
@@ -1329,7 +1348,37 @@ class HapWorksheetRow:
 
         update_fields = {}
         
+        # 处理关联表字段
+        processed_data = data.copy()
+        
         for k, v in data.items():
+        #     # 检查字段是否是关联表字段
+        #     if self.worksheet.related_sheets and k in self.worksheet.related_sheets:
+        #         related_worksheet = self.worksheet.related_sheets[k]
+                
+        #         # 检查关联表是否有冲突字段
+        #         if related_worksheet.conflict_fields:
+        #             # 构建查询条件
+        #             # filter_expr = " && ".join([f"{field}__eq='{v.get(field)}'" for field in related_worksheet.conflict_fields if field in v])
+        #             filter_expr = " && ".join([f"{field}__eq='{data.get(field)}'" for field in related_worksheet.conflict_fields])
+                    
+        #             if filter_expr:
+        #                 # 查询关联表记录
+        #                 related_row_set = related_worksheet.rows(filter_expression=filter_expr).all()
+                        
+        #                 if related_row_set.count() > 0:
+        #                     # 如果找到关联记录，使用第一个记录的rowid
+        #                     processed_data[k] = related_row_set.first().row_id
+        #                 else:
+        #                     # 如果没有找到关联记录，在关联表中创建新记录
+        #                     new_row = related_worksheet.create_rows([{field: data.get(field) for field in related_worksheet.conflict_fields}])[0]
+        #                     processed_data[k] = new_row.row_id
+        #             else:
+        #                 # 如果没有冲突字段或冲突字段不在v中，直接使用原值
+        #                 processed_data[k] = v
+            
+        # # 构建更新字段
+        # for k, v in processed_data.items():
             if v is None and exclude_none:
                 continue
             if k not in self.row_data:
@@ -1431,8 +1480,10 @@ class HapWorksheetRow:
             passed_seconds = datetime.now().timestamp() - exist_query.last_query_timestamp
             if passed_seconds <= REFRESH_INTERVAL_SECONDS:
                 return exist_query
-        related_worksheet_id = self.hap_conn.allowed_worksheets[self.worksheet.worksheet_id].related_sheets[relation_fieldname]
-        related_worksheet = self.hap_conn.worksheet(related_worksheet_id)
+        
+        # 获取关联表的worksheet_id
+        related_worksheet = self.worksheet.related_sheets[relation_fieldname]
+        related_worksheet_id = related_worksheet.worksheet_id
         related_rowids = self.row_data[relation_fieldname]
 
         relation_rows_filter_exp = f"rowId__in={json.dumps(related_rowids)}"
@@ -1443,8 +1494,9 @@ class HapWorksheetRow:
         related_row_query = related_worksheet.rows(filter_expression=filter_expression, relation_origin_row=self, relation_field_name=relation_fieldname)
         # related_row_query.relation_origin_row = self
         # related_row_query.relation_field_name = relation_fieldname
-
+        related_row_query.last_query_timestamp = datetime.now().timestamp()
         self.relation_query[relation_fieldname] = related_row_query
+
         return related_row_query
 
 
