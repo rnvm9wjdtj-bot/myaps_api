@@ -185,7 +185,8 @@ class JkyConnection(BaseConnection):
         md5_hash.update(s.encode('utf-8'))
         sign = md5_hash.hexdigest()
         payload['sign'] = sign
-        return sign
+        encoded_payload = "&".join(f"{k}={quote(v)}" for k, v in payload.items())
+        return encoded_payload
 
 
     def call_api(self, base_url, biz_content, method, version) -> Dict[str, Any]:
@@ -200,16 +201,11 @@ class JkyConnection(BaseConnection):
             "timestamp": timestamp,
             "version": version,
         }
-        sign = self.sign_payload(payload)
-        encoded_params = "&".join(f"{k}={quote(v)}" for k, v in payload.items())
-        url = f"{base_url}?{encoded_params}"
+        encoded_payload = self.sign_payload(payload)
+        url = f"{base_url}?{encoded_payload}"
         headers = {'Content-Type': 'application/json', 'Accept':'application/json'}
 
-        response = self._session.post(
-            url=url,
-            json=payload,
-            headers=headers
-        )
+        response = self._session.post(url=url, json=payload, headers=headers)
 
         response_json = response.json()
         return response_json

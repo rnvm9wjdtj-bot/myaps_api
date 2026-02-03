@@ -190,17 +190,14 @@ class Field(ABC):
     """字段基类"""
     def __init__(self, 
                  field_name: Optional[str] = None, 
-                 max_length: Optional[int] = None, 
                  null: bool = False, 
                  default: Any = None, 
                  description: Optional[str] = None,
-                 pk: bool = False):
-        self.max_length = max_length
+                 ):
         self.null = null
         self.default = default
         self.description = description
         self.field_name = field_name
-        self.pk = pk
         self.model: Optional[Type['Model']] = None
     
     def __set_name__(self, owner, name):
@@ -215,12 +212,12 @@ class TextField(Field):
     """文本字段"""
     def __init__(self, 
                  field_name: Optional[str] = None, 
-                 max_length: Optional[int] = None, 
                  null: bool = False, 
                  default: Optional[str] = None, 
                  description: Optional[str] = None,
                  pk: bool = False):
-        super().__init__(field_name, max_length, null, default, description, pk)
+        self.pk = pk
+        super().__init__(field_name=field_name, null=null, default=default, description=description)
 
 
 # 数值字段
@@ -232,7 +229,8 @@ class NumField(Field):
                  default: Optional[Union[int, float]] = None, 
                  description: Optional[str] = None,
                  pk: bool = False):
-        super().__init__(field_name, None, null, default, description, pk)
+        self.pk = pk
+        super().__init__(field_name=field_name, null=null, default=default, description=description)
 
 
 # 关联字段
@@ -241,17 +239,42 @@ class RelationField(Field):
     def __init__(self, 
                  model: Union[Type['Model'], str], 
                  field_name: Optional[str] = None, 
+                 follow_with: Optional[str] = None,
                  null: bool = False, 
                  description: Optional[str] = None,
-                 pk: bool = False,
-                 follow_with: Optional[str] = None):
+                 ):
         # 关联字段不能被设为主键
-        if pk:
-            raise ValueError("RelationField cannot be set as primary key")
+        # if pk:
+        #     raise ValueError("RelationField cannot be set as primary key")
         self.follow_with = follow_with  # 跟随的字段名，用于自动更新关联关系
-        super().__init__(field_name, None, null, None, description, False)
+        super().__init__(field_name=field_name, null=null, default=None, description=description)
         self.related_model = model
         self.model_name = model if isinstance(model, str) else model.__name__
+
+
+# class DecodeField(Field):
+#     """枚举字段"""
+#     def __init__(self, 
+#                  decode_rule: Dict[str, str], 
+#                  field_name: Optional[str] = None, 
+#                  decode_from: Optional[str] = None,
+#                  null: bool = False, 
+#                  default: Optional[str] = None, 
+#                  description: Optional[str] = None,
+#                  ):
+#         self.decode_rule = decode_rule
+#         self.encode_rule = {v: k for k, v in decode_rule.items()}
+#         self.decode_from = decode_from
+#         super().__init__(field_name=field_name, null=null, default=default, description=description)
+        
+
+#     def encode(self, value: str) -> str:
+#         """将枚举值编码为HAP存储值"""
+#         return self.encode_rule.get(value, value)
+    
+#     def decode(self, value: str) -> str:
+#         """将HAP存储值解码为枚举值"""
+#         return self.decode_rule.get(value, value)
 
 
 # Model基类
@@ -267,31 +290,112 @@ class Model(ABC):
         cache: Optional[List[str]] = None
     
     def __init__(self, **kwargs):
-        # 获取模型的所有字段
-        fields = self._get_fields()
-        
         # 首先处理特殊属性
         if 'hap_conn' in kwargs:
             self.hap_conn = kwargs.pop('hap_conn')
         
-        # 首先处理直接匹配的字段
-        for key, value in kwargs.items():
-            setattr(self, key, value)
+        # 获取反向字段映射（field_name 到属性名）
+        reverse_field_map = self._get_reverse_field_map()
         
-        # 然后处理通过 field_name 映射的字段
-        for attr_name, field in fields.items():
-            if field.field_name in kwargs and not hasattr(self, attr_name):
-                setattr(self, attr_name, kwargs[field.field_name])
+        # 处理所有关键字参数
+        for key, value in kwargs.items():
+            # 通过 field_name 映射设置属性（优先）
+            if key in reverse_field_map:
+                attr_name = reverse_field_map[key]
+                setattr(self, attr_name, value)
+            # 直接设置属性（作为后备）
+            elif hasattr(self, key):
+                setattr(self, key, value)
     
     @classmethod
     def _get_fields(cls) -> Dict[str, Field]:
         """获取模型的所有字段"""
-        fields = {}
-        for attr_name in dir(cls):
-            attr = getattr(cls, attr_name)
-            if isinstance(attr, Field):
-                fields[attr_name] = attr
-        return fields
+        if not hasattr(cls, '_fields_cache'):
+            fields = {}
+            for attr_name in dir(cls):
+                attr = getattr(cls, attr_name)
+                if isinstance(attr, Field):
+                    fields[attr_name] = attr
+            cls._fields_cache = fields
+        return cls._fields_cache
+    
+    @classmethod
+    def _get_field_map(cls) -> Dict[str, str]:
+        """获取属性名到field_name的映射"""
+        if not hasattr(cls, '_field_map_cache'):
+            field_map = {}
+            fields = cls._get_fields()
+            for attr_name, field in fields.items():
+                field_map[attr_name] = field.field_name
+            cls._field_map_cache = field_map
+        return cls._field_map_cache
+    
+    @classmethod
+    def _get_reverse_field_map(cls) -> Dict[str, str]:
+        """获取field_name到属性名的映射"""
+        if not hasattr(cls, '_reverse_field_map_cache'):
+            reverse_field_map = {}
+            fields = cls._get_fields()
+            for attr_name, field in fields.items():
+                reverse_field_map[field.field_name] = attr_name
+            cls._reverse_field_map_cache = reverse_field_map
+        return cls._reverse_field_map_cache
+    
+    @classmethod
+    def clear_field_caches(cls) -> None:
+        """清理字段相关的缓存"""
+        # 清理字段缓存
+        if hasattr(cls, '_fields_cache'):
+            delattr(cls, '_fields_cache')
+        # 清理字段映射缓存
+        if hasattr(cls, '_field_map_cache'):
+            delattr(cls, '_field_map_cache')
+        # 清理反向字段映射缓存
+        if hasattr(cls, '_reverse_field_map_cache'):
+            delattr(cls, '_reverse_field_map_cache')
+    
+    def __setattr__(self, name, value):
+        """设置属性值时清理缓存"""
+        # 如果设置的是字段属性，清理缓存
+        if name not in ['hap_conn', 'row_id']:
+            # 检查是否是字段属性
+            try:
+                fields = self._get_fields()
+                if name in fields:
+                    # 清理缓存
+                    self.__class__.clear_field_caches()
+            except Exception:
+                pass
+        super().__setattr__(name, value)
+    
+    def get_field_by_name(self, name: str) -> Optional[Field]:
+        """通过属性名获取字段对象"""
+        fields = self._get_fields()
+        return fields.get(name)
+    
+    def get_field_by_field_name(self, field_name: str) -> Optional[Field]:
+        """通过field_name获取字段对象"""
+        reverse_map = self._get_reverse_field_map()
+        attr_name = reverse_map.get(field_name)
+        if attr_name:
+            fields = self._get_fields()
+            return fields.get(attr_name)
+        return None
+    
+    def get_attribute_by_field_name(self, field_name: str) -> Optional[Any]:
+        """通过field_name获取属性值"""
+        reverse_map = self._get_reverse_field_map()
+        attr_name = reverse_map.get(field_name)
+        if attr_name and hasattr(self, attr_name):
+            return getattr(self, attr_name)
+        return None
+    
+    def set_attribute_by_field_name(self, field_name: str, value: Any) -> None:
+        """通过field_name设置属性值"""
+        reverse_map = self._get_reverse_field_map()
+        attr_name = reverse_map.get(field_name)
+        if attr_name:
+            setattr(self, attr_name, value)
     
     @classmethod
     def _get_field_names(cls) -> List[str]:
@@ -312,7 +416,7 @@ class Model(ABC):
     def get_pk_field(cls) -> Optional[str]:
         """获取主键字段名"""
         fields = cls._get_fields()
-        pk_fields = [field_name for field_name, field in fields.items() if field.pk]
+        pk_fields = [field_name for field_name, field in fields.items() if hasattr(field, 'pk') and field.pk]
         # 确保每个模型只有一个主键
         if len(pk_fields) > 1:
             raise ValueError("Model can only have one primary key")
@@ -323,6 +427,7 @@ class Model(ABC):
         
         Args:
             **kwargs: 要更新的字段和值
+            when_value_equal_then: 当字段值相等时的处理方式，默认'jumpover' 跳过，'update' 则无论字段是否与data一样都更新
             
         Returns:
             Model: 更新后的模型实例
@@ -331,20 +436,56 @@ class Model(ABC):
         if not hasattr(self, 'row_id'):
             raise ValueError("Model instance must have a row_id to update")
         
-        # 构建更新请求
-        endpoint = f"/v3/app/worksheets/{self.__class__.get_worksheet_id()}/rows/batch"
+        # 获取 when_value_equal_then 参数
+        when_value_equal_then = kwargs.pop('when_value_equal_then', 'jumpover')
         
         # 构建字段映射，将属性名映射到正确的字段名（优先使用 field_name）
         field_map = {}
-        fields = self.__class__._get_fields()
+        fields = self._get_fields()
         for attr_name, field in fields.items():
             if field.field_name:
                 field_map[attr_name] = field.field_name
             else:
                 field_map[attr_name] = attr_name
         
-        # 转换数据为字段列表，使用字段映射
-        fields_list = HapUtils.convert_data_to_fieldslist(kwargs, field_map=field_map, model=self)
+        # 获取模型实例的原始数据
+        original_data = self.to_dict()
+        
+        # 处理关联字段
+        # 创建临时的 HapRowSet 实例来使用其 _process_relation_fields 方法
+        from .hapv2 import HapRowSet
+        temp_row_set = HapRowSet(models=[self], model=self.__class__, hap_conn=self.hap_conn)
+        processed_data = temp_row_set._process_relation_fields(kwargs, original_data)
+        
+        # 比较字段值差异，只包含变化的字段
+        changed_data = {}
+        if when_value_equal_then == 'update':
+            # 无论字段值是否变化，都更新
+            changed_data = processed_data
+        else:
+            # 只包含变化的字段
+            from apps.data_opt.utils.data_processor import DataProcessor
+            for key, value in processed_data.items():
+                # 确定在 original_data 中使用的键名
+                original_key = key
+                if key in field_map:
+                    original_key = field_map[key]
+                elif key in original_data:
+                    original_key = key
+                
+                # 检查字段值是否变化
+                if original_key not in original_data or not DataProcessor.is_equal(original_data[original_key], value):
+                    changed_data[key] = value
+        
+        # 如果没有变化的字段，直接返回
+        if not changed_data:
+            return self
+        
+        # 构建更新请求
+        endpoint = f"/v3/app/worksheets/{self.__class__.get_worksheet_id()}/rows/batch"
+        
+        # 转换数据为字段列表，使用字段映射，保留未注册的字段
+        fields_list = HapUtils.convert_data_to_fieldslist(changed_data, field_map=field_map, model=self, remain_irrelevant_fields=True)
         
         # 构建请求体
         payload = {
@@ -420,6 +561,61 @@ class HapUtils:
     """
     
     @staticmethod
+    def normalize_field_name(model, field_identifier: str) -> str:
+        """
+        将属性名或 field_name 标准化为 field_name
+        
+        Args:
+            model: 模型类
+            field_identifier: 属性名或 field_name
+            
+        Returns:
+            str: 标准化后的 field_name
+        """
+        if not model:
+            return field_identifier
+        
+        # 检查是否已经是 field_name
+        try:
+            reverse_map = model._get_reverse_field_map()
+            if field_identifier in reverse_map:
+                return field_identifier
+        except Exception:
+            pass
+        
+        # 检查是否是属性名
+        try:
+            field_map = model._get_field_map()
+            if field_identifier in field_map:
+                return field_map[field_identifier]
+        except Exception:
+            pass
+        
+        # 如果都不是，返回原标识符
+        return field_identifier
+    
+    @staticmethod
+    def normalize_data_fields(model, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        标准化数据字典的字段名，将属性名转换为 field_name
+        
+        Args:
+            model: 模型类
+            data: 数据字典
+            
+        Returns:
+            Dict[str, Any]: 标准化后的字段名
+        """
+        if not model or not data:
+            return data
+        
+        normalized_data = {}
+        for key, value in data.items():
+            normalized_key = HapUtils.normalize_field_name(model, key)
+            normalized_data[normalized_key] = value
+        return normalized_data
+    
+    @staticmethod
     def convert_data_to_fieldslist(data: Dict[str, Any], exclude_none: bool = True, ignore_fields=[], field_map={}, remain_irrelevant_fields=True, model=None) -> List[Dict[str, Any]]:
         """
         将单个数据字典转换为工作表API字段值list
@@ -445,11 +641,15 @@ class HapUtils:
         for k, v in data.items():
             if k in ignore_fields: 
                 continue
+            
+            # 标准化字段名，将属性名或field_name转换为field_name
+            normalized_key = HapUtils.normalize_field_name(model, k)
+            
             try:
-                control_id = field_map[k]
+                control_id = field_map.get(k, normalized_key)
             except:
                 if remain_irrelevant_fields:
-                    control_id = k
+                    control_id = normalized_key
                 else:
                     continue
 
@@ -458,10 +658,10 @@ class HapUtils:
                 # 检查是否需要 json.dumps
                 need_json_dumps = True
                 if model:
-                    # 获取模型的字段映射
-                    field_map_reverse = {v: k for k, v in field_map.items()}
-                    # 获取字段名
-                    field_name = field_map_reverse.get(control_id, k)
+                    # 获取反向字段映射（field_name 到属性名）
+                    reverse_field_map = model._get_reverse_field_map()
+                    # 获取字段名（属性名）
+                    field_name = reverse_field_map.get(control_id, k)
                     # 获取字段对象
                     field_obj = getattr(model, field_name, None)
                     # 检查字段类型
@@ -814,10 +1014,12 @@ class HapConnection:
                     cache_value = {}
                     # 首先添加 rowid
                     cache_value['row_id'] = row_id
-                    # 然后添加用户指定的字段
+                    # 然后添加用户指定的字段（使用field_name作为键）
                     for field_name in cache_fields:
                         if hasattr(model_instance, field_name):
-                            cache_value[field_name] = getattr(model_instance, field_name)
+                            # 标准化字段名，使用field_name作为键
+                            normalized_field = HapUtils.normalize_field_name(model, field_name)
+                            cache_value[normalized_field] = getattr(model_instance, field_name)
                     
                     # 存储数据（以 rowid 为键）
                     self.cache_data[worksheet_id][row_id] = cache_value
@@ -829,10 +1031,11 @@ class HapConnection:
                     if pk_field and hasattr(model_instance, pk_field):
                         pk_value = str(getattr(model_instance, pk_field))
                         self.cache_indexes[worksheet_id]['pk'][pk_value] = row_id
-                        # 同时添加按字段名的索引
-                        if not pk_field in self.cache_indexes[worksheet_id]:
-                            self.cache_indexes[worksheet_id][pk_field] = {}
-                        self.cache_indexes[worksheet_id][pk_field][pk_value] = row_id
+                        # 同时添加按field_name的索引
+                        normalized_pk_field = HapUtils.normalize_field_name(model, pk_field)
+                        if not normalized_pk_field in self.cache_indexes[worksheet_id]:
+                            self.cache_indexes[worksheet_id][normalized_pk_field] = {}
+                        self.cache_indexes[worksheet_id][normalized_pk_field][pk_value] = row_id
                     
                     # 如果有冲突字段，创建冲突字段索引
                     elif conflict_fields:
@@ -850,11 +1053,13 @@ class HapConnection:
                     for field_name in cache_fields:
                         if hasattr(model_instance, field_name):
                             field_value = str(getattr(model_instance, field_name))
+                            # 标准化字段名，使用field_name作为索引键
+                            normalized_field = HapUtils.normalize_field_name(model, field_name)
                             # 如果该字段还没有索引，创建一个
-                            if not field_name in self.cache_indexes[worksheet_id]:
-                                self.cache_indexes[worksheet_id][field_name] = {}
+                            if not normalized_field in self.cache_indexes[worksheet_id]:
+                                self.cache_indexes[worksheet_id][normalized_field] = {}
                             # 添加字段值到索引
-                            self.cache_indexes[worksheet_id][field_name][field_value] = row_id
+                            self.cache_indexes[worksheet_id][normalized_field][field_value] = row_id
             except Exception as e:
                 # 缓存失败时记录错误，但不影响模型注册
                 console_log(f"缓存模型 {model.__name__} 失败: {str(e)}")
@@ -963,10 +1168,12 @@ class HapConnection:
                 cache_value = {}
                 # 首先添加 rowid
                 cache_value['row_id'] = row_id
-                # 然后添加用户指定的字段
+                # 然后添加用户指定的字段（使用field_name作为键）
                 for field_name in cache_fields:
                     if hasattr(model_instance, field_name):
-                        cache_value[field_name] = getattr(model_instance, field_name)
+                        # 标准化字段名，使用field_name作为键
+                        normalized_field = HapUtils.normalize_field_name(model, field_name)
+                        cache_value[normalized_field] = getattr(model_instance, field_name)
                 
                 # 存储数据（以 rowid 为键）
                 self.cache_data[worksheet_id][row_id] = cache_value
@@ -978,10 +1185,11 @@ class HapConnection:
                 if pk_field and hasattr(model_instance, pk_field):
                     pk_value = str(getattr(model_instance, pk_field))
                     self.cache_indexes[worksheet_id]['pk'][pk_value] = row_id
-                    # 同时添加按字段名的索引
-                    if not pk_field in self.cache_indexes[worksheet_id]:
-                        self.cache_indexes[worksheet_id][pk_field] = {}
-                    self.cache_indexes[worksheet_id][pk_field][pk_value] = row_id
+                    # 同时添加按field_name的索引
+                    normalized_pk_field = HapUtils.normalize_field_name(model, pk_field)
+                    if not normalized_pk_field in self.cache_indexes[worksheet_id]:
+                        self.cache_indexes[worksheet_id][normalized_pk_field] = {}
+                    self.cache_indexes[worksheet_id][normalized_pk_field][pk_value] = row_id
                 
                 # 如果有冲突字段，创建冲突字段索引
                 elif conflict_fields:
@@ -999,11 +1207,13 @@ class HapConnection:
                 for field_name in cache_fields:
                     if hasattr(model_instance, field_name):
                         field_value = str(getattr(model_instance, field_name))
+                        # 标准化字段名，使用field_name作为索引键
+                        normalized_field = HapUtils.normalize_field_name(model, field_name)
                         # 如果该字段还没有索引，创建一个
-                        if not field_name in self.cache_indexes[worksheet_id]:
-                            self.cache_indexes[worksheet_id][field_name] = {}
+                        if not normalized_field in self.cache_indexes[worksheet_id]:
+                            self.cache_indexes[worksheet_id][normalized_field] = {}
                         # 添加字段值到索引
-                        self.cache_indexes[worksheet_id][field_name][field_value] = row_id
+                        self.cache_indexes[worksheet_id][normalized_field][field_value] = row_id
             
             return True
         except Exception as e:
@@ -1122,6 +1332,7 @@ class HapRowsQuery(Generic[ModelType]):
                 processed_data = HapUtils.exclude_sys_fields(processed_data)
                 
                 # 创建模型实例，传递 hap_conn 属性
+                # 模型的 __init__ 方法会自动处理 field_name 到属性名的映射
                 model_instance = self.model(**processed_data, hap_conn=self.hap_conn)
                 if 'rowid' in row_dict:
                     model_instance.row_id = row_dict['rowid']
@@ -1311,8 +1522,8 @@ class HapRowSet(Generic[ModelType]):
 
     def _process_relation_fields(self, data: Dict[str, Any], original_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        处理关联字段，根据特定字段自动更新关联关系
-        
+        处理关联字段字段自动更新关联关系
+    
         Args:
             data: 包含字段数据的字典
             original_data: 原始数据字典，用于比较字段值是否变化
@@ -1327,91 +1538,118 @@ class HapRowSet(Generic[ModelType]):
         
         # 遍历所有字段，查找关联字段
         for attr_name, field in fields.items():
-            if isinstance(field, RelationField):
-                # 确定代码字段名
-                code_field_name = None
-                
-                # 优先使用 follow_with 参数指定的字段名
-                if field.follow_with:
-                    code_field_name = field.follow_with
-                # 否则使用默认规则（例如：currency -> currencyCode）
+            if not isinstance(field, RelationField):
+                continue
+            followwith_field = field.follow_with
+            if not followwith_field:
+                continue
+            
+            # 确保使用 follow_with 字段，而不是关联字段本身
+            # 从 processed_data 中移除关联字段本身，避免干扰
+            if attr_name in processed_data:
+                del processed_data[attr_name]
+            
+            # 检查是否需要更新关联字段
+            # 情况一：创建记录时 code_field_name 有值
+            # 情况二：更新记录时 code_field_name 与原数据不一样
+            if not followwith_field in processed_data:
+                field_map = self.model._get_field_map()
+                if followwith_field in field_map:
+                    followwith_field = field_map[followwith_field]
+            
+            # 确保 follow_with 字段存在
+            if followwith_field not in processed_data:
+                continue
+            
+            need_update = False
+            code_value = processed_data[followwith_field]
+            if code_value:
+                # 情况一：创建记录时
+                if not original_data:
+                    need_update = True
+                # 情况二：更新记录时，值有变化
                 else:
-                    code_field_name = f"{field.field_name}Code"
-                
-                # 检查是否需要更新关联字段
-                # 情况一：创建记录时 code_field_name 有值
-                # 情况二：更新记录时 code_field_name 与原数据不一样
-                need_update = False
-                
-                if code_field_name in processed_data:
-                    code_value = processed_data[code_field_name]
-                    if code_value:
-                        # 情况一：创建记录时
-                        if not original_data:
-                            need_update = True
-                        # 情况二：更新记录时，值有变化
-                        elif code_field_name not in original_data or original_data[code_field_name] != code_value:
-                            need_update = True
-                
-                if need_update:
-                    code_value = processed_data[code_field_name]
+                    # 确定在 original_data 中使用的键名（字段名）
+                    original_key = followwith_field
+                    field_map = self.model._get_field_map()
+                    if followwith_field in field_map:
+                        # 如果 followwith_field 是属性名，转换为字段名
+                        original_key = field_map[followwith_field]
                     
-                    # 处理延时导入的模型
-                    if isinstance(field.related_model, str):
-                        # 从 hap_conn 中获取注册的模型类
-                        related_model = self.hap_conn.get_model(field.related_model)
+                    if original_key not in original_data or original_data[original_key] != code_value:
+                        need_update = True
+            
+            if not need_update:
+                continue
+
+            # 处理延时导入的模型
+            if isinstance(field.related_model, str):
+                # 从 hap_conn 中获取注册的模型类
+                related_model = self.hap_conn.get_model(field.related_model)
+            else:
+                related_model = field.related_model
+            
+            try:
+                # 优先从缓存中获取数据
+                related_instance = None
+                relation_data = []
+                
+                # 处理逗号分隔的值
+                code_values = [v.strip() for v in str(code_value).split(',')] if isinstance(code_value, str) else [code_value]
+                
+                # 检查缓存是否存在
+                if hasattr(self.hap_conn, 'cache_data') and hasattr(self.hap_conn, 'cache_indexes'):
+                    worksheet_id = related_model.get_worksheet_id()
+                    if worksheet_id in self.hap_conn.cache_indexes:
+                        # 确定缓存中使用的键名（字段名）
+                        cache_key = followwith_field
+                        field_map = self.model._get_field_map()
+                        if followwith_field in field_map:
+                            cache_key = field_map[followwith_field]
+                        
+                        # 检查是否有 code_field_name 的索引
+                        if cache_key in self.hap_conn.cache_indexes[worksheet_id]:
+                            # 从索引中查找每个 code_value 对应的 row_id
+                            for cv in code_values:
+                                if cv in self.hap_conn.cache_indexes[worksheet_id][cache_key]:
+                                    row_id = self.hap_conn.cache_indexes[worksheet_id][cache_key][cv]
+                                    # 从缓存数据中获取完整信息
+                                    if worksheet_id in self.hap_conn.cache_data and row_id in self.hap_conn.cache_data[worksheet_id]:
+                                        # 构建关联字段数据，只需要传入 rowid
+                                        relation_data.append(row_id)
+                
+                # 缓存中没有，从 API 查询
+                if not relation_data:
+                    # 确定查询时使用的字段名
+                    query_field = followwith_field
+                    field_map = self.model._get_field_map()
+                    if followwith_field in field_map:
+                        query_field = field_map[followwith_field]
+                    
+                    # 构建查询条件，使用 in 操作符
+                    if len(code_values) > 1:
+                        # 多个值使用 in 操作符
+                        # filter_expr = f"{code_field_name}__in=[\"{\",\".join(code_values)}\"]"
+                        filter_expr = Q(**{f"{query_field}__in": code_values})
+                        related_instances = self.hap_conn.rows(related_model).filter(filter_expr).all()
+                        for instance in related_instances.row_objects:
+                            if hasattr(instance, 'row_id'):
+                                relation_data.append(instance.row_id)
                     else:
-                        related_model = field.related_model
-                    
-                    try:
-                        # 优先从缓存中获取数据
-                        related_instance = None
-                        relation_data = []
-                        
-                        # 处理逗号分隔的值
-                        code_values = [v.strip() for v in str(code_value).split(',')] if isinstance(code_value, str) else [code_value]
-                        
-                        # 检查缓存是否存在
-                        if hasattr(self.hap_conn, 'cache_data') and hasattr(self.hap_conn, 'cache_indexes'):
-                            worksheet_id = related_model.get_worksheet_id()
-                            if worksheet_id in self.hap_conn.cache_indexes:
-                                # 检查是否有 code_field_name 的索引
-                                if code_field_name in self.hap_conn.cache_indexes[worksheet_id]:
-                                    # 从索引中查找每个 code_value 对应的 row_id
-                                    for cv in code_values:
-                                        if cv in self.hap_conn.cache_indexes[worksheet_id][code_field_name]:
-                                            row_id = self.hap_conn.cache_indexes[worksheet_id][code_field_name][cv]
-                                            # 从缓存数据中获取完整信息
-                                            if worksheet_id in self.hap_conn.cache_data and row_id in self.hap_conn.cache_data[worksheet_id]:
-                                                # 构建关联字段数据，只需要传入 rowid
-                                                relation_data.append(row_id)
-                        
-                        # 缓存中没有，从 API 查询
-                        if not relation_data:
-                            # 构建查询条件，使用 in 操作符
-                            if len(code_values) > 1:
-                                # 多个值使用 in 操作符
-                                # filter_expr = f"{code_field_name}__in=[\"{\",\".join(code_values)}\"]"
-                                filter_expr = Q(**{f"{code_field_name}__in": code_values})
-                                related_instances = self.hap_conn.rows(related_model).filter(filter_expr).all()
-                                for instance in related_instances.row_objects:
-                                    if hasattr(instance, 'row_id'):
-                                        relation_data.append(instance.row_id)
-                            else:
-                                # 单个值使用 eq 操作符
-                                # filter_expr = f"{code_field_name}__eq={code_values[0]}"
-                                filter_expr = Q(**{f"{code_field_name}__eq": code_values[0]})
-                                related_instance = self.hap_conn.rows(related_model).filter(filter_expr).first()
-                                if related_instance and hasattr(related_instance, 'row_id'):
-                                    relation_data = [related_instance.row_id]
-                        
-                        # 更新关联字段数据
-                        if relation_data:
-                            processed_data[attr_name] = relation_data
-                    except Exception as e:
-                        # 忽略查询错误，保持原始数据
-                        pass
-        
+                        # 单个值使用 eq 操作符
+                        # filter_expr = f"{code_field_name}__eq={code_values[0]}"
+                        filter_expr = Q(**{f"{query_field}__eq": code_values[0]})
+                        related_instance = self.hap_conn.rows(related_model).filter(filter_expr).first()
+                        if related_instance and hasattr(related_instance, 'row_id'):
+                            relation_data = [related_instance.row_id]
+                
+                # 更新关联字段数据
+                if relation_data:
+                    processed_data[attr_name] = relation_data
+            except Exception as e:
+                # 忽略查询错误，保持原始数据
+                pass
+    
         return processed_data
 
     def create(self, **kwargs) -> ModelType:
@@ -1699,7 +1937,12 @@ class HapRowSet(Generic[ModelType]):
         return created_models
     
     def update(self, **kwargs) -> List[ModelType]:
-        """批量更新模型实例"""
+        """批量更新模型实例
+        
+        Args:
+            **kwargs: 要更新的字段和值
+            when_value_equal_then: 当字段值相等时的处理方式，默认'jumpover' 跳过，'update' 则无论字段是否与data一样都更新
+        """
         # 构建字段映射，将属性名映射到正确的字段名（优先使用 field_name）
         field_map = {}
         fields = self.model._get_fields()
@@ -1708,6 +1951,9 @@ class HapRowSet(Generic[ModelType]):
                 field_map[attr_name] = field.field_name
             else:
                 field_map[attr_name] = attr_name
+        
+        # 获取 when_value_equal_then 参数
+        when_value_equal_then = kwargs.pop('when_value_equal_then', 'jumpover')
         
         # 分批处理，每批最多100条
         batch_size = 100
@@ -1723,24 +1969,55 @@ class HapRowSet(Generic[ModelType]):
             
             # 为每个模型实例处理关联字段，传递原始数据以便比较
             processed_batch_data = []
+            valid_row_ids = []
             for model in batch_models:
                 # 获取模型实例的原始数据
                 original_data = model.to_dict()
                 # 处理关联字段，传递原始数据以便比较
                 processed_data = self._process_relation_fields(kwargs, original_data)
-                processed_batch_data.append(processed_data)
+                
+                # 比较字段值差异，只包含变化的字段
+                changed_data = {}
+                if when_value_equal_then == 'update':
+                    # 无论字段值是否变化，都更新
+                    changed_data = processed_data
+                else:
+                    # 只包含变化的字段
+                    from apps.data_opt.utils.data_processor import DataProcessor
+                    for key, value in processed_data.items():
+                        # 确定在 original_data 中使用的键名
+                        original_key = key
+                        if key in field_map:
+                            original_key = field_map[key]
+                        elif key in original_data:
+                            original_key = key
+                        
+                        # 检查字段值是否变化
+                        if original_key not in original_data or not DataProcessor.is_equal(original_data[original_key], value):
+                            changed_data[key] = value
+                
+                # 如果没有变化的字段，跳过更新
+                if not changed_data:
+                    continue
+                    
+                processed_batch_data.append(changed_data)
+                valid_row_ids.append(model.row_id)
+            
+            # 如果没有需要更新的字段，跳过批次
+            if not processed_batch_data or not valid_row_ids:
+                continue
             
             # 构建更新请求
             endpoint = f"/v3/app/worksheets/{self.model.get_worksheet_id()}/rows/batch"
             
-            # 转换数据为字段列表，使用字段映射
+            # 转换数据为字段列表，使用字段映射，保留未注册的字段
             if processed_batch_data:
-                fields = HapUtils.convert_data_to_fieldslist(processed_batch_data[0], field_map=field_map, model=self.model)
+                fields = HapUtils.convert_data_to_fieldslist(processed_batch_data[0], field_map=field_map, model=self.model, remain_irrelevant_fields=True)
             else:
-                fields = HapUtils.convert_data_to_fieldslist(kwargs, field_map=field_map, model=self.model)
+                fields = HapUtils.convert_data_to_fieldslist(kwargs, field_map=field_map, model=self.model, remain_irrelevant_fields=True)
             
             payload = {
-                "rowIds": batch_row_ids,
+                "rowIds": valid_row_ids,
                 "fields": fields,
                 "triggerWorkflow": True
             }
@@ -1751,6 +2028,10 @@ class HapRowSet(Generic[ModelType]):
             # 处理响应
             if response.get('success'):
                 for j, model in enumerate(batch_models):
+                    # 检查模型是否在有效更新列表中
+                    if model.row_id not in valid_row_ids:
+                        continue
+                        
                     # 更新模型实例的属性
                     if j < len(processed_batch_data):
                         for key, value in processed_batch_data[j].items():
@@ -1821,12 +2102,14 @@ class HapRowSet(Generic[ModelType]):
         result_models = []
         create_list = []  # 存储需要创建的数据
         
-        # 检查是否有冲突字段
+        # 获取主键字段和冲突字段
+        pk_field = self.model.get_pk_field()
         conflict_fields = self.model.get_conflict_fields()
+        has_pk = bool(pk_field)
         has_conflict_fields = bool(conflict_fields)
         
-        # 如果没有冲突字段，直接批量创建
-        if not has_conflict_fields:
+        # 如果既没有主键字段也没有冲突字段，直接批量创建
+        if not has_pk and not has_conflict_fields:
             created_models = self.bulk_create(data_list)
             result_models.extend(created_models)
             return HapRowSet(models=result_models, model=self.model, hap_conn=self.hap_conn)
@@ -1842,27 +2125,61 @@ class HapRowSet(Generic[ModelType]):
                 processed_data = data.copy()
             processed_data_list.append(processed_data)
         
-        # 构建字段映射，将属性名映射到正确的字段名（优先使用 field_name）
-        field_map = {}
-        fields = self.model._get_fields()
-        for attr_name, field in fields.items():
-            if field.field_name:
-                field_map[attr_name] = field.field_name
-            else:
-                field_map[attr_name] = attr_name
-        
         # 定义查询和更新函数
         def process_item(data_dict):
-            # 构建查询条件
+            # 构建查询条件，优先使用主键
             filter_conditions = []
-            for field in conflict_fields:
-                if field in data_dict:
-                    value = data_dict[field]
-                    if isinstance(value, str):
-                        value = f"\"{value}\""
-                    filter_conditions.append(f'{field}__eq={value}')
+            
+            # 获取字段映射
+            field_map = self.model._get_field_map()
+            reverse_field_map = self.model._get_reverse_field_map()
+            
+            # 优先使用主键字段
+            if has_pk:
+                # 检查 data_dict 中是否包含主键字段的属性名或 field_name
+                pk_value = None
+                if pk_field in data_dict:
+                    # 直接使用属性名
+                    pk_value = data_dict[pk_field]
+                    if pk_value is not None:
+                        if isinstance(pk_value, str):
+                            pk_value = f"\"{pk_value}\""
+                        filter_conditions.append(f'{pk_field}__eq={pk_value}')
+                else:
+                    if pk_field in field_map:
+                        pk_field_name = field_map[pk_field]
+                        if pk_field_name in data_dict:
+                            # 使用 field_name
+                            pk_value = data_dict[pk_field_name]
+                        # 如果找到了主键值，使用主键构建查询条件
+                        if pk_value is not None:
+                            if isinstance(pk_value, str):
+                                pk_value = f"\"{pk_value}\""
+                            filter_conditions.append(f'{pk_field_name}__eq={pk_value}')
+            
+            # 如果没有使用主键或主键值不存在，使用冲突字段
+            if not filter_conditions and has_conflict_fields:
+                for field in conflict_fields:
+                    # 检查 data_dict 中是否包含冲突字段的属性名或 field_name
+                    field_value = None
+                    if field in data_dict:
+                        # 直接使用属性名
+                        field_value = data_dict[field]
+                    else:
+                        # 通过 field_map 获取冲突字段的 field_name
+                        if field in field_map:
+                            field_field_name = field_map[field]
+                            if field_field_name in data_dict:
+                                # 使用 field_name
+                                field_value = data_dict[field_field_name]
+                    
+                    # 如果找到了字段值，添加到查询条件
+                    if field_value is not None:
+                        if isinstance(field_value, str):
+                            field_value = f"\"{field_value}\""
+                        filter_conditions.append(f'{field}__eq={field_value}')
 
-            # 如果没有有效的冲突字段值，返回需要创建
+            # 如果没有有效的查询条件，返回需要创建
             if not filter_conditions:
                 return (None, data_dict)
             
@@ -1874,9 +2191,34 @@ class HapRowSet(Generic[ModelType]):
             if models_count == 1:
                 # 若有且仅有1条则执行更新
                 existing_model = existing_models.first()
+                
+                # 检查是否需要跳过更新
+                if when_value_equal_then == 'jumpover':
+                    original_data = existing_model.to_dict()
+                    has_changes = False
+                    
+                    # 检查是否有字段值变化
+                    from apps.data_opt.utils.data_processor import DataProcessor
+                    for key, value in data_dict.items():
+                        # 确定在 original_data 中使用的键名
+                        original_key = key
+                        if key in field_map:
+                            original_key = field_map[key]
+                        elif key in original_data:
+                            original_key = key
+                        
+                        # 检查字段值是否变化
+                        if original_key not in original_data or not DataProcessor.is_equal(original_data[original_key], value):
+                            has_changes = True
+                            break
+                    
+                    # 如果没有变化，跳过更新
+                    if not has_changes:
+                        return (existing_model, None)
+                
                 # 创建只包含该模型的 HapRowSet
                 single_model_set = HapRowSet(models=[existing_model], model=self.model, hap_conn=self.hap_conn)
-                updated_models = single_model_set.update(**data_dict)
+                updated_models = single_model_set.update(**data_dict, when_value_equal_then=when_value_equal_then)
                 if updated_models:
                     return (updated_models[0], None)
             elif models_count > 1:
