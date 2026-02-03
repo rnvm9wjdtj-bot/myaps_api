@@ -26,7 +26,12 @@ git remote add origin https://gitee.com/sit_and_look_at_the_wind_and_clouds/myap
 
 # 启用sparse-checkout
 git config core.sparseCheckout true
+git sparse-checkout init --no-cone
 ```
+
+**说明**：
+- `--no-cone`: 使用非cone模式，可以更精确地控制要检出的文件
+
 
 ### 2. 配置sparse-checkout（关键步骤）
 

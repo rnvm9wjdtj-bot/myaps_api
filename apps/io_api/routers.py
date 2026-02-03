@@ -162,7 +162,7 @@ async def post_material(
     x_api_key: str = common_params["x_api_key"]
     ):
     db_name = db_name.replace(" ", "")
-    return await db_bupsert(db_names=db_name, model_or_tablename="t_material", data_list=data, use_orm_or_sql="orm") # 强制使用ORM操作，确保create时触发orm事件
+    return await db_bupsert(db_names=db_name, model_or_tablename="t_material", data_list=data) 
 
 
 

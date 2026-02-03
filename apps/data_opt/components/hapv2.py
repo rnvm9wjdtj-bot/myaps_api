@@ -239,7 +239,7 @@ class NumField(Field):
 class RelationField(Field):
     """关联字段"""
     def __init__(self, 
-                 model: Type['Model'], 
+                 model: Union[Type['Model'], str], 
                  field_name: Optional[str] = None, 
                  null: bool = False, 
                  description: Optional[str] = None,
@@ -251,6 +251,7 @@ class RelationField(Field):
         self.follow_with = follow_with  # 跟随的字段名，用于自动更新关联关系
         super().__init__(field_name, None, null, None, description, False)
         self.related_model = model
+        self.model_name = model if isinstance(model, str) else model.__name__
 
 
 # Model基类
@@ -1354,7 +1355,13 @@ class HapRowSet(Generic[ModelType]):
                 
                 if need_update:
                     code_value = processed_data[code_field_name]
-                    related_model = field.related_model
+                    
+                    # 处理延时导入的模型
+                    if isinstance(field.related_model, str):
+                        # 从 hap_conn 中获取注册的模型类
+                        related_model = self.hap_conn.get_model(field.related_model)
+                    else:
+                        related_model = field.related_model
                     
                     try:
                         # 优先从缓存中获取数据
@@ -1897,39 +1904,3 @@ class HapRowSet(Generic[ModelType]):
         return HapRowSet(models=result_models, model=self.model, hap_conn=self.hap_conn)
 
 
-# 示例模型定义
-class Material(Model):
-    """物料模型"""
-    class Meta:
-        worksheet_id = "t_material"
-        conflict_fields = ["material_code"]
-    
-    material_code = TextField(max_length=50, description="物料编码")
-    material_name = TextField(max_length=100, description="物料名称")
-    material_spec = TextField(max_length=200, description="物料规格")
-    unit = TextField(max_length=20, description="单位")
-    price = NumField(description="单价")
-    stock = NumField(description="库存")
-
-
-class WorkCenter(Model):
-    """工作中心模型"""
-    class Meta:
-        worksheet_id = "t_workcenter"
-        conflict_fields = ["workcenter_code"]
-    
-    workcenter_code = TextField(max_length=50, description="工作中心编码")
-    workcenter_name = TextField(max_length=100, description="工作中心名称")
-    capacity = NumField(description="产能")
-
-
-class MaterialWorkCenter(Model):
-    """物料工作中心关联模型"""
-    class Meta:
-        worksheet_id = "t_mat_wc"
-        conflict_fields = ["material_code", "workcenter_code"]
-    
-    material_code = TextField(max_length=50, description="物料编码")
-    workcenter_code = TextField(max_length=50, description="工作中心编码")
-    material = RelationField(Material, description="关联物料")
-    workcenter = RelationField(WorkCenter, description="关联工作中心")

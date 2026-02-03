@@ -101,21 +101,7 @@ git sparse-checkout init --no-cone
 #### 3.2 设置Sparse-Checkout路径
 
 ```bash
-git sparse-checkout set \  
-    apps/ \  
-    config/ \  
-    globalobjects/ \  
-    migrations/ \  
-    static/ \  
-    /main.py \  
-    /pyproject.toml \  
-    /requirements.txt \  
-    /run.bat \  
-    /README.md \  
-    /project_files/__init__.py \  
-    /project_files/_base.py \  
-    /project_files/_template.py \  
-    project_files/JYHDXS/
+git sparse-checkout set  apps/   config/  globalobjects/  migrations/  static/  /main.py  /pyproject.toml  /requirements.txt  /run.bat  /README.md  /project_files/__init__.py  /project_files/_base.py  /project_files/_template.py  project_files/JYHDXS/
 ```
 
 **说明**：

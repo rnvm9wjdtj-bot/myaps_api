@@ -270,7 +270,9 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
     for item in processed_data_list:
         upsert_data_list.append(item.processed_data)
 
-    filelog_normal.info(f"ℹ️↓接收到{origin_total}条数据，去重后剩余{len(upsert_data_list)}条，拟写入{mdl._meta.db_table}@[{db_names}] —— db_bupsert\n{upsert_data_list}")
+    # 格式化数据用于日志记录，将枚举和Decimal等类型转换为字符串
+    formatted_data = format_data_for_logging(upsert_data_list)
+    filelog_normal.info(f"ℹ️↓接收到{origin_total}条数据，去重后剩余{len(upsert_data_list)}条，拟写入{mdl._meta.db_table}@[{db_names}] —— db_bupsert\n{formatted_data}")
     # 准备更新字段（排除主键字段）
     update_fields = [field for field in upsert_data_list[0].keys() if field not in model_key]
     

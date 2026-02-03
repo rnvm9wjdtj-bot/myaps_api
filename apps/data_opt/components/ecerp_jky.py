@@ -202,11 +202,11 @@ class JkyConnection(BaseConnection):
         }
         sign = self.sign_payload(payload)
         encoded_params = "&".join(f"{k}={quote(v)}" for k, v in payload.items())
-        base_url = f"{base_url}?{encoded_params}"
+        url = f"{base_url}?{encoded_params}"
         headers = {'Content-Type': 'application/json', 'Accept':'application/json'}
 
         response = self._session.post(
-            url=base_url,
+            url=url,
             json=payload,
             headers=headers
         )
@@ -229,14 +229,15 @@ class JkyConnection(BaseConnection):
         page_index = 0
 
         while True:
+            bc = biz_content.format(
+                # start=self.start,
+                # end=self.end,
+                page_size=page_size,
+                page_index=page_index
+            )
             response_json = self.call_api(
                 base_url=self.base_url,
-                biz_content=biz_content.format(
-                    # start=self.start,
-                    # end=self.end,
-                    page_size=page_size,
-                    page_index=page_index
-                ),
+                biz_content=bc,
                 method=method,
                 version=version
             )

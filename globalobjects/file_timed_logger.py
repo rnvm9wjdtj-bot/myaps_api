@@ -9,24 +9,41 @@ class DatePrefixRotatingFileHandler(TimedRotatingFileHandler):
         super().__init__(*args, **kwargs)
         # 确保编码参数被正确存储
         self.encoding = kwargs.get('encoding', 'utf-8')
+        # 计算初始轮替时间
+        self.rolloverAt = self.computeRollover(int(time.time()))
+        print(f"📅 初始化轮替时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.rolloverAt))}")
+    
+    def emit(self, record):
+        """重写 emit 方法，确保轮替检查能够正常执行"""
+        # 检查是否需要轮替
+        current_time = int(time.time())
+        if current_time >= self.rolloverAt:
+            print(f"🔄 触发轮替检查，当前时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(current_time))}, 轮替时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.rolloverAt))}")
+            self.doRollover()
+        super().emit(record)
     
     def doRollover(self):
         """重写轮转方法，实现日期前缀"""
+        print(f"📋 开始执行轮替操作")
         if self.stream:
             self.stream.close()
             self.stream = None
+            print(f"✓ 已关闭当前日志流")
             
         # 获取当前时间
         current_time = int(time.time())
+        print(f"✓ 当前时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(current_time))}")
         
         # 计算下一次轮转的时间
         self.rolloverAt = self.computeRollover(current_time)
+        print(f"✓ 下一次轮替时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.rolloverAt))}")
         
         # 处理文件名
         if self.backupCount > 0:
             # 获取原始文件名的信息
             base_dir, filename = os.path.split(self.baseFilename)
             name_without_ext, ext = os.path.splitext(filename)
+            print(f"✓ 原始文件名: {filename}")
             
             # 生成带日期前缀的文件名
             date_prefix = time.strftime("%Y%m%d", time.localtime(current_time))
@@ -34,18 +51,23 @@ class DatePrefixRotatingFileHandler(TimedRotatingFileHandler):
             # 新的文件名格式：[日期前缀]_[原始文件名][扩展名]
             new_filename = f"{date_prefix}_{name_without_ext}{ext}"
             new_filepath = os.path.join(base_dir, new_filename)
+            print(f"✓ 新文件名: {new_filename}")
             
             # 如果文件已存在，先删除
             if os.path.exists(new_filepath):
                 os.remove(new_filepath)
+                print(f"✓ 已删除已存在的文件: {new_filepath}")
             
             # 重命名当前文件
             if os.path.exists(self.baseFilename):
                 os.rename(self.baseFilename, new_filepath)
+                print(f"✓ 已重命名文件: {self.baseFilename} -> {new_filepath}")
         
         # 重新打开文件
         self.mode = 'a'
         self.stream = self._open()
+        print(f"✓ 已重新打开日志文件: {self.baseFilename}")
+        print(f"📋 轮替操作完成")
 
 # 存储多个logger实例和对应的listener
 logger_instances = {}
@@ -84,7 +106,7 @@ def setup_logging(log_name: str, log_filename='app.log'):
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
     # 创建按时间轮替的 FileHandler（支持日期前缀）
-    # TODO 日期轮替功能失效，待修复
+    print(f"📝 创建日志处理器: {log_filename}")
     timed_handler = DatePrefixRotatingFileHandler(
         filename=os.path.join(log_dir, log_filename),
         when='midnight',
@@ -110,6 +132,7 @@ def setup_logging(log_name: str, log_filename='app.log'):
     logger_instances[logger_key] = logger
 
     # 注意：这里不在这里启动 listener，而是在 lifespan 的启动阶段启动
+    print(f"✅ 日志配置完成: {logger_key}")
     return logger
 
 

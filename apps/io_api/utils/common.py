@@ -115,6 +115,31 @@ def convert_to_dict(data_item: PydanticSchema | Dict[str, Any], exclude_none: bo
     return data_item
 
 
+def format_data_for_logging(data):
+    """
+    格式化数据用于日志记录，将复杂类型转换为字符串表示
+    
+    Args:
+        data: 要格式化的数据
+        
+    Returns:
+        格式化后的数据
+    """
+    from decimal import Decimal
+    import enum
+    
+    if isinstance(data, dict):
+        return {k: format_data_for_logging(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [format_data_for_logging(item) for item in data]
+    elif isinstance(data, enum.Enum):
+        return data.value
+    elif isinstance(data, Decimal):
+        return str(data)
+    else:
+        return data
+
+
 # pydantic验证错误统一格式
 class CustomValidationError(HTTPException):
     def __init__(self, errors: List[Dict[str, Any]]):
