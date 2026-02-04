@@ -105,19 +105,40 @@ class ApsBaseAction(ABC):
         log_msg = f"✅推送计划任务执行成功，账套：{cls.main_db}，PL单号：{plno}，MO单号：{mono or plno}"
         console_log.info(log_msg)
         filelog_normal.info(log_msg)
+
+        query_result = await db_query(db_name=cls.main_db, model_or_tablename="t_supply", filter_string=f"`SupplyNo`='{plno}'")
+        if query_result['success'] == 0:
+            return standard_response(status_code=query_result['status_code'], success=0, message=query_result['message'])
+
+        query_data = query_result['data']
+        if not query_data or len(query_data) > 1:
+            return standard_response(success=0, message=f"PL {plno} not found or multiple records matched.")
+
+        if query_data[0]["type"] != "PL":
+            return standard_response(status_code=400, success=0, message=f"Supply {plno} is not a PL.")
+
+        memo = json.dumps({
+            "msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now,
+            "native_no": plno, "_code": mono, "_id": _id, "_entryid": _entryid}, ensure_ascii=False
+        )
+        # # 调用存储过程SupplyConvertMOByE2A，将PL转为MO
+        # params_list = [[plno, mono, to_status, _id, _entryid, memo, change_supplyno]]
+        # return await call_dbprocdure(db_names=cls.main_db, procedure_name="SupplyConvertMOByE2A", params_list=params_list)
+
         response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}/pltomo?db_name={cls.main_db}', json={
             'status': to_status,
             'apiex_code': mono,
             'apiex_id': _id,
             'apiex_entryid': _entryid,
             'supplyno': mono,
-            'memo': json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": plno, "_code": mono, "_id": _id, "_entryid": _entryid}, ensure_ascii=False),
+            'change_supplyno': change_supplyno,
+            'memo': memo,
         })
         return response
 
 
     @classmethod
-    async def _pl_release_failed(cls, plno: str, to_status: Literal[OrderStatusEnum.NEW, OrderStatusEnum.CRE]='CRE', msg: str=None, msg_from: str=None):
+    def _pl_release_failed(cls, plno: str, to_status: Literal[OrderStatusEnum.NEW, OrderStatusEnum.CRE]='CRE', msg: str=None, msg_from: str=None):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_msg = f"🚫 推送计划任务执行失败，账套：{cls.main_db}，PL单号：{plno}"
         console_log.error(log_msg)
@@ -144,32 +165,42 @@ class ApsBaseAction(ABC):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         response = await db_update_by_index(
-            db_name=cls.main_db,
+            db_names=cls.main_db,
             model_or_tablename='t_demand',
             index_dict={"demandno": rsno},
-            new_value={     # 注意不能更新 demandno ，因为会在推送工单成功后，调用 数据库存储过程 修改 RS demand 编号
+            new_values_dict={     # 注意不能更新 demandno ，因为会在推送工单成功后，调用 数据库存储过程 修改 RS demand 编号
                 "status": to_status,
                 "apiex_code": _code,
                 "apiex_id": _id,
                 "apiex_entryid": _entryid,
                 'memo': json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": rsno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
             },
-            not_found_action="skip",
+            not_found_behavior="skip",
         )
         return response
 
-    # @classmethod
-    # async def _rs_push_failed(cls, rsno: str, msg: str=None, msg_from: str=None):
-    #     """
-    #     当推送 RS 至 ERP 失败时，调用该方法更新 RS 状态
-    #     Args:
-    #         rsno: RS 号
-    #         msg: 外部系统返回信息
-    #         msg_from: 外部系统名称
-    #     """
-    #     pass
 
+    @classmethod
+    async def _rs_push_failed(cls, rsno: str, msg: str=None, msg_from: str=None):
+        """
+        当推送 RS 至 ERP 失败时，调用该方法更新 RS 状态
+        Args:
+            rsno: RS 号
+            msg: 外部系统返回信息
+            msg_from: 外部系统名称
+        """
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+        response = await db_update_by_index(
+            db_names=cls.main_db,
+            model_or_tablename='t_demand',
+            index_dict={"demandno": rsno},
+            new_values_dict={
+                'memo': json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": True, "datetime": now}, ensure_ascii=False)
+            },
+            not_found_behavior="skip",
+        )
+        return response
 
 
 

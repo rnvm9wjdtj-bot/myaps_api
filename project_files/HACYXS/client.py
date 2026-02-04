@@ -53,10 +53,10 @@ async def get_maindata_from_erp_to_hap():
     # workcenter = tplus_conn.pull_from_source(source_name='workcenter')
     # hap_conn.worksheet('t_workcenter').upsert(workcenter)
 
-    bom = await tplus_conn.pull_from_source(source_name='bom')      # 先拉BOM，顺便获取BOM CODES，以便后续获取工艺路线
+    bom = tplus_conn.pull_from_source(source_name='bom')      # 先拉BOM，顺便获取BOM CODES，以便后续获取工艺路线
     # hap_conn.worksheet('t_mat_wc_bom').upsert(bom)
 
-    route = await tplus_conn.pull_from_source(source_name='route')
+    route = tplus_conn.pull_from_source(source_name='route')
     hap_conn.worksheet('t_mat_wc').upsert(route)
 
     pass
@@ -71,7 +71,7 @@ async def refresh_stock():
     timestamp = current_time.strftime('%d%H%M')
     
     # 获取原始库存数据
-    stock = await tplus_conn.pull_from_source(source_name='stock')
+    stock = tplus_conn.pull_from_source(source_name='stock')
     
     # 使用pandas进行数据汇总
     if stock:
@@ -134,26 +134,23 @@ async def refresh_stock_task(*args, **kwargs):
 #################################################################################
 
 # 测试用完删
-async def push_rs_to_tplus(mono: str):
-    rs_data = ApsBaseAction._get_demand_datalist(demandno=mono)
-    response = await tplus_conn.push_into_target(target_name='rs', push_data=rs_data)
-    return response
-
+# async def push_rs_to_tplus(mono: str):
+#     rs_data = ApsBaseAction._get_demand_datalist(demandno=mono)
+#     response = await tplus_conn.push_into_target(target_name='rs', push_data=rs_data)
+#     return response
+_REMAIN_SUPPLYNO = True
 
 class ApsAction(ApsBaseAction):
 
     @classmethod
-    async def click_release_button(cls, supplyno: str):
+    def click_release_button(cls, supplyno: str):
         """
         当按下工单管理的下达按钮（PL的Status变为'A2E'）时该方法将被自动调用
         🅰 supplyno: PL计划单编号
         """
-        # supply_record = await TSupply.get_or_none(supplyno=supplyno)
-        # if not supply_record:
-        #     raise Exception(f"supplyno {supplyno} not found in t_supply")
         supplymo_detaildata = ApsBaseAction._get_supplymo_detaildata(supplyno=supplyno)
-        # 使用正确的target_name 'mo_single' 而不是 'mo'
-        mo_push_response = await tplus_conn.push_into_target(target_name='mo_single', push_data=supplymo_detaildata)
+
+        mo_push_response = tplus_conn.push_into_target(target_name='mo_single', push_data=supplymo_detaildata, mo_remain_supplyno=_REMAIN_SUPPLYNO)
         mo_push_response_json = mo_push_response.json()
 
         if mo_push_response_json['code'] == 0: # 响应错误码为0，MO 创建成功
@@ -161,32 +158,43 @@ class ApsAction(ApsBaseAction):
             response_data = mo_push_response_json['data']
             # 查询一下刚刚推送成功的 MO 在 T+ 中详情， 这是查询单个mo的接口
             tplus_mo_id = response_data['ID']
-
+            
             try:
-                mo_in_tplus = (await tplus_conn.pull_from_source(source_name='mo_single', filter={"voucherID": tplus_mo_id}))[0]
+                mo_in_tplus = (tplus_conn.pull_from_source(source_name='mo_single', filter={"voucherID": tplus_mo_id}))[0]
                 tplus_mo_code = mo_in_tplus['Code']
                 # 从 T+ 中提取 MO 详情中的第一个详情记录的 ID 作为 _entryid
                 tplus_mo_entryid = mo_in_tplus['ManufactureOrderDetails'][0]['ID']
             except Exception as e:
                 tplus_mo_entryid = None
-                console_log.error(f"Error extracting entry ID from T+ MO: {e}") 
+                filelog_error.error(f"Error extracting entry ID from T+ MO: {e}") 
                
             # 推送 领料申请 到 T+
             rs_data = ApsBaseAction._get_demand_datalist(demandno=supplyno)     # 从 APS 查询 RS 领料数据，以工单号 supplyno 为依据查找
-            rs_push_response = await tplus_conn.push_into_target(target_name='rs', push_data=rs_data, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid)
+            rs_push_response = tplus_conn.push_into_target(target_name='rs', push_data=rs_data, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid)
             rs_push_response_json = rs_push_response.json()
-            
-            await cls._rs_push_success(rsno=supplyno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
+            if str(rs_push_response_json['code']) == '0': # 创建成功
+                # 同步调用 _rs_push_success 方法
+                import asyncio
+                asyncio.run(cls._rs_push_success(rsno=supplyno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID')))
+            else:
+                filelog_error.error(f"❌ 领料申请推送失败，对应工单：{supplyno}，错误信息：{rs_push_response_json['message']}")
+                # 同步调用 _rs_push_failed 方法
+                import asyncio
+                a = asyncio.run(cls._rs_push_failed(rsno=supplyno, msg=rs_push_response_json['message'], msg_from='T+'))
 
             # 最后再更改工单信息，一定放在最后一步，否则如果变更工单号变更太早，前面所有相关查询都会失败
-            await cls._pl_release_success(plno=supplyno, msg=mo_push_response_json['message'], change_supplyno=False, msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
-
+            # 同步调用 _pl_release_success 方法
+            import asyncio
+            a = asyncio.run(cls._pl_release_success(plno=supplyno, msg=mo_push_response_json['message'], change_supplyno=not _REMAIN_SUPPLYNO, msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid))
+            # 审批工单
+            a = tplus_conn.push_into_target(target_name='mo_approve', push_data={'voucherID': tplus_mo_id})
         else:
-            await cls._pl_release_failed(plno=supplyno, msg=mo_push_response_json['message'], msg_from='T+')
+            # 同步调用 _pl_release_failed 方法
+            a = cls._pl_release_failed(plno=supplyno, msg=mo_push_response_json['message'], msg_from='T+')
             
 
     @classmethod
-    async def when_mo_close(cls, mo_data: dict, *args, **kwargs):
+    def when_mo_close(cls, mo_data: dict, *args, **kwargs):
         """
         当工单管理的状态变为'CMP'（完成）时该方法将被自动调用
         🅰 mono: MO号

@@ -28,7 +28,7 @@ from apps.data_opt.utils.mysqlmonitor import mysql_monitor
 
 
 @mysql_monitor.on_update_for_table("t_supply", database=MYAPS_MAIN_DB)
-async def handle_update_supply(database: str, table: str, data: dict, data_diff: dict):
+def handle_update_supply(database: str, table: str, data: dict, data_diff: dict):
     """处理t_supply表的更新事件"""
     data_before = dict_to_lower_keys(data['old'])
     status_before = data_before['status']
@@ -40,9 +40,15 @@ async def handle_update_supply(database: str, table: str, data: dict, data_diff:
 
     # 确认/下达生产计划单PL (当PL状态从NEW或CRE变为A2E时)
     if type_now == 'PL' and status_now == OrderStatusEnum.A2E.value and status_before in ["NEW", "CRE"]:
-        await project_client.ApsAction.click_release_button(no_now)
+        # 同步调用 ApsAction.click_release_button 方法
+        # 由于 ApsAction.click_release_button 是异步方法，我们需要使用 asyncio.run 来运行它
+        import asyncio
+        asyncio.run(project_client.ApsAction.click_release_button(no_now))
         return
 
     # 工单关闭
     if type_now == 'MO' and status_now == OrderStatusEnum.CMP.value:
-        await project_client.ApsAction.when_mo_close(data_now)
+        # 同步调用 ApsAction.when_mo_close 方法
+        # 由于 ApsAction.when_mo_close 是异步方法，我们需要使用 asyncio.run 来运行它
+        import asyncio
+        asyncio.run(project_client.ApsAction.when_mo_close(data_now))

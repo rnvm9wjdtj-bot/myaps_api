@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
     print(f"✅ 已将主应用事件循环传递给调度器: {main_loop}")
     
     if TURNON_DBMONITOR:
-        await mysql_monitor.start_monitoring()
+        mysql_monitor.start_monitoring()
         print("✅ MySQL Binlog监控已启动")
 
     file_timed_logger.setup_logging(__name__)

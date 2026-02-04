@@ -10,6 +10,7 @@ from config.settings import MYAPS_MAIN_DB
 
 
 from ._base import (
+    PydanticModel,
     console_log, filelog_normal, filelog_error,
     DataProcessor, globalconst, CACHE_JSON, pdv,
     BaseConnection, convert_timeunit, clean_value,
@@ -27,7 +28,7 @@ from ._base import (
 在 @model_validator 中需要将：
 无法通过处理原生数据获取的联合索引字段设为  "🈳❗"  占位，以保证能构成完整的联合索引
 """
-class TplusMaterial(AcceptMaterial):
+class TplusPullMaterial(AcceptMaterial):
 
     size: Optional[str] = Field(None)   # 需要客户在HAP中填写的字段统一设为 None。
     candelay: Optional[str] = Field(None)   # 需要客户在HAP中填写的字段统一设为 None。
@@ -81,7 +82,7 @@ class TplusMaterial(AcceptMaterial):
 
 
 
-class TplusWorkcenter(AcceptWorkcenter):
+class TplusPullWorkcenter(AcceptWorkcenter):
 
     class Config:
         extra = 'allow'
@@ -110,7 +111,7 @@ class TplusWorkcenter(AcceptWorkcenter):
 
 
 
-class TplusMatWc(AcceptMatWc):
+class TplusPullMatWc(AcceptMatWc):
 
     matver: Optional[str] = Field(None)
     itemno: Optional[str] = Field(None)
@@ -139,7 +140,7 @@ class TplusMatWc(AcceptMatWc):
 
 
 
-class TplusMatWcBom(AcceptMatWcBom):
+class TplusPullMatWcBom(AcceptMatWcBom):
 
     matver: Optional[str] = Field(None)
     itemno: Optional[str] = Field(None)
@@ -168,7 +169,7 @@ class TplusMatWcBom(AcceptMatWcBom):
 
 
 
-class TplusStock(AcceptSupply):
+class TplusPullStock(AcceptSupply):
 
     type: str = Field('ST')
     priority: int = Field(0)
@@ -191,6 +192,84 @@ class TplusStock(AcceptSupply):
         cleaned_values['dt_req'] = now
         return cleaned_values
 
+
+class TplusPushMo(PydanticModel):
+    """
+    整理推送T+MO数据
+    """
+    ExternalCode: str = Field()
+    StartDate: str = Field()
+    FinishDate: str = Field()
+    BusiType: dict = Field()
+    Department: dict = Field()
+    VoucherDate: str = Field()
+    Memo: str = Field()
+    IsMaterialRequest: bool = Field(True)
+    ManufactureOrderDetails: list[dict] = Field()
+    
+    class Config:
+        extra = 'allow'
+
+    @model_validator(mode="before")
+    @classmethod
+    def model_valid(cls, values: Dict[str, Any]):
+        cleaned_values = {}
+        cleaned_values['ExternalCode'] = values['supplyno']
+        cleaned_values['StartDate'] = values['dt_ordstart']
+        cleaned_values['FinishDate'] = values['dt_ordend']
+        cleaned_values['BusiType'] = {'Code': CACHE_JSON.get("erp")["$MoBusiType"]}
+        cleaned_values['Department'] = {'Code': CACHE_JSON.get("erp")["$MoDepartment"]}
+        cleaned_values['VoucherDate'] = values['dt_ordstart']
+        cleaned_values['IsMaterialRequest'] = True
+        cleaned_values['Memo'] = values['vendorno']
+        cleaned_values['ManufactureOrderDetails'] = [
+            {
+                'Inventory': {'Code': values['materialno']},
+                'Unit': {'Name': values.get('unit', "")},
+                'Quantity': values['avail_qty'],
+                'PreStartDate': values['dt_ordstart'],
+                'PreFinishDate': values['dt_ordend'],
+                'IsMaterialRequest': True,
+            }
+        ]
+        return cleaned_values
+
+
+class TplusPushRs(PydanticModel):
+    """
+    整理推送T+领料申请数据
+    """
+    ExternalCode: str = Field()
+    VoucherType: dict = Field()
+    VoucherDate: str = Field()
+    BusiType: dict = Field()
+    Department: dict = Field()
+    MaterialRequestDetails: list[dict] = Field()
+
+    class Config:
+        extra = 'allow'
+
+    @model_validator(mode="before")
+    @classmethod
+    def model_valid(cls, values: Dict[str, Any]):
+        cleaned_values = {}
+        cleaned_values['ExternalCode'] = values['demandno']
+        cleaned_values['VoucherType'] = {"Code": "ST1039"}
+        cleaned_values['VoucherDate'] = values["_entries_"][0]['req_date']
+        cleaned_values['BusiType'] = {"Code": "MR01"}
+        cleaned_values['Department'] = {"Code": CACHE_JSON.get("erp")["$MoDepartment"]}
+
+        mr_details = []
+        for entry in values["_entries_"]:
+            mr = {}
+            mr['IdSourceVoucherType'] = "69"
+            mr['SourceVoucherId'] = values['tplus_mo_id']
+            mr['SourceVoucherDetailId'] = values['tplus_mo_entryid']
+            mr['Inventory'] = {'Code': entry['materialno']}
+            mr['BaseQuantity'] = entry['req_qty'] * -1
+            mr_details.append(mr)
+        cleaned_values['MaterialRequestDetails'] = mr_details
+        return cleaned_values
 
 
 class TplusConfig:
@@ -235,7 +314,7 @@ class TplusConfig:
                 "IsMaterial": True,
                 "Ts": None
             },
-            "pydantic_model": TplusMaterial,
+            "pydantic_model": TplusPullMaterial,
         },
 
         "workcenter": {
@@ -244,7 +323,7 @@ class TplusConfig:
                 "ID": "ID", "Code": "编码", "Name": "名称", "Disabled": "是否停用"
             },
             "base_filter": {},
-            "pydantic_model": TplusWorkcenter,
+            "pydantic_model": TplusPullWorkcenter,
         },
 
         "route": {
@@ -258,7 +337,7 @@ class TplusConfig:
                 "BOMProcessDTOs / Process / Equipment": "生产设备", "BOMProcessDTOs / Process / StandardWorkingHours": "标准工时",
             },
             "base_filter": {},
-            "pydantic_model": TplusMatWc,
+            "pydantic_model": TplusPullMatWc,
         },
 
         "bom": {
@@ -271,7 +350,7 @@ class TplusConfig:
                 "BOMChilds / WasteRate": "损耗率",
             },
             "base_filter": {},
-            "pydantic_model": TplusMatWcBom,
+            "pydantic_model": TplusPullMatWcBom,
         },
 
         "stock": {  # 现存量查询 https://open.chanjet.com/docs/file/apiFile/tcloud/tjqt/xcl?id=30875，以 现存量字段 为库存数导入
@@ -285,7 +364,7 @@ class TplusConfig:
             "base_filter": {
                 "IsIncludeZero": True
             },
-            "pydantic_model": TplusStock,
+            "pydantic_model": TplusPullStock,
         },
 
         "workreport": { # 工序汇报单列表查询 https://open.chanjet.com/docs/file/apiFile/tcloud/t+dj/t+gxhbd?id=32107
@@ -303,65 +382,23 @@ class TplusConfig:
             "base_filter": {},
             "pydantic_model": None,
         },
-        # "mo_batch": {
-        #     "endpoint": "/tplus/api/v2/ManufactureOrderOpenApi/FindVoucherList",
-        #     "field_map": {},
-        #     "base_filter": {},
-        #     "pydantic_model": None,
-        # }
     }
 
 
     PUSH_TARGET = {
         "mo_single": {
             "endpoint": "/tplus/api/v2/ManufactureOrderOpenApi/Create",
-            "field_map": {
-                # "[]": "ManufactureOrderDetails",
+            "pydantic_model": TplusPushMo,
+        },
 
-                "ExternalCode": "supplyno",
-                # "Code": "supplyno",   # 注释掉，Code 字段不传，用 T+ 生成的编码
-                "StartDate": "dt_ordstart",
-                "FinishDate": "dt_ordend",
-                "BusiType / Code": "$MoBusiType", # 标$是因为APS提供的原生数据没有，需要从配置文件中获取
-                "Department / Code": "$MoDepartment",
-                "VoucherDate": "create_date",
-                "Memo": "vendorno",
-                "ManufactureOrderDetails / Inventory / Code": "materialno",
-                "ManufactureOrderDetails / Unit / Name": "unit",
-                "ManufactureOrderDetails / Quantity": "avail_qty",
-                "ManufactureOrderDetails / PreStartDate": "dt_ordstart",
-                "ManufactureOrderDetails / PreFinishDate": "dt_ordend",
-            },
-            "static_values": {
-                "MoBusiType": CACHE_JSON.get("erp")["$MoBusiType"],
-                "MoDepartment": CACHE_JSON.get("erp")["$MoDepartment"],
-            },
+        "mo_approve": {
+            "endpoint": "/tplus/api/v2/ManufactureOrderOpenApi/Audit",
+            "pydantic_model": None,
         },
 
         "rs": { # 领料申请，supply RS
             "endpoint": "/tplus/api/v2/MaterialRequestOpenApi/Create",
-            "field_map": {
-                "[]": "MaterialRequestDetails",
-
-                "ExternalCode": "demandno",
-                # "Code": "demandno",   # 注释掉，Code 字段不传，让 T+ 自行生成领料单编码
-                "VoucherType / Code": "$VoucherType",
-                "VoucherDate": "create_date",
-                "BusiType / Code": "$BusiType",
-                "Department / Code": "$Department",
-
-                "MaterialRequestDetails / IdSourceVoucherType": "$IdSourceVoucherType",
-                "MaterialRequestDetails / SourceVoucherId": "tplus_mo_id",
-                "MaterialRequestDetails / SourceVoucherDetailId": "tplus_mo_entryid",
-                "MaterialRequestDetails / Inventory / Code": "_entries_ / materialno",
-                "MaterialRequestDetails / BaseQuantity": "(_entries_ / req_qty) × -1",
-            },
-            "static_values": {
-                "BusiType": "MR01",     # 业务类型 MR01 自制领料申请  MR02 委外领料申请  MR03 其他领料申请
-                "VoucherType": "ST1039",    # 单据类型。固定值
-                "Department": CACHE_JSON.get("erp")["$MoDepartment"],
-                "IdSourceVoucherType": "69",    # 来源单据的单据类型ID  69：生产加工单  21：材料出库单
-            },
+            "pydantic_model": TplusPushRs,
         },
 
         "pr": { # 采购申请 supply PR
@@ -477,7 +514,7 @@ class TplusConnection(BaseConnection):
         return response
 
 
-    async def pull_from_source(self, source_name: str, filter: dict=None, only_today: bool=False, pydantic_model: PydanticModel=None, **kwargs):
+    def pull_from_source(self, source_name: str, filter: dict=None, only_today: bool=False, pydantic_model: PydanticModel=None, **kwargs):
         """
         获取畅捷通数据列表
         Args:
@@ -635,7 +672,7 @@ class TplusConnection(BaseConnection):
         return processed_data
 
 
-    async def push_into_target(self, target_name: str, push_data: dict, **kwargs):
+    def push_into_target(self, target_name: str, push_data: dict, **kwargs):
         """
         推送数据到T+
         Args:
@@ -647,8 +684,9 @@ class TplusConnection(BaseConnection):
         self.auth()
         target_name = target_name.lower()
         endpoint = self.config.PUSH_TARGET[target_name]['endpoint']
-        field_map = self.config.PUSH_TARGET[target_name]['field_map']
-        static_values = self.config.PUSH_TARGET[target_name].get('static_values')
+        # field_map = self.config.PUSH_TARGET[target_name]['field_map']
+        # static_values = self.config.PUSH_TARGET[target_name].get('static_values')
+        pydantic_model = self.config.PUSH_TARGET[target_name].get('pydantic_model')
         
         if target_name == 'rs':
             # 先合并一下表头，以适配 T+ 数据结构
@@ -660,8 +698,8 @@ class TplusConnection(BaseConnection):
             # 如果提取不到，就尝试调用 T+ 接口查询 MO 记录
             if not (tplus_mo_id and tplus_mo_entryid):
                 try:
-                    # mo_in_tplus = await self.pull_from_source(source_name='mo_single', filter={"externalCode": push_data['demandno']})[0]     通过 外部单号（supplyno）查询 MO 记录，不够稳定，因为 supplyno 可能会被改写
-                    mo_in_tplus = await self.pull_from_source(source_name='mo_single', filter={"voucherID": tplus_mo_id})[0]
+                    # mo_in_tplus = self.pull_from_source(source_name='mo_single', filter={"externalCode": push_data['demandno']})[0]     通过 外部单号（supplyno）查询 MO 记录，不够稳定，因为 supplyno 可能会被改写
+                    mo_in_tplus = self.pull_from_source(source_name='mo_single', filter={"voucherID": tplus_mo_id})[0]
                     tplus_mo_id = mo_in_tplus['ID']
                     tplus_mo_entryid = mo_in_tplus['ManufactureOrderDetails'][0]['ID']
                 except:
@@ -675,12 +713,15 @@ class TplusConnection(BaseConnection):
             push_data['tplus_mo_entryid'] = tplus_mo_entryid
 
         if target_name in ('mo_single', 'rs'):
-            tplus_format_data = DataProcessor.generate_hierarchy_dict(origin_data=push_data, field_map=field_map, static_values=static_values)
-            print("origin_data", push_data)
-            print("field_map", field_map)
-            print(tplus_format_data)
-            payload = {
-                "dto": tplus_format_data
-            }
+            dto = pydantic_model(**push_data).model_dump()
+            if kwargs.get('mo_remain_supplyno'):
+                dto['Code'] = push_data['supplyno']
+            payload = {"dto": dto}
             response = self._post(endpoint=endpoint, data=payload)
             return response
+        elif target_name == 'mo_approve':
+            payload = {"param": push_data}
+            response = self._post(endpoint=endpoint, data=payload)
+            return response
+        else:
+            raise ValueError(f"❌ 未知的目标名称: {target_name}")

@@ -453,6 +453,11 @@ async def db_update_by_index(
         for db_name in valid_dbs:
             db_manager = db_managers[db_name]
 
+
+            print(f"index_dict: {index_dict}")
+            print(f"new_values_dict: {new_values_dict}")
+
+
             result = await db_manager.update_by_index(
                 model_class=mdl,
                 index_dict=index_dict,

@@ -478,7 +478,7 @@ class AcceptSupply(BaseModel):
     matver: Optional[str] = Field(None, max_length=32, example=pdv.MATVER, description='产线版本')
     itemno: str = Field(None, max_length=6, description='项目号', example=pdv.ITEMNO)
     type: gc.SupplyTypeEnum = Field(..., example=gc.SupplyTypeEnum.MO, description='类型 PL-生产计划 MO-生产工单 ST-库存 PO-采购订单')
-    category: gc.ProductCategoryEnum = Field(gc.ProductCategoryEnum.MTO, example=gc.ProductCategoryEnum.MTO, description='分类(MTO/MTS)')
+    category: gc.ProductCategoryEnum = Field(gc.ProductCategoryEnum.MTS, example=gc.ProductCategoryEnum.MTO, description='分类(MTO/MTS)')
     priority: int = Field(..., description='优先级', example=1)
     status: gc.OrderStatusEnum = Field(None,
         example=gc.OrderStatusEnum.NEW, description='状态 NEW-新增 CRE-已创建 SCH-计划 REL-已发布 PNF-已报工, CMP-已完成')
@@ -529,6 +529,8 @@ class AcceptSupply(BaseModel):
         _cache_raw_input_data(cls, values)
         if values.get('itemno') in gc.NONE_AND_EMPTY:
             values['itemno'] = pdv.ITEMNO
+        if values.get("category") == gc.ProductCategoryEnum.MTO and values.get("vendorno") in gc.NONE_AND_EMPTY:
+            raise ValueError("MTO订单号vendorno不能为空")
         return values
 
     @model_validator(mode='after')
@@ -577,7 +579,7 @@ class AcceptDemand(BaseModel):
     demandno: str = Field(..., max_length=64, description='需求单号', example="SO123456")
     itemno: str = Field(..., max_length=6, description='项目号（若类型为SO则可传入订单号或其他标识符，不超过6位）', example=pdv.ITEMNO)
     type: gc.DemandTypeEnum = Field(..., example=gc.DemandTypeEnum.SO, description='类型 SO-销售订单 DM-计划需求 RS-工单预留 FC-预测 SS-安全库存')
-    category: gc.ProductCategoryEnum = Field(gc.ProductCategoryEnum.MTO, example=gc.ProductCategoryEnum.MTO, description='分类(MTO/MTS)')
+    category: gc.ProductCategoryEnum = Field(gc.ProductCategoryEnum.MTS, example=gc.ProductCategoryEnum.MTS, description='分类(MTO/MTS)')
     priority: int = Field(..., description='优先级', example=1)
     workcenter: str = Field(None, max_length=32, description='工作中心', example="WC001")
     status: gc.OrderStatusEnum = Field(..., example=gc.OrderStatusEnum.NEW, description=f'状态 {gc.OrderStatusEnum.__members__}')
@@ -629,6 +631,8 @@ class AcceptDemand(BaseModel):
                 values["req_qty"] = -1 * req_qty
         except ValueError:
             req_qty = None
+        if  values.get("category") == gc.ProductCategoryEnum.MTO and values.get("refno") in gc.NONE_AND_EMPTY:
+            raise ValueError("MTO订单号refno不能为空")
         # if values.get("status") in gc.NONE_AND_EMPTY:
         #     values["status"] = "NEW"
         # if values.get("category") in gc.NONE_AND_EMPTY:
@@ -645,8 +649,8 @@ class AcceptDemand(BaseModel):
 
 class AcceptConfirm(BaseModel):
     supplyno: str = Field(..., max_length=64, description='供应单号', example="MO123456")
-    itemno: str = Field(None, max_length=6, description='工序项目', example=pdv.ITEMNO)
-    workcenter: str = Field(None, max_length=32, description='工作中心', example="WC001")
+    itemno: str = Field(..., max_length=6, description='工序项目', example=pdv.ITEMNO)
+    # workcenter: str = Field(None, max_length=32, description='工作中心', example="WC001")
     recordqty: float = Field(..., description='报工数量', gt=0, example=100)
     recorddt: datetime = Field(..., description='报工日期', example="2025-01-07 10:00:00")
     status: gc.YesNoEnum = Field(gc.YesNoEnum.YES, example="Y", description='状态')

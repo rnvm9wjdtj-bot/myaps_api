@@ -77,6 +77,9 @@ class MySQLBinlogMonitor:
         # 表过滤功能（支持多数据库）
         self._table_filters = {}  # 格式: {database.table: handlers}
         
+        # 创建持久的事件循环
+        self._event_loop = None
+        
         # 验证配置
         self._validate_config()
 
@@ -353,7 +356,7 @@ class MySQLBinlogMonitor:
                 return parts[0], parts[1]  # database, table
         return None, full_table_name  # 无数据库信息，只有表名
 
-    async def start_monitoring(self):
+    def start_monitoring(self):
         """开始监控Binlog"""
         self.running = True
         monitoring_thread = threading.Thread(target=self._monitor_binlog_with_retry, daemon=True)
@@ -421,9 +424,8 @@ class MySQLBinlogMonitor:
                 if not self.running:
                     break
                 
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                    future = executor.submit(self._run_async_event, binlogevent)
-                    future.result()
+                # 直接在当前线程中执行，避免创建新线程导致的事件循环冲突
+                self._run_async_event(binlogevent)
 
         except Exception as e:
             logger.error(f"🚫 Binlog流处理错误: {e}")
@@ -434,17 +436,14 @@ class MySQLBinlogMonitor:
                 logger.info("✅ Binlog流已关闭")
 
     def _run_async_event(self, event):
-        """在新线程中运行异步事件"""
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        """在新线程中运行事件"""
         try:
-            loop.run_until_complete(self.process_binlog_event(event))
+            # 直接调用同步方法处理事件
+            self.process_binlog_event(event)
         except Exception as e:
-            logger.error(f"🚫 处理异步事件时出错: {e}")
-        finally:
-            loop.close()
+            logger.error(f"🚫 处理事件时出错: {e}")
 
-    async def process_binlog_event(self, event):
+    def process_binlog_event(self, event):
         """处理Binlog事件并调用被装饰的函数"""
         try:
             table = getattr(event, 'table', 'unknown_table')
@@ -474,18 +473,18 @@ class MySQLBinlogMonitor:
                     
                     # 调用全局处理器
                     for handler in self._insert_handlers:
-                        await handler(schema, table, mapped_data)
+                        handler(schema, table, mapped_data)
                     
                     # 调用特定表处理器
                     full_table_name = self._get_full_table_name(schema, table)
                     if full_table_name in self._table_filters:
                         for handler in self._table_filters[full_table_name]["insert"]:
-                            await handler(schema, table, mapped_data)
+                            handler(schema, table, mapped_data)
                     
                     # 调用无数据库前缀的处理器（向后兼容）
                     if table in self._table_filters:
                         for handler in self._table_filters[table]["insert"]:
-                            await handler(schema, table, mapped_data)
+                            handler(schema, table, mapped_data)
                             
             elif isinstance(event, UpdateRowsEvent):
                 batch_count = len(event.rows)
@@ -528,7 +527,7 @@ class MySQLBinlogMonitor:
                     
                     # 调用全局处理器
                     for handler in self._update_handlers:
-                        await handler(schema, table, change_data, data_diff)
+                        handler(schema, table, change_data, data_diff)
                     
                     # 调用特定表处理器
                     full_table_name = self._get_full_table_name(schema, table)
@@ -537,7 +536,7 @@ class MySQLBinlogMonitor:
                             update_handlers = self._table_filters[full_table_name].get("update", [])
                             for handler in update_handlers:
                                 try:
-                                    await handler(schema, table, change_data, data_diff)
+                                    handler(schema, table, change_data, data_diff)
                                 except Exception as e:
                                     logger.error(f"❌ 执行特定表UPDATE处理器失败: {e}")
                         except Exception as e:
@@ -549,7 +548,7 @@ class MySQLBinlogMonitor:
                             update_handlers = self._table_filters[table].get("update", [])
                             for handler in update_handlers:
                                 try:
-                                    await handler(schema, table, change_data, data_diff)
+                                    handler(schema, table, change_data, data_diff)
                                 except Exception as e:
                                     logger.error(f"❌ 执行无数据库前缀UPDATE处理器失败: {e}")
                         except Exception as e:
@@ -577,18 +576,18 @@ class MySQLBinlogMonitor:
                     
                     # 调用全局处理器
                     for handler in self._delete_handlers:
-                        await handler(schema, table, mapped_data)
+                        handler(schema, table, mapped_data)
                     
                     # 调用特定表处理器
                     full_table_name = self._get_full_table_name(schema, table)
                     if full_table_name in self._table_filters:
                         for handler in self._table_filters[full_table_name]["delete"]:
-                            await handler(schema, table, mapped_data)
+                            handler(schema, table, mapped_data)
                     
                     # 调用无数据库前缀的处理器
                     if table in self._table_filters:
                         for handler in self._table_filters[table]["delete"]:
-                            await handler(schema, table, mapped_data)
+                            handler(schema, table, mapped_data)
                             
         except Exception as e:
             logger.error(f"🚫 处理Binlog事件错误: {e}")
