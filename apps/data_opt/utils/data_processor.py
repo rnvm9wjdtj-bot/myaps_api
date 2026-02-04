@@ -634,6 +634,14 @@ class DataProcessor:
                             for path_part in path_parts:
                                 if isinstance(path_value, dict) and path_part in path_value:
                                     path_value = path_value[path_part]
+                                elif isinstance(path_value, list) and path_part == '_entries_':
+                                    # 特殊处理 _entries_ 列表，返回第一个元素
+                                    if path_value:
+                                        path_value = path_value[0]
+                                    else:
+                                        # 列表为空，视为空字符串
+                                        path_value = ''
+                                        break
                                 else:
                                     # 路径不存在，视为空字符串
                                     path_value = ''
@@ -680,6 +688,14 @@ class DataProcessor:
                                 for path_part in path_parts:
                                     if isinstance(path_value, dict) and path_part in path_value:
                                         path_value = path_value[path_part]
+                                    elif isinstance(path_value, list) and path_part == '_entries_':
+                                        # 特殊处理 _entries_ 列表，返回第一个元素
+                                        if path_value:
+                                            path_value = path_value[0]
+                                        else:
+                                            # 列表为空，视为1
+                                            path_value = 1
+                                            break
                                     else:
                                         # 路径不存在，视为1
                                         path_value = 1
@@ -760,6 +776,14 @@ class DataProcessor:
                                 for path_part in path_parts:
                                     if isinstance(path_value, dict) and path_part in path_value:
                                         path_value = path_value[path_part]
+                                    elif isinstance(path_value, list) and path_part == '_entries_':
+                                        # 特殊处理 _entries_ 列表，返回第一个元素
+                                        if path_value:
+                                            path_value = path_value[0]
+                                        else:
+                                            # 列表为空，视为0
+                                            path_value = 0
+                                            break
                                     else:
                                         # 路径不存在，视为0
                                         path_value = 0
@@ -823,6 +847,14 @@ class DataProcessor:
                     for path_part in path_parts:
                         if isinstance(path_value, dict) and path_part in path_value:
                             path_value = path_value[path_part]
+                        elif isinstance(path_value, list) and path_part == '_entries_':
+                            # 特殊处理 _entries_ 列表，返回第一个元素
+                            if path_value:
+                                path_value = path_value[0]
+                            else:
+                                # 列表为空，返回空字符串
+                                path_value = ''
+                                break
                         else:
                             # 路径不存在，返回空字符串
                             path_value = ''
@@ -1117,6 +1149,9 @@ class DataProcessor:
                                                 for path_part in path_parts:
                                                     if isinstance(path_value, dict) and path_part in path_value:
                                                         path_value = path_value[path_part]
+                                                    elif path_part == '_entries_' and list_key == '_entries_':
+                                                        # 特殊处理：当路径中包含_entries_且list_key也是_entries_时，使用当前item
+                                                        path_value = item_data
                                                     else:
                                                         # 路径不存在，视为空字符串
                                                         path_value = ''
@@ -1163,6 +1198,9 @@ class DataProcessor:
                                                     for path_part in path_parts:
                                                         if isinstance(path_value, dict) and path_part in path_value:
                                                             path_value = path_value[path_part]
+                                                        elif path_part == '_entries_' and list_key == '_entries_':
+                                                            # 特殊处理：当路径中包含_entries_且list_key也是_entries_时，使用当前item
+                                                            path_value = item_data
                                                         else:
                                                             # 路径不存在，视为1
                                                             path_value = 1
@@ -1243,6 +1281,9 @@ class DataProcessor:
                                                     for path_part in path_parts:
                                                         if isinstance(path_value, dict) and path_part in path_value:
                                                             path_value = path_value[path_part]
+                                                        elif path_part == '_entries_' and list_key == '_entries_':
+                                                            # 特殊处理：当路径中包含_entries_且list_key也是_entries_时，使用当前item
+                                                            path_value = item_data
                                                         else:
                                                             # 路径不存在，视为0
                                                             path_value = 0
@@ -1306,6 +1347,9 @@ class DataProcessor:
                                         for path_part in path_parts:
                                             if isinstance(path_value, dict) and path_part in path_value:
                                                 path_value = path_value[path_part]
+                                            elif path_part == '_entries_' and list_key == '_entries_':
+                                                # 特殊处理：当路径中包含_entries_且list_key也是_entries_时，使用当前item
+                                                path_value = item_data
                                             else:
                                                 # 路径不存在，返回空字符串
                                                 path_value = ''

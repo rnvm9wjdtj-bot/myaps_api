@@ -122,7 +122,7 @@ async def get_maindata_from_erp_to_hap_task(*args, **kwargs):
 
 
 # @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22",minute="0,5,10,15,20,25,30,35,40,45,50,55")
-# @cron_task(hour="8,10,12,14,16",minute="55")
+@cron_task(hour="8,10,12,14,16",minute="55")
 async def refresh_stock_task(*args, **kwargs):
     console_log.info("⏰ 开始执行刷新库存定时任务")
     stock = await refresh_stock()
@@ -152,7 +152,8 @@ class ApsAction(ApsBaseAction):
         # if not supply_record:
         #     raise Exception(f"supplyno {supplyno} not found in t_supply")
         supplymo_detaildata = ApsBaseAction._get_supplymo_detaildata(supplyno=supplyno)
-        mo_push_response = await tplus_conn.push_into_target(target_name='mo', push_data=supplymo_detaildata)
+        # 使用正确的target_name 'mo_single' 而不是 'mo'
+        mo_push_response = await tplus_conn.push_into_target(target_name='mo_single', push_data=supplymo_detaildata)
         mo_push_response_json = mo_push_response.json()
 
         if mo_push_response_json['code'] == 0: # 响应错误码为0，MO 创建成功
@@ -162,12 +163,13 @@ class ApsAction(ApsBaseAction):
             tplus_mo_id = response_data['ID']
 
             try:
-                mo_in_tplus = await tplus_conn.pull_from_source(source_name='mo_single', filter={"voucherID": tplus_mo_id})[0]
+                mo_in_tplus = (await tplus_conn.pull_from_source(source_name='mo_single', filter={"voucherID": tplus_mo_id}))[0]
                 tplus_mo_code = mo_in_tplus['Code']
                 # 从 T+ 中提取 MO 详情中的第一个详情记录的 ID 作为 _entryid
                 tplus_mo_entryid = mo_in_tplus['ManufactureOrderDetails'][0]['ID']
-            except:
+            except Exception as e:
                 tplus_mo_entryid = None
+                console_log.error(f"Error extracting entry ID from T+ MO: {e}") 
                
             # 推送 领料申请 到 T+
             rs_data = ApsBaseAction._get_demand_datalist(demandno=supplyno)     # 从 APS 查询 RS 领料数据，以工单号 supplyno 为依据查找

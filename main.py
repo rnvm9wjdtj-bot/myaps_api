@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.openapi.docs import get_swagger_ui_html
 from tortoise.contrib.fastapi import register_tortoise
 
-from config.settings import TORTOISE_ORM_CONFIG, PORT, BASE_DIR
+from config.settings import TORTOISE_ORM_CONFIG, PORT, BASE_DIR, TURNON_DBMONITOR
 from globalobjects import file_timed_logger
 from apps.io_api.routers import rt as io_rt
 from apps.io_api.utils.common import register_exception_handlers
@@ -28,9 +28,10 @@ async def lifespan(app: FastAPI):
     main_loop = asyncio.get_running_loop()
     scheduler_manager.set_main_loop(main_loop)
     print(f"✅ 已将主应用事件循环传递给调度器: {main_loop}")
-
-    await mysql_monitor.start_monitoring()
-    print("✅ MySQL Binlog监控已启动")
+    
+    if TURNON_DBMONITOR:
+        await mysql_monitor.start_monitoring()
+        print("✅ MySQL Binlog监控已启动")
 
     file_timed_logger.setup_logging(__name__)
     # 启动所有日志队列监听器
@@ -40,8 +41,10 @@ async def lifespan(app: FastAPI):
     
     # 应用关闭时执行的操作
     print("🛑 应用关闭中...")
-    mysql_monitor.stop_monitoring()
-    print("🛑 MySQL Binlog监控已停止")
+    
+    if TURNON_DBMONITOR:
+        mysql_monitor.stop_monitoring()
+        print("🛑 MySQL Binlog监控已停止")
     # 关闭调度器
     scheduler_manager.shutdown()
     print("🛑 定时任务管理器已关闭")

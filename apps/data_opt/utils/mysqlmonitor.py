@@ -533,13 +533,27 @@ class MySQLBinlogMonitor:
                     # 调用特定表处理器
                     full_table_name = self._get_full_table_name(schema, table)
                     if full_table_name in self._table_filters:
-                        for handler in self._table_filters[full_table_name]["update"]:
-                            await handler(schema, table, change_data, data_diff)
+                        try:
+                            update_handlers = self._table_filters[full_table_name].get("update", [])
+                            for handler in update_handlers:
+                                try:
+                                    await handler(schema, table, change_data, data_diff)
+                                except Exception as e:
+                                    logger.error(f"❌ 执行特定表UPDATE处理器失败: {e}")
+                        except Exception as e:
+                            logger.error(f"❌ 访问特定表处理器列表失败: {e}")
                     
                     # 调用无数据库前缀的处理器
                     if table in self._table_filters:
-                        for handler in self._table_filters[table]["update"]:
-                            await handler(schema, table, change_data, data_diff)
+                        try:
+                            update_handlers = self._table_filters[table].get("update", [])
+                            for handler in update_handlers:
+                                try:
+                                    await handler(schema, table, change_data, data_diff)
+                                except Exception as e:
+                                    logger.error(f"❌ 执行无数据库前缀UPDATE处理器失败: {e}")
+                        except Exception as e:
+                            logger.error(f"❌ 访问无数据库前缀处理器列表失败: {e}")
                             
             elif isinstance(event, DeleteRowsEvent):
                 batch_count = len(event.rows)

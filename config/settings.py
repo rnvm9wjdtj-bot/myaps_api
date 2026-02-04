@@ -31,6 +31,12 @@ THIS_DB_USER = os.getenv("THIS_DB_USER")
 THIS_DB_PASSWORD = os.getenv("THIS_DB_PASSWORD")
 THIS_DB_NAME = os.getenv("THIS_DB_NAME")
 
+# 项目目录
+PROJECT_DIR = os.getenv("PROJECT_DIR")
+
+# 数据库监控开关
+TURNON_DBMONITOR = os.getenv("TURNON_DBMONITOR", "False").lower() == "true"
+
 ######################################################################################
 # 数据库配置
 connections = {}

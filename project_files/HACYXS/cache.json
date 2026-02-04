@@ -2,12 +2,12 @@
   "erp": {
     "app_key": "UG69s1P1",
     "app_secret": "F1A51CB0AD5275BF6FAA46270AF1CF37",
-    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJpc3YiLCJpc3MiOiJjaGFuamV0IiwidXNlcklkIjoiMzk2MjUxNzMxNzA5OTU0Iiwib3JnSWQiOiIxMjQxNzU3OTMzNjA5NDUzIiwiYWNjZXNzX3Rva2VuIjoiYmMtZjhlMmU1MTEtNGQ4ZS00ZWNjLTg2OGQtNmU5YjNhMDYyMmM0IiwiYXVkIjoiaXN2IiwibmJmIjoxNzcwMDgzODI4LCJhcHBJZCI6IjU4Iiwic2NvcGUiOiJhdXRoX2FsbCIsImFwcEtleSI6IlVHNjlzMVAxIiwiaWQiOiJjYTBlYjRkMC04NzdlLTQzMWQtOTQxMC0yZmNiZjRiNmZiNTQiLCJleHAiOjE3NzA2MDIyMjgsImlhdCI6MTc3MDA4MzgyOCwib3JnQWNjb3VudCI6InV3aWF4ZnVlc2E2OCJ9.0UtXST8e65RdFtA4OuvjDx-3tsCbUpsLjUBaaWRBnBs",
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJpc3YiLCJpc3MiOiJjaGFuamV0IiwidXNlcklkIjoiMzk2MjUxNzMxNzA5OTU0Iiwib3JnSWQiOiIxMjQxNzU3OTMzNjA5NDUzIiwiYWNjZXNzX3Rva2VuIjoiYmMtZjhlMmU1MTEtNGQ4ZS00ZWNjLTg2OGQtNmU5YjNhMDYyMmM0IiwiYXVkIjoiaXN2IiwibmJmIjoxNzcwMTY0ODQxLCJhcHBJZCI6IjU4Iiwic2NvcGUiOiJhdXRoX2FsbCIsImFwcEtleSI6IlVHNjlzMVAxIiwiaWQiOiI2ZTQ2MDYzMi1hNzNkLTQ0YjgtODVmZS1jMGE3YzE4NzI2MzgiLCJleHAiOjE3NzA2ODMyNDEsImlhdCI6MTc3MDE2NDg0MSwib3JnQWNjb3VudCI6InV3aWF4ZnVlc2E2OCJ9.UmX0FpB6RYqIRd6arcly87QGRh5kcmfJ4mRQAMjEaYs",
     "refresh_token": "cc4a6cf8b4f34ee2ad9350f2a4dd75b2",
     "org_id": "",
-    "_auth_at_": "2026-02-03 09:57:09",
+    "_auth_at_": "2026-02-04 08:27:21",
     "$MoBusiType": "PT01",
-    "$MoDepartment": "001",
+    "$MoDepartment": "1",
     "$PrRequisitionPerson": "001"
   },
   "hap": {

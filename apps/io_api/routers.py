@@ -335,6 +335,9 @@ async def patch_supply(
         data.supplyno = path_targetsupply   # 供应号不能修改，将目标供应号重新赋值给data，以便后续 orm 时能正确索引到记录
         data.change_supplyno = False
         data = dict(data)
+        query_result = await db_query(db_name=db_name, model_or_tablename="t_supply", filter_string=f"`SupplyNo`='{path_targetsupply}'")
+        materialno = query_result['data'][0]['materialno']
+        data['materialno'] = materialno
         return await db_supsert(db_names=db_name, model_or_tablename="t_supply", data_item=data)
     else:
         return standard_response(

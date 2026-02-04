@@ -9,7 +9,7 @@ from pydantic import BaseModel as PydanticSchema
 from config.settings import MYAPS_DB_SET
 from globalobjects.db_manager import db_managers, DbManager
 from globalobjects import file_timed_logger
-from .common import standard_response, format_query_result, get_raw_input_data, convert_to_dict
+from .common import standard_response, format_query_result, get_raw_input_data, convert_to_dict, format_data_for_logging
 from ..models import TABLE_MODEL_MAPPING
 
 

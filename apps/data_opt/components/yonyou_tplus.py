@@ -316,7 +316,7 @@ class TplusConfig:
         "mo_single": {
             "endpoint": "/tplus/api/v2/ManufactureOrderOpenApi/Create",
             "field_map": {
-                "[]": "ManufactureOrderDetails",
+                # "[]": "ManufactureOrderDetails",
 
                 "ExternalCode": "supplyno",
                 # "Code": "supplyno",   # 注释掉，Code 字段不传，用 T+ 生成的编码
@@ -325,6 +325,7 @@ class TplusConfig:
                 "BusiType / Code": "$MoBusiType", # 标$是因为APS提供的原生数据没有，需要从配置文件中获取
                 "Department / Code": "$MoDepartment",
                 "VoucherDate": "create_date",
+                "Memo": "vendorno",
                 "ManufactureOrderDetails / Inventory / Code": "materialno",
                 "ManufactureOrderDetails / Unit / Name": "unit",
                 "ManufactureOrderDetails / Quantity": "avail_qty",
@@ -366,7 +367,7 @@ class TplusConfig:
         "pr": { # 采购申请 supply PR
             "endpoint": "/tplus/api/v2/PurchaseRequisitionOpenApi/Create",
             "field_map": {
-                "[]": "PurchaseRequisitionDetails",
+                # "[]": "PurchaseRequisitionDetails",
 
                 "ExternalCode": "supplyno",
                 # "Code": "supplyno",   # 注释掉，Code 字段不传，让 T+ 自行生成编码
@@ -675,6 +676,9 @@ class TplusConnection(BaseConnection):
 
         if target_name in ('mo_single', 'rs'):
             tplus_format_data = DataProcessor.generate_hierarchy_dict(origin_data=push_data, field_map=field_map, static_values=static_values)
+            print("origin_data", push_data)
+            print("field_map", field_map)
+            print(tplus_format_data)
             payload = {
                 "dto": tplus_format_data
             }
