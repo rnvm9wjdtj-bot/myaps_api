@@ -40,15 +40,21 @@ def handle_update_supply(database: str, table: str, data: dict, data_diff: dict)
 
     # 确认/下达生产计划单PL (当PL状态从NEW或CRE变为A2E时)
     if type_now == 'PL' and status_now == OrderStatusEnum.A2E.value and status_before in ["NEW", "CRE"]:
-        # 同步调用 ApsAction.click_release_button 方法
-        # 由于 ApsAction.click_release_button 是异步方法，我们需要使用 asyncio.run 来运行它
-        import asyncio
-        asyncio.run(project_client.ApsAction.click_release_button(no_now))
-        return
+        project_client.ApsAction.click_release_button(no_now)
+
 
     # 工单关闭
     if type_now == 'MO' and status_now == OrderStatusEnum.CMP.value:
-        # 同步调用 ApsAction.when_mo_close 方法
-        # 由于 ApsAction.when_mo_close 是异步方法，我们需要使用 asyncio.run 来运行它
-        import asyncio
-        asyncio.run(project_client.ApsAction.when_mo_close(data_now))
+        project_client.ApsAction.when_mo_close(data_now)
+
+
+@mysql_monitor.on_update_for_table("t_demand", database=MYAPS_MAIN_DB)
+def handle_update_supplydemand(database: str, table: str, data: dict, data_diff: dict):
+    data_before = dict_to_lower_keys(data['old'])
+    type_before = data_before['type']
+    data_now = dict_to_lower_keys(data['new'])
+    type_now = data_now['type']
+    
+    if type_now == 'RS' and type_before == 'DM':
+        project_client.ApsAction.push_rs(data_now['demandno'])
+

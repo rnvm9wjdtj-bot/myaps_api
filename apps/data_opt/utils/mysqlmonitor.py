@@ -449,15 +449,20 @@ class MySQLBinlogMonitor:
             result = handler(*args, **kwargs)
             # 检查是否是协程对象
             if hasattr(result, '__await__'):
-                # 如果是协程，创建事件循环并运行
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+                # 使用现有的事件循环或获取当前线程的事件循环
                 try:
+                    loop = asyncio.get_event_loop()
                     loop.run_until_complete(result)
-                finally:
-                    loop.close()
+                except RuntimeError:  # 如果没有事件循环，才创建新的
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        loop.run_until_complete(result)
+                    finally:
+                        loop.close()
         except Exception as e:
             logger.error(f"❌ 执行处理器失败: {e}")
+        
 
     def process_binlog_event(self, event):
         """处理Binlog事件并调用被装饰的函数"""

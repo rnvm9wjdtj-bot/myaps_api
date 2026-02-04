@@ -2,7 +2,7 @@
 淮安超越橡塑项目文件
 """
 
-import requests, logging, os#, atexit
+import requests, logging, os, asyncio
 import pandas as pd
 from datetime import datetime
 from typing import Callable
@@ -44,7 +44,7 @@ tplus_conn.auth()
 #################################################################################
 # ⬇️ 项目可复用逻辑
 #################################################################################
-async def get_maindata_from_erp_to_hap():
+def get_maindata_from_erp_to_hap():
     if not hap_conn:
         return
     # material = tplus_conn.pull_from_source(source_name='material')
@@ -62,7 +62,7 @@ async def get_maindata_from_erp_to_hap():
     pass
 
 
-async def refresh_stock():
+def refresh_stock():
     import pandas as pd
     from datetime import datetime
     
@@ -105,9 +105,9 @@ async def refresh_stock():
     else:
         aggregated_stock = []
     # 删除旧库存数据
-    delete_result = await db_delete(db_names=MYAPS_DB_SET, model_or_tablename='t_supply', filter_string=f"`Type`='ST'")
+    delete_result = asyncio.run(db_delete(db_names=MYAPS_DB_SET, model_or_tablename='t_supply', filter_string=f"`Type`='ST'"))
     # 插入汇总后的数据
-    bupsurt_result = await db_bupsert(db_names=MYAPS_DB_SET, model_or_tablename='t_supply', data_list=aggregated_stock)
+    bupsurt_result = asyncio.run(db_bupsert(db_names=MYAPS_DB_SET, model_or_tablename='t_supply', data_list=aggregated_stock))
     return aggregated_stock
 
 #################################################################################
@@ -115,17 +115,17 @@ async def refresh_stock():
 #################################################################################
 # @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22",minute="0,5,10,15,20,25,30,35,40,45,50,55")
 # @cron_task(hour="8,10,12,14,16",minute="55")
-async def get_maindata_from_erp_to_hap_task(*args, **kwargs):
+def get_maindata_from_erp_to_hap_task(*args, **kwargs):
     console_log.info("⏰ 开始执行获取主数据定时任务")
-    await get_maindata_from_erp_to_hap()
+    get_maindata_from_erp_to_hap()
     console_log.info("⏰ 获取主数据定时任务执行完成")
 
 
 # @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22",minute="0,5,10,15,20,25,30,35,40,45,50,55")
 @cron_task(hour="8,10,12,14,16",minute="55")
-async def refresh_stock_task(*args, **kwargs):
+def refresh_stock_task(*args, **kwargs):
     console_log.info("⏰ 开始执行刷新库存定时任务")
-    stock = await refresh_stock()
+    stock = refresh_stock()
     console_log.info("⏰ 刷新库存定时任务执行完成")
 
 
@@ -159,35 +159,37 @@ class ApsAction(ApsBaseAction):
                 mo_in_tplus = (tplus_conn.pull_from_source(source_name='mo_single', filter={"voucherID": tplus_mo_id}))[0]
                 tplus_mo_code = mo_in_tplus['Code']
                 # 从 T+ 中提取 MO 详情中的第一个详情记录的 ID 作为 _entryid
-                tplus_mo_entryid = mo_in_tplus['ManufactureOrderDetails'][0]['ID']
+                tplus_mo_entryid = mo_in_tplus['ManufactureOrderDetails'][0]['ID'] 
+                # 最后再更改工单信息，一定放在最后一步，否则如果变更工单号变更太早，前面若有用原生供应号查询都会失败
+                a = cls._pl_release_success(plno=supplyno, msg=mo_push_response_json['message'], change_supplyno=not _REMAIN_SUPPLYNO, msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
+                # 审批工单
+                b = tplus_conn.push_into_target(target_name='mo_approve', push_data={'voucherID': tplus_mo_id})
             except Exception as e:
                 tplus_mo_entryid = None
-                filelog_error.error(f"Error extracting entry ID from T+ MO: {e}") 
-               
-            # 推送 领料申请 到 T+
-            rs_data = ApsBaseAction._get_demand_datalist(demandno=supplyno)     # 从 APS 查询 RS 领料数据，以工单号 supplyno 为依据查找
-            rs_push_response = tplus_conn.push_into_target(target_name='rs', push_data=rs_data, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid)
-            rs_push_response_json = rs_push_response.json()
-            if str(rs_push_response_json['code']) == '0': # 创建成功
-                # 同步调用 _rs_push_success 方法
-                import asyncio
-                asyncio.run(cls._rs_push_success(rsno=supplyno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID')))
-            else:
-                filelog_error.error(f"❌ 领料申请推送失败，对应工单：{supplyno}，错误信息：{rs_push_response_json['message']}")
-                # 同步调用 _rs_push_failed 方法
-                import asyncio
-                a = asyncio.run(cls._rs_push_failed(rsno=supplyno, msg=rs_push_response_json['message'], msg_from='T+'))
+                filelog_error.error(f"Error extracting entry ID from T+ MO: {e}")
 
-            # 最后再更改工单信息，一定放在最后一步，否则如果变更工单号变更太早，前面所有相关查询都会失败
-            # 同步调用 _pl_release_success 方法
-            import asyncio
-            a = asyncio.run(cls._pl_release_success(plno=supplyno, msg=mo_push_response_json['message'], change_supplyno=not _REMAIN_SUPPLYNO, msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid))
-            # 审批工单
-            a = tplus_conn.push_into_target(target_name='mo_approve', push_data={'voucherID': tplus_mo_id})
         else:
-            # 同步调用 _pl_release_failed 方法
             a = cls._pl_release_failed(plno=supplyno, msg=mo_push_response_json['message'], msg_from='T+')
             
+
+    @classmethod
+    def push_rs(cls, related_supplyno: str, *args, **kwargs):
+        # 推送 领料申请 到 T+
+        # rs_data = ApsBaseAction._get_demand_datalist(demandno=related_supplyno)     # 从 APS 查询 RS 领料数据，以工单号 related_supplyno 为依据查找
+        # rs_push_response = tplus_conn.push_into_target(target_name='rs', push_data=rs_data, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid)
+        # rs_push_response_json = rs_push_response.json()
+        # if str(rs_push_response_json['code']) == '0': # 创建成功
+        #     # 同步调用 _rs_push_success 方法
+        #     import asyncio
+        #     asyncio.run(cls._rs_push_success(rsno=related_supplyno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID')))
+        # else:
+        #     filelog_error.error(f"❌ 领料申请推送失败，对应工单：{related_supplyno}，错误信息：{rs_push_response_json['message']}")
+        #     # 同步调用 _rs_push_failed 方法
+        #     import asyncio
+        #     a = asyncio.run(cls._rs_push_failed(rsno=related_supplyno, msg=rs_push_response_json['message'], msg_from='T+'))
+        print('开始推送RS......')
+        a = cls._rs_push_failed(rsno=related_supplyno, msg='hello world!', msg_from='T+')
+
 
     @classmethod
     def when_mo_close(cls, mo_data: dict, *args, **kwargs):

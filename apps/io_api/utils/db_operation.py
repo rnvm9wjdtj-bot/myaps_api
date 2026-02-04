@@ -406,6 +406,7 @@ async def call_dbprocdure(db_names: str, procedure_name: str, params_list: List[
             meta=meta
         )
     except Exception as e:
+        filelog_error.error(f"❌调用存储过程`{procedure_name}`失败，{db_names}，错误信息：{str(e)}")
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

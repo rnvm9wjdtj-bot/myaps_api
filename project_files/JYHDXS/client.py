@@ -1,6 +1,6 @@
 """江阴海达橡塑"""
 
-import requests, uuid#, logging#, os, atexit
+import requests, uuid, asyncio#, logging#, os, atexit
 import pandas as pd
 from datetime import datetime
 
@@ -41,7 +41,7 @@ mes_url = mes.get("base_url", "")
 
 
 
-async def sap_post(url: str, session: requests.Session, interface_id: str, data: dict):
+def sap_post(url: str, session: requests.Session, interface_id: str, data: dict):
     """
     向SAP系统发送POST请求
     url: 请求URL
@@ -74,7 +74,7 @@ async def sap_post(url: str, session: requests.Session, interface_id: str, data:
     }
 
 
-async def refresh_workreport(supplyno: str):
+def refresh_workreport(supplyno: str):
     """
     刷新单条报工数据
     """
@@ -83,11 +83,11 @@ async def refresh_workreport(supplyno: str):
     response_json = response.json()
     workreport_data = response_json['data']
 
-    await db_delete(db_names=MYAPS_MAIN_DB, model_or_tablename='t_confirm', filter_string=f"`SupplyNo` = '{supplyno}'")
+    asyncio.run(db_delete(db_names=MYAPS_MAIN_DB, model_or_tablename='t_confirm', filter_string=f"`SupplyNo` = '{supplyno}'"))
     if not workreport_data:
         return
     [d.pop('workcenter') for d in workreport_data]
-    await db_bupsert(db_names=MYAPS_MAIN_DB, model_or_tablename='t_confirm', data_list=workreport_data)
+    asyncio.run(db_bupsert(db_names=MYAPS_MAIN_DB, model_or_tablename='t_confirm', data_list=workreport_data))
     return workreport_data
 
 #################################################################################
@@ -96,24 +96,24 @@ async def refresh_workreport(supplyno: str):
 
 # @cron_task(hour='8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23', minute='0,5,10,15,20,25,30,35,40,45,50,55')
 @cron_task(hour='6,8,10,12,14,16', minute='56')
-async def refresh_all_mo_workreport():
+def refresh_all_mo_workreport():
     """
     刷新所有报工数据
     """
     filelog_normal.info("⏰ 开始执行刷新所有报工数据任务")
     db = MYAPS_MAIN_DB
-    query_response = await db_query(db_name=db, model_or_tablename='v_supply_mo', filter_string="`Status` in ('E2A','REL','CNF')")
+    query_response = asyncio.run(db_query(db_name=db, model_or_tablename='v_supply_mo', filter_string="`Status` in ('E2A','REL','CNF')"))
     if not query_response['success']:
         return
     supplynos_list = [item['supplyno'] for item in query_response['data']]
     for supplyno in supplynos_list:
-        await refresh_workreport(supplyno)
+        asyncio.run(refresh_workreport(supplyno))
         filelog_normal.info(f"✅ 已刷新报工数据: {supplyno}")
 
 
 # @cron_task(hour='8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23', minute='0,5,10,15,20,25,30,35,40,45,50,55')
 @cron_task(hour='6,8,10,12,14,16', minute='55')
-async def refresh_stock(dbs: str = None):
+def refresh_stock(dbs: str = None):
     """
     刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据
     db: 对哪些账套生效，多个账套用逗号分隔
@@ -162,8 +162,8 @@ async def refresh_stock(dbs: str = None):
         stock['itemno'] = pdv.ITEMNO
         stock_data = stock.to_dict(orient='records')
 
-        delete_result = await db_delete(db_names=dbs, model_or_tablename='t_supply', filter_string=f"`Type`='ST'")
-        write_result = await db_bupsert(db_names=dbs, model_or_tablename='t_supply', data_list=stock_data)
+        delete_result = asyncio.run(db_delete(db_names=dbs, model_or_tablename='t_supply', filter_string=f"`Type`='ST'"))
+        write_result = asyncio.run(db_bupsert(db_names=dbs, model_or_tablename='t_supply', data_list=stock_data))
         filelog_normal.info(f"✅ 刷新库存任务执行完成，账套：{dbs}")
         response = standard_response(message=f"刷新库存任务执行完成，账套：{dbs}")
         
@@ -203,9 +203,9 @@ srm_field_map = {
 # @cron_task(hour=23, minute=50)
 # @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23", minute="0,5,10,15,20,25,30,35,40,45,50,55")
 # @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23", minute="0,10,20,30,40,50")
-# async def push_weekpr_to_srm():
+# def push_weekpr_to_srm():
 #     # 推送周要货计划到SRM
-#     pr_data = await ApsBaseAction.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=30, field_map=srm_field_map)
+#     pr_data = asyncio.run(ApsBaseAction.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=30, field_map=srm_field_map))
 #     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 #     for item in pr_data:
 #         item["plant"] = "1000"
@@ -224,7 +224,7 @@ srm_field_map = {
 
 # @cron_task(day=27, hour=12, minute=55)
 # @cron_task(day=1, hour=0, minute=5)
-# async def push_seasonpr_to_srm():
+# def push_seasonpr_to_srm():
 #     # 每月初推送季度要货计划到SRM
 #     # 生成下三个月的月底日期列表
 #     date_list = [
@@ -254,7 +254,7 @@ srm_field_map = {
 class ApsAction(ApsBaseAction):
 
     @classmethod
-    async def click_release_button(cls, supplyno: str):
+    def click_release_button(cls, supplyno: str):
         supplymo_detaildata = cls._get_supplymo_detaildata(supplyno=supplyno)
         try:
             start_datetime: str = supplymo_detaildata['dt_ordstart'].split(" ")[0]
@@ -273,20 +273,20 @@ class ApsAction(ApsBaseAction):
                 "BACKUP1": ','.join([i['workcenter'] for i in orderwc])
             }
 
-            sap_response = await sap_post(url=sap_url2, session=sap_session, interface_id="ZPP_PLAN_ORD_CREATE", data=data)
+            sap_response = sap_post(url=sap_url2, session=sap_session, interface_id="ZPP_PLAN_ORD_CREATE", data=data)
             sap_response_json = sap_response['response_json']
             sap_mo_data = sap_response_json['BODY'][0]
             
             if sap_mo_data['STATUS'] == 'S':
-                await cls._pl_release_success(plno=supplyno, mono=sap_mo_data['AUFNR'], msg=sap_mo_data['MESSAGE'], msg_from='ERP')
+                cls._pl_release_success(plno=supplyno, mono=sap_mo_data['AUFNR'], msg=sap_mo_data['MESSAGE'], msg_from='ERP')
             else:
-                await cls._pl_release_failed(plno=supplyno, to_status=supplymo_detaildata.get('status', 'CRE'), msg=sap_mo_data['MESSAGE'], msg_from='ERP')
+                cls._pl_release_failed(plno=supplyno, to_status=supplymo_detaildata.get('status', 'CRE'), msg=sap_mo_data['MESSAGE'], msg_from='ERP')
         except Exception as e:
-            await cls._pl_release_failed(plno=supplyno, to_status=supplymo_detaildata.get('status', 'CRE'), msg=str(e), msg_from='API')
+            cls._pl_release_failed(plno=supplyno, to_status=supplymo_detaildata.get('status', 'CRE'), msg=str(e), msg_from='API')
 
 
     @classmethod
-    async def when_mo_close(cls, supplyno: str):
+    def when_mo_close(cls, supplyno: str):
         """
         当工单管理的状态变为'CMP'（完成）时该方法将被自动调用
         🅰 supplyno: PL计划单编号

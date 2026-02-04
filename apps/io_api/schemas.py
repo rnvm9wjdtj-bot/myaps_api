@@ -544,11 +544,13 @@ class ModifySupply(BaseModel):
     supplyno: str = Field(None, max_length=64, description='新MO号（仅pltomo时传入有效）', example="MO123456")
     status: gc.OrderStatusEnum = Field(None,
         example=gc.OrderStatusEnum.CRE, description=f'状态 {gc.OrderStatusEnum.__members__}')
-    apiex_code: Optional[str] = Field(None, max_length=32, description='外部系统单据编号', example="MO123456")
-    apiex_id: Optional[str] = Field(None, max_length=32, description='外部系统单据ID', example="1")
-    apiex_entryid: Optional[str] = Field(None, max_length=32, description='外部系统单据条目ID', example="1")
+    avail_qty: Optional[float] = Field(None, ge=0, description='可用数量', example=100.0)
+    apiex_code: Optional[str | int] = Field(None, description='外部系统单据编号', example="MO123456")
+    apiex_id: Optional[str | int] = Field(None, description='外部系统单据ID', example="1")
+    apiex_entryid: Optional[str | int] = Field(None, description='外部系统单据条目ID', example="1")
     change_supplyno: bool = Field(True, description='是否更改供应单号（仅pltomo时传入有效）')
     memo: str = Field(None, max_length=255, description='备注', example="标准生产工单")
+    _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
 
     class Config:
         title = "验证规则 - 生产计划"
@@ -563,14 +565,20 @@ class ModifySupply(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values):
+        _cache_raw_input_data(cls, values)
+        if values.get("avail_qty") is not None:
+            try:
+                values["avail_qty"] = float(values["avail_qty"])
+            except ValueError:
+                values["avail_qty"] = None
         if values.get("status") not in gc.OrderStatusEnum.__members__:
             values["status"] = gc.OrderStatusEnum.CRE
         return values
 
-
-class DeleteSupply(BaseModel):
-    materialno: str = Field(..., max_length=64, description='料号', example="M001")
-    supplyno: str = Field(..., max_length=64, description='供应单号', example="MO123456")
+    @model_validator(mode="after")
+    def model_valid_after(self):
+        _set_raw_input_data(self)
+        return self
 
 
 
@@ -642,6 +650,33 @@ class AcceptDemand(BaseModel):
         return values
 
     @model_validator(mode='after')
+    def model_valid_after(self):
+        _set_raw_input_data(self)
+        return self
+
+
+class ModifyDemand(BaseModel):
+    status: Optional[gc.OrderStatusEnum] = Field(None, example='CRE', description=f'状态 {gc.OrderStatusEnum.__members__}')
+    req_qty: Optional[float] = Field(None, description='需求数量（须为负数，若输入正数则自动转为负数）', example=-100.0)
+    req_date: Optional[datetime | str] = Field(None, description='需求日期', example="2023-01-07T10:00:00")
+    memo: Optional[str] = Field(None, max_length=255, description='备注', example="标准销售订单")
+    _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
+
+    @model_validator(mode="before")
+    @classmethod
+    def model_valid(cls, values):
+        _cache_raw_input_data(cls, values)
+        req_qty = values.get("req_qty")
+        if req_qty is not None:
+            try:
+                req_qty = float(req_qty)
+                if req_qty > 0:
+                    values["req_qty"] = -1 * req_qty
+            except ValueError:
+                values["req_qty"] = None
+        return values
+
+    @model_validator(mode="after")
     def model_valid_after(self):
         _set_raw_input_data(self)
         return self

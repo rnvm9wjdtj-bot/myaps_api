@@ -3,7 +3,7 @@
 """
 
 # import threading
-import os
+import os, asyncio
 import logging, json, requests, pandas as pd
 from socket import MsgFlag
 from typing import Literal, List, Dict, Any, Optional
@@ -47,7 +47,7 @@ class ApsBaseAction(ABC):
 
     @classmethod
     @abstractmethod
-    async def click_release_button(cls, supplyno: str, *args, **kwargs):
+    def click_release_button(cls, supplyno: str, *args, **kwargs):
         """
         当按下工单管理的下达按钮（PL的Status变为'A2E'）时该方法将被自动调用
         - 各项目文件须声明子类并覆写该方法，注意要包含实现推送 PL 至 ERP 的逻辑：
@@ -55,7 +55,16 @@ class ApsBaseAction(ABC):
             - 若异步，则由 ERP 调用 api patch("/t_supply/{path_targetsupply}") 更新 PL
         - 若无需对接ERP，则无需覆写此方法
         """
-        await cls._pl_release_success(plno=supplyno, to_status='REL')
+        cls._pl_release_success(plno=supplyno, to_status='REL')
+
+
+    @classmethod
+    @abstractmethod
+    def push_rs(cls, supplymo_detaildata: Dict, *args, **kwargs):
+        """
+        调用存储过程将demand type由DM变更为RS时自动调用
+        """
+        pass
 
 
     @classmethod
@@ -101,37 +110,38 @@ class ApsBaseAction(ABC):
         🅰 _id: 外部系统返回的 MO ID
         🅰 _entryid: 外部系统返回的 MO 详情 ID（对于某些有表头的ERP，具体的 MO 是存在于子表中的，有单独的行记录id
         """
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_msg = f"✅推送计划任务执行成功，账套：{cls.main_db}，PL单号：{plno}，MO单号：{mono or plno}"
-        console_log.info(log_msg)
-        filelog_normal.info(log_msg)
-
         # query_result = db_query(db_name=cls.main_db, model_or_tablename="t_supply", filter_string=f"`SupplyNo`='{plno}'")
         query_result = cls._session.get(f"{cls.this_base_url}/api/t_supply?db_name={cls.main_db}&supplyno={plno}")
-        if query_result['success'] == 0:
-            return standard_response(status_code=query_result['status_code'], success=0, message=query_result['message'])
+        query_result_json = query_result.json()
 
-        query_data = query_result['data']
+        if query_result_json['success'] == 0:
+            console_log.error(f"Error querying supply {plno}: {query_result_json['message']}")
+            return standard_response(status_code=query_result_json['status_code'], success=0, message=query_result_json['message'])
+
+        query_data = query_result_json['data']
         if not query_data or len(query_data) > 1:
+            filelog_error.error(f"Error querying supply {plno}: multiple records matched.")
             return standard_response(success=0, message=f"PL {plno} not found or multiple records matched.")
 
         if query_data[0]["type"] != "PL":
+            filelog_error.error(f"Error querying supply {plno}: not a PL.")
             return standard_response(status_code=400, success=0, message=f"Supply {plno} is not a PL.")
 
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_msg = f"✅ 推送计划任务执行成功，账套：{cls.main_db}，PL单号：{plno}，MO单号：{mono or plno}"
+        console_log.info(log_msg)
+        filelog_normal.info(log_msg)
         memo = json.dumps({
             "msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now,
             "native_no": plno, "_code": mono, "_id": _id, "_entryid": _entryid}, ensure_ascii=False
         )
-        # # 调用存储过程SupplyConvertMOByE2A，将PL转为MO
-        # params_list = [[plno, mono, to_status, _id, _entryid, memo, change_supplyno]]
-        # return await call_dbprocdure(db_names=cls.main_db, procedure_name="SupplyConvertMOByE2A", params_list=params_list)
 
         response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}/pltomo?db_name={cls.main_db}', json={
             'status': to_status,
-            'apiex_code': mono,
-            'apiex_id': _id,
-            'apiex_entryid': _entryid,
-            'supplyno': mono,
+            'apiex_code': str(mono),
+            'apiex_id': str(_id),
+            'apiex_entryid': str(_entryid),
+            'supplyno': str(mono),
             'change_supplyno': change_supplyno,
             'memo': memo,
         })
@@ -143,16 +153,17 @@ class ApsBaseAction(ABC):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_msg = f"🚫 推送计划任务执行失败，账套：{cls.main_db}，PL单号：{plno}"
         console_log.error(log_msg)
-        filelog_normal.error(log_msg)
+        filelog_error.error(log_msg)
+        memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
         response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}/edit?db_name={cls.main_db}', json={
             'status': to_status,    # ❗❗失败情况下，状态务必回撤为 CRE 或 NEW ，否则后续无法再次下达
-            'memo': json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False),
+            'memo': memo,
         })
         return response
 
 
     @classmethod
-    async def _rs_push_success(cls, rsno: str, to_status: Literal[OrderStatusEnum.E2A, OrderStatusEnum.REL]='E2A', msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
+    def _rs_push_success(cls, rsno: str, to_status: Literal[OrderStatusEnum.E2A, OrderStatusEnum.REL]='E2A', msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
         """
         当推送 领料申请 RS 至 ERP 成功时，调用该方法更新 RS
         Args:
@@ -164,25 +175,18 @@ class ApsBaseAction(ABC):
             _entryid: 外部系统返回的 领料单 详情 ID（对于某些有表头的ERP，具体的 领料申请 是存在于子表中的，有单独的行记录id
         """
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        memo = json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": rsno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
         
-        response = await db_update_by_index(
-            db_names=cls.main_db,
-            model_or_tablename='t_demand',
-            index_dict={"demandno": rsno},
-            new_values_dict={     # 注意不能更新 demandno ，因为会在推送工单成功后，调用 数据库存储过程 修改 RS demand 编号
-                "status": to_status,
-                "apiex_code": _code,
-                "apiex_id": _id,
-                "apiex_entryid": _entryid,
-                'memo': json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": rsno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
-            },
-            not_found_behavior="skip",
-        )
+        response = cls._session.patch(f'{cls.this_base_url}/api/t_demand/{rsno}?db_name={cls.main_db}', json={
+            'status': to_status,
+            'memo': memo,
+        })
+        
         return response
 
 
     @classmethod
-    async def _rs_push_failed(cls, rsno: str, msg: str=None, msg_from: str=None):
+    def _rs_push_failed(cls, rsno: str, msg: str=None, msg_from: str=None):
         """
         当推送 RS 至 ERP 失败时，调用该方法更新 RS 状态
         Args:
@@ -191,16 +195,12 @@ class ApsBaseAction(ABC):
             msg_from: 外部系统名称
         """
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
 
-        response = await db_update_by_index(
-            db_names=cls.main_db,
-            model_or_tablename='t_demand',
-            index_dict={"demandno": rsno},
-            new_values_dict={
-                'memo': json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": True, "datetime": now}, ensure_ascii=False)
-            },
-            not_found_behavior="skip",
-        )
+        response = cls._session.patch(f'{cls.this_base_url}/api/t_demand/{rsno}?db_name={cls.main_db}', json={
+            'memo': memo,
+        })
+
         return response
 
 
@@ -214,7 +214,7 @@ class ApsBaseAction(ABC):
 
 
     @classmethod
-    async def get_dategrouped_pr(cls, db_name: str=None, period: int|str=30, groupdates: str=None, field_map: dict=None):
+    def get_dategrouped_pr(cls, db_name: str=None, period: int|str=30, groupdates: str=None, field_map: dict=None):
         """
         从数据库获取按日期分组的计划任务数据
         🅰 db_name: 账套名称，默认cls.main_db
@@ -225,11 +225,11 @@ class ApsBaseAction(ABC):
         from apps.io_api.routers import get_matdailyqtyreport
         from datetime import date, datetime
         db_name = db_name or cls.main_db
-        response = await get_matdailyqtyreport(db_name=db_name, period=period, groupdates=groupdates, materialno=None)
-        data = response.get('data', [])
-        # response = cls._session.get(f"{cls.this_base_url}/api/v_matdailyqtyreport?db_name={db_name}&period={period}&groupdates={groupdates}")
-        # response.raise_for_status()
-        # data = response.json().get('data', [])
+        # response = asyncio.run(get_matdailyqtyreport(db_name=db_name, period=period, groupdates=groupdates, materialno=None))
+        # data = response.get('data', [])
+        response = cls._session.get(f"{cls.this_base_url}/api/v_matdailyqtyreport?db_name={db_name}&period={period}&groupdates={groupdates}")
+        response.raise_for_status()
+        data = response.json().get('data', [])
         field_map = field_map or {
             'materialno': '料号',
             'datestr': '交期',

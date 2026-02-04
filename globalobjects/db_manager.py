@@ -9,6 +9,7 @@ from tortoise.transactions import in_transaction
 from tortoise.exceptions import IntegrityError
 
 from config.settings import MYAPS_DBSET_LIST
+from apps.io_api.utils.common import dict_to_lower_keys
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -236,7 +237,7 @@ class DbManager:
                 "execution_time": execution_time,
                 "total": total,
                 "batch_size": batch_size,
-                "data": all_data
+                "data": [dict_to_lower_keys(item) for item in all_data]
             }
             
             logger.info(f"数据查询完成: {response}")
