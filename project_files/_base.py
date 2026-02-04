@@ -89,7 +89,7 @@ class ApsBaseAction(ABC):
 
 
     @classmethod
-    async def _pl_release_success(cls, plno: str, mono: str=None, to_status: Literal[OrderStatusEnum.E2A, OrderStatusEnum.REL]='E2A', change_supplyno: bool=True, msg: str=None, msg_from: str=None, _id: str=None, _entryid: str=None):
+    def _pl_release_success(cls, plno: str, mono: str=None, to_status: Literal[OrderStatusEnum.E2A, OrderStatusEnum.REL]='E2A', change_supplyno: bool=True, msg: str=None, msg_from: str=None, _id: str=None, _entryid: str=None):
         """
         通过调用自路由修改PL的Type、Status、SupplyNo、Memo等字段，作为私有方法在 def click_release_button() 中被直接调用
         🅰 plno: PL计划单编号
@@ -106,7 +106,8 @@ class ApsBaseAction(ABC):
         console_log.info(log_msg)
         filelog_normal.info(log_msg)
 
-        query_result = await db_query(db_name=cls.main_db, model_or_tablename="t_supply", filter_string=f"`SupplyNo`='{plno}'")
+        # query_result = db_query(db_name=cls.main_db, model_or_tablename="t_supply", filter_string=f"`SupplyNo`='{plno}'")
+        query_result = cls._session.get(f"{cls.this_base_url}/api/t_supply?db_name={cls.main_db}&supplyno={plno}")
         if query_result['success'] == 0:
             return standard_response(status_code=query_result['status_code'], success=0, message=query_result['message'])
 
@@ -252,7 +253,7 @@ class ApsBaseAction(ABC):
 
     @classmethod
     @abstractmethod
-    async def when_mo_close(cls, mo_data: dict, *args, **kwargs):
+    def when_mo_close(cls, mo_data: dict, *args, **kwargs):
         """
         当MO关闭时该方法将被自动调用
         🅰 mo_data: MO数据

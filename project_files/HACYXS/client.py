@@ -133,11 +133,7 @@ async def refresh_stock_task(*args, **kwargs):
 # ⬇️ 数据库事件
 #################################################################################
 
-# 测试用完删
-# async def push_rs_to_tplus(mono: str):
-#     rs_data = ApsBaseAction._get_demand_datalist(demandno=mono)
-#     response = await tplus_conn.push_into_target(target_name='rs', push_data=rs_data)
-#     return response
+
 _REMAIN_SUPPLYNO = True
 
 class ApsAction(ApsBaseAction):

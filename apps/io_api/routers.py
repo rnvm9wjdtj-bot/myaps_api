@@ -264,17 +264,17 @@ async def post_mat_wc_mold(
 ########################################################################
 # 生产数据接口
 ########################################################################
-# @rt.get("/t_supply", tags=["生产数据 - 供应"], summary="获取供应记录", description="获取供应记录")
-# async def get_supply(
-#     db_name: str = common_params["db_name"],
-#     supplyno: str = Query(..., description="供应号"),
-#     type: str = Query(None, enum=['PL', 'MO', 'PR', 'PO'], description="供应类型"),
-#     # x_api_key: str = common_params["x_api_key"]
-# ):
-#     filter_string = f"`SupplyNo`='{supplyno}'"
-#     if type:
-#         filter_string += f" AND `Type`='{type}'"
-#     return await db_query(db_name=db_name, model_or_tablename="v_supply", filter_string=filter_string)
+@rt.get("/t_supply", tags=["生产数据 - 供应"], summary="获取供应记录", description="获取供应记录")
+async def get_supply(
+    db_name: str = common_params["db_name"],
+    supplyno: str = Query(..., description="供应号"),
+    type: str = Query(None, enum=['PL', 'MO', 'PR', 'PO'], description="供应类型"),
+    # x_api_key: str = common_params["x_api_key"]
+):
+    filter_string = f"`SupplyNo`='{supplyno}'"
+    if type:
+        filter_string += f" AND `Type`='{type}'"
+    return await db_query(db_name=db_name, model_or_tablename="v_supply", filter_string=filter_string)
 #   TODO 如果 vendorno 不为空，则尝试查询一下 销售订单 demand
 
 
@@ -319,6 +319,9 @@ async def patch_supply(
             success=0,
             message=f"PL {path_targetsupply} not found or multiple records matched.")
 
+    if isinstance(data, ModifySupply):
+        data = data.model_dump(exclude_unset=True, exclude_none=True)
+    data['materialno'] = query_data[0]['materialno']
     if action == "pltomo":
         if query_data[0]["type"] != "PL":
             return standard_response(
@@ -326,15 +329,14 @@ async def patch_supply(
                 success=0,
                 message=f"Supply {path_targetsupply} is not a PL.")
         # 如果未指定供应号，则延用
-        if not data.supplyno:
-            data.supplyno = path_targetsupply
+        if not data.get('supplyno'):
+            data['supplyno'] = path_targetsupply
         # 调用存储过程SupplyConvertMOByE2A，将PL转为MO
-        params_list = [[path_targetsupply, data.supplyno, data.status, data.apiex_id, data.apiex_entryid, data.memo, data.change_supplyno]]
+        params_list = [[path_targetsupply, data['supplyno'], data['status'], data['apiex_id'], data['apiex_entryid'], data['memo'], data['change_supplyno']]]
         return await call_dbprocdure(db_names=db_name, procedure_name="SupplyConvertMOByE2A", params_list=params_list)
     elif action == "edit":
-        data.supplyno = path_targetsupply   # 供应号不能修改，将目标供应号重新赋值给data，以便后续 orm 时能正确索引到记录
-        data.change_supplyno = False
-        data = dict(data)
+        data['supplyno'] = path_targetsupply   # 供应号不能修改，将目标供应号重新赋值给data，以便后续 orm 时能正确索引到记录
+        # data['change_supplyno'] = False
         return await db_supsert(db_names=db_name, model_or_tablename="t_supply", data_item=data)
     else:
         return standard_response(

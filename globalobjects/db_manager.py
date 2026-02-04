@@ -1072,10 +1072,17 @@ class DbManager:
             raise
 
 
-def get_db_managers():
-    db_managers = {}
-    for db in MYAPS_DBSET_LIST:
-        db_managers[db] = DbManager(db)
-    return db_managers
+# 延迟初始化 db_managers
+_db_managers = None
 
+def get_db_managers():
+    global _db_managers
+    if _db_managers is None:
+        _db_managers = {}
+        for db in MYAPS_DBSET_LIST:
+            _db_managers[db] = DbManager(db)
+    return _db_managers
+
+# 为了保持向后兼容，提供一个模块级别的变量
+# 但在实际使用中，建议使用 get_db_managers() 函数来获取
 db_managers = get_db_managers()

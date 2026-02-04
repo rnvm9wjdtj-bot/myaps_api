@@ -7,8 +7,23 @@ from tortoise.models import Model as TortoiseBaseModel
 from pydantic import BaseModel as PydanticSchema
 
 from config.settings import MYAPS_DB_SET
-from globalobjects.db_manager import db_managers, DbManager
+from globalobjects.db_manager import get_db_managers, DbManager
 from globalobjects import file_timed_logger
+
+# 为了保持向后兼容，重新导出 db_managers
+db_managers = get_db_managers()
+
+def get_db_manager(db_name):
+    """
+    获取数据库管理器实例，确保使用当前事件循环的连接
+    
+    Args:
+        db_name: 数据库连接名称
+        
+    Returns:
+        DbManager 实例
+    """
+    return get_db_managers()[db_name]
 from .common import standard_response, format_query_result, get_raw_input_data, convert_to_dict, format_data_for_logging
 from ..models import TABLE_MODEL_MAPPING
 
@@ -72,7 +87,7 @@ async def db_query(db_name: str, model_or_tablename: TortoiseBaseModel | str, fi
         valid_db = validate_databases(db_name)[0]
         assert valid_db, "未指定账套或账套不存在"
 
-        db_manager = db_managers[valid_db]
+        db_manager = get_db_manager(valid_db)
         
         query_result = await db_manager.query_data(
             table_name=table_name,
@@ -290,7 +305,7 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
         # 处理每个账套，使用专属的DbManager实例
         for db_name in valid_dbs:
             # 获取该账套的专属DbManager实例
-            db_manager = db_managers[db_name]
+            db_manager = get_db_manager(db_name)
             
             result = await db_manager.bulk_upsert(
                 model_class=mdl,
@@ -345,7 +360,7 @@ async def db_delete(db_names: str, model_or_tablename: TortoiseBaseModel | str, 
         assert valid_dbs, "未指定账套或账套不存在"
         total_count = 0
         for db_name in valid_dbs:
-            db_manager = db_managers[db_name]
+            db_manager = get_db_manager(db_name)
             exe_result = await db_manager.delete_data(table_name=table_name, filter_string=filter_string)
 
             count = exe_result.get("affected_rows", 0)
@@ -451,7 +466,7 @@ async def db_update_by_index(
 
     try:
         for db_name in valid_dbs:
-            db_manager = db_managers[db_name]
+            db_manager = get_db_manager(db_name)
 
 
             print(f"index_dict: {index_dict}")
