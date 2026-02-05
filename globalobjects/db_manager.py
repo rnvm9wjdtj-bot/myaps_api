@@ -1,6 +1,5 @@
 from typing import List, Dict, Any, Tuple, Optional, Union, Literal
 from contextlib import asynccontextmanager
-import logging
 from datetime import datetime
 
 from tortoise import Tortoise#, connections
@@ -10,10 +9,10 @@ from tortoise.exceptions import IntegrityError
 
 from config.settings import MYAPS_DBSET_LIST
 from apps.io_api.utils.common import dict_to_lower_keys
+from globalobjects import logger as log_config
 
-# 配置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# 获取统一日志器
+logger = log_config.get_logger(__name__)
 
 
 def with_transaction(func):

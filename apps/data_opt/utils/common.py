@@ -1,4 +1,9 @@
 import base64, requests, json, ast, re#,os,
+
+from globalobjects import logger as log_config
+
+# 获取日志器
+logger = log_config.get_logger(__name__)
 from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
 from typing import Optional, Dict, Union
@@ -125,7 +130,7 @@ def map_dict_keys(dict_list, key_mapper):
         # 返回映射后的字典字符串
         return mapped_data_list
     except (ValueError, SyntaxError) as e:
-        print(f"Error mapping keys: {e}")
+        logger.error(f"Error mapping keys: {e}")
         return None
 
 
@@ -201,7 +206,7 @@ def parallel_executor(max_workers=10):
                         else:
                             results.append(result)
                     except Exception as exc:
-                        print(f"处理 {item} 时出错: {exc}")
+                        logger.error(f"处理 {item} 时出错: {exc}")
             return results
         return wrapper
     return decorator

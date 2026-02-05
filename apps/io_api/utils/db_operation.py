@@ -8,7 +8,7 @@ from pydantic import BaseModel as PydanticSchema
 
 from config.settings import MYAPS_DB_SET
 from globalobjects.db_manager import get_db_managers, DbManager
-from globalobjects import file_timed_logger
+from globalobjects import logger as log_config
 
 # 为了保持向后兼容，重新导出 db_managers
 db_managers = get_db_managers()
@@ -30,8 +30,12 @@ from ..models import TABLE_MODEL_MAPPING
 
 
 
-filelog_normal = file_timed_logger.setup_logging(__name__, "normal.log")
-filelog_error = file_timed_logger.setup_logging(__name__, "error.log")
+# 获取控制台日志器
+logger = log_config.get_logger(__name__)
+
+# 获取文件日志器
+filelog_normal = log_config.get_file_logger(__name__, 'default')
+filelog_error = log_config.get_file_logger(__name__, 'error')
 
 
 
@@ -470,8 +474,8 @@ async def db_update_by_index(
             db_manager = get_db_manager(db_name)
 
 
-            print(f"index_dict: {index_dict}")
-            print(f"new_values_dict: {new_values_dict}")
+            logger.debug(f"index_dict: {index_dict}")
+            logger.debug(f"new_values_dict: {new_values_dict}")
 
 
             result = await db_manager.update_by_index(

@@ -18,7 +18,7 @@ from apps.data_opt.utils.common import get_session
 
 
 # ❗❗❗❗❗❗❗❗❗❗❗❗⬇️不要删掉，便于各项目文件引用 ❗❗❗❗❗❗❗❗❗❗❗❗
-from globalobjects import file_timed_logger, CACHE_JSON, ProjectDefaultValues as pdv
+from globalobjects import logger as log_config, CACHE_JSON, ProjectDefaultValues as pdv
 from apps.io_api.utils.common import standard_response
 from apps.io_api.utils.db_operation import db_delete, db_bupsert, call_dbprocdure, db_query, db_bupsert, db_supsert, db_update_by_index
 from apps.data_opt.components.hap import HapConnection
@@ -29,13 +29,13 @@ from apps.io_api.utils.db_operation import db_delete, db_bupsert
 
 
 # 配置日志
-filelog_normal = file_timed_logger.setup_logging(__name__, log_filename='normal.log')
-filelog_error = file_timed_logger.setup_logging(__name__, log_filename='error.log')
+filelog_normal = log_config.get_file_logger(__name__, 'default')
+filelog_error = log_config.get_file_logger(__name__, 'error')
 
 
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-console_log = logging.getLogger(__name__)
+# 获取统一日志器
+console_log = log_config.get_logger(__name__)
 
 
 

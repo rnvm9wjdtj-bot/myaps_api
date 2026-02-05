@@ -1,4 +1,4 @@
-import os, asyncio, inspect, logging, atexit
+import os, asyncio, inspect, atexit
 from fastapi import FastAPI
 
 from typing import Dict, List, Callable, Any, Optional
@@ -9,13 +9,10 @@ from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
 
+from globalobjects import logger as log_config
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO, 
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# 获取统一日志器
+logger = log_config.get_logger(__name__)
 
 class TaskRegistry:
     """任务注册表，用于收集和管理所有定时任务"""

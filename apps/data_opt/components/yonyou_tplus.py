@@ -269,6 +269,7 @@ class TplusPushRs(PydanticModel):
     def model_valid(cls, values: Dict[str, Any]):
         cleaned_values = {}
         cleaned_values['ExternalCode'] = values['demandno']
+        # cleaned_values['Code'] = values['demandno']
         cleaned_values['VoucherType'] = {"Code": "ST1039"}
         cleaned_values['VoucherDate'] = values["_entries_"][0]['req_date']
         cleaned_values['BusiType'] = {"Code": "MR01"}
@@ -709,12 +710,13 @@ class TplusConnection(BaseConnection):
         return processed_data
 
 
-    def push_into_target(self, target_name: str, push_data: dict, **kwargs):
+    def push_into_target(self, target_name: str, push_data: dict | list[dict], use_nativeno: bool = False, **kwargs):
         """
         推送数据到T+
         Args:
             target_name: 目标名称
             push_data: APS数据库查询结果
+            use_nativeno: 是否使用 APS 原生编号，默认False
         Returns:
 
         """
@@ -748,8 +750,9 @@ class TplusConnection(BaseConnection):
 
         if target_name in ('mo_single', 'rs'):
             dto = pydantic_model(**push_data).model_dump()
-            if kwargs.get('mo_remain_supplyno'):
-                dto['Code'] = push_data['supplyno']
+            if use_nativeno:
+                nativeno = push_data.get('supplyno') or push_data.get('demandno')
+                dto['Code'] = nativeno
             payload = {"dto": dto}
             response = self._post(endpoint=endpoint, data=payload)
             return response

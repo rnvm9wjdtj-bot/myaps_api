@@ -16,11 +16,14 @@ from .._base import (
     db_delete, db_bupsert, db_query
 )
 
+# 导入统一日志配置（用于直接使用）
+from globalobjects import logger as log_config
+
 from apps.data_opt.components import yonyou_tplus, hap
 
 
-# 推送 MO 后是否保留原生的 supplyno
-_REMAIN_SUPPLYNO = True
+# 将 APS 原生的 supplyno 、demandno 等字段，直接推送到 T+ 中，作为单据编号
+_USE_NATIVENO = True
 
 #################################################################################
 # ⬇️ 项目对象及参数
@@ -53,8 +56,6 @@ def get_maindata_from_erp_to_hap():
 
     route = tplus_conn.pull_from_source(source_name='route')
     hap_conn.worksheet('t_mat_wc').upsert(route)
-
-    pass
 
 
 def refresh_stock():
@@ -107,7 +108,10 @@ def refresh_stock():
 
 
 def push_pr():
-    pass
+    pr_query = db_query(db_name=MYAPS_MAIN_DB, model_or_tablename='t_supply', filter_string=f"`Type`='PR' AND `Status` IN ('NEW','CRE')")
+    if pr_query['success']:
+        pr_list = pr_query['data']
+        tplus_conn.push_into_target(target_name='pr', push_data=pr_list, use_nativeno=_USE_NATIVENO)
 #################################################################################
 # ⬇️ 定时任务
 #################################################################################
@@ -153,10 +157,10 @@ class ApsAction(ApsBaseAction):
         supplymo_detaildata = ApsBaseAction._get_supplymo_detaildata(supplyno=supplyno)
         supplymo_detaildata['demand_list'] = demand_list
 
-        mo_push_response = tplus_conn.push_into_target(target_name='mo_single', push_data=supplymo_detaildata, mo_remain_supplyno=_REMAIN_SUPPLYNO)
+        mo_push_response = tplus_conn.push_into_target(target_name='mo_single', push_data=supplymo_detaildata, use_nativeno=_USE_NATIVENO)
         mo_push_response_json = mo_push_response.json()
 
-        if mo_push_response_json['code'] == 0: # 响应错误码为0，MO 创建成功
+        if str(mo_push_response_json['code']) == '0': # 响应错误码为0，MO 创建成功
             # 从响应中提取 data
             response_data = mo_push_response_json['data']
             # 查询一下刚刚推送成功的 MO 在 T+ 中详情， 这是查询单个mo的接口
@@ -168,7 +172,7 @@ class ApsAction(ApsBaseAction):
                 # 从 T+ 中提取 MO 详情中的第一个详情记录的 ID 作为 _entryid
                 tplus_mo_entryid = mo_in_tplus['ManufactureOrderDetails'][0]['ID'] 
                 # 最后再更改工单信息，一定放在最后一步，否则如果变更工单号变更太早，前面若有用原生供应号查询都会失败
-                a = cls._pl_release_success(plno=supplyno, msg=mo_push_response_json['message'], change_supplyno=not _REMAIN_SUPPLYNO, msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
+                a = cls._pl_release_success(plno=supplyno, msg=mo_push_response_json['message'], change_supplyno=not _USE_NATIVENO, msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
 
                 # 审批接口，要在领料申请前批准
                 b = tplus_conn.push_into_target(target_name='mo_approve', push_data={'voucherID': tplus_mo_id})
@@ -193,17 +197,17 @@ class ApsAction(ApsBaseAction):
         """
         if isinstance(mdlist_or_supplyno, str):
             rs_data = ApsBaseAction._get_demand_datalist(demandno=mdlist_or_supplyno)     # 从 APS 查询 RS 领料数据，以工单号 related_supplyno 为依据查找
-            demandno = rs_data[0]['demandno']
+            demandno = mdlist_or_supplyno
         else:
             rs_data = mdlist_or_supplyno
-            demandno = mdlist_or_supplyno
-        rs_push_response = tplus_conn.push_into_target(target_name='rs', push_data=rs_data, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid)
+            demandno = rs_data[0]['demandno']
+        rs_push_response = tplus_conn.push_into_target(target_name='rs', push_data=rs_data, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid, use_nativeno=_USE_NATIVENO)
         rs_push_response_json = rs_push_response.json()
         if str(rs_push_response_json['code']) == '0': # 创建成功
-            a = asyncio.run(cls._rs_push_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID')))
+            a = cls._rs_push_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
         else:
             filelog_error.error(f"❌ 领料申请推送失败，对应工单：{demandno}，错误信息：{rs_push_response_json['message']}")
-            a = asyncio.run(cls._rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+'))
+            a = cls._rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+')
 
 
     @classmethod

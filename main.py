@@ -9,7 +9,7 @@ from fastapi.openapi.docs import get_swagger_ui_html
 from tortoise.contrib.fastapi import register_tortoise
 
 from config.settings import TORTOISE_ORM_CONFIG, PORT, BASE_DIR, TURNON_DBMONITOR
-from globalobjects import file_timed_logger
+from globalobjects import logger as log_config
 from apps.io_api.routers import rt as io_rt
 from apps.io_api.utils.common import register_exception_handlers
 from apps.data_opt.routers import rt as do_rt
@@ -24,33 +24,33 @@ from apps.data_opt.utils.scheduler import scheduler_manager
 async def lifespan(app: FastAPI):
     """应用生命周期管理器"""
     # 应用启动时执行的操作
+    # 初始化统一日志系统
+    log_config.initialize_logging()
+    
     # 将主应用事件循环传递给调度器（在 uvicorn 启动后获取正确的事件循环）
     main_loop = asyncio.get_running_loop()
     scheduler_manager.set_main_loop(main_loop)
-    print(f"✅ 已将主应用事件循环传递给调度器: {main_loop}")
+    log_config.info(f"已将主应用事件循环传递给调度器: {main_loop}")
     
     if TURNON_DBMONITOR:
         mysql_monitor.start_monitoring()
-        print("✅ MySQL Binlog监控已启动")
-
-    file_timed_logger.setup_logging(__name__)
-    # 启动所有日志队列监听器
-    file_timed_logger.start_all_listeners()
+        log_config.info("MySQL Binlog监控已启动")
+    else:
+        log_config.warning("⚠️ MySQL Binlog监控未启动\，请确认环境变量 TURNON_DBMONITOR 是否配置为期望的值")
     
     yield  # 应用运行期间
     
     # 应用关闭时执行的操作
-    print("🛑 应用关闭中...")
+    log_config.info("应用关闭中...")
     
     if TURNON_DBMONITOR:
         mysql_monitor.stop_monitoring()
-        print("🛑 MySQL Binlog监控已停止")
+        log_config.info("MySQL Binlog监控已停止")
     # 关闭调度器
     scheduler_manager.shutdown()
-    print("🛑 定时任务管理器已关闭")
-    # 关闭日志队列监听
-    file_timed_logger.close_logging()
-    print("🛑 日志队列 已停止。")
+    log_config.info("定时任务管理器已关闭")
+    # 关闭统一日志系统
+    log_config.shutdown_logging()
 
 
 
@@ -210,7 +210,7 @@ register_tortoise(
 from apps.data_opt.utils.scheduler import initialize_scheduler, get_scheduler_status, scheduler_manager
 
 initialize_scheduler()
-print(f"✅ 定时任务管理器状态: {get_scheduler_status()}")
+log_config.info(f"定时任务管理器状态: {get_scheduler_status()}")
 
 
 # 启动说明：
@@ -221,12 +221,28 @@ if __name__ == "__main__":
     env_file = os.path.join(BASE_DIR, '.env')
     os.environ.setdefault('ENV_FILE', env_file)
     load_dotenv(env_file)
+    
+    # 配置uvicorn日志格式，与我们的日志系统格式一致
+    from uvicorn.config import LOGGING_CONFIG
+    LOGGING_CONFIG['formatters']['default']['fmt'] = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    # 精简访问日志格式，只包含必要信息
+    LOGGING_CONFIG['formatters']['access']['fmt'] = '%(asctime)s - %(name)s - %(levelname)s - %(client_addr)s - "%(request_line)s" %(status_code)s'
+    
+    # 禁用访问日志处理器
+    LOGGING_CONFIG['handlers'].pop('access', None)
+    LOGGING_CONFIG['loggers']['uvicorn.access'] = {
+        'handlers': [],
+        'level': 'CRITICAL',
+        'propagate': False,
+    }
+    
     uvicorn.run(
         app,
         host="0.0.0.0",
         port=PORT,
         log_level="info",
-        access_log=False
+        access_log=False,
+        log_config=LOGGING_CONFIG
     )
 
 

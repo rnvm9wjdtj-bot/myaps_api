@@ -7,6 +7,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, Any#NamedTuple, List#, Callable, Literal, 
 # import requests
 
+from globalobjects import logger as log_config
+
 from ._base import (
     BaseConnection, convert_timeunit, clean_value, #reset_default_values,
     BaseModel as PydanticModel, model_validator, Field,
@@ -14,6 +16,9 @@ from ._base import (
     AcceptMold, AcceptMatWcMold,
     CACHE_JSON
 )
+
+# 获取日志器
+logger = log_config.get_logger(__name__)
 
 
 
@@ -220,7 +225,7 @@ class K3Connection(BaseConnection):
             gmt_time = gmt_time.replace(tzinfo=gmt_timezone)
             # 转换为系统默认时区时间
             expire_time = gmt_time.astimezone()
-            print(f"Cookie解析成功，GMT过期时间: {gmt_time}, 系统时区过期时间: {expire_time}")
+            logger.debug(f"Cookie解析成功，GMT过期时间: {gmt_time}, 系统时区过期时间: {expire_time}")
             return cookie_value, expire_time
         except (IndexError, ValueError, http.cookies.CookieError) as e:
             raise ConnectionError(f"Cookie解析失败: {e}")
@@ -303,7 +308,7 @@ class K3Connection(BaseConnection):
             )
             # 处理响应
             if 'ErrorCode' in response.text:
-                print(f"查询失败: {response.text}")
+                logger.error(f"查询失败: {response.text}")
                 break
             data = []
             raw_data = response.json()
