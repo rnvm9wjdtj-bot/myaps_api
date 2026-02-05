@@ -164,6 +164,8 @@ class ApsAction(ApsBaseAction):
                 a = cls._pl_release_success(plno=supplyno, msg=mo_push_response_json['message'], change_supplyno=not _REMAIN_SUPPLYNO, msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
                 # 审批工单
                 b = tplus_conn.push_into_target(target_name='mo_approve', push_data={'voucherID': tplus_mo_id})
+
+                c = cls.push_rs(related_supplyno=supplyno, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid)
             except Exception as e:
                 tplus_mo_entryid = None
                 filelog_error.error(f"Error extracting entry ID from T+ MO: {e}")
@@ -173,22 +175,16 @@ class ApsAction(ApsBaseAction):
             
 
     @classmethod
-    def push_rs(cls, related_supplyno: str, *args, **kwargs):
+    def push_rs(cls, related_supplyno: str, tplus_mo_id: str, tplus_mo_entryid: str):
         # 推送 领料申请 到 T+
-        # rs_data = ApsBaseAction._get_demand_datalist(demandno=related_supplyno)     # 从 APS 查询 RS 领料数据，以工单号 related_supplyno 为依据查找
-        # rs_push_response = tplus_conn.push_into_target(target_name='rs', push_data=rs_data, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid)
-        # rs_push_response_json = rs_push_response.json()
-        # if str(rs_push_response_json['code']) == '0': # 创建成功
-        #     # 同步调用 _rs_push_success 方法
-        #     import asyncio
-        #     asyncio.run(cls._rs_push_success(rsno=related_supplyno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID')))
-        # else:
-        #     filelog_error.error(f"❌ 领料申请推送失败，对应工单：{related_supplyno}，错误信息：{rs_push_response_json['message']}")
-        #     # 同步调用 _rs_push_failed 方法
-        #     import asyncio
-        #     a = asyncio.run(cls._rs_push_failed(rsno=related_supplyno, msg=rs_push_response_json['message'], msg_from='T+'))
-        print('开始推送RS......')
-        a = cls._rs_push_failed(rsno=related_supplyno, msg='hello world!', msg_from='T+')
+        rs_data = ApsBaseAction._get_demand_datalist(demandno=related_supplyno)     # 从 APS 查询 RS 领料数据，以工单号 related_supplyno 为依据查找
+        rs_push_response = tplus_conn.push_into_target(target_name='rs', push_data=rs_data, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid)
+        rs_push_response_json = rs_push_response.json()
+        if str(rs_push_response_json['code']) == '0': # 创建成功
+            a = asyncio.run(cls._rs_push_success(rsno=related_supplyno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID')))
+        else:
+            filelog_error.error(f"❌ 领料申请推送失败，对应工单：{related_supplyno}，错误信息：{rs_push_response_json['message']}")
+            a = asyncio.run(cls._rs_push_failed(rsno=related_supplyno, msg=rs_push_response_json['message'], msg_from='T+'))
 
 
     @classmethod
