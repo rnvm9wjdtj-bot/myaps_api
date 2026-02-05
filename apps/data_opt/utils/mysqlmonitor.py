@@ -80,6 +80,9 @@ class MySQLBinlogMonitor:
         # 创建持久的事件循环
         self._event_loop = None
         
+        # 创建线程池用于并行处理事件
+        self._thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=10)  # 可根据需要调整线程池大小
+        
         # 验证配置
         self._validate_config()
 
@@ -438,8 +441,8 @@ class MySQLBinlogMonitor:
     def _run_async_event(self, event):
         """在新线程中运行事件"""
         try:
-            # 直接调用同步方法处理事件
-            self.process_binlog_event(event)
+            # 使用线程池并行处理事件
+            self._thread_pool.submit(self.process_binlog_event, event)
         except Exception as e:
             logger.error(f"🚫 处理事件时出错: {e}")
     
@@ -637,6 +640,12 @@ class MySQLBinlogMonitor:
     def stop_monitoring(self):
         """停止监控"""
         self.running = False
+        # 关闭线程池
+        try:
+            self._thread_pool.shutdown(wait=True)
+            logger.info("✅ 线程池已关闭")
+        except Exception as e:
+            logger.error(f"🚫 关闭线程池时出错: {e}")
         logger.info("✅ Binlog监控已停止")
 
     @staticmethod

@@ -144,7 +144,11 @@ class ApsAction(ApsBaseAction):
         当按下工单管理的下达按钮（PL的Status变为'A2E'）时该方法将被自动调用
         🅰 supplyno: PL计划单编号
         """
+        # 材料需求
+        demand_list = ApsBaseAction._get_demand_datalist(demandno=supplyno)
+        # PL及工序详情
         supplymo_detaildata = ApsBaseAction._get_supplymo_detaildata(supplyno=supplyno)
+        supplymo_detaildata['demand_list'] = demand_list
 
         mo_push_response = tplus_conn.push_into_target(target_name='mo_single', push_data=supplymo_detaildata, mo_remain_supplyno=_REMAIN_SUPPLYNO)
         mo_push_response_json = mo_push_response.json()
@@ -162,10 +166,12 @@ class ApsAction(ApsBaseAction):
                 tplus_mo_entryid = mo_in_tplus['ManufactureOrderDetails'][0]['ID'] 
                 # 最后再更改工单信息，一定放在最后一步，否则如果变更工单号变更太早，前面若有用原生供应号查询都会失败
                 a = cls._pl_release_success(plno=supplyno, msg=mo_push_response_json['message'], change_supplyno=not _REMAIN_SUPPLYNO, msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
+
+                # 推送领料申请
+                c = cls.push_rs(related_supplyno=supplyno, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid)
                 # 审批工单
                 b = tplus_conn.push_into_target(target_name='mo_approve', push_data={'voucherID': tplus_mo_id})
 
-                c = cls.push_rs(related_supplyno=supplyno, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid)
             except Exception as e:
                 tplus_mo_entryid = None
                 filelog_error.error(f"Error extracting entry ID from T+ MO: {e}")

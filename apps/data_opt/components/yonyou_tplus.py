@@ -214,6 +214,21 @@ class TplusPushMo(PydanticModel):
     @classmethod
     def model_valid(cls, values: Dict[str, Any]):
         cleaned_values = {}
+
+        demand_list = values.get('demand_list')
+        momd = []
+        if demand_list:
+            for demand in demand_list:
+                momd.append({
+                    'Inventory': {'Code': demand['materialno']},
+                    'Unit': {'Name': demand.get('unit', "")},
+                    'SonNeededQuantity': demand['avail_qty'] * -1,
+                    'SonScaleQuantity': demand['avail_qty'] * -1,
+                    'Quantity': demand['avail_qty'] * -1,
+                    'IsMaterialRequest': True,
+                })
+
+
         cleaned_values['ExternalCode'] = values['supplyno']
         cleaned_values['StartDate'] = values['dt_ordstart']
         cleaned_values['FinishDate'] = values['dt_ordend']
@@ -229,7 +244,7 @@ class TplusPushMo(PydanticModel):
                 'Quantity': values['avail_qty'],
                 'PreStartDate': values['dt_ordstart'],
                 'PreFinishDate': values['dt_ordend'],
-                'IsMaterialRequest': True,
+                'ManufactureOrderMaterialDetails': momd,
             }
         ]
         return cleaned_values

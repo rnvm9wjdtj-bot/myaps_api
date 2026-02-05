@@ -185,7 +185,7 @@ async def db_supsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
 
     valid_dbs = validate_databases(db_names)
     if not valid_dbs:
-        filelog_normal.error(f"❌↑未找到有效账套（available_dbs：{MYAPS_DB_SET}），禁止写入 —— db_supsert")
+        filelog_error.error(f"❌ 未找到有效账套（available_dbs：{MYAPS_DB_SET}），禁止写入 —— db_supsert")
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -240,7 +240,7 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
     # 验证账套
     valid_dbs = validate_databases(db_names)
     if not valid_dbs:
-        filelog_normal.error(f"❌↑未找到有效账套（available_dbs：{MYAPS_DB_SET}），禁止写入 —— db_bupsert")
+        filelog_error.error(f"❌ 未找到有效账套（available_dbs：{MYAPS_DB_SET}），禁止写入 —— db_bupsert")
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -321,12 +321,12 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
             update_count = result.get("updated", 0)
             create_count_total += create_count
             update_count_total += update_count
-            filelog_normal.info(f"✅生效账套@{db_name}，新增{create_count}条，修改{update_count}条")
+            filelog_normal.info(f"✅ 生效账套@{db_name}，新增{create_count}条，修改{update_count}条")
             # 记录成功的账套
             success_db.append({"db_name": db_name, "create": create_count, "update": update_count})
         
         # 记录总日志
-        filelog_normal.info(f"✅生效{len(success_db)}个账套，总计新增{create_count_total}条，修改{update_count_total}条")
+        filelog_normal.info(f"✅ 生效{len(success_db)}个账套，总计新增{create_count_total}条，修改{update_count_total}条")
         
         return standard_response(
             data=data_list,
@@ -335,7 +335,7 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
         )
         
     except Exception as e:
-        filelog_normal.error(f"❌↑操作失败：{str(e)} —— db_bupsert")
+        filelog_error.error(f"❌ 操作失败：{mdl._meta.db_table}@[{db_names}] {str(e)} —— db_bupsert")
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -365,14 +365,14 @@ async def db_delete(db_names: str, model_or_tablename: TortoiseBaseModel | str, 
 
             count = exe_result.get("affected_rows", 0)
             total_count += count
-            filelog_normal.info(f"✅执行SQL删除操作成功，{table_name}@{db_name}，条件：{filter_string}，删除{count}条记录")
-        filelog_normal.info(f"✅执行SQL删除操作成功，共删除{total_count}条记录，{table_name}@[{','.join(valid_dbs)}]")
+            filelog_normal.info(f"✅ 执行SQL删除操作成功，{table_name}@{db_name}，条件：{filter_string}，删除{count}条记录")
+        filelog_normal.info(f"✅ 执行SQL删除操作成功，共删除{total_count}条记录，{table_name}@[{','.join(valid_dbs)}]")
         return standard_response(
             meta={"affect_count": total_count, "affect_dbs": ", ".join(valid_dbs)}
         )
         
     except Exception as e:
-        filelog_normal.error(f"❌执行SQL删除操作失败，{table_name}@{db_names}，条件：{filter_string}，错误信息：{str(e)}")
+        filelog_error.error(f"❌ 执行SQL删除操作失败，{table_name}@{db_names}，条件：{filter_string}，错误信息：{str(e)}")
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -399,14 +399,14 @@ async def call_dbprocdure(db_names: str, procedure_name: str, params_list: List[
             exe_result = await db_manager.call_stored_procedure(procedure_name=procedure_name, params_list=params_list)
             affect_rows = exe_result.get('affected_rows', 0)
             total_affect_count += affect_rows
-            filelog_normal.info(f"✅调用存储过程`{procedure_name}`成功，{db_name}，影响{affect_rows}条记录")
+            filelog_normal.info(f"✅ 调用存储过程`{procedure_name}`成功，{db_name}，影响{affect_rows}条记录")
             meta[db_name] = affect_rows
         return standard_response(
             message=f"调用存储过程`{procedure_name}`成功，影响{total_affect_count}条记录",
             meta=meta
         )
     except Exception as e:
-        filelog_error.error(f"❌调用存储过程`{procedure_name}`失败，{db_names}，错误信息：{str(e)}")
+        filelog_error.error(f"❌ 调用存储过程`{procedure_name}`失败，{db_names}，错误信息：{str(e)}")
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -450,7 +450,7 @@ async def db_update_by_index(
 
     valid_dbs = validate_databases(db_names)
     if not valid_dbs:
-        filelog_normal.error(f"❌↑未找到有效账套（available_dbs：{MYAPS_DB_SET}），禁止写入 —— db_update_by_index")
+        filelog_error.error(f"❌ 未找到有效账套（available_dbs：{MYAPS_DB_SET}），禁止写入 —— db_update_by_index")
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
