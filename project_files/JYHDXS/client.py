@@ -180,24 +180,12 @@ srm_headers = {
     "Content-Type": "application/json",
 }
 srm_field_map = {
-    "materialno": "material_no",
-    "description": "description",
-    "size": "size",
-    "type": "type",
-    "abc": "abc",
-    "planner": "planner",
-    "datestr": "datestr",
-    "物料来源": "name",
-    "首期库存": "stock_qty",
-    "累计盈余": "cumulative_balance",
-    "期间合计需求": "total_demand",
-    "期间合计供应": "total_supply",
-    "期间盈余": "daily_balance",
-    "期间": "original_datestr",
-    "期间要货数": "current_order_quantity",
-    "期初盈余": "initial_surplus",
-    "期末盈余": "last_surplus",
-    "要求交期": "datestr",
+    "materialno": "material_no", "description": "description", "size": "size",
+    "type": "type", "abc": "abc", "planner": "planner", "datestr": "datestr",
+    "物料来源": "name", "首期库存": "stock_qty", "累计盈余": "cumulative_balance",
+    "期间合计需求": "total_demand", "期间合计供应": "total_supply", "期间盈余": "daily_balance",
+    "期间": "original_datestr", "期间要货数": "current_order_quantity",
+    "期初盈余": "initial_surplus", "期末盈余": "last_surplus", "要求交期": "datestr",
 }
 
 # @cron_task(hour=23, minute=50)

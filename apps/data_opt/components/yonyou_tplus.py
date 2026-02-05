@@ -222,9 +222,9 @@ class TplusPushMo(PydanticModel):
                 momd.append({
                     'Inventory': {'Code': demand['materialno']},
                     'Unit': {'Name': demand.get('unit', "")},
-                    'SonNeededQuantity': demand['avail_qty'] * -1,
-                    'SonScaleQuantity': demand['avail_qty'] * -1,
-                    'Quantity': demand['avail_qty'] * -1,
+                    'SonNeededQuantity': demand['req_qty'] * -1,
+                    'SonScaleQuantity': demand['req_qty'] * -1,
+                    'Quantity': demand['req_qty'] * -1,
                     'IsMaterialRequest': True,
                 })
 
@@ -285,6 +285,28 @@ class TplusPushRs(PydanticModel):
             mr_details.append(mr)
         cleaned_values['MaterialRequestDetails'] = mr_details
         return cleaned_values
+
+
+class TplusPushPr(PydanticModel):
+    """
+    整理推送T+请购单数据
+    """
+    ExternalCode: str = Field()
+    RequisitionPerson: dict = Field()
+    PurchaseRequisitionDetails: list[dict] = Field()
+
+    class Config:
+        extra = 'allow'
+
+    @model_validator(mode="before")
+    @classmethod
+    def model_valid(cls, values: Dict[str, Any]):
+        cleaned_values = {}
+        cleaned_values['ExternalCode'] = values['aupplyno']
+        cleaned_values['RequisitionPerson'] = {"Code": CACHE_JSON.get("erp")["$RequisitionPerson"]}
+        cleaned_values['PurchaseRequisitionDetails'] = []
+        pass
+
 
 
 class TplusConfig:
@@ -699,8 +721,6 @@ class TplusConnection(BaseConnection):
         self.auth()
         target_name = target_name.lower()
         endpoint = self.config.PUSH_TARGET[target_name]['endpoint']
-        # field_map = self.config.PUSH_TARGET[target_name]['field_map']
-        # static_values = self.config.PUSH_TARGET[target_name].get('static_values')
         pydantic_model = self.config.PUSH_TARGET[target_name].get('pydantic_model')
         
         if target_name == 'rs':
@@ -713,7 +733,6 @@ class TplusConnection(BaseConnection):
             # 如果提取不到，就尝试调用 T+ 接口查询 MO 记录
             if not (tplus_mo_id and tplus_mo_entryid):
                 try:
-                    # mo_in_tplus = self.pull_from_source(source_name='mo_single', filter={"externalCode": push_data['demandno']})[0]     通过 外部单号（supplyno）查询 MO 记录，不够稳定，因为 supplyno 可能会被改写
                     mo_in_tplus = self.pull_from_source(source_name='mo_single', filter={"voucherID": tplus_mo_id})[0]
                     tplus_mo_id = mo_in_tplus['ID']
                     tplus_mo_entryid = mo_in_tplus['ManufactureOrderDetails'][0]['ID']
