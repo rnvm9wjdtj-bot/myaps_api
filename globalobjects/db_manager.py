@@ -1076,13 +1076,21 @@ class DbManager:
 _db_managers = None
 
 def get_db_managers():
+    """
+    获取数据库管理器实例字典
+    每次调用都会创建新的 DbManager 实例，确保使用当前事件循环的连接
+    """
     global _db_managers
-    if _db_managers is None:
-        _db_managers = {}
-        for db in MYAPS_DBSET_LIST:
-            _db_managers[db] = DbManager(db)
+    _db_managers = {}
+    for db in MYAPS_DBSET_LIST:
+        _db_managers[db] = DbManager(db)
     return _db_managers
 
 # 为了保持向后兼容，提供一个模块级别的变量
 # 但在实际使用中，建议使用 get_db_managers() 函数来获取
-db_managers = get_db_managers()
+def db_managers():
+    """
+    获取数据库管理器实例字典
+    每次调用都会返回最新的实例字典，确保使用当前事件循环的连接
+    """
+    return get_db_managers()

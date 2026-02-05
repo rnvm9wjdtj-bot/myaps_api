@@ -11,7 +11,12 @@ from globalobjects.db_manager import get_db_managers, DbManager
 from globalobjects import logger as log_config
 
 # 为了保持向后兼容，重新导出 db_managers
-db_managers = get_db_managers()
+def db_managers():
+    """
+    获取数据库管理器实例字典
+    每次调用都会返回最新的实例字典，确保使用当前事件循环的连接
+    """
+    return get_db_managers()
 
 def get_db_manager(db_name):
     """
@@ -23,6 +28,7 @@ def get_db_manager(db_name):
     Returns:
         DbManager 实例
     """
+    # 每次都调用get_db_managers()获取最新的实例字典
     return get_db_managers()[db_name]
 from .common import standard_response, format_query_result, get_raw_input_data, convert_to_dict, format_data_for_logging
 from ..models import TABLE_MODEL_MAPPING
@@ -206,7 +212,7 @@ async def db_supsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
     update_count_total = 0
 
     for db_name in valid_dbs:
-        db_manager = db_managers[db_name]
+        db_manager = get_db_manager(db_name)
 
         result = await db_manager.single_upsert(
             model_class=mdl,
@@ -399,7 +405,7 @@ async def call_dbprocdure(db_names: str, procedure_name: str, params_list: List[
     meta = {}
     try:
         for db_name in valid_dbs:
-            db_manager = db_managers[db_name]
+            db_manager = get_db_manager(db_name)
             exe_result = await db_manager.call_stored_procedure(procedure_name=procedure_name, params_list=params_list)
             affect_rows = exe_result.get('affected_rows', 0)
             total_affect_count += affect_rows

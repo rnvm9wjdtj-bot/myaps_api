@@ -1,4 +1,22 @@
 {
+    "env": {
+        "PROTOCOL": "http://",
+        "HOST": "localhost",
+        "PORT": 8000,
+        "THIS_DB_HOST": null,
+        "THIS_DB_PORT": null,
+        "THIS_DB_USER": null,
+        "THIS_DB_PASSWORD": null,
+        "THIS_DB_NAME": null,
+        "MYAPS_VERSION": "P",
+        "MYAPS_BASE_URL": "http://172.16.101.197:8092",
+        "MYAPS_DB_HOST": "172.16.101.197",
+        "MYAPS_DB_PORT": 3333,
+        "MYAPS_DB_USER": "root",
+        "MYAPS_DB_PASSWORD": "E9damw0o@#$",
+        "MYAPS_DB_SET": "haida1,dev_mes",
+        "MYAPS_MAIN_DB": "haida1"
+    },
     "erp": {
         "base_url": "http://192.168.201.2:8000",
         "werks": "1600",

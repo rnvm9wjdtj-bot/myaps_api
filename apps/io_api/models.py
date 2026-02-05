@@ -1,7 +1,7 @@
 from tortoise import fields
 # from tortoise.signals import post_save
 
-from globalobjects.db_manager import db_managers
+from globalobjects.db_manager import get_db_managers
 from globalobjects import globalconst as gc, ProjectDefaultValues as pdv
 from . import protomodels as pm
 # from apps.io_api.schemas import Values as pdv
@@ -71,7 +71,7 @@ class TMatVer(pm.ProtoMatVer):
         if priority is None:
             priority = pdv.MATVER_PRIORITY
             
-        db_manager = db_managers.get(db_name)
+        db_manager = get_db_managers()[db_name]
         db_manager._bulk_upsert_orm(
             model_class=cls,
             data_list=[{

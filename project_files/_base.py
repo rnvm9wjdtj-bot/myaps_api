@@ -136,7 +136,7 @@ class ApsBaseAction(ABC):
             "native_no": plno, "_code": mono, "_id": _id, "_entryid": _entryid}, ensure_ascii=False
         )
 
-        response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}/pltomo?db_name={cls.main_db}', json={
+        response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}?db_name={cls.main_db}&action=pltomo', json={
             'status': to_status,
             'apiex_code': str(mono),
             'apiex_id': str(_id),
@@ -155,7 +155,7 @@ class ApsBaseAction(ABC):
         console_log.error(log_msg)
         filelog_error.error(log_msg)
         memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
-        response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}/edit?db_name={cls.main_db}', json={
+        response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}?db_name={cls.main_db}&action=edit', json={
             'status': to_status,    # ❗❗失败情况下，状态务必回撤为 CRE 或 NEW ，否则后续无法再次下达
             'memo': memo,
         })

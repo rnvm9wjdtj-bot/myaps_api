@@ -1,4 +1,12 @@
 import os, uvicorn, asyncio#, hashlib
+from dotenv import load_dotenv
+
+# 加载环境变量
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+env_file = os.path.join(BASE_DIR, '.env')
+os.environ.setdefault('ENV_FILE', env_file)
+load_dotenv(env_file)
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
@@ -31,6 +39,10 @@ async def lifespan(app: FastAPI):
     main_loop = asyncio.get_running_loop()
     scheduler_manager.set_main_loop(main_loop)
     log_config.info(f"已将主应用事件循环传递给调度器: {main_loop}")
+    
+    # 初始化并启动定时任务管理器
+    initialize_scheduler()
+    log_config.info(f"定时任务管理器状态: {get_scheduler_status()}")
     
     if TURNON_DBMONITOR:
         mysql_monitor.start_monitoring()
@@ -197,6 +209,7 @@ async def read_root():
     }
 
 # 注册Tortoise ORM
+
 register_tortoise(
     app = app,
     config=TORTOISE_ORM_CONFIG,
@@ -205,28 +218,20 @@ register_tortoise(
     # add_exception_handlers=True,  # 生产环境不要开，会泄露调试信息
 )
 
-
 # 初始化定时任务管理器
 from apps.data_opt.utils.scheduler import initialize_scheduler, get_scheduler_status, scheduler_manager
-
-initialize_scheduler()
-log_config.info(f"定时任务管理器状态: {get_scheduler_status()}")
 
 
 # 启动说明：
 # 使用命令: uvicorn main:app --host 0.0.0.0 --port 8000 
 # 然后访问 http://127.0.0.1:8000 或 http://127.0.0.1:8000/docs
 if __name__ == "__main__":
-    from dotenv import load_dotenv
-    env_file = os.path.join(BASE_DIR, '.env')
-    os.environ.setdefault('ENV_FILE', env_file)
-    load_dotenv(env_file)
     
     # 配置uvicorn日志格式，与我们的日志系统格式一致
     from uvicorn.config import LOGGING_CONFIG
-    LOGGING_CONFIG['formatters']['default']['fmt'] = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    LOGGING_CONFIG['formatters']['default']['fmt'] = '%(asctime)s - %(levelname)s - %(message)s'
     # 精简访问日志格式，只包含必要信息
-    LOGGING_CONFIG['formatters']['access']['fmt'] = '%(asctime)s - %(name)s - %(levelname)s - %(client_addr)s - "%(request_line)s" %(status_code)s'
+    LOGGING_CONFIG['formatters']['access']['fmt'] = '%(asctime)s - %(levelname)s - %(client_addr)s - "%(request_line)s" %(status_code)s'
     
     # 禁用访问日志处理器
     LOGGING_CONFIG['handlers'].pop('access', None)

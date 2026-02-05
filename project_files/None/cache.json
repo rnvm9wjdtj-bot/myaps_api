@@ -1,0 +1,20 @@
+{
+    "env": {
+        "PROTOCOL": "http://",
+        "HOST": "localhost",
+        "PORT": 8000,
+        "THIS_DB_HOST": null,
+        "THIS_DB_PORT": null,
+        "THIS_DB_USER": null,
+        "THIS_DB_PASSWORD": null,
+        "THIS_DB_NAME": null,
+        "MYAPS_VERSION": "P",
+        "MYAPS_BASE_URL": "http://1.13.184.21:8092",
+        "MYAPS_DB_HOST": "1.13.184.21",
+        "MYAPS_DB_PORT": 3333,
+        "MYAPS_DB_USER": "MYAPS",
+        "MYAPS_DB_PASSWORD": "MYAPS2025",
+        "MYAPS_DB_SET": "demo16,qhjh",
+        "MYAPS_MAIN_DB": "demo16"
+    }
+}

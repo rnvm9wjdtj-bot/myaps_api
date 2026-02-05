@@ -293,14 +293,14 @@ async def post_supply(
 
 
 @rt.patch(
-    "/t_supply/{path_targetsupply}/{action}",
+    "/t_supply/{path_targetsupply}",
     tags=["生产数据 - 供应"],
     summary="修改供应记录",
     description="根据供应号更新PL记录，与POST方法的区别是：POST方法以【料号+供应号】为联合索引，且不会修改供应号；而PATCH方法以供应号为索引，且允许修改供应号"
     )
 async def patch_supply(
     path_targetsupply: str = Path(..., description="要修改的供应记录的供应号"),
-    action: str = Path(enum=["pltomo", "edit"], description="要执行的操作，pltomo：将PL转为MO，edit：普通更新"),
+    action: str = Query(enum=["pltomo", "edit"], description="要执行的操作，pltomo：将PL转为MO，edit：普通更新"),
     data: ModifySupply = Body(..., description="修改为这些信息"),
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
@@ -346,7 +346,7 @@ async def patch_supply(
 
 
 @rt.delete(
-    "/t_supply/{path_targetsupply}",
+    "/t_supply",
     tags=["生产数据 - 供应"],
     summary="删除供应记录",
     description="根据供应类型、料号、供应号删除供应记录。若为MO PL，还会删除关联的工序记录（仅对PL、MO类型有效）"
@@ -354,7 +354,7 @@ async def patch_supply(
 async def delete_supply(
     db_name: str = common_params["db_name"],
     type: str = common_params["supply_type"],
-    path_targetsupply: str = Path(description="要删除的供应记录的供应号"),
+    supplyno: str = Query(None, description="要删除的供应记录的供应号"),
     materialno: Optional[str] = Query(None, description="料号"),
     x_api_key: str = common_params["x_api_key"]
     ):
@@ -378,12 +378,12 @@ async def delete_supply(
     filter_conditions = [f"`Type`='{supply_type_param}'", ]
     if materialno:
         filter_conditions.append(f"`MaterialNo`='{materialno}'")
-    if path_targetsupply:
-        filter_conditions.append(f"`SupplyNo`='{path_targetsupply}'")
+    if supplyno:
+        filter_conditions.append(f"`SupplyNo`='{supplyno}'")
     filter_string = " AND ".join(filter_conditions)
     result = await db_delete(db_names=db_name, model_or_tablename="t_supply", filter_string=filter_string)
-    if supply_type_param in ['PL', 'MO'] and path_targetsupply and result["success"]: # 删除关联的工序记录
-        await db_delete(db_names=db_name, model_or_tablename="t_orderwc", filter_string=f"`SupplyNo`='{path_targetsupply}'")
+    if supply_type_param in ['PL', 'MO'] and supplyno and result["success"]: # 删除关联的工序记录
+        await db_delete(db_names=db_name, model_or_tablename="t_orderwc", filter_string=f"`SupplyNo`='{supplyno}'")
     return result
 
 

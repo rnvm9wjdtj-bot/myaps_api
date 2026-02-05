@@ -232,8 +232,9 @@ class TplusPushMo(PydanticModel):
         cleaned_values['ExternalCode'] = values['supplyno']
         cleaned_values['StartDate'] = values['dt_ordstart']
         cleaned_values['FinishDate'] = values['dt_ordend']
-        cleaned_values['BusiType'] = {'Code': CACHE_JSON.get("erp")["$MoBusiType"]}
-        cleaned_values['Department'] = {'Code': CACHE_JSON.get("erp")["$MoDepartment"]}
+        erp_config = CACHE_JSON.get("erp", {})
+        cleaned_values['BusiType'] = {'Code': erp_config.get("$MoBusiType", "")}
+        cleaned_values['Department'] = {'Code': erp_config.get("$MoDepartment", "")}
         cleaned_values['VoucherDate'] = values['dt_ordstart']
         cleaned_values['IsMaterialRequest'] = True
         cleaned_values['Memo'] = values['vendorno']
@@ -273,7 +274,8 @@ class TplusPushRs(PydanticModel):
         cleaned_values['VoucherType'] = {"Code": "ST1039"}
         cleaned_values['VoucherDate'] = values["_entries_"][0]['req_date']
         cleaned_values['BusiType'] = {"Code": "MR01"}
-        cleaned_values['Department'] = {"Code": CACHE_JSON.get("erp")["$MoDepartment"]}
+        erp_config = CACHE_JSON.get("erp", {})
+        cleaned_values['Department'] = {"Code": erp_config.get("$MoDepartment", "")}
 
         mr_details = []
         for entry in values["_entries_"]:
@@ -304,7 +306,8 @@ class TplusPushPr(PydanticModel):
     def model_valid(cls, values: Dict[str, Any]):
         cleaned_values = {}
         cleaned_values['ExternalCode'] = values['aupplyno']
-        cleaned_values['RequisitionPerson'] = {"Code": CACHE_JSON.get("erp")["$RequisitionPerson"]}
+        erp_config = CACHE_JSON.get("erp", {})
+        cleaned_values['RequisitionPerson'] = {"Code": erp_config.get("$RequisitionPerson", "")}
         cleaned_values['PurchaseRequisitionDetails'] = []
         pass
 
@@ -456,7 +459,7 @@ class TplusConfig:
                 # "PurchaseRequisitionDetails / SourceVoucherDetailId": "dt_ordend",
             },
             "static_values": {
-                "RequisitionPerson": CACHE_JSON.get("erp")["$PrRequisitionPerson"],
+                "RequisitionPerson": CACHE_JSON.get("erp", {}).get("$PrRequisitionPerson", ""),
                 "IdSourceVoucherType": "43",    # 来源单据的单据类型ID  43：销售订单  预测单：68
             },
         },

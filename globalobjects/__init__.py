@@ -2,12 +2,12 @@ import os
 
 from .json_manager import JSONManager
 
+
+
 project_dir = os.getenv("PROJECT_DIR")
+if project_dir is None:
+    raise ValueError("❌ PROJECT_DIR 环境变量未设置，请在 .env 文件中设置 PROJECT_DIR")
 CACHE_JSON = JSONManager(f"project_files/{project_dir}/cache.json")
-
-
-
-# from globalobjects.globalconst import AbcEnum, EfEnum, YesNoEnum, LotSizeEnum
 
 
 class ProjectDefaultValues:

@@ -40,7 +40,7 @@ class BaseConnection(ABC):
 
 
     @abstractmethod
-    async def pull_from_source(self, *args, **kwargs):
+    def pull_from_source(self, *args, **kwargs):
         """
         从目标系统获取数据
         """
@@ -48,7 +48,7 @@ class BaseConnection(ABC):
 
 
     @abstractmethod
-    async def push_into_target(self, *args, **kwargs):
+    def push_into_target(self, *args, **kwargs):
         """
         推送数据到目标系统
         """

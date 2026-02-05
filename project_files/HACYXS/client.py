@@ -9,7 +9,7 @@ from fastapi import status
 
 
 from .._base import (
-    MYAPS_DB_SET, MYAPS_MAIN_DB,
+    MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL,
     cron_task, filelog_normal, filelog_error, CACHE_JSON,
     ApsBaseAction, DataProcessor,
     filelog_normal, console_log, standard_response, get_session, 
@@ -29,6 +29,7 @@ _USE_NATIVENO = True
 # ⬇️ 项目对象及参数
 #################################################################################
 
+session = get_session()
 hap_conn = None
 
 # hap_conn = hap.HapConnection()
@@ -100,10 +101,15 @@ def refresh_stock():
         aggregated_stock = grouped.to_dict('records')
     else:
         aggregated_stock = []
+
+    global session
     # 删除旧库存数据
-    delete_result = asyncio.run(db_delete(db_names=MYAPS_DB_SET, model_or_tablename='t_supply', filter_string=f"`Type`='ST'"))
+    # delete_result = asyncio.run(db_delete(db_names=MYAPS_DB_SET, model_or_tablename='t_supply', filter_string=f"`Type`='ST'"))
+    session.delete(url=f"{THIS_BASE_URL}/api/t_supply?db_name={MYAPS_DB_SET}&type=ST")
     # 插入汇总后的数据
-    bupsurt_result = asyncio.run(db_bupsert(db_names=MYAPS_DB_SET, model_or_tablename='t_supply', data_list=aggregated_stock))
+    # bupsurt_result = asyncio.run(db_bupsert(db_names=MYAPS_DB_SET, model_or_tablename='t_supply', data_list=aggregated_stock))
+    session.post(url=f"{THIS_BASE_URL}/api/t_supply?db_name={MYAPS_DB_SET}", json=aggregated_stock)
+
     return aggregated_stock
 
 
@@ -123,8 +129,8 @@ def get_maindata_from_erp_to_hap_task(*args, **kwargs):
     console_log.info("⏰ 获取主数据定时任务执行完成")
 
 
-# @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22",minute="0,5,10,15,20,25,30,35,40,45,50,55")
-@cron_task(hour="8,10,12,14,16",minute="55")
+@cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22",minute="0,5,10,15,20,25,30,35,40,45,50,55")
+# @cron_task(hour="8,10,12,14,16",minute="55")
 def refresh_stock_task(*args, **kwargs):
     console_log.info("⏰ 开始执行刷新库存定时任务")
     stock = refresh_stock()

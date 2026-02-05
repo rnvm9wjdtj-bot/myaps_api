@@ -1,11 +1,29 @@
 {
+  "env": {
+    "PROTOCOL": "http://",
+    "HOST": "localhost",
+    "PORT": 8000,
+    "THIS_DB_HOST": null,
+    "THIS_DB_PORT": null,
+    "THIS_DB_USER": null,
+    "THIS_DB_PASSWORD": null,
+    "THIS_DB_NAME": null,
+    "MYAPS_VERSION": "P",
+    "MYAPS_BASE_URL": "http://62.234.20.251:8092",
+    "MYAPS_DB_HOST": "62.234.20.251",
+    "MYAPS_DB_PORT": 3333,
+    "MYAPS_DB_USER": "root",
+    "MYAPS_DB_PASSWORD": "E9damw0o@#$",
+    "MYAPS_DB_SET": "aps1,aps2",
+    "MYAPS_MAIN_DB": "aps1"
+  },
   "erp": {
     "app_key": "UG69s1P1",
     "app_secret": "F1A51CB0AD5275BF6FAA46270AF1CF37",
-    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJpc3YiLCJpc3MiOiJjaGFuamV0IiwidXNlcklkIjoiMzk2MjUxNzMxNzA5OTU0Iiwib3JnSWQiOiIxMjQxNzU3OTMzNjA5NDUzIiwiYWNjZXNzX3Rva2VuIjoiYmMtZjhlMmU1MTEtNGQ4ZS00ZWNjLTg2OGQtNmU5YjNhMDYyMmM0IiwiYXVkIjoiaXN2IiwibmJmIjoxNzcwMjQ2MDcyLCJhcHBJZCI6IjU4Iiwic2NvcGUiOiJhdXRoX2FsbCIsImFwcEtleSI6IlVHNjlzMVAxIiwiaWQiOiJmNWI5YjEyMC1mMmM4LTQ1ZGYtOGQ2NS1jNzNlNWMxNDliYWIiLCJleHAiOjE3NzA3NjQ0NzIsImlhdCI6MTc3MDI0NjA3Miwib3JnQWNjb3VudCI6InV3aWF4ZnVlc2E2OCJ9.zcNmtEhTUzhAf3fJXXYYa6VodPh_VdzOxOdWD86enWE",
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJpc3YiLCJpc3MiOiJjaGFuamV0IiwidXNlcklkIjoiMzk2MjUxNzMxNzA5OTU0Iiwib3JnSWQiOiIxMjQxNzU3OTMzNjA5NDUzIiwiYWNjZXNzX3Rva2VuIjoiYmMtZjhlMmU1MTEtNGQ4ZS00ZWNjLTg2OGQtNmU5YjNhMDYyMmM0IiwiYXVkIjoiaXN2IiwibmJmIjoxNzcwMjkyMDI0LCJhcHBJZCI6IjU4Iiwic2NvcGUiOiJhdXRoX2FsbCIsImFwcEtleSI6IlVHNjlzMVAxIiwiaWQiOiI0NjY2ZmNmMS0yNDg0LTQyYjItYjQ1Yy05ODZmZTQwMjRhYWQiLCJleHAiOjE3NzA4MTA0MjQsImlhdCI6MTc3MDI5MjAyNCwib3JnQWNjb3VudCI6InV3aWF4ZnVlc2E2OCJ9.fkMsXBu2RuIlslqOwG1PtCs6SAUfKRln9KgX2cXosLQ",
     "refresh_token": "cc4a6cf8b4f34ee2ad9350f2a4dd75b2",
     "org_id": "",
-    "_auth_at_": "2026-02-05 07:01:12",
+    "_auth_at_": "2026-02-05 19:01:13",
     "$MoBusiType": "PT01",
     "$MoDepartment": "1",
     "$PrRequisitionPerson": "001"
