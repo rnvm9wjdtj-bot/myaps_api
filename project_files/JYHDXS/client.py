@@ -8,7 +8,7 @@ from fastapi import status
 from dateutil.relativedelta import relativedelta
 
 
-from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR, SCHEDULER_MINUTE
+from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
 from .._base import (
     get_scheduler_minute,
     ApsBaseAction, filelog_error, filelog_normal, console_log, standard_response, get_session, HapConnection,
@@ -28,7 +28,7 @@ hap_conn = None
 
 erp = CACHE_JSON.get("erp", {})
 sap_url1 = erp.get("base_url", "") + '/zrestful_test2?sap-client=800'  # 库存
-sap_url2 = erp.get("base_url", "") + '/zrestful_plan?sap-client=800'  # 计划
+sap_url2 = erp.get("base_url", "") + '/zrestful_plan?sap-client=' + erp.get("sap-client")  # 计划
 werks = erp.get("werks", "")
 sap_username = erp.get("username", "")
 sap_password = erp.get("password", "")
@@ -269,9 +269,9 @@ class ApsAction(ApsBaseAction):
             if sap_mo_data['STATUS'] == 'S':
                 cls._pl_release_success(plno=supplyno, mono=sap_mo_data['AUFNR'], msg=sap_mo_data['MESSAGE'], msg_from='ERP')
             else:
-                cls._pl_release_failed(plno=supplyno, to_status=supplymo_detaildata.get('status', 'CRE'), msg=sap_mo_data['MESSAGE'], msg_from='ERP')
+                cls._pl_release_failed(plno=supplyno, msg=sap_mo_data['MESSAGE'], msg_from='ERP')
         except Exception as e:
-            cls._pl_release_failed(plno=supplyno, to_status=supplymo_detaildata.get('status', 'CRE'), msg=str(e), msg_from='API')
+            cls._pl_release_failed(plno=supplyno, msg=str(e), msg_from='API')
 
 
     @classmethod

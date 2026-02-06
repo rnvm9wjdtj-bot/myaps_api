@@ -24,36 +24,37 @@ SCHEDULER_MINUTE = os.getenv("SCHEDULER_MINUTE") or "55"
 
 
 # JSON文件中记录的配置项
-CACHE_FILE = JSONManager(f"project_files/{PROJECT_DIR}/cache.json")
-env_config = CACHE_FILE.get("env")
+CACHE_FILENAME = os.getenv("CACHE_FILENAME") or "cache.json"
+CACHE_FILE = JSONManager(f"project_files/{PROJECT_DIR}/{CACHE_FILENAME}")
+json_env_config = CACHE_FILE.get("env")
 
-PROTOCOL = os.getenv("PROTOCOL") or env_config.get("PROTOCOL") or "http://"
-HOST = os.getenv("HOST") or env_config.get("HOST")  or "localhost"
-PORT = int(os.getenv("PORT") or env_config.get("PORT") or 8000)
+PROTOCOL = os.getenv("PROTOCOL") or json_env_config.get("PROTOCOL") or "http://"
+HOST = os.getenv("HOST") or json_env_config.get("HOST")  or "localhost"
+PORT = int(os.getenv("PORT") or json_env_config.get("PORT") or 8000)
 if not(PROTOCOL and HOST and PORT):
     raise ValueError("❌ PROTOCOL, HOST, PORT 环境变量未设置")
-THIS_BASE_URL = f"{PROTOCOL}{HOST}:{PORT}"
+THIS_BASE_URL = f"{PROTOCOL}localhost:{PORT}"
 
-MYAPS_VERSION = (os.getenv("MYAPS_VERSION") or env_config.get("MYAPS_VERSION") or "L").upper()
-MYAPS_BASE_URL = os.getenv("MYAPS_BASE_URL") or env_config.get("MYAPS_BASE_URL")
-MYAPS_DB_HOST = os.getenv("MYAPS_DB_HOST") or env_config.get("MYAPS_DB_HOST")
-MYAPS_DB_PORT = int(os.getenv("MYAPS_DB_PORT") or env_config.get("MYAPS_DB_PORT") or 3333)
-MYAPS_DB_USER = os.getenv("MYAPS_DB_USER") or env_config.get("MYAPS_DB_USER")
-MYAPS_DB_PASSWORD = os.getenv("MYAPS_DB_PASSWORD") or env_config.get("MYAPS_DB_PASSWORD")
-MYAPS_DB_SET = os.getenv("MYAPS_DB_SET") or env_config.get("MYAPS_DB_SET")
+MYAPS_VERSION = (os.getenv("MYAPS_VERSION") or json_env_config.get("MYAPS_VERSION") or "L").upper()
+MYAPS_BASE_URL = os.getenv("MYAPS_BASE_URL") or json_env_config.get("MYAPS_BASE_URL")
+MYAPS_DB_HOST = os.getenv("MYAPS_DB_HOST") or json_env_config.get("MYAPS_DB_HOST")
+MYAPS_DB_PORT = int(os.getenv("MYAPS_DB_PORT") or json_env_config.get("MYAPS_DB_PORT") or 3333)
+MYAPS_DB_USER = os.getenv("MYAPS_DB_USER") or json_env_config.get("MYAPS_DB_USER")
+MYAPS_DB_PASSWORD = os.getenv("MYAPS_DB_PASSWORD") or json_env_config.get("MYAPS_DB_PASSWORD")
+MYAPS_DB_SET = os.getenv("MYAPS_DB_SET") or json_env_config.get("MYAPS_DB_SET")
 if not MYAPS_DB_SET:
     raise ValueError("❌ MYAPS_DB_SET 环境变量未设置")
 MYAPS_DBSET_LIST = MYAPS_DB_SET.split(",")
-MYAPS_MAIN_DB = os.getenv("MYAPS_MAIN_DB") or env_config.get("MYAPS_MAIN_DB")
+MYAPS_MAIN_DB = os.getenv("MYAPS_MAIN_DB") or json_env_config.get("MYAPS_MAIN_DB")
 if MYAPS_MAIN_DB is None:
     MYAPS_MAIN_DB = MYAPS_DBSET_LIST[0]
 
 # 本API数据库配置<postgreSQL>
-THIS_DB_HOST = os.getenv("THIS_DB_HOST") or env_config.get("THIS_DB_HOST")
-THIS_DB_PORT = int(os.getenv("THIS_DB_PORT") or env_config.get("THIS_DB_PORT") or 5432)
-THIS_DB_USER = os.getenv("THIS_DB_USER") or env_config.get("THIS_DB_USER")
-THIS_DB_PASSWORD = os.getenv("THIS_DB_PASSWORD") or env_config.get("THIS_DB_PASSWORD")
-THIS_DB_NAME = os.getenv("THIS_DB_NAME") or env_config.get("THIS_DB_NAME")
+THIS_DB_HOST = os.getenv("THIS_DB_HOST") or json_env_config.get("THIS_DB_HOST")
+THIS_DB_PORT = int(os.getenv("THIS_DB_PORT") or json_env_config.get("THIS_DB_PORT") or 5432)
+THIS_DB_USER = os.getenv("THIS_DB_USER") or json_env_config.get("THIS_DB_USER")
+THIS_DB_PASSWORD = os.getenv("THIS_DB_PASSWORD") or json_env_config.get("THIS_DB_PASSWORD")
+THIS_DB_NAME = os.getenv("THIS_DB_NAME") or json_env_config.get("THIS_DB_NAME")
 
 
 

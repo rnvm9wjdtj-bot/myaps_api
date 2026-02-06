@@ -5,9 +5,10 @@ from .json_manager import JSONManager
 
 
 project_dir = os.getenv("PROJECT_DIR")
+cache_filename = os.getenv("CACHE_FILENAME") or "cache.json"
 if project_dir is None:
     raise ValueError("❌ PROJECT_DIR 环境变量未设置，请在 .env 文件中设置 PROJECT_DIR")
-CACHE_JSON = JSONManager(f"project_files/{project_dir}/cache.json")
+CACHE_JSON = JSONManager(f"project_files/{project_dir}/{cache_filename}")   
 
 
 class ProjectDefaultValues:

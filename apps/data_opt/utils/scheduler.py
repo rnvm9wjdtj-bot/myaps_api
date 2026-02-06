@@ -133,15 +133,10 @@ class SchedulerManager:
             @wraps(func)
             def wrapper():
                 try:
-                    # 尝试使用主应用事件循环执行任务
-                    if scheduler_manager.main_loop and scheduler_manager.main_loop.is_running():
-                        # 主应用事件循环正在运行，使用它来执行任务
-                        logger.debug("使用主应用事件循环执行异步任务")
-                        return asyncio.run_coroutine_threadsafe(async_wrapper(), scheduler_manager.main_loop).result()
-                    else:
-                        # 主应用事件循环不可用，使用 asyncio.run 创建新循环
-                        logger.debug("使用新的事件循环执行异步任务")
-                        return asyncio.run(async_wrapper())
+                    # 始终使用 asyncio.run 创建新的事件循环来执行异步任务
+                    # 这样可以避免使用已关闭的主应用事件循环
+                    logger.debug("使用新的事件循环执行异步任务")
+                    return asyncio.run(async_wrapper())
                 except Exception as e:
                     logger.error(f"🚫 执行异步任务时发生错误: {str(e)}", exc_info=True)
                     raise

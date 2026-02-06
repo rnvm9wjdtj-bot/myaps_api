@@ -3,14 +3,39 @@ import logging
 import queue
 import time
 import sys
+import platform
 from typing import Optional, Dict, Any
 from logging.handlers import TimedRotatingFileHandler, QueueHandler, QueueListener
 
-# 导入并初始化colorama以支持Windows终端颜色
-import colorama
-from colorama import Fore, Style
-# 强制初始化colorama，确保Windows终端颜色支持
-colorama.init(autoreset=True, convert=True)
+# 检测终端是否支持ANSI颜色
+def is_terminal_supports_ansi():
+    """
+    检测终端是否支持ANSI颜色
+    """
+    # 检查是否在Windows系统上
+    if platform.system() == 'Windows':
+        # 在Windows上，检查是否是现代终端
+        import ctypes
+        try:
+            # 获取控制台句柄
+            hConsole = ctypes.windll.kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+            # 检查是否支持虚拟终端处理
+            mode = ctypes.c_ulong()
+            if ctypes.windll.kernel32.GetConsoleMode(hConsole, ctypes.byref(mode)):
+                # 启用虚拟终端处理
+                new_mode = mode.value | 0x0004  # ENABLE_VIRTUAL_TERMINAL_PROCESSING
+                if ctypes.windll.kernel32.SetConsoleMode(hConsole, new_mode):
+                    return True
+        except Exception:
+            pass
+        # 回退到不支持
+        return False
+    else:
+        # 在非Windows系统上，检查是否连接到终端
+        return sys.stdout.isatty()
+
+# 全局变量
+TERMINAL_SUPPORTS_ANSI = is_terminal_supports_ansi()
 
 # 尝试导入ctypes并获取控制台句柄
 import ctypes
@@ -57,6 +82,16 @@ except Exception as e:
     original_color = 0
     LEVEL_COLORS = {}
     print(f"获取控制台句柄失败: {e}")
+
+# ANSI颜色代码
+ANSI_COLORS = {
+    'DEBUG': '\033[36m',  # 青色
+    'INFO': '\033[32m',  # 绿色
+    'WARNING': '\033[33m',  # 黄色
+    'ERROR': '\033[31m',  # 红色
+    'CRITICAL': '\033[31m',  # 红色
+    'RESET': '\033[0m',  # 重置
+}
 
 # 全局日志配置
 LOG_LEVELS = {
@@ -337,7 +372,20 @@ def setup_console_logger(logger: logging.Logger, level: int = logging.INFO) -> N
     
     def debug_wrapper(msg, *args, **kwargs):
         """包装debug方法，添加彩色输出"""
-        if SUPPORT_WINDOWS_API:
+        if TERMINAL_SUPPORTS_ANSI:
+            try:
+                # 获取当前时间
+                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                
+                # 格式化日志消息
+                formatted_msg = msg % args
+                
+                # 使用ANSI颜色代码
+                print(f"{ANSI_COLORS['DEBUG']}{timestamp} - DEBUG - {formatted_msg}{ANSI_COLORS['RESET']}")
+            except Exception:
+                # 如果出错，使用原始方法
+                original_debug(msg, *args, **kwargs)
+        elif SUPPORT_WINDOWS_API:
             try:
                 # 获取当前时间
                 timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
@@ -357,12 +405,25 @@ def setup_console_logger(logger: logging.Logger, level: int = logging.INFO) -> N
                 # 如果出错，使用原始方法
                 original_debug(msg, *args, **kwargs)
         else:
-            # 如果不支持Windows API，使用原始方法
+            # 如果不支持任何颜色输出，使用原始方法
             original_debug(msg, *args, **kwargs)
     
     def info_wrapper(msg, *args, **kwargs):
         """包装info方法，添加彩色输出"""
-        if SUPPORT_WINDOWS_API:
+        if TERMINAL_SUPPORTS_ANSI:
+            try:
+                # 获取当前时间
+                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                
+                # 格式化日志消息
+                formatted_msg = msg % args
+                
+                # 使用ANSI颜色代码
+                print(f"{ANSI_COLORS['INFO']}{timestamp} - INFO - {formatted_msg}{ANSI_COLORS['RESET']}")
+            except Exception:
+                # 如果出错，使用原始方法
+                original_info(msg, *args, **kwargs)
+        elif SUPPORT_WINDOWS_API:
             try:
                 # 获取当前时间
                 timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
@@ -382,12 +443,25 @@ def setup_console_logger(logger: logging.Logger, level: int = logging.INFO) -> N
                 # 如果出错，使用原始方法
                 original_info(msg, *args, **kwargs)
         else:
-            # 如果不支持Windows API，使用原始方法
+            # 如果不支持任何颜色输出，使用原始方法
             original_info(msg, *args, **kwargs)
     
     def warning_wrapper(msg, *args, **kwargs):
         """包装warning方法，添加彩色输出"""
-        if SUPPORT_WINDOWS_API:
+        if TERMINAL_SUPPORTS_ANSI:
+            try:
+                # 获取当前时间
+                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                
+                # 格式化日志消息
+                formatted_msg = msg % args
+                
+                # 使用ANSI颜色代码
+                print(f"{ANSI_COLORS['WARNING']}{timestamp} - WARNING - {formatted_msg}{ANSI_COLORS['RESET']}")
+            except Exception:
+                # 如果出错，使用原始方法
+                original_warning(msg, *args, **kwargs)
+        elif SUPPORT_WINDOWS_API:
             try:
                 # 获取当前时间
                 timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
@@ -407,12 +481,25 @@ def setup_console_logger(logger: logging.Logger, level: int = logging.INFO) -> N
                 # 如果出错，使用原始方法
                 original_warning(msg, *args, **kwargs)
         else:
-            # 如果不支持Windows API，使用原始方法
+            # 如果不支持任何颜色输出，使用原始方法
             original_warning(msg, *args, **kwargs)
     
     def error_wrapper(msg, *args, **kwargs):
         """包装error方法，添加彩色输出"""
-        if SUPPORT_WINDOWS_API:
+        if TERMINAL_SUPPORTS_ANSI:
+            try:
+                # 获取当前时间
+                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                
+                # 格式化日志消息
+                formatted_msg = msg % args
+                
+                # 使用ANSI颜色代码
+                print(f"{ANSI_COLORS['ERROR']}{timestamp} - ERROR - {formatted_msg}{ANSI_COLORS['RESET']}")
+            except Exception:
+                # 如果出错，使用原始方法
+                original_error(msg, *args, **kwargs)
+        elif SUPPORT_WINDOWS_API:
             try:
                 # 获取当前时间
                 timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
@@ -432,12 +519,25 @@ def setup_console_logger(logger: logging.Logger, level: int = logging.INFO) -> N
                 # 如果出错，使用原始方法
                 original_error(msg, *args, **kwargs)
         else:
-            # 如果不支持Windows API，使用原始方法
+            # 如果不支持任何颜色输出，使用原始方法
             original_error(msg, *args, **kwargs)
     
     def critical_wrapper(msg, *args, **kwargs):
         """包装critical方法，添加彩色输出"""
-        if SUPPORT_WINDOWS_API:
+        if TERMINAL_SUPPORTS_ANSI:
+            try:
+                # 获取当前时间
+                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                
+                # 格式化日志消息
+                formatted_msg = msg % args
+                
+                # 使用ANSI颜色代码
+                print(f"{ANSI_COLORS['CRITICAL']}{timestamp} - CRITICAL - {formatted_msg}{ANSI_COLORS['RESET']}")
+            except Exception:
+                # 如果出错，使用原始方法
+                original_critical(msg, *args, **kwargs)
+        elif SUPPORT_WINDOWS_API:
             try:
                 # 获取当前时间
                 timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
@@ -457,7 +557,7 @@ def setup_console_logger(logger: logging.Logger, level: int = logging.INFO) -> N
                 # 如果出错，使用原始方法
                 original_critical(msg, *args, **kwargs)
         else:
-            # 如果不支持Windows API，使用原始方法
+            # 如果不支持任何颜色输出，使用原始方法
             original_critical(msg, *args, **kwargs)
     
     # 替换logger的方法
@@ -662,19 +762,24 @@ def initialize_logging() -> None:
             # 直接使用Windows API输出彩色日志
             try:
                 # 使用全局的控制台句柄
-                global hConsole, original_color
+                global hConsole, original_color, SUPPORT_WINDOWS_API, LEVEL_COLORS
                 
-                # 获取对应级别的颜色
-                color = LEVEL_COLORS.get(record.levelname, original_color)
-                
-                # 设置控制台颜色
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, color)
-                
-                # 调用父类的emit方法
-                super().emit(record)
-                
-                # 恢复原始颜色
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
+                # 检查是否支持Windows API
+                if SUPPORT_WINDOWS_API and hConsole:
+                    # 获取对应级别的颜色
+                    color = LEVEL_COLORS.get(record.levelname, original_color)
+                    
+                    # 设置控制台颜色
+                    ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, color)
+                    
+                    # 调用父类的emit方法
+                    super().emit(record)
+                    
+                    # 恢复原始颜色
+                    ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
+                else:
+                    # 如果不支持Windows API，直接调用父类的emit方法
+                    super().emit(record)
             except Exception:
                 # 如果出错，调用父类的emit方法
                 super().emit(record)
@@ -724,8 +829,20 @@ def debug(msg: Any, *args: Any, **kwargs: Any) -> None:
     """
     记录 DEBUG 级别的日志
     """
-    # 直接使用Windows API设置控制台颜色并输出日志消息
-    if SUPPORT_WINDOWS_API:
+    if TERMINAL_SUPPORTS_ANSI:
+        try:
+            # 获取当前时间
+            timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+            
+            # 格式化日志消息
+            formatted_msg = msg % args
+            
+            # 使用ANSI颜色代码
+            print(f"{ANSI_COLORS['DEBUG']}{timestamp} - DEBUG - {formatted_msg}{ANSI_COLORS['RESET']}")
+        except Exception:
+            # 如果出错，使用标准输出
+            get_logger().debug(msg, *args, **kwargs)
+    elif SUPPORT_WINDOWS_API:
         try:
             # 获取当前时间
             timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
@@ -745,7 +862,7 @@ def debug(msg: Any, *args: Any, **kwargs: Any) -> None:
             # 如果出错，使用标准输出
             get_logger().debug(msg, *args, **kwargs)
     else:
-        # 如果不支持Windows API，使用标准输出
+        # 如果不支持任何颜色输出，使用标准输出
         get_logger().debug(msg, *args, **kwargs)
 
 
@@ -753,8 +870,20 @@ def info(msg: Any, *args: Any, **kwargs: Any) -> None:
     """
     记录 INFO 级别的日志
     """
-    # 直接使用Windows API设置控制台颜色并输出日志消息
-    if SUPPORT_WINDOWS_API:
+    if TERMINAL_SUPPORTS_ANSI:
+        try:
+            # 获取当前时间
+            timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+            
+            # 格式化日志消息
+            formatted_msg = msg % args
+            
+            # 使用ANSI颜色代码
+            print(f"{ANSI_COLORS['INFO']}{timestamp} - INFO - {formatted_msg}{ANSI_COLORS['RESET']}")
+        except Exception:
+            # 如果出错，使用标准输出
+            get_logger().info(msg, *args, **kwargs)
+    elif SUPPORT_WINDOWS_API:
         try:
             # 获取当前时间
             timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
@@ -774,7 +903,7 @@ def info(msg: Any, *args: Any, **kwargs: Any) -> None:
             # 如果出错，使用标准输出
             get_logger().info(msg, *args, **kwargs)
     else:
-        # 如果不支持Windows API，使用标准输出
+        # 如果不支持任何颜色输出，使用标准输出
         get_logger().info(msg, *args, **kwargs)
 
 
@@ -782,8 +911,20 @@ def warning(msg: Any, *args: Any, **kwargs: Any) -> None:
     """
     记录 WARNING 级别的日志
     """
-    # 直接使用Windows API设置控制台颜色并输出日志消息
-    if SUPPORT_WINDOWS_API:
+    if TERMINAL_SUPPORTS_ANSI:
+        try:
+            # 获取当前时间
+            timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+            
+            # 格式化日志消息
+            formatted_msg = msg % args
+            
+            # 使用ANSI颜色代码
+            print(f"{ANSI_COLORS['WARNING']}{timestamp} - WARNING - {formatted_msg}{ANSI_COLORS['RESET']}")
+        except Exception:
+            # 如果出错，使用标准输出
+            get_logger().warning(msg, *args, **kwargs)
+    elif SUPPORT_WINDOWS_API:
         try:
             # 获取当前时间
             timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
@@ -803,7 +944,7 @@ def warning(msg: Any, *args: Any, **kwargs: Any) -> None:
             # 如果出错，使用标准输出
             get_logger().warning(msg, *args, **kwargs)
     else:
-        # 如果不支持Windows API，使用标准输出
+        # 如果不支持任何颜色输出，使用标准输出
         get_logger().warning(msg, *args, **kwargs)
 
 
@@ -811,8 +952,20 @@ def error(msg: Any, *args: Any, **kwargs: Any) -> None:
     """
     记录 ERROR 级别的日志
     """
-    # 直接使用Windows API设置控制台颜色并输出日志消息
-    if SUPPORT_WINDOWS_API:
+    if TERMINAL_SUPPORTS_ANSI:
+        try:
+            # 获取当前时间
+            timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+            
+            # 格式化日志消息
+            formatted_msg = msg % args
+            
+            # 使用ANSI颜色代码
+            print(f"{ANSI_COLORS['ERROR']}{timestamp} - ERROR - {formatted_msg}{ANSI_COLORS['RESET']}")
+        except Exception:
+            # 如果出错，使用标准输出
+            get_logger().error(msg, *args, **kwargs)
+    elif SUPPORT_WINDOWS_API:
         try:
             # 获取当前时间
             timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
@@ -832,7 +985,7 @@ def error(msg: Any, *args: Any, **kwargs: Any) -> None:
             # 如果出错，使用标准输出
             get_logger().error(msg, *args, **kwargs)
     else:
-        # 如果不支持Windows API，使用标准输出
+        # 如果不支持任何颜色输出，使用标准输出
         get_logger().error(msg, *args, **kwargs)
 
 
@@ -840,8 +993,20 @@ def critical(msg: Any, *args: Any, **kwargs: Any) -> None:
     """
     记录 CRITICAL 级别的日志
     """
-    # 直接使用Windows API设置控制台颜色并输出日志消息
-    if SUPPORT_WINDOWS_API:
+    if TERMINAL_SUPPORTS_ANSI:
+        try:
+            # 获取当前时间
+            timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+            
+            # 格式化日志消息
+            formatted_msg = msg % args
+            
+            # 使用ANSI颜色代码
+            print(f"{ANSI_COLORS['CRITICAL']}{timestamp} - CRITICAL - {formatted_msg}{ANSI_COLORS['RESET']}")
+        except Exception:
+            # 如果出错，使用标准输出
+            get_logger().critical(msg, *args, **kwargs)
+    elif SUPPORT_WINDOWS_API:
         try:
             # 获取当前时间
             timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
@@ -861,7 +1026,7 @@ def critical(msg: Any, *args: Any, **kwargs: Any) -> None:
             # 如果出错，使用标准输出
             get_logger().critical(msg, *args, **kwargs)
     else:
-        # 如果不支持Windows API，使用标准输出
+        # 如果不支持任何颜色输出，使用标准输出
         get_logger().critical(msg, *args, **kwargs)
 
 

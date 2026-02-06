@@ -1,0 +1,44 @@
+{
+    "env": {
+        "PROTOCOL": "http://",
+        "HOST": "localhost",
+        "PORT": 8000,
+        "THIS_DB_HOST": null,
+        "THIS_DB_PORT": null,
+        "THIS_DB_USER": null,
+        "THIS_DB_PASSWORD": null,
+        "THIS_DB_NAME": null,
+        "MYAPS_VERSION": "P",
+        "MYAPS_BASE_URL": "http://192.168.1.193:8092",
+        "MYAPS_DB_HOST": "192.168.1.193",
+        "MYAPS_DB_PORT": 3333,
+        "MYAPS_DB_USER": "root",
+        "MYAPS_DB_PASSWORD": "E9damw0o@#$",
+        "MYAPS_DB_SET": "dev",
+        "MYAPS_MAIN_DB": "dev"
+    },
+    "erp": {
+        "base_url": "http://192.168.1.170:8001",
+        "sap-client": "500",
+        "#available_materials": ["20007224 涂胶件/J69_2909050_01","20007226 涂胶件/J69_2909070_01"],
+        "werks": "1600",
+        "username": "T058",
+        "password": "123456"
+    },
+    "mes": {
+        "base_url": "http://58.214.28.122:8851"
+    },
+    "srm": {
+        "base_url": "http://192.168.1.222:7774",
+        "Authorization": "Basic dHNpcGFkbWluOmFkbWlu"
+    },
+    "defaults": {
+        "auto_matver": false,
+        "matver_prefix": "V",
+        "matver": "V01",
+        "itemno_prefix": "A",
+        "itemno": "A01",
+        "plant": "1600",
+        "planner": "haida"
+    }
+}

@@ -19,6 +19,7 @@
     },
     "erp": {
         "base_url": "http://192.168.201.2:8000",
+        "sap-client": "800",
         "werks": "1600",
         "username": "T058",
         "password": "123456"
@@ -27,7 +28,7 @@
         "base_url": "http://58.214.28.122:8851"
     },
     "srm": {
-        "base_url": "http://192.168.1.222:7776",
+        "base_url": "http://1.94.54.66:7776",
         "Authorization": "Basic dHNpcGFkbWluOmFkbWlu"
     },
     "defaults": {

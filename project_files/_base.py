@@ -122,42 +122,52 @@ class ApsBaseAction(ABC):
         🅰 _id: 外部系统返回的 MO ID
         🅰 _entryid: 外部系统返回的 MO 详情 ID（对于某些有表头的ERP，具体的 MO 是存在于子表中的，有单独的行记录id
         """
-        # query_result = db_query(db_name=cls.main_db, model_or_tablename="t_supply", filter_string=f"`SupplyNo`='{plno}'")
-        query_result = cls._session.get(f"{cls.this_base_url}/api/t_supply?db_name={cls.main_db}&supplyno={plno}")
-        query_result_json = query_result.json()
+        try:
+            # query_result = db_query(db_name=cls.main_db, model_or_tablename="t_supply", filter_string=f"`SupplyNo`='{plno}'")
+            console_log.info(f"开始查询PL信息: {plno}")
+            query_result = cls._session.get(f"{cls.this_base_url}/api/t_supply?db_name={cls.main_db}&supplyno={plno}")
+            console_log.info(f"查询PL信息响应: {query_result.status_code}")
+            query_result_json = query_result.json()
 
-        if query_result_json['success'] == 0:
-            console_log.error(f"Error querying supply {plno}: {query_result_json['message']}")
-            return standard_response(status_code=query_result_json['status_code'], success=0, message=query_result_json['message'])
+            if query_result_json['success'] == 0:
+                console_log.error(f"Error querying supply {plno}: {query_result_json['message']}")
+                return standard_response(status_code=query_result_json['status_code'], success=0, message=query_result_json['message'])
 
-        query_data = query_result_json['data']
-        if not query_data or len(query_data) > 1:
-            filelog_error.error(f"Error querying supply {plno}: multiple records matched.")
-            return standard_response(success=0, message=f"PL {plno} not found or multiple records matched.")
+            query_data = query_result_json['data']
+            if not query_data or len(query_data) > 1:
+                filelog_error.error(f"Error querying supply {plno}: multiple records matched.")
+                return standard_response(success=0, message=f"PL {plno} not found or multiple records matched.")
 
-        if query_data[0]["type"] != "PL":
-            filelog_error.error(f"Error querying supply {plno}: not a PL.")
-            return standard_response(status_code=400, success=0, message=f"Supply {plno} is not a PL.")
+            if query_data[0]["type"] != "PL":
+                filelog_error.error(f"Error querying supply {plno}: not a PL.")
+                return standard_response(status_code=400, success=0, message=f"Supply {plno} is not a PL.")
 
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_msg = f"✅ 推送计划任务执行成功，账套：{cls.main_db}，PL单号：{plno}，MO单号：{mono or plno}"
-        console_log.info(log_msg)
-        filelog_normal.info(log_msg)
-        memo = json.dumps({
-            "msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now,
-            "native_no": plno, "_code": mono, "_id": _id, "_entryid": _entryid}, ensure_ascii=False
-        )
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            log_msg = f"✅ 推送计划任务执行成功，账套：{cls.main_db}，PL单号：{plno}，MO单号：{mono or plno}"
+            console_log.info(log_msg)
+            filelog_normal.info(log_msg)
+            memo = json.dumps({
+                "msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now,
+                "native_no": plno, "_code": mono, "_id": _id, "_entryid": _entryid}, ensure_ascii=False
+            )
 
-        response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}?db_name={cls.main_db}&action=pltomo', json={
-            'status': to_status,
-            'apiex_code': str(mono),
-            'apiex_id': str(_id),
-            'apiex_entryid': str(_entryid),
-            'supplyno': str(mono),
-            'change_supplyno': change_supplyno,
-            'memo': memo,
-        })
-        return response
+            console_log.info(f"开始更新PL状态为MO: {plno}, 目标状态: {to_status}, MO单号: {mono}")
+            response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}?db_name={cls.main_db}&action=pltomo', json={
+                'status': to_status,
+                'apiex_code': str(mono),
+                'apiex_id': str(_id or ""),
+                'apiex_entryid': str(_entryid or ""),
+                'supplyno': str(mono),
+                'change_supplyno': change_supplyno,
+                'memo': memo,
+            })
+            console_log.info(f"更新PL状态为MO响应: {response.status_code}, {response.text}")
+            return response
+        except Exception as e:
+            error_msg = f"更新PL状态为MO时发生网络错误: {str(e)}"
+            filelog_error.error(error_msg)
+            console_log.error(error_msg)
+            return standard_response(status_code=500, success=0, message=error_msg)
 
 
     @classmethod
@@ -167,11 +177,21 @@ class ApsBaseAction(ABC):
         console_log.error(log_msg)
         filelog_error.error(log_msg)
         memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
-        response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}?db_name={cls.main_db}&action=edit', json={
-            'status': to_status,    # ❗❗失败情况下，状态务必回撤为 CRE 或 NEW ，否则后续无法再次下达
-            'memo': memo,
-        })
-        return response
+        
+        try:
+            console_log.info(f"开始更新PL状态: {plno}, 目标状态: {to_status}")
+            response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}?db_name={cls.main_db}&action=edit', json={
+                'status': to_status,    # ❗❗失败情况下，状态务必回撤为 CRE 或 NEW ，否则后续无法再次下达
+                'memo': memo,
+            })
+            console_log.info(f"更新PL状态响应: {response.status_code}, {response.text}")
+            return response
+        except Exception as e:
+            error_msg = f"更新PL状态时发生网络错误: {str(e)}"
+            filelog_error.error(error_msg)
+            console_log.error(error_msg)
+            # 可以考虑添加重试逻辑
+            return None
 
 
     @classmethod
@@ -186,15 +206,22 @@ class ApsBaseAction(ABC):
             _id: 外部系统返回的 领料单 ID
             _entryid: 外部系统返回的 领料单 详情 ID（对于某些有表头的ERP，具体的 领料申请 是存在于子表中的，有单独的行记录id
         """
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        memo = json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": rsno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
-        
-        response = cls._session.patch(f'{cls.this_base_url}/api/t_demand/{rsno}?db_name={cls.main_db}', json={
-            'status': to_status,
-            'memo': memo,
-        })
-        
-        return response
+        try:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            memo = json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": rsno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
+            
+            console_log.info(f"开始更新RS状态: {rsno}, 目标状态: {to_status}")
+            response = cls._session.patch(f'{cls.this_base_url}/api/t_demand/{rsno}?db_name={cls.main_db}', json={
+                'status': to_status,
+                'memo': memo,
+            })
+            console_log.info(f"更新RS状态响应: {response.status_code}, {response.text}")
+            return response
+        except Exception as e:
+            error_msg = f"更新RS状态时发生网络错误: {str(e)}"
+            filelog_error.error(error_msg)
+            console_log.error(error_msg)
+            return standard_response(status_code=500, success=0, message=error_msg)
 
 
     @classmethod
@@ -206,12 +233,20 @@ class ApsBaseAction(ABC):
             msg: 外部系统返回信息
             msg_from: 外部系统名称
         """
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
-        response = cls._session.patch(f'{cls.this_base_url}/api/t_demand/{rsno}?db_name={cls.main_db}', json={
-            'memo': memo,
-        })
-        return response
+        try:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
+            console_log.info(f"开始更新RS失败状态: {rsno}")
+            response = cls._session.patch(f'{cls.this_base_url}/api/t_demand/{rsno}?db_name={cls.main_db}', json={
+                'memo': memo,
+            })
+            console_log.info(f"更新RS失败状态响应: {response.status_code}, {response.text}")
+            return response
+        except Exception as e:
+            error_msg = f"更新RS失败状态时发生网络错误: {str(e)}"
+            filelog_error.error(error_msg)
+            console_log.error(error_msg)
+            return standard_response(status_code=500, success=0, message=error_msg)
 
 
     @classmethod
@@ -226,12 +261,20 @@ class ApsBaseAction(ABC):
             _id: 外部系统返回的 请购单 ID
             _entryid: 外部系统返回的 请购单 详情 ID（对于某些有表头的ERP，具体的 请购申请 是存在于子表中的，有单独的行记录id
         """
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        memo = json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": prno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
-        response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{prno}?db_name={cls.main_db}', json={
-            'memo': memo,
-        })
-        return response
+        try:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            memo = json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": prno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
+            console_log.info(f"开始更新PR状态: {prno}")
+            response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{prno}?db_name={cls.main_db}', json={
+                'memo': memo,
+            })
+            console_log.info(f"更新PR状态响应: {response.status_code}, {response.text}")
+            return response
+        except Exception as e:
+            error_msg = f"更新PR状态时发生网络错误: {str(e)}"
+            filelog_error.error(error_msg)
+            console_log.error(error_msg)
+            return standard_response(status_code=500, success=0, message=error_msg)
 
 
     @classmethod
@@ -243,12 +286,20 @@ class ApsBaseAction(ABC):
             msg: 外部系统返回信息
             msg_from: 外部系统名称
         """
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
-        response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{prno}?db_name={cls.main_db}', json={
-            'memo': memo,
-        })
-        return response
+        try:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
+            console_log.info(f"开始更新PR失败状态: {prno}")
+            response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{prno}?db_name={cls.main_db}', json={
+                'memo': memo,
+            })
+            console_log.info(f"更新PR失败状态响应: {response.status_code}, {response.text}")
+            return response
+        except Exception as e:
+            error_msg = f"更新PR失败状态时发生网络错误: {str(e)}"
+            filelog_error.error(error_msg)
+            console_log.error(error_msg)
+            return standard_response(status_code=500, success=0, message=error_msg)
 
 
     @classmethod
