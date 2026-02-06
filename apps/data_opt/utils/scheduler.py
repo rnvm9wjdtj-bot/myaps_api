@@ -202,10 +202,24 @@ class SchedulerManager:
         
         jobs = []
         for job in self.scheduler.get_jobs():
+            # 尝试获取下一次运行时间，处理不同版本的 API
+            next_run_time = None
+            try:
+                # 尝试使用 next_run_time 属性
+                next_run_time = job.next_run_time
+            except AttributeError:
+                try:
+                    # 尝试使用 _get_run_times 方法
+                    run_times = job._get_run_times(None)
+                    if run_times:
+                        next_run_time = run_times[0]
+                except Exception:
+                    pass
+            
             jobs.append({
                 'id': job.id,
                 'name': job.name,
-                'next_run_time': job.next_run_time,
+                'next_run_time': next_run_time,
                 'trigger': str(job.trigger)
             })
         return jobs

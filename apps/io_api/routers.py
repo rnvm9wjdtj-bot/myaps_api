@@ -269,13 +269,12 @@ async def get_supply(
     db_name: str = common_params["db_name"],
     supplyno: str = Query(..., description="供应号"),
     type: str = Query(None, enum=['PL', 'MO', 'PR', 'PO'], description="供应类型"),
-    # x_api_key: str = common_params["x_api_key"]
 ):
     filter_string = f"`SupplyNo`='{supplyno}'"
     if type:
         filter_string += f" AND `Type`='{type}'"
     return await db_query(db_name=db_name, model_or_tablename="v_supply", filter_string=filter_string)
-#   TODO 如果 vendorno 不为空，则尝试查询一下 销售订单 demand
+#   TODO 如果 vendorno 不为空，则尝试查询一下 销售订单 demand，如果是 MO 类型，则尝试查询一下 前置MO
 
 
 @rt.post("/t_supply",

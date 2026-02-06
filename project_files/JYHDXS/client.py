@@ -8,8 +8,9 @@ from fastapi import status
 from dateutil.relativedelta import relativedelta
 
 
-from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL
+from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR, SCHEDULER_MINUTE
 from .._base import (
+    get_scheduler_minute,
     ApsBaseAction, filelog_error, filelog_normal, console_log, standard_response, get_session, HapConnection,
     cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, CACHE_JSON, pdv
 )
@@ -94,8 +95,7 @@ def refresh_workreport(supplyno: str):
 # ⬇️定时任务设置
 #################################################################################
 
-# @cron_task(hour='8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23', minute='0,5,10,15,20,25,30,35,40,45,50,55')
-@cron_task(hour='6,8,10,12,14,16', minute='56')
+@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1))
 def refresh_all_mo_workreport():
     """
     刷新所有报工数据
@@ -111,8 +111,7 @@ def refresh_all_mo_workreport():
         filelog_normal.info(f"✅ 已刷新报工数据: {supplyno}")
 
 
-# @cron_task(hour='8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23', minute='0,5,10,15,20,25,30,35,40,45,50,55')
-@cron_task(hour='6,8,10,12,14,16', minute='55')
+@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute())
 def refresh_stock(dbs: str = None):
     """
     刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据

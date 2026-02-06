@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 from fastapi.openapi.docs import get_swagger_ui_html
 from tortoise.contrib.fastapi import register_tortoise
 
-from config.settings import TORTOISE_ORM_CONFIG, PORT, BASE_DIR, TURNON_DBMONITOR
+from config.settings import TORTOISE_ORM_CONFIG, PORT, BASE_DIR, TURNON_DBMONITOR, TRUNON_SCHEDULER
 from globalobjects import logger as log_config
 from apps.io_api.routers import rt as io_rt
 from apps.io_api.utils.common import register_exception_handlers
@@ -25,7 +25,7 @@ from apps.data_opt.routers import rt as do_rt
 
 # 导入全局MySQL监控实例
 from apps.data_opt.utils.mysqlmonitor import mysql_monitor
-from apps.data_opt.utils.scheduler import scheduler_manager
+from apps.data_opt.utils.scheduler import scheduler_manager, get_scheduler_status
 
 # 定义生命周期事件处理器
 @asynccontextmanager
@@ -41,14 +41,18 @@ async def lifespan(app: FastAPI):
     log_config.info(f"已将主应用事件循环传递给调度器: {main_loop}")
     
     # 初始化并启动定时任务管理器
-    initialize_scheduler()
-    log_config.info(f"定时任务管理器状态: {get_scheduler_status()}")
+    if TRUNON_SCHEDULER:
+        scheduler_manager.init_scheduler()
+        scheduler_manager.start()
+        log_config.info(f"定时任务管理器状态: {get_scheduler_status()}")
+    else:
+        log_config.warning("⚠️ 定时任务管理器未启动，请确认环境变量 TRUNON_SCHEDULER 是否配置为期望的值")
     
     if TURNON_DBMONITOR:
         mysql_monitor.start_monitoring()
         log_config.info("MySQL Binlog监控已启动")
     else:
-        log_config.warning("⚠️ MySQL Binlog监控未启动\，请确认环境变量 TURNON_DBMONITOR 是否配置为期望的值")
+        log_config.warning("⚠️ MySQL Binlog监控未启动，请确认环境变量 TURNON_DBMONITOR 是否配置为期望的值")
     
     yield  # 应用运行期间
     
@@ -58,9 +62,15 @@ async def lifespan(app: FastAPI):
     if TURNON_DBMONITOR:
         mysql_monitor.stop_monitoring()
         log_config.info("MySQL Binlog监控已停止")
+    else:
+        log_config.debug("⚠️ MySQL Binlog监控未启动，无需停止")
+
     # 关闭调度器
-    scheduler_manager.shutdown()
-    log_config.info("定时任务管理器已关闭")
+    if TRUNON_SCHEDULER:
+        scheduler_manager.shutdown()
+        log_config.info("定时任务管理器已关闭")
+    else:
+        log_config.debug("⚠️ 定时任务管理器未启动，无需关闭")
     # 关闭统一日志系统
     log_config.shutdown_logging()
 

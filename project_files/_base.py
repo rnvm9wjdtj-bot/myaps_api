@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 
 # from tortoise import Tortoise
 
-from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET
+from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET, SCHEDULER_MINUTE
 from globalobjects.globalconst import OrderStatusEnum
 from apps.data_opt.utils.common import get_session
 
@@ -33,10 +33,22 @@ filelog_normal = log_config.get_file_logger(__name__, 'default')
 filelog_error = log_config.get_file_logger(__name__, 'error')
 
 
-
 # 获取统一日志器
 console_log = log_config.get_logger(__name__)
 
+
+def get_scheduler_minute(offset: int=0):
+
+    minutes = []
+    for m in SCHEDULER_MINUTE.split(','):
+        minute = int(m) + offset
+        # 确保分钟值在 0-59 之间
+        if minute < 0:
+            minute = 60 + minute
+        elif minute >= 60:
+            minute = minute - 60
+        minutes.append(str(minute))
+    return ','.join(minutes)
 
 
 class ApsBaseAction(ABC):
@@ -196,13 +208,47 @@ class ApsBaseAction(ABC):
         """
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
-
         response = cls._session.patch(f'{cls.this_base_url}/api/t_demand/{rsno}?db_name={cls.main_db}', json={
             'memo': memo,
         })
-
         return response
 
+
+    @classmethod
+    def _pr_push_success(cls, prno: str, msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
+        """ TODO
+        当推送 PR 至 ERP 成功时，调用该方法更新 PR
+        Args:
+            prno: PR 号
+            msg: 外部系统返回信息
+            msg_from: 外部系统名称
+            _code: 外部系统返回的 请购单 编号
+            _id: 外部系统返回的 请购单 ID
+            _entryid: 外部系统返回的 请购单 详情 ID（对于某些有表头的ERP，具体的 请购申请 是存在于子表中的，有单独的行记录id
+        """
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        memo = json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": prno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
+        response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{prno}?db_name={cls.main_db}', json={
+            'memo': memo,
+        })
+        return response
+
+
+    @classmethod
+    def _pr_push_failed(cls, prno: str, msg: str=None, msg_from: str=None):
+        """ TODO
+        当推送 PR 至 ERP 失败时，调用该方法更新 PR 状态
+        Args:
+            prno: PR 号
+            msg: 外部系统返回信息
+            msg_from: 外部系统名称
+        """
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
+        response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{prno}?db_name={cls.main_db}', json={
+            'memo': memo,
+        })
+        return response
 
 
     @classmethod

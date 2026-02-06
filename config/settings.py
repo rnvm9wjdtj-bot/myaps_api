@@ -16,32 +16,44 @@ if PROJECT_DIR is None:
     raise ValueError("❌ PROJECT_DIR 环境变量未设置，请在 .env 文件中设置 PROJECT_DIR")
 # 数据库监控开关
 TURNON_DBMONITOR = os.getenv("TURNON_DBMONITOR", "False").lower() == "true"
+# 定时任务开关
+TRUNON_SCHEDULER = os.getenv("TRUNON_SCHEDULER", "False").lower() == "true"
+# 定时任务执行时间
+SCHEDULER_HOUR = os.getenv("SCHEDULER_HOUR") or "6,8,10,12,14,16"
+SCHEDULER_MINUTE = os.getenv("SCHEDULER_MINUTE") or "55"
+
 
 # JSON文件中记录的配置项
 CACHE_FILE = JSONManager(f"project_files/{PROJECT_DIR}/cache.json")
 env_config = CACHE_FILE.get("env")
 
-PROTOCOL = env_config.get("PROTOCOL", "http://")
-HOST = env_config.get("HOST", "localhost")
-PORT = int(env_config.get("PORT", 8000))
+PROTOCOL = os.getenv("PROTOCOL") or env_config.get("PROTOCOL") or "http://"
+HOST = os.getenv("HOST") or env_config.get("HOST")  or "localhost"
+PORT = int(os.getenv("PORT") or env_config.get("PORT") or 8000)
+if not(PROTOCOL and HOST and PORT):
+    raise ValueError("❌ PROTOCOL, HOST, PORT 环境变量未设置")
 THIS_BASE_URL = f"{PROTOCOL}{HOST}:{PORT}"
 
-MYAPS_VERSION = env_config.get("MYAPS_VERSION", "L").upper()
-MYAPS_BASE_URL = env_config.get("MYAPS_BASE_URL")
-MYAPS_DB_HOST = env_config.get("MYAPS_DB_HOST")
-MYAPS_DB_PORT = int(env_config.get("MYAPS_DB_PORT"))
-MYAPS_DB_USER = env_config.get("MYAPS_DB_USER")
-MYAPS_DB_PASSWORD = env_config.get("MYAPS_DB_PASSWORD")
-MYAPS_DB_SET = env_config.get("MYAPS_DB_SET")
-MYAPS_MAIN_DB = env_config.get("MYAPS_MAIN_DB")
+MYAPS_VERSION = (os.getenv("MYAPS_VERSION") or env_config.get("MYAPS_VERSION") or "L").upper()
+MYAPS_BASE_URL = os.getenv("MYAPS_BASE_URL") or env_config.get("MYAPS_BASE_URL")
+MYAPS_DB_HOST = os.getenv("MYAPS_DB_HOST") or env_config.get("MYAPS_DB_HOST")
+MYAPS_DB_PORT = int(os.getenv("MYAPS_DB_PORT") or env_config.get("MYAPS_DB_PORT") or 3333)
+MYAPS_DB_USER = os.getenv("MYAPS_DB_USER") or env_config.get("MYAPS_DB_USER")
+MYAPS_DB_PASSWORD = os.getenv("MYAPS_DB_PASSWORD") or env_config.get("MYAPS_DB_PASSWORD")
+MYAPS_DB_SET = os.getenv("MYAPS_DB_SET") or env_config.get("MYAPS_DB_SET")
+if not MYAPS_DB_SET:
+    raise ValueError("❌ MYAPS_DB_SET 环境变量未设置")
 MYAPS_DBSET_LIST = MYAPS_DB_SET.split(",")
+MYAPS_MAIN_DB = os.getenv("MYAPS_MAIN_DB") or env_config.get("MYAPS_MAIN_DB")
+if MYAPS_MAIN_DB is None:
+    MYAPS_MAIN_DB = MYAPS_DBSET_LIST[0]
 
 # 本API数据库配置<postgreSQL>
-THIS_DB_HOST = env_config.get("THIS_DB_HOST")
-THIS_DB_PORT = env_config.get("THIS_DB_PORT") 
-THIS_DB_USER = env_config.get("THIS_DB_USER") 
-THIS_DB_PASSWORD = env_config.get("THIS_DB_PASSWORD")
-THIS_DB_NAME = env_config.get("THIS_DB_NAME")
+THIS_DB_HOST = os.getenv("THIS_DB_HOST") or env_config.get("THIS_DB_HOST")
+THIS_DB_PORT = int(os.getenv("THIS_DB_PORT") or env_config.get("THIS_DB_PORT") or 5432)
+THIS_DB_USER = os.getenv("THIS_DB_USER") or env_config.get("THIS_DB_USER")
+THIS_DB_PASSWORD = os.getenv("THIS_DB_PASSWORD") or env_config.get("THIS_DB_PASSWORD")
+THIS_DB_NAME = os.getenv("THIS_DB_NAME") or env_config.get("THIS_DB_NAME")
 
 
 
@@ -85,7 +97,7 @@ TORTOISE_ORM_CONFIG = {
         },
         "data_opt_models": {
             "models": ["apps.data_opt.models", "aerich.models"],
-            "default_connection": MYAPS_MAIN_DB  # 当THIS_DB_NAME为None时，使用MYAPS_MAIN_DB作为默认连接
+            "default_connection": THIS_DB_NAME or MYAPS_MAIN_DB  # 当THIS_DB_NAME为None时，使用MYAPS_MAIN_DB作为默认连接
         },
     },
 }

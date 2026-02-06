@@ -8,8 +8,9 @@ from typing import Callable
 from fastapi import status
 
 
+from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR, SCHEDULER_MINUTE
 from .._base import (
-    MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL,
+    MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, get_scheduler_minute,
     cron_task, filelog_normal, filelog_error, CACHE_JSON,
     ApsBaseAction, DataProcessor,
     filelog_normal, console_log, standard_response, get_session, 
@@ -121,24 +122,21 @@ def push_pr():
 #################################################################################
 # ⬇️ 定时任务
 #################################################################################
-# @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22",minute="0,5,10,15,20,25,30,35,40,45,50,55")
-# @cron_task(hour="8,10,12,14,16",minute="55")
+# @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(-1))
 def get_maindata_from_erp_to_hap_task(*args, **kwargs):
     console_log.info("⏰ 开始执行获取主数据定时任务")
     maindata = get_maindata_from_erp_to_hap()
     console_log.info("⏰ 获取主数据定时任务执行完成")
 
 
-@cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22",minute="0,5,10,15,20,25,30,35,40,45,50,55")
-# @cron_task(hour="8,10,12,14,16",minute="55")
+@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute())
 def refresh_stock_task(*args, **kwargs):
     console_log.info("⏰ 开始执行刷新库存定时任务")
     stock = refresh_stock()
     console_log.info("⏰ 刷新库存定时任务执行完成")
 
 
-# @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22",minute="0,5,10,15,20,25,30,35,40,45,50,55")
-@cron_task(hour="8,12",minute="56")
+# @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1))
 def push_pr_task(*args, **kwargs):
     console_log.info("⏰ 开始执行推送请购单定时任务")
     pr = push_pr()
