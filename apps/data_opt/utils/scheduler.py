@@ -133,10 +133,15 @@ class SchedulerManager:
             @wraps(func)
             def wrapper():
                 try:
-                    # 始终使用 asyncio.run 创建新的事件循环来执行异步任务
-                    # 这样可以避免使用已关闭的主应用事件循环
-                    logger.debug("使用新的事件循环执行异步任务")
-                    return asyncio.run(async_wrapper())
+                    # 优先使用已设置的主事件循环
+                    if self.main_loop:
+                        logger.debug("使用主应用事件循环执行异步任务")
+                        # 直接传递coroutine对象给run_coroutine_threadsafe
+                        return asyncio.run_coroutine_threadsafe(async_wrapper(), self.main_loop).result()
+                    else:
+                        # 如果没有主事件循环，才创建新的
+                        logger.debug("使用新的事件循环执行异步任务")
+                        return asyncio.run(async_wrapper())
                 except Exception as e:
                     logger.error(f"🚫 执行异步任务时发生错误: {str(e)}", exc_info=True)
                     raise
@@ -280,36 +285,37 @@ def get_scheduler_status() -> Dict:
         'jobs': scheduler_manager.get_jobs_info()
     }
 
-# 应用启动时自动初始化
-# initialize_scheduler()
-# 或者在模块导入后合适的时机调用
 
+if __name__ == "__main__":
+    # 应用启动时自动初始化
+    # initialize_scheduler()
+    # 或者在模块导入后合适的时机调用
 
-# 在其他模块中使用装饰器：
-# from apps.data_opt.utils.scheduler import daily_task, hourly_task, interval_task
+    # 在其他模块中使用装饰器：
+    from apps.data_opt.utils.scheduler import daily_task, hourly_task, interval_task
 
-# @daily_task(hour=9, minute=0)  # 每天9点执行
-# def refresh_stock():
-#     """刷新库存数据"""
-#     print("执行库存刷新...")
-#     # 你的业务逻辑
+    @daily_task(hour=9, minute=0)  # 每天9点执行
+    def refresh_stock():
+        """刷新库存数据"""
+        print("执行库存刷新...")
+        # 你的业务逻辑
 
-# @hourly_task(minute=30)  # 每小时的30分执行
-# def sync_inventory():
-#     """同步库存信息"""
-#     print("同步库存信息...")
-#     # 你的业务逻辑
+    @hourly_task(minute=30)  # 每小时的30分执行
+    def sync_inventory():
+        """同步库存信息"""
+        print("同步库存信息...")
+        # 你的业务逻辑
 
-# @interval_task(hours=2)  # 每2小时执行一次
-# def cleanup_temp_data():
-#     """清理临时数据"""
-#     print("清理临时数据...")
-#     # 你的业务逻辑
+    @interval_task(hours=2)  # 每2小时执行一次
+    def cleanup_temp_data():
+        """清理临时数据"""
+        print("清理临时数据...")
+        # 你的业务逻辑
 
-# # 使用完整的cron表达式
-# from apps.data_opt.utils.scheduler import cron_task
+    # 使用完整的cron表达式
+    from apps.data_opt.utils.scheduler import cron_task
 
-# @cron_task(hour='9,11,13,15,17', minute=0, day_of_week='mon-fri')
-# def complex_stock_task():
-#     """复杂定时任务：工作日的9,11,13,15,17点执行"""
-#     print("执行复杂库存任务...")
+    @cron_task(hour='9,11,13,15,17', minute=0, day_of_week='mon-fri')
+    def complex_stock_task():
+        """复杂定时任务：工作日的9,11,13,15,17点执行"""
+        print("执行复杂库存任务...")

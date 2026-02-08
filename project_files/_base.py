@@ -42,12 +42,7 @@ def get_scheduler_minute(offset: int=0):
     minutes = []
     for m in SCHEDULER_MINUTE.split(','):
         minute = int(m) + offset
-        # 确保分钟值在 0-59 之间
-        if minute < 0:
-            minute = 60 + minute
-        elif minute >= 60:
-            minute = minute - 60
-        minutes.append(str(minute))
+        minutes.append(str(minute % 60))
     return ','.join(minutes)
 
 

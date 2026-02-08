@@ -270,7 +270,6 @@ class TplusPushRs(PydanticModel):
     def model_valid(cls, values: Dict[str, Any]):
         cleaned_values = {}
         cleaned_values['ExternalCode'] = values['demandno']
-        # cleaned_values['Code'] = values['demandno']
         cleaned_values['VoucherType'] = {"Code": "ST1039"}
         cleaned_values['VoucherDate'] = values["_entries_"][0]['req_date']
         cleaned_values['BusiType'] = {"Code": "MR01"}
@@ -718,7 +717,7 @@ class TplusConnection(BaseConnection):
         推送数据到T+
         Args:
             target_name: 目标名称
-            push_data: APS数据库查询结果
+            push_data: APS数据库查询结果， MO为字典格式， RS、PR为列表格式先合并清洗
             use_nativeno: 是否使用 APS 原生编号，默认False
         Returns:
 
@@ -728,6 +727,7 @@ class TplusConnection(BaseConnection):
         endpoint = self.config.PUSH_TARGET[target_name]['endpoint']
         pydantic_model = self.config.PUSH_TARGET[target_name].get('pydantic_model')
         
+        # 先合并、清洗数据
         if target_name == 'rs':
             # 先合并一下表头，以适配 T+ 数据结构
             push_data = DataProcessor.merge_common_fields(data=push_data, merge_with=["demandno", "type", "status", "create_date"], entries_key="_entries_")  
@@ -750,8 +750,11 @@ class TplusConnection(BaseConnection):
             # 结果计入推送数据，以便后续通过字段映射的配置直接取值
             push_data['tplus_mo_id'] = tplus_mo_id
             push_data['tplus_mo_entryid'] = tplus_mo_entryid
+        elif target_name == 'pr':
+            pass
 
-        if target_name in ('mo_single', 'rs'):
+
+        if target_name in ('mo_single', 'rs', 'pr'):
             dto = pydantic_model(**push_data).model_dump()
             if use_nativeno:
                 nativeno = push_data.get('supplyno') or push_data.get('demandno')

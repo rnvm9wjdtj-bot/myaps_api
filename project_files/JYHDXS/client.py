@@ -75,7 +75,7 @@ def sap_post(url: str, session: requests.Session, interface_id: str, data: dict)
     }
 
 
-def refresh_workreport(supplyno: str):
+async def refresh_workreport(supplyno: str):
     """
     刷新单条报工数据
     """
@@ -84,11 +84,11 @@ def refresh_workreport(supplyno: str):
     response_json = response.json()
     workreport_data = response_json['data']
 
-    asyncio.run(db_delete(db_names=MYAPS_MAIN_DB, model_or_tablename='t_confirm', filter_string=f"`SupplyNo` = '{supplyno}'"))
+    await db_delete(db_names=MYAPS_MAIN_DB, model_or_tablename='t_confirm', filter_string=f"`SupplyNo` = '{supplyno}'")
     if not workreport_data:
         return
     [d.pop('workcenter') for d in workreport_data]
-    asyncio.run(db_bupsert(db_names=MYAPS_MAIN_DB, model_or_tablename='t_confirm', data_list=workreport_data))
+    await db_bupsert(db_names=MYAPS_MAIN_DB, model_or_tablename='t_confirm', data_list=workreport_data)
     return workreport_data
 
 #################################################################################
@@ -96,19 +96,20 @@ def refresh_workreport(supplyno: str):
 #################################################################################
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1))
-def refresh_all_mo_workreport():
+async def refresh_all_mo_workreport():
     """
     刷新所有报工数据
     """
     filelog_normal.info("⏰ 开始执行刷新所有报工数据任务")
     db = MYAPS_MAIN_DB
-    query_response = asyncio.run(db_query(db_name=db, model_or_tablename='v_supply_mo', filter_string="`Status` in ('E2A','REL','CNF')"))
+    query_response = await db_query(db_name=db, model_or_tablename='v_supply_mo', filter_string="`Status` in ('E2A','REL','CNF')")
     if not query_response['success']:
         return
     supplynos_list = [item['supplyno'] for item in query_response['data']]
     for supplyno in supplynos_list:
-        asyncio.run(refresh_workreport(supplyno))
+        await refresh_workreport(supplyno)
         filelog_normal.info(f"✅ 已刷新报工数据: {supplyno}")
+    return
 
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute())
@@ -275,9 +276,9 @@ class ApsAction(ApsBaseAction):
 
 
     @classmethod
-    def when_mo_close(cls, supplyno: str):
+    async def when_mo_close(cls, supplyno: str):
         """
         当工单管理的状态变为'CMP'（完成）时该方法将被自动调用
         🅰 supplyno: PL计划单编号
         """
-        refresh_workreport(supplyno=supplyno)
+        await refresh_workreport(supplyno=supplyno)
