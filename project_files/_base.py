@@ -344,6 +344,19 @@ class ApsBaseAction(ABC):
 
 
     @classmethod
+    def confirm_workreport(cls):
+        """
+        确认 工作报工 数据
+        🅰 workreport_data: 工作报工数据
+        🅰 db_name: 账套名称，默认cls.main_db
+        """
+        db_name = cls.main_db
+        response = cls._session.patch(f"{cls.this_base_url}/api/t_confirm?db_name={db_name}")
+        response.raise_for_status()
+        return response.json()
+
+
+    @classmethod
     @abstractmethod
     def when_mo_close(cls, mo_data: dict, *args, **kwargs):
         """

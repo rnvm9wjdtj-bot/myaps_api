@@ -59,3 +59,6 @@ class ProjectDefaultValues:
     ITEMNO = f"{itemno_prefix}{1:0{itemno_width}d}" # 示例 / 默认工序项目
 
     MATWC_RATE = defaults.get("matwc_rate", 1.0)  # 默认配比
+
+
+    WORKREPORT_STATUS = defaults.get("workreport_status", "N")  # 默认报工状态，N 未报工，Y 已报工，一般应为 N，由定时任务统一确认

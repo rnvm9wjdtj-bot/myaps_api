@@ -685,10 +685,9 @@ class ModifyDemand(BaseModel):
 class AcceptConfirm(BaseModel):
     supplyno: str = Field(..., max_length=64, description='供应单号', example="MO123456")
     itemno: str = Field(..., max_length=6, description='工序项目', example=pdv.ITEMNO)
-    # workcenter: str = Field(None, max_length=32, description='工作中心', example="WC001")
     recordqty: float = Field(..., description='报工数量', gt=0, example=100)
     recorddt: datetime = Field(..., description='报工日期', example="2025-01-07 10:00:00")
-    status: gc.YesNoEnum = Field(gc.YesNoEnum.YES, example="Y", description='状态')
+    status: gc.YesNoEnum = Field(..., enum=gc.YesNoEnum, description='状态')
     sysuser: str = Field(None, max_length=32, description='系统用户', example="张三")
     _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
 
@@ -712,8 +711,7 @@ class AcceptConfirm(BaseModel):
     def model_valid(cls, values):
         _cache_raw_input_data(cls, values)
         # 基本验证和默认值设置
-        if values.get("status") in gc.NONE_AND_EMPTY:
-            values["status"] = "Y"
+        values["status"] = pdv.WORKREPORT_STATUS
         if values.get("recorddt") in gc.NONE_AND_EMPTY:
             values["recorddt"] = datetime.now()
         return values

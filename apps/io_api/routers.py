@@ -665,17 +665,23 @@ async def create_workreport(
     db_name: str，数据库名称，多个数据库名称用逗号分隔
     """
     db_name = db_name.replace(" ", "")
-    # for d in data:
-        # if not hasattr(d, "itemno") or d.itemno in gc.NONE_AND_EMPTY:
-        #     workcenter = d.workcenter if hasattr(d, "workcenter") else None
-        #     assert workcenter not in gc.NONE_AND_EMPTY, "workcenter cannot be empty when itemno is empty"
-
-        #     orderwc_query_result = await db_query(db_name=db_name, model_or_tablename="t_orderwc", filter_string=f"`SupplyNo` = '{d.supplyno}' AND `WorkCenter` = '{workcenter}'")
-            
-        #     orderwc_data = orderwc_query_result.get('data', [])
-        #     if orderwc_query_result['success'] and len(orderwc_data) == 1:
-        #         d.itemno = orderwc_data[0]['itemno']
-        # d.workcenter = None
-
-    
     return await db_bupsert(db_names=db_name, model_or_tablename="t_confirm", data_list=data)
+
+
+@rt.patch(
+    "/t_confirm",
+    tags=["生产数据 - 报工"],
+    summary="确认报工记录",
+    description="确认报工记录"
+    )
+async def confirm_workreport(
+    db_name: str = common_params["db_name"],
+    x_api_key: str = common_params["x_api_key"]
+    ):
+    """
+    确认报工记录
+    db_name: str，数据库名称，多个数据库名称用逗号分隔
+    """
+    db_name = db_name.replace(" ", "")
+    return await call_dbprocdure(db_names=db_name, procedure_name="UpdateConfirmQtyToOrderWC")
+

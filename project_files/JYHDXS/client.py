@@ -175,6 +175,15 @@ def refresh_stock(dbs: str = None):
     return response
 
 
+@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2))
+def confirm_workreport():
+    """
+    确认报工记录
+    """
+    filelog_normal.info("⏰ 开始执行确认报工记录任务")
+    ApsAction.confirm_workreport()
+
+
 srm = CACHE_JSON.get("srm", {})
 srm_url = srm.get("base_url", "")
 srm_headers = {
@@ -238,7 +247,7 @@ srm_field_map = {
 
   
 #################################################################################
-# ⬇️数据库事件处理
+# ⬇️APS行动
 #################################################################################
 
 class ApsAction(ApsBaseAction):
