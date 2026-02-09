@@ -22,6 +22,8 @@ from .utils.db_operation import db_managers, db_query, db_supsert, db_bupsert, d
 from project_files import hap_conn
 from apps.data_opt.utils.data_processor import DataProcessor
 
+
+
 # def _check_db_name(hap_wsid: str = None):
 #     """
 #     检查函数是否有db_name参数，如果没有则调用 HAP API
@@ -268,13 +270,58 @@ async def post_mat_wc_mold(
 async def get_supply(
     db_name: str = common_params["db_name"],
     supplyno: str = Query(..., description="供应号"),
-    type: str = Query(None, enum=['PL', 'MO', 'PR', 'PO'], description="供应类型"),
+    type: Optional[str] = Query(None, enum=['PL', 'MO', 'PR', 'PO'], description="供应类型"),
 ):
+    async def get_prev_mo(mono: str):
+        """
+        通过工单 supplyno 号查询前 前置 工单
+        """
+        for_demands = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{mono}' AND `Type` IN ('DM', 'RS', 'PR', 'PO')")
+        demands_data = for_demands['data']
+        prev_mo = []
+        if demands_data:
+            demands_no = ','.join([f"'{i['demandno']}'" for i in demands_data])
+            prev_mo_query_result = await db_query(db_name=db_name, model_or_tablename="v_peg", filter_string=f"`DemandNo` IN ({demands_no}) AND `S_Type` IN ('PL', 'MO')")
+            # prev_mo.append(prev_mo_query_result['data'])
+            prev_mo = prev_mo_query_result['data']
+        return prev_mo
+
+
+    async def get_next_mo(mono: str): 
+        """
+        通过工单 supplyno 号查询后 后置 工单
+        """
+        in_pegs = await db_query(db_name=db_name, model_or_tablename="v_peg", filter_string=f"`S_SupplyNo`='{mono}' AND `Type` IN ('DM', 'RS')")
+        pegs_data = in_pegs['data']
+        next_mo = []
+        if pegs_data:
+            demands_no = ','.join([f"'{i['demandno']}'" for i in pegs_data])
+            next_mo_query_result = await db_query(db_name=db_name, model_or_tablename="v_supply", filter_string=f"`SupplyNo` IN ({demands_no}) AND `Type` IN ('MO', 'PL')")
+            # next_mo.append(next_mo_query_result['data'])
+            next_mo = next_mo_query_result['data']
+        return next_mo
+
     filter_string = f"`SupplyNo`='{supplyno}'"
     if type:
         filter_string += f" AND `Type`='{type}'"
-    return await db_query(db_name=db_name, model_or_tablename="v_supply", filter_string=filter_string)
-#   TODO 如果 vendorno 不为空，则尝试查询一下 销售订单 demand，如果是 MO 类型，则尝试查询一下 前置MO
+    supply_query_result = await db_query(db_name=db_name, model_or_tablename="v_supply", filter_string=filter_string)
+    supply_data = supply_query_result['data']
+
+    if supply_data:
+        for item in supply_data:
+            vendorno = item.get('vendorno')
+            if vendorno:
+                so_query_result = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{vendorno}' AND `Type`='SO'")
+                so_data = so_query_result['data']
+                if so_data:
+                    item['so'] = so_data[0]
+
+            # 如果是 MO 类型，则尝试查询一下 前后MO
+            if item['type'] in ["PL", "MO"]:
+                item['prev_mo'] = await get_prev_mo(item['supplyno'])
+                item['next_mo'] = await get_next_mo(item['supplyno'])
+    
+    return standard_response(data=supply_data)
 
 
 @rt.post("/t_supply",
@@ -291,18 +338,51 @@ async def post_supply(
     return await db_bupsert(db_names=db_name, model_or_tablename="t_supply", data_list=data)
 
 
+
+@rt.patch(
+    "/t_supply/{supplyno}/{materialno}",
+    tags=["生产数据 - 供应"],
+    summary="修改供应记录",
+    description="根据供应号、料号修改供应记录"
+)
+async def patch_supply_by_materialno(
+    supplyno: str = Path(..., description="要修改的供应记录的供应号"),
+    materialno: str = Path(..., description="料号"),
+    data: ModifySupply = Body(..., description="修改为这些信息"),
+    db_name: str = common_params["db_name"],
+    x_api_key: str = common_params["x_api_key"]
+    ):
+    db_name = db_name.replace(" ", "")
+    if isinstance(data, ModifySupply):
+        data = data.model_dump(exclude_unset=True)
+
+    if "supplyno" in data:
+        data.pop("supplyno")    # 从data中移除supplyno，防止意外修改 供应号
+    index_dict = {"SupplyNo": supplyno}
+    if not materialno == "...":
+        index_dict["MaterialNo"] = materialno
+    return await db_update_by_index(
+        db_names=db_name,
+        model_or_tablename="t_supply",
+        index_dict=index_dict,
+        new_values_dict=data,
+        not_found_behavior="skip"
+    )
+
+
+
 @rt.patch(
     "/t_supply/{supplyno}",
     tags=["生产数据 - 供应"],
     summary="将 PL 转为 MO",
     description="根据供应号更新 PL 记录 ，转化时允许修改供应号"
-    )
+)
 async def patch_supply(
     supplyno: str = Path(..., description="要修改的供应记录的供应号"),
     data: ModifySupply = Body(..., description="修改为这些信息"),
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
-    ):
+):
     db_name = db_name.replace(" ", "")
     query_result = await db_query(db_name=db_name, model_or_tablename="t_supply", filter_string=f"`SupplyNo`='{supplyno}'")
 
@@ -323,36 +403,6 @@ async def patch_supply(
     params_list = [[supplyno, data['supplyno'], data['status'], data['apiex_id'], data['apiex_entryid'], data['memo'], data['change_supplyno']]]
     return await call_dbprocdure(db_names=db_name, procedure_name="SupplyConvertMOByE2A", params_list=params_list)
     
-
-
-@rt.patch(
-    "t_supply/{supplyno}/{materialno}",
-    tags=["生产数据 - 供应"],
-    summary="修改供应记录",
-    description="根据供应号、料号修改供应记录"
-)
-async def patch_supply_by_materialno(
-    supplyno: str = Path(..., description="要修改的供应记录的供应号"),
-    materialno: str = Path(..., description="料号"),
-    data: ModifySupply = Body(..., description="修改为这些信息"),
-    db_name: str = common_params["db_name"],
-    x_api_key: str = common_params["x_api_key"]
-    ):
-    db_name = db_name.replace(" ", "")
-    if isinstance(data, ModifySupply):
-        data = data.model_dump(exclude_unset=True)
-    data.pop("supplyno")    # 从data中移除supplyno，防止意外修改
-    index_dict = {"SupplyNo": supplyno}
-    if not materialno == "...":
-        index_dict["MaterialNo"] = materialno
-    return await db_update_by_index(
-        db_names=db_name,
-        model_or_tablename="t_supply",
-        index_dict=index_dict,
-        new_values_dict=data,
-        not_found_behavior="skip"
-    )
-
 
 
 @rt.put("/t_supply",

@@ -549,7 +549,7 @@ class ModifySupply(BaseModel):
     apiex_id: Optional[str | int] = Field(None, description='外部系统单据ID', example="1")
     apiex_entryid: Optional[str | int] = Field(None, description='外部系统单据条目ID', example="1")
     change_supplyno: bool = Field(True, description='是否更改供应单号（仅pltomo时传入有效）')
-    memo: str = Field(None, max_length=255, description='备注', example="标准生产工单")
+    memo: Optional[str] = Field(None, max_length=255, description='备注', example="标准生产工单")
     _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
 
     class Config:

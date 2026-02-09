@@ -47,14 +47,3 @@ def handle_update_supply(database: str, table: str, data: dict, data_diff: dict)
     if type_now == 'MO' and status_now == OrderStatusEnum.CMP.value:
         project_client.ApsAction.when_mo_close(data_now)
 
-
-# @mysql_monitor.on_update_for_table("t_demand", database=MYAPS_MAIN_DB)
-# def handle_update_supplydemand(database: str, table: str, data: dict, data_diff: dict):
-#     data_before = dict_to_lower_keys(data['old'])
-#     type_before = data_before['type']
-#     data_now = dict_to_lower_keys(data['new'])
-#     type_now = data_now['type']
-    
-#     if type_now == 'RS' and type_before == 'DM':
-#         project_client.ApsAction.push_rs(data_now['demandno'])
-
