@@ -104,13 +104,19 @@ def refresh_stock():
         aggregated_stock = []
 
     global session
-    # 删除旧库存数据
-    # delete_result = asyncio.run(db_delete(db_names=MYAPS_DB_SET, model_or_tablename='t_supply', filter_string=f"`Type`='ST'"))
-    session.delete(url=f"{THIS_BASE_URL}/api/t_supply?db_name={MYAPS_DB_SET}&type=ST")
-    # 插入汇总后的数据
-    # bupsurt_result = asyncio.run(db_bupsert(db_names=MYAPS_DB_SET, model_or_tablename='t_supply', data_list=aggregated_stock))
-    session.post(url=f"{THIS_BASE_URL}/api/t_supply?db_name={MYAPS_DB_SET}", json=aggregated_stock)
-
+    # # 删除旧库存数据
+    # # delete_result = asyncio.run(db_delete(db_names=MYAPS_DB_SET, model_or_tablename='t_supply', filter_string=f"`Type`='ST'"))
+    # session.delete(url=f"{THIS_BASE_URL}/api/t_supply?db_name={MYAPS_DB_SET}&type=ST")
+    # # 插入汇总后的数据
+    # # bupsurt_result = asyncio.run(db_bupsert(db_names=MYAPS_DB_SET, model_or_tablename='t_supply', data_list=aggregated_stock))
+    # session.post(url=f"{THIS_BASE_URL}/api/t_supply?db_name={MYAPS_DB_SET}", json=aggregated_stock)
+    # 刷新库存
+    refresh_result = session.put(url=f"{THIS_BASE_URL}/api/t_supply?db_name={MYAPS_DB_SET}&type=ST", json=aggregated_stock)
+    if refresh_result.json()['success']:
+        filelog_normal.info(f"✅ 刷新库存任务执行完成，账套：{MYAPS_DB_SET}")
+    else:
+        filelog_error.error(f"🚫 刷新库存任务执行失败: {refresh_result.json()['message']}")
+    
     return aggregated_stock
 
 

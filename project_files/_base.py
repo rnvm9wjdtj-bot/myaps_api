@@ -105,7 +105,7 @@ class ApsBaseAction(ABC):
 
 
     @classmethod
-    def _pl_release_success(cls, plno: str, mono: str=None, to_status: Literal[OrderStatusEnum.E2A, OrderStatusEnum.REL]='E2A', change_supplyno: bool=True, msg: str=None, msg_from: str=None, _id: str=None, _entryid: str=None):
+    def _pl_release_success(cls, plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', change_supplyno: bool=True, msg: str=None, msg_from: str=None, _id: str=None, _entryid: str=None):
         """
         通过调用自路由修改PL的Type、Status、SupplyNo、Memo等字段，作为私有方法在 def click_release_button() 中被直接调用
         🅰 plno: PL计划单编号
@@ -147,7 +147,7 @@ class ApsBaseAction(ABC):
             )
 
             console_log.info(f"开始更新PL状态为MO: {plno}, 目标状态: {to_status}, MO单号: {mono}")
-            response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}?db_name={cls.main_db}&action=pltomo', json={
+            response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}?db_name={cls.main_db}', json={
                 'status': to_status,
                 'apiex_code': str(mono),
                 'apiex_id': str(_id or ""),
@@ -166,7 +166,7 @@ class ApsBaseAction(ABC):
 
 
     @classmethod
-    def _pl_release_failed(cls, plno: str, to_status: Literal[OrderStatusEnum.NEW, OrderStatusEnum.CRE]='CRE', msg: str=None, msg_from: str=None):
+    def _pl_release_failed(cls, plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, msg_from: str=None):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_msg = f"🚫 推送计划任务执行失败，账套：{cls.main_db}，PL单号：{plno}"
         console_log.error(log_msg)
@@ -175,7 +175,7 @@ class ApsBaseAction(ABC):
         
         try:
             console_log.info(f"开始更新PL状态: {plno}, 目标状态: {to_status}")
-            response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}?db_name={cls.main_db}&action=edit', json={
+            response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{plno}/...?db_name={cls.main_db}', json={
                 'status': to_status,    # ❗❗失败情况下，状态务必回撤为 CRE 或 NEW ，否则后续无法再次下达
                 'memo': memo,
             })
@@ -190,7 +190,7 @@ class ApsBaseAction(ABC):
 
 
     @classmethod
-    def _rs_push_success(cls, rsno: str, to_status: Literal[OrderStatusEnum.E2A, OrderStatusEnum.REL]='E2A', msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
+    def _rs_push_success(cls, rsno: str, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
         """
         当推送 领料申请 RS 至 ERP 成功时，调用该方法更新 RS
         Args:
@@ -206,7 +206,7 @@ class ApsBaseAction(ABC):
             memo = json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": rsno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
             
             console_log.info(f"开始更新RS状态: {rsno}, 目标状态: {to_status}")
-            response = cls._session.patch(f'{cls.this_base_url}/api/t_demand/{rsno}?db_name={cls.main_db}', json={
+            response = cls._session.patch(f'{cls.this_base_url}/api/t_demand/{rsno}/.../...?db_name={cls.main_db}', json={
                 'status': to_status,
                 'memo': memo,
             })
@@ -232,7 +232,7 @@ class ApsBaseAction(ABC):
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
             console_log.info(f"开始更新RS失败状态: {rsno}")
-            response = cls._session.patch(f'{cls.this_base_url}/api/t_demand/{rsno}?db_name={cls.main_db}', json={
+            response = cls._session.patch(f'{cls.this_base_url}/api/t_demand/{rsno}/.../...?db_name={cls.main_db}', json={
                 'memo': memo,
             })
             console_log.info(f"更新RS失败状态响应: {response.status_code}, {response.text}")
@@ -260,7 +260,7 @@ class ApsBaseAction(ABC):
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": prno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
             console_log.info(f"开始更新PR状态: {prno}")
-            response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{prno}?db_name={cls.main_db}', json={
+            response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{prno}/...?db_name={cls.main_db}', json={
                 'memo': memo,
             })
             console_log.info(f"更新PR状态响应: {response.status_code}, {response.text}")
@@ -285,7 +285,7 @@ class ApsBaseAction(ABC):
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
             console_log.info(f"开始更新PR失败状态: {prno}")
-            response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{prno}?db_name={cls.main_db}', json={
+            response = cls._session.patch(f'{cls.this_base_url}/api/t_supply/{prno}/...?db_name={cls.main_db}', json={
                 'memo': memo,
             })
             console_log.info(f"更新PR失败状态响应: {response.status_code}, {response.text}")

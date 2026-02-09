@@ -292,98 +292,119 @@ async def post_supply(
 
 
 @rt.patch(
-    "/t_supply/{path_targetsupply}",
+    "/t_supply/{supplyno}",
     tags=["生产数据 - 供应"],
-    summary="修改供应记录",
-    description="根据供应号更新PL记录，与POST方法的区别是：POST方法以【料号+供应号】为联合索引，且不会修改供应号；而PATCH方法以供应号为索引，且允许修改供应号"
+    summary="将 PL 转为 MO",
+    description="根据供应号更新 PL 记录 ，转化时允许修改供应号"
     )
 async def patch_supply(
-    path_targetsupply: str = Path(..., description="要修改的供应记录的供应号"),
-    action: str = Query(enum=["pltomo", "edit"], description="要执行的操作，pltomo：将PL转为MO，edit：普通更新"),
+    supplyno: str = Path(..., description="要修改的供应记录的供应号"),
     data: ModifySupply = Body(..., description="修改为这些信息"),
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
     db_name = db_name.replace(" ", "")
-    query_result = await db_query(db_name=db_name, model_or_tablename="t_supply", filter_string=f"`SupplyNo`='{path_targetsupply}'")
-    if query_result['success'] == 0:
-        return standard_response(
-            status_code=query_result['status_code'],
-            success=0,
-            message=query_result['message'])
+    query_result = await db_query(db_name=db_name, model_or_tablename="t_supply", filter_string=f"`SupplyNo`='{supplyno}'")
 
     query_data = query_result['data']
-    if not query_data or len(query_data) > 1:
+    if not query_data[0]["type"] == "PL":
         return standard_response(
+            status_code=status.HTTP_400_BAD_REQUEST,
             success=0,
-            message=f"PL {path_targetsupply} not found or multiple records matched.")
+            message=f"Supply {supplyno} is not a PL.")
 
     if isinstance(data, ModifySupply):
         data = data.model_dump(exclude_unset=True, exclude_none=True)
     data['materialno'] = query_data[0]['materialno']
-    if action == "pltomo":
-        if query_data[0]["type"] != "PL":
-            return standard_response(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                success=0,
-                message=f"Supply {path_targetsupply} is not a PL.")
-        # 如果未指定供应号，则延用
-        if not data.get('supplyno'):
-            data['supplyno'] = path_targetsupply
-        # 调用存储过程SupplyConvertMOByE2A，将PL转为MO
-        params_list = [[path_targetsupply, data['supplyno'], data['status'], data['apiex_id'], data['apiex_entryid'], data['memo'], data['change_supplyno']]]
-        return await call_dbprocdure(db_names=db_name, procedure_name="SupplyConvertMOByE2A", params_list=params_list)
-    elif action == "edit":
-        data['supplyno'] = path_targetsupply   # 供应号不能修改，将目标供应号重新赋值给data，以便后续 orm 时能正确索引到记录
-        # data['change_supplyno'] = False
-        return await db_supsert(db_names=db_name, model_or_tablename="t_supply", data_item=data)
-    else:
-        return standard_response(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            success=0,
-            message="Invalid action. Expected 'pltomo' or 'edit'.")
+    # 如果未指定供应号，则延用
+    if not data.get('supplyno'):
+        data['supplyno'] = supplyno
+    # 调用存储过程SupplyConvertMOByE2A，将PL转为MO
+    params_list = [[supplyno, data['supplyno'], data['status'], data['apiex_id'], data['apiex_entryid'], data['memo'], data['change_supplyno']]]
+    return await call_dbprocdure(db_names=db_name, procedure_name="SupplyConvertMOByE2A", params_list=params_list)
+    
 
 
-@rt.delete(
-    "/t_supply",
+@rt.patch(
+    "t_supply/{supplyno}/{materialno}",
     tags=["生产数据 - 供应"],
-    summary="删除供应记录",
-    description="根据供应类型、料号、供应号删除供应记录。若为MO PL，还会删除关联的工序记录（仅对PL、MO类型有效）"
-    )
-async def delete_supply(
+    summary="修改供应记录",
+    description="根据供应号、料号修改供应记录"
+)
+async def patch_supply_by_materialno(
+    supplyno: str = Path(..., description="要修改的供应记录的供应号"),
+    materialno: str = Path(..., description="料号"),
+    data: ModifySupply = Body(..., description="修改为这些信息"),
     db_name: str = common_params["db_name"],
-    type: str = common_params["supply_type"],
-    supplyno: str = Query(None, description="要删除的供应记录的供应号"),
-    materialno: Optional[str] = Query(None, description="料号"),
     x_api_key: str = common_params["x_api_key"]
     ):
     db_name = db_name.replace(" ", "")
-    # 使用一个更具描述性的变量名替换内置函数名
-    supply_type_param = type
-    supply_type_param = supply_type_param.upper()
-    all_supply_type = list(gc.SupplyTypeEnum.__members__.keys())
-    
-    if not supply_type_param:
-        return standard_response(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            success=0,
-            message="Required parameter 'type' not found.")
-    if supply_type_param not in all_supply_type:
-        return standard_response(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            success=0,
-            message=f"Invalid input type. Expected list of DeleteSupply or dict with 'bytype' in {all_supply_type}.")
+    if isinstance(data, ModifySupply):
+        data = data.model_dump(exclude_unset=True)
+    data.pop("supplyno")    # 从data中移除supplyno，防止意外修改
+    index_dict = {"SupplyNo": supplyno}
+    if not materialno == "...":
+        index_dict["MaterialNo"] = materialno
+    return await db_update_by_index(
+        db_names=db_name,
+        model_or_tablename="t_supply",
+        index_dict=index_dict,
+        new_values_dict=data,
+        not_found_behavior="skip"
+    )
 
-    filter_conditions = [f"`Type`='{supply_type_param}'", ]
-    if materialno:
-        filter_conditions.append(f"`MaterialNo`='{materialno}'")
-    if supplyno:
-        filter_conditions.append(f"`SupplyNo`='{supplyno}'")
-    filter_string = " AND ".join(filter_conditions)
+
+
+@rt.put("/t_supply",
+    tags=["生产数据 - 供应"],
+    summary="按类型替换供应记录",
+    description="根据供应类型删除所有该类型的供应记录，然后新增这些供应记录。可用于库存刷新等场景"
+    )
+async def replace_supply(
+    db_name: str = common_params["db_name"],
+    type: str = common_params["supply_type"],
+    data: List[AcceptSupply | Dict] = Body(..., description="替换为这些供应记录"),
+    x_api_key: str = common_params["x_api_key"]
+    ):
+    db_name = db_name.replace(" ", "")
+    delete_result = await db_delete(db_names=db_name, model_or_tablename="t_supply", filter_string=f"`Type`='{type}'")
+    if data:
+        create_result = await db_bupsert(db_names=db_name, model_or_tablename="t_supply", data_list=data)
+        return create_result
+    else:
+        return delete_result
+
+
+@rt.delete(
+    "/t_supply/{supplyno}/{materialno}",
+    tags=["生产数据 - 供应"],
+    summary="删除供应记录",
+    description="根据供应类型、料号、供应号删除供应记录。若为MO PL，还会删除关联的工序记录"
+)
+async def delete_supply(
+    db_name: str = common_params["db_name"],
+    supplyno: str = Path(..., description="要删除的供应记录的供应号"),
+    materialno: str = Path(..., description="料号"),
+    x_api_key: str = common_params["x_api_key"]
+    ):
+    db_name = db_name.replace(" ", "")
+    filter_string = f"`SupplyNo`='{supplyno}'"
+    if not materialno == "...":
+        filter_string += f" AND `MaterialNo`='{materialno}'"
+    query_result = await db_query(db_name=db_name, model_or_tablename="t_supply", filter_string=filter_string)
     result = await db_delete(db_names=db_name, model_or_tablename="t_supply", filter_string=filter_string)
-    if supply_type_param in ['PL', 'MO'] and supplyno and result["success"]: # 删除关联的工序记录
-        await db_delete(db_names=db_name, model_or_tablename="t_orderwc", filter_string=f"`SupplyNo`='{supplyno}'")
-    return result
+    _type = query_result['data'][0]['type']
+    if result['success'] and _type in ['PL', 'MO']: # 生产工单还要删除关联的工序记录
+        orderwc_delete_result = await db_delete(db_names=db_name, model_or_tablename="t_orderwc", filter_string=filter_string)
+        return standard_response(
+            success=1,
+            message=f"Supply {supplyno} for material {materialno} of type {_type} deleted successfully.")
+    else:
+        return standard_response(
+            status_code=result["status_code"],
+            success=0,
+            message=result["message"])
+
 
 
 # 需求
@@ -433,22 +454,25 @@ async def post_demand(
 
 
 @rt.patch(
-    "/t_demand/{path_targetdemand}",
+    "/t_demand/{demandno}/{materialno}/{itemno}",
     tags=["生产数据 - 需求"],
     summary="修改需求记录",
     description="根据需求号修改记录"
     )
 async def patch_demand(
-    path_targetdemand: str = Path(..., description="需要修改的需求记录的需求号"),
-    materialno: Optional[str] = Query(None, description="料号"),
+    demandno: str = Path(..., description="需要修改的需求记录的需求号"),
+    materialno: str = Path(..., description="料号"),
+    itemno: str = Path(..., description="项目号"),
     data: ModifyDemand = Body(..., description="修改为这些信息"),
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
     db_name = db_name.replace(" ", "")
-    index_dict = {"DemandNo": path_targetdemand}
-    if materialno:
+    index_dict = {"DemandNo": demandno}
+    if not materialno == "...":
         index_dict["MaterialNo"] = materialno
+    if not itemno == "...":
+        index_dict["ItemNo"] = itemno
 
     response = await db_update_by_index(
         db_names=db_name,

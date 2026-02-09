@@ -161,14 +161,16 @@ def refresh_stock(dbs: str = None):
         })
         stock['itemno'] = pdv.ITEMNO
         stock_data = stock.to_dict(orient='records')
-
-        # delete_result = asyncio.run(db_delete(db_names=dbs, model_or_tablename='t_supply', filter_string=f"`Type`='ST'"))
-        delete_result = requests.delete(url=f"{THIS_BASE_URL}/api/t_supply?db_name={dbs}&type=ST")
-        # write_result = asyncio.run(db_bupsert(db_names=dbs, model_or_tablename='t_supply', data_list=stock_data))
-        write_result = requests.post(url=f"{THIS_BASE_URL}/api/t_supply?db_name={dbs}", json=stock_data)
-        filelog_normal.info(f"✅ 刷新库存任务执行完成，账套：{dbs}")
+        # # delete_result = asyncio.run(db_delete(db_names=dbs, model_or_tablename='t_supply', filter_string=f"`Type`='ST'"))
+        # delete_result = requests.delete(url=f"{THIS_BASE_URL}/api/t_supply?db_name={dbs}&type=ST")
+        # # write_result = asyncio.run(db_bupsert(db_names=dbs, model_or_tablename='t_supply', data_list=stock_data))
+        # write_result = requests.post(url=f"{THIS_BASE_URL}/api/t_supply?db_name={dbs}", json=stock_data)
+        refresh_result = requests.put(url=f"{THIS_BASE_URL}/api/t_supply?db_name={dbs}&type=ST", json=stock_data)
+        if refresh_result.json()['success']:
+            filelog_normal.info(f"✅ 刷新库存任务执行完成，账套：{dbs}")
+        else:
+            filelog_error.error(f"🚫 刷新库存任务执行失败: {refresh_result.json()['message']}")
         response = standard_response(message=f"刷新库存任务执行完成，账套：{dbs}")
-        
     except Exception as e:
         filelog_error.error(f"🚫 刷新库存任务执行失败: {str(e)}")
         response = standard_response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, success=0, message=f"刷新库存任务执行失败: {str(e)}")

@@ -26,7 +26,7 @@ SCHEDULER_MINUTE = os.getenv("SCHEDULER_MINUTE") or "55"
 # JSON文件中记录的配置项
 CACHE_FILENAME = os.getenv("CACHE_FILENAME") or "cache.json"
 CACHE_FILE = JSONManager(f"project_files/{PROJECT_DIR}/{CACHE_FILENAME}")
-json_env_config = CACHE_FILE.get("env")
+json_env_config = CACHE_FILE.get("env") or {}
 
 PROTOCOL = os.getenv("PROTOCOL") or json_env_config.get("PROTOCOL") or "http://"
 HOST = os.getenv("HOST") or json_env_config.get("HOST")  or "localhost"
