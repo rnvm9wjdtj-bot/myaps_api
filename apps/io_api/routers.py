@@ -405,19 +405,19 @@ async def patch_supply(
     
 
 
-@rt.put("/t_supply",
+@rt.put("/t_supply/type{type_}",
     tags=["生产数据 - 供应"],
     summary="按类型替换供应记录",
     description="根据供应类型删除所有该类型的供应记录，然后新增这些供应记录。可用于库存刷新等场景"
     )
 async def replace_supply(
     db_name: str = common_params["db_name"],
-    type: str = common_params["supply_type"],
+    type_: str = common_params["supply_type"],
     data: List[AcceptSupply | Dict] = Body(..., description="替换为这些供应记录"),
     x_api_key: str = common_params["x_api_key"]
     ):
     db_name = db_name.replace(" ", "")
-    delete_result = await db_delete(db_names=db_name, model_or_tablename="t_supply", filter_string=f"`Type`='{type}'")
+    delete_result = await db_delete(db_names=db_name, model_or_tablename="t_supply", filter_string=f"`Type`='{type_}'")
     if data:
         create_result = await db_bupsert(db_names=db_name, model_or_tablename="t_supply", data_list=data)
         return create_result
@@ -566,6 +566,7 @@ async def get_supply_mo(
         orderwc = await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=f"`SupplyNo` = '{supplyno}'", order_string="`SortNo` ASC")
         result['data'][0]['orderwc'] = orderwc['data']
     return result
+
 
 @rt.get(
     "/v_orderwc",
