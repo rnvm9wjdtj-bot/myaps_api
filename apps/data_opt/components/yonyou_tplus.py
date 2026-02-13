@@ -393,8 +393,9 @@ class TplusConfig:
             "pydantic_model": TplusPullMatWcBom,
         },
 
-        "stock": {  # 现存量查询 https://open.chanjet.com/docs/file/apiFile/tcloud/tjqt/xcl?id=30875，以 现存量字段 为库存数导入
+        "stock": {
             "endpoint": "/tplus/api/v2/currentStock/Query",
+            # 现存量查询 https://open.chanjet.com/docs/file/apiFile/tcloud/tjqt/xcl?id=30875，以 现存量字段 为库存数导入
             "field_map": {
                 "InventoryCode": "存货编码",
                 # "AvailableQuantity": "可用量",
@@ -407,8 +408,9 @@ class TplusConfig:
             "pydantic_model": TplusPullStock,
         },
 
-        "workreport": { # 工序汇报单列表查询 https://open.chanjet.com/docs/file/apiFile/tcloud/t+dj/t+gxhbd?id=32107
+        "workreport": {
             "endpoint": "/tplus/api/v2/reportQuery/GetReportData",
+            # 工序汇报单列表查询 https://open.chanjet.com/docs/file/apiFile/tcloud/t+dj/t+gxhbd?id=32107
             "field_map": {},
             "base_filter": {},
             "pydantic_model": None,

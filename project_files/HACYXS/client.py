@@ -24,7 +24,7 @@ from apps.data_opt.components import yonyou_tplus, hap
 
 
 # 将 APS 原生的 supplyno 、demandno 等字段，直接推送到 T+ 中，作为单据编号
-_USE_NATIVENO = True
+_USE_NATIVENO = False
 
 #################################################################################
 # ⬇️ 项目对象及参数
@@ -44,20 +44,20 @@ tplus_conn.auth()
 #################################################################################
 # ⬇️ 项目可复用逻辑
 #################################################################################
-def get_maindata_from_erp_to_hap():
-    if not hap_conn:
-        return
+# def get_maindata_from_erp_to_hap():
+#     if not hap_conn:
+#         return
     # material = tplus_conn.pull_from_source(source_name='material')
     # hap_conn.worksheet('t_material').upsert(material)
 
     # workcenter = tplus_conn.pull_from_source(source_name='workcenter')
     # hap_conn.worksheet('t_workcenter').upsert(workcenter)
 
-    bom = tplus_conn.pull_from_source(source_name='bom')      # 先拉BOM，顺便获取BOM CODES，以便后续获取工艺路线
+    # bom = tplus_conn.pull_from_source(source_name='bom')      # 先拉BOM，顺便获取BOM CODES，以便后续获取工艺路线
     # hap_conn.worksheet('t_mat_wc_bom').upsert(bom)
 
-    route = tplus_conn.pull_from_source(source_name='route')
-    hap_conn.worksheet('t_mat_wc').upsert(route)
+    # route = tplus_conn.pull_from_source(source_name='route')
+    # hap_conn.worksheet('t_mat_wc').upsert(route)
 
 
 def refresh_stock():
@@ -122,10 +122,10 @@ def push_pr():
 # ⬇️ 定时任务
 #################################################################################
 # @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(-1))
-def get_maindata_from_erp_to_hap_task(*args, **kwargs):
-    console_log.info("⏰ 开始执行获取主数据定时任务")
-    maindata = get_maindata_from_erp_to_hap()
-    console_log.info("⏰ 获取主数据定时任务执行完成")
+# def get_maindata_from_erp_to_hap_task(*args, **kwargs):
+#     console_log.info("⏰ 开始执行获取主数据定时任务")
+#     maindata = get_maindata_from_erp_to_hap()
+#     console_log.info("⏰ 获取主数据定时任务执行完成")
 
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute())
@@ -141,6 +141,15 @@ def push_pr_task(*args, **kwargs):
     pr = push_pr()
     console_log.info("⏰ 推送请购单定时任务执行完成")
 
+
+@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2))
+def confirm_workreport():
+    """
+    确认报工记录
+    """
+    console_log.info("⏰ 开始执行确认报工记录任务")
+    ApsAction.confirm_workreport()
+    console_log.info("⏰ 确认报工记录任务执行完成")
 #################################################################################
 # ⬇️ 数据库事件
 #################################################################################
@@ -175,7 +184,7 @@ class ApsAction(ApsBaseAction):
                 # 从 T+ 中提取 MO 详情中的第一个详情记录的 ID 作为 _entryid
                 tplus_mo_entryid = mo_in_tplus['ManufactureOrderDetails'][0]['ID'] 
                 # 最后再更改工单信息，一定放在最后一步，否则如果变更工单号变更太早，前面若有用原生供应号查询都会失败
-                a = cls._pl_release_success(plno=supplyno, msg=mo_push_response_json['message'], change_supplyno=not _USE_NATIVENO, msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
+                a = cls._pl_release_success(plno=supplyno, msg=mo_push_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
 
                 # 审批接口，要在领料申请前批准
                 b = tplus_conn.push_into_target(target_name='mo_approve', push_data={'voucherID': tplus_mo_id})
@@ -199,7 +208,7 @@ class ApsAction(ApsBaseAction):
         🅰 tplus_mo_entryid: T+ 中 MO 详情记录id
         """
         if isinstance(mdlist_or_supplyno, str):
-            rs_data = ApsBaseAction._get_demand_datalist(demandno=mdlist_or_supplyno)     # 从 APS 查询 RS 领料数据，以工单号 related_supplyno 为依据查找
+            rs_data = ApsBaseAction._get_demand_datalist(demandno=mdlist_or_supplyno)     # 从 APS 查询 RS 领料数据，以工单号  为依据查找
             demandno = mdlist_or_supplyno
         else:
             rs_data = mdlist_or_supplyno
@@ -215,8 +224,4 @@ class ApsAction(ApsBaseAction):
 
     @classmethod
     def when_mo_close(cls, mo_data: dict, *args, **kwargs):
-        """
-        当工单管理的状态变为'CMP'（完成）时该方法将被自动调用
-        🅰 mono: MO号
-        """
         pass

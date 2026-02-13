@@ -267,7 +267,7 @@ async def post_mat_wc_mold(
 # 生产数据接口
 ########################################################################
 @rt.get(
-    "/v_supply/{supplyno}/type/{type_}",
+    "/v_supply/{supplyno}",
     tags=["生产数据 - 供应"],
     summary="获取供应记录",
     description="获取供应记录"
@@ -275,22 +275,22 @@ async def post_mat_wc_mold(
 async def get_supply(
     db_name: str = common_params["db_name"],
     supplyno: str = Path(..., description="供应号"),
-    type_: str = Path(..., enum=['PL', 'MO', 'PR', 'PO'], description="供应类型"),
+    # type_: str = Path(..., enum=['PL', 'MO', 'PR', 'PO'], description="供应类型"),
 ):
     filter_string = f"`SupplyNo`='{supplyno}'"
-    if not type_ == "...":
-        filter_string += f" AND `Type`='{type_}'"
+    # if not type_ == "...":
+    #     filter_string += f" AND `Type`='{type_}'"
     supply_query_result = await db_query(db_name=db_name, model_or_tablename="v_supply", filter_string=filter_string)
     supply_data = supply_query_result['data']
 
-    if supply_data:
-        for item in supply_data:
-            vendorno = item.get('vendorno')
-            if vendorno:
-                so_query_result = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{vendorno}' AND `Type`='SO'")
-                so_data = so_query_result['data']
-                if so_data:
-                    item['so'] = so_data[0]
+    # if supply_data:
+    #     for item in supply_data:
+    #         vendorno = item.get('vendorno')
+    #         if vendorno:
+    #             so_query_result = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{vendorno}' AND `Type`='SO'")
+    #             so_data = so_query_result['data']
+    #             if so_data:
+    #                 item['so'] = so_data[0]
 
     
     return standard_response(data=supply_data)
@@ -372,7 +372,7 @@ async def patch_supply(
     if not data.get('supplyno'):
         data['supplyno'] = supplyno
     # 调用存储过程SupplyConvertMOByE2A，将PL转为MO
-    params_list = [[supplyno, data['supplyno'], data['status'], data['apiex_id'], data['apiex_entryid'], data['memo'], data['change_supplyno']]]
+    params_list = [[supplyno, data['supplyno'], data['status'], data['apiex_id'], data['apiex_entryid'], data['memo']]]
     return await call_dbprocdure(db_names=db_name, procedure_name="SupplyConvertMOByE2A", params_list=params_list)
     
 
@@ -449,13 +449,13 @@ async def delete_supply(
 async def get_demand(
     db_name: str = common_params["db_name"],
     demandno: str = Path(..., description="需求号"),
-    # type: str = Query(None, enum=[gc.DemandTypeEnum.DM.value, gc.DemandTypeEnum.RS.value], description="需求类型"),
+    # type_: str = Path(..., enum=["DM", "RS"], description="需求类型"),
 ):
     filter_string = f"`DemandNo`='{demandno}'"
-    # if type:
-    #     filter_string += f" AND `Type`='{type}'"
+    # if not type_ == "...":
+    #     filter_string += f" AND `Type`='{type_}'"
     # else:   # 默认查找生产相关的全部类型需求
-    #     filter_string += f" AND `Type` IN ('{gc.DemandTypeEnum.DM.value}', '{gc.DemandTypeEnum.RS.value}')"
+    #     filter_string += f" AND `Type` IN ('DM', 'RS')"
 
     query_result_demand = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=filter_string)
     if query_result_demand["success"] == 0:
@@ -465,7 +465,7 @@ async def get_demand(
         return query_result_demand
     if query_result_supply["data"]:
         # 合并需求和供应数据
-        query_result_demand["meta"]["related_supply"] = query_result_supply["data"][0]
+        query_result_demand["meta"]["mo"] = query_result_supply["data"][0]
     return query_result_demand
 
 
@@ -518,27 +518,6 @@ async def patch_demand(
 ########################################################################
 # 报表接口
 ########################################################################
-@rt.get(
-    "/v_supply_mo",
-    tags=["报表 - 工单报表"],
-    summary="获取工单报表",
-    description="按工单开完工时间获取工单报表，默认开工时间为今日，默认完工时间为一周后。"
-)
-async def get_mo_by_time(
-    db_name: str = common_params["db_name"],
-    starttime: datetime = Query(None, description="工单开工时间"),
-    endtime: datetime = Query(None, description="工单完工时间"),
-    # x_api_key: str = common_params["x_api_key"]
-):
-    db_name = db_name.replace(" ", "")
-
-    starttime = starttime or date.today()
-    endtime = endtime or starttime + timedelta(days=7)
-    filter_string = f"`DT_OrdStart` >= '{starttime}' AND `DT_OrdEnd` <= '{endtime}'"
-    result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=filter_string)
-    return result
-
-
 @rt.get(
     "/v_supply_mo/{supplyno}",
     tags=["报表 - 工单报表"],
@@ -604,6 +583,27 @@ async def get_mo_by_supplyno(
         if next_mo:
             result['data'][0]['next_mo'] = await get_next_mo(supplyno)
 
+    return result
+
+
+@rt.get(
+    "/v_supply_mo",
+    tags=["报表 - 工单报表"],
+    summary="获取工单报表",
+    description="按工单开完工时间获取工单报表，默认开工时间为今日，默认完工时间为一周后。"
+)
+async def get_mo_by_time(
+    db_name: str = common_params["db_name"],
+    starttime: datetime = Query(None, description="工单开工时间"),
+    endtime: datetime = Query(None, description="工单完工时间"),
+    # x_api_key: str = common_params["x_api_key"]
+):
+    db_name = db_name.replace(" ", "")
+
+    starttime = starttime or date.today()
+    endtime = endtime or starttime + timedelta(days=7)
+    filter_string = f"`DT_OrdStart` >= '{starttime}' AND `DT_OrdEnd` <= '{endtime}'"
+    result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=filter_string)
     return result
 
 

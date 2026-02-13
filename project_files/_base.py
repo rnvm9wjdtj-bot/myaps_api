@@ -105,13 +105,12 @@ class ApsBaseAction(ABC):
 
 
     @classmethod
-    def _pl_release_success(cls, plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', change_supplyno: bool=True, msg: str=None, msg_from: str=None, _id: str=None, _entryid: str=None):
+    def _pl_release_success(cls, plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _id: str=None, _entryid: str=None):
         """
         通过调用自路由修改PL的Type、Status、SupplyNo、Memo等字段，作为私有方法在 def click_release_button() 中被直接调用
         🅰 plno: PL计划单编号
         🅰 mono: MO号，可选，若非None则更改PL的SupplyNo
         🅰 to_status: 转化成MO后，Status设为哪个状态，默认'REL'
-        🅰 change_supplyno: 是否更改PL的SupplyNo，默认True
         🅰 msg: 外部系统返回信息
         🅰 msg_from: 外部系统名称
         🅰 _id: 外部系统返回的 MO ID
@@ -152,7 +151,6 @@ class ApsBaseAction(ABC):
                 'apiex_id': str(_id or ""),
                 'apiex_entryid': str(_entryid or ""),
                 'supplyno': str(mono),
-                'change_supplyno': change_supplyno,
                 'memo': memo,
             })
             console_log.info(f"更新PL状态为MO响应: {response.status_code}, {response.text}")
