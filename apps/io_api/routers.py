@@ -266,44 +266,20 @@ async def post_mat_wc_mold(
 ########################################################################
 # 生产数据接口
 ########################################################################
-@rt.get("/t_supply", tags=["生产数据 - 供应"], summary="获取供应记录", description="获取供应记录")
+@rt.get(
+    "/v_supply/{supplyno}/type/{type_}",
+    tags=["生产数据 - 供应"],
+    summary="获取供应记录",
+    description="获取供应记录"
+)
 async def get_supply(
     db_name: str = common_params["db_name"],
-    supplyno: str = Query(..., description="供应号"),
-    type: Optional[str] = Query(None, enum=['PL', 'MO', 'PR', 'PO'], description="供应类型"),
+    supplyno: str = Path(..., description="供应号"),
+    type_: str = Path(..., enum=['PL', 'MO', 'PR', 'PO'], description="供应类型"),
 ):
-    async def get_prev_mo(mono: str):
-        """
-        通过工单 supplyno 号查询前 前置 工单
-        """
-        for_demands = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{mono}' AND `Type` IN ('DM', 'RS', 'PR', 'PO')")
-        demands_data = for_demands['data']
-        prev_mo = []
-        if demands_data:
-            demands_no = ','.join([f"'{i['demandno']}'" for i in demands_data])
-            prev_mo_query_result = await db_query(db_name=db_name, model_or_tablename="v_peg", filter_string=f"`DemandNo` IN ({demands_no}) AND `S_Type` IN ('PL', 'MO')")
-            # prev_mo.append(prev_mo_query_result['data'])
-            prev_mo = prev_mo_query_result['data']
-        return prev_mo
-
-
-    async def get_next_mo(mono: str): 
-        """
-        通过工单 supplyno 号查询后 后置 工单
-        """
-        in_pegs = await db_query(db_name=db_name, model_or_tablename="v_peg", filter_string=f"`S_SupplyNo`='{mono}' AND `Type` IN ('DM', 'RS')")
-        pegs_data = in_pegs['data']
-        next_mo = []
-        if pegs_data:
-            demands_no = ','.join([f"'{i['demandno']}'" for i in pegs_data])
-            next_mo_query_result = await db_query(db_name=db_name, model_or_tablename="v_supply", filter_string=f"`SupplyNo` IN ({demands_no}) AND `Type` IN ('MO', 'PL')")
-            # next_mo.append(next_mo_query_result['data'])
-            next_mo = next_mo_query_result['data']
-        return next_mo
-
     filter_string = f"`SupplyNo`='{supplyno}'"
-    if type:
-        filter_string += f" AND `Type`='{type}'"
+    if not type_ == "...":
+        filter_string += f" AND `Type`='{type_}'"
     supply_query_result = await db_query(db_name=db_name, model_or_tablename="v_supply", filter_string=filter_string)
     supply_data = supply_query_result['data']
 
@@ -316,10 +292,6 @@ async def get_supply(
                 if so_data:
                     item['so'] = so_data[0]
 
-            # 如果是 MO 类型，则尝试查询一下 前后MO
-            if item['type'] in ["PL", "MO"]:
-                item['prev_mo'] = await get_prev_mo(item['supplyno'])
-                item['next_mo'] = await get_next_mo(item['supplyno'])
     
     return standard_response(data=supply_data)
 
@@ -405,17 +377,27 @@ async def patch_supply(
     
 
 
-@rt.put("/t_supply/type{type_}",
+@rt.put("/t_supply/type/{type_}",
     tags=["生产数据 - 供应"],
     summary="按类型替换供应记录",
     description="根据供应类型删除所有该类型的供应记录，然后新增这些供应记录。可用于库存刷新等场景"
     )
 async def replace_supply(
     db_name: str = common_params["db_name"],
-    type_: str = common_params["supply_type"],
+    type_: str = Path(..., enum=['PL', 'MO', 'PR', 'PO', 'ST'], description="供应类型"),
     data: List[AcceptSupply | Dict] = Body(..., description="替换为这些供应记录"),
     x_api_key: str = common_params["x_api_key"]
     ):
+    wrong_type_count = 0
+    for item in data:
+        if item['type'] != type_:
+            wrong_type_count += 1
+    if wrong_type_count > 0:
+        return standard_response(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            success=0,
+            message=f"Supply type {type_} in data does not match.")
+            
     db_name = db_name.replace(" ", "")
     delete_result = await db_delete(db_names=db_name, model_or_tablename="t_supply", filter_string=f"`Type`='{type_}'")
     if data:
@@ -459,21 +441,21 @@ async def delete_supply(
 
 # 需求
 @rt.get(
-    "/t_demand",
+    "/v_demand/{demandno}",
     tags=["生产数据 - 需求"],
     summary="根据需求号获取物料需求详情",
-    description="根据 APS pegging 算法，需求号与供应号一致，所以该接口也即是：根据生产工单号获取原料需求"
+    description="根据 APS pegging 算法，需求号与供应号一致，所以该接口也即是：根据工单的 supplyno 获取原料需求"
 )
 async def get_demand(
     db_name: str = common_params["db_name"],
-    demandno: str = Query(..., description="需求号"),
-    type: str = Query(None, enum=[gc.DemandTypeEnum.DM.value, gc.DemandTypeEnum.RS.value], description="需求类型"),
+    demandno: str = Path(..., description="需求号"),
+    # type: str = Query(None, enum=[gc.DemandTypeEnum.DM.value, gc.DemandTypeEnum.RS.value], description="需求类型"),
 ):
     filter_string = f"`DemandNo`='{demandno}'"
-    if type:
-        filter_string += f" AND `Type`='{type}'"
-    else:   # 默认查找生产相关的全部类型需求
-        filter_string += f" AND `Type` IN ('{gc.DemandTypeEnum.DM.value}', '{gc.DemandTypeEnum.RS.value}')"
+    # if type:
+    #     filter_string += f" AND `Type`='{type}'"
+    # else:   # 默认查找生产相关的全部类型需求
+    #     filter_string += f" AND `Type` IN ('{gc.DemandTypeEnum.DM.value}', '{gc.DemandTypeEnum.RS.value}')"
 
     query_result_demand = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=filter_string)
     if query_result_demand["success"] == 0:
@@ -540,31 +522,88 @@ async def patch_demand(
     "/v_supply_mo",
     tags=["报表 - 工单报表"],
     summary="获取工单报表",
-    description="按工单开完工时间获取工单报表，默认开工时间为今日，默认完工时间为一周后。也支持按工单（供应）号筛选，若传工单（供应）号，则忽略时间筛选条件。"
+    description="按工单开完工时间获取工单报表，默认开工时间为今日，默认完工时间为一周后。"
 )
-async def get_supply_mo(
+async def get_mo_by_time(
     db_name: str = common_params["db_name"],
     starttime: datetime = Query(None, description="工单开工时间"),
     endtime: datetime = Query(None, description="工单完工时间"),
-    supplyno: str = Query(None, description="工单（供应）号"),
     # x_api_key: str = common_params["x_api_key"]
 ):
     db_name = db_name.replace(" ", "")
-    if supplyno:
-        filter_string = f"`SupplyNo` = '{supplyno}'"
-    else:
-        # starttime = starttime or date.today()
-        # endtime = endtime or starttime + timedelta(days=7)
-        filter_strings = []
-        if starttime:
-            filter_strings.append(f"`DT_OrdStart` >= '{starttime}'")  
-        if endtime:
-            filter_strings.append(f"`DT_OrdEnd` <= '{endtime}'")
-        filter_string = " AND ".join(filter_strings)
+
+    starttime = starttime or date.today()
+    endtime = endtime or starttime + timedelta(days=7)
+    filter_string = f"`DT_OrdStart` >= '{starttime}' AND `DT_OrdEnd` <= '{endtime}'"
+    result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=filter_string)
+    return result
+
+
+@rt.get(
+    "/v_supply_mo/{supplyno}",
+    tags=["报表 - 工单报表"],
+    summary="获取工单报表",
+    description="按供应号获取工单信息。"
+)
+async def get_mo_by_supplyno(
+    db_name: str = common_params["db_name"],
+    supplyno: str = Path(..., description="工单（供应）号"),
+    prev_mo: int = Query(0, description="是否查询前 前置 工单，1 为查询，0 为不查询"),
+    next_mo: int = Query(0, description="是否查询后 后置 工单，1 为查询，0 为不查询"),
+    # x_api_key: str = common_params["x_api_key"]
+):
+
+    async def get_prev_mo(mono: str):
+        """
+        通过工单 supplyno 号查询前 前置 工单
+        """
+        for_demands = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{mono}' AND `Type` IN ('DM', 'RS', 'PR', 'PO')")
+        demands_data = for_demands['data']
+        prev_mo = []
+        if demands_data:
+            demands_no = ','.join([f"'{i['demandno']}'" for i in demands_data])
+            peg_query_result = await db_query(db_name=db_name, model_or_tablename="v_peg", filter_string=f"`DemandNo` IN ({demands_no}) AND `S_Type` IN ('PL', 'MO')")
+            if peg_query_result['data']:
+                supplies_no = ','.join([f"'{i['s_supplyno']}'" for i in peg_query_result['data']])
+                prev_mo_query_result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=f"`SupplyNo` IN ({supplies_no})")
+                prev_mo = prev_mo_query_result['data']
+        return prev_mo
+
+    async def get_next_mo(mono: str): 
+        """
+        通过工单 supplyno 号查询后 后置 工单
+        """
+        in_pegs = await db_query(db_name=db_name, model_or_tablename="v_peg", filter_string=f"`S_SupplyNo`='{mono}' AND `Type` IN ('DM', 'RS')")
+        pegs_data = in_pegs['data']
+        next_mo = []
+        if pegs_data:
+            demands_no = ','.join([f"'{i['demandno']}'" for i in pegs_data])
+            next_mo_query_result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=f"`SupplyNo` IN ({demands_no}) AND `Type` IN ('MO', 'PL')")
+            # next_mo.append(next_mo_query_result['data'])
+            next_mo = next_mo_query_result['data']
+        return next_mo
+
+    db_name = db_name.replace(" ", "")
+    filter_string = f"`SupplyNo` = '{supplyno}'"
+
     result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=filter_string)
     if result['success'] and result['meta']['total'] == 1:  # 筛选到唯一的工单，则补充工序信息（v_orderwc）
-        orderwc = await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=f"`SupplyNo` = '{supplyno}'", order_string="`SortNo` ASC")
+        orderwc = await db_query(
+            db_name=db_name, model_or_tablename="v_orderwc",
+            filter_string=f"`SupplyNo` = '{supplyno}'"
+        )
         result['data'][0]['orderwc'] = orderwc['data']
+        vendorno = result['data'][0].get('vendorno')
+        if result['data'][0].get('category') == 'MTO' and vendorno:
+            so_query_result = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{vendorno}' AND `Type`='SO'")
+            so_data = so_query_result['data']
+            if so_data:
+                result['data'][0]['so'] = so_data[0]
+        if prev_mo:
+            result['data'][0]['prev_mo'] = await get_prev_mo(supplyno)
+        if next_mo:
+            result['data'][0]['next_mo'] = await get_next_mo(supplyno)
+
     return result
 
 
@@ -572,28 +611,36 @@ async def get_supply_mo(
     "/v_orderwc",
     tags=["报表 - 工序报表"],
     summary="获取工序报表",
-    description="按工序开完工时间获取工序报表，默认开工时间为今日，默认完工时间为一周后。也支持按工单（供应）号筛选，若传工单（供应）号，则忽略时间筛选条件。"
+    description="按工序开完工时间获取工序报表，默认开工时间为今日，默认完工时间为一周后。"
 )
 async def get_orderwc(
     db_name: str = common_params["db_name"],
     starttime: datetime = Query(None, description="工序开工时间"),
     endtime: datetime = Query(None, description="工序完工时间"),
-    supplyno: str = Query(None, description="工单（供应）号"),
     # x_api_key: str = common_params["x_api_key"]
 ):
     db_name = db_name.replace(" ", "")
-    if supplyno:
-        filter_string = f"`SupplyNo` = '{supplyno}'"
-    else:
-        # starttime = starttime or date.today()
-        # endtime = endtime or starttime + timedelta(days=7)
-        filter_strings = []
-        if starttime:
-            filter_strings.append(f"`DT_Start` >= '{starttime}'")  
-        if endtime:
-            filter_strings.append(f"`DT_End` <= '{endtime}'")   
-        filter_string = " AND ".join(filter_strings)
+    starttime = starttime or date.today()
+    endtime = endtime or starttime + timedelta(days=7)
+    filter_string = f"`DT_Start` >= '{starttime}' AND `DT_End` <= '{endtime}'"
     return await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=filter_string)
+
+
+@rt.get(
+    "/v_orderwc/{supplyno}",
+    tags=["报表 - 工序报表"],
+    summary="获取工序报表",
+    description="按编号（供应号）获取工序报表"
+)
+async def get_orderwc(
+    db_name: str = common_params["db_name"],
+    supplyno: str = Path(..., description="工单（供应）号"),
+    # x_api_key: str = common_params["x_api_key"]
+):
+    db_name = db_name.replace(" ", "")
+    filter_string = f"`SupplyNo` = '{supplyno}'"
+    return await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=filter_string)
+
 
 
 @rt.get(

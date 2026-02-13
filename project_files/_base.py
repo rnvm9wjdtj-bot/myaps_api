@@ -83,7 +83,7 @@ class ApsBaseAction(ABC):
         Returns:
             工单计划单详情
         """
-        supply_response = cls._session.get(f"{cls.this_base_url}/api/v_supply_mo?db_name={cls.main_db}&supplyno={supplyno}")
+        supply_response = cls._session.get(f"{cls.this_base_url}/api/v_supply_mo/{supplyno}?db_name={cls.main_db}")
         supply_response_json = supply_response.json()
         supplymo_detaildata = supply_response_json['data'][0]
         return supplymo_detaildata
@@ -98,7 +98,7 @@ class ApsBaseAction(ABC):
         Returns:
             工单原料需求详情
         """
-        demand_response = cls._session.get(f"{cls.this_base_url}/api/t_demand?db_name={cls.main_db}&demandno={demandno}")
+        demand_response = cls._session.get(f"{cls.this_base_url}/api/v_demand/{demandno}?db_name={cls.main_db}")
         demand_response_json = demand_response.json()
         demand_detaildata = demand_response_json['data']
         return demand_detaildata
@@ -118,9 +118,8 @@ class ApsBaseAction(ABC):
         🅰 _entryid: 外部系统返回的 MO 详情 ID（对于某些有表头的ERP，具体的 MO 是存在于子表中的，有单独的行记录id
         """
         try:
-            # query_result = db_query(db_name=cls.main_db, model_or_tablename="t_supply", filter_string=f"`SupplyNo`='{plno}'")
             console_log.info(f"开始查询PL信息: {plno}")
-            query_result = cls._session.get(f"{cls.this_base_url}/api/t_supply?db_name={cls.main_db}&supplyno={plno}")
+            query_result = cls._session.get(f"{cls.this_base_url}/api/v_supply_mo/{plno}?db_name={cls.main_db}")
             console_log.info(f"查询PL信息响应: {query_result.status_code}")
             query_result_json = query_result.json()
 

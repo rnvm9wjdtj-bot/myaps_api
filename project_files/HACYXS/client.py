@@ -104,7 +104,7 @@ def refresh_stock():
         aggregated_stock = []
 
     global session
-    refresh_result = session.put(url=f"{THIS_BASE_URL}/api/t_supply/typeST?db_name={MYAPS_DB_SET}", json=aggregated_stock)
+    refresh_result = session.put(url=f"{THIS_BASE_URL}/api/t_supply/type/ST?db_name={MYAPS_DB_SET}", json=aggregated_stock)
     if refresh_result.json()['success']:
         filelog_normal.info(f"✅ 刷新库存任务执行完成，账套：{MYAPS_DB_SET}")
     else:
