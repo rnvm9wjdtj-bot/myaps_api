@@ -21,7 +21,7 @@ from apps.data_opt.utils.common import get_session
 from globalobjects import logger as log_config, CACHE_JSON, ProjectDefaultValues as pdv
 from apps.io_api.utils.common import standard_response
 from apps.io_api.utils.db_operation import db_delete, db_bupsert, call_dbprocdure, db_query, db_bupsert, db_supsert, db_update_by_index
-from apps.data_opt.components.hap import HapConnection
+# from apps.data_opt.components.hapv1 import HapConnection
 from apps.data_opt.utils.scheduler import cron_task
 from apps.data_opt.utils.common import add_basic_auth_requests
 from apps.data_opt.utils.data_processor import DataProcessor

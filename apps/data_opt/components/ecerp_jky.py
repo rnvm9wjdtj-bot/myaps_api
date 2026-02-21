@@ -1,3 +1,5 @@
+# coding: utf-8
+
 import json
 import hashlib
 import requests
@@ -16,16 +18,14 @@ from ._base import (
     AcceptMold, AcceptMatWcMold
 )
 
-from .hap import HapConnection
 
 
 class JkyConfig():
 
     BASE_URL = "https://open.jackyun.com/open/openapi/do"
-
     API_VERSION = "V1.0"
-
-    CACHE_FILE = CACHE_JSON
+    APP_KEY = CACHE_JSON.get("erp", {}).get("app_key", "")
+    APP_SECRET = CACHE_JSON.get("erp", {}).get("app_secret", "")
     """
     ⬆️credential JSON，用于存储吉客云认证信息。文件包含如下结构用于吉客云的认证：
     {
@@ -40,7 +40,7 @@ class JkyConfig():
     PULL_SOURCE :OrderedDict = {
         "全量公司信息": {
             "method": "erp.company.query",
-            "biz_content": "{{'pageIndex': '{page_index}','pageSize': '{page_size}'}}",
+            "biz_content": {"pageIndex": None, "pageSize": None},
             "field_map": {
                 "groupId": ["groupId", "group"],
                 "currencyCode": ["currencyCode", "currency"],
@@ -53,7 +53,7 @@ class JkyConfig():
 
         "全部仓库": {
             "method": "erp.warehouse.get",
-            "biz_content": "{{'pageIndex': '{page_index}','pageSize': '{page_size}'}}",
+            "biz_content": {"pageIndex": None, "pageSize": None},
             "hap_worksheet": "warehouse",
             "conflict_fields": ("warehouseId", ),
             "data_node": "warehouseInfo"
@@ -61,7 +61,7 @@ class JkyConfig():
 
         "全部部门": {
             "method": "erp.depart.query",
-            "biz_content": "{}",
+            "biz_content": {},
             "hap_worksheet": "depart",
             "conflict_fields": ("departCode", ),
             "data_node": None
@@ -69,7 +69,11 @@ class JkyConfig():
 
         "全部员工": {
             "method": "erp.user.search",
-            "biz_content": "{{'cols': 'companyId,companyName,email,mainDepartId,mainDepartName,mobile,realName,userId,userName', 'pageIndex': '{page_index}', 'pageSize': '{page_size}'}}",
+            "biz_content": {
+                "cols": "companyId,companyName,email,mainDepartId,mainDepartName,mobile,realName,userId,userName",
+                "pageIndex": None,
+                "pageSize": None
+            },
             "hap_worksheet": "staff",
             "conflict_fields": ("userName", ),
             "data_node": None
@@ -77,7 +81,7 @@ class JkyConfig():
 
         "全部销售渠道": {
             "method": "erp.sales.get",
-            "biz_content": "{{'pageIndex': '{page_index}','pageSize': '{page_size}'}}",
+            "biz_content": {"pageIndex": None, "pageSize": None},
             "hap_worksheet": "channel",
             "conflict_fields": ("channelCode", ),
             "data_node": "salesChannelInfo"
@@ -85,7 +89,7 @@ class JkyConfig():
 
         "货品全量分类": {
             "method": "erp.goodscate.get",
-            "biz_content": "{}",
+            "biz_content": {},
             "hap_worksheet": "goodscate",
             "conflict_fields": ("cateCode", ),
             "data_node": None
@@ -93,7 +97,7 @@ class JkyConfig():
 
         "全量物流公司": {
             "method": "erp.logistic.get",
-            "biz_content": "{{'pageIndex': '{page_index}','pageSize': '{page_size}'}}",
+            "biz_content": {"pageIndex": None, "pageSize": None},
             "hap_worksheet": "logistic",
             "conflict_fields": ("id", ),
             "data_node": "logisticInfo"
@@ -101,7 +105,12 @@ class JkyConfig():
 
         "全量结算账户": {
             "method": "erp-baseinfo.bankaccounts.listNeed",
-            "biz_content": "{{'pageIndex': '{page_index}','pageSize': '{page_size}', 'isIncludeBlockup': 1, 'cols': 'accId,accName,acctypeCode,companyId,companyName,currId,currName,platAccountId,memo,bankCode,bankName,bankbranch,accOwner,accNumber,internationalBankAccount,swiftCode,countriesRegions,personalAuth,imageUpload'}}",
+            "biz_content": {
+                "pageIndex": None,
+                "pageSize": None,
+                "isIncludeBlockup": 1,
+                "cols": "accId,accName,acctypeCode,companyId,companyName,currId,currName,platAccountId,memo,bankCode,bankName,bankbranch,accOwner,accNumber,internationalBankAccount,swiftCode,countriesRegions,personalAuth,imageUpload"
+            },
             "hap_worksheet": "bankaccounts",
             "conflict_fields": ("accId", ),
             "data_node": None
@@ -116,7 +125,16 @@ class JkyConfig():
         # },
         "更新SKU": {
             "method": "erp.storage.goodslist",
-            "biz_content": "{{'startDateModifiedSku': '{start}', 'endDateModifiedSku': '{end}', 'pageSize': {page_size}, 'pageIndex': {page_index}, 'isQueryDelete': 0, 'skuIsBlockup': 0, 'isBlockup': 0, 'isPackageGood': 0}}",
+            "biz_content": {
+                "startDateModifiedSku": None,
+                "endDateModifiedSku": None,
+                "pageSize": None,
+                "pageIndex": None,
+                "isQueryDelete": 0,
+                "skuIsBlockup": 0,
+                "isBlockup": 0,
+                "isPackageGood": 0
+            },
             "hap_worksheet": "sku",
             "conflict_fields": ("skuId", ),
             "data_node": "goods"
@@ -124,7 +142,14 @@ class JkyConfig():
 
         "更新客户信息": {
             "method": "crm.customer.list",
-            "biz_content": "{{'gmtModifiedBegin': '{start}', 'gmtModifiedEnd': '{end}', 'pageSize': {page_size}, 'pageIndex': {page_index}, 'hasTotal': 1, 'enable': 1}}",
+            "biz_content": {
+                "gmtModifiedBegin": None,
+                "gmtModifiedEnd": None,
+                "pageSize": None,
+                "pageIndex": None,
+                "hasTotal": 1,
+                "enable": 1
+            },
             "hap_worksheet": "customer",
             "conflict_fields": ("customerId", ),
             "data_node": None
@@ -140,7 +165,13 @@ class JkyConfig():
 
         "更新网店订单": {
             "method": "omsapi-business.order.get",
-            "biz_content": "{{'startModified': '{start}', 'endModified': '{end}', 'pageSize': {page_size}, 'pageIndex': {page_index}, 'hasTotal': 1}}",
+            "biz_content": {
+                "startModified": None,
+                "endModified": None,
+                "pageSize": None,
+                "pageIndex": None,
+                "hasTotal": 1
+            },
             "hap_worksheet": "businessOrder",
             "conflict_fields": ("tradeNo", ),
             "data_node": None
@@ -148,7 +179,13 @@ class JkyConfig():
 
         "发货单": {
             "method": "wms.order.query-info.page",
-            "biz_content": "{{'startFinishTime': '{start}', 'endFinishTime': '{end}', 'pageSize': {page_size}, 'pageIndex': {page_index}, 'hasTotal': 1}}",
+            "biz_content": {
+                "startFinishTime": None,
+                "endFinishTime": None,
+                "pageSize": None,
+                "pageIndex": None,
+                "hasTotal": 1
+            },
             "hap_worksheet": "order",
             "conflict_fields": None,
             "data_node": None
@@ -162,10 +199,9 @@ class JkyConnection(BaseConnection):
     def __init__(self, config: JkyConfig=JkyConfig):
         self.config = config
         self.base_url = config.BASE_URL
-        self.cache_file = config.CACHE_FILE.get("erp", {})
         self.credential_keys = ("app_key", "app_secret")
-        for key in self.credential_keys:
-            setattr(self, key, self.cache_file.get(key, ""))
+        self.app_key = config.APP_KEY
+        self.app_secret = config.APP_SECRET
         super().__init__()
 
 
@@ -211,11 +247,13 @@ class JkyConnection(BaseConnection):
         return response_json
 
 
-    def pull_from_source(self, source_name: str):
+    def pull_from_source(self, source_name: str, biz_content_format: Optional[Dict[str, Any]]=None):
         source = self.config.PULL_SOURCE[source_name]
         method = source["method"]
         field_map = source.get("field_map", {})
         biz_content = source["biz_content"]
+        if biz_content_format:
+            biz_content.update(biz_content_format)
         version = source.get("version", "v1.0")
         data_node = source["data_node"]
         # conflict_fields = source["conflict_fields"]
@@ -225,15 +263,14 @@ class JkyConnection(BaseConnection):
         page_index = 0
 
         while True:
-            bc = biz_content.format(
-                # start=self.start,
-                # end=self.end,
-                page_size=page_size,
-                page_index=page_index
-            )
+            page_params = {
+                "pageSize": page_size,
+                "pageIndex": page_index
+            }
+            biz_content.update((k, v) for k, v in page_params.items() if k in biz_content)
             response_json = self.call_api(
                 base_url=self.base_url,
-                biz_content=bc,
+                biz_content=json.dumps(biz_content),
                 method=method,
                 version=version
             )
@@ -258,6 +295,8 @@ class JkyConnection(BaseConnection):
                 data_list.append(data)
             page_index += 1
             yield data_list
+            if len(result_data) < page_size or (not "pageSize" in biz_content and page_index > 0):
+                break
 
 
     def push_into_target(self, *args, **kwargs):

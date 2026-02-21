@@ -490,7 +490,7 @@ async def post_demand(
     tags=["生产数据 - 需求"],
     summary="修改需求记录",
     description="根据需求号修改记录"
-    )
+)
 async def patch_demand(
     demandno: str = Path(..., description="需要修改的需求记录的需求号"),
     materialno: str = Path(..., description="料号"),
@@ -498,7 +498,7 @@ async def patch_demand(
     data: ModifyDemand = Body(..., description="修改为这些信息"),
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
-    ):
+):
     db_name = db_name.replace(" ", "")
     index_dict = {"DemandNo": demandno}
     if not materialno == "...":
@@ -506,11 +506,13 @@ async def patch_demand(
     if not itemno == "...":
         index_dict["ItemNo"] = itemno
 
+    new_values_dict = data.model_dump(exclude_unset=True, exclude_none=True)
+    # new_values_dict['apiex_sn'] = demandno    # 已在MOA2E存储过程修改
     response = await db_update_by_index(
         db_names=db_name,
         model_or_tablename="t_demand",
         index_dict=index_dict,
-        new_values_dict=data.model_dump(exclude_unset=True, exclude_none=True),
+        new_values_dict=new_values_dict,
         not_found_behavior="skip",
     )
 

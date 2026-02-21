@@ -20,7 +20,7 @@ from .._base import (
 # 导入统一日志配置（用于直接使用）
 from globalobjects import logger as log_config
 
-from apps.data_opt.components import yonyou_tplus, hap
+from apps.data_opt.components import yonyou_tplus
 
 
 # 将 APS 原生的 supplyno 、demandno 等字段，直接推送到 T+ 中，作为单据编号
@@ -183,18 +183,16 @@ class ApsAction(ApsBaseAction):
                 tplus_mo_code = mo_in_tplus['Code']
                 # 从 T+ 中提取 MO 详情中的第一个详情记录的 ID 作为 _entryid
                 tplus_mo_entryid = mo_in_tplus['ManufactureOrderDetails'][0]['ID'] 
-                # 最后再更改工单信息，一定放在最后一步，否则如果变更工单号变更太早，前面若有用原生供应号查询都会失败
-                a = cls._pl_release_success(plno=supplyno, msg=mo_push_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
-
+                
                 # 审批接口，要在领料申请前批准
-                b = tplus_conn.push_into_target(target_name='mo_approve', push_data={'voucherID': tplus_mo_id})
+                a = tplus_conn.push_into_target(target_name='mo_approve', push_data={'voucherID': tplus_mo_id})
                 # 推送领料申请
-                c = cls.push_rs(mdlist_or_supplyno=demand_list, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid)
-
+                b = cls.push_rs(mdlist_or_supplyno=demand_list, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid)
+                # 最后再更改工单信息，一定放在最后一步，否则工单号变更太早，前面若有用原生供应号查询都会失败
+                c = cls._pl_release_success(plno=supplyno, msg=mo_push_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
             except Exception as e:
                 tplus_mo_entryid = None
                 filelog_error.error(f"Error extracting entry ID from T+ MO: {e}")
-
         else:
             a = cls._pl_release_failed(plno=supplyno, msg=mo_push_response_json['message'], msg_from='T+')
             

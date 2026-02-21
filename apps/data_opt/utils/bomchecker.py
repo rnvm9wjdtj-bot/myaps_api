@@ -929,7 +929,7 @@ if __name__ == '__main__':
 def run_example_from_erp():
     """运行BOMChecker的完整示例"""
     from apps.data_opt.components.yonyou_tplus import TplusConnection, TplusConfig
-    from apps.data_opt.components.hap import HapConnection, get_maindata_worksheetinfo, WorksheetProperty
+    from apps.data_opt.components.hapv1 import HapConnection, get_maindata_worksheetinfo, WorksheetProperty
 
 
     hap_conn = HapConnection(

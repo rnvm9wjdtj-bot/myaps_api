@@ -6,6 +6,10 @@ from dotenv import load_dotenv
 
 
 from globalobjects.json_manager import JSONManager
+from globalobjects import logger as log_config
+
+
+console_log = log_config.get_logger(__name__)
 # 加载.env文件中的环境变量
 BASE_DIR = os.getcwd()
 load_dotenv(os.getenv('ENV_FILE', os.path.join(BASE_DIR, '.env')))
@@ -31,8 +35,6 @@ json_env_config = CACHE_FILE.get("env") or {}
 PROTOCOL = os.getenv("PROTOCOL") or json_env_config.get("PROTOCOL") or "http://"
 HOST = os.getenv("HOST") or json_env_config.get("HOST")  or "localhost"
 PORT = int(os.getenv("PORT") or json_env_config.get("PORT") or 8000)
-if not(PROTOCOL and HOST and PORT):
-    raise ValueError("❌ PROTOCOL, HOST, PORT 环境变量未设置")
 THIS_BASE_URL = f"{PROTOCOL}localhost:{PORT}"
 
 MYAPS_VERSION = (os.getenv("MYAPS_VERSION") or json_env_config.get("MYAPS_VERSION") or "L").upper()
@@ -43,7 +45,8 @@ MYAPS_DB_USER = os.getenv("MYAPS_DB_USER") or json_env_config.get("MYAPS_DB_USER
 MYAPS_DB_PASSWORD = os.getenv("MYAPS_DB_PASSWORD") or json_env_config.get("MYAPS_DB_PASSWORD")
 MYAPS_DB_SET = os.getenv("MYAPS_DB_SET") or json_env_config.get("MYAPS_DB_SET")
 if not MYAPS_DB_SET:
-    raise ValueError("❌ MYAPS_DB_SET 环境变量未设置")
+    console_log.warning("⚠️ MYAPS_DB_SET 环境变量未设置")
+    MYAPS_DB_SET = ""
 MYAPS_DBSET_LIST = MYAPS_DB_SET.split(",")
 MYAPS_MAIN_DB = os.getenv("MYAPS_MAIN_DB") or json_env_config.get("MYAPS_MAIN_DB")
 if MYAPS_MAIN_DB is None:
