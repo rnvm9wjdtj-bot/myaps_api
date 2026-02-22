@@ -274,10 +274,9 @@ class JkyConnection(BaseConnection):
                 method=method,
                 version=version
             )
+            result_data = response_json['result']['data']
             if data_node:
-                result_data = response_json['result'][data_node]
-            else:
-                result_data = response_json['result']['data']
+                result_data = result_data[data_node]
             if not result_data:
                 break
             data_list = []

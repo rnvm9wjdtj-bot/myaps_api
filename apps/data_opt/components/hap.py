@@ -421,7 +421,7 @@ class RelationField(Field):
             return processed_data
         
         need_update = False
-        code_value = processed_data[followwith_field]
+        code_value = str(processed_data[followwith_field])
         if code_value:
             # 情况一：创建记录时
             if not original_data:
@@ -534,6 +534,173 @@ class RelationField(Field):
         
         return processed_data
 
+
+class SubtableField(Field):
+    """子表字段"""
+    def __init__(
+        self,
+        model: Type['Model'],
+        data_source: str,   # 以 model 中哪个字段为数据源
+        field_name: str = None):
+        super().__init__(field_name=field_name)
+        self.subtable_model = model  # 使用 subtable_model 存储子表 model
+        self.data_source = data_source  # 数据源字段名
+    
+    def process_subtable(self, data: Dict[str, Any], original_data: Optional[Dict[str, Any]] = None, hap_conn: Optional['HapConnection'] = None) -> Dict[str, Any]:
+        """
+        处理子表字段的数据
+        
+        Args:
+            data: 包含字段数据的字典
+            original_data: 原始数据字典，用于比较字段值是否变化
+            hap_conn: HapConnection 实例，用于操作子表数据
+            
+        Returns:
+            Dict[str, Any]: 处理后的字段数据字典
+        """
+        if not self.data_source or not hap_conn:
+            return data
+        
+        processed_data = data.copy()
+        
+        # 获取当前字段在模型中的属性名
+        attr_name = None
+        if self.model:
+            reverse_field_map = self.model._get_reverse_field_map()
+            attr_name = reverse_field_map.get(self.field_name, None)
+        if not attr_name:
+            # 如果无法获取属性名，使用字段名作为后备
+            attr_name = self.field_name
+        
+        # 检查数据源字段是否存在
+        data_source_field = self.data_source
+        if not data_source_field in processed_data:
+            field_map = self.model._get_field_map()
+            if data_source_field in field_map:
+                data_source_field = field_map[data_source_field]
+        
+        # 确保数据源字段存在
+        if data_source_field not in processed_data:
+            return processed_data
+        
+        need_update = False
+        source_value = processed_data[data_source_field]
+        if source_value:
+            # 情况一：创建记录时
+            if not original_data:
+                need_update = True
+            # 情况二：更新记录时，值有变化
+            else:
+                # 确定在 original_data 中使用的键名（字段名）
+                original_key = data_source_field
+                field_map = self.model._get_field_map()
+                if data_source_field in field_map:
+                    # 如果 data_source_field 是属性名，转换为字段名
+                    original_key = field_map[data_source_field]
+                
+                if original_key not in original_data or not DataProcessor.is_equal(original_data[original_key], source_value):
+                    need_update = True
+        
+        if not need_update:
+            return processed_data
+        
+        try:
+            # 解析数据源为字典列表
+            if isinstance(source_value, str):
+                subtable_data_list = json.loads(source_value)
+            elif isinstance(source_value, list):
+                subtable_data_list = source_value
+            else:
+                return processed_data
+            
+            # 确保是字典列表
+            if not isinstance(subtable_data_list, list) or not all(isinstance(item, dict) for item in subtable_data_list):
+                return processed_data
+            
+            # 获取子表模型的冲突字段
+            conflict_fields = getattr(self.subtable_model.Meta, 'conflict_fields', None)
+            
+            # 获取子表模型的主键字段
+            pk_field = self.subtable_model.get_pk_field()
+            
+            # 获取字段映射
+            field_map = self.subtable_model._get_field_map()
+            
+            # 存储处理后的子表记录 row_id
+            subtable_row_ids = []
+            
+            # 处理子表数据
+            for subtable_data in subtable_data_list:
+                # 检查是否存在冲突记录
+                is_conflict = False
+                existing_row = None
+                
+                # 优先使用主键字段检查
+                if pk_field:
+                    # 检查主键字段是否在数据中
+                    if pk_field in subtable_data:
+                        # 直接使用主键字段
+                        query = hap_conn.rows(self.subtable_model)
+                        query = query.filter(Q(**{f"{pk_field}__eq": subtable_data[pk_field]}))
+                        # existing_row = query.all().first()
+                        existing_row = query.first()
+                        is_conflict = existing_row is not None
+                    elif pk_field in field_map:
+                        # 尝试使用 field_name
+                        pk_field_name = field_map[pk_field]
+                        if pk_field_name in subtable_data:
+                            query = hap_conn.rows(self.subtable_model)
+                            query = query.filter(Q(**{f"{pk_field_name}__eq": subtable_data[pk_field_name]}))
+                            # existing_row = query.all().first()
+                            existing_row = query.first()
+                            is_conflict = existing_row is not None
+                
+                # 如果主键字段检查失败，使用冲突字段检查
+                if not is_conflict and conflict_fields:
+                    # 构建查询条件
+                    query = hap_conn.rows(self.subtable_model)
+                    # 检查所有冲突字段
+                    has_valid_condition = False
+                    for field in conflict_fields:
+                        if field in subtable_data:
+                            # 直接使用冲突字段
+                            query = query.filter(Q(**{f"{field}__eq": subtable_data[field]}))
+                            has_valid_condition = True
+                        elif field in field_map:
+                            # 尝试使用 field_name
+                            c_field_name = field_map[field]
+                            if c_field_name in subtable_data:
+                                query = query.filter(Q(**{f"{c_field_name}__eq": subtable_data[c_field_name]}))
+                                has_valid_condition = True
+                    
+                    # 如果有有效的查询条件，执行查询
+                    if has_valid_condition:
+                        # existing_row = query.all().first()
+                        existing_row = query.first()
+                        is_conflict = existing_row is not None
+                
+                if is_conflict and existing_row:
+                    # 更新现有记录
+                    existing_row.update(**subtable_data)
+                    subtable_row_ids.append(existing_row.row_id)
+                else:
+                    # 创建新记录
+                    new_row = hap_conn.rows(self.subtable_model).create(**subtable_data)
+                    if new_row and hasattr(new_row, 'row_id'):
+                        subtable_row_ids.append(new_row.row_id)
+            
+            # 将子表记录的 row_id 挂载到当前主记录
+            if subtable_row_ids:
+                processed_data[attr_name] = subtable_row_ids
+        except Exception as e:
+            # 添加错误日志，以便于调试
+            import traceback
+            print(f"Error processing subtable field: {e}")
+            print(traceback.format_exc())
+            # 忽略处理错误，保持原始数据
+            pass
+        
+        return processed_data
 
 
 # TODO 选项集属性
@@ -1346,13 +1513,15 @@ class HapConnection:
 
     def register_model(self, model: Type[Model]):
         """注册模型"""
-        self.models[model.get_worksheet_id()] = model
+        # 同时通过 worksheet_id 和类名存储模型
+        worksheet_id = model.get_worksheet_id()
+        self.models[worksheet_id] = model
+        self.models[model.__name__] = model  # 通过类名存储模型
         
         # 检查模型是否配置了缓存
         cache_fields = getattr(model.Meta, 'cache', None)
         if cache_fields:
             # 初始化该模型的缓存数据和索引
-            worksheet_id = model.get_worksheet_id()
             self.cache_data[worksheet_id] = {}
             self.cache_indexes[worksheet_id] = {
                 'pk': {},  # 主键到 rowid 的映射
@@ -1684,6 +1853,23 @@ class HapQuerySet(Generic[ModelType]):
         self.last_query_timestamp = datetime.now().timestamp()
         return HapRowSet(models=all_models, model=self.model, hap_conn=self.hap_conn)
     
+
+    def first(self) -> Optional[ModelType]:
+        """获取第一个匹配的记录"""
+        # 创建一个新的查询集，限制只获取一条记录
+        limited_query = self.__class__(self.model, self.hap_conn)
+        limited_query.filter_condition = self.filter_condition.copy() if self.filter_condition else {}
+        limited_query.sorts = self.sorts.copy() if self.sorts else []
+        limited_query.page_size = self.page_size
+        limited_query.limit = 1
+        
+        # 执行查询
+        row_set = limited_query.all()
+        
+        # 返回第一个记录
+        return row_set.first() if row_set.count() > 0 else None
+    
+
     def stream(self) -> Generator[ModelType, None, None]:
         """流式获取所有匹配的记录"""
         # 首先获取总数
@@ -1816,7 +2002,7 @@ class HapRowSet(Generic[ModelType]):
         # 获取模型的所有字段
         fields = self.model._get_fields()
         
-        # 遍历所有字段，查找关联字段和文本字段
+        # 遍历所有字段，查找关联字段、文本字段和子表字段
         for attr_name, field in fields.items():
             if isinstance(field, RelationField):
                 # 调用 RelationField 自身的处理方法
@@ -1824,6 +2010,9 @@ class HapRowSet(Generic[ModelType]):
             elif isinstance(field, TextField):
                 # 调用 TextField 自身的处理方法
                 processed_data = field.process_mapping(processed_data, original_data)
+            elif isinstance(field, SubtableField):
+                # 调用 SubtableField 自身的处理方法
+                processed_data = field.process_subtable(processed_data, original_data, self.hap_conn)
         
         return processed_data
 
