@@ -541,8 +541,10 @@ class SubtableField(Field):
         self,
         model: Type['Model'],
         data_source: str,   # 以 model 中哪个字段为数据源
-        field_name: str = None):
-        super().__init__(field_name=field_name)
+        field_name: str = None,
+        description: str = None
+        ):
+        super().__init__(field_name=field_name, description=description)
         self.subtable_model = model  # 使用 subtable_model 存储子表 model
         self.data_source = data_source  # 数据源字段名
     
@@ -577,12 +579,12 @@ class SubtableField(Field):
         if attr_name in processed_data:
             del processed_data[attr_name]
         
+        # parent_row = hap_conn.rows(self.model).get_by_rowid(row_id=processed_data.get('row_id'))
         parent_field_map = self.model._get_field_map()
         subtable_field_map = self.subtable_model._get_field_map()
         # 检查数据源字段是否存在
         data_source_field = self.data_source
         if not data_source_field in processed_data:
-
             if data_source_field in parent_field_map:
                 data_source_field = parent_field_map[data_source_field]
         
@@ -702,41 +704,41 @@ class SubtableField(Field):
                 except Exception as e:
                     pass
             
-            # 删除不在 data_source 中的子表记录
-            # 获取主记录当前挂载的子表记录 row_id
-            current_row_ids = []
-            if attr_name in processed_data:
-                current_row_ids = processed_data[attr_name]
-            elif original_data and attr_name in original_data:
-                current_row_ids = original_data[attr_name]
+            ## 删除不在 data_source 中的子表记录
+            ## 获取主记录当前挂载的子表记录 row_id
+            # current_row_ids = []
+            # if attr_name in processed_data:
+            #     current_row_ids = processed_data[attr_name]
+            # elif original_data and attr_name in original_data:
+            #     current_row_ids = original_data[attr_name]
             
-            # 确保 current_row_ids 是列表
-            if not isinstance(current_row_ids, list):
-                current_row_ids = []
+            # # 确保 current_row_ids 是列表
+            # if not isinstance(current_row_ids, list):
+            #     current_row_ids = []
             
-            # 找出需要删除的子表记录
-            rows_to_delete = []
-            for row_id in current_row_ids:
-                if row_id not in subtable_row_ids:
-                    # 尝试获取对应的模型实例
-                    try:
-                        query = hap_conn.rows(self.subtable_model)
-                        # 使用 row_id 直接查询
-                        query = query.filter(Q(**{f"row_id__eq": row_id}))
-                        existing_row = query.first()
-                        if existing_row:
-                            rows_to_delete.append(existing_row)
-                    except Exception as e:
-                        # 忽略查询错误，继续处理其他记录
-                        pass
+            # # 找出需要删除的子表记录
+            # rows_to_delete = []
+            # for row_id in current_row_ids:
+            #     if row_id not in subtable_row_ids:
+            #         # 尝试获取对应的模型实例
+            #         try:
+            #             query = hap_conn.rows(self.subtable_model)
+            #             # 使用 row_id 直接查询
+            #             query = query.filter(Q(**{f"row_id__eq": row_id}))
+            #             existing_row = query.first()
+            #             if existing_row:
+            #                 rows_to_delete.append(existing_row)
+            #         except Exception as e:
+            #             # 忽略查询错误，继续处理其他记录
+            #             pass
             
-            # 删除不需要保留的子表记录
-            if rows_to_delete:
-                # 创建包含需要删除记录的 HapRowSet 实例
-                delete_row_set = HapRowSet(models=rows_to_delete, model=self.subtable_model, hap_conn=hap_conn)
-                # 执行删除操作
-                delete_row_set.delete()
-                
+            # # 删除不需要保留的子表记录
+            # if rows_to_delete:
+            #     # 创建包含需要删除记录的 HapRowSet 实例
+            #     delete_row_set = HapRowSet(models=rows_to_delete, model=self.subtable_model, hap_conn=hap_conn)
+            #     # 执行删除操作
+            #     delete_row_set.delete()
+
             # 将子表记录的 row_id 挂载到当前主记录
             if subtable_row_ids:
                 processed_data[attr_name] = subtable_row_ids
@@ -748,9 +750,7 @@ class SubtableField(Field):
             import traceback
             print(f"Error processing subtable field: {e}")
             print(traceback.format_exc())
-            # 忽略处理错误，保持原始数据
-            pass
-        
+
         return processed_data
 
 
@@ -946,7 +946,7 @@ class Model(ABC):
         # 创建临时的 HapRowSet 实例来使用其 _process_relation_fields 方法
         from .hap import HapRowSet
         temp_row_set = HapRowSet(models=[self], model=self.__class__, hap_conn=self.hap_conn)
-        processed_data = temp_row_set._process_relation_fields(kwargs, original_data)
+        processed_data = temp_row_set._process_complex_fields(kwargs, original_data)
         
         # 比较字段值差异，只包含变化的字段
         changed_data = {}
@@ -965,8 +965,10 @@ class Model(ABC):
                     original_key = key
                 
                 # 检查字段值是否变化
-                if original_key not in original_data or not DataProcessor.is_equal(original_data[original_key], value):
+                if original_key in original_data and not DataProcessor.is_equal(original_data[original_key], value):
                     changed_data[key] = value
+                # if original_key not in original_data or not DataProcessor.is_equal(original_data[original_key], value):
+                #     changed_data[key] = value
         
         # 如果没有变化的字段，直接返回
         if not changed_data:
@@ -986,7 +988,7 @@ class Model(ABC):
         }
         
         # 发送请求
-        from .hap import HapConnection
+        # from .hap import HapConnection
         # 检查是否有 hap_conn 属性
         if not hasattr(self, 'hap_conn'):
             raise ValueError("Model instance must have a hap_conn attribute to update")
@@ -1845,7 +1847,36 @@ class HapQuerySet(Generic[ModelType]):
         self.page_size = 20
         self.limit = None
         self.last_query_timestamp = 0
+
+
+    def get_by_rowid(self, row_id: str) -> Optional[ModelType]:
+        """根据行ID获取单条记录"""
+        worksheet_id = self.model.get_worksheet_id()
+        endpoint = f"/v3/app/worksheets/{worksheet_id}/rows/{row_id}"
+        response = self.hap_conn._get(endpoint=endpoint, payload={})
+
+        if response.get("success"):
+            row_data = response['data']
+
+            # 处理行数据
+            processed_data = HapUtils.process_choice_fields(row_data)
+            processed_data = HapUtils.exclude_unamed_fields(processed_data)
+            processed_data = HapUtils.exclude_sys_fields(processed_data)
+            
+            # 创建模型实例
+            model_instance = self.model(**processed_data)
+            if 'rowid' in row_data:
+                model_instance.row_id = row_data['rowid']
+            elif 'rowId' in row_data:
+                model_instance.row_id = row_data['rowId']
+            # 设置 hap_conn 属性，用于后续的 update 操作
+            model_instance.hap_conn = self.hap_conn
+            
+            return model_instance
+        
+        return None
     
+
     def filter(self, *args, **kwargs) -> 'HapQuerySet[ModelType]':
         """添加筛选条件
         
@@ -2067,9 +2098,9 @@ class HapRowSet(Generic[ModelType]):
             model.refresh()
         return self
 
-    def _process_relation_fields(self, data: Dict[str, Any], original_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def _process_complex_fields(self, data: Dict[str, Any], original_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        处理关联字段字段自动更新关联关系
+        处理关联字段等复杂类型的字段
     
         Args:
             data: 包含字段数据的字典
@@ -2092,13 +2123,15 @@ class HapRowSet(Generic[ModelType]):
             elif isinstance(field, TextField):
                 # 调用 TextField 自身的处理方法
                 processed_data = field.process_mapping(processed_data, original_data)
+            elif isinstance(field, SubtableField):
+                processed_data = field.process_subtable(processed_data, original_data, self.hap_conn)
         
         return processed_data
 
     def create(self, **kwargs) -> ModelType:
         """创建新模型实例"""
         # 处理关联字段
-        processed_kwargs = self._process_relation_fields(kwargs)
+        processed_kwargs = self._process_complex_fields(kwargs)
         
         # 构建创建请求
         endpoint = f"/v3/app/worksheets/{self.model.get_worksheet_id()}/rows/batch"
@@ -2143,7 +2176,7 @@ class HapRowSet(Generic[ModelType]):
             processed_batch_data = []
             for data_dict in batch_data:
                 # 处理关联字段
-                processed_data = self._process_relation_fields(data_dict)
+                processed_data = self._process_complex_fields(data_dict)
                 processed_batch_data.append(processed_data)
                 
                 row_fields = HapUtils.convert_data_to_fieldslist(processed_data, model=self.model)
@@ -2196,7 +2229,7 @@ class HapRowSet(Generic[ModelType]):
             original_data = model.to_dict()
             
             # 处理关联字段
-            processed_kwargs = self._process_relation_fields(kwargs, original_data)
+            processed_kwargs = self._process_complex_fields(kwargs, original_data)
             
             # 比较字段值差异，只包含变化的字段
             changed_data = {}
@@ -2394,21 +2427,12 @@ class HapRowSet(Generic[ModelType]):
         processed_data_list = []
         for data in data_list:
             # 处理关联字段
-            processed_data = self._process_relation_fields(data)
-            
-            # 处理子表字段
-            fields = self.model._get_fields()
-            for attr_name, field in fields.items():
-                if isinstance(field, SubtableField):
-                    # 调用 SubtableField 自身的处理方法
-                    processed_data = field.process_subtable(processed_data, None, self.hap_conn)
-            
+            processed_data = self._process_complex_fields(data)
+
             # 过滤掉值为 None 的字段
             if exclude_none:
                 processed_data = {k: v for k, v in processed_data.items() if v is not None}
-            
             processed_data_list.append(processed_data)
-        
         
         # 处理每条数据
         for i, data_dict in enumerate(processed_data_list):
