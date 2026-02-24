@@ -249,11 +249,9 @@ class Field(ABC):
     """字段基类"""
     def __init__(self, 
                  field_name: Optional[str] = None, 
-                 null: bool = False, 
                  default: Any = None, 
                  description: Optional[str] = None,
                  ):
-        self.null = null
         self.default = default
         self.description = description
         self.field_name = field_name
@@ -267,21 +265,20 @@ class Field(ABC):
 
 
 # 文本字段
-class TextField(Field):
+class StrField(Field):
     """文本字段"""
     def __init__(self, 
-                 field_name: Optional[str] = None, 
-                 null: bool = False, 
-                 default: Optional[str] = None, 
+                 field_name: Optional[str] = None,
+                 default: Optional[str] = None,
                  description: Optional[str] = None,
                  pk: bool = False,
                  mapper: Optional[Dict[str, str]] = None,
-                 follow_with: Optional[str] = None, 
-                 ):
+                 follow_with: Optional[str] = None,
+                ):
         self.pk = pk
         self.mapper = mapper  # 映射字典，用于将follow_with字段的值映射成新值
         self.follow_with = follow_with  # 跟随的字段名，用于自动更新映射值
-        super().__init__(field_name=field_name, null=null, default=default, description=description)
+        super().__init__(field_name=field_name, default=default, description=description)
     
     def process_mapping(self, data: Dict[str, Any], original_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
@@ -348,17 +345,137 @@ class TextField(Field):
         return processed_data
 
 
+class ChoiceField(StrField):
+    """选项字段
+    继承自 StrField
+    ChoiceField 类型的字段会被自动处理
+    与 StrField 类型的字段一样
+    调用其 process_mapping 方法来处理映射关系。
+    """
+    def __init__(self,
+                 field_name: Optional[str] = None,
+                 default: Optional[str] = None,
+                 description: Optional[str] = None,
+                 mapper: Optional[Dict[str, str]] = None,
+                 follow_with: Optional[str] = None,
+                 spliter: Optional[str] = ",",
+                 ):
+        self.spliter = spliter
+        super().__init__(field_name=field_name, default=default, description=description, pk=False, mapper=mapper, follow_with=follow_with)
+    
+    def process_mapping(self, data: Dict[str, Any], original_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        处理选择字段的映射关系
+        
+        Args:
+            data: 包含字段数据的字典
+            original_data: 原始数据字典，用于比较字段值是否变化
+            
+        Returns:
+            Dict[str, Any]: 处理后的字段数据字典
+        """
+
+        processed_data = data.copy()
+        
+        # 获取当前字段在模型中的属性名
+        attr_name = None
+        if self.model:
+            # reverse_field_map = self.model._get_reverse_field_map()
+            # reverse_field_map = self.model._get_field_map()
+            # attr_name = reverse_field_map.get(self.field_name, None)
+            attr_name = self.field_name
+        if not attr_name:
+            # 如果无法获取属性名，使用字段名作为后备
+            attr_name = self.field_name
+        
+        # 确定要处理的值
+        value_to_process = None
+        if self.follow_with:
+            # 有 follow_with，处理 follow_with 字段的值
+            followwith_field = self.follow_with
+            if not followwith_field in processed_data:
+                field_map = self.model._get_field_map()
+                if followwith_field in field_map:
+                    followwith_field = field_map[followwith_field]
+            
+            # 确保 follow_with 字段存在
+            if followwith_field not in processed_data:
+                return processed_data
+            
+            # 检查是否需要更新映射字段
+            need_update = False
+            value_to_process = processed_data[followwith_field]
+            if value_to_process:
+                # 情况一：创建记录时
+                if not original_data:
+                    need_update = True
+                # 情况二：更新记录时，值有变化
+                else:
+                    # 确定在 original_data 中使用的键名（字段名）
+                    original_key = followwith_field
+                    field_map = self.model._get_field_map()
+                    if followwith_field in field_map:
+                        # 如果 followwith_field 是属性名，转换为字段名
+                        original_key = field_map[followwith_field]
+                    
+                    if original_key not in original_data or not DataProcessor.is_equal(original_data[original_key], value_to_process):
+                        need_update = True
+            
+            if not need_update:
+                return processed_data
+        else:
+            # 没有 follow_with，直接处理本字段的值
+            if attr_name not in processed_data:
+                return processed_data
+            value_to_process = processed_data[attr_name]
+        
+        # 处理不同类型的值
+        values_to_process = []
+        if isinstance(value_to_process, list):
+            # 直接使用 list
+            values_to_process = value_to_process
+        elif isinstance(value_to_process, str):
+            try:
+                # 尝试解析为 json
+                import json
+                parsed_value = json.loads(value_to_process)
+                if isinstance(parsed_value, list):
+                    values_to_process = parsed_value
+                else:
+                    # 如果不是 list，按 spliter 分割
+                    values_to_process = value_to_process.split(self.spliter)
+            except:
+                # 解析失败，按 spliter 分割
+                values_to_process = value_to_process.split(self.spliter)
+        
+        # 执行映射
+        processed_values = []
+        for value in values_to_process:
+            value_str = str(value).strip()
+            if self.mapper:
+                # 有 mapper，执行映射
+                mapped_value = self.mapper.get(value_str, value_str)
+                processed_values.append(mapped_value)
+            else:
+                # 没有 mapper，直接使用原值
+                processed_values.append(value_str)
+        
+        # 保留 list 形式的结果
+        processed_data[attr_name] = processed_values
+        
+        return processed_data
+
+
 # 数值字段
 class NumField(Field):
     """数值字段，支持整数和浮点数"""
     def __init__(self, 
                  field_name: Optional[str] = None, 
-                 null: bool = False, 
                  default: Optional[Union[int, float]] = None, 
                  description: Optional[str] = None,
                  pk: bool = False):
         self.pk = pk
-        super().__init__(field_name=field_name, null=null, default=default, description=description)
+        super().__init__(field_name=field_name, default=default, description=description)
 
 
 # 关联字段
@@ -369,12 +486,11 @@ class RelationField(Field):
                  field_name: Optional[str] = None, 
                  follow_with: Optional[str] = None,
                  query_field: Optional[str] = None,  # 显式指定关联模型的查询字段，若未指定，则使用关联模型的pk
-                 null: bool = False, 
                  description: Optional[str] = None,
                  ):
         self.follow_with = follow_with  # 跟随的字段名，用于自动更新关联关系
         self.query_field = query_field  # 显式指定关联模型的查询字段
-        super().__init__(field_name=field_name, null=null, default=None, description=description)
+        super().__init__(field_name=field_name, default=None, description=description)
         self.related_model = model
         self.model_name = model if isinstance(model, str) else model.__name__
     
@@ -458,11 +574,12 @@ class RelationField(Field):
             # 检查缓存是否存在
             if hasattr(hap_conn, 'cache_data') and hasattr(hap_conn, 'cache_indexes'):
                 worksheet_id = related_model.get_worksheet_id()
+                cache_key = followwith_field
                 if worksheet_id in hap_conn.cache_indexes:
                     # 确定缓存中使用的键名（字段名）
                     if self.query_field:
                         # 使用显式指定的查询字段
-                        cache_key = self.query_field
+                        cache_key = cache_key
                     else:
                         # 未指定查询字段，使用关联模型的主键字段
                         pk_field = related_model.get_pk_field()
@@ -755,13 +872,13 @@ class SubtableField(Field):
 
 
 # TODO 选项集属性
-class ChoiceProperty(NamedTuple):
-    """单个选项属性"""
-    key: str
-    value: str
-    index: int
-    score: float = 0.0
-    is_delete: bool = False
+# class ChoiceProperty(NamedTuple):
+#     """单个选项属性"""
+#     key: str
+#     value: str
+#     index: int
+#     score: float = 0.0
+#     is_delete: bool = False
 
 
 
@@ -942,11 +1059,9 @@ class Model(ABC):
         # 获取模型实例的原始数据
         original_data = self.to_dict()
         
-        # 处理关联字段
-        # 创建临时的 HapRowSet 实例来使用其 _process_relation_fields 方法
-        from .hap import HapRowSet
-        temp_row_set = HapRowSet(models=[self], model=self.__class__, hap_conn=self.hap_conn)
-        processed_data = temp_row_set._process_complex_fields(kwargs, original_data)
+        # 直接使用传入的 kwargs，不再调用 _process_complex_fields
+        # 因为在 upsert 操作中已经处理过了
+        processed_data = kwargs
         
         # 比较字段值差异，只包含变化的字段
         changed_data = {}
@@ -2120,7 +2235,7 @@ class HapRowSet(Generic[ModelType]):
             if isinstance(field, RelationField):
                 # 调用 RelationField 自身的处理方法
                 processed_data = field.process_relation(processed_data, original_data, self.hap_conn)
-            elif isinstance(field, TextField):
+            elif isinstance(field, StrField):
                 # 调用 TextField 自身的处理方法
                 processed_data = field.process_mapping(processed_data, original_data)
             elif isinstance(field, SubtableField):
@@ -2175,8 +2290,9 @@ class HapRowSet(Generic[ModelType]):
             rows_data = []
             processed_batch_data = []
             for data_dict in batch_data:
-                # 处理关联字段
-                processed_data = self._process_complex_fields(data_dict)
+                # 直接使用传入的数据，不再调用 _process_complex_fields
+                # 因为在 upsert 操作中已经处理过了
+                processed_data = data_dict
                 processed_batch_data.append(processed_data)
                 
                 row_fields = HapUtils.convert_data_to_fieldslist(processed_data, model=self.model)
@@ -2411,19 +2527,7 @@ class HapRowSet(Generic[ModelType]):
         result_models = []
         create_list = []  # 存储需要创建的数据
         
-        # 获取主键字段
-        pk_field = self.model.get_pk_field()
-        
-        # 检查是否有冲突字段
-        conflict_fields = self.model.get_conflict_fields()
-        has_conflict_fields = bool(conflict_fields)
-        
-        # 如果既没有主键字段也没有冲突字段，直接批量创建
-        if not pk_field and not has_conflict_fields:
-            created_models = self.bulk_create(data_list)
-            return HapRowSet(models=created_models, model=self.model, hap_conn=self.hap_conn)
-        
-        # 处理数据列表
+        # 处理数据列表 - 只处理一次
         processed_data_list = []
         for data in data_list:
             # 处理关联字段
@@ -2433,6 +2537,18 @@ class HapRowSet(Generic[ModelType]):
             if exclude_none:
                 processed_data = {k: v for k, v in processed_data.items() if v is not None}
             processed_data_list.append(processed_data)
+        
+        # 获取主键字段
+        pk_field = self.model.get_pk_field()
+        
+        # 检查是否有冲突字段
+        conflict_fields = self.model.get_conflict_fields()
+        has_conflict_fields = bool(conflict_fields)
+        
+        # 如果既没有主键字段也没有冲突字段，直接批量创建
+        if not pk_field and not has_conflict_fields:
+            created_models = self.bulk_create(processed_data_list)
+            return HapRowSet(models=created_models, model=self.model, hap_conn=self.hap_conn)
         
         # 处理每条数据
         for i, data_dict in enumerate(processed_data_list):
