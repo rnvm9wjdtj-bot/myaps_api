@@ -634,6 +634,8 @@ class RelationField(Field):
                     for instance in related_instances.row_objects:
                         if hasattr(instance, 'row_id'):
                             relation_data.append(instance.row_id)
+                            # 将查询结果添加到缓存中
+                            hap_conn._update_cache_for_instance(instance)
                 else:
                     # 单个值使用 eq 操作符
                     from .hap import Q
@@ -641,6 +643,8 @@ class RelationField(Field):
                     related_instance = hap_conn.rows(related_model).filter(filter_expr).all().first()
                     if related_instance and hasattr(related_instance, 'row_id'):
                         relation_data = [related_instance.row_id]
+                        # 将查询结果添加到缓存中
+                        hap_conn._update_cache_for_instance(related_instance)
             
             # 更新关联字段数据
             if relation_data:
@@ -1624,12 +1628,13 @@ class HapUtils:
 
 
 class HapConfig:
+    _SAAS_ENV = "https://api.mingdao.com"
     MAX_WORKERS = os.cpu_count() * 3
     # 调用刷新函数时，距离上次刷新超过这个秒数，才会刷新行数据，否则直接返回缓存数据
     REFRESH_INTERVAL_SECONDS = 60
-    # QPS 限制，默认 50
-    QPS_LIMIT = 50
-    BASE_URL = CACHE_JSON.get("hap", {}).get("base_url", "https://api.mingdao.com")
+    BASE_URL = CACHE_JSON.get("hap", {}).get("base_url", _SAAS_ENV)
+    # QPS 限制，SAAS环境默认 50，私有部署默认 100
+    QPS_LIMIT = 50 if BASE_URL == _SAAS_ENV else 100
     APP_KEY = CACHE_JSON.get("hap", {}).get("app_key", "")
     SIGN = CACHE_JSON.get("hap", {}).get("sign", "")
     DESCRIPTION = CACHE_JSON.get("hap", {}).get("description", "")
@@ -1671,6 +1676,9 @@ class HapConnection:
             connect_timeout=5.0,  # 增加连接超时时间
             read_timeout=60.0,    # 增加读取超时时间
         )
+        
+        # 启动缓存定时刷新任务
+        self._start_cache_refresh_task()
 
 
     def _post(self, endpoint: str, payload: dict):
@@ -1949,6 +1957,130 @@ class HapConnection:
                             for key in keys_to_delete:
                                 del index_data[key]
                 break
+    
+    def _update_cache_for_instances(self, model_instances: List[Model]) -> None:
+        """
+        批量更新缓存中的模型实例数据
+        
+        Args:
+            model_instances: 模型实例列表
+        """
+        if not model_instances:
+            return
+        
+        # 按模型类型分组处理
+        instances_by_model = {}
+        for instance in model_instances:
+            model_class = instance.__class__
+            if model_class not in instances_by_model:
+                instances_by_model[model_class] = []
+            instances_by_model[model_class].append(instance)
+        
+        # 分组处理每个模型的实例
+        for model_class, instances in instances_by_model.items():
+            # 检查模型是否配置了缓存
+            cache_fields = getattr(model_class.Meta, 'cache', None)
+            if not cache_fields:
+                continue
+            
+            worksheet_id = model_class.get_worksheet_id()
+            if worksheet_id not in self.cache_data:
+                continue
+            
+            # 批量更新缓存
+            for instance in instances:
+                row_id = getattr(instance, 'row_id', None)
+                if not row_id:
+                    continue
+                
+                # 更新缓存数据
+                cache_value = {}
+                cache_value['row_id'] = row_id
+                
+                for field_name in cache_fields:
+                    if hasattr(instance, field_name):
+                        # 标准化字段名，使用field_name作为键
+                        normalized_field = HapUtils.normalize_field_name(model_class, field_name)
+                        cache_value[normalized_field] = getattr(instance, field_name)
+                
+                self.cache_data[worksheet_id][row_id] = cache_value
+                
+                # 更新索引
+                pk_field = model_class.get_pk_field()
+                if pk_field and hasattr(instance, pk_field):
+                    pk_value = str(getattr(instance, pk_field))
+                    self.cache_indexes[worksheet_id]['pk'][pk_value] = row_id
+                    # 同时更新按field_name的索引
+                    normalized_pk_field = HapUtils.normalize_field_name(model_class, pk_field)
+                    if normalized_pk_field in self.cache_indexes[worksheet_id]:
+                        self.cache_indexes[worksheet_id][normalized_pk_field][pk_value] = row_id
+                
+                # 更新缓存字段的索引
+                for field_name in cache_fields:
+                    if hasattr(instance, field_name):
+                        field_value = str(getattr(instance, field_name))
+                        # 标准化字段名，使用field_name作为索引键
+                        normalized_field = HapUtils.normalize_field_name(model_class, field_name)
+                        if normalized_field in self.cache_indexes[worksheet_id]:
+                            self.cache_indexes[worksheet_id][normalized_field][field_value] = row_id
+    
+    def _start_cache_refresh_task(self):
+        """
+        启动缓存定时刷新任务
+        """
+        import threading
+        import time
+        
+        def refresh_cache():
+            """
+            定时刷新缓存的函数
+            """
+            while True:
+                try:
+                    # 每隔30分钟刷新一次
+                    time.sleep(30 * 60)
+                    
+                    # 遍历所有已注册的模型
+                    for model_name, model_class in self.models.items():
+                        # 只处理类名对应的模型（避免重复处理）
+                        if not isinstance(model_name, str) or model_name != model_class.__name__:
+                            continue
+                        
+                        # 检查模型是否配置了缓存
+                        cache_fields = getattr(model_class.Meta, 'cache', None)
+                        if not cache_fields:
+                            continue
+                        
+                        worksheet_id = model_class.get_worksheet_id()
+                        if worksheet_id not in self.cache_data:
+                            continue
+                        
+                        # 获取最新的1000条记录
+                        try:
+                            # 构建查询：过滤所有记录，按utime降序排序，获取最新的1000条
+                            query = self.rows(model_class)
+                            # 应用过滤和排序
+                            query = query.filter()  # 空过滤，获取所有记录
+                            query = query.order_by("-utime")  # 按utime降序排序
+                            query.page_size = 1000  # 设置每页大小为1000
+                            query.limit = 1000  # 限制最多获取1000条
+                            
+                            # 执行查询
+                            latest_instances = query.all()
+                            
+                            # 刷新缓存
+                            if latest_instances.count() > 0:
+                                self._update_cache_for_instances(latest_instances.row_objects)
+                                console_log(f"已刷新模型 {model_class.__name__} 的缓存，更新了 {latest_instances.count()} 条记录")
+                        except Exception as e:
+                            console_log(f"刷新模型 {model_class.__name__} 的缓存失败: {str(e)}")
+                except Exception as e:
+                    console_log(f"缓存刷新任务执行失败: {str(e)}")
+        
+        # 启动后台线程执行定时刷新
+        refresh_thread = threading.Thread(target=refresh_cache, daemon=True)
+        refresh_thread.start()
+        console_log("缓存定时刷新任务已启动")
 
 
 
@@ -1959,7 +2091,7 @@ class HapQuerySet(Generic[ModelType]):
         self.hap_conn = hap_conn
         self.filter_condition = {}
         self.sorts = []
-        self.page_size = 20
+        self.page_size = 1000
         self.limit = None
         self.last_query_timestamp = 0
 
@@ -2064,6 +2196,8 @@ class HapQuerySet(Generic[ModelType]):
                         model_instance.row_id = row_dict['rowId']
                     # 设置 hap_conn 属性，用于后续的 update 操作
                     model_instance.hap_conn = self.hap_conn
+                    # 将查询结果添加到缓存中
+                    self.hap_conn._update_cache_for_instance(model_instance)
                     all_models.append(model_instance)
             
             # 应用 limit
@@ -2317,6 +2451,9 @@ class HapRowSet(Generic[ModelType]):
                         self.row_objects.append(model_instance)
                         created_models.append(model_instance)
         
+        # 批量更新缓存
+        self.hap_conn._update_cache_for_instances(created_models)
+        
         return created_models
 
     def update(self, **kwargs) -> List[ModelType]:
@@ -2407,6 +2544,9 @@ class HapRowSet(Generic[ModelType]):
                     updated_models.append(model)
             else:
                 raise Exception(f"Failed to update model instances: {response.get('message', 'Unknown error')}")
+        
+        # 批量更新缓存
+        self.hap_conn._update_cache_for_instances(updated_models)
         
         return updated_models
 
@@ -2563,5 +2703,8 @@ class HapRowSet(Generic[ModelType]):
         if create_list:
             created_models = self.bulk_create(create_list)
             result_models.extend(created_models)
+        
+        # 批量更新缓存
+        self.hap_conn._update_cache_for_instances(result_models)
         
         return HapRowSet(models=result_models, model=self.model, hap_conn=self.hap_conn)

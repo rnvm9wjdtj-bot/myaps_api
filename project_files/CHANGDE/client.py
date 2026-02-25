@@ -1,9 +1,9 @@
 from typing import Text
-from apps.data_opt.components.hap import HapConfig, HapConnection, Model, StrField, NumField, RelationField, SubtableField, Q
+from apps.data_opt.components.hap import HapConfig, HapConnection, Model, StrField, NumField, RelationField, SubtableField, ChoiceField, Q
 
 import importlib
 importlib.reload(sys.modules['apps.data_opt.components.hap'])
-from apps.data_opt.components.hap import HapConfig, HapConnection, Model, StrField, NumField, RelationField, SubtableField, Q
+from apps.data_opt.components.hap import HapConfig, HapConnection, Model, StrField, NumField, RelationField, SubtableField, ChoiceField, Q
 
 DECODER = {
     "bankaccounts": {
@@ -231,8 +231,8 @@ class Group(Model):
 
     class Meta:
         worksheet_id = "group"
-        conflict_fields = ["group_id"]
         cache = ["group_id", "group_name"]
+        description = "集团"
 
 
 class Currency(Model):
@@ -242,14 +242,20 @@ class Currency(Model):
     class Meta:
         worksheet_id = "currency"
         cache = ["currency_code", "currency_name"]
+        description = "币种"
 
 
 class Company(Model):
     company_id = StrField(pk=True, field_name="companyId")
     company_code = StrField(field_name="companyCode")
     company_name = StrField(field_name="companyName")
+    fax = StrField(field_name="fax")
+    tel = StrField(field_name="tel")
+    opening_bank = StrField(field_name="openingBank", description="开户行")
+    busi_brand = StrField(field_name="busiBrand", description="品牌")
     currency_code = StrField(field_name="currencyCode")
     currency = RelationField(Currency, field_name="currency", follow_with="currency_code")
+    currency_name = StrField(field_name="currencyName", description="货币类型名称")
     group_id = StrField(field_name="groupId")
     group = RelationField(Group, field_name="group", follow_with="group_id")
     group_name = StrField(field_name="groupName")
@@ -257,73 +263,7 @@ class Company(Model):
     class Meta:
         worksheet_id = "company"
         cache = ["company_id", "company_code", "company_name"]
-
-
-class Department(Model):
-    department_id = StrField(pk=True, field_name="departId")
-    department_code = StrField(field_name="departCode")
-    department_name = StrField(field_name="departName")
-    company_id = StrField(field_name="companyId")
-    company = RelationField(Company, field_name="company", follow_with="company_id")
-    parent_id = StrField(field_name="parentId")
-    parent = RelationField('Department', field_name="parent", follow_with="parent_id")
-
-    class Meta:
-        worksheet_id = "depart"
-        cache = ["department_id", "department_code", "department_name"]
-
-
-class Staff(Model):
-    user_id = StrField(pk=True, field_name="userId")
-    user_name = StrField(field_name="userName")
-    main_department_id = StrField(field_name="mainDepartId")
-    department = RelationField(Department, field_name="department", follow_with="main_department_id")
-    company_id = StrField(field_name="companyId")
-    company = RelationField(Company, field_name="company", follow_with="company_id")
-
-    class Meta:
-        worksheet_id = "staff"
-        cache = ["user_id", "user_name"]
-
-
-class Channel(Model):
-    channel_id = StrField(pk=True, field_name="channelId")
-    channel_code = StrField(field_name="channelCode")
-    channel_name = StrField(field_name="channelName")
-    channel_type = StrField(field_name="channelType")
-    channel_type_display = StrField(field_name="channelType__display__", follow_with="channel_type", mapper=DECODER["channel"]["channelType"])
-    company_id = StrField(field_name="companyId")
-    company = RelationField(Company, field_name="company", follow_with="company_id")
-    departnemnt_id = StrField(field_name="channelDepartId")
-    department = RelationField(Department, field_name="depart", follow_with="departnemnt_id")
-
-    class Meta:
-        worksheet_id = "channel"
-        cache = ["channel_id", "channel_code", "channel_name"]
-
-
-class GoodsCate(Model):
-    cate_id = StrField(pk=True, field_name="cateId")
-    cate_code = StrField(field_name="cateCode")
-    cate_name = StrField(field_name="cateName")
-    parent_id = StrField(field_name="parentCateId")
-    parent = RelationField('GoodsCate', field_name="parent", follow_with="parent_id")
-    usable_range = StrField(field_name="usableRange")
-    usable_range_display = StrField(field_name="usableRange__display__", follow_with="usable_range", mapper=DECODER["goodscate"]["usableRange"])
-
-    class Meta:
-        worksheet_id = "goodscate"
-        cache = ["cate_id", "cate_code", "cate_name"]
-
-
-class Warehouse(Model):
-    warehouse_id = StrField(pk=True, field_name="warehouseId")
-    warehouse_code = StrField(field_name="warehouseCode")
-    warehouse_name = StrField(field_name="warehouseName")
-
-    class Meta:
-        worksheet_id = "warehouse"
-        cache = ["warehouse_id", "warehouse_code", "warehouse_name"]
+        description = "公司"
 
 
 class BankAccounts(Model):
@@ -333,74 +273,77 @@ class BankAccounts(Model):
     acctype_code__display__ = StrField(field_name="acctypeCode__display__", follow_with="acctype_code", mapper=DECODER["bankaccounts"]["acctypeCode"])
     company = RelationField('Company', field_name="company", follow_with="company_id")
     company_id = StrField(field_name="companyId")
+    company_name = StrField(field_name="companyName", description="公司名称")
+    bank_name = StrField(field_name="bankName", description="开户行")
+    acc_owner = StrField(field_name="accOwner", description="户名")
+    acc_number = StrField(field_name="accNumber", description="账号")
     currency_id = StrField(field_name="currId")
     currency = RelationField(Currency, field_name="currency", follow_with="currency_id")
+    currency_name = StrField(field_name="currName", description="币种名称")
     
     class Meta:
         worksheet_id = "bankaccounts"
-        conflict_fields = ["acc_id"]
         cache = ["acc_id", "acc_name"]
+        description = "公司收款账户"
 
 
-class Logistic(Model):
-    logistic_id = StrField(pk=True, field_name="id")
-    logistic_code = StrField(field_name="logisticCode")
-    logistic_name = StrField(field_name="logisticName")
-    link_type = StrField(field_name="linkType")
-    link_type_display = StrField(field_name="linkType__display__", follow_with="link_type", mapper=DECODER["logistic"]["linkType"])
-
-    class Meta:
-        worksheet_id = "logistic"
-        cache = ["logistic_id", "logistic_code", "logistic_name"]
-
-
-class CustomerSource(Model):
-    id = StrField(pk=True, field_name="channelCustomerId")
-    # source_name = TextField(field_name="name")
-    channel_id = StrField(field_name="channelId")
-    channel_relation = RelationField(Channel, field_name="channelId__relation__", follow_with="channel_id")
-    salesman_id = StrField(field_name="salesman")
-    salesman_relation = RelationField(Staff, field_name="salesman__relation__", follow_with="salesman_id")
-    is_default = StrField(field_name="isDefault")
+class Department(Model):
+    department_id = StrField(pk=True, field_name="departId")
+    department_code = StrField(field_name="departCode")
+    department_name = StrField(field_name="departName")
+    department_type = StrField(field_name="departTypeName", description="部门类型名称")
+    user_name = StrField(field_name="userName", description="部门负责人")
+    company_id = StrField(field_name="companyId")
+    company = RelationField(Company, field_name="company", follow_with="company_id")
+    company_code = StrField(field_name="companyCode", description="部门所属公司编码")
+    phone = StrField(field_name="departPhone", description="部门电话")
+    functional = StrField(field_name="departFunctional", description="部门职能")
+    parent_id = StrField(field_name="parentId")
+    parent = RelationField('Department', field_name="parent", follow_with="parent_id")
+    parent_code = StrField(field_name="parentCode", description="上级部门code")
 
     class Meta:
-        worksheet_id = "customerSource"
+        worksheet_id = "depart"
+        cache = ["department_id", "department_code", "department_name"]
+        description = "部门"
 
 
-class CustomerType(Model):
-    type_id = StrField(pk=True, field_name="id")
-    type_name = StrField(field_name="name")
-
-    class Meta:
-        worksheet_id = "customertype"
-        cache = ["type_id", "type_name"]
-
-
-class Customer(Model):
-    customer_id = StrField(pk=True, field_name="customerId")
-    customer_code = StrField(field_name="customerCode")
-    nick_name = StrField(field_name="nickName")
-    create_source = StrField(field_name="customerCreateSource")
-    create_source_display = StrField(field_name="customerCreateSource__display__", follow_with="create_source", mapper=DECODER["customer"]["customerCreateSource"])
-    customer_type_id = StrField(field_name="customerType")
-    customer_type_relation = RelationField(CustomerType, follow_with="customer_type_id", field_name="customerType__relation__")
-    salesman_id = StrField(field_name="salesman")
-    salesman_relation = RelationField(Staff, field_name="salesman__relation__", follow_with="salesman_id")
-    referee_id = StrField(field_name="refereeId")
-    referee_relation = RelationField(Staff, field_name="referee__relation__", follow_with="referee_id")
-    customer_manager_id = StrField(field_name="customerManager")
-    customer_manager_relation = RelationField(Staff, field_name="customerManager__relation__", follow_with="customer_manager_id")
-    default_logistics_id = StrField(field_name="defaultDeliveryLogistics")
-    default_logistics_relation = RelationField(Logistic, field_name="defaultDeliveryLogistics__relation__", follow_with="default_logistics_id")
-    # default_settlement_method_id = TextField(field_name="defaultSettlementMethod")
-    # default_settlement_method_relation = RelationField(BankAccounts, field_name="defaultSettlementMethod__relation__", follow_with="default_settlement_method_id")
-    customer_source_arr = StrField(field_name="customerSourceArr")
-    customer_source = SubtableField(CustomerSource, field_name="customerSource", data_source="customer_source_arr")
-
+class Staff(Model):
+    user_id = StrField(pk=True, field_name="userId")
+    is_blockup = NumField(field_name="isBlockup", description="是否停用")
+    user_name = StrField(field_name="userName")
+    real_name = StrField(field_name="realName", description="真实姓名")
+    mobile = StrField(field_name="mobile", description="手机号")
+    email = StrField(field_name="email", description="邮箱")
+    main_department_id = StrField(field_name="mainDepartId")
+    department = RelationField(Department, field_name="department", follow_with="main_department_id")
+    main_department_name = StrField(field_name="mainDepartName", description="主部门名称")
+    company_id = StrField(field_name="companyId")
+    company = RelationField(Company, field_name="company", follow_with="company_id")
+    company_name = StrField(field_name="companyName", description="公司名称")
 
     class Meta:
-        worksheet_id = "customer"
-        cache = ["customer_id", "customer_code"]
+        worksheet_id = "staff"
+        cache = ["user_id", "user_name"]
+        description = "员工"
+
+
+class GoodsCate(Model):
+    cate_id = StrField(pk=True, field_name="cateId")
+    cate_code = StrField(field_name="cateCode")
+    cate_name = StrField(field_name="cateName")
+    is_leaf = NumField(field_name="isLeaf", description="是否叶子节点")
+    full_name = StrField(field_name="cateFullName", description="分类全路径名称")
+    order_index = NumField(field_name="orderIndex", description="序号")
+    parent_id = StrField(field_name="parentCateId")
+    parent = RelationField('GoodsCate', field_name="parent", follow_with="parent_id")
+    usable_range = StrField(field_name="usableRange")
+    usable_range_display = StrField(field_name="usableRange__display__", follow_with="usable_range", mapper=DECODER["goodscate"]["usableRange"])
+
+    class Meta:
+        worksheet_id = "goodscate"
+        cache = ["cate_id", "cate_code", "cate_name"]
+        description = "货品分类"
 
 
 class Spu(Model):
@@ -411,16 +354,166 @@ class Spu(Model):
     class Meta:
         worksheet_id = "spu"
         cache = ["spu_id", "spu_code", "spu_name"]
+        description = "货品"
 
 
 class Sku(Model):
     sku_id = StrField(pk=True, field_name="skuId")
     sku_code = StrField(field_name="skuNo")
     sku_name = StrField(field_name="skuName")
+    barcode = StrField(field_name="skuBarcode", description="条码")
+    length = NumField(field_name="skuLength", description="长度")
+    width = NumField(field_name="skuWidth", description="宽度")
+    height = NumField(field_name="skuHeight", description="高度")
+    color_code = StrField(field_name="colorCode", description="颜色编码")
+    color_name = StrField(field_name="colorName", description="颜色名称")
+    size_code = StrField(field_name="sizeCode", description="尺寸编码")
+    size_name = StrField(field_name="sizeName", description="尺寸名称")
+    weight = NumField(field_name="skuWeight", description="重量")
+    volume = NumField(field_name="skuVolume", description="体积")
+    create_time = StrField(field_name="skuGmtCreate", description="创建时间")
+    modify_time = StrField(field_name="skuGmtModified", description="修改时间")
+    retail_price = NumField(field_name="retailPrice", description="固定成本价")
+    memo = StrField(field_name="memo", description="备注")
+    is_blockup = NumField(field_name="skuIsBlockup", description="是否停用")
+    img_url = StrField(field_name="imgUrl", description="图片URL")
+    is_main_image = NumField(field_name="isMainImage", description="是否主图")
+    image_position = StrField(field_name="imagePosition", description="图片位置")
+    image_position_display = StrField(field_name="imagePosition__display__", follow_with="image_position", mapper=DECODER["spu"]["imagePosition"])
+    outer_code = StrField(field_name="skuCode", description="外部货品编码")
+    goods_no = StrField(field_name="goodsNo", description="货品编号")
+    goods_id = StrField(field_name="goodsId", description="货品ID")
+    create_time = StrField(field_name="skuGmtCreate", description="创建时间")
+    modify_time = StrField(field_name="skuGmtModified", description="修改时间")
 
     class Meta:
         worksheet_id = "sku"
         cache = ["sku_id", "sku_code", "sku_name"]
+        description = "货品规格"
+
+
+class Warehouse(Model):
+    warehouse_id = StrField(pk=True, field_name="warehouseId")
+    warehouse_code = StrField(field_name="warehouseCode")
+    warehouse_name = StrField(field_name="warehouseName")
+
+    class Meta:
+        worksheet_id = "warehouse"
+        cache = ["warehouse_id", "warehouse_code", "warehouse_name"]
+        description = "仓库"
+
+
+class Logistic(Model):
+    logistic_id = StrField(pk=True, field_name="id")
+    logistic_code = StrField(field_name="logisticCode")
+    logistic_name = StrField(field_name="logisticName")
+    link_man = StrField(field_name="linkMan", description="联系人")
+    link_tel = StrField(field_name="linkTel", description="联系电话")
+    express_code = StrField(field_name="expressCode", description="快递公司编码")
+    express_name = StrField(field_name="expressName", description="快递公司名称")
+    link_type = StrField(field_name="linkType", description="联系途径")
+    link_type_display = StrField(field_name="linkType__display__", follow_with="link_type", mapper=DECODER["logistic"]["linkType"])
+    interface_id = StrField(field_name="interfaceId", description="面单接口ID")
+    interface_name = StrField(field_name="interfaceName", description="面单接口名称")
+    print_template_id = StrField(field_name="printTemplateId", description="打印模板ID")
+    print_template_name = StrField(field_name="printTemplateName", description="打印模板名称")
+    print_type = StrField(field_name="printType", description="打印类型")
+
+    class Meta:
+        worksheet_id = "logistic"
+        cache = ["logistic_id", "logistic_code", "logistic_name"]
+        description = "物流"
+
+
+class Channel(Model):
+    channel_id = StrField(pk=True, field_name="channelId")
+    channel_code = StrField(field_name="channelCode", description="渠道编码")
+    channel_name = StrField(field_name="channelName", description="渠道名称")
+    channel_type = StrField(field_name="channelType", description="渠道类型")
+    channel_type_display = StrField(field_name="channelType__display__", follow_with="channel_type", mapper=DECODER["channel"]["channelType"])
+    plat_name = StrField(field_name="onlinePlatTypeName", description="店铺平台名称")
+    plat_code = StrField(field_name="onlinePlatTypeCode", description="店铺平台编码")
+    company_id = StrField(field_name="companyId")
+    company = RelationField(Company, field_name="company", follow_with="company_id")
+    departnemnt_id = StrField(field_name="channelDepartId")
+    department = RelationField(Department, field_name="depart", follow_with="departnemnt_id")
+
+    class Meta:
+        worksheet_id = "channel"
+        cache = ["channel_id", "channel_code", "channel_name"]
+        description = "销售渠道"
+
+
+class CustomerType(Model):
+    type_id = StrField(pk=True, field_name="id")
+    type_name = StrField(field_name="name")
+
+    class Meta:
+        worksheet_id = "customertype"
+        cache = ["type_id", "type_name"]
+        description = "客户类别"
+
+
+class CustomerSource(Model):
+    id = StrField(pk=True, field_name="channelCustomerId")
+    channel_id = StrField(field_name="channelId")
+    channel_relation = RelationField(Channel, field_name="channelId__relation__", follow_with="channel_id")
+    salesman_id = StrField(field_name="salesman")
+    salesman_relation = RelationField(Staff, field_name="salesman__relation__", follow_with="salesman_id")
+    is_default = NumField(field_name="isDefault")
+
+    class Meta:
+        worksheet_id = "customerSource"
+        description = "客户账号表"
+
+
+class Customer(Model):
+    customer_id = StrField(pk=True, field_name="customerId")
+    customer_code = StrField(field_name="customerCode")
+    nick_name = StrField(field_name="nickName", description="客户名称")
+    alias = StrField(field_name="alias", description="别名")
+    type_name = StrField(field_name="customerTypeName", description="客户类别名称")
+    debt_max = NumField(field_name="debtAmountMax", description="信用额度")
+    debt_amount = NumField(field_name="debtAmount", description="欠款金额")
+    default_settlement_name = StrField(field_name="defaultSettlementMethodName", description="默认结算方式名称")
+    default_account_name = StrField(field_name="defaultCollectionAccountName", description="默认收款账户名称")
+    special_reminding = StrField(field_name="specialReminding", description="特别提醒")
+    tag_arr = StrField(field_name="tagArr", description="客户标签")
+    create_time = StrField(field_name="gmtCreate", description="创建时间")
+    modify_time = StrField(field_name="gmtModified", description="修改时间")
+    remark = StrField(field_name="remark", description="备注")
+    blacklist = NumField(field_name="blackList", description="是否黑名单")
+    no_disturb = NumField(field_name="noDisturb", description="免打扰")
+    is_delete = NumField(field_name="isDelete", description="是否删除")
+    enable = NumField(field_name="enable", description="是否启用")
+    create_source = StrField(field_name="customerCreateSource", description="客户档案创建来源")
+    create_source_display = StrField(field_name="customerCreateSource__display__", follow_with="create_source", mapper=DECODER["customer"]["customerCreateSource"])
+    pre_storage = NumField(field_name="preStorageBalance", description="预存余额")
+    logistic_type = StrField(field_name="logisticType", description="默认配送方式")
+    default_delivery_logistics = StrField(field_name="defaultDeliveryLogisticsName", description="默认发货物流名称")
+    contacts = StrField(field_name="contacts", description="联系人")
+    phone = StrField(field_name="phone", description="联系电话")
+    detailed_address = StrField(field_name="detailedAddress", description="详细地址")
+    customer_type_id = StrField(field_name="customerType")
+    customer_type_relation = RelationField(CustomerType, follow_with="customer_type_id", field_name="customerType__relation__")
+    salesman_id = StrField(field_name="salesman")
+    salesman_relation = RelationField(Staff, field_name="salesman__relation__", follow_with="salesman_id")
+    referee_id = StrField(field_name="refereeId")
+    referee_relation = RelationField(Staff, field_name="referee__relation__", follow_with="referee_id")
+    customer_manager_id = StrField(field_name="customerManager")
+    customer_manager_relation = RelationField(Staff, field_name="customerManager__relation__", follow_with="customer_manager_id")
+    default_logistics_id = StrField(field_name="defaultDeliveryLogistics", description="默认发货物流id")
+    default_logistics_relation = RelationField(Logistic, field_name="defaultDeliveryLogistics__relation__", follow_with="default_logistics_id")
+    default_settlement_id = StrField(field_name="defaultSettlementMethod", description="默认结算方式id")
+    # default_settlement_method_relation = RelationField(BankAccounts, field_name="defaultSettlementMethod__relation__", follow_with="default_settlement_method_id")
+    default_account_id = StrField(field_name="defaultCollectionAccount", description="默认收款账户id")
+    # default_account_relation = RelationField(BankAccounts, field_name="defaultCollectionAccount__relation__", follow_with="default_account_id")
+    customer_source_arr = StrField(field_name="customerSourceArr")
+    customer_source = SubtableField(CustomerSource, field_name="customerSource", data_source="customer_source_arr")
+
+    class Meta:
+        worksheet_id = "customer"
+        cache = ["customer_id", "customer_code"]
 
 
 # class Package(Model):
@@ -569,11 +662,11 @@ class TradeGoodsDetail(Model):
 
 
 class Trade(Model):
-    id = StrField(field_name="id")
+    id = StrField(field_name="Id")
     trade_id = StrField(pk=True, field_name="tradeId")
     trade_code = StrField(field_name="tradeNo")
     trade_status_explain = StrField(field_name="tradeStatusExplain")
-    flag_names = StrField(field_name="flagNames", description="订单标记")
+    flag_names = ChoiceField(field_name="flagNames", description="订单标记")
     freeze_reason = StrField(field_name="freezeReason", description="订单冻结原因")
     buyer_open_uid = StrField(field_name="buyerOpenUid", description="平台买家唯一标识")
     order_no = StrField(field_name="orderNo", description="发货单单号")
@@ -647,7 +740,7 @@ class Trade(Model):
     shop_id = StrField(field_name="shopId")
     shop_id_relation = RelationField(Channel, field_name="shopId__relation__", follow_with="shop_id")
     customer_code = StrField(field_name="customerCode", description="客户编码")
-    customer_code_relation = RelationField(Customer, field_name="customerCode__relation__", follow_with="customer_code")
+    customer_code_relation = RelationField(Customer, field_name="customerCode__relation__", follow_with="customer_code", query_field="customer_code")
     warehouse_id = StrField(field_name="warehouseId", description="仓库id")
     warehouseId_relation = RelationField(Warehouse, field_name="warehouseId__relation__", follow_with="warehouse_id")
     logistic_id = StrField(field_name="logisticId", description="物流公司id")
