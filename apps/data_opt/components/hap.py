@@ -751,7 +751,7 @@ class SubtableField(Field):
             
             # 获取子表模型的主键字段
             subtable_pk_field = self.subtable_model.get_pk_field()
-            subtable_pk_field_name = subtable_field_map[subtable_pk_field]
+            subtable_pk_field_name = subtable_field_map[subtable_pk_field] if subtable_pk_field else None
             # 预处理子表数据：确保字段名能够被正确地映射到模型的属性名
             preprocessed_data_list = []
             
@@ -774,6 +774,44 @@ class SubtableField(Field):
                                     preprocessed_data[follow_with] = subtable_data[api_field]
                 
                 preprocessed_data_list.append(preprocessed_data)
+            
+            # 检查子表模型是否既没有 pk 也没有 conflict fields
+            subtable_has_pk_or_conflict = bool(subtable_pk_field or conflict_fields)
+            
+            # 如果子表模型既没有 pk 也没有 conflict fields，先删除主表当前挂载的子表记录
+            if not subtable_has_pk_or_conflict:
+                # 获取主记录当前挂载的子表记录 row_id
+                current_row_ids = []
+                if attr_name in processed_data:
+                    current_row_ids = processed_data[attr_name]
+                elif original_data and attr_name in original_data:
+                    current_row_ids = original_data[attr_name]
+                
+                # 确保 current_row_ids 是列表
+                if not isinstance(current_row_ids, list):
+                    current_row_ids = []
+                
+                # 删除当前挂载的子表记录
+                if current_row_ids:
+                    try:
+                        # 构建删除请求
+                        endpoint = f"/v3/app/worksheets/{self.subtable_model.get_worksheet_id()}/rows/batch"
+                        
+                        # 构建请求体
+                        payload = {
+                            "rowIds": current_row_ids,
+                            "triggerWorkflow": True
+                        }
+                        
+                        # 发送请求
+                        response = hap_conn._delete(endpoint=endpoint, payload=payload)
+                        
+                        # 从缓存中移除
+                        for row_id in current_row_ids:
+                            hap_conn._remove_from_cache(row_id)
+                    except Exception as e:
+                        # 忽略删除错误，继续处理其他记录
+                        pass
             
             # 处理子表数据：复用 HapRowSet.upsert 方法
             # 创建空的 HapRowSet 实例
@@ -1799,7 +1837,7 @@ class HapConnection:
                             self.cache_indexes[worksheet_id][normalized_field][field_value] = row_id
             except Exception as e:
                 # 缓存失败时记录错误，但不影响模型注册
-                console_log(f"缓存模型 {model.__name__} 失败: {str(e)}")
+                console_log.error(f"缓存模型 {model.__name__} 失败: {str(e)}")
 
 
     def register_models(self, models: List[Type[Model]]):
@@ -2071,16 +2109,16 @@ class HapConnection:
                             # 刷新缓存
                             if latest_instances.count() > 0:
                                 self._update_cache_for_instances(latest_instances.row_objects)
-                                console_log(f"已刷新模型 {model_class.__name__} 的缓存，更新了 {latest_instances.count()} 条记录")
+                                console_log.info(f"已刷新模型 {model_class.__name__} 的缓存，更新了 {latest_instances.count()} 条记录")
                         except Exception as e:
-                            console_log(f"刷新模型 {model_class.__name__} 的缓存失败: {str(e)}")
+                            console_log.error(f"刷新模型 {model_class.__name__} 的缓存失败: {str(e)}")
                 except Exception as e:
-                    console_log(f"缓存刷新任务执行失败: {str(e)}")
+                    console_log.error(f"缓存刷新任务执行失败: {str(e)}")
         
         # 启动后台线程执行定时刷新
         refresh_thread = threading.Thread(target=refresh_cache, daemon=True)
         refresh_thread.start()
-        console_log("缓存定时刷新任务已启动")
+        console_log.info("缓存定时刷新任务已启动")
 
 
 

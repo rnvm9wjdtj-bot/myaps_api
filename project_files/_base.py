@@ -303,7 +303,7 @@ class ApsBaseAction(ABC):
 
 
     @classmethod
-    def get_dategrouped_pr(cls, db_name: str=None, period: int|str=30, groupdates: str=None, field_map: dict=None):
+    def get_dategrouped_pr(cls, db_name: str=None, period: int|str=30, groupdates: Optional[str]=None, field_map: dict=None):
         """
         从数据库获取按日期分组的计划任务数据
         🅰 db_name: 账套名称，默认cls.main_db

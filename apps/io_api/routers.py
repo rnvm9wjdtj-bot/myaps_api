@@ -654,8 +654,8 @@ async def get_orderwc(
 async def get_matdailyqtyreport(
         db_name: str = common_params["db_name"],
         period: int | str = Query(default=30, description="查询时间范围（天）"),
-        groupdates: str = Query(default=None, description="分组日期，逗号分隔"),
-        materialno: str = Query(default=None, description="料号，多个料号用逗号分隔")
+        groupdates: Optional[str] = Query(default=None, description="分组日期，逗号分隔"),
+        materialno: Optional[str] = Query(default=None, description="料号，多个料号用逗号分隔")
     ):
     """
     获取按日期分组的库存动态报表，用于指导采购决策。
@@ -676,8 +676,10 @@ async def get_matdailyqtyreport(
 
     db_name = db_name.replace(" ", "")
     request_result = []
-    dates = [_.strip() for _ in groupdates.split(',')] if groupdates else None
-
+    if groupdates and groupdates != 'None':
+        dates = [_.strip() for _ in groupdates.split(',')]
+    else:
+        dates = [(start_date + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(period)]
     filter_string = f"`DateStr` >= '{start_date}' AND `DateStr` <= '{end_date}'"
     order_string = "`MaterialNo`, `DateStr`"
     if materialno:

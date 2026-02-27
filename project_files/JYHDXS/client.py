@@ -202,20 +202,20 @@ srm_field_map = {
 # @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23", minute="0,10,20,30,40,50")
 # def push_weekpr_to_srm():
 #     # 推送周要货计划到SRM
-#     pr_data = asyncio.run(ApsBaseAction.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=30, field_map=srm_field_map))
+#     pr_data = ApsBaseAction.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=30, field_map=srm_field_map)
 #     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 #     for item in pr_data:
 #         item["plant"] = "1000"
 #         item["bu_code"] = werks
 #         item["version"] = timestamp
-#     file_log.info(f"推送周要货计划到SRM：\n{pr_data}")
+#     filelog_normal.info(f"推送周要货计划到SRM：\n{pr_data}")
     # response = requests.post(
     #     url=f"{srm_url}/jbl/service/execute/SRM_RECEIVE_PUSHED_DEMAND_PLAN_SERVICE",
     #     headers=srm_headers, json={"demand_plan": pr_data})
     # if response.json().get("body", {}).get("status", "").lower() == "success":
-    #     file_log.info(f"推送周要货计划到SRM：\n{pr_data}")
+    #     filelog_normal.info(f"推送周要货计划到SRM：\n{pr_data}")
     # else:
-    #     file_log.error(f"推送周要货计划到SRM失败：\n{response.json()}")
+    #     filelog_error.error(f"推送周要货计划到SRM失败：\n{response.json()}")
 
 
 
@@ -228,7 +228,7 @@ srm_field_map = {
 #         (datetime.now().replace(day=1) + relativedelta(months=i + 1) - relativedelta(days=1)).strftime('%Y-%m-%d')
 #         for i in range(3)
 #     ]
-#     pr_data = await ApsBaseAction.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=90, groupdates=','.join(date_list), field_map=srm_field_map)
+#     pr_data = ApsBaseAction.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=90, groupdates=','.join(date_list), field_map=srm_field_map)
 #     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 #     for item in pr_data:
 #         item["plant"] = "1000"
@@ -238,9 +238,9 @@ srm_field_map = {
 #         url=f"{srm_url}/jbl/service/execute/SRM_RECEIVE_PUSHED_DEMAND_PLAN_SERVICE",
 #         headers=srm_headers, json={"demand_plan": pr_data})
 #     if response.json().get("body", {}).get("status", "").lower() == "success":
-#         file_log.info(f"推送季度要货计划到SRM：\n{pr_data}")
+#         filelog_normal.info(f"推送季度要货计划到SRM：\n{pr_data}")
 #     else:
-#         file_log.error(f"推送季度要货计划到SRM失败：\n{response.json()}")
+#         filelog_error.error(f"推送季度要货计划到SRM失败：\n{response.json()}  ")
 
 
   
