@@ -64,7 +64,7 @@ def standard_response(
 
 # url - 公共参数
 common_params = {
-    "db_name": Query(MYAPS_MAIN_DB, example=MYAPS_MAIN_DB, description="账套"),
+    "db_name": Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     "page_size": Query(1000, description="每页数量", gt=0, le=10000),
     "page_index": Query(0, description="分页页码，从0开始", ge=0),
     "supply_type": Query(..., description="供应类型", openapi_examples={key: {"value": key, "summary": value.value} for key, value in SupplyTypeEnum.__members__.items()}),

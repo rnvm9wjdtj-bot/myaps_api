@@ -10,7 +10,7 @@ pf_dir = os.getenv("PROJECT_DIR")
 cache_filename = os.getenv("CACHE_FILENAME") or "cache.json"
 if pf_dir is None:
     raise ValueError("❌ PROJECT_DIR 环境变量未设置，请在 .env 文件中设置 PROJECT_DIR")
-CACHE_JSON = JSONManager(f"{root_dir}/project_files/{pf_dir}/{cache_filename}")
+CACHE_JSON = JSONManager(f"{current_dir}/project_files/{pf_dir}/{cache_filename}")
 
 
 class ProjectDefaultValues:

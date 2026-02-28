@@ -1715,6 +1715,10 @@ class HapConnection:
             read_timeout=60.0,    # 增加读取超时时间
         )
         
+        # 初始化线程池
+        from concurrent.futures import ThreadPoolExecutor
+        self.executor = ThreadPoolExecutor(max_workers=self.max_workers)
+        
         # 启动缓存定时刷新任务
         self._start_cache_refresh_task()
 
@@ -2624,6 +2628,205 @@ class HapRowSet(Generic[ModelType]):
         else:
             raise Exception(f"Failed to delete model instances: {response.get('message', 'Unknown error')}")
 
+    def _process_item(self, data_dict, pk_field, conflict_fields, when_value_equal_then):
+        """处理单个数据项的 upsert 操作"""
+        # 构建查询条件
+        field_map = self.model._get_field_map()
+        filter_conditions = []
+        
+        # 优先使用主键字段判断
+        if pk_field:
+            pk_field_name = field_map[pk_field]
+            if pk_field in data_dict:
+                match_value = data_dict[pk_field]
+            else:
+                match_value = data_dict[pk_field_name]
+            filter_conditions.append(f'{pk_field_name}__eq=\"{match_value}\"')
+        # 其次使用冲突字段判断
+        if conflict_fields and not filter_conditions:
+            for field in conflict_fields:
+                match_value = None
+                if field in data_dict:
+                    match_value = data_dict[field]
+                    filter_conditions.append(f'{field}__eq=\"{match_value}\"')
+                elif field in field_map:
+                    c_field_name = field_map[field]
+                    if c_field_name in data_dict:
+                        match_value = data_dict[c_field_name]
+                        filter_conditions.append(f'{c_field_name}__eq=\"{match_value}\"')
+        
+        # 如果没有有效的判断字段值，返回需要创建
+        if not filter_conditions:
+            return (None, data_dict)
+        
+        # 执行查询
+        existing_rows = self.hap_conn.rows(self.model).filter(" && ".join(filter_conditions)).all()
+        rows_count = existing_rows.count()
+        
+        if rows_count == 1:
+            # 若有且仅有一条则执行更新
+            existing_model = existing_rows.first()
+            # 构建更新数据
+            update_data = {}
+            for key, value in data_dict.items():
+                # 跳过特殊字段
+                if key not in ['row_id', 'hap_conn']:
+                    update_data[key] = value
+            # 执行更新
+            updated_model = existing_model.update(**update_data, when_value_equal_then=when_value_equal_then)
+            return (updated_model, None)
+        if rows_count > 1:
+            # 存在多条，删除所有匹配行
+            existing_rows.delete()
+        return (None, data_dict)
+    
+    def _batch_process_items(self, data_list, pk_field, conflict_fields, when_value_equal_then):
+        """批量处理多个数据项的 upsert 操作"""
+        if not data_list:
+            return []
+        
+        # 分类数据：需要更新的和需要创建的
+        to_update = []
+        to_create = []
+        
+        # 构建批量查询条件
+        field_map = self.model._get_field_map()
+        batch_conditions = []
+        data_map = {}
+        
+        for data_dict in data_list:
+            filter_conditions = []
+            
+            # 优先使用主键字段判断
+            if pk_field:
+                pk_field_name = field_map[pk_field]
+                if pk_field in data_dict:
+                    match_value = data_dict[pk_field]
+                else:
+                    match_value = data_dict[pk_field_name]
+                filter_conditions.append(f'{pk_field_name}__eq=\"{match_value}\"')
+            # 其次使用冲突字段判断
+            elif conflict_fields:
+                for field in conflict_fields:
+                    match_value = None
+                    if field in data_dict:
+                        match_value = data_dict[field]
+                        filter_conditions.append(f'{field}__eq=\"{match_value}\"')
+                    elif field in field_map:
+                        c_field_name = field_map[field]
+                        if c_field_name in data_dict:
+                            match_value = data_dict[c_field_name]
+                            filter_conditions.append(f'{c_field_name}__eq=\"{match_value}\"')
+            
+            if filter_conditions:
+                condition_str = " && ".join(filter_conditions)
+                batch_conditions.append(condition_str)
+                data_map[condition_str] = data_dict
+            else:
+                to_create.append(data_dict)
+        
+        # 批量查询
+        if batch_conditions:
+            # 构建 OR 条件
+            or_condition = " || ".join([f"({cond})" for cond in batch_conditions])
+            existing_rows = self.hap_conn.rows(self.model).filter(or_condition).all()
+            
+            # 构建查询结果映射
+            existing_map = {}
+            for model_instance in existing_rows.row_objects:
+                # 构建唯一键
+                key_parts = []
+                if pk_field:
+                    pk_value = getattr(model_instance, pk_field)
+                    key_parts.append(f'{field_map[pk_field]}__eq=\"{pk_value}\"')
+                elif conflict_fields:
+                    for field in conflict_fields:
+                        field_value = getattr(model_instance, field)
+                        key_parts.append(f'{field}__eq=\"{field_value}\"')
+                if key_parts:
+                    key = " && ".join(key_parts)
+                    existing_map[key] = model_instance
+            
+            # 分类数据
+            for condition_str, data_dict in data_map.items():
+                if condition_str in existing_map:
+                    to_update.append((existing_map[condition_str], data_dict))
+                else:
+                    to_create.append(data_dict)
+        
+        # 批量更新
+        updated_models = []
+        if to_update:
+            # 按更新数据分组
+            update_groups = {}
+            for model_instance, data_dict in to_update:
+                # 构建更新数据
+                update_data = {}
+                for key, value in data_dict.items():
+                    if key not in ['row_id', 'hap_conn']:
+                        update_data[key] = value
+                
+                # 按更新数据分组
+                data_key = str(update_data)
+                if data_key not in update_groups:
+                    update_groups[data_key] = {
+                        "data": update_data,
+                        "models": []
+                    }
+                update_groups[data_key]["models"].append(model_instance)
+            
+            # 执行批量更新
+            for group in update_groups.values():
+                # 创建 HapRowSet 并执行批量更新
+                row_set = HapRowSet(models=group["models"], model=self.model, hap_conn=self.hap_conn)
+                updated = row_set.update(**group["data"], when_value_equal_then=when_value_equal_then)
+                updated_models.extend(updated)
+        
+        # 批量创建
+        created_models = []
+        if to_create:
+            created = self.bulk_create(to_create)
+            created_models.extend(created)
+        
+        # 合并结果
+        all_models = updated_models + created_models
+        return all_models
+
+    def _process_items_parallel(self, data_list, pk_field, conflict_fields, when_value_equal_then):
+        """并行处理多个数据项的 upsert 操作"""
+        from concurrent.futures import as_completed
+        
+        results = []
+        # 动态调整任务数，避免创建过多线程
+        max_tasks = min(len(data_list), self.hap_conn.max_workers)
+        
+        # 使用 HapConnection 中的全局线程池
+        executor = self.hap_conn.executor
+        
+        # 提交所有任务
+        future_to_data = {executor.submit(self._process_item, data, pk_field, conflict_fields, when_value_equal_then): data for data in data_list[:max_tasks]}
+        
+        # 收集结果
+        for future in as_completed(future_to_data):
+            data = future_to_data[future]
+            try:
+                result = future.result()
+                results.append(result)
+            except Exception as exc:
+                console_log.error(f"处理 {data} 时出错: {exc}")
+        
+        # 处理剩余的数据（如果有）
+        if len(data_list) > max_tasks:
+            remaining_data = data_list[max_tasks:]
+            for data in remaining_data:
+                try:
+                    result = self._process_item(data, pk_field, conflict_fields, when_value_equal_then)
+                    results.append(result)
+                except Exception as exc:
+                    console_log.error(f"处理 {data} 时出错: {exc}")
+        
+        return results
+
     def upsert(self, data_list: List[Dict[str, Any]], exclude_none: bool = True, trigger_workflow: bool = True, when_value_equal_then: Literal['jumpover', 'update'] = 'jumpover') -> 'HapRowSet[ModelType]':
         """批量 upsert 操作
         
@@ -2636,72 +2839,6 @@ class HapRowSet(Generic[ModelType]):
         Returns:
             HapRowSet[ModelType]: 包含 upsert 后模型实例的行集合
         """
-
-        # 定义查询和更新函数
-        def process_item(data_dict, pk_field, conflict_fields):
-            # 构建查询条件
-            field_map = self.model._get_field_map()
-            # reverse_field_map = self.model._get_reverse_field_map()
-            filter_conditions = []
-            
-            # 优先使用主键字段判断
-            if pk_field:
-                # if pk_field in data_dict:
-                #     match_value = data_dict[pk_field]
-                #     filter_conditions.append(f'{pk_field}__eq=\"{match_value}\"')
-                # elif pk_field in field_map:
-                #     pk_field_name = field_map[pk_field]
-                #     if pk_field_name in data_dict:
-                #             # 使用 field_name
-                #         match_value = data_dict[pk_field_name]
-                #         # 如果找到了主键值，使用主键构建查询条件
-                #         filter_conditions.append(f'{pk_field_name}__eq=\"{match_value}\"')
-                pk_field_name = field_map[pk_field]
-                if pk_field in data_dict:
-                    match_value = data_dict[pk_field]
-                else:
-                    match_value = data_dict[pk_field_name]
-                filter_conditions.append(f'{pk_field_name}__eq=\"{match_value}\"')
-            # 其次使用冲突字段判断
-            if conflict_fields and not filter_conditions:
-
-                for field in conflict_fields:
-                    match_value = None
-                    if field in data_dict:
-                        match_value = data_dict[field]
-                        filter_conditions.append(f'{field}__eq=\"{match_value}\"')
-                    elif field in field_map:
-                        c_field_name = field_map[field]
-                        if c_field_name in data_dict:
-                            match_value = data_dict[c_field_name]
-                            filter_conditions.append(f'{c_field_name}__eq=\"{match_value}\"')
-            
-            # 如果没有有效的判断字段值，返回需要创建
-            if not filter_conditions:
-                return (None, data_dict)
-            
-            # 执行查询
-            existing_rows = self.hap_conn.rows(self.model).filter(" && ".join(filter_conditions)).all()
-            rows_count = existing_rows.count()
-            
-            if rows_count == 1:
-                # 若有且仅有一条则执行更新
-                existing_model = existing_rows.first()
-                # 构建更新数据
-                update_data = {}
-                for key, value in data_dict.items():
-                    # 跳过特殊字段
-                    if key not in ['row_id', 'hap_conn']:
-                        update_data[key] = value
-                # 执行更新
-                updated_model = existing_model.update(**update_data, when_value_equal_then=when_value_equal_then)
-                return (updated_model, None)
-            if rows_count > 1:
-                # 存在多条，删除所有匹配行
-                existing_rows.delete()
-            return (None, data_dict)
-
-
         result_models = []
         create_list = []  # 存储需要创建的数据
         
@@ -2728,19 +2865,36 @@ class HapRowSet(Generic[ModelType]):
             created_models = self.bulk_create(processed_data_list)
             return HapRowSet(models=created_models, model=self.model, hap_conn=self.hap_conn)
         
-        # 处理每条数据
-        for i, data_dict in enumerate(processed_data_list):
-            result = process_item(data_dict, pk_field=pk_field, conflict_fields=conflict_fields)
-            if result[0]:  # 更新成功的模型
-                result_models.append(result[0])
-            elif result[1]:  # 需要创建的模型
-                # 使用处理后的 processed_data 而不是原始的 data_dict
-                create_list.append(processed_data_list[i])
-        
-        # 批量创建需要新增的模型
-        if create_list:
-            created_models = self.bulk_create(create_list)
-            result_models.extend(created_models)
+        # 根据数据量选择处理方式
+        if len(processed_data_list) > 10:  # 数据量较大时使用批量处理
+            # 批量处理数据
+            all_models = self._batch_process_items(
+                processed_data_list,
+                pk_field,
+                conflict_fields,
+                when_value_equal_then
+            )
+            result_models.extend(all_models)
+        else:  # 数据量较小时使用并行处理
+            # 并行处理数据
+            results = self._process_items_parallel(
+                processed_data_list,
+                pk_field,
+                conflict_fields,
+                when_value_equal_then
+            )
+            
+            # 处理结果
+            for result in results:
+                if result[0]:  # 更新成功的模型
+                    result_models.append(result[0])
+                elif result[1]:  # 需要创建的模型
+                    create_list.append(result[1])
+            
+            # 批量创建需要新增的模型
+            if create_list:
+                created_models = self.bulk_create(create_list)
+                result_models.extend(created_models)
         
         # 批量更新缓存
         self.hap_conn._update_cache_for_instances(result_models)

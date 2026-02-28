@@ -7,6 +7,7 @@ from urllib.parse import quote
 import os
 from typing import Dict, Any, Optional, OrderedDict
 from datetime import datetime, timedelta
+import time
 
 
 from ._base import (
@@ -225,8 +226,8 @@ class JkyConnection(BaseConnection):
         return encoded_payload
 
 
-    def call_api(self, base_url, biz_content, method, version) -> Dict[str, Any]:
-
+    def call_api(self, base_url, biz_content, method, version, max_retries=3, retry_delay=2, timeout=30) -> Dict[str, Any]:
+        
         now = datetime.now()
         timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
         payload = {
@@ -241,10 +242,39 @@ class JkyConnection(BaseConnection):
         url = f"{base_url}?{encoded_payload}"
         headers = {'Content-Type': 'application/json', 'Accept':'application/json'}
 
-        response = self._session.post(url=url, json=payload, headers=headers)
-
-        response_json = response.json()
-        return response_json
+        for attempt in range(max_retries):
+            try:
+                response = self._session.post(url=url, json=payload, headers=headers, timeout=timeout)
+                response_json = response.json()
+                return response_json
+            except requests.exceptions.ChunkedEncodingError as e:
+                if attempt < max_retries - 1:
+                    console_log(f"ChunkedEncodingError occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    raise
+            except requests.exceptions.Timeout as e:
+                if attempt < max_retries - 1:
+                    console_log(f"Timeout occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    raise
+            except requests.exceptions.ConnectionError as e:
+                if attempt < max_retries - 1:
+                    console_log(f"ConnectionError occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    raise
+            except requests.exceptions.RequestException as e:
+                if attempt < max_retries - 1:
+                    console_log(f"RequestException occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    raise
 
 
     def pull_from_source(self, source_name: str, biz_content_format: Optional[Dict[str, Any]]=None):
@@ -276,7 +306,7 @@ class JkyConnection(BaseConnection):
             )
             result_data = response_json['result']['data']
             if data_node:
-                result_data = result_data[data_node]
+                result_data = result_data.get(data_node)
             if not result_data:
                 break
             data_list = []
@@ -859,7 +889,7 @@ class BusinessOrderGoodsDetail(Model):
     plat_parent_order_no = StrField(field_name="platParentOrderNo", description="网店订单ID")
 
     jky_trade_id = StrField(field_name="tradeId", description="销售单ID")
-    jky_trade_relation = RelationField("BusinessOrder", follow_with="jky_trade_id", field_name="tradeId__relation__")
+    jky_trade_relation = RelationField("Trade", follow_with="jky_trade_id", field_name="tradeId__relation__")
 
     class Meta:
         worksheet_id = "businessOrderGoodsDetail"
@@ -1089,7 +1119,7 @@ class Order(Model):
     order_no = StrField(field_name="orderNo", pk=True, description="发货单号")
     owner_name = StrField(field_name="ownerName", description="货主名称")
     jy_no = StrField(field_name="erporderNo", description="关联销售单号")
-    jy_relation = RelationField(Trade, field_name="erporderNo__relation__", follow_with="jy_no", query_field="jy_no")
+    # jy_relation = RelationField(Trade, field_name="erporderNo__relation__", follow_with="jy_no", query_field="jy_no")
     logistic_type = StrField(field_name="logisticTypeName", description="物流公司名称")
     order_status = StrField(field_name="orderStatusName", description="发货单状态名称")
     send_time = StrField(field_name="sendTime", description="发货时间")
