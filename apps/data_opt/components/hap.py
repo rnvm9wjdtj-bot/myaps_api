@@ -1667,12 +1667,12 @@ class HapUtils:
 
 class HapConfig:
     _SAAS_ENV = "https://api.mingdao.com"
-    MAX_WORKERS = os.cpu_count() * 3
+    MAX_WORKERS = os.cpu_count() * 10
     # 调用刷新函数时，距离上次刷新超过这个秒数，才会刷新行数据，否则直接返回缓存数据
     REFRESH_INTERVAL_SECONDS = 60
     BASE_URL = CACHE_JSON.get("hap", {}).get("base_url", _SAAS_ENV)
     # QPS 限制，SAAS环境默认 50，私有部署默认 100
-    QPS_LIMIT = 50 if BASE_URL == _SAAS_ENV else 100
+    QPS_LIMIT = 50 if BASE_URL == _SAAS_ENV else 1000
     APP_KEY = CACHE_JSON.get("hap", {}).get("app_key", "")
     SIGN = CACHE_JSON.get("hap", {}).get("sign", "")
     DESCRIPTION = CACHE_JSON.get("hap", {}).get("description", "")
@@ -2797,6 +2797,7 @@ class HapRowSet(Generic[ModelType]):
         from concurrent.futures import as_completed
         
         results = []
+        failed_data = []  # 记录失败的数据
         # 动态调整任务数，避免创建过多线程
         max_tasks = min(len(data_list), self.hap_conn.max_workers)
         
@@ -2813,7 +2814,9 @@ class HapRowSet(Generic[ModelType]):
                 result = future.result()
                 results.append(result)
             except Exception as exc:
-                console_log.error(f"处理 {data} 时出错: {exc}")
+                filelog_error.error(f"处理 {data} 时出错: {exc}")
+                # 记录失败的数据，稍后重试
+                failed_data.append(data)
         
         # 处理剩余的数据（如果有）
         if len(data_list) > max_tasks:
@@ -2823,7 +2826,31 @@ class HapRowSet(Generic[ModelType]):
                     result = self._process_item(data, pk_field, conflict_fields, when_value_equal_then)
                     results.append(result)
                 except Exception as exc:
-                    console_log.error(f"处理 {data} 时出错: {exc}")
+                    filelog_error.error(f"处理 {data} 时出错: {exc}")
+                    # 记录失败的数据，稍后重试
+                    failed_data.append(data)
+        
+        # 重试失败的数据（最多重试3次）
+        for retry in range(3):
+            if not failed_data:
+                break
+            retry_failed = []
+            console_log.info(f"第 {retry + 1} 次重试，共 {len(failed_data)} 条数据")
+            for data in failed_data:
+                try:
+                    result = self._process_item(data, pk_field, conflict_fields, when_value_equal_then)
+                    results.append(result)
+                except Exception as exc:
+                    console_log.error(f"重试处理 {data} 时出错: {exc}")
+                    retry_failed.append(data)
+            failed_data = retry_failed
+        
+        # 如果仍有失败的数据，记录到错误日志
+        if failed_data:
+            filelog_error.error(f"最终失败的数据共 {len(failed_data)} 条: {failed_data}")
+            # 将失败的数据作为需要创建的数据返回，避免丢失
+            for data in failed_data:
+                results.append((None, data))
         
         return results
 

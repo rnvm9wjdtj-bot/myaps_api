@@ -11,12 +11,7 @@ import time
 
 
 from ._base import (
-    console_log,
-    DataProcessor, globalconst, CACHE_JSON,
-    BaseConnection, convert_timeunit, clean_value, #reset_default_values,
-    BaseModel as PydanticModel, model_validator, Field,
-    AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
-    AcceptMold, AcceptMatWcMold
+    console_log, CACHE_JSON, BaseConnection
 )
 
 
@@ -46,17 +41,12 @@ class JkyConfig():
                 "groupId": ["groupId", "group"],
                 "currencyCode": ["currencyCode", "currency"],
             },
-
-            "hap_worksheet": "company",
-            "conflict_fields": ("companyCode", ),
             "data_node": None
         },
 
         "全部部门": {
             "method": "erp.depart.query",
             "biz_content": {},
-            "hap_worksheet": "depart",
-            "conflict_fields": ("departCode", ),
             "data_node": None
         },
 
@@ -67,40 +57,30 @@ class JkyConfig():
                 "pageIndex": None,
                 "pageSize": None
             },
-            "hap_worksheet": "staff",
-            "conflict_fields": ("userName", ),
             "data_node": None
         },
 
         "全部仓库": {
             "method": "erp.warehouse.get",
             "biz_content": {"pageIndex": None, "pageSize": None},
-            "hap_worksheet": "warehouse",
-            "conflict_fields": ("warehouseId", ),
             "data_node": "warehouseInfo"
         },
 
         "全部销售渠道": {
             "method": "erp.sales.get",
             "biz_content": {"pageIndex": None, "pageSize": None},
-            "hap_worksheet": "channel",
-            "conflict_fields": ("channelCode", ),
             "data_node": "salesChannelInfo"
         },
 
         "货品全量分类": {
             "method": "erp.goodscate.get",
             "biz_content": {},
-            "hap_worksheet": "goodscate",
-            "conflict_fields": ("cateCode", ),
             "data_node": None
         },
 
         "全量物流公司": {
             "method": "erp.logistic.get",
             "biz_content": {"pageIndex": None, "pageSize": None},
-            "hap_worksheet": "logistic",
-            "conflict_fields": ("id", ),
             "data_node": "logisticInfo"
         },
 
@@ -112,8 +92,6 @@ class JkyConfig():
                 "isIncludeBlockup": 1,
                 "cols": "accId,accName,acctypeCode,companyId,companyName,currId,currName,platAccountId,memo,bankCode,bankName,bankbranch,accOwner,accNumber,internationalBankAccount,swiftCode,countriesRegions,personalAuth,imageUpload"
             },
-            "hap_worksheet": "bankaccounts",
-            "conflict_fields": ("accId", ),
             "data_node": None
         },
 
@@ -129,8 +107,6 @@ class JkyConfig():
                 "isBlockup": 0,
                 "isPackageGood": 0
             },
-            "hap_worksheet": "sku",
-            "conflict_fields": ("skuId", ),
             "data_node": "goods"
         },
 
@@ -144,8 +120,6 @@ class JkyConfig():
                 "hasTotal": 1,
                 "enable": 1
             },
-            "hap_worksheet": "customer",
-            "conflict_fields": ("customerId", ),
             "data_node": None
         },
 
@@ -159,8 +133,6 @@ class JkyConfig():
                 "hasTotal": 1, 
                 "fields": "totalResults,trades,checkTotal,tradeNo,otherFee,chargeCurrency,accountName,payType,payNo,sellerMemo,buyerMemo,goodsDetail,goodsDetail.goodsNo,goodsDetail.goodsName,goodsDetail.specName,goodsDetail.barcode,goodsDetail.sellCount,goodsDetail.unit,goodsDetail.sellPrice,goodsDetail.sellTotal,goodsDetail.cost,goodsDetail.discountTotal,goodsDetail.discountPoint,goodsDetail.taxFee,goodsDetail.shareFavourableFee,goodsDetail.estimateWeight,goodsDetail.goodsMemo,goodsDetail.cateName,goodsDetail.brandName,goodsDetail.goodsTags,goodsDetail.isFit,goodsDetail.isGift,goodsDetail.discountFee,goodsDetail.taxRate,goodsDetail.estimateGoodsVolume,goodsDetail.isPresell,goodsDetail.customerPrice,goodsDetail.customerTotal,goodsDetail.tradeGoodsNo,goodsDetail.tradeGoodsName,goodsDetail.tradeGoodsSpec,goodsDetail.tradeGoodsUnit,goodsDetail.sourceSubtradeNo,goodsDetail.platCode,goodsDetail.platGoodsId,goodsDetail.subTradeId,goodsDetail.goodsDelivery,goodsDelivery.sendCount,goodsDelivery.productionDate,goodsDelivery.expirationDate,goodsDelivery.batchNo,goodsDelivery.expireDate,goodsDelivery.productDate,goodsDetail.platAuthorId,goodsDetail.platAuthorName,goodsDetail.isPlatGift,goodsDetail.goodsPlatDiscountFee,goodsDetail.tradeOrderGoodsDiscountInfoDtoList,tradeOrderGoodsDiscountInfoDtoList.discountFee,tradeOrderGoodsDiscountInfoDtoList.discountName,goodsDetail.shareFavourableAfterFee,goodsDetail.divideSellTotal,goodsDetail.shareOrderDiscountFee,goodsDetail.shareOrderPlatDiscountFee,goodsDetail.sourceTradeNo,goodsDetail.actualSendCount,goodsDetail.platSkuId,goodsDetail.customerTradeNo,goodsDetail.customerSubtradeNo,goodsDetail.PlatCustomData,goodsDetail.assessmentCostLocal,goodsDetail.assessmentGrossProfitLocal,goodsDetail.assessmentGrossProfitPercent,goodsDetail.goodsCompassSourceContentType,goodsDetail.goodsSeller,goodsDetail.inventoryWarehouseId,goodsDetail.inventoryWarehouseName,goodsDetail.specId,goodsDetail.goodsId,goodsDetail.outerId,goodsDetail.apiType,goodsDetail.tradeId,goodsDetail.skuImgUrl,goodsDetail.needProcessCount,goodsDetail.goodsFlagIds,goodsDetail.goodsFlagNames,appendMemo,tradeFrom,register,seller,auditor,reviewer,estimateWeight,packageWeight,tradeCount,goodsTypeCount,freezeReason,abnormalDescription,onlineTradeNo,goodslist,gmtCreate,gmtModified,stockoutNo,confirmTime,departName,lastShipTime,payStatus,chargeCurrencyCode,chargeExchangeRate,tradeStatus,grossProfit,estimateVolume,customerTypeName,customerGradeName,customerTags,customerCode,customerDiscount,specialReminding,blackList,tradeTime,country,state,city,district,town,zip,payTime,countryCode,cityCode,invoiceType,payerName,payerRegno,payerBankAccount,payerPhone,auditTime,payerAddress,invoiceNo,invoiceCode,invoiceStatus,payerBankName,preTypedetail,firstPayment,finalPayment,firstPaytime,finalPaytime,reviewTime,activationTime,customerTotalFee,customerDiscountFee,notifyPickTime,consignTime,orderNo,customerPostFee,shopId,shopName,tradeOrderPayList,customerPayment,companyName,tradeOrderColumnExt,isBillCheck,warehouseCode,warehouseName,logisticName,tradeId,billDate,logisticType,mainPostid,tradeType,totalFee,taxFee,receivedPostFee,discountFee,payment,couponFee,receivedTotal,postFee,isTableSwitch,completeTime,shopcode,signingTime,goodsSerial,otherPaymentFees,tradeOrderGoodsColumnExts,isDelete,localPayment,localExchangeRate,customerAccount,localCurrencyCode,platCompleteTime,buyerOpenUid,tradeOrderAssemblyGoodsDtoList,tradeOrderRefundTime,assemblyGoodsDetail,apiType,logisticCode,agentShopName,tradeStatusExplain,flagIds,flagNames,sysFlagIds,shopTypeCode,sourceAfterNo,ticketCodeList,allCompassSourceContentType,customerName,invoiceAmount,realFee,packageDetail.state,finReceiptTime,extraLogisticNo,warehouseId,id,govSubsidy,pickUpTime,tradeOrderPre,scrollId,chargeType,chargeCurrency,chargeAccount,accountName,payType,payNo,payment,chargeCurrencyCode,chargeExchangeRate,columnExt.tradeId,goodsSerial.subTradeId,goodsSerial.skuId,goodsSerial.serialNo,goodsSerial.serialNo2,expense.expenseFee,expense.expenseItemName,subTradeId,tradeId,tradeOrderAssemblyGoodsDtoList.goodsNo,tradeOrderAssemblyGoodsDtoList.unit,tradeOrderAssemblyGoodsDtoList.specId,tradeOrderAssemblyGoodsDtoList.goodsId,tradeOrderAssemblyGoodsDtoList.tradeId,tradeOrderAssemblyGoodsDtoList.specName,tradeOrderAssemblyGoodsDtoList.goodsName,tradeOrderAssemblyGoodsDtoList.sellCount,tradeOrderAssemblyGoodsDtoList.subTradeId,tradeOrderAssemblyGoodsDtoList.baseUnitSellCount,tradeOrderAssemblyGoodsDtoList.assemblyGoodsDelivery,tradeId,specId,batchNo,expireDate,subTradeId,productDate,packageDetail.state,packageDetail.city,packageDetail.town,packageDetail.district,packageDetail.isGift,packageDetail.barcode,packageDetail.tradeNo,packageDetail.buyerMemo,packageDetail.sellCount,packageDetail.isPlatGift,packageDetail.logisticNo,packageDetail.sellerMemo,packageDetail.consignTime,packageDetail.logisticCode,packageDetail.logisticName,packageDetail.sourceTradeNo,packageDetail.warehouseName,packageDetail.sourceSubtradeNo,frstPaytime,firstPayment,finalPaytime,finalPayment,preTypedetail,sourceTradeNo"
             },
-            "hap_worksheet": "trade",
-            "conflict_fields": ("tradeId", ),
             "data_node": "trades"
         },
 
@@ -173,8 +145,6 @@ class JkyConfig():
                 "pageIndex": None,
                 "hasTotal": 1
             },
-            "hap_worksheet": "businessOrder",
-            "conflict_fields": ("tradeNo", ),
             "data_node": None
         },
 
@@ -187,8 +157,6 @@ class JkyConfig():
                 "pageIndex": None,
                 "hasTotal": 1
             },
-            "hap_worksheet": "order",
-            "conflict_fields": None,
             "data_node": None
         },
     }
@@ -286,8 +254,6 @@ class JkyConnection(BaseConnection):
             biz_content.update(biz_content_format)
         version = source.get("version", "v1.0")
         data_node = source["data_node"]
-        # conflict_fields = source["conflict_fields"]
-        # hap_worksheetid = source["hap_worksheet"]
 
         page_size = 200
         page_index = 0
