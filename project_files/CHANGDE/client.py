@@ -20,7 +20,7 @@ class ChangdeHapConfig(HapConfig):
 hap_conn = HapConnection(config=ChangdeHapConfig)
 hap_conn.register_models([
     Currency, Group, Company, BankAccounts, Department, Staff, Channel, GoodsCate, Warehouse, Logistic,
-    CustomerSource, CustomerType, Customer,Sku, Spu, BusinessOrder, BusinessOrderGoodsDetail, TradeGoodsDetail, Trade, Order
+    CustomerSource, CustomerType, Customer, Sku, Spu, BusinessOrder, BusinessOrderGoodsDetail, TradeGoodsDetail, Trade, Order
 ])
 
 jky_conn = JkyConnection()

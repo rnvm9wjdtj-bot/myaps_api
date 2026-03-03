@@ -20,12 +20,10 @@ from apps.data_opt.utils.common import get_session
 # ❗❗❗❗❗❗❗❗❗❗❗❗⬇️不要删掉，便于各项目文件引用 ❗❗❗❗❗❗❗❗❗❗❗❗
 from globalobjects import logger as log_config, CACHE_JSON, ProjectDefaultValues as pdv
 from apps.io_api.utils.common import standard_response
-from apps.io_api.utils.db_operation import db_delete, db_bupsert, call_dbprocdure, db_query, db_bupsert, db_supsert, db_update_by_index
-# from apps.data_opt.components.hapv1 import HapConnection
+from apps.io_api.utils.db_operation import db_delete, db_bupsert, call_dbprocdure, db_query, db_supsert, db_update_by_index
 from apps.data_opt.utils.scheduler import cron_task
 from apps.data_opt.utils.common import add_basic_auth_requests
 from apps.data_opt.utils.data_processor import DataProcessor
-from apps.io_api.utils.db_operation import db_delete, db_bupsert
 
 
 # 配置日志
@@ -353,11 +351,54 @@ class ApsBaseAction(ABC):
         return response.json()
 
 
-    @classmethod
-    @abstractmethod
-    def when_mo_close(cls, mo_data: dict, *args, **kwargs):
-        """
-        当MO关闭时该方法将被自动调用
-        🅰 mo_data: MO数据
-        """
-        pass
+    # @classmethod
+    # @abstractmethod
+    # def when_mo_close(cls, mo_data: dict, *args, **kwargs):
+    #     """
+    #     当MO关闭时该方法将被自动调用
+    #     🅰 mo_data: MO数据
+    #     """
+    #     pass
+
+######### HAP MODEL #########
+from apps.data_opt.components.hap import Model as HapModel, StrField, NumField, RelationField, SubtableField, ChoiceField
+
+
+class Material(HapModel):   
+    materialno = StrField(pk=True)
+    description = StrField()
+    size = StrField()
+    plant = StrField()
+    planner = StrField()
+    fifo = NumField()
+    leadday = NumField()
+    expday = NumField()
+    grday = NumField()
+    abc = StrField()
+    unit = StrField()
+    price = NumField()
+    groupno = StrField()
+    type_ = StrField(field_name="type")
+    phantom = StrField()
+    phantommin = NumField()
+    firmday = NumField()
+    daygap = NumField()
+    candelay = StrField()
+    lotsize = StrField()
+    lotfix = NumField()
+    lotmin = NumField()
+    lotmax = NumField()
+    lotround = NumField()
+    lotss = NumField()
+    lotpoint = NumField()
+    lottop = NumField()
+    planitem = StrField()
+    preday = NumField()
+    subday = NumField()
+    free1 = StrField()
+    free2 = StrField()
+    free3 = StrField()
+    memo = StrField()
+
+    class Meta:
+        table_name = "t_material"

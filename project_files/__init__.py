@@ -43,7 +43,7 @@ def handle_update_supply(database: str, table: str, data: dict, data_diff: dict)
         project_client.ApsAction.click_release_button(no_now)
 
 
-    # 工单关闭
-    if type_now == 'MO' and status_now == OrderStatusEnum.CMP.value:
-        project_client.ApsAction.when_mo_close(data_now)
+    # # 工单关闭
+    # if type_now == 'MO' and status_now == OrderStatusEnum.CMP.value:
+    #     project_client.ApsAction.when_mo_close(data_now)
 

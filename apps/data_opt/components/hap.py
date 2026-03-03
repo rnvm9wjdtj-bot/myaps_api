@@ -1667,11 +1667,11 @@ class HapUtils:
 
 class HapConfig:
     _SAAS_ENV = "https://api.mingdao.com"
-    MAX_WORKERS = os.cpu_count() * 10
+    MAX_WORKERS = os.cpu_count() * 5
     # 调用刷新函数时，距离上次刷新超过这个秒数，才会刷新行数据，否则直接返回缓存数据
     REFRESH_INTERVAL_SECONDS = 60
     BASE_URL = CACHE_JSON.get("hap", {}).get("base_url", _SAAS_ENV)
-    # QPS 限制，SAAS环境默认 50，私有部署默认 100
+    # QPS 限制，SAAS环境默认 50，私有部署默认 1000
     QPS_LIMIT = 50 if BASE_URL == _SAAS_ENV else 1000
     APP_KEY = CACHE_JSON.get("hap", {}).get("app_key", "")
     SIGN = CACHE_JSON.get("hap", {}).get("sign", "")
@@ -2480,18 +2480,57 @@ class HapRowSet(Generic[ModelType]):
             }
             
             # 发送请求
-            response = self.hap_conn._post(endpoint, payload)
-            
-            # 处理响应
-            if response.get('success'):
-                row_ids = response.get('data', {}).get('rowIds', [])
-                for j, row_id in enumerate(row_ids):
-                    if i + j < total_items:
-                        # 创建模型实例
-                        model_instance = self.model(**processed_batch_data[j])
-                        model_instance.row_id = row_id
-                        self.row_objects.append(model_instance)
-                        created_models.append(model_instance)
+            try:
+                response = self.hap_conn._post(endpoint, payload)
+                
+                # 处理响应
+                if response.get('success'):
+                    row_ids = response.get('data', {}).get('rowIds', [])
+                    for j, row_id in enumerate(row_ids):
+                        if i + j < total_items:
+                            # 创建模型实例
+                            model_instance = self.model(**processed_batch_data[j])
+                            model_instance.row_id = row_id
+                            self.row_objects.append(model_instance)
+                            created_models.append(model_instance)
+                else:
+                    # 记录失败信息
+                    error_msg = response.get('message', 'Unknown error')
+                    console_log.error(f"批量创建失败，批次 {i//batch_size + 1}: {error_msg}")
+                    # 尝试单条创建失败的数据
+                    for data in processed_batch_data:
+                        try:
+                            # 单条创建
+                            single_response = self.hap_conn._post(endpoint, {
+                                "rows": [{'fields': HapUtils.convert_data_to_fieldslist(data, model=self.model)}],
+                                "triggerWorkflow": True
+                            })
+                            if single_response.get('success'):
+                                row_id = single_response.get('data', {}).get('rowIds', [])[0]
+                                model_instance = self.model(**data)
+                                model_instance.row_id = row_id
+                                self.row_objects.append(model_instance)
+                                created_models.append(model_instance)
+                        except Exception as e:
+                            console_log.error(f"单条创建失败: {data}, 错误: {e}")
+            except Exception as e:
+                # 捕获网络等异常
+                console_log.error(f"批量创建请求失败，批次 {i//batch_size + 1}: {e}")
+                # 尝试单条创建
+                for data in processed_batch_data:
+                    try:
+                        single_response = self.hap_conn._post(endpoint, {
+                            "rows": [{'fields': HapUtils.convert_data_to_fieldslist(data, model=self.model)}],
+                            "triggerWorkflow": True
+                        })
+                        if single_response.get('success'):
+                            row_id = single_response.get('data', {}).get('rowIds', [])[0]
+                            model_instance = self.model(**data)
+                            model_instance.row_id = row_id
+                            self.row_objects.append(model_instance)
+                            created_models.append(model_instance)
+                    except Exception as single_error:
+                        console_log.error(f"单条创建失败: {data}, 错误: {single_error}")
         
         # 批量更新缓存
         self.hap_conn._update_cache_for_instances(created_models)
@@ -2688,108 +2727,148 @@ class HapRowSet(Generic[ModelType]):
         # 分类数据：需要更新的和需要创建的
         to_update = []
         to_create = []
+        failed_data = []  # 记录处理失败的数据
         
         # 构建批量查询条件
         field_map = self.model._get_field_map()
         batch_conditions = []
         data_map = {}
         
-        for data_dict in data_list:
-            filter_conditions = []
-            
-            # 优先使用主键字段判断
-            if pk_field:
-                pk_field_name = field_map[pk_field]
-                if pk_field in data_dict:
-                    match_value = data_dict[pk_field]
+        try:
+            for data_dict in data_list:
+                filter_conditions = []
+                
+                # 优先使用主键字段判断
+                if pk_field:
+                    pk_field_name = field_map[pk_field]
+                    if pk_field in data_dict:
+                        match_value = data_dict[pk_field]
+                    else:
+                        match_value = data_dict[pk_field_name]
+                    filter_conditions.append(f'{pk_field_name}__eq=\"{match_value}\"')
+                # 其次使用冲突字段判断
+                elif conflict_fields:
+                    for field in conflict_fields:
+                        match_value = None
+                        if field in data_dict:
+                            match_value = data_dict[field]
+                            filter_conditions.append(f'{field}__eq=\"{match_value}\"')
+                        elif field in field_map:
+                            c_field_name = field_map[field]
+                            if c_field_name in data_dict:
+                                match_value = data_dict[c_field_name]
+                                filter_conditions.append(f'{c_field_name}__eq=\"{match_value}\"')
+                
+                if filter_conditions:
+                    condition_str = " && ".join(filter_conditions)
+                    batch_conditions.append(condition_str)
+                    data_map[condition_str] = data_dict
                 else:
-                    match_value = data_dict[pk_field_name]
-                filter_conditions.append(f'{pk_field_name}__eq=\"{match_value}\"')
-            # 其次使用冲突字段判断
-            elif conflict_fields:
-                for field in conflict_fields:
-                    match_value = None
-                    if field in data_dict:
-                        match_value = data_dict[field]
-                        filter_conditions.append(f'{field}__eq=\"{match_value}\"')
-                    elif field in field_map:
-                        c_field_name = field_map[field]
-                        if c_field_name in data_dict:
-                            match_value = data_dict[c_field_name]
-                            filter_conditions.append(f'{c_field_name}__eq=\"{match_value}\"')
-            
-            if filter_conditions:
-                condition_str = " && ".join(filter_conditions)
-                batch_conditions.append(condition_str)
-                data_map[condition_str] = data_dict
-            else:
-                to_create.append(data_dict)
+                    to_create.append(data_dict)
+        except Exception as e:
+            console_log.error(f"构建查询条件失败: {e}")
+            # 所有数据都作为需要创建处理
+            to_create.extend(data_list)
+            batch_conditions = []
         
         # 批量查询
         if batch_conditions:
-            # 构建 OR 条件
-            or_condition = " || ".join([f"({cond})" for cond in batch_conditions])
-            existing_rows = self.hap_conn.rows(self.model).filter(or_condition).all()
-            
-            # 构建查询结果映射
-            existing_map = {}
-            for model_instance in existing_rows.row_objects:
-                # 构建唯一键
-                key_parts = []
-                if pk_field:
-                    pk_value = getattr(model_instance, pk_field)
-                    key_parts.append(f'{field_map[pk_field]}__eq=\"{pk_value}\"')
-                elif conflict_fields:
-                    for field in conflict_fields:
-                        field_value = getattr(model_instance, field)
-                        key_parts.append(f'{field}__eq=\"{field_value}\"')
-                if key_parts:
-                    key = " && ".join(key_parts)
-                    existing_map[key] = model_instance
-            
-            # 分类数据
-            for condition_str, data_dict in data_map.items():
-                if condition_str in existing_map:
-                    to_update.append((existing_map[condition_str], data_dict))
-                else:
-                    to_create.append(data_dict)
+            try:
+                # 构建 OR 条件
+                or_condition = " || ".join([f"({cond})" for cond in batch_conditions])
+                existing_rows = self.hap_conn.rows(self.model).filter(or_condition).all()
+                
+                # 构建查询结果映射
+                existing_map = {}
+                for model_instance in existing_rows.row_objects:
+                    # 构建唯一键
+                    key_parts = []
+                    if pk_field:
+                        pk_value = getattr(model_instance, pk_field)
+                        key_parts.append(f'{field_map[pk_field]}__eq=\"{pk_value}\"')
+                    elif conflict_fields:
+                        for field in conflict_fields:
+                            field_value = getattr(model_instance, field)
+                            key_parts.append(f'{field}__eq=\"{field_value}\"')
+                    if key_parts:
+                        key = " && ".join(key_parts)
+                        existing_map[key] = model_instance
+                
+                # 分类数据
+                for condition_str, data_dict in data_map.items():
+                    if condition_str in existing_map:
+                        to_update.append((existing_map[condition_str], data_dict))
+                    else:
+                        to_create.append(data_dict)
+            except Exception as e:
+                console_log.error(f"批量查询失败: {e}")
+                # 查询失败，所有数据都作为需要创建处理
+                to_create.extend(data_map.values())
         
         # 批量更新
         updated_models = []
         if to_update:
-            # 按更新数据分组
-            update_groups = {}
-            for model_instance, data_dict in to_update:
-                # 构建更新数据
-                update_data = {}
-                for key, value in data_dict.items():
-                    if key not in ['row_id', 'hap_conn']:
-                        update_data[key] = value
-                
+            try:
                 # 按更新数据分组
-                data_key = str(update_data)
-                if data_key not in update_groups:
-                    update_groups[data_key] = {
-                        "data": update_data,
-                        "models": []
-                    }
-                update_groups[data_key]["models"].append(model_instance)
-            
-            # 执行批量更新
-            for group in update_groups.values():
-                # 创建 HapRowSet 并执行批量更新
-                row_set = HapRowSet(models=group["models"], model=self.model, hap_conn=self.hap_conn)
-                updated = row_set.update(**group["data"], when_value_equal_then=when_value_equal_then)
-                updated_models.extend(updated)
+                update_groups = {}
+                for model_instance, data_dict in to_update:
+                    # 构建更新数据
+                    update_data = {}
+                    for key, value in data_dict.items():
+                        if key not in ['row_id', 'hap_conn']:
+                            update_data[key] = value
+                    
+                    # 按更新数据分组
+                    data_key = str(update_data)
+                    if data_key not in update_groups:
+                        update_groups[data_key] = {
+                            "data": update_data,
+                            "models": []
+                        }
+                    update_groups[data_key]["models"].append(model_instance)
+                
+                # 执行批量更新
+                for group in update_groups.values():
+                    # 创建 HapRowSet 并执行批量更新
+                    row_set = HapRowSet(models=group["models"], model=self.model, hap_conn=self.hap_conn)
+                    updated = row_set.update(**group["data"], when_value_equal_then=when_value_equal_then)
+                    updated_models.extend(updated)
+            except Exception as e:
+                console_log.error(f"批量更新失败: {e}")
+                # 更新失败，将这些数据作为需要创建处理
+                for model_instance, data_dict in to_update:
+                    to_create.append(data_dict)
         
         # 批量创建
         created_models = []
         if to_create:
-            created = self.bulk_create(to_create)
-            created_models.extend(created)
+            try:
+                created = self.bulk_create(to_create)
+                created_models.extend(created)
+            except Exception as e:
+                console_log.error(f"批量创建失败: {e}")
+                # 创建失败，记录为失败数据
+                failed_data.extend(to_create)
         
         # 合并结果
         all_models = updated_models + created_models
+        
+        # 如果有失败数据，尝试单条处理
+        if failed_data:
+            console_log.info(f"尝试单条处理 {len(failed_data)} 条失败数据")
+            for data in failed_data:
+                try:
+                    # 单条 upsert
+                    result = self._process_item(data, pk_field, conflict_fields, when_value_equal_then)
+                    if result[0]:  # 更新成功
+                        all_models.append(result[0])
+                    elif result[1]:  # 需要创建
+                        # 尝试单条创建
+                        single_created = self.bulk_create([result[1]])
+                        all_models.extend(single_created)
+                except Exception as e:
+                    console_log.error(f"单条处理失败: {data}, 错误: {e}")
+        
         return all_models
 
     def _process_items_parallel(self, data_list, pk_field, conflict_fields, when_value_equal_then):

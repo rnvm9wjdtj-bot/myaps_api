@@ -95,21 +95,21 @@ async def refresh_workreport(supplyno: str):
 # ⬇️定时任务设置
 #################################################################################
 
-@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1))
-async def refresh_all_mo_workreport():
-    """
-    刷新所有报工数据
-    """
-    filelog_normal.info("⏰ 开始执行刷新所有报工数据任务")
-    db = MYAPS_MAIN_DB
-    query_response = await db_query(db_name=db, model_or_tablename='v_supply_mo', filter_string="`Status` in ('E2A','REL','CNF')")
-    if not query_response['success']:
-        return
-    supplynos_list = [item['supplyno'] for item in query_response['data']]
-    for supplyno in supplynos_list:
-        await refresh_workreport(supplyno)
-        filelog_normal.info(f"✅ 已刷新报工数据: {supplyno}")
-    return
+# @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1))
+# async def refresh_all_mo_workreport():
+#     """
+#     刷新所有报工数据
+#     """
+#     filelog_normal.info("⏰ 开始执行刷新所有报工数据任务")
+#     db = MYAPS_MAIN_DB
+#     query_response = await db_query(db_name=db, model_or_tablename='v_supply_mo', filter_string="`Status` in ('E2A','REL','CNF')")
+#     if not query_response['success']:
+#         return
+#     supplynos_list = [item['supplyno'] for item in query_response['data']]
+#     for supplyno in supplynos_list:
+#         await refresh_workreport(supplyno)
+#         filelog_normal.info(f"✅ 已刷新报工数据: {supplyno}")
+#     return
 
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute())
@@ -197,8 +197,8 @@ srm_field_map = {
     "期初盈余": "initial_surplus", "期末盈余": "last_surplus", "要求交期": "datestr",
 }
 
-# @cron_task(hour=23, minute=50)
-@cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23", minute="0,5,10,15,20,25,30,35,40,45,50,55")
+@cron_task(hour=23, minute=50)
+# @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23", minute="0,5,10,15,20,25,30,35,40,45,50,55")
 # @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23", minute="0,10,20,30,40,50")
 def push_weekpr_to_srm():
     # 推送周要货计划到SRM
@@ -219,28 +219,27 @@ def push_weekpr_to_srm():
 
 
 
-# @cron_task(day=27, hour=12, minute=55)
-# @cron_task(day=1, hour=0, minute=5)
-# def push_seasonpr_to_srm():
-#     # 每月初推送季度要货计划到SRM
-#     # 生成下三个月的月底日期列表
-#     date_list = [
-#         (datetime.now().replace(day=1) + relativedelta(months=i + 1) - relativedelta(days=1)).strftime('%Y-%m-%d')
-#         for i in range(3)
-#     ]
-#     pr_data = ApsBaseAction.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=90, groupdates=','.join(date_list), field_map=srm_field_map)
-#     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-#     for item in pr_data:
-#         item["plant"] = "1000"
-#         item["bu_code"] = werks
-#         item["version"] = timestamp
-#     response = requests.post(
-#         url=f"{srm_url}/jbl/service/execute/SRM_RECEIVE_PUSHED_DEMAND_PLAN_SERVICE",
-#         headers=srm_headers, json={"demand_plan": pr_data})
-#     if response.json().get("body", {}).get("status", "").lower() == "success":
-#         filelog_normal.info(f"推送季度要货计划到SRM：\n{pr_data}")
-#     else:
-#         filelog_error.error(f"推送季度要货计划到SRM失败：\n{response.json()}  ")
+@cron_task(day=1, hour=0, minute=5)
+def push_seasonpr_to_srm():
+    # 每月初推送季度要货计划到SRM
+    # 生成下三个月的月底日期列表
+    date_list = [
+        (datetime.now().replace(day=1) + relativedelta(months=i + 1) - relativedelta(days=1)).strftime('%Y-%m-%d')
+        for i in range(3)
+    ]
+    pr_data = ApsBaseAction.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=90, groupdates=','.join(date_list), field_map=srm_field_map)
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    for item in pr_data:
+        item["plant"] = "1000"
+        item["bu_code"] = werks
+        item["version"] = timestamp
+    response = requests.post(
+        url=f"{srm_url}/jbl/service/execute/SRM_RECEIVE_PUSHED_DEMAND_PLAN_SERVICE",
+        headers=srm_headers, json={"demand_plan": pr_data})
+    if response.json().get("body", {}).get("status", "").lower() == "success":
+        filelog_normal.info(f"推送季度要货计划到SRM：\n{pr_data}")
+    else:
+        filelog_error.error(f"推送季度要货计划到SRM失败：\n{response.json()}  ")
 
 
   
@@ -281,11 +280,3 @@ class ApsAction(ApsBaseAction):
         except Exception as e:
             cls._pl_release_failed(plno=supplyno, msg=str(e), msg_from='API')
 
-
-    @classmethod
-    async def when_mo_close(cls, supplyno: str):
-        """
-        当工单管理的状态变为'CMP'（完成）时该方法将被自动调用
-        🅰 supplyno: PL计划单编号
-        """
-        await refresh_workreport(supplyno=supplyno)

@@ -299,7 +299,8 @@ class JkyConnection(BaseConnection):
 
 
 
-from apps.data_opt.components.hap import HapConfig, HapConnection, Model, StrField, NumField, RelationField, SubtableField, ChoiceField, Q
+from .hap import HapConfig, HapConnection, Model, StrField, NumField, RelationField, SubtableField, ChoiceField, Q
+
 
 ENUM_DECODER = {
     "bankaccounts": {

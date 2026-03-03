@@ -220,6 +220,6 @@ class ApsAction(ApsBaseAction):
             a = cls._rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+')
 
 
-    @classmethod
-    def when_mo_close(cls, mo_data: dict, *args, **kwargs):
-        pass
+    # @classmethod
+    # def when_mo_close(cls, mo_data: dict, *args, **kwargs):
+    #     pass
