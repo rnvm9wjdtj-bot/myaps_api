@@ -38,6 +38,8 @@
         "itemno_prefix": "A",
         "itemno": "A01",
         "plant": "1600",
-        "planner": "haida"
+        "planner": "haida",
+        "leadday_e": 0,
+        "leadday_f": 0
     }
 }

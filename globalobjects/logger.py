@@ -205,10 +205,22 @@ class DatePrefixRotatingFileHandler(TimedRotatingFileHandler):
                 os.remove(new_filepath)
                 get_module_logger().debug(f"已删除已存在的文件: {new_filepath}")
             
-            # 重命名当前文件
+            # 重命名当前文件（带重试机制，解决Windows文件占用问题）
             if os.path.exists(self.baseFilename):
-                os.rename(self.baseFilename, new_filepath)
-                get_module_logger().debug(f"已重命名文件: {self.baseFilename} -> {new_filepath}")
+                max_retries = 10
+                retry_delay = 0.1
+                for attempt in range(max_retries):
+                    try:
+                        os.rename(self.baseFilename, new_filepath)
+                        get_module_logger().debug(f"已重命名文件: {self.baseFilename} -> {new_filepath}")
+                        break
+                    except PermissionError:
+                        if attempt < max_retries - 1:
+                            get_module_logger().debug(f"文件被占用，等待后重试 ({attempt + 1}/{max_retries})")
+                            time.sleep(retry_delay)
+                        else:
+                            get_module_logger().error(f"重命名文件失败，已达到最大重试次数: {self.baseFilename}")
+                            raise
         
         # 重新打开文件
         self.mode = 'a'

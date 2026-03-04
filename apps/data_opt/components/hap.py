@@ -913,17 +913,6 @@ class SubtableField(Field):
         return processed_data
 
 
-# TODO 选项集属性
-# class ChoiceProperty(NamedTuple):
-#     """单个选项属性"""
-#     key: str
-#     value: str
-#     index: int
-#     score: float = 0.0
-#     is_delete: bool = False
-
-
-
 # Model基类
 ModelType = TypeVar('ModelType', bound='Model')
 
@@ -2455,13 +2444,9 @@ class HapRowSet(Generic[ModelType]):
         batch_size = 100
         total_items = len(data_list)
         created_models = []
-        
+        endpoint = f"/v3/app/worksheets/{self.model.get_worksheet_id()}/rows/batch"
         for i in range(0, total_items, batch_size):
             batch_data = data_list[i:i+batch_size]
-            
-            # 构建创建请求
-            endpoint = f"/v3/app/worksheets/{self.model.get_worksheet_id()}/rows/batch"
-            
             # 转换数据为字段列表
             rows_data = []
             processed_batch_data = []
@@ -2495,7 +2480,7 @@ class HapRowSet(Generic[ModelType]):
                             created_models.append(model_instance)
                 else:
                     # 记录失败信息
-                    error_msg = response.get('message', 'Unknown error')
+                    error_msg = response.get('error_msg', 'Unknown error')
                     console_log.error(f"批量创建失败，批次 {i//batch_size + 1}: {error_msg}")
                     # 尝试单条创建失败的数据
                     for data in processed_batch_data:
@@ -2624,7 +2609,7 @@ class HapRowSet(Generic[ModelType]):
                         setattr(model, key, value)
                     updated_models.append(model)
             else:
-                raise Exception(f"Failed to update model instances: {response.get('message', 'Unknown error')}")
+                raise Exception(f"Failed to update model instances: {response.get('error_msg', 'Unknown error')}")
         
         # 批量更新缓存
         self.hap_conn._update_cache_for_instances(updated_models)
@@ -2665,7 +2650,7 @@ class HapRowSet(Generic[ModelType]):
             self.row_objects = []
             return True
         else:
-            raise Exception(f"Failed to delete model instances: {response.get('message', 'Unknown error')}")
+            raise Exception(f"Failed to delete model instances: {response.get('error_msg', 'Unknown error')}")
 
     def _process_item(self, data_dict, pk_field, conflict_fields, when_value_equal_then):
         """处理单个数据项的 upsert 操作"""
@@ -2729,10 +2714,8 @@ class HapRowSet(Generic[ModelType]):
         to_create = []
         failed_data = []  # 记录处理失败的数据
         
-        # 构建批量查询条件
+        # 逐行构建筛选条件并立即查询
         field_map = self.model._get_field_map()
-        batch_conditions = []
-        data_map = {}
         
         try:
             for data_dict in data_list:
@@ -2760,50 +2743,34 @@ class HapRowSet(Generic[ModelType]):
                                 filter_conditions.append(f'{c_field_name}__eq=\"{match_value}\"')
                 
                 if filter_conditions:
-                    condition_str = " && ".join(filter_conditions)
-                    batch_conditions.append(condition_str)
-                    data_map[condition_str] = data_dict
+                    try:
+                        # 构建查询条件
+                        condition_str = " && ".join(filter_conditions)
+                        # 立即执行查询
+                        existing_rows = self.hap_conn.rows(self.model).filter(condition_str).all()
+                        rows_count = existing_rows.count()
+                        
+                        if rows_count == 1:
+                            # 找到一条记录，需要更新
+                            existing_model = existing_rows.first()
+                            to_update.append((existing_model, data_dict))
+                        elif rows_count > 1:
+                            # 找到多条记录，删除后创建新记录
+                            existing_rows.delete()
+                            to_create.append(data_dict)
+                        else:
+                            # 没有找到记录，需要创建
+                            to_create.append(data_dict)
+                    except Exception as e:
+                        console_log.error(f"查询数据失败: {data_dict}, 错误: {e}")
+                        # 查询失败，作为需要创建处理
+                        to_create.append(data_dict)
                 else:
                     to_create.append(data_dict)
         except Exception as e:
             console_log.error(f"构建查询条件失败: {e}")
             # 所有数据都作为需要创建处理
             to_create.extend(data_list)
-            batch_conditions = []
-        
-        # 批量查询
-        if batch_conditions:
-            try:
-                # 构建 OR 条件
-                or_condition = " || ".join([f"({cond})" for cond in batch_conditions])
-                existing_rows = self.hap_conn.rows(self.model).filter(or_condition).all()
-                
-                # 构建查询结果映射
-                existing_map = {}
-                for model_instance in existing_rows.row_objects:
-                    # 构建唯一键
-                    key_parts = []
-                    if pk_field:
-                        pk_value = getattr(model_instance, pk_field)
-                        key_parts.append(f'{field_map[pk_field]}__eq=\"{pk_value}\"')
-                    elif conflict_fields:
-                        for field in conflict_fields:
-                            field_value = getattr(model_instance, field)
-                            key_parts.append(f'{field}__eq=\"{field_value}\"')
-                    if key_parts:
-                        key = " && ".join(key_parts)
-                        existing_map[key] = model_instance
-                
-                # 分类数据
-                for condition_str, data_dict in data_map.items():
-                    if condition_str in existing_map:
-                        to_update.append((existing_map[condition_str], data_dict))
-                    else:
-                        to_create.append(data_dict)
-            except Exception as e:
-                console_log.error(f"批量查询失败: {e}")
-                # 查询失败，所有数据都作为需要创建处理
-                to_create.extend(data_map.values())
         
         # 批量更新
         updated_models = []
