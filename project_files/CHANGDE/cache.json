@@ -5,8 +5,8 @@
     },
     "hap": {
         "base_url": "http://146.56.216.100:8880/api",
-        "app_key": "c66555329030c79e",
-        "sign": "NzkyMGQwMmI4Nzg3MDdkOWIxOTAwOTRmNmQ2NWMwNjVjNzAyNDNlNDZhMDJmNDMyMDdjOWM1N2ZmNzUxYTcwYg==",
+        "app_key": "19e462d66f2952af",
+        "sign": "NWViY2QxMmFiOWJlZDc3YjI3ZjgwMjdmODRjMzJjYjMxYTE1MmVlZDZmZTAzNjE3YTJjODFkNmFiZDJjMDQxNg==",
         "description": null
     }
 }

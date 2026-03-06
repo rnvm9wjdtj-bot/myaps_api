@@ -34,7 +34,7 @@ from pymysqlreplication.row_event import (
     DeleteRowsEvent,
 )
 
-from config.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST
+from config.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_DBMONITOR
 
 
 logger = logging.getLogger(__name__)
@@ -95,7 +95,7 @@ class MySQLBinlogMonitor:
             if field not in self.mysql_settings or not self.mysql_settings[field]:
                 missing_fields.append(field)
         
-        if missing_fields:
+        if missing_fields and TURNON_DBMONITOR:
             raise ValueError(f"❌ 缺少必要的MySQL配置: {', '.join(missing_fields)}")
         
         # 检查数据库配置

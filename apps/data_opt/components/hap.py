@@ -1,22 +1,134 @@
 """
-明道云 API v3 封装为 ORM，V2.0
+HAP API v3 封装为 ORM
 """
 
 import os
 import re
 import json
 import time
+import threading
 from typing import List, Dict, Any, Optional, Union, Literal, Generator, Type, TypeVar, NamedTuple, Generic
 from datetime import datetime
 from decimal import Decimal
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import lru_cache
 
 from config.settings import BASE_DIR
+import requests
 
 from ..utils.data_processor import DataProcessor
 from ..utils.common import parallel_executor
 from ._base import get_session, filelog_normal, filelog_error, console_log, CACHE_JSON
 
+
+
+# 自适应超时管理器
+class AdaptiveTimeout:
+    """自适应超时管理器，根据网络状况动态调整超时时间"""
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+        return cls._instance
+    
+    def __init__(self, base_connect: float = 5.0, base_read: float = 60.0):
+        if not hasattr(self, '_initialized'):
+            self.base_connect_timeout = base_connect
+            self.base_read_timeout = base_read
+            self.current_connect_timeout = base_connect
+            self.current_read_timeout = base_read
+            self.success_count = 0
+            self.failure_count = 0
+            self.total_response_time = 0.0
+            self._stats_lock = threading.Lock()
+            self._initialized = True
+    
+    def record_success(self, response_time: float):
+        """记录成功请求"""
+        with self._stats_lock:
+            self.success_count += 1
+            self.total_response_time += response_time
+            if self.success_count >= 10:
+                avg_response_time = self.total_response_time / self.success_count
+                self.current_read_timeout = max(
+                    self.base_read_timeout,
+                    min(120.0, avg_response_time * 3)
+                )
+                self.current_connect_timeout = min(15.0, self.base_connect_timeout * 1.5)
+                self.success_count = 0
+                self.total_response_time = 0.0
+    
+    def record_failure(self):
+        """记录失败请求"""
+        with self._stats_lock:
+            self.failure_count += 1
+            if self.failure_count >= 3:
+                self.current_connect_timeout = min(20.0, self.current_connect_timeout * 1.5)
+                self.current_read_timeout = min(120.0, self.current_read_timeout * 1.3)
+                self.failure_count = 0
+    
+    def get_timeout(self) -> tuple:
+        """获取当前超时设置"""
+        return (self.current_connect_timeout, self.current_read_timeout)
+    
+    def reset(self):
+        """重置为默认超时"""
+        with self._stats_lock:
+            self.current_connect_timeout = self.base_connect_timeout
+            self.current_read_timeout = self.base_read_timeout
+            self.success_count = 0
+            self.failure_count = 0
+            self.total_response_time = 0.0
+
+
+# 增强的重试策略类
+class EnhancedRetryStrategy:
+    """增强的重试策略，支持指数退避和抖动"""
+    def __init__(
+        self,
+        max_retries: int = 3,
+        base_delay: float = 0.5,
+        max_delay: float = 30.0,
+        exponential_base: float = 2.0,
+        jitter: float = 0.1
+    ):
+        self.max_retries = max_retries
+        self.base_delay = base_delay
+        self.max_delay = max_delay
+        self.exponential_base = exponential_base
+        self.jitter = jitter
+    
+    def get_delay(self, attempt: int) -> float:
+        """计算重试延迟"""
+        import random
+        delay = min(self.base_delay * (self.exponential_base ** attempt), self.max_delay)
+        jitter_amount = delay * self.jitter
+        return delay + random.uniform(-jitter_amount, jitter_amount)
+    
+    def should_retry(self, attempt: int, status_code: int = None, exception: Exception = None) -> bool:
+        """判断是否应该重试"""
+        if attempt >= self.max_retries:
+            return False
+        
+        if status_code and status_code in (429, 500, 502, 503, 504):
+            return True
+        
+        if exception:
+            retryable_exceptions = (
+                ConnectionError,
+                TimeoutError,
+                ConnectionResetError,
+                ConnectionAbortedError
+            )
+            if isinstance(exception, retryable_exceptions):
+                return True
+        
+        return False
 
 
 # 令牌桶算法实现，用于控制QPS
@@ -74,7 +186,7 @@ class TokenBucket:
                 return False
             
             # 短暂睡眠，避免CPU占用过高
-            time.sleep(0.01)
+            time.sleep(min(0.1, max(0.001, tokens * 0.01)))
 
 
 # 自定义JSON编码器，用于处理Decimal类型
@@ -823,45 +935,10 @@ class SubtableField(Field):
             # 收集处理后的子表记录 row_id
             subtable_row_ids = []
             
-            # 直接检查 row_objects
+            # 直接从 upsert 结果中获取所有记录的 row_id
             for model_instance in upserted_row_set.row_objects:
                 if hasattr(model_instance, 'row_id'):
                     subtable_row_ids.append(model_instance.row_id)
-            
-            # 即使 row_objects 不为空，也尝试直接查询子表记录，确保获取所有记录的 row_id
-            # 构建查询条件
-            filter_conditions = []
-            # subtable_reverse_field_map = self.subtable_model._get_reverse_field_map()
-            
-            for subtable_data in preprocessed_data_list:
-                # 优先使用主键字段
-                # pk_field = self.subtable_model.get_pk_field()
-                if subtable_pk_field and subtable_pk_field in subtable_data:
-                    match_value = subtable_data[subtable_pk_field]
-                    # 获取主键字段的 API 字段名
-                    api_pk_field = subtable_field_map.get(subtable_pk_field, subtable_pk_field)
-                    filter_conditions.append(f'{api_pk_field}__eq="{match_value}"')
-                # 其次使用冲突字段
-                elif hasattr(self.subtable_model.Meta, 'conflict_fields'):
-                    conflict_fields = self.subtable_model.Meta.conflict_fields
-                    for field in conflict_fields:
-                        if field in subtable_data:
-                            match_value = subtable_data[field]
-                            # 获取冲突字段的 API 字段名
-                            api_field = subtable_field_map.get(field, field)
-                            filter_conditions.append(f'{api_field}__eq="{match_value}"')
-            
-            # 如果有查询条件，执行查询
-            if filter_conditions:
-                try:
-                    query = hap_conn.rows(self.subtable_model)
-                    query = query.filter(" || ".join(filter_conditions))
-                    queried_rows = query.all()
-                    for model_instance in queried_rows.row_objects:
-                        if hasattr(model_instance, 'row_id') and model_instance.row_id not in subtable_row_ids:
-                            subtable_row_ids.append(model_instance.row_id)
-                except Exception as e:
-                    pass
             
             ## 删除不在 data_source 中的子表记录
             ## 获取主记录当前挂载的子表记录 row_id
@@ -1090,7 +1167,6 @@ class Model(ABC):
         # 获取模型实例的原始数据
         original_data = self.to_dict()
         
-        # 直接使用传入的 kwargs，不再调用 _process_complex_fields
         # 因为在 upsert 操作中已经处理过了
         processed_data = kwargs
         
@@ -1252,6 +1328,133 @@ class Model(ABC):
 
 
 # 工具类，包含通用方法
+
+# 预编译正则表达式，提升性能
+_UUID_PATTERN = re.compile(r'^[0-9a-f]{18,24}$', re.IGNORECASE)
+
+
+# 字符串intern池，减少重复字符串的内存占用
+class StringInternPool:
+    """字符串intern池，用于减少重复字符串的内存占用"""
+    _instance = None
+    _pool: Dict[str, str] = {}
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+        return cls._instance
+    
+    def intern(self, s: str) -> str:
+        """Intern一个字符串，如果池中已存在则返回池中的版本"""
+        if s in self._pool:
+            return self._pool[s]
+        with self._lock:
+            if s not in self._pool:
+                self._pool[s] = s
+            return self._pool[s]
+
+
+# 数据处理管道 - 将多个处理步骤合并，减少遍历次数
+class DataProcessingPipeline:
+    """数据处理管道，将多个处理步骤合并为一次遍历"""
+    
+    @staticmethod
+    def process_row_data(data: dict) -> dict:
+        """
+        一次性处理行数据，合并多个处理步骤
+        包含：处理选项字段、排除未命名字段、排除系统字段
+        
+        Args:
+            data: 原始数据字典
+            
+        Returns:
+            dict: 处理后的数据字典
+        """
+        if not data:
+            return {}
+        
+        processed = {}
+        for k, v in data.items():
+            if k.startswith('_'):
+                continue
+            
+            if _UUID_PATTERN.match(k.lower()):
+                continue
+            
+            if isinstance(v, list) and v and isinstance(v[0], dict) and 'key' in v[0] and 'value' in v[0]:
+                picked_options = [item['value'] for item in v]
+                v = ','.join(picked_options)
+            
+            processed[k] = v
+        
+        return processed
+    
+    @staticmethod
+    def process_batch(data_list: List[dict]) -> List[dict]:
+        """批量处理数据字典列表"""
+        return [DataProcessingPipeline.process_row_data(data) for data in data_list]
+
+
+# 轻量级数据容器 - 使用__slots__减少内存占用
+class LightweightRow:
+    """轻量级行数据容器，使用__slots__减少内存占用"""
+    __slots__ = ('_data', 'row_id')
+    
+    def __init__(self, data: dict = None):
+        self._data = data or {}
+        self.row_id = self._data.get('rowid') or self._data.get('rowId')
+    
+    def __getattr__(self, name):
+        try:
+            return self._data[name]
+        except KeyError:
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+    
+    def __setattr__(self, name, value):
+        if name in self.__slots__:
+            object.__setattr__(self, name, value)
+        else:
+            self._data[name] = value
+    
+    def to_dict(self) -> dict:
+        return self._data.copy()
+    
+    def get(self, key, default=None):
+        return self._data.get(key, default)
+
+
+# 对象池管理器
+class ObjectPool:
+    """通用对象池，用于复用对象减少内存分配"""
+    
+    def __init__(self, factory, max_size: int = 1000):
+        self._factory = factory
+        self._max_size = max_size
+        self._pool: List = []
+        self._lock = threading.Lock()
+    
+    def acquire(self):
+        """获取一个对象"""
+        with self._lock:
+            if self._pool:
+                return self._pool.pop()
+        return self._factory()
+    
+    def release(self, obj):
+        """归还一个对象"""
+        with self._lock:
+            if len(self._pool) < self._max_size:
+                self._pool.append(obj)
+    
+    def clear(self):
+        """清空对象池"""
+        with self._lock:
+            self._pool.clear()
+
+
 class HapUtils:
     """
     明道云工具类，包含通用方法
@@ -1704,20 +1907,159 @@ class HapConnection:
             read_timeout=60.0,    # 增加读取超时时间
         )
         
+        # 初始化自适应超时管理器
+        self.timeout_manager = AdaptiveTimeout(
+            base_connect=5.0,
+            base_read=60.0
+        )
+        
+        # 初始化增强重试策略
+        self.retry_strategy = EnhancedRetryStrategy(
+            max_retries=3,
+            base_delay=0.5,
+            max_delay=30.0,
+            exponential_base=2.0,
+            jitter=0.1
+        )
+        
         # 初始化线程池
-        from concurrent.futures import ThreadPoolExecutor
         self.executor = ThreadPoolExecutor(max_workers=self.max_workers)
+        
+        # 内存监控相关
+        self._memory_threshold_mb = 500  # 内存阈值（MB），超过时触发清理
+        self._cache_max_size = 10000  # 每个模型缓存的最大记录数
+        self._enable_memory_management = True  # 是否启用内存管理
         
         # 启动缓存定时刷新任务
         self._start_cache_refresh_task()
+    
+    def get_memory_usage(self) -> dict:
+        """获取当前内存使用情况"""
+        import sys
+        try:
+            import psutil
+            process = psutil.Process()
+            memory_info = process.memory_info()
+            return {
+                'rss_mb': memory_info.rss / 1024 / 1024,
+                'vms_mb': memory_info.vms / 1024 / 1024,
+                'python_objects': len(gc.get_objects()) if 'gc' in globals() else 0
+            }
+        except ImportError:
+            return {
+                'rss_mb': 0,
+                'vms_mb': 0,
+                'python_objects': 0
+            }
+    
+    def _check_memory_and_cleanup(self) -> bool:
+        """检查内存使用情况，必要时进行清理，返回是否进行了清理"""
+        if not self._enable_memory_management:
+            return False
+        
+        try:
+            import psutil
+            process = psutil.Process()
+            memory_info = process.memory_info()
+            memory_mb = memory_info.rss / 1024 / 1024
+            
+            if memory_mb > self._memory_threshold_mb:
+                console_log.warning(f"内存使用过高 ({memory_mb:.1f}MB)，开始清理缓存...")
+                self._cleanup_cache()
+                return True
+        except ImportError:
+            pass
+        return False
+    
+    def _cleanup_cache(self):
+        """清理缓存，释放内存"""
+        for worksheet_id in list(self.cache_data.keys()):
+            cache_dict = self.cache_data[worksheet_id]
+            
+            if len(cache_dict) > self._cache_max_size:
+                sorted_items = sorted(
+                    cache_dict.items(),
+                    key=lambda x: x[1].get('_access_time', 0) if isinstance(x[1], dict) else 0
+                )
+                
+                items_to_remove = len(cache_dict) - self._cache_max_size // 2
+                for i in range(items_to_remove):
+                    row_id, _ = sorted_items[i]
+                    del cache_dict[row_id]
+                    
+                    if worksheet_id in self.cache_indexes:
+                        for index_dict in self.cache_indexes[worksheet_id].values():
+                            if row_id in index_dict:
+                                del index_dict[row_id]
+                
+                console_log.info(f"已清理缓存 {worksheet_id}，释放 {items_to_remove} 条记录")
+
+
+    def _make_request(self, method: str, url: str, **kwargs) -> requests.Response:
+        """统一的请求方法，支持自适应超时和增强重试"""
+        attempt = 0
+        last_exception = None
+        
+        while attempt <= self.retry_strategy.max_retries:
+            try:
+                start_time = time.time()
+                
+                # 获取当前自适应超时设置
+                connect_timeout, read_timeout = self.timeout_manager.get_timeout()
+                kwargs.setdefault('timeout', (connect_timeout, read_timeout))
+                
+                # 根据方法选择请求函数
+                if method.upper() == 'POST':
+                    response = self.session.post(url, **kwargs)
+                elif method.upper() == 'GET':
+                    response = self.session.get(url, **kwargs)
+                elif method.upper() == 'PATCH':
+                    response = self.session.patch(url, **kwargs)
+                elif method.upper() == 'DELETE':
+                    response = self.session.delete(url, **kwargs)
+                else:
+                    raise ValueError(f"Unsupported HTTP method: {method}")
+                
+                response_time = time.time() - start_time
+                response.raise_for_status()
+                
+                # 记录成功请求
+                self.timeout_manager.record_success(response_time)
+                
+                return response
+                
+            except Exception as e:
+                last_exception = e
+                attempt += 1
+                
+                # 记录失败请求
+                self.timeout_manager.record_failure()
+                
+                # 检查是否应该重试
+                status_code = getattr(e, 'response', None)
+                status_code = status_code.status_code if status_code else None
+                
+                if self.retry_strategy.should_retry(attempt, status_code, e):
+                    delay = self.retry_strategy.get_delay(attempt)
+                    time.sleep(delay)
+                    continue
+                else:
+                    break
+        
+        raise last_exception
 
 
     def _post(self, endpoint: str, payload: dict):
         # QPS限制检查
         self.token_bucket.wait_for_token()
         url = f"{self.base_url}{endpoint}"
-        response = self.session.post(url, headers=self.headers, json=payload)
-        response.raise_for_status()
+        
+        response = self._make_request(
+            'POST',
+            url,
+            headers=self.headers,
+            json=payload
+        )
         return response.json()
 
 
@@ -1725,8 +2067,13 @@ class HapConnection:
         # QPS限制检查
         self.token_bucket.wait_for_token()
         url = f"{self.base_url}{endpoint}"
-        response = self.session.get(url, headers=self.headers, params=params)
-        response.raise_for_status()
+        
+        response = self._make_request(
+            'GET',
+            url,
+            headers=self.headers,
+            params=params
+        )
         return response.json()
 
 
@@ -1734,8 +2081,13 @@ class HapConnection:
         # QPS限制检查
         self.token_bucket.wait_for_token()
         url = f"{self.base_url}{endpoint}"
-        response = self.session.patch(url, headers=self.headers, json=payload)
-        response.raise_for_status()
+        
+        response = self._make_request(
+            'PATCH',
+            url,
+            headers=self.headers,
+            json=payload
+        )
         return response.json()
 
 
@@ -1743,8 +2095,13 @@ class HapConnection:
         # QPS限制检查
         self.token_bucket.wait_for_token()
         url = f"{self.base_url}{endpoint}"
-        response = self.session.delete(url, headers=self.headers, json=payload)
-        response.raise_for_status()
+        
+        response = self._make_request(
+            'DELETE',
+            url,
+            headers=self.headers,
+            json=payload
+        )
         return response.json()
 
 
@@ -1927,16 +2284,18 @@ class HapConnection:
             return
         
         # 更新缓存数据
-        cache_value = {}
-        cache_value['row_id'] = row_id
+        cache_value = {'row_id': row_id, '_access_time': time.time()}
         
         for field_name in cache_fields:
             if hasattr(model_instance, field_name):
-                # 标准化字段名，使用field_name作为键
                 normalized_field = HapUtils.normalize_field_name(model_instance.__class__, field_name)
                 cache_value[normalized_field] = getattr(model_instance, field_name)
         
         self.cache_data[worksheet_id][row_id] = cache_value
+        
+        # 定期检查内存使用情况
+        if hasattr(self, '_check_memory_and_cleanup'):
+            self._check_memory_and_cleanup()
         
         # 更新索引
         pk_field = model_instance.__class__.get_pk_field()
@@ -2131,23 +2490,19 @@ class HapQuerySet(Generic[ModelType]):
         """根据行ID获取单条记录"""
         worksheet_id = self.model.get_worksheet_id()
         endpoint = f"/v3/app/worksheets/{worksheet_id}/rows/{row_id}"
-        response = self.hap_conn._get(endpoint=endpoint, payload={})
+        response = self.hap_conn._get(endpoint=endpoint, params={})
 
         if response.get("success"):
             row_data = response['data']
 
-            # 处理行数据
-            processed_data = HapUtils.process_choice_fields(row_data)
-            processed_data = HapUtils.exclude_unamed_fields(processed_data)
-            processed_data = HapUtils.exclude_sys_fields(processed_data)
+            # 使用优化的数据处理管道
+            processed_data = DataProcessingPipeline.process_row_data(row_data)
             
             # 创建模型实例
             model_instance = self.model(**processed_data)
-            if 'rowid' in row_data:
-                model_instance.row_id = row_data['rowid']
-            elif 'rowId' in row_data:
-                model_instance.row_id = row_data['rowId']
-            # 设置 hap_conn 属性，用于后续的 update 操作
+            row_id_value = row_data.get('rowid') or row_data.get('rowId')
+            if row_id_value:
+                model_instance.row_id = row_id_value
             model_instance.hap_conn = self.hap_conn
             
             return model_instance
@@ -2197,11 +2552,17 @@ class HapQuerySet(Generic[ModelType]):
         """获取所有匹配的记录"""
         all_models = []
         page_index = 1
+        batch_size = min(self.page_size, 1000)
+        
+        # 预分配列表大小，减少动态扩容开销
+        if self.limit:
+            estimated_size = min(self.limit, batch_size * 2)
+            all_models = []
         
         while True:
             # 构建查询参数
             payload = {
-                "pageSize": min(self.page_size, 1000),  # 确保不超过 HAP 系统限制
+                "pageSize": batch_size,
                 "pageIndex": page_index,
                 "includeTotalCount": False,
                 "filter": self.filter_condition,
@@ -2213,21 +2574,18 @@ class HapQuerySet(Generic[ModelType]):
             response = self.hap_conn._post(endpoint=endpoint, payload=payload)
             
             if response.get('success'):
-                for row_dict in response.get('data', {}).get('rows', []):
-                    # 处理行数据
-                    processed_data = HapUtils.process_choice_fields(row_dict)
-                    processed_data = HapUtils.exclude_unamed_fields(processed_data)
-                    processed_data = HapUtils.exclude_sys_fields(processed_data)
+                rows = response.get('data', {}).get('rows', [])
+                
+                for row_dict in rows:
+                    # 使用优化的数据处理管道，一次性处理所有步骤
+                    processed_data = DataProcessingPipeline.process_row_data(row_dict)
                     
                     # 创建模型实例
                     model_instance = self.model(**processed_data)
-                    if 'rowid' in row_dict:
-                        model_instance.row_id = row_dict['rowid']
-                    elif 'rowId' in row_dict:
-                        model_instance.row_id = row_dict['rowId']
-                    # 设置 hap_conn 属性，用于后续的 update 操作
+                    row_id = row_dict.get('rowid') or row_dict.get('rowId')
+                    if row_id:
+                        model_instance.row_id = row_id
                     model_instance.hap_conn = self.hap_conn
-                    # 将查询结果添加到缓存中
                     self.hap_conn._update_cache_for_instance(model_instance)
                     all_models.append(model_instance)
             
@@ -2237,9 +2595,8 @@ class HapQuerySet(Generic[ModelType]):
                 break
             
             # 检查是否还有更多数据
-            if not response.get('success') or len(response.get('data', {}).get('rows', [])) < payload['pageSize']:
+            if not response.get('success') or len(response.get('data', {}).get('rows', [])) < batch_size:
                 break
-            
             page_index += 1
         
         self.last_query_timestamp = datetime.now().timestamp()
@@ -2303,19 +2660,17 @@ class HapQuerySet(Generic[ModelType]):
             response = self.hap_conn._post(endpoint=endpoint, payload=payload)
             
             if response.get('success'):
-                for row_dict in response.get('data', {}).get('rows', []):
-                    # 处理行数据
-                    processed_data = HapUtils.process_choice_fields(row_dict)
-                    processed_data = HapUtils.exclude_unamed_fields(processed_data)
-                    processed_data = HapUtils.exclude_sys_fields(processed_data)
+                rows = response.get('data', {}).get('rows', [])
+                
+                for row_dict in rows:
+                    # 使用优化的数据处理管道
+                    processed_data = DataProcessingPipeline.process_row_data(row_dict)
                     
                     # 创建模型实例
                     model_instance = self.model(**processed_data)
-                    if 'rowid' in row_dict:
-                        model_instance.row_id = row_dict['rowid']
-                    elif 'rowId' in row_dict:
-                        model_instance.row_id = row_dict['rowId']
-                    # 设置 hap_conn 属性，用于后续的 update 操作
+                    row_id = row_dict.get('rowid') or row_dict.get('rowId')
+                    if row_id:
+                        model_instance.row_id = row_id
                     model_instance.hap_conn = self.hap_conn
                     
                     yield model_instance
@@ -2451,8 +2806,6 @@ class HapRowSet(Generic[ModelType]):
             rows_data = []
             processed_batch_data = []
             for data_dict in batch_data:
-                # 直接使用传入的数据，不再调用 _process_complex_fields
-                # 因为在 upsert 操作中已经处理过了
                 processed_data = data_dict
                 processed_batch_data.append(processed_data)
                 
@@ -2717,6 +3070,30 @@ class HapRowSet(Generic[ModelType]):
         # 逐行构建筛选条件并立即查询
         field_map = self.model._get_field_map()
         
+        # filter_conditions = []
+        # if pk_field:
+        #     pk_values = []
+        #     pk_field_name = field_map[pk_field]
+        #     for data_dict in data_list:
+        #         if pk_field in data_dict:
+        #             pk_values.append(data_dict[pk_field])
+        #         else:
+        #             pk_values.append(data_dict[pk_field_name])
+        #     filter_conditions.append(f"{pk_field_name}__in={json.dumps(pk_values, ensure_ascii=False)}")
+        # elif conflict_fields:
+        #     for data_dict in data_list:
+        #         for field in conflict_fields:
+        #             row_filter_conditions = []
+        #             match_value = None
+        #             if field in data_dict:
+        #                 match_value = data_dict[field]
+        #                 row_filter_conditions.append(f'{field}__eq=\"{match_value}\"')
+        #             elif field in field_map:
+        #                 c_field_name = field_map[field]
+        #                 if c_field_name in data_dict:
+        #                     match_value = data_dict[c_field_name]
+        #                     row_filter_conditions.append(f'{c_field_name}__eq=\"{match_value}\"')
+        #         filter_conditions.append(' && '.join(row_filter_conditions))
         try:
             for data_dict in data_list:
                 filter_conditions = []

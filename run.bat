@@ -1,13 +1,25 @@
 @echo off
 chcp 65001 >nul
+setlocal EnableDelayedExpansion
 
-REM Configuration
-set PORT=8000
-set HOST=0.0.0.0
+REM Load environment variables from .env file
+for /f "usebackq tokens=*" %%a in (".env") do (
+    set "line=%%a"
+    set "firstchar=!line:~0,1!"
+    if not "!firstchar!"=="#" if not "!line!"=="" (
+        for /f "tokens=1,2 delims==" %%b in ("%%a") do (
+            set "%%b=%%c"
+        )
+    )
+)
+
+REM Configuration (defaults if not set in .env)
+if "%PORT%"=="" set PORT=8000
+if "%HOST%"=="" set HOST=0.0.0.0
 set APP=main:app
 set LOG_FILE=logs\fastapi_server.log
 
-REM Command line arguments support
+REM Command line arguments support (highest priority)
 if not "%~1"=="" set PORT=%~1
 
 REM Set PORT as environment variable so the application uses it

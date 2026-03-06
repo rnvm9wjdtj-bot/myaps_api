@@ -46,13 +46,13 @@ async def lifespan(app: FastAPI):
         scheduler_manager.start()
         log_config.info(f"定时任务管理器状态: {get_scheduler_status()}")
     else:
-        log_config.warning("⚠️ 定时任务管理器未启动，请确认环境变量 TRUNON_SCHEDULER 是否配置为期望的值")
+        log_config.warning("⚠️ 定时任务管理器未启动")
     
     if TURNON_DBMONITOR:
         mysql_monitor.start_monitoring()
         log_config.info("MySQL Binlog监控已启动")
     else:
-        log_config.warning("⚠️ MySQL Binlog监控未启动，请确认环境变量 TURNON_DBMONITOR 是否配置为期望的值")
+        log_config.warning("⚠️ MySQL Binlog监控未启动")
     
     yield  # 应用运行期间
     
