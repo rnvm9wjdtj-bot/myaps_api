@@ -126,8 +126,7 @@ class SchedulerManager:
                     logger.info(f"✅ 异步任务执行完成: {func.__module__}.{func.__name__}")
                     return result
                 except Exception as e:
-                    logger.error(f"🚫 异步任务执行失败: {func.__module__}.{func.__name__}, 错误: {str(e)}", 
-                            exc_info=True)
+                    logger.error(f"🚫 异步任务执行失败: {func.__module__}.{func.__name__}, 错误: {str(e)}", exc_info=True)
                     return None
             # 为异步函数创建同步包装器
             @wraps(func)

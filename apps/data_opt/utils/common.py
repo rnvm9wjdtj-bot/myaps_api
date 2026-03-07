@@ -47,6 +47,104 @@ def get_session(
     return request_session
 
 
+def get_optimized_session(
+    retries: int = 3,
+    allowed_methods: list = ["HEAD", "GET", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"],
+    pool_connections: int = 10,
+    pool_maxsize: int = 10,
+    connect_timeout: float = 10.0,
+    read_timeout: float = 30.0,
+    enable_http2: bool = True,
+    enable_warmup: bool = False,
+):
+    """获取优化的 Session 实例
+    
+    支持 HTTP/2 和连接池预热等优化功能。
+    
+    Args:
+        retries: 重试次数
+        allowed_methods: 允许重试的HTTP方法
+        pool_connections: 连接池中的最大连接数
+        pool_maxsize: 连接池中每个主机的最大连接数
+        connect_timeout: 连接超时时间
+        read_timeout: 读取超时时间
+        enable_http2: 是否启用 HTTP/2 支持（默认 True）
+        enable_warmup: 是否启用连接池预热（默认 False）
+        
+    Returns:
+        requests.Session: Session 实例
+    """
+    # 尝试使用 httpx 启用 HTTP/2
+    if enable_http2:
+        try:
+            import httpx
+            logger.info("使用 httpx 启用 HTTP/2 支持")
+            client = httpx.Client(
+                http2=True,
+                timeout=httpx.Timeout(
+                    connect=connect_timeout,
+                    read=read_timeout
+                ),
+                limits=httpx.Limits(
+                    max_keepalive_connections=pool_connections,
+                    max_connections=pool_maxsize
+                ),
+                verify=False
+            )
+            # 包装为 requests.Session 兼容接口
+            class HttpxSessionWrapper:
+                def __init__(self, client):
+                    self._client = client
+                    self.headers = {}
+                
+                def request(self, method, url, **kwargs):
+                    headers = {**self.headers, **kwargs.pop('headers', {})}
+                    response = self._client.request(method, url, headers=headers, **kwargs)
+                    return response
+                
+                def get(self, url, **kwargs):
+                    return self.request('GET', url, **kwargs)
+                
+                def post(self, url, **kwargs):
+                    return self.request('POST', url, **kwargs)
+                
+                def patch(self, url, **kwargs):
+                    return self.request('PATCH', url, **kwargs)
+                
+                def delete(self, url, **kwargs):
+                    return self.request('DELETE', url, **kwargs)
+                
+                def head(self, url, **kwargs):
+                    return self.request('HEAD', url, **kwargs)
+                
+                def close(self):
+                    self._client.close()
+                
+                def mount(self, *args, **kwargs):
+                    pass
+            
+            return HttpxSessionWrapper(client)
+        except ImportError:
+            logger.warning("httpx 未安装，回退到 requests（不支持 HTTP/2）")
+            logger.info("安装 httpx 以启用 HTTP/2: pip install httpx")
+            enable_http2 = False
+        except Exception as e:
+            logger.warning(f"启用 HTTP/2 失败: {e}，回退到 requests")
+            enable_http2 = False
+    
+    # 使用标准的 requests.Session
+    request_session = get_session(
+        retries=retries,
+        allowed_methods=allowed_methods,
+        pool_connections=pool_connections,
+        pool_maxsize=pool_maxsize,
+        connect_timeout=connect_timeout,
+        read_timeout=read_timeout
+    )
+    
+    return request_session
+
+
 def add_basic_auth_requests(
     session: Optional[Union[requests.Session, Dict[str, str]]] = None,
     username: Optional[str] = None,

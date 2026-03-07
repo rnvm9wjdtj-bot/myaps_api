@@ -31,6 +31,305 @@ from .hap import (
 ModelType = TypeVar("ModelType", bound=Model)
 
 
+class HapApiMonitor:
+    """HAP API 请求监控器
+    
+    记录所有向 HAP 发起的 API 请求，包括：
+    - 请求时间、方法、URL
+    - 请求参数、响应时间
+    - 成功/失败状态
+    - 错误信息
+    """
+    
+    def __init__(self):
+        """初始化监控器"""
+        import threading
+        self._lock = threading.Lock()
+        self._requests = []
+        self._max_records = 1000  # 最多保留 1000 条记录
+    
+    def record_request(
+        self,
+        method: str,
+        endpoint: str,
+        params: dict = None,
+        data: dict = None,
+        response_time: float = 0.0,
+        success: bool = True,
+        status_code: int = None,
+        error: str = None
+    ):
+        """记录 API 请求
+        
+        Args:
+            method: HTTP 方法（GET, POST, PATCH, DELETE）
+            endpoint: API 端点
+            params: 请求参数
+            data: 请求体数据
+            response_time: 响应时间（秒）
+            success: 是否成功
+            status_code: HTTP 状态码
+            error: 错误信息
+        """
+        import time
+        
+        record = {
+            "timestamp": time.time(),
+            "method": method,
+            "endpoint": endpoint,
+            "params": params,
+            "data": data,
+            "response_time": response_time,
+            "success": success,
+            "status_code": status_code,
+            "error": error
+        }
+        
+        with self._lock:
+            self._requests.append(record)
+            # 限制记录数量
+            if len(self._requests) > self._max_records:
+                self._requests = self._requests[-self._max_records:]
+    
+    def get_stats(self, last_n: int = 100) -> dict:
+        """获取统计数据
+        
+        Args:
+            last_n: 统计最近 N 条记录
+            
+        Returns:
+            dict: 统计信息
+        """
+        with self._lock:
+            records = self._requests[-last_n:] if last_n else self._requests
+            
+            if not records:
+                return {
+                    "total": 0,
+                    "success": 0,
+                    "failure": 0,
+                    "success_rate": 0.0,
+                    "avg_response_time": 0.0,
+                    "requests": []
+                }
+            
+            total = len(records)
+            success = sum(1 for r in records if r["success"])
+            failure = total - success
+            avg_response_time = sum(r["response_time"] for r in records) / total
+            
+            # 按端点统计
+            endpoint_stats = {}
+            for r in records:
+                endpoint = r["endpoint"]
+                if endpoint not in endpoint_stats:
+                    endpoint_stats[endpoint] = {
+                        "count": 0,
+                        "success": 0,
+                        "avg_response_time": 0.0
+                    }
+                endpoint_stats[endpoint]["count"] += 1
+                if r["success"]:
+                    endpoint_stats[endpoint]["success"] += 1
+                endpoint_stats[endpoint]["avg_response_time"] += r["response_time"]
+            
+            # 计算每个端点的平均响应时间
+            for stats in endpoint_stats.values():
+                stats["success_rate"] = stats["success"] / stats["count"] if stats["count"] > 0 else 0
+                stats["avg_response_time"] /= stats["count"]
+            
+            return {
+                "total": total,
+                "success": success,
+                "failure": failure,
+                "success_rate": success / total if total > 0 else 0,
+                "avg_response_time": avg_response_time,
+                "endpoint_stats": endpoint_stats,
+                "requests": records[-10:]  # 最近 10 条记录
+            }
+    
+    def get_recent_errors(self, limit: int = 10) -> list:
+        """获取最近的错误记录
+        
+        Args:
+            limit: 返回的记录数
+            
+        Returns:
+            list: 错误记录列表
+        """
+        with self._lock:
+            errors = [r for r in self._requests if not r["success"]]
+            return errors[-limit:]
+    
+    def clear(self):
+        """清空所有记录"""
+        with self._lock:
+            self._requests.clear()
+
+
+class AdaptiveRateController:
+    """自适应速率控制器
+    
+    根据网络状况和 QPS 动态调整 buffer_size 和 max_concurrency。
+    
+    核心机制：
+    1. 监控请求成功率和响应时间
+    2. 根据成功率动态调整并发数
+    3. 根据响应时间动态调整缓冲区大小
+    4. 遇到错误时自动降速
+    """
+    
+    def __init__(
+        self,
+        initial_buffer_size: int = None,
+        initial_concurrency: int = None,
+        min_buffer_size: int = 50,
+        max_buffer_size: int = None,
+        min_concurrency: int = 1,
+        max_concurrency: int = None,
+        target_qps: float = 10.0,
+        adjustment_interval: int = 5,
+    ):
+        """
+        初始化自适应速率控制器
+        
+        Args:
+            initial_buffer_size: 初始缓冲区大小，None 时根据 QPS 自动计算
+            initial_concurrency: 初始并发数，None 时根据 QPS 自动计算
+            min_buffer_size: 最小缓冲区大小
+            max_buffer_size: 最大缓冲区大小，None 时根据 QPS 自动计算
+            min_concurrency: 最小并发数
+            max_concurrency: 最大并发数，None 时根据 QPS 自动计算
+            target_qps: 目标 QPS（每秒请求数）
+            adjustment_interval: 调整间隔（每 N 个请求调整一次）
+        """
+        # 根据 QPS 自动计算参数
+        if initial_buffer_size is None:
+            initial_buffer_size = min(500, max(100, int(target_qps * 5)))
+        if initial_concurrency is None:
+            initial_concurrency = min(10, max(2, int(target_qps / 10)))
+        if max_buffer_size is None:
+            max_buffer_size = min(1000, max(300, int(target_qps * 10)))
+        if max_concurrency is None:
+            max_concurrency = min(20, max(5, int(target_qps / 5)))
+        
+        self.buffer_size = initial_buffer_size
+        self.concurrency = initial_concurrency
+        
+        self.min_buffer_size = min_buffer_size
+        self.max_buffer_size = max_buffer_size
+        self.min_concurrency = min_concurrency
+        self.max_concurrency = max_concurrency
+        self.target_qps = target_qps
+        self.adjustment_interval = adjustment_interval
+        
+        # 统计数据
+        self.request_count = 0
+        self.success_count = 0
+        self.failure_count = 0
+        self.total_response_time = 0.0
+        self.recent_response_times = []
+        self.recent_failures = []
+        
+        import threading
+        self._lock = threading.Lock()
+    
+    def record_request(self, success: bool, response_time: float):
+        """记录请求结果"""
+        with self._lock:
+            self.request_count += 1
+            if success:
+                self.success_count += 1
+                self.total_response_time += response_time
+                self.recent_response_times.append(response_time)
+                # 保留最近 20 次响应时间
+                if len(self.recent_response_times) > 20:
+                    self.recent_response_times.pop(0)
+            else:
+                self.failure_count += 1
+                self.recent_failures.append(response_time)
+                # 保留最近 10 次失败
+                if len(self.recent_failures) > 10:
+                    self.recent_failures.pop(0)
+    
+    def adjust(self) -> tuple:
+        """根据统计数据调整参数
+        
+        Returns:
+            tuple: (new_buffer_size, new_concurrency)
+        """
+        with self._lock:
+            # 每隔一定请求数才调整
+            if self.request_count % self.adjustment_interval != 0:
+                return self.buffer_size, self.concurrency
+            
+            # 计算成功率
+            total = self.success_count + self.failure_count
+            success_rate = self.success_count / total if total > 0 else 1.0
+            
+            # 计算平均响应时间
+            avg_response_time = (
+                sum(self.recent_response_times) / len(self.recent_response_times)
+                if self.recent_response_times else 1.0
+            )
+            
+            # 计算当前 QPS
+            current_qps = 1.0 / avg_response_time if avg_response_time > 0 else 1.0
+            
+            # 调整策略
+            new_buffer_size = self.buffer_size
+            new_concurrency = self.concurrency
+            
+            # 成功率高且 QPS 低于目标 -> 激进提速
+            if success_rate > 0.90 and current_qps < self.target_qps:
+                # 大幅增加缓冲区（减少请求次数）
+                new_buffer_size = min(self.max_buffer_size, int(self.buffer_size * 1.5))
+                # 大幅增加并发（提高吞吐量）
+                new_concurrency = min(self.max_concurrency, self.concurrency + 2)
+            
+            # 成功率一般但 QPS 远低于目标 -> 温和提速
+            elif success_rate > 0.85 and current_qps < self.target_qps * 0.5:
+                # 增加缓冲区
+                new_buffer_size = min(self.max_buffer_size, int(self.buffer_size * 1.3))
+                # 增加并发
+                new_concurrency = min(self.max_concurrency, self.concurrency + 1)
+            
+            # 成功率低或响应时间过长 -> 降速
+            elif success_rate < 0.75 or avg_response_time > 10.0:
+                # 减小缓冲区（更频繁但更小的请求）
+                new_buffer_size = max(self.min_buffer_size, int(self.buffer_size * 0.7))
+                # 减少并发（降低服务器压力）
+                new_concurrency = max(self.min_concurrency, self.concurrency - 1)
+            
+            # 连续失败 -> 大幅降速
+            elif len(self.recent_failures) >= 3:
+                new_buffer_size = max(self.min_buffer_size, int(self.buffer_size * 0.5))
+                new_concurrency = self.min_concurrency
+            
+            # 更新参数
+            self.buffer_size = new_buffer_size
+            self.concurrency = new_concurrency
+            
+            return new_buffer_size, new_concurrency
+    
+    def get_stats(self) -> dict:
+        """获取统计数据"""
+        with self._lock:
+            total = self.success_count + self.failure_count
+            return {
+                "request_count": self.request_count,
+                "success_count": self.success_count,
+                "failure_count": self.failure_count,
+                "success_rate": self.success_count / total if total > 0 else 1.0,
+                "buffer_size": self.buffer_size,
+                "concurrency": self.concurrency,
+                "avg_response_time": (
+                    sum(self.recent_response_times) / len(self.recent_response_times)
+                    if self.recent_response_times else 0
+                ),
+            }
+
+
 class AsyncHapConnection:
     """HAP 连接的异步包装器
     
@@ -56,7 +355,8 @@ class AsyncHapConnection:
     def __init__(
         self, 
         sync_conn: HapConnection, 
-        max_workers: int = None
+        max_workers: int = None,
+        enable_monitor: bool = True
     ):
         """
         初始化异步 HAP 连接
@@ -64,6 +364,7 @@ class AsyncHapConnection:
         Args:
             sync_conn: 同步 HAP 连接实例
             max_workers: 线程池最大工作线程数，默认自动计算（CPU核心数 * 5）
+            enable_monitor: 是否启用 API 监控，默认 True
         """
         import os
         self._sync_conn = sync_conn
@@ -74,6 +375,11 @@ class AsyncHapConnection:
         self._max_workers = max_workers
         # 缓存常用操作的函数引用
         self._func_cache = {}
+        # 初始化监控器
+        self._monitor = HapApiMonitor() if enable_monitor else None
+        
+        # 连接池预热（复用同步版本的预热器）
+        self._connection_warmer = getattr(sync_conn, '_connection_warmer', None)
     
     def _run_in_executor(self, func: Callable, *args, **kwargs) -> asyncio.Future:
         """在线程池中执行同步函数
@@ -95,6 +401,98 @@ class AsyncHapConnection:
         else:
             # 对于只有位置参数的情况，直接传递
             return loop.run_in_executor(self._executor, func, *args)
+    
+    def _run_with_monitor(
+        self, 
+        func: Callable, 
+        method: str,
+        endpoint: str,
+        *args, 
+        **kwargs
+    ) -> asyncio.Future:
+        """在线程池中执行同步函数并监控
+        
+        Args:
+            func: 要执行的同步函数
+            method: HTTP 方法
+            endpoint: API 端点
+            *args: 位置参数
+            **kwargs: 关键字参数
+            
+        Returns:
+            asyncio.Future: 异步 Future 对象
+        """
+        import time
+        
+        async def monitored_wrapper():
+            start_time = time.time()
+            success = True
+            error = None
+            status_code = None
+            
+            try:
+                result = await self._run_in_executor(func, *args, **kwargs)
+                return result
+            except Exception as e:
+                success = False
+                error = str(e)
+                raise
+            finally:
+                response_time = time.time() - start_time
+                
+                # 记录监控数据
+                if self._monitor:
+                    self._monitor.record_request(
+                        method=method,
+                        endpoint=endpoint,
+                        params=kwargs,
+                        response_time=response_time,
+                        success=success,
+                        error=error
+                    )
+        
+        return monitored_wrapper()
+    
+    # ==================== 监控相关方法 ====================
+    
+    def get_monitor_stats(self, last_n: int = 100) -> dict:
+        """获取 API 监控统计数据
+        
+        Args:
+            last_n: 统计最近 N 条记录
+            
+        Returns:
+            dict: 统计信息
+        """
+        if not self._monitor:
+            return {"error": "监控未启用"}
+        return self._monitor.get_stats(last_n)
+    
+    def get_recent_errors(self, limit: int = 10) -> list:
+        """获取最近的错误记录
+        
+        Args:
+            limit: 返回的记录数
+            
+        Returns:
+            list: 错误记录列表
+        """
+        if not self._monitor:
+            return []
+        return self._monitor.get_recent_errors(limit)
+    
+    def clear_monitor(self):
+        """清空监控数据"""
+        if self._monitor:
+            self._monitor.clear()
+    
+    def is_monitor_enabled(self) -> bool:
+        """检查监控是否启用
+        
+        Returns:
+            bool: 是否启用监控
+        """
+        return self._monitor is not None
     
     # ==================== 模型注册与管理 ====================
     
@@ -220,58 +618,137 @@ class AsyncHapConnection:
         self,
         model: Type[ModelType],
         data_generator,
-        buffer_size: int = 200,
-        max_concurrency: int = 2,
+        buffer_size: int = None,
+        max_concurrency: int = None,
         max_retries: int = 3,
         retry_delay: float = 1.0,
+        adaptive: bool = True,
+        target_qps: float = None,
         **kwargs
     ) -> int:
         """从生成器批量 upsert 数据（高性能版本）
         
         针对 `pull_incremental_data` 等场景优化，支持批量收集和并发处理。
-        包含错误处理和重试机制，避免网络问题导致任务失败。
+        包含错误处理、重试机制和自适应速率控制。
         
         Args:
             model: 模型类
             data_generator: 数据生成器，每次 yield 一个数据列表
-            buffer_size: 缓冲区大小，达到此数量才执行 upsert，默认 200
-            max_concurrency: 最大并发数，默认 2（避免触发 HAP 限流）
+            buffer_size: 缓冲区大小，None 时使用自适应调节
+            max_concurrency: 最大并发数，None 时使用自适应调节
             max_retries: 最大重试次数，默认 3
             retry_delay: 重试延迟（秒），默认 1.0
+            adaptive: 是否启用自适应速率控制，默认 True
+            target_qps: 目标 QPS（每秒请求数），None 时自动从 HapConfig 获取
             **kwargs: 传递给 upsert 的其他参数
             
         Returns:
             int: 处理的总记录数
             
         Example:
-            >>> data_gen = jky_conn.pull_from_source(source_name="test")
+            >>> # 自适应模式（推荐，自动从 HapConfig 获取 QPS）
             >>> count = await async_hap.upsert_from_generator(
-            ...     MyModel, 
-            ...     data_gen, 
-            ...     buffer_size=200,
-            ...     max_concurrency=2
+            ...     MyModel, data_gen, adaptive=True
             ... )
-            >>> print(f"处理了 {count} 条记录")
+            >>> 
+            >>> # 固定参数模式
+            >>> count = await async_hap.upsert_from_generator(
+            ...     MyModel, data_gen, buffer_size=200, max_concurrency=2
+            ... )
         """
         import logging
+        import time
         logger = logging.getLogger(__name__)
+        
+        # 自动从 HapConfig 获取 QPS 限制
+        if target_qps is None:
+            target_qps = getattr(self._sync_conn, 'qps_limit', 10.0)
+            logger.info(f"从 HapConfig 自动获取 QPS 限制: {target_qps}")
+        
+        # 使用智能批处理大小计算器（如果同步版本已配置）
+        smart_batch_calculator = getattr(self._sync_conn, '_batch_size_calculator', None)
+        
+        # 初始化自适应控制器
+        if adaptive:
+            # 如果提供了 buffer_size，使用提供的值；否则使用智能计算
+            if buffer_size is None and smart_batch_calculator:
+                # 先使用默认值初始化，后续根据实际数据量调整
+                initial_buffer = 200
+            else:
+                initial_buffer = buffer_size or 200
+            
+            controller = AdaptiveRateController(
+                initial_buffer_size=initial_buffer,
+                initial_concurrency=max_concurrency or 2,
+                target_qps=target_qps,
+            )
+            current_buffer_size = controller.buffer_size
+            current_concurrency = controller.concurrency
+        else:
+            # 非自适应模式，使用智能批处理大小
+            if buffer_size is None and smart_batch_calculator:
+                # 先使用默认值，后续根据实际数据调整
+                current_buffer_size = 200
+            else:
+                current_buffer_size = buffer_size or 200
+            current_concurrency = max_concurrency or 2
         
         buffer = []
         total_count = 0
-        semaphore = asyncio.Semaphore(max_concurrency)
+        semaphore = asyncio.Semaphore(current_concurrency)
         tasks = []
         
         async def do_upsert_with_retry(data_batch, batch_index):
-            """带重试的 upsert"""
+            """带重试和性能监控的 upsert"""
+            nonlocal current_buffer_size, current_concurrency, semaphore
+            
             async with semaphore:
+                start_time = time.time()
                 for attempt in range(max_retries):
                     try:
                         result = await self.upsert(model, data_batch, **kwargs)
+                        response_time = time.time() - start_time
+                        
+                        # 记录成功请求到自适应控制器
+                        if adaptive:
+                            controller.record_request(True, response_time)
+                        
+                        # 记录到监控器
+                        if self._monitor:
+                            # 安全获取 worksheet_id
+                            worksheet_id = getattr(model, '_worksheet_id', model.__name__)
+                            self._monitor.record_request(
+                                method="POST",
+                                endpoint=f"/api/v3/app/worksheets/{worksheet_id}/rows/upsert",
+                                data={"batch_size": len(data_batch)},
+                                response_time=response_time,
+                                success=True
+                            )
+                        
                         return result.count()
                     except Exception as e:
+                        response_time = time.time() - start_time
                         logger.warning(f"批次 {batch_index} 第 {attempt + 1} 次尝试失败: {e}")
+                        
+                        # 记录失败请求到自适应控制器
+                        if adaptive:
+                            controller.record_request(False, response_time)
+                        
+                        # 记录到监控器
+                        if self._monitor:
+                            # 安全获取 worksheet_id
+                            worksheet_id = getattr(model, '_worksheet_id', model.__name__)
+                            self._monitor.record_request(
+                                method="POST",
+                                endpoint=f"/api/v3/app/worksheets/{worksheet_id}/rows/upsert",
+                                data={"batch_size": len(data_batch)},
+                                response_time=response_time,
+                                success=False,
+                                error=str(e)
+                            )
+                        
                         if attempt < max_retries - 1:
-                            await asyncio.sleep(retry_delay * (attempt + 1))  # 指数退避
+                            await asyncio.sleep(retry_delay * (attempt + 1))
                         else:
                             logger.error(f"批次 {batch_index} 最终失败，跳过 {len(data_batch)} 条数据")
                             return 0
@@ -281,8 +758,32 @@ class AsyncHapConnection:
         for data in data_generator:
             buffer.extend(data)
             
-            if len(buffer) >= buffer_size:
+            if len(buffer) >= current_buffer_size:
                 batch_index += 1
+                
+                # 自适应调整参数
+                if adaptive and batch_index % 5 == 0:
+                    new_buffer_size, new_concurrency = controller.adjust()
+                    
+                    if new_concurrency != current_concurrency:
+                        # 更新信号量
+                        current_concurrency = new_concurrency
+                        semaphore = asyncio.Semaphore(current_concurrency)
+                        logger.info(f"自适应调整: 并发数 -> {current_concurrency}")
+                    
+                    if new_buffer_size != current_buffer_size:
+                        current_buffer_size = new_buffer_size
+                        logger.info(f"自适应调整: 缓冲区 -> {current_buffer_size}")
+                    
+                    # 定期输出统计信息
+                    if batch_index % 20 == 0:
+                        stats = controller.get_stats()
+                        logger.info(
+                            f"统计: 成功率={stats['success_rate']:.2%}, "
+                            f"平均响应={stats['avg_response_time']:.2f}s, "
+                            f"当前参数: buffer={current_buffer_size}, concurrency={current_concurrency}"
+                        )
+                
                 # 提交当前缓冲区的数据
                 tasks.append(asyncio.create_task(
                     do_upsert_with_retry(buffer[:], batch_index)
@@ -290,8 +791,7 @@ class AsyncHapConnection:
                 buffer = []
                 
                 # 控制并发数量，避免内存溢出
-                if len(tasks) >= max_concurrency * 2:
-                    # 等待最早的任务完成
+                if len(tasks) >= current_concurrency * 2:
                     done, pending = await asyncio.wait(
                         tasks, 
                         return_when=asyncio.FIRST_COMPLETED
@@ -318,6 +818,15 @@ class AsyncHapConnection:
                     total_count += result
                 elif isinstance(result, Exception):
                     logger.error(f"任务异常: {result}")
+        
+        # 输出最终统计
+        if adaptive:
+            stats = controller.get_stats()
+            logger.info(
+                f"完成: 总请求={stats['request_count']}, "
+                f"成功率={stats['success_rate']:.2%}, "
+                f"最终参数: buffer={stats['buffer_size']}, concurrency={stats['concurrency']}"
+            )
         
         return total_count
     
@@ -1084,11 +1593,46 @@ if __name__ == "__main__":
         await async_hap.close()
     
     
+    # -------------------------------------------------------------------------
+    # 示例 9: API 监控
+    # -------------------------------------------------------------------------
+    async def example_monitoring():
+        """API 监控示例"""
+        from .hap import hap_conn, MyModel
+        
+        # 创建异步连接（默认启用监控）
+        async_hap = AsyncHapConnection(hap_conn, enable_monitor=True)
+        
+        # 执行一些操作
+        await async_hap.upsert(MyModel, [{"name": "test1"}, {"name": "test2"}])
+        await async_hap.query(MyModel).filter(name="test").all()
+        
+        # 获取监控统计
+        stats = async_hap.get_monitor_stats(last_n=100)
+        print(f"总请求数: {stats['total']}")
+        print(f"成功率: {stats['success_rate']:.2%}")
+        print(f"平均响应时间: {stats['avg_response_time']:.2f}s")
+        print(f"各端点统计: {stats['endpoint_stats']}")
+        
+        # 获取最近的错误
+        errors = async_hap.get_recent_errors(limit=5)
+        if errors:
+            print(f"最近的错误: {len(errors)} 条")
+            for error in errors:
+                print(f"  - {error['endpoint']}: {error['error']}")
+        
+        # 清空监控数据
+        async_hap.clear_monitor()
+        
+        await async_hap.close()
+    
+    
     # 运行示例
     # asyncio.run(example_direct_call())
     # asyncio.run(example_context_manager())
     # asyncio.run(example_quick_functions())
     # asyncio.run(example_complex_query())
     # asyncio.run(example_cache_operations())
+    # asyncio.run(example_monitoring())
     
     pass

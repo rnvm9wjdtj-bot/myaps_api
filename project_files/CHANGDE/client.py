@@ -133,7 +133,12 @@ from apps.data_opt.components.ecerp_jky import (
     BusinessOrderGoodsDetail, BusinessOrder, TradeGoodsDetail, TradePay, Trade, Order
     )
 
-hap_conn = AsyncHapConnection(HapConnection())
+hap_conn = HapConnection()
+hap_conn.register_models([
+    Currency, Group, Company, BankAccounts, Department, Staff, Channel, GoodsCate, Warehouse, Logistic,
+    CustomerSource, CustomerType, Customer, Sku, Spu, BusinessOrder, BusinessOrderGoodsDetail, TradeGoodsDetail, Trade, Order
+])
+async_hap = AsyncHapConnection(hap_conn)
 
 jky_conn = JkyConnection()
 
@@ -146,7 +151,6 @@ jky_conn = JkyConnection()
 async def pull_incremental_data(source_name, model, biz_content_format, add_origin_json=False):
     data_gen = jky_conn.pull_from_source(source_name=source_name, biz_content_format=biz_content_format)
     console_log.info(f"开始处理 【{source_name}】 【{biz_content_format}】")
-    
     # 数据预处理生成器
     def preprocess_gen():
         for data in data_gen:
@@ -156,19 +160,19 @@ async def pull_incremental_data(source_name, model, biz_content_format, add_orig
             yield data
     
     time_start = datetime.now()
-    
-    # 使用优化的批量处理方法
-    # 注意：根据 HAP API 限制调整参数，避免连接被重置
-    count = await hap_conn.upsert_from_generator(
+
+    count = await async_hap.upsert_from_generator(
         model, 
         preprocess_gen(),
-        buffer_size=200,      # 每 200 条数据执行一次 upsert（避免单次请求过大）
-        max_concurrency=2,    # 最多 2 个并发请求（避免触发限流）
+        adaptive=True,        # 启用自适应速率控制
         trigger_workflow=True
     )
     
     time_end = datetime.now()
-    console_log.info(f"成功处理 【{source_name}】 【{count} 条增量数据】 【耗时{time_end - time_start}】")
+    console_log.info(f"成功处理 【{source_name}】耗时【{time_end - time_start}】")
+    stats = async_hap.get_monitor_stats()
+    console_log.info(stats)
+
 
 def get_full_data_configs():
 # 全量数据配置
@@ -227,9 +231,10 @@ def get_incremental_configs(slice_start: str, slice_end: str = None):
 #     for config in full_data_configs:
 #         pull_full_data(config["source_name"], config["model"])
 
-@cron_task(hour='0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23', minute=46)
+# @cron_task(hour='0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23', minute=46)
+@cron_task(hour=21, minute=2)
 async def sync_incremental_data():
-    incremental_data_configs = get_incremental_configs(slice_start="2026-03-05 11:00:00", slice_end="2026-03-05 12:00:00")
+    incremental_data_configs = get_incremental_configs(slice_start="2026-03-07 14:00:00", slice_end="2026-03-07 16:00:00")
     for config in incremental_data_configs:
         await pull_incremental_data(
             config["source_name"], 
@@ -237,4 +242,4 @@ async def sync_incremental_data():
             config["biz_content_format"], 
             config.get("add_origin_json", False)
         )
-    console_log.info(f"成功处理 {len(incremental_data_configs)} 条增量数据")
+    pass

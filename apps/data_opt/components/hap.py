@@ -18,9 +18,8 @@ from config.settings import BASE_DIR
 import requests
 
 from ..utils.data_processor import DataProcessor
-from ..utils.common import parallel_executor
-from ._base import get_session, filelog_normal, filelog_error, console_log, CACHE_JSON
-
+from ..utils.common import parallel_executor, get_optimized_session
+from ._base import filelog_normal, filelog_error, console_log, CACHE_JSON
 
 
 # 自适应超时管理器
@@ -839,8 +838,12 @@ class SubtableField(Field):
                     # 如果 data_source_field 是属性名，转换为字段名
                     original_key = parent_field_map[data_source_field]
                 
-                if original_key not in original_data or not DataProcessor.is_equal(original_data[original_key], source_value):
+                if original_key not in original_data:
                     need_update = True
+                else:
+                    # 深度比较子表数据内容
+                    if not self._subtable_data_equal(source_value, original_data[original_key]):
+                        need_update = True
         
         if not need_update:
             return processed_data
@@ -988,6 +991,90 @@ class SubtableField(Field):
             print(traceback.format_exc())
 
         return processed_data
+    
+    def _subtable_data_equal(self, new_value, original_value) -> bool:
+        """
+        深度比较子表数据是否相同
+        
+        Args:
+            new_value: 新的子表数据（可能是 JSON 字符串或列表）
+            original_value: 原始的子表数据（可能是 JSON 字符串或列表）
+            
+        Returns:
+            bool: 子表数据是否相同
+        """
+        try:
+            # 解析 JSON 字符串
+            if isinstance(new_value, str):
+                new_data = json.loads(new_value)
+            else:
+                new_data = new_value
+            
+            if isinstance(original_value, str):
+                original_data = json.loads(original_value)
+            else:
+                original_data = original_value
+            
+            # 比较数据类型
+            if type(new_data) != type(original_data):
+                return False
+            
+            # 比较列表长度
+            if isinstance(new_data, list):
+                if len(new_data) != len(original_data):
+                    return False
+                
+                # 按顺序比较每个元素
+                for new_item, original_item in zip(new_data, original_data):
+                    if not self._deep_equal(new_item, original_item):
+                        return False
+                return True
+            
+            # 比较字典
+            elif isinstance(new_data, dict):
+                return self._deep_equal(new_data, original_data)
+            
+            # 比较其他类型
+            else:
+                return new_data == original_data
+        except Exception:
+            # 解析失败，认为数据不同
+            return False
+    
+    def _deep_equal(self, obj1, obj2) -> bool:
+        """
+        深度比较两个对象是否相等
+        
+        Args:
+            obj1: 第一个对象
+            obj2: 第二个对象
+            
+        Returns:
+            bool: 两个对象是否相等
+        """
+        if type(obj1) != type(obj2):
+            return False
+        
+        if isinstance(obj1, dict):
+            if len(obj1) != len(obj2):
+                return False
+            for key in obj1:
+                if key not in obj2:
+                    return False
+                if not self._deep_equal(obj1[key], obj2[key]):
+                    return False
+            return True
+        
+        elif isinstance(obj1, list):
+            if len(obj1) != len(obj2):
+                return False
+            for item1, item2 in zip(obj1, obj2):
+                if not self._deep_equal(item1, item2):
+                    return False
+            return True
+        
+        else:
+            return obj1 == obj2
 
 
 # Model基类
@@ -1868,7 +1955,224 @@ class HapConfig:
     APP_KEY = CACHE_JSON.get("hap", {}).get("app_key", "")
     SIGN = CACHE_JSON.get("hap", {}).get("sign", "")
     DESCRIPTION = CACHE_JSON.get("hap", {}).get("description", "")
+    # 是否启用 HTTP/2 支持（默认 True）
+    ENABLE_HTTP2 = CACHE_JSON.get("hap", {}).get("enable_http2", True)
 
+
+class ConnectionPoolWarmer:
+    """连接池预热器
+    
+    预先建立连接，减少首次请求延迟。
+    支持预热多个目标地址，提高并发性能。
+    """
+    
+    def __init__(self, session: requests.Session, max_warm_connections: int = 5):
+        """
+        初始化连接池预热器
+        
+        Args:
+            session: requests.Session 实例
+            max_warm_connections: 最大预热连接数
+        """
+        self._session = session
+        self._max_warm_connections = max_warm_connections
+        self._warmed_urls = set()
+        self._lock = threading.Lock()
+    
+    def warm_up(self, base_url: str, headers: dict = None, timeout: float = 5.0) -> bool:
+        """
+        预热连接池
+        
+        Args:
+            base_url: 基础 URL
+            headers: 请求头
+            timeout: 超时时间
+            
+        Returns:
+            bool: 是否成功预热
+        """
+        with self._lock:
+            if base_url in self._warmed_urls:
+                return True
+            
+            try:
+                # 发送预热请求（HEAD 请求开销小）
+                for i in range(self._max_warm_connections):
+                    try:
+                        response = self._session.head(
+                            base_url,
+                            headers=headers,
+                            timeout=timeout,
+                            allow_redirects=True
+                        )
+                        if response.status_code < 500:
+                            console_log.info(f"连接池预热成功 [{i+1}/{self._max_warm_connections}]: {base_url}")
+                        else:
+                            console_log.warning(f"连接池预热返回状态码 {response.status_code}: {base_url}")
+                    except Exception as e:
+                        console_log.warning(f"连接池预热请求失败: {e}")
+                        # 继续尝试其他连接
+                
+                self._warmed_urls.add(base_url)
+                console_log.info(f"连接池预热完成: {base_url}")
+                return True
+                
+            except Exception as e:
+                console_log.error(f"连接池预热失败: {e}")
+                return False
+    
+    def is_warmed(self, base_url: str) -> bool:
+        """检查是否已预热"""
+        with self._lock:
+            return base_url in self._warmed_urls
+
+
+class SmartBatchSizeCalculator:
+    """智能批处理大小计算器
+    
+    根据数据特征动态计算最优批次大小，提高处理效率。
+    """
+    
+    def __init__(
+        self,
+        base_size: int = 200,
+        min_size: int = 50,
+        max_size: int = 500,
+        field_threshold: int = 20,
+        complexity_threshold: float = 1.0
+    ):
+        """
+        初始化智能批处理大小计算器
+        
+        Args:
+            base_size: 基础批次大小
+            min_size: 最小批次大小
+            max_size: 最大批次大小
+            field_threshold: 字段数阈值
+            complexity_threshold: 复杂度阈值
+        """
+        self.base_size = base_size
+        self.min_size = min_size
+        self.max_size = max_size
+        self.field_threshold = field_threshold
+        self.complexity_threshold = complexity_threshold
+        self._history = []
+    
+    def calculate(
+        self,
+        data_size: int,
+        field_count: int,
+        complexity_score: float = 1.0,
+        network_latency: float = 0.0
+    ) -> int:
+        """
+        计算最优批次大小
+        
+        Args:
+            data_size: 数据总量
+            field_count: 字段数量
+            complexity_score: 复杂度评分（1.0为基准）
+            network_latency: 网络延迟（毫秒）
+            
+        Returns:
+            int: 最优批次大小
+        """
+        # 基础大小
+        optimal = self.base_size
+        
+        # 根据数据量调整
+        if data_size > 10000:
+            size_factor = 1.5  # 大数据量，增大批次
+        elif data_size > 1000:
+            size_factor = 1.2
+        elif data_size < 100:
+            size_factor = 0.8  # 小数据量，减小批次
+        else:
+            size_factor = 1.0
+        
+        # 根据字段数调整
+        if field_count > self.field_threshold * 2:
+            field_factor = 0.7  # 字段多，减小批次
+        elif field_count > self.field_threshold:
+            field_factor = 0.85
+        elif field_count < 5:
+            field_factor = 1.3  # 字段少，增大批次
+        else:
+            field_factor = 1.0
+        
+        # 根据复杂度调整
+        if complexity_score > self.complexity_threshold * 2:
+            complexity_factor = 0.6
+        elif complexity_score > self.complexity_threshold:
+            complexity_factor = 0.8
+        elif complexity_score < 0.5:
+            complexity_factor = 1.2
+        else:
+            complexity_factor = 1.0
+        
+        # 根据网络延迟调整
+        if network_latency > 500:
+            latency_factor = 1.4  # 高延迟，增大批次减少请求数
+        elif network_latency > 200:
+            latency_factor = 1.2
+        elif network_latency < 50:
+            latency_factor = 0.9  # 低延迟，可以减小批次
+        else:
+            latency_factor = 1.0
+        
+        # 计算最终批次大小
+        optimal = int(
+            self.base_size * 
+            size_factor * 
+            field_factor * 
+            complexity_factor * 
+            latency_factor
+        )
+        
+        # 限制在合理范围内
+        optimal = max(self.min_size, min(self.max_size, optimal))
+        
+        # 记录历史
+        self._history.append({
+            'data_size': data_size,
+            'field_count': field_count,
+            'complexity': complexity_score,
+            'latency': network_latency,
+            'batch_size': optimal
+        })
+        
+        return optimal
+    
+    def get_average_batch_size(self, last_n: int = 10) -> float:
+        """获取最近 N 次的平均批次大小"""
+        if not self._history:
+            return self.base_size
+        recent = self._history[-last_n:]
+        return sum(h['batch_size'] for h in recent) / len(recent)
+    
+    def get_recommendation(self) -> dict:
+        """获取优化建议"""
+        if len(self._history) < 5:
+            return {'message': '数据不足，无法提供建议'}
+        
+        avg_size = self.get_average_batch_size()
+        recent = self._history[-10:]
+        
+        # 分析趋势
+        if len(recent) >= 5:
+            first_half = sum(h['batch_size'] for h in recent[:5]) / 5
+            second_half = sum(h['batch_size'] for h in recent[5:]) / 5
+            trend = 'increasing' if second_half > first_half * 1.1 else \
+                    'decreasing' if second_half < first_half * 0.9 else 'stable'
+        else:
+            trend = 'unknown'
+        
+        return {
+            'average_batch_size': avg_size,
+            'trend': trend,
+            'recommendation': '考虑调整基础批次大小' if trend != 'stable' else '当前配置良好',
+            'history_count': len(self._history)
+        }
 
 
 class HapConnection:
@@ -1897,14 +2201,16 @@ class HapConnection:
         
         # 根据 max_workers 动态调整 session 参数，确保至少 20 个连接
         session_pool_size = max(self.max_workers, 20)
-        # 初始化Session并配置性能参数
-        self.session = get_session(
+        # 初始化Session并配置性能参数（使用优化版本，支持HTTP/2和连接池预热）
+        self.session = get_optimized_session(
             retries=3,
             allowed_methods=["GET", "POST", "PATCH", "DELETE"],
             pool_connections=session_pool_size,  # 根据并发度动态调整连接池数量
             pool_maxsize=session_pool_size,     # 根据并发度动态调整最大连接数  
             connect_timeout=5.0,  # 增加连接超时时间
             read_timeout=60.0,    # 增加读取超时时间
+            enable_http2=getattr(config, 'ENABLE_HTTP2', True),   # 默认启用HTTP/2
+            enable_warmup=True,   # 启用连接池预热
         )
         
         # 初始化自适应超时管理器
@@ -1930,8 +2236,47 @@ class HapConnection:
         self._cache_max_size = 10000  # 每个模型缓存的最大记录数
         self._enable_memory_management = True  # 是否启用内存管理
         
+        # 初始化智能批处理大小计算器
+        self._batch_size_calculator = SmartBatchSizeCalculator(
+            base_size=200,
+            min_size=50,
+            max_size=500
+        )
+        
         # 启动缓存定时刷新任务
         self._start_cache_refresh_task()
+    
+    def get_optimal_batch_size(
+        self,
+        data_size: int,
+        field_count: int = 10,
+        complexity_score: float = 1.0
+    ) -> int:
+        """获取最优批处理大小
+        
+        根据数据特征动态计算最优批次大小。
+        
+        Args:
+            data_size: 数据总量
+            field_count: 字段数量
+            complexity_score: 复杂度评分
+            
+        Returns:
+            int: 最优批次大小
+        """
+        # 估算网络延迟（可以根据实际情况调整）
+        network_latency = 100.0  # 默认 100ms
+        
+        return self._batch_size_calculator.calculate(
+            data_size=data_size,
+            field_count=field_count,
+            complexity_score=complexity_score,
+            network_latency=network_latency
+        )
+    
+    def get_batch_size_recommendation(self) -> dict:
+        """获取批处理大小优化建议"""
+        return self._batch_size_calculator.get_recommendation()
     
     def get_memory_usage(self) -> dict:
         """获取当前内存使用情况"""
@@ -3292,17 +3637,6 @@ class HapRowSet(Generic[ModelType]):
         result_models = []
         create_list = []  # 存储需要创建的数据
         
-        # 处理数据列表 - 只处理一次
-        processed_data_list = []
-        for data in data_list:
-            # 处理关联字段
-            processed_data = self._process_complex_fields(data)
-
-            # 过滤掉值为 None 的字段
-            if exclude_none:
-                processed_data = {k: v for k, v in processed_data.items() if v is not None}
-            processed_data_list.append(processed_data)
-        
         # 获取主键字段
         pk_field = self.model.get_pk_field()
         
@@ -3312,8 +3646,84 @@ class HapRowSet(Generic[ModelType]):
         
         # 如果既没有主键字段也没有冲突字段，直接批量创建
         if not pk_field and not has_conflict_fields:
+            # 处理数据列表
+            processed_data_list = []
+            for data in data_list:
+                # 处理关联字段
+                processed_data = self._process_complex_fields(data)
+                
+                # 过滤掉值为 None 的字段
+                if exclude_none:
+                    processed_data = {k: v for k, v in processed_data.items() if v is not None}
+                processed_data_list.append(processed_data)
+            
             created_models = self.bulk_create(processed_data_list)
             return HapRowSet(models=created_models, model=self.model, hap_conn=self.hap_conn)
+        
+        # 调整处理顺序：先判断记录存在，再处理复杂字段
+        processed_data_list = []
+        field_map = self.model._get_field_map()
+        
+        for data in data_list:
+            # 构建查询条件
+            filter_conditions = []
+            
+            # 优先使用主键字段判断
+            if pk_field:
+                pk_field_name = field_map[pk_field]
+                if pk_field in data:
+                    match_value = data[pk_field]
+                elif pk_field_name in data:
+                    match_value = data[pk_field_name]
+                else:
+                    # 没有主键值，直接处理
+                    processed_data = self._process_complex_fields(data)
+                    if exclude_none:
+                        processed_data = {k: v for k, v in processed_data.items() if v is not None}
+                    processed_data_list.append(processed_data)
+                    continue
+                filter_conditions.append(f'{pk_field_name}__eq="{match_value}"')
+            # 其次使用冲突字段判断
+            elif conflict_fields:
+                for field in conflict_fields:
+                    match_value = None
+                    if field in data:
+                        match_value = data[field]
+                        filter_conditions.append(f'{field}__eq="{match_value}"')
+                    elif field in field_map:
+                        c_field_name = field_map[field]
+                        if c_field_name in data:
+                            match_value = data[c_field_name]
+                            filter_conditions.append(f'{c_field_name}__eq="{match_value}"')
+            
+            # 获取原始数据
+            original_data = None
+            if filter_conditions:
+                try:
+                    # 构建查询条件
+                    condition_str = " && ".join(filter_conditions)
+                    # 执行查询
+                    existing_rows = self.hap_conn.rows(self.model).filter(condition_str).all()
+                    if existing_rows.count() == 1:
+                        # 找到一条记录，获取其原始数据
+                        existing_model = existing_rows.first()
+                        # 转换为字典
+                        original_data = {}
+                        for attr_name, field in self.model._get_fields().items():
+                            field_name = field_map.get(attr_name, attr_name)
+                            if hasattr(existing_model, attr_name):
+                                original_data[field_name] = getattr(existing_model, attr_name)
+                except Exception as e:
+                    # 查询失败，继续处理
+                    pass
+            
+            # 处理复杂字段（传递原始数据进行比较）
+            processed_data = self._process_complex_fields(data, original_data)
+            
+            # 过滤掉值为 None 的字段
+            if exclude_none:
+                processed_data = {k: v for k, v in processed_data.items() if v is not None}
+            processed_data_list.append(processed_data)
         
         # 根据数据量选择处理方式
         if len(processed_data_list) > 10:  # 数据量较大时使用批量处理

@@ -217,28 +217,28 @@ class JkyConnection(BaseConnection):
                 return response_json
             except requests.exceptions.ChunkedEncodingError as e:
                 if attempt < max_retries - 1:
-                    console_log(f"ChunkedEncodingError occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
+                    console_log.error(f"ChunkedEncodingError occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
                     time.sleep(retry_delay)
                     continue
                 else:
                     raise
             except requests.exceptions.Timeout as e:
                 if attempt < max_retries - 1:
-                    console_log(f"Timeout occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
+                    console_log.error(f"Timeout occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
                     time.sleep(retry_delay)
                     continue
                 else:
                     raise
             except requests.exceptions.ConnectionError as e:
                 if attempt < max_retries - 1:
-                    console_log(f"ConnectionError occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
+                    console_log.error(f"ConnectionError occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
                     time.sleep(retry_delay)
                     continue
                 else:
                     raise
             except requests.exceptions.RequestException as e:
                 if attempt < max_retries - 1:
-                    console_log(f"RequestException occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
+                    console_log.error(f"RequestException occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
                     time.sleep(retry_delay)
                     continue
                 else:
@@ -257,7 +257,7 @@ class JkyConnection(BaseConnection):
 
         page_size = 200
         page_index = 0
-
+        row_count = 0
         while True:
             page_params = {
                 "pageSize": page_size,
@@ -289,8 +289,11 @@ class JkyConnection(BaseConnection):
                         data[k] = v
                 data_list.append(data)
             page_index += 1
+            current_page_size = len(result_data)
+            row_count += current_page_size
+            console_log.info(f"获取【{source_name}】第【{page_index}】页数据，【{current_page_size}】条，累计【{row_count}】条")
             yield data_list
-            if len(result_data) < page_size or (not "pageSize" in biz_content and page_index > 0):
+            if current_page_size < page_size or (not "pageSize" in biz_content and page_index > 0):
                 break
 
 
@@ -811,7 +814,7 @@ class Customer(Model):
 
     class Meta:
         worksheet_id = "customer"
-        cache = ["customer_id", "customer_code"]
+        # cache = ["customer_id", "customer_code"]
 
 
 # class Package(Model):
@@ -969,7 +972,7 @@ class TradePay(Model):
     pay_no = StrField(field_name="payNo", description="支付单号")
     payment = NumField(field_name="payment", description="支付金额")
     currency_code = StrField(field_name="chargeCurrencyCode", description="收款币种")
-    currency_relation = RelationField(Currency, field_name="chargeCurrencyCode__relation__", follow_with="currency_code", query_field="currency_code")
+    currency_relation = RelationField(Currency, field_name="chargeCurrencyCode__relation__", follow_with="currency_code")
     exchange_rate = NumField(field_name="chargeExchangeRate", description="结算汇率")
     trade_id = StrField(field_name="tradeId", description="吉客云销售单id")
 
@@ -1082,12 +1085,12 @@ class Trade(Model):
     class Meta:
         worksheet_id = "trade"
 
-
+    
 class Order(Model):
     order_no = StrField(field_name="orderNo", pk=True, description="发货单号")
     owner_name = StrField(field_name="ownerName", description="货主名称")
     jy_no = StrField(field_name="erporderNo", description="关联销售单号")
-    # jy_relation = RelationField(Trade, field_name="erporderNo__relation__", follow_with="jy_no", query_field="jy_no")
+    jy_relation = RelationField(Trade, field_name="erporderNo__relation__", follow_with="jy_no", query_field="jy_no")
     logistic_type = StrField(field_name="logisticTypeName", description="物流公司名称")
     order_status = StrField(field_name="orderStatusName", description="发货单状态名称")
     send_time = StrField(field_name="sendTime", description="发货时间")
