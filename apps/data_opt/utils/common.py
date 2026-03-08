@@ -83,7 +83,9 @@ def get_optimized_session(
                 http2=True,
                 timeout=httpx.Timeout(
                     connect=connect_timeout,
-                    read=read_timeout
+                    read=read_timeout,
+                    write=read_timeout,
+                    pool=connect_timeout
                 ),
                 limits=httpx.Limits(
                     max_keepalive_connections=pool_connections,
@@ -99,6 +101,9 @@ def get_optimized_session(
                 
                 def request(self, method, url, **kwargs):
                     headers = {**self.headers, **kwargs.pop('headers', {})}
+                    # 转换 requests 参数到 httpx 参数
+                    if 'allow_redirects' in kwargs:
+                        kwargs['follow_redirects'] = kwargs.pop('allow_redirects')
                     response = self._client.request(method, url, headers=headers, **kwargs)
                     return response
                 
@@ -130,6 +135,8 @@ def get_optimized_session(
             enable_http2 = False
         except Exception as e:
             logger.warning(f"启用 HTTP/2 失败: {e}，回退到 requests")
+            import traceback
+            logger.debug(f"HTTP/2 启用失败详细错误: {traceback.format_exc()}")
             enable_http2 = False
     
     # 使用标准的 requests.Session

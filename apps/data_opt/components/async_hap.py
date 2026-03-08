@@ -24,9 +24,25 @@ from typing import (
 )
 
 from .hap import (
+    CACHE_JSON,
     HapConfig, HapConnection, HapQuerySet, HapRowSet, Model, Q, Field,
     StrField, NumField, RelationField, SubtableField, ChoiceField,
 )
+
+
+# 最大并发数（默认 10）
+_MAX_CONCURRENCY:int = CACHE_JSON.get("hap", {}).get("max_concurrency", 10)
+# 初始缓冲区大小（默认 100）
+_DEFAULT_BUFFER_SIZE:int = CACHE_JSON.get("hap", {}).get("default_buffer_size", 100)
+# 自适应速率控制器配置（高优先级）
+_ADAPTIVE_MIN_BUFFER_SIZE:int = CACHE_JSON.get("hap", {}).get("adaptive_min_buffer_size", 50)
+_ADAPTIVE_SCALE_UP_FAST:float = CACHE_JSON.get("hap", {}).get("adaptive_scale_up_fast", 1.5)
+_ADAPTIVE_SCALE_UP_SLOW:float = CACHE_JSON.get("hap", {}).get("adaptive_scale_up_slow", 1.3)
+_ADAPTIVE_SCALE_DOWN:float = CACHE_JSON.get("hap", {}).get("adaptive_scale_down", 0.8)
+_ADAPTIVE_SCALE_DOWN_FAST:float = CACHE_JSON.get("hap", {}).get("adaptive_scale_down_fast", 0.5)
+_DEFAULT_MAX_RETRIES:int = CACHE_JSON.get("hap", {}).get("default_max_retries", 3)
+_DEFAULT_RETRY_DELAY:float = CACHE_JSON.get("hap", {}).get("default_retry_delay", 1.0)
+
 
 ModelType = TypeVar("ModelType", bound=Model)
 
@@ -183,7 +199,7 @@ class AdaptiveRateController:
         self,
         initial_buffer_size: int = None,
         initial_concurrency: int = None,
-        min_buffer_size: int = 50,
+        min_buffer_size: int = None,
         max_buffer_size: int = None,
         min_concurrency: int = 1,
         max_concurrency: int = None,
@@ -196,22 +212,26 @@ class AdaptiveRateController:
         Args:
             initial_buffer_size: 初始缓冲区大小，None 时根据 QPS 自动计算
             initial_concurrency: 初始并发数，None 时根据 QPS 自动计算
-            min_buffer_size: 最小缓冲区大小
+            min_buffer_size: 最小缓冲区大小，None 时使用配置默认值
             max_buffer_size: 最大缓冲区大小，None 时根据 QPS 自动计算
             min_concurrency: 最小并发数
             max_concurrency: 最大并发数，None 时根据 QPS 自动计算
             target_qps: 目标 QPS（每秒请求数）
             adjustment_interval: 调整间隔（每 N 个请求调整一次）
         """
+        # 使用配置的默认值
+        if min_buffer_size is None:
+            min_buffer_size = _ADAPTIVE_MIN_BUFFER_SIZE
+        
         # 根据 QPS 自动计算参数
         if initial_buffer_size is None:
             initial_buffer_size = min(500, max(100, int(target_qps * 5)))
         if initial_concurrency is None:
-            initial_concurrency = min(10, max(2, int(target_qps / 10)))
+            initial_concurrency = min(10, max(_MAX_CONCURRENCY, int(target_qps / 10)))
         if max_buffer_size is None:
             max_buffer_size = min(1000, max(300, int(target_qps * 10)))
         if max_concurrency is None:
-            max_concurrency = min(20, max(5, int(target_qps / 5)))
+            max_concurrency = min(20, max(_MAX_CONCURRENCY, int(target_qps / 5)))
         
         self.buffer_size = initial_buffer_size
         self.concurrency = initial_concurrency
@@ -283,28 +303,30 @@ class AdaptiveRateController:
             # 成功率高且 QPS 低于目标 -> 激进提速
             if success_rate > 0.90 and current_qps < self.target_qps:
                 # 大幅增加缓冲区（减少请求次数）
-                new_buffer_size = min(self.max_buffer_size, int(self.buffer_size * 1.5))
+                new_buffer_size = min(self.max_buffer_size, int(self.buffer_size * _ADAPTIVE_SCALE_UP_FAST))
                 # 大幅增加并发（提高吞吐量）
-                new_concurrency = min(self.max_concurrency, self.concurrency + 2)
+                new_concurrency = min(self.max_concurrency, int(self.concurrency * _ADAPTIVE_SCALE_UP_FAST))
             
             # 成功率一般但 QPS 远低于目标 -> 温和提速
             elif success_rate > 0.85 and current_qps < self.target_qps * 0.5:
                 # 增加缓冲区
-                new_buffer_size = min(self.max_buffer_size, int(self.buffer_size * 1.3))
+                new_buffer_size = min(self.max_buffer_size, int(self.buffer_size * _ADAPTIVE_SCALE_UP_SLOW))
                 # 增加并发
-                new_concurrency = min(self.max_concurrency, self.concurrency + 1)
+                new_concurrency = min(self.max_concurrency, int(self.concurrency * _ADAPTIVE_SCALE_UP_SLOW))
             
             # 成功率低或响应时间过长 -> 降速
             elif success_rate < 0.75 or avg_response_time > 10.0:
                 # 减小缓冲区（更频繁但更小的请求）
-                new_buffer_size = max(self.min_buffer_size, int(self.buffer_size * 0.7))
+                new_buffer_size = max(self.min_buffer_size, int(self.buffer_size * _ADAPTIVE_SCALE_DOWN))
                 # 减少并发（降低服务器压力）
-                new_concurrency = max(self.min_concurrency, self.concurrency - 1)
+                new_concurrency = max(self.min_concurrency, int(self.concurrency * _ADAPTIVE_SCALE_DOWN))
             
             # 连续失败 -> 大幅降速
             elif len(self.recent_failures) >= 3:
-                new_buffer_size = max(self.min_buffer_size, int(self.buffer_size * 0.5))
-                new_concurrency = self.min_concurrency
+                # 大幅减小缓冲区（更多失败时）
+                new_buffer_size = max(self.min_buffer_size, int(self.buffer_size * _ADAPTIVE_SCALE_DOWN_FAST))
+                # 大幅减少并发（失败时降低服务器压力）
+                new_concurrency = max(self.min_concurrency, int(self.concurrency * _ADAPTIVE_SCALE_DOWN_FAST))
             
             # 更新参数
             self.buffer_size = new_buffer_size
@@ -334,15 +356,16 @@ class AsyncHapConnection:
     """HAP 连接的异步包装器
     
     通过线程池将同步 HAP 操作转换为异步操作，保持与同步版本相同的 API 接口。
+    复用 HapConnection 的线程池，避免资源重复创建。
     
     Attributes:
         _sync_conn: 原始的同步 HAP 连接
-        _executor: 线程池执行器
+        _executor: 线程池执行器（复用自 sync_conn）
         _max_workers: 最大工作线程数
     
     Example:
         >>> hap_conn = HapConnection(app_key="xxx", sign="yyy")
-        >>> async_hap = AsyncHapConnection(hap_conn, max_workers=20)
+        >>> async_hap = AsyncHapConnection(hap_conn)
         >>> 
         >>> # 方式一：直接调用 upsert
         >>> result = await async_hap.upsert(MyModel, data_list)
@@ -355,7 +378,6 @@ class AsyncHapConnection:
     def __init__(
         self, 
         sync_conn: HapConnection, 
-        max_workers: int = None,
         enable_monitor: bool = True
     ):
         """
@@ -363,22 +385,13 @@ class AsyncHapConnection:
         
         Args:
             sync_conn: 同步 HAP 连接实例
-            max_workers: 线程池最大工作线程数，默认自动计算（CPU核心数 * 5）
             enable_monitor: 是否启用 API 监控，默认 True
         """
-        import os
         self._sync_conn = sync_conn
-        # 自动计算线程池大小
-        if max_workers is None:
-            max_workers = os.cpu_count() * 5 if os.cpu_count() else 20
-        self._executor = ThreadPoolExecutor(max_workers=max_workers)
-        self._max_workers = max_workers
-        # 缓存常用操作的函数引用
+        self._executor = sync_conn.executor
+        self._max_workers = sync_conn.max_workers
         self._func_cache = {}
-        # 初始化监控器
         self._monitor = HapApiMonitor() if enable_monitor else None
-        
-        # 连接池预热（复用同步版本的预热器）
         self._connection_warmer = getattr(sync_conn, '_connection_warmer', None)
     
     def _run_in_executor(self, func: Callable, *args, **kwargs) -> asyncio.Future:
@@ -620,8 +633,8 @@ class AsyncHapConnection:
         data_generator,
         buffer_size: int = None,
         max_concurrency: int = None,
-        max_retries: int = 3,
-        retry_delay: float = 1.0,
+        max_retries: int = None,
+        retry_delay: float = None,
         adaptive: bool = True,
         target_qps: float = None,
         **kwargs
@@ -636,8 +649,8 @@ class AsyncHapConnection:
             data_generator: 数据生成器，每次 yield 一个数据列表
             buffer_size: 缓冲区大小，None 时使用自适应调节
             max_concurrency: 最大并发数，None 时使用自适应调节
-            max_retries: 最大重试次数，默认 3
-            retry_delay: 重试延迟（秒），默认 1.0
+            max_retries: 最大重试次数，None 时使用配置默认值
+            retry_delay: 重试延迟（秒），None 时使用配置默认值
             adaptive: 是否启用自适应速率控制，默认 True
             target_qps: 目标 QPS（每秒请求数），None 时自动从 HapConfig 获取
             **kwargs: 传递给 upsert 的其他参数
@@ -653,12 +666,18 @@ class AsyncHapConnection:
             >>> 
             >>> # 固定参数模式
             >>> count = await async_hap.upsert_from_generator(
-            ...     MyModel, data_gen, buffer_size=200, max_concurrency=2
+            ...     MyModel, data_gen, buffer_size=_DEFAULT_BUFFER_SIZE, max_concurrency=_MAX_CONCURRENCY
             ... )
         """
         import logging
         import time
         logger = logging.getLogger(__name__)
+        
+        # 使用配置的默认值
+        if max_retries is None:
+            max_retries = _DEFAULT_MAX_RETRIES
+        if retry_delay is None:
+            retry_delay = _DEFAULT_RETRY_DELAY
         
         # 自动从 HapConfig 获取 QPS 限制
         if target_qps is None:
@@ -673,13 +692,13 @@ class AsyncHapConnection:
             # 如果提供了 buffer_size，使用提供的值；否则使用智能计算
             if buffer_size is None and smart_batch_calculator:
                 # 先使用默认值初始化，后续根据实际数据量调整
-                initial_buffer = 200
+                initial_buffer = _DEFAULT_BUFFER_SIZE
             else:
-                initial_buffer = buffer_size or 200
+                initial_buffer = buffer_size or _DEFAULT_BUFFER_SIZE
             
             controller = AdaptiveRateController(
                 initial_buffer_size=initial_buffer,
-                initial_concurrency=max_concurrency or 2,
+                initial_concurrency=max_concurrency or _MAX_CONCURRENCY,
                 target_qps=target_qps,
             )
             current_buffer_size = controller.buffer_size
@@ -688,10 +707,10 @@ class AsyncHapConnection:
             # 非自适应模式，使用智能批处理大小
             if buffer_size is None and smart_batch_calculator:
                 # 先使用默认值，后续根据实际数据调整
-                current_buffer_size = 200
+                current_buffer_size = _DEFAULT_BUFFER_SIZE
             else:
-                current_buffer_size = buffer_size or 200
-            current_concurrency = max_concurrency or 2
+                current_buffer_size = buffer_size or _DEFAULT_BUFFER_SIZE
+            current_concurrency = max_concurrency or _MAX_CONCURRENCY
         
         buffer = []
         total_count = 0
@@ -1233,14 +1252,14 @@ class AsyncHapQuerySet(Generic[ModelType]):
         self,
         data_list: List[Dict[str, Any]],
         batch_size: int = 100,
-        max_concurrency: int = 5
+        max_concurrency: int = _MAX_CONCURRENCY
     ) -> List[ModelType]:
         """并行批量 upsert，提高处理速度
         
         Args:
             data_list: 要 upsert 的数据列表
             batch_size: 每批处理数量，默认 100
-            max_concurrency: 最大并发数，默认 5
+            max_concurrency: 最大并发数，默认 _MAX_CONCURRENCY
             
         Returns:
             List[ModelType]: 处理后的模型实例列表
@@ -1371,7 +1390,7 @@ if __name__ == "__main__":
         from .hap import hap_conn, MyModel
         
         # 创建异步连接
-        async_hap = AsyncHapConnection(hap_conn, max_workers=20)
+        async_hap = AsyncHapConnection(hap_conn)
         
         # 方式 1: 直接调用 upsert
         result = await async_hap.upsert(
@@ -1448,7 +1467,7 @@ if __name__ == "__main__":
         """使用上下文管理器自动管理资源"""
         from .hap import hap_conn, ModelA, ModelB
         
-        async with AsyncHapConnection(hap_conn, max_workers=10) as async_hap:
+        async with AsyncHapConnection(hap_conn) as async_hap:
             # 并行执行多个操作
             results = await asyncio.gather(
                 async_hap.upsert(ModelA, [{"name": "test1"}]),

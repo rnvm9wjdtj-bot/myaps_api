@@ -1090,7 +1090,7 @@ class Order(Model):
     order_no = StrField(field_name="orderNo", pk=True, description="发货单号")
     owner_name = StrField(field_name="ownerName", description="货主名称")
     jy_no = StrField(field_name="erporderNo", description="关联销售单号")
-    jy_relation = RelationField(Trade, field_name="erporderNo__relation__", follow_with="jy_no", query_field="jy_no")
+    # jy_relation = RelationField(Trade, field_name="erporderNo__relation__", follow_with="jy_no", query_field="jy_no")
     logistic_type = StrField(field_name="logisticTypeName", description="物流公司名称")
     order_status = StrField(field_name="orderStatusName", description="发货单状态名称")
     send_time = StrField(field_name="sendTime", description="发货时间")

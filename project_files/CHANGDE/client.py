@@ -232,9 +232,9 @@ def get_incremental_configs(slice_start: str, slice_end: str = None):
 #         pull_full_data(config["source_name"], config["model"])
 
 # @cron_task(hour='0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23', minute=46)
-@cron_task(hour=21, minute=2)
+@cron_task(hour=19, minute=50)
 async def sync_incremental_data():
-    incremental_data_configs = get_incremental_configs(slice_start="2026-03-07 14:00:00", slice_end="2026-03-07 16:00:00")
+    incremental_data_configs = get_incremental_configs(slice_start="2026-03-01 00:00:00", slice_end="2026-03-02 00:00:00")
     for config in incremental_data_configs:
         await pull_incremental_data(
             config["source_name"], 

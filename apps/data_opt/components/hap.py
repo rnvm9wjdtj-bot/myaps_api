@@ -22,6 +22,8 @@ from ..utils.common import parallel_executor, get_optimized_session
 from ._base import filelog_normal, filelog_error, console_log, CACHE_JSON
 
 
+
+
 # 自适应超时管理器
 class AdaptiveTimeout:
     """自适应超时管理器，根据网络状况动态调整超时时间"""
@@ -248,9 +250,12 @@ class Q:
         self.negated = not self.negated
         return self
     
-    def to_filter_condition(self) -> dict:
+    def to_filter_condition(self, field_map: Optional[Dict[str, str]] = None) -> dict:
         """
         将 Q 对象转换为明道云 API 要求的筛选条件格式
+        
+        Args:
+            field_map: 属性名到 field_name 的映射字典，用于将属性名转换为字段名
         
         Returns:
             dict: 符合明道云 API 要求的筛选条件
@@ -259,7 +264,7 @@ class Q:
         if self.connector:
             children_conditions = []
             for child in self.children:
-                child_condition = child.to_filter_condition()
+                child_condition = child.to_filter_condition(field_map)
                 if child_condition:
                     children_conditions.append(child_condition)
             
@@ -290,6 +295,10 @@ class Q:
                 operator = op
             else:
                 continue
+            
+            # 使用 field_map 将属性名转换为 field_name
+            if field_map and field in field_map:
+                field = field_map[field]
             
             # 处理需要数组值的运算符
             array_operators = ['in', 'notin', 'contains', 'notcontains', 'concurrent', 'belongsto', 'notbelongsto', 'between', 'notbetween']
@@ -1707,12 +1716,13 @@ class HapUtils:
     
 
     @staticmethod
-    def expression_to_filter_condition(expression):
+    def expression_to_filter_condition(expression, field_map: Optional[Dict[str, str]] = None):
         """
         将逻辑表达式字符串转换为筛选条件JSON结构
 
         参数:
             expression: 逻辑表达式字符串，格式如 "(age__gt=18 && status__in=[\"active\",\"pending\"]) || name__isempty"
+            field_map: 属性名到 field_name 的映射字典，用于将属性名转换为字段名
             
         返回:
             符合明道云API要求的筛选条件JSON结构
@@ -1723,6 +1733,12 @@ class HapUtils:
         
         # 去除空白字符
         expression = ''.join(expression.split())
+        
+        def convert_field_name(field: str) -> str:
+            """将属性名转换为 field_name"""
+            if field_map and field in field_map:
+                return field_map[field]
+            return field
         
         def parse(expression):
             # 辅助函数：解析表达式
@@ -1788,7 +1804,7 @@ class HapUtils:
                     field = expression.replace('__isempty', '')
                     return {
                         "type": "condition",
-                        "field": field.strip(),
+                        "field": convert_field_name(field.strip()),
                         "operator": "isempty",
                         "value": []
                     }
@@ -1796,7 +1812,7 @@ class HapUtils:
                     field = expression.replace('__isnotempty', '')
                     return {
                         "type": "condition",
-                        "field": field.strip(),
+                        "field": convert_field_name(field.strip()),
                         "operator": "isnotempty",
                         "value": []
                     }
@@ -1812,6 +1828,9 @@ class HapUtils:
                     else:
                         return {}
                     
+                    # 转换字段名
+                    field = convert_field_name(field.strip())
+                    
                     # 处理需要数组值的运算符
                     array_operators = ['in', 'notin', 'contains', 'notcontains', 'concurrent', 'belongsto', 'notbelongsto', 'between', 'notbetween']
                     
@@ -1824,7 +1843,7 @@ class HapUtils:
                                 if isinstance(array_value, list):
                                     return {
                                         "type": "condition",
-                                        "field": field.strip(),
+                                        "field": field,
                                         "operator": operator,
                                         "value": array_value
                                     }
@@ -1839,7 +1858,7 @@ class HapUtils:
                             stripped_value = stripped_value[1:-1]
                         return {
                             "type": "condition",
-                            "field": field.strip(),
+                            "field": field,
                             "operator": operator,
                             "value": stripped_value
                         }
@@ -1957,7 +1976,12 @@ class HapConfig:
     DESCRIPTION = CACHE_JSON.get("hap", {}).get("description", "")
     # 是否启用 HTTP/2 支持（默认 True）
     ENABLE_HTTP2 = CACHE_JSON.get("hap", {}).get("enable_http2", True)
-
+    # 每个模型缓存的最大记录数
+    CACHE_MAX_SIZE = CACHE_JSON.get("hap", {}).get("cache_max_size", 10000)
+    # 内存阈值（MB），超过时触发清理
+    MEMORY_THRESHOLD_MB = CACHE_JSON.get("hap", {}).get("memory_threshold_mb", 1024)
+    # 是否启用内存管理（默认 True）
+    ENABLE_MEMORY_MANAGEMENT = CACHE_JSON.get("hap", {}).get("enable_memory_management", True)
 
 class ConnectionPoolWarmer:
     """连接池预热器
@@ -2002,8 +2026,7 @@ class ConnectionPoolWarmer:
                         response = self._session.head(
                             base_url,
                             headers=headers,
-                            timeout=timeout,
-                            allow_redirects=True
+                            timeout=timeout
                         )
                         if response.status_code < 500:
                             console_log.info(f"连接池预热成功 [{i+1}/{self._max_warm_connections}]: {base_url}")
@@ -2213,6 +2236,18 @@ class HapConnection:
             enable_warmup=True,   # 启用连接池预热
         )
         
+        # 初始化连接池预热器并执行预热
+        self._connection_warmer = ConnectionPoolWarmer(
+            session=self.session,
+            max_warm_connections=min(session_pool_size, 10)  # 预热连接数不超过池大小
+        )
+        # 异步执行预热，不阻塞主流程
+        self._connection_warmer.warm_up(
+            base_url=self.base_url,
+            headers=self.headers,
+            timeout=5.0
+        )
+        
         # 初始化自适应超时管理器
         self.timeout_manager = AdaptiveTimeout(
             base_connect=5.0,
@@ -2232,9 +2267,9 @@ class HapConnection:
         self.executor = ThreadPoolExecutor(max_workers=self.max_workers)
         
         # 内存监控相关
-        self._memory_threshold_mb = 500  # 内存阈值（MB），超过时触发清理
-        self._cache_max_size = 10000  # 每个模型缓存的最大记录数
-        self._enable_memory_management = True  # 是否启用内存管理
+        self._memory_threshold_mb = config.MEMORY_THRESHOLD_MB
+        self._cache_max_size = config.CACHE_MAX_SIZE
+        self._enable_memory_management = config.ENABLE_MEMORY_MANAGEMENT
         
         # 初始化智能批处理大小计算器
         self._batch_size_calculator = SmartBatchSizeCalculator(
@@ -2862,17 +2897,22 @@ class HapQuerySet(Generic[ModelType]):
         1. 使用 Q 对象: filter(Q(field1__eq=value1) & Q(field2__eq=value2))
         2. 使用表达式字符串: filter("field1__eq=value1 && field2__eq=value2")
         3. 使用关键字参数: filter(field1__eq=value1, field2__eq=value2)
+        
+        支持同时使用属性名或 field_name 作为字段标识
         """
+        # 获取字段映射（属性名 -> field_name）
+        field_map = self.model._get_field_map()
+        
         # 处理 Q 对象
         if args and isinstance(args[0], Q):
-            self.filter_condition = args[0].to_filter_condition()
+            self.filter_condition = args[0].to_filter_condition(field_map)
         # 处理表达式字符串
         elif args and isinstance(args[0], str):
-            self.filter_condition = HapUtils.expression_to_filter_condition(args[0])
+            self.filter_condition = HapUtils.expression_to_filter_condition(args[0], field_map)
         # 处理关键字参数
         elif kwargs:
             q = Q(**kwargs)
-            self.filter_condition = q.to_filter_condition()
+            self.filter_condition = q.to_filter_condition(field_map)
         return self
     
     def order_by(self, sorts: str) -> 'HapQuerySet[ModelType]':
