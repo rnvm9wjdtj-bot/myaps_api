@@ -80,11 +80,14 @@ class MySQLBinlogMonitor:
         # 创建持久的事件循环
         self._event_loop = None
         
-        # 创建线程池用于并行处理事件
-        self._thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=10)  # 可根据需要调整线程池大小
+        if MYAPS_DBSET_LIST and TURNON_DBMONITOR:
+            # 创建线程池用于并行处理事件
+            self._thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=10)  # 可根据需要调整线程池大小
+            # 验证配置
+            self._validate_config()
+        else:
+            self._thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         
-        # 验证配置
-        self._validate_config()
 
     def _validate_config(self):
         """验证MySQL配置"""
@@ -673,6 +676,7 @@ class MySQLBinlogMonitor:
 
 # 定义全局的MySQLBinlogMonitor单例实例
 # 用户可以直接导入并使用这个实例
+
 mysql_monitor = MySQLBinlogMonitor()
 
 

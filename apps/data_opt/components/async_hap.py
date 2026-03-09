@@ -25,7 +25,7 @@ from typing import (
 )
 
 from .hap import (
-    CACHE_JSON,
+    CACHE_JSON, console_log,
     HapConfig, HapConnection, HapQuerySet, HapRowSet, Model, Q, Field,
     StrField, NumField, RelationField, SubtableField, ChoiceField,
 )
@@ -43,6 +43,86 @@ _ADAPTIVE_SCALE_DOWN:float = CACHE_JSON.get("hap", {}).get("adaptive_scale_down"
 _ADAPTIVE_SCALE_DOWN_FAST:float = CACHE_JSON.get("hap", {}).get("adaptive_scale_down_fast", 0.5)
 _DEFAULT_MAX_RETRIES:int = CACHE_JSON.get("hap", {}).get("default_max_retries", 3)
 _DEFAULT_RETRY_DELAY:float = CACHE_JSON.get("hap", {}).get("default_retry_delay", 1.0)
+
+
+def hap_async_timer(func: Callable = None, *, operation_name: str = None):
+    """统计 HAP 异步操作执行时间的装饰器
+    
+    用于装饰 async 函数，记录其执行时间、操作名称、数据条数等信息。
+    
+    Args:
+        func: 被装饰的函数
+        operation_name: 操作名称，默认使用函数名
+    
+    Returns:
+        装饰后的函数
+    
+    Example:
+        >>> @hap_async_timer()
+        >>> async def my_operation():
+        >>>     pass
+        >>>
+        >>> @hap_async_timer(operation_name="自定义操作")
+        >>> async def my_operation():
+        >>>     pass
+    """
+    def decorator(fn: Callable) -> Callable:
+        import time
+        import logging
+        import functools
+        
+        @functools.wraps(fn)
+        async def wrapper(*args, **kwargs):
+            op_name = operation_name or fn.__name__
+            start_time = time.time()
+            result = None
+            error = None
+            data_count = 0
+            
+            try:
+                result = await fn(*args, **kwargs)
+                
+                if hasattr(result, 'count'):
+                    data_count = result.count()
+                elif hasattr(result, '__len__'):
+                    data_count = len(result)
+                elif isinstance(result, int):
+                    data_count = result
+                
+                return result
+            except Exception as e:
+                error = e
+                raise
+            finally:
+                elapsed_time = time.time() - start_time
+                
+                log_info = {
+                    "operation": op_name,
+                    "elapsed_time": f"{elapsed_time:.3f}s",
+                    "data_count": data_count,
+                }
+                
+                if elapsed_time > 0:
+                    data_rate_per_second = data_count / elapsed_time
+                    log_info["data_rate_per_second"] = f"{data_rate_per_second:.2f}条/秒"
+                else:
+                    log_info["data_rate_per_second"] = "N/A"
+                
+                if error:
+                    log_info["status"] = "FAILED"
+                    log_info["error"] = str(error)
+                    console_log.warning(f"HAP异步操作统计 | {log_info}")
+                else:
+                    log_info["status"] = "SUCCESS"
+                    console_log.info(f"HAP异步操作统计 | {log_info}")
+        
+        return wrapper
+    
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
 
 
 ModelType = TypeVar("ModelType", bound=Model)
@@ -539,6 +619,7 @@ class AsyncHapConnection:
     
     # ==================== 核心数据操作方法 ====================
     
+    @hap_async_timer()
     async def upsert(
         self,
         model: Type[ModelType],
@@ -580,6 +661,7 @@ class AsyncHapConnection:
             when_value_equal_then=when_value_equal_then
         )
     
+    @hap_async_timer()
     async def bulk_create(
         self,
         model: Type[ModelType],
@@ -603,6 +685,7 @@ class AsyncHapConnection:
             trigger_workflow=trigger_workflow
         )
     
+    @hap_async_timer()
     async def bulk_update(
         self,
         model: Type[ModelType],
@@ -628,10 +711,11 @@ class AsyncHapConnection:
     
     # ==================== 批量处理优化（针对生成器）====================
     
+    @hap_async_timer()
     async def upsert_from_generator(
         self,
         model: Type[ModelType],
-        data_generator,
+        data_source,
         buffer_size: int = None,
         max_concurrency: int = None,
         max_retries: int = None,
@@ -640,14 +724,16 @@ class AsyncHapConnection:
         target_qps: float = None,
         **kwargs
     ) -> int:
-        """从生成器批量 upsert 数据（高性能版本）
+        """从生成器函数批量 upsert 数据（高性能版本）[已废弃]
         
+        .. deprecated::
+            请使用新的调用方式：await async_hap.rows(Model).upsert_from_generator(data_generator_func)
         针对 `pull_incremental_data` 等场景优化，支持批量收集和并发处理。
         包含错误处理、重试机制和自适应速率控制。
         
         Args:
             model: 模型类
-            data_generator: 数据生成器，每次 yield 一个数据列表
+            data_source: 数据生成器函数，每次调用返回一个数据列表的生成器
             buffer_size: 缓冲区大小，None 时使用自适应调节
             max_concurrency: 最大并发数，None 时使用自适应调节
             max_retries: 最大重试次数，None 时使用配置默认值
@@ -660,19 +746,16 @@ class AsyncHapConnection:
             int: 处理的总记录数
             
         Example:
-            >>> # 自适应模式（推荐，自动从 HapConfig 获取 QPS）
-            >>> count = await async_hap.upsert_from_generator(
-            ...     MyModel, data_gen, adaptive=True
-            ... )
-            >>> 
-            >>> # 固定参数模式
-            >>> count = await async_hap.upsert_from_generator(
-            ...     MyModel, data_gen, buffer_size=_DEFAULT_BUFFER_SIZE, max_concurrency=_MAX_CONCURRENCY
-            ... )
+            >>> count = await async_hap.rows(MyModel).upsert_from_generator(data_gen_func)
         """
+        from typing import Callable, Generator
         import logging
         import time
-        logger = logging.getLogger(__name__)
+        
+        if callable(data_source):
+            data_generator = data_source()
+        else:
+            raise ValueError("data_source 必须是生成器函数，请传递函数名而非函数调用结果")
         
         # 使用配置的默认值
         if max_retries is None:
@@ -683,7 +766,7 @@ class AsyncHapConnection:
         # 自动从 HapConfig 获取 QPS 限制
         if target_qps is None:
             target_qps = getattr(self._sync_conn, 'qps_limit', 10.0)
-            logger.info(f"从 HapConfig 自动获取 QPS 限制: {target_qps}")
+            console_log.info(f"从 HapConfig 自动获取 QPS 限制: {target_qps}")
         
         # 使用智能批处理大小计算器（如果同步版本已配置）
         smart_batch_calculator = getattr(self._sync_conn, '_batch_size_calculator', None)
@@ -748,7 +831,7 @@ class AsyncHapConnection:
                         return result.count()
                     except Exception as e:
                         response_time = time.time() - start_time
-                        logger.warning(f"批次 {batch_index} 第 {attempt + 1} 次尝试失败: {e}")
+                        console_log.warning(f"批次 {batch_index} 第 {attempt + 1} 次尝试失败: {e}")
                         
                         # 记录失败请求到自适应控制器
                         if adaptive:
@@ -770,7 +853,7 @@ class AsyncHapConnection:
                         if attempt < max_retries - 1:
                             await asyncio.sleep(retry_delay * (attempt + 1))
                         else:
-                            logger.error(f"批次 {batch_index} 最终失败，跳过 {len(data_batch)} 条数据")
+                            console_log.error(f"批次 {batch_index} 最终失败，跳过 {len(data_batch)} 条数据")
                             return 0
                 return 0
         
@@ -789,16 +872,16 @@ class AsyncHapConnection:
                         # 更新信号量
                         current_concurrency = new_concurrency
                         semaphore = asyncio.Semaphore(current_concurrency)
-                        logger.info(f"自适应调整: 并发数 -> {current_concurrency}")
+                        console_log.info(f"自适应调整: 并发数 -> {current_concurrency}")
                     
                     if new_buffer_size != current_buffer_size:
                         current_buffer_size = new_buffer_size
-                        logger.info(f"自适应调整: 缓冲区 -> {current_buffer_size}")
+                        console_log.info(f"自适应调整: 缓冲区 -> {current_buffer_size}")
                     
                     # 定期输出统计信息
                     if batch_index % 20 == 0:
                         stats = controller.get_stats()
-                        logger.info(
+                        console_log.info(
                             f"统计: 成功率={stats['success_rate']:.2%}, "
                             f"平均响应={stats['avg_response_time']:.2f}s, "
                             f"当前参数: buffer={current_buffer_size}, concurrency={current_concurrency}"
@@ -820,7 +903,7 @@ class AsyncHapConnection:
                         try:
                             total_count += await task
                         except Exception as e:
-                            logger.error(f"任务执行失败: {e}")
+                            console_log.error(f"任务执行失败: {e}")
                     tasks = list(pending)
         
         # 处理剩余数据
@@ -837,12 +920,12 @@ class AsyncHapConnection:
                 if isinstance(result, int):
                     total_count += result
                 elif isinstance(result, Exception):
-                    logger.error(f"任务异常: {result}")
+                    console_log.error(f"任务异常: {result}")
         
         # 输出最终统计
         if adaptive:
             stats = controller.get_stats()
-            logger.info(
+            console_log.info(
                 f"完成: 总请求={stats['request_count']}, "
                 f"成功率={stats['success_rate']:.2%}, "
                 f"最终参数: buffer={stats['buffer_size']}, concurrency={stats['concurrency']}"
@@ -903,7 +986,7 @@ class AsyncHapConnection:
             >>> query = async_hap.query(MyModel)
             >>> results = await query.filter(status="active").order_by("-created").all()
         """
-        return AsyncHapQuerySet(model, self._sync_conn, self._executor)
+        return AsyncHapQuerySet(model, self._sync_conn, self._executor, async_hap=self)
     
     # 兼容 rows 方法名
     def rows(self, model: Type[ModelType]) -> 'AsyncHapQuerySet[ModelType]':
@@ -1000,7 +1083,8 @@ class AsyncHapQuerySet(Generic[ModelType]):
         self, 
         model: Type[ModelType], 
         sync_conn: HapConnection, 
-        executor: ThreadPoolExecutor
+        executor: ThreadPoolExecutor,
+        async_hap: 'AsyncHapConnection' = None
     ):
         """
         初始化异步查询集
@@ -1009,10 +1093,12 @@ class AsyncHapQuerySet(Generic[ModelType]):
             model: 模型类
             sync_conn: 同步 HAP 连接
             executor: 线程池执行器
+            async_hap: 异步 HAP 连接实例（用于获取监控器）
         """
         self._model = model
         self._sync_conn = sync_conn
         self._executor = executor
+        self._async_hap = async_hap
         self._sync_query = sync_conn.rows(model)
     
     def _run_in_executor(self, func: Callable, *args, **kwargs) -> asyncio.Future:
@@ -1148,6 +1234,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
     
     # ==================== 数据修改（异步）====================
     
+    @hap_async_timer()
     async def upsert(
         self,
         data_list: List[Dict[str, Any]],
@@ -1174,6 +1261,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
             when_value_equal_then=when_value_equal_then
         )
     
+    @hap_async_timer()
     async def bulk_create(
         self,
         data_list: List[Dict[str, Any]],
@@ -1194,6 +1282,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
             trigger_workflow=trigger_workflow
         )
     
+    @hap_async_timer()
     async def bulk_update(
         self,
         data_list: List[Dict[str, Any]],
@@ -1214,16 +1303,17 @@ class AsyncHapQuerySet(Generic[ModelType]):
             trigger_workflow=trigger_workflow
         )
     
-    async def delete(self, row_ids: List[str]) -> bool:
-        """异步删除记录
+    @hap_async_timer()
+    async def delete(self, trigger_workflow: bool = True) -> bool:
+        """异步删除模型实例
         
         Args:
-            row_ids: 要删除的行 ID 列表
+            trigger_workflow: 是否触发工作流
             
         Returns:
-            bool: 是否删除成功
+            bool: 删除是否成功
         """
-        return await self._run_in_executor(self._sync_query.delete, row_ids)
+        return await self._run_in_executor(self._sync_query.delete, trigger_workflow)
     
     async def bulk_upsert(
         self,
@@ -1288,6 +1378,202 @@ class AsyncHapQuerySet(Generic[ModelType]):
             results.extend(batch_result)
         
         return results
+
+    @hap_async_timer()
+    async def upsert_from_generator(
+        self,
+        data_source,
+        buffer_size: int = None,
+        max_concurrency: int = None,
+        max_retries: int = None,
+        retry_delay: float = None,
+        adaptive: bool = True,
+        target_qps: float = None,
+        **kwargs
+    ) -> int:
+        """从生成器函数批量 upsert 数据（高性能版本）
+        
+        针对数据同步场景优化，支持批量收集和并发处理。
+        包含错误处理、重试机制和自适应速率控制。
+        
+        Args:
+            data_source: 数据生成器函数，每次调用返回一个数据列表的生成器
+            buffer_size: 缓冲区大小，None 时使用自适应调节
+            max_concurrency: 最大并发数，None 时使用自适应调节
+            max_retries: 最大重试次数，None 时使用配置默认值
+            retry_delay: 重试延迟（秒），None 时使用配置默认值
+            adaptive: 是否启用自适应速率控制，默认 True
+            target_qps: 目标 QPS（每秒请求数），None 时自动从 HapConfig 获取
+            **kwargs: 传递给 upsert 的其他参数
+            
+        Returns:
+            int: 处理的总记录数
+            
+        Example:
+            >>> # 自适应模式（推荐，自动从 HapConfig 获取 QPS）
+            >>> count = await async_hap.rows(MyModel).upsert_from_generator(data_gen_func)
+            >>> 
+            >>> # 固定参数模式
+            >>> count = await async_hap.rows(MyModel).upsert_from_generator(
+            ...     data_gen_func, buffer_size=200, max_concurrency=20
+            ... )
+        """
+        import logging
+        import time
+        from typing import Callable, Generator
+        
+        model = self._model
+        
+        if callable(data_source):
+            data_generator = data_source()
+        else:
+            raise ValueError("data_source 必须是生成器函数，请传递函数名而非函数调用结果")
+        
+        if max_retries is None:
+            max_retries = _DEFAULT_MAX_RETRIES
+        if retry_delay is None:
+            retry_delay = _DEFAULT_RETRY_DELAY
+        
+        if target_qps is None:
+            target_qps = getattr(self._sync_conn, 'qps_limit', 10.0)
+            console_log.info(f"从 HapConfig 自动获取 QPS 限制: {target_qps}")
+        
+        smart_batch_calculator = getattr(self._sync_conn, '_batch_size_calculator', None)
+        
+        if adaptive:
+            if buffer_size is None and smart_batch_calculator:
+                initial_buffer = _DEFAULT_BUFFER_SIZE
+            else:
+                initial_buffer = buffer_size or _DEFAULT_BUFFER_SIZE
+            
+            controller = AdaptiveRateController(
+                initial_buffer_size=initial_buffer,
+                initial_concurrency=max_concurrency or _MAX_CONCURRENCY,
+                target_qps=target_qps,
+            )
+            current_buffer_size = controller.buffer_size
+            current_concurrency = controller.concurrency
+        else:
+            if buffer_size is None and smart_batch_calculator:
+                current_buffer_size = _DEFAULT_BUFFER_SIZE
+            else:
+                current_buffer_size = buffer_size or _DEFAULT_BUFFER_SIZE
+            current_concurrency = max_concurrency or _MAX_CONCURRENCY
+        
+        buffer = []
+        total_count = 0
+        semaphore = asyncio.Semaphore(current_concurrency)
+        tasks = []
+        
+        async def do_upsert_with_retry(data_batch, batch_index):
+            nonlocal current_buffer_size, current_concurrency, semaphore
+            
+            async with semaphore:
+                start_time = time.time()
+                for attempt in range(max_retries):
+                    try:
+                        result = await self.upsert(data_batch, **kwargs)
+                        response_time = time.time() - start_time
+                        
+                        if adaptive:
+                            controller.record_request(True, response_time)
+                        
+                        if self._async_hap and self._async_hap._monitor:
+                            worksheet_id = getattr(model, '_worksheet_id', model.__name__)
+                            self._async_hap._monitor.record_request(
+                                method="POST",
+                                endpoint=f"/api/v3/app/worksheets/{worksheet_id}/rows/upsert",
+                                data={"batch_size": len(data_batch)},
+                                response_time=response_time,
+                                success=True
+                            )
+                        
+                        return result.count()
+                    except Exception as e:
+                        response_time = time.time() - start_time
+                        console_log.warning(f"批次 {batch_index} 第 {attempt + 1} 次尝试失败: {e}")
+                        
+                        if adaptive:
+                            controller.record_request(False, response_time)
+                        
+                        if self._async_hap and self._async_hap._monitor:
+                            worksheet_id = getattr(model, '_worksheet_id', model.__name__)
+                            self._async_hap._monitor.record_request(
+                                method="POST",
+                                endpoint=f"/api/v3/app/worksheets/{worksheet_id}/rows/upsert",
+                                data={"batch_size": len(data_batch)},
+                                response_time=response_time,
+                                success=False,
+                                error=str(e)
+                            )
+                        
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(retry_delay * (attempt + 1))
+                        else:
+                            console_log.error(f"批次 {batch_index} 最终失败，跳过 {len(data_batch)} 条数据")
+                            return 0
+                return 0
+        
+        batch_index = 0
+        for data in data_generator:
+            buffer.extend(data)
+            
+            if len(buffer) >= current_buffer_size:
+                batch_index += 1
+                
+                if adaptive and batch_index % 5 == 0:
+                    new_buffer_size, new_concurrency = controller.adjust()
+                    
+                    if new_concurrency != current_concurrency:
+                        current_concurrency = new_concurrency
+                        semaphore = asyncio.Semaphore(current_concurrency)
+                        console_log.info(f"自适应调整: 并发数 -> {current_concurrency}")
+                    
+                    if new_buffer_size != current_buffer_size:
+                        current_buffer_size = new_buffer_size
+                        console_log.info(f"自适应调整: 缓冲区 -> {current_buffer_size}")
+                    
+                    if batch_index % 20 == 0:
+                        stats = controller.get_stats()
+                        console_log.info(
+                            f"统计: 成功率={stats['success_rate']:.2%}, "
+                            f"平均响应={stats['avg_response_time']:.2f}s, "
+                            f"当前参数: buffer={current_buffer_size}, concurrency={current_concurrency}"
+                        )
+                
+                tasks.append(asyncio.create_task(
+                    do_upsert_with_retry(buffer[:], batch_index)
+                ))
+                buffer = []
+                
+                if len(tasks) >= current_concurrency * 2:
+                    done, pending = await asyncio.wait(
+                        tasks, 
+                        return_when=asyncio.FIRST_COMPLETED
+                    )
+                    for task in done:
+                        try:
+                            total_count += await task
+                        except Exception as e:
+                            console_log.error(f"任务执行失败: {e}")
+                    tasks = list(pending)
+        
+        if buffer:
+            batch_index += 1
+            tasks.append(asyncio.create_task(
+                do_upsert_with_retry(buffer, batch_index)
+            ))
+        
+        if tasks:
+            done, _ = await asyncio.wait(tasks)
+            for task in done:
+                try:
+                    total_count += await task
+                except Exception as e:
+                    console_log.error(f"任务执行失败: {e}")
+        
+        console_log.info(f"upsert_from_generator 完成，总处理 {total_count} 条记录")
+        return total_count
 
 
 # ==================== 便捷函数 ====================
@@ -1375,284 +1661,116 @@ async def async_query(
     return async_hap.query(model)
 
 
+###
+
 if __name__ == "__main__":
     """
     ============================================================================
     使用示例
     ============================================================================
+
+    异步版本调用方式与同步版本保持一致，只需添加 await 关键字。
+
+    与同步版本的对比：
+    -------------------------------------------------------------------------
+    同步版本:                |  异步版本:
+    ----------------------- | -----------------------
+    hap_conn.rows(Model)    |  await async_hap.rows(Model)
+    .upsert(data_list)      |  .upsert(data_list)
+    .filter(...).all()      |  .filter(...).all()
+    .bulk_create(data_list) |  .bulk_create(data_list)
+    .bulk_update(data_list) |  .bulk_update(data_list)
+    .delete()               |  .delete()
+    -------------------------------------------------------------------------
+
+    示例代码：
+    -------------------------------------------------------------------------
     """
     import asyncio
-    
-    # -------------------------------------------------------------------------
-    # 示例 1: 后端直接调用（定时任务、消息队列等）
-    # -------------------------------------------------------------------------
-    async def example_direct_call():
-        """后端直接调用示例"""
-        from .hap import hap_conn, MyModel
-        
-        # 创建异步连接
+
+    class MyModel(Model):
+        class Meta:
+            worksheet_id = "your_worksheet_id"
+            primary_field = "id"
+
+        id = StrField(field_name="ID")
+        name = StrField(field_name="Name")
+        status = StrField(field_name="Status")
+        amount = NumField(field_name="Amount")
+
+    async def main():
+        hap_conn = HapConnection()
         async_hap = AsyncHapConnection(hap_conn)
-        
-        # 方式 1: 直接调用 upsert
-        result = await async_hap.upsert(
-            model=MyModel,
-            data_list=[
-                {"id": "1", "name": "张三", "status": "active"},
-                {"id": "2", "name": "李四", "status": "inactive"},
-            ],
-            exclude_none=True,
-            trigger_workflow=True,
-            when_value_equal_then='jumpover'
+
+        results = await async_hap.rows(MyModel).all()
+
+        results = await async_hap.rows(MyModel).filter(
+            status="active"
+        ).all()
+
+        results = await async_hap.rows(MyModel).filter(
+            status="active",
+            amount__gt=1000
+        ).order_by("-created").all()
+
+        first = await async_hap.rows(MyModel).filter(id="123").first()
+
+        count = await async_hap.rows(MyModel).filter(status="active").count()
+
+        results = await async_hap.rows(MyModel).filter(
+            status="active"
+        ).limit(10).offset(20).all()
+
+        result = await async_hap.rows(MyModel).upsert([
+            {"id": "1", "name": "张三", "status": "active", "amount": 1000},
+            {"id": "2", "name": "李四", "status": "inactive", "amount": 2000},
+        ])
+        print(f"处理了 {result.count()} 条记录")
+
+        created = await async_hap.rows(MyModel).bulk_create([
+            {"name": "王五", "status": "active", "amount": 3000},
+            {"name": "赵六", "status": "active", "amount": 4000},
+        ])
+
+        updated = await async_hap.rows(MyModel).bulk_update([
+            {"row_id": "123", "name": "张三（已更新）", "amount": 1500},
+            {"row_id": "456", "name": "李四（已更新）", "amount": 2500},
+        ])
+
+        success = await async_hap.rows(MyModel).filter(
+            status="deleted"
+        ).all().delete()
+
+        # 从生成器函数批量 upsert（高性能版本）
+        def data_generator():
+            for i in range(1000):
+                yield [{"id": str(i), "name": f"用户{i}", "status": "active"}]
+
+        count = await async_hap.rows(MyModel).upsert_from_generator(
+            data_generator,
+            adaptive=True,
+            target_qps=50
         )
-        print(f"Upsert 完成，处理了 {result.count()} 条记录")
-        
-        # 方式 2: 批量创建
-        created = await async_hap.bulk_create(
-            model=MyModel,
-            data_list=[
-                {"name": "王五", "email": "wangwu@example.com"},
-                {"name": "赵六", "email": "zhaoliu@example.com"},
-            ],
-            trigger_workflow=False
-        )
-        print(f"批量创建完成，创建了 {len(created)} 条记录")
-        
-        # 方式 3: 使用查询集
-        query = async_hap.query(MyModel).filter(status__eq="active").order_by("-created")
-        active_users = await query.all()
-        print(f"活跃用户数: {active_users.count()}")
-        
-        # 方式 4: 流式查询（大数据量）
-        async for item in query.stream(batch_size=100):
-            print(f"处理: {item.name}")
-        
-        # 关闭连接
-        await async_hap.close()
-    
-    
-    # -------------------------------------------------------------------------
-    # 示例 2: FastAPI 路由中使用
-    # -------------------------------------------------------------------------
-    """
-    # api.py
-    from fastapi import APIRouter
-    from apps.data_opt.components.async_hap import AsyncHapConnection
-    from apps.data_opt.components.hap import hap_conn, MyModel
-    
-    router = APIRouter()
-    async_hap = AsyncHapConnection(hap_conn)
-    
-    @router.post("/api/sync-data")
-    async def sync_data_endpoint(data: list[dict]):
-        # 异步 upsert，不会阻塞事件循环
-        result = await async_hap.upsert(MyModel, data)
-        return {"success": True, "count": result.count()}
-    
-    @router.get("/api/query")
-    async def query_data(status: str = None, limit: int = 100):
-        query = async_hap.query(MyModel)
-        if status:
-            query = query.filter(status__eq=status)
-        results = await query.limit(limit).order_by("-created").all()
-        return {
-            "total": results.count(),
-            "data": [item.to_dict() for item in results.row_objects]
-        }
-    """
-    
-    
-    # -------------------------------------------------------------------------
-    # 示例 3: 上下文管理器（推荐）
-    # -------------------------------------------------------------------------
-    async def example_context_manager():
-        """使用上下文管理器自动管理资源"""
-        from .hap import hap_conn, ModelA, ModelB
-        
-        async with AsyncHapConnection(hap_conn) as async_hap:
-            # 并行执行多个操作
-            results = await asyncio.gather(
-                async_hap.upsert(ModelA, [{"name": "test1"}]),
-                async_hap.bulk_create(ModelB, [{"name": "test2"}]),
-                async_hap.query(ModelA).filter(status="active").count(),
-            )
-            print(f"操作 1: {results[0].count()} 条")
-            print(f"操作 2: 创建了 {len(results[1])} 条")
-            print(f"操作 3: 共 {results[2]} 条记录")
-    
-    
-    # -------------------------------------------------------------------------
-    # 示例 4: 便捷函数（快速使用）
-    # -------------------------------------------------------------------------
-    async def example_quick_functions():
-        """使用便捷函数快速操作"""
-        from .hap import MyModel
-        
-        # 一行代码 upsert
-        result = await async_upsert(
-            MyModel,
-            [{"id": "1", "name": "快速测试"}],
-            trigger_workflow=False
-        )
-        
-        # 一行代码批量创建
-        created = await async_bulk_create(
-            MyModel,
-            [{"name": "用户1"}, {"name": "用户2"}]
-        )
-        
-        # 一行代码查询
-        query = await async_query(MyModel)
-        results = await query.filter(name__contains="测试").all()
-    
-    
-    # -------------------------------------------------------------------------
-    # 示例 5: 定时任务（APScheduler）
-    # -------------------------------------------------------------------------
-    """
-    # tasks.py
-    from apscheduler.schedulers.asyncio import AsyncIOScheduler
-    from apps.data_opt.components.async_hap import AsyncHapConnection
-    from apps.data_opt.components.hap import hap_conn, SyncModel
-    
-    scheduler = AsyncIOScheduler()
-    async_hap = AsyncHapConnection(hap_conn)
-    
-    async def daily_sync_job():
-        # 从外部系统获取数据
-        external_data = await fetch_from_external_api()
-        
-        # 同步到 HAP（非阻塞）
-        result = await async_hap.upsert(
-            SyncModel,
-            external_data,
-            when_value_equal_then='update'
-        )
-        print(f"[定时任务] 同步完成: {result.count()} 条")
-    
-    # 每天凌晨 2 点执行
-    scheduler.add_job(daily_sync_job, 'cron', hour=2, minute=0)
-    scheduler.start()
-    """
-    
-    
-    # -------------------------------------------------------------------------
-    # 示例 6: 消息队列（Celery）
-    # -------------------------------------------------------------------------
-    """
-    # celery_tasks.py
-    from celery import Celery
-    import asyncio
-    from apps.data_opt.components.async_hap import AsyncHapConnection
-    from apps.data_opt.components.hap import hap_conn, TaskModel
-    
-    celery_app = Celery('tasks')
-    async_hap = AsyncHapConnection(hap_conn)
-    
-    @celery_app.task
-    def process_hap_data(data_list: list):
-        # Celery 是同步的，需要包装异步调用
-        asyncio.run(_process_async(data_list))
-    
-    async def _process_async(data_list):
-        result = await async_hap.bulk_create(TaskModel, data_list)
-        return f"创建了 {len(result)} 条记录"
-    """
-    
-    
-    # -------------------------------------------------------------------------
-    # 示例 7: 复杂查询
-    # -------------------------------------------------------------------------
-    async def example_complex_query():
-        """复杂查询示例"""
-        from .hap import hap_conn, MyModel, Q
-        
-        async_hap = AsyncHapConnection(hap_conn)
-        
-        # 使用 Q 对象构建复杂条件
-        query = async_hap.query(MyModel).filter(
-            Q(status__eq="active") & 
-            (Q(name__contains="测试") | Q(email__contains="test"))
-        ).exclude(is_deleted__eq=True).order_by("-created", "name")
-        
-        # 分页查询
-        page1 = await query.limit(20).offset(0).all()
-        page2 = await query.limit(20).offset(20).all()
-        
-        # 获取总数
-        total = await query.count()
-        
-        print(f"总记录数: {total}, 第一页: {page1.count()}, 第二页: {page2.count()}")
-        
-        await async_hap.close()
-    
-    
-    # -------------------------------------------------------------------------
-    # 示例 8: 缓存操作
-    # -------------------------------------------------------------------------
-    async def example_cache_operations():
-        """缓存操作示例"""
-        from .hap import hap_conn, CachedModel
-        
-        async_hap = AsyncHapConnection(hap_conn)
-        
-        # 预热缓存
-        await async_hap.warmup_cache(CachedModel)
-        
-        # 从缓存获取数据
-        cached = await async_hap.get_cached_data(
-            CachedModel,
-            key="record_id_123",
-            index_type="pk"
-        )
-        
-        if cached:
-            print(f"缓存命中: {cached}")
-        else:
-            print("缓存未命中")
-        
-        await async_hap.close()
-    
-    
-    # -------------------------------------------------------------------------
-    # 示例 9: API 监控
-    # -------------------------------------------------------------------------
-    async def example_monitoring():
-        """API 监控示例"""
-        from .hap import hap_conn, MyModel
-        
-        # 创建异步连接（默认启用监控）
-        async_hap = AsyncHapConnection(hap_conn, enable_monitor=True)
-        
-        # 执行一些操作
-        await async_hap.upsert(MyModel, [{"name": "test1"}, {"name": "test2"}])
-        await async_hap.query(MyModel).filter(name="test").all()
-        
-        # 获取监控统计
+        print(f"从生成器处理了 {count} 条记录")
+
+        result = await async_hap.upsert(MyModel, [
+            {"id": "1", "name": "测试"}
+        ])
+        created = await async_hap.bulk_create(MyModel, [
+            {"name": "测试1"},
+            {"name": "测试2"},
+        ])
+        updated = await async_hap.bulk_update(MyModel, [
+            {"row_id": "123", "name": "已更新"}
+        ])
+
         stats = async_hap.get_monitor_stats(last_n=100)
         print(f"总请求数: {stats['total']}")
-        print(f"成功率: {stats['success_rate']:.2%}")
+        print(f"成功率: {stats['success_rate']}")
         print(f"平均响应时间: {stats['avg_response_time']:.2f}s")
-        print(f"各端点统计: {stats['endpoint_stats']}")
-        
-        # 获取最近的错误
-        errors = async_hap.get_recent_errors(limit=5)
-        if errors:
-            print(f"最近的错误: {len(errors)} 条")
-            for error in errors:
-                print(f"  - {error['endpoint']}: {error['error']}")
-        
-        # 清空监控数据
-        async_hap.clear_monitor()
-        
+
+        errors = async_hap.get_recent_errors(limit=10)
+
         await async_hap.close()
-    
-    
-    # 运行示例
-    # asyncio.run(example_direct_call())
-    # asyncio.run(example_context_manager())
-    # asyncio.run(example_quick_functions())
-    # asyncio.run(example_complex_query())
-    # asyncio.run(example_cache_operations())
-    # asyncio.run(example_monitoring())
-    
-    pass
+
+    asyncio.run(main())
