@@ -12,7 +12,7 @@
         "memory_threshold_mb": 1024,
         "enable_memory_management": true,
         "max_concurrency": 10,
-        "default_buffer_size": 100,
+        "default_buffer_size": 200,
         "adaptive_min_buffer_size": 50,
         "adaptive_scale_up_fast": 1.5,
         "adaptive_scale_up_slow": 1.3,

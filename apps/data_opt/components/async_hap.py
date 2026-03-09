@@ -17,6 +17,7 @@ HAP API v3 的异步包装器，使用线程池将同步操作转换为异步操
 
 import asyncio
 import functools
+import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import (
     List, Dict, Any, Optional, Type, TypeVar, Generic, 
@@ -30,10 +31,10 @@ from .hap import (
 )
 
 
-# 最大并发数（默认 10）
-_MAX_CONCURRENCY:int = CACHE_JSON.get("hap", {}).get("max_concurrency", 10)
-# 初始缓冲区大小（默认 100）
-_DEFAULT_BUFFER_SIZE:int = CACHE_JSON.get("hap", {}).get("default_buffer_size", 100)
+# 最大并发数
+_MAX_CONCURRENCY:int = CACHE_JSON.get("hap", {}).get("max_concurrency", os.cpu_count() * 3)
+# 初始缓冲区大小（默认 200）
+_DEFAULT_BUFFER_SIZE:int = CACHE_JSON.get("hap", {}).get("default_buffer_size", 200)
 # 自适应速率控制器配置（高优先级）
 _ADAPTIVE_MIN_BUFFER_SIZE:int = CACHE_JSON.get("hap", {}).get("adaptive_min_buffer_size", 50)
 _ADAPTIVE_SCALE_UP_FAST:float = CACHE_JSON.get("hap", {}).get("adaptive_scale_up_fast", 1.5)
