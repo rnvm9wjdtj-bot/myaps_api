@@ -361,7 +361,7 @@ class ApsBaseAction(ABC):
     #     pass
 
 ######### HAP MODEL #########
-from apps.data_opt.components.hap import Model as HapModel, StrField, NumField, RelationField, SubtableField, ChoiceField
+from apps.data_opt.utils.hap import Model as HapModel, StrField, NumField, RelationField, SubtableField, ChoiceField
 
 
 class Material(HapModel):   

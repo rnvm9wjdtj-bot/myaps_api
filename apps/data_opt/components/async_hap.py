@@ -5,7 +5,7 @@ HAP API v3 的异步包装器，使用线程池将同步操作转换为异步操
 避免在 FastAPI 等异步框架中阻塞事件循环。
 
 使用方式：
-    1. 后端直接调用：await async_hap.upsert(Model, data_list)
+    1. 后端直接调用：await async_hap.rows(Models).upsert(data_list)
     2. API 接口触发：通过 FastAPI 路由调用
 
 示例：

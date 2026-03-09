@@ -40,7 +40,7 @@
         "itemno": "A01",
         "plant": "1600",
         "planner": "haida",
-        "leadday_e": 0,
-        "leadday_f": 0
+        "leadday_e": 1,
+        "leadday_f": 1
     }
 }

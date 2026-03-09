@@ -303,7 +303,13 @@ class JkyConnection(BaseConnection):
 
 
 # from .hap import HapConfig, HapConnection, Model, StrField, NumField, RelationField, SubtableField, ChoiceField, Q
-from .async_hap import HapConfig, HapConnection, AsyncHapConnection, Model, StrField, NumField, RelationField, SubtableField, ChoiceField, Q
+# from ..utils.hap._base import HapConfig
+# from ..utils.hap.connection import HapConnection, AsyncHapConnection
+# from ..utils.hap.models import Model
+# from ..utils.hap.fields import StrField, NumField, RelationField, SubtableField, ChoiceField
+# from ..utils.hap.data_objects import Q
+
+from ..utils.hap import *
 
 
 ENUM_DECODER = {

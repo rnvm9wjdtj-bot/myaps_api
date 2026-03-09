@@ -2,11 +2,7 @@
 HAP API v3 封装为 ORM
 """
 
-import os
-import re
-import json
-import time
-import threading
+import os, re, json, time, threading, requests
 from typing import List, Dict, Any, Optional, Union, Literal, Generator, Type, TypeVar, NamedTuple, Generic
 from datetime import datetime
 from decimal import Decimal
@@ -14,14 +10,9 @@ from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
 
-from config.settings import BASE_DIR
-import requests
-
 from ..utils.data_processor import DataProcessor
 from ..utils.common import parallel_executor, get_optimized_session
 from ._base import filelog_normal, filelog_error, console_log, CACHE_JSON
-
-
 
 
 # 自适应超时管理器
