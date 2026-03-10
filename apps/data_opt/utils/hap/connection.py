@@ -11,7 +11,14 @@ from concurrent.futures import ThreadPoolExecutor
 import asyncio
 
 from ..common import get_optimized_session
-from ._base import CACHE_JSON, console_log, HapConfig, ModelType, _MAX_CONCURRENCY, _DEFAULT_BUFFER_SIZE, _DEFAULT_MAX_RETRIES, _DEFAULT_RETRY_DELAY
+from ._base import (
+    CACHE_JSON, console_log, HapConfig, ModelType, 
+    _MAX_CONCURRENCY, _DEFAULT_BUFFER_SIZE, _DEFAULT_MAX_RETRIES, _DEFAULT_RETRY_DELAY,
+    _DEFAULT_CONNECT_TIMEOUT, _DEFAULT_READ_TIMEOUT, _DEFAULT_BASE_CONNECT_TIMEOUT, _DEFAULT_BASE_READ_TIMEOUT,
+    _DEFAULT_RETRY_BASE_DELAY, _DEFAULT_RETRY_MAX_DELAY, _DEFAULT_RETRY_EXPONENTIAL_BASE, _DEFAULT_RETRY_JITTER,
+    _DEFAULT_BATCH_MAX_SIZE, _DEFAULT_WARM_CONNECTIONS, _DEFAULT_WARMUP_TIMEOUT,
+    _DEFAULT_NETWORK_LATENCY, _ADAPTIVE_MIN_BUFFER_SIZE
+)
 from .utils import(
     HapUtils, AdaptiveTimeout, EnhancedRetryStrategy, TokenBucket, DecimalEncoder, HapApiMonitor,
     StringInternPool, DataProcessingPipeline, LightweightRow, ObjectPool, ConnectionPoolWarmer, SmartBatchSizeCalculator,
@@ -53,8 +60,8 @@ class HapConnection:
             allowed_methods=["GET", "POST", "PATCH", "DELETE"],
             pool_connections=session_pool_size,  # 根据并发度动态调整连接池数量
             pool_maxsize=session_pool_size,     # 根据并发度动态调整最大连接数  
-            connect_timeout=5.0,  # 增加连接超时时间
-            read_timeout=60.0,    # 增加读取超时时间
+            connect_timeout=_DEFAULT_CONNECT_TIMEOUT,
+            read_timeout=_DEFAULT_READ_TIMEOUT,
             enable_http2=getattr(config, 'ENABLE_HTTP2', True),   # 默认启用HTTP/2
             enable_warmup=True,   # 启用连接池预热
         )
@@ -62,28 +69,28 @@ class HapConnection:
         # 初始化连接池预热器并执行预热
         self._connection_warmer = ConnectionPoolWarmer(
             session=self.session,
-            max_warm_connections=min(session_pool_size, 10)  # 预热连接数不超过池大小
+            max_warm_connections=min(session_pool_size, _DEFAULT_WARM_CONNECTIONS)
         )
         # 异步执行预热，不阻塞主流程
         self._connection_warmer.warm_up(
             base_url=self.base_url,
             headers=self.headers,
-            timeout=5.0
+            timeout=_DEFAULT_WARMUP_TIMEOUT
         )
         
         # 初始化自适应超时管理器
         self.timeout_manager = AdaptiveTimeout(
-            base_connect=5.0,
-            base_read=60.0
+            base_connect=_DEFAULT_BASE_CONNECT_TIMEOUT,
+            base_read=_DEFAULT_BASE_READ_TIMEOUT
         )
         
         # 初始化增强重试策略
         self.retry_strategy = EnhancedRetryStrategy(
-            max_retries=3,
-            base_delay=0.5,
-            max_delay=30.0,
-            exponential_base=2.0,
-            jitter=0.1
+            max_retries=_DEFAULT_MAX_RETRIES,
+            base_delay=_DEFAULT_RETRY_BASE_DELAY,
+            max_delay=_DEFAULT_RETRY_MAX_DELAY,
+            exponential_base=_DEFAULT_RETRY_EXPONENTIAL_BASE,
+            jitter=_DEFAULT_RETRY_JITTER
         )
         
         # 初始化线程池
@@ -96,14 +103,43 @@ class HapConnection:
         
         # 初始化智能批处理大小计算器
         self._batch_size_calculator = SmartBatchSizeCalculator(
-            base_size=200,
-            min_size=50,
-            max_size=500
+            base_size=_DEFAULT_BUFFER_SIZE,
+            min_size=_ADAPTIVE_MIN_BUFFER_SIZE,
+            max_size=_DEFAULT_BATCH_MAX_SIZE
         )
         
         # 启动缓存定时刷新任务
         self._start_cache_refresh_task()
+        
+        # 异步连接实例缓存
+        self._async_connection = None
     
+    
+    def async_connection(self, enable_monitor: bool = True) -> 'AsyncHapConnection':
+        """创建并返回包装好的异步连接
+        
+        每个同步连接实例只会创建一个异步连接实例，确保资源的高效利用。
+        
+        Args:
+            enable_monitor: 是否启用 API 监控，默认 True
+            
+        Returns:
+            AsyncHapConnection: 异步 HAP 连接实例
+            
+        Example:
+            >>> hap_conn = HapConnection()
+            >>> async_hap = hap_conn.async_connection()
+            >>> result = await async_hap.upsert(Model, data_list)
+        """
+        from .connection import AsyncHapConnection
+        
+        # 如果还没有创建过异步连接，或者监控配置发生了变化，就创建新的
+        if self._async_connection is None:
+            self._async_connection = AsyncHapConnection(self, enable_monitor=enable_monitor)
+        
+        return self._async_connection
+    
+
     def get_optimal_batch_size(
         self,
         data_size: int,
@@ -123,7 +159,7 @@ class HapConnection:
             int: 最优批次大小
         """
         # 估算网络延迟（可以根据实际情况调整）
-        network_latency = 100.0  # 默认 100ms
+        network_latency = _DEFAULT_NETWORK_LATENCY
         
         return self._batch_size_calculator.calculate(
             data_size=data_size,
@@ -655,8 +691,8 @@ class HapConnection:
                             # 应用过滤和排序
                             query = query.filter()  # 空过滤，获取所有记录
                             query = query.order_by("-utime")  # 按utime降序排序
-                            query.page_size = 1000  # 设置每页大小为1000
-                            query.limit = 1000  # 限制最多获取1000条
+                            query.page_size = 1000  # 设置每页大小
+                            query.limit = 1000  # 限制最多获取条数
                             
                             # 执行查询
                             latest_instances = query.all()
@@ -790,6 +826,35 @@ class AsyncHapConnection:
                     )
         
         return monitored_wrapper()
+    
+    def _record_monitor(
+        self,
+        method: str,
+        endpoint: str,
+        data: dict,
+        response_time: float,
+        success: bool,
+        error: str = None
+    ):
+        """记录 API 请求到监控器
+        
+        Args:
+            method: HTTP 方法
+            endpoint: API 端点
+            data: 请求数据
+            response_time: 响应时间
+            success: 是否成功
+            error: 错误信息
+        """
+        if self._monitor:
+            self._monitor.record_request(
+                method=method,
+                endpoint=endpoint,
+                data=data,
+                response_time=response_time,
+                success=success,
+                error=error
+            )
     
     # ==================== 监控相关方法 ====================
     
@@ -1051,6 +1116,9 @@ class AsyncHapConnection:
             
             async with semaphore:
                 start_time = time.time()
+                worksheet_id = getattr(model, '_worksheet_id', model.__name__)
+                endpoint = f"/api/v3/app/worksheets/{worksheet_id}/rows/upsert"
+                
                 for attempt in range(max_retries):
                     try:
                         result = await self.upsert(model, data_batch, **kwargs)
@@ -1061,16 +1129,13 @@ class AsyncHapConnection:
                             controller.record_request(True, response_time)
                         
                         # 记录到监控器
-                        if self._monitor:
-                            # 安全获取 worksheet_id
-                            worksheet_id = getattr(model, '_worksheet_id', model.__name__)
-                            self._monitor.record_request(
-                                method="POST",
-                                endpoint=f"/api/v3/app/worksheets/{worksheet_id}/rows/upsert",
-                                data={"batch_size": len(data_batch)},
-                                response_time=response_time,
-                                success=True
-                            )
+                        self._record_monitor(
+                            method="POST",
+                            endpoint=endpoint,
+                            data={"batch_size": len(data_batch)},
+                            response_time=response_time,
+                            success=True
+                        )
                         
                         return result.count()
                     except Exception as e:
@@ -1082,17 +1147,14 @@ class AsyncHapConnection:
                             controller.record_request(False, response_time)
                         
                         # 记录到监控器
-                        if self._monitor:
-                            # 安全获取 worksheet_id
-                            worksheet_id = getattr(model, '_worksheet_id', model.__name__)
-                            self._monitor.record_request(
-                                method="POST",
-                                endpoint=f"/api/v3/app/worksheets/{worksheet_id}/rows/upsert",
-                                data={"batch_size": len(data_batch)},
-                                response_time=response_time,
-                                success=False,
-                                error=str(e)
-                            )
+                        self._record_monitor(
+                            method="POST",
+                            endpoint=endpoint,
+                            data={"batch_size": len(data_batch)},
+                            response_time=response_time,
+                            success=False,
+                            error=str(e)
+                        )
                         
                         if attempt < max_retries - 1:
                             await asyncio.sleep(retry_delay * (attempt + 1))

@@ -10,7 +10,7 @@ from typing import Dict, Any, Optional, List, Type, Tuple, Union, Literal, Gener
 from datetime import datetime, timedelta
 
 from ..data_processor import DataProcessor
-from ._base import console_log, filelog_error, HapConfig, ModelType, _MAX_CONCURRENCY, _DEFAULT_BUFFER_SIZE, _DEFAULT_MAX_RETRIES, _DEFAULT_RETRY_DELAY
+from ._base import console_log, filelog_error, HapConfig, ModelType, _MAX_CONCURRENCY, _DEFAULT_BUFFER_SIZE, _DEFAULT_MAX_RETRIES, _DEFAULT_RETRY_DELAY, _DEFAULT_PAGE_SIZE
 from .fields import StrField, NumField, RelationField, ChoiceField, SubtableField
 from .utils import(
     HapUtils, AdaptiveTimeout, EnhancedRetryStrategy, TokenBucket, DecimalEncoder, HapApiMonitor,
@@ -189,177 +189,6 @@ class Q:
         return result
 
 
-# def set_global_hap_conn(conn: HapConnection):
-#     """设置全局 HAP 连接实例
-    
-#     Args:
-#         conn: HAP 连接实例
-#     """
-#     global hap_conn
-#     hap_conn = conn
-
-
-# def get_global_hap_conn() -> HapConnection:
-#     """获取全局 HAP 连接实例
-    
-#     Returns:
-#         HapConnection: HAP 连接实例
-#     """
-#     global hap_conn
-#     if not hap_conn:
-#         raise Exception("HAP 连接未初始化，请先调用 set_global_hap_conn")
-#     return hap_conn
-
-
-# class HapQuery:
-#     """HAP 查询条件构建器
-    
-#     用于构建复杂的查询条件，支持链式调用。
-#     """
-    
-#     def __init__(self, model: Type[Model]):
-#         """
-#         初始化查询条件构建器
-        
-#         Args:
-#             model: 模型类
-#         """
-#         self.model = model
-#         self.conditions = []
-#         self.sort = []
-#         self.page = 1
-#         self.page_size = 100
-    
-#     def filter(self, **kwargs) -> 'HapQuery':
-#         """添加筛选条件
-        
-#         支持的运算符：
-#         - eq: 等于
-#         - ne: 不等于
-#         - gt: 大于
-#         - ge: 大于等于
-#         - lt: 小于
-#         - le: 小于等于
-#         - in_: 包含在列表中
-#         - notin: 不包含在列表中
-#         - contains: 包含字符串
-#         - notcontains: 不包含字符串
-#         - isempty: 为空
-#         - isnotempty: 不为空
-        
-#         Args:
-#             **kwargs: 筛选条件，格式为 field__operator=value
-            
-#         Returns:
-#             HapQuery: 自身实例，支持链式调用
-#         """
-#         for key, value in kwargs.items():
-#             if '__' in key:
-#                 field, op = key.rsplit('__', 1)
-#                 # 标准化字段名
-#                 field = HapUtils.normalize_field_name(self.model, field)
-                
-#                 condition = {
-#                     "type": "condition",
-#                     "field": field,
-#                     "operator": op,
-#                     "value": value if op not in ['isempty', 'isnotempty'] else []
-#                 }
-#                 self.conditions.append(condition)
-#         return self
-    
-#     def order_by(self, *fields) -> 'HapQuery':
-#         """添加排序规则
-        
-#         Args:
-#             *fields: 排序字段，以负号开头表示降序
-            
-#         Returns:
-#             HapQuery: 自身实例，支持链式调用
-#         """
-#         for field in fields:
-#             if field.startswith('-'):
-#                 field_name = field[1:]
-#                 is_asc = False
-#             else:
-#                 field_name = field
-#                 is_asc = True
-            
-#             # 标准化字段名
-#             field_name = HapUtils.normalize_field_name(self.model, field_name)
-            
-#             self.sort.append({
-#                 "field": field_name,
-#                 "isAsc": is_asc
-#             })
-#         return self
-    
-#     def limit(self, page_size: int) -> 'HapQuery':
-#         """设置每页大小
-        
-#         Args:
-#             page_size: 每页大小
-            
-#         Returns:
-#             HapQuery: 自身实例，支持链式调用
-#         """
-#         self.page_size = page_size
-#         return self
-    
-#     def offset(self, page: int) -> 'HapQuery':
-#         """设置页码
-        
-#         Args:
-#             page: 页码
-            
-#         Returns:
-#             HapQuery: 自身实例，支持链式调用
-#         """
-#         self.page = page
-#         return self
-    
-#     def get_filter(self) -> Dict[str, Any]:
-#         """获取筛选条件
-        
-#         Returns:
-#             Dict[str, Any]: 筛选条件
-#         """
-#         if not self.conditions:
-#             return {}
-#         elif len(self.conditions) == 1:
-#             return self.conditions[0]
-#         else:
-#             return {
-#                 "type": "group",
-#                 "logic": "AND",
-#                 "children": self.conditions
-#             }
-    
-#     def get_sort(self) -> List[Dict[str, Any]]:
-#         """获取排序规则
-        
-#         Returns:
-#             List[Dict[str, Any]]: 排序规则
-#         """
-#         return self.sort
-    
-#     def get_page(self) -> int:
-#         """获取页码
-        
-#         Returns:
-#             int: 页码
-#         """
-#         return self.page
-    
-#     def get_page_size(self) -> int:
-#         """获取每页大小
-        
-#         Returns:
-#             int: 每页大小
-#         """
-#         return self.page_size
-
-
 class HapRowSet(Generic[ModelType]):
     """行集合类，用于管理多个模型实例"""
     def __init__(self, models: List[ModelType], model: Type[ModelType], hap_conn: 'HapConnection'):
@@ -417,7 +246,7 @@ class HapRowSet(Generic[ModelType]):
                 # 调用 RelationField 自身的处理方法
                 processed_data = field.process_relation(processed_data, original_data, self.hap_conn)
             elif isinstance(field, StrField):
-                # 调用 TextField 自身的处理方法
+                # 调用 StrField 自身的处理方法
                 processed_data = field.process_mapping(processed_data, original_data)
             elif isinstance(field, SubtableField):
                 processed_data = field.process_subtable(processed_data, original_data, self.hap_conn)
@@ -1085,7 +914,7 @@ class HapQuerySet(Generic[ModelType]):
         self.hap_conn = hap_conn
         self.filter_condition = {}
         self.sorts = []
-        self.page_size = 1000
+        self.page_size = _DEFAULT_PAGE_SIZE
         self.limit = None
         self.last_query_timestamp = 0
 
@@ -1305,8 +1134,7 @@ class HapQuerySet(Generic[ModelType]):
         """批量 upsert 操作"""
         # 创建一个空的 HapRowSet 实例，然后调用其 upsert 方法
         row_set = HapRowSet(models=[], model=self.model, hap_conn=self.hap_conn)
-        return row_set.upsert(data_list, exclude_none, trigger_workflow, when_value_equal_then  )
-        return row_set.upsert(data_list, exclude_none, trigger_workflow, when_value_equal_then  )
+        return row_set.upsert(data_list, exclude_none, trigger_workflow, when_value_equal_then)
 
 
 class AsyncHapQuerySet(Generic[ModelType]):

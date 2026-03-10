@@ -48,6 +48,51 @@ class StrField(Field):
         self.follow_with = follow_with  # 跟随的字段名，用于自动更新映射值
         super().__init__(field_name=field_name, default=default, description=description)
     
+    def _get_attr_name(self) -> str:
+        """获取当前字段在模型中的属性名"""
+        if self.model:
+            reverse_field_map = self.model._get_reverse_field_map()
+            attr_name = reverse_field_map.get(self.field_name, None)
+            if attr_name:
+                return attr_name
+        return self.field_name
+    
+    def _resolve_field_name(self, field_name: str) -> str:
+        """将属性名解析为字段名"""
+        if not self.model:
+            return field_name
+        if field_name not in self.model._get_field_map():
+            return field_name
+        return self.model._get_field_map()[field_name]
+    
+    def _check_need_update(self, processed_data: Dict[str, Any], original_data: Optional[Dict[str, Any]], followwith_field: str) -> bool:
+        """检查是否需要更新映射字段"""
+        follow_value = processed_data.get(followwith_field)
+        if not follow_value:
+            return False
+        
+        # 情况一：创建记录时
+        if not original_data:
+            return True
+        
+        # 情况二：更新记录时，值有变化
+        original_key = self._resolve_field_name(followwith_field)
+        if original_key not in original_data:
+            return True
+        
+        return not DataProcessor.is_equal(original_data[original_key], follow_value)
+    
+    def _get_followwith_field(self, processed_data: Dict[str, Any]) -> Optional[str]:
+        """获取并验证 follow_with 字段名"""
+        if not self.follow_with:
+            return None
+        
+        followwith_field = self.follow_with
+        if followwith_field not in processed_data:
+            followwith_field = self._resolve_field_name(followwith_field)
+        
+        return followwith_field if followwith_field in processed_data else None
+    
     def process_mapping(self, data: Dict[str, Any], original_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         处理文本字段的映射关系
@@ -62,63 +107,31 @@ class StrField(Field):
         if not self.follow_with or not self.mapper:
             return data
         
-        processed_data = data.copy()
+        # 直接使用传入的数据字典，不创建副本
         
-        # 获取当前字段在模型中的属性名
-        attr_name = None
-        if self.model:
-            reverse_field_map = self.model._get_reverse_field_map()
-            attr_name = reverse_field_map.get(self.field_name, None)
-        if not attr_name:
-            # 如果无法获取属性名，使用字段名作为后备
-            attr_name = self.field_name
+        # 获取属性名和 follow_with 字段
+        attr_name = self._get_attr_name()
+        followwith_field = self._get_followwith_field(data)
         
-        # 检查是否需要更新映射字段
-        followwith_field = self.follow_with
-        if not followwith_field in processed_data:
-            field_map = self.model._get_field_map()
-            if followwith_field in field_map:
-                followwith_field = field_map[followwith_field]
+        if not followwith_field:
+            return data
         
-        # 确保 follow_with 字段存在
-        if followwith_field not in processed_data:
-            return processed_data
-        
-        need_update = False
-        follow_value = processed_data[followwith_field]
-        if follow_value:
-            # 情况一：创建记录时
-            if not original_data:
-                need_update = True
-            # 情况二：更新记录时，值有变化
-            else:
-                # 确定在 original_data 中使用的键名（字段名）
-                original_key = followwith_field
-                field_map = self.model._get_field_map()
-                if followwith_field in field_map:
-                    # 如果 followwith_field 是属性名，转换为字段名
-                    original_key = field_map[followwith_field]
-                
-                if original_key not in original_data or not DataProcessor.is_equal(original_data[original_key], follow_value):
-                    need_update = True
-        
-        if not need_update:
-            return processed_data
+        # 检查是否需要更新
+        if not self._check_need_update(data, original_data, followwith_field):
+            return data
         
         # 执行映射
-        mapped_value = self.mapper.get(str(follow_value), None)
+        follow_value = data[followwith_field]
+        mapped_value = self.mapper.get(str(follow_value))
         if mapped_value is not None:
-            processed_data[attr_name] = mapped_value
+            data[attr_name] = mapped_value
         
-        return processed_data
+        return data
 
 
 class ChoiceField(StrField):
     """选项字段
-    继承自 StrField
-    ChoiceField 类型的字段会被自动处理
-    与 StrField 类型的字段一样
-    调用其 process_mapping 方法来处理映射关系。
+    继承自 StrField，支持多选项的映射处理
     """
     def __init__(self,
                  field_name: Optional[str] = None,
@@ -131,107 +144,60 @@ class ChoiceField(StrField):
         self.spliter = spliter
         super().__init__(field_name=field_name, default=default, description=description, pk=False, mapper=mapper, follow_with=follow_with)
     
+    def _parse_values(self, value_to_process: Any) -> List[str]:
+        """解析输入值为字符串列表"""
+        if isinstance(value_to_process, list):
+            return [str(v).strip() for v in value_to_process]
+        
+        if isinstance(value_to_process, str):
+            try:
+                import json
+                parsed_value = json.loads(value_to_process)
+                if isinstance(parsed_value, list):
+                    return [str(v).strip() for v in parsed_value]
+            except:
+                pass
+            # 按分隔符分割
+            return [v.strip() for v in value_to_process.split(self.spliter)]
+        
+        return [str(value_to_process).strip()]
+    
+    def _apply_mapping(self, values: List[str]) -> List[str]:
+        """应用映射到值列表"""
+        if not self.mapper:
+            return values
+        return [self.mapper.get(v, v) for v in values]
+    
     def process_mapping(self, data: Dict[str, Any], original_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         处理选择字段的映射关系
-        
-        Args:
-            data: 包含字段数据的字典
-            original_data: 原始数据字典，用于比较字段值是否变化
-            
-        Returns:
-            Dict[str, Any]: 处理后的字段数据字典
+        支持多选项的批量映射处理
         """
-
-        processed_data = data.copy()
-        
-        # 获取当前字段在模型中的属性名
-        attr_name = None
-        if self.model:
-            # reverse_field_map = self.model._get_reverse_field_map()
-            # reverse_field_map = self.model._get_field_map()
-            # attr_name = reverse_field_map.get(self.field_name, None)
-            attr_name = self.field_name
-        if not attr_name:
-            # 如果无法获取属性名，使用字段名作为后备
-            attr_name = self.field_name
+        attr_name = self._get_attr_name()
         
         # 确定要处理的值
         value_to_process = None
         if self.follow_with:
-            # 有 follow_with，处理 follow_with 字段的值
-            followwith_field = self.follow_with
-            if not followwith_field in processed_data:
-                field_map = self.model._get_field_map()
-                if followwith_field in field_map:
-                    followwith_field = field_map[followwith_field]
+            followwith_field = self._get_followwith_field(data)
+            if not followwith_field:
+                return data
             
-            # 确保 follow_with 字段存在
-            if followwith_field not in processed_data:
-                return processed_data
+            if not self._check_need_update(data, original_data, followwith_field):
+                return data
             
-            # 检查是否需要更新映射字段
-            need_update = False
-            value_to_process = processed_data[followwith_field]
-            if value_to_process:
-                # 情况一：创建记录时
-                if not original_data:
-                    need_update = True
-                # 情况二：更新记录时，值有变化
-                else:
-                    # 确定在 original_data 中使用的键名（字段名）
-                    original_key = followwith_field
-                    field_map = self.model._get_field_map()
-                    if followwith_field in field_map:
-                        # 如果 followwith_field 是属性名，转换为字段名
-                        original_key = field_map[followwith_field]
-                    
-                    if original_key not in original_data or not DataProcessor.is_equal(original_data[original_key], value_to_process):
-                        need_update = True
-            
-            if not need_update:
-                return processed_data
+            value_to_process = data[followwith_field]
         else:
-            # 没有 follow_with，直接处理本字段的值
-            if attr_name not in processed_data:
-                return processed_data
-            value_to_process = processed_data[attr_name]
+            model_fieldmap = self.model._get_field_map()
+            field_name = model_fieldmap.get(attr_name)
+            if field_name not in data and attr_name not in data:
+                return data
+            value_to_process = data[field_name]
         
-        # 处理不同类型的值
-        values_to_process = []
-        if isinstance(value_to_process, list):
-            # 直接使用 list
-            values_to_process = value_to_process
-        elif isinstance(value_to_process, str):
-            try:
-                # 尝试解析为 json
-                import json
-                parsed_value = json.loads(value_to_process)
-                if isinstance(parsed_value, list):
-                    values_to_process = parsed_value
-                else:
-                    # 如果不是 list，按 spliter 分割
-                    values_to_process = value_to_process.split(self.spliter)
-            except:
-                # 解析失败，按 spliter 分割
-                values_to_process = value_to_process.split(self.spliter)
+        # 解析值并应用映射
+        values = self._parse_values(value_to_process)
+        data[attr_name] = self._apply_mapping(values)
         
-        # 执行映射
-        processed_values = []
-        for value in values_to_process:
-            value_str = str(value).strip()
-            if self.mapper:
-                # 有 mapper，执行映射
-                mapped_value = self.mapper.get(value_str, value_str)
-                processed_values.append(mapped_value)
-            else:
-                # 没有 mapper，直接使用原值
-                processed_values.append(value_str)
-        
-        # 保留 list 形式的结果
-        processed_data[attr_name] = processed_values
-        
-        return processed_data
+        return data
 
 
 # 数值字段
@@ -277,7 +243,7 @@ class RelationField(Field):
         if not self.follow_with:
             return data
         
-        processed_data = data.copy()
+        # 直接使用传入的数据字典，不创建副本
         
         # 获取当前字段在模型中的属性名
         attr_name = None
@@ -289,23 +255,23 @@ class RelationField(Field):
             attr_name = self.field_name
         
         # 确保使用 follow_with 字段，而不是关联字段本身
-        # 从 processed_data 中移除关联字段本身，避免干扰
-        if attr_name in processed_data:
-            del processed_data[attr_name]
+        # 从 data 中移除关联字段本身，避免干扰
+        if attr_name in data:
+            del data[attr_name]
         
         # 检查是否需要更新关联字段
         followwith_field = self.follow_with
-        if not followwith_field in processed_data:
+        if not followwith_field in data:
             field_map = self.model._get_field_map()
             if followwith_field in field_map:
                 followwith_field = field_map[followwith_field]
         
         # 确保 follow_with 字段存在
-        if followwith_field not in processed_data:
-            return processed_data
+        if followwith_field not in data:
+            return data
         
         need_update = False
-        code_value = str(processed_data[followwith_field])
+        code_value = str(data[followwith_field])
         if code_value:
             # 情况一：创建记录时
             if not original_data:
@@ -323,7 +289,7 @@ class RelationField(Field):
                     need_update = True
         
         if not need_update or not hap_conn:
-            return processed_data
+            return data
         
         # 处理延时导入的模型
         if isinstance(self.related_model, str):
@@ -416,12 +382,12 @@ class RelationField(Field):
             
             # 更新关联字段数据
             if relation_data:
-                processed_data[attr_name] = relation_data
+                data[attr_name] = relation_data
         except Exception as e:
             # 忽略查询错误，保持原始数据
             pass
         
-        return processed_data
+        return data
 
 
 class SubtableField(Field):
@@ -452,7 +418,7 @@ class SubtableField(Field):
         if not self.data_source or not hap_conn:
             return data
         
-        processed_data = data.copy()
+        # 直接使用传入的数据字典，不创建副本
         
         # 获取当前字段在模型中的属性名
         attr_name = None
@@ -464,25 +430,25 @@ class SubtableField(Field):
             attr_name = self.field_name
         
         # 确保使用 data_source 字段，而不是子表字段本身
-        # 从 processed_data 中移除子表字段本身，避免干扰
-        if attr_name in processed_data:
-            del processed_data[attr_name]
+        # 从 data 中移除子表字段本身，避免干扰
+        if attr_name in data:
+            del data[attr_name]
         
-        # parent_row = hap_conn.rows(self.model).get_by_rowid(row_id=processed_data.get('row_id'))
+        # parent_row = hap_conn.rows(self.model).get_by_rowid(row_id=data.get('row_id'))
         parent_field_map = self.model._get_field_map()
         subtable_field_map = self.subtable_model._get_field_map()
         # 检查数据源字段是否存在
         data_source_field = self.data_source
-        if not data_source_field in processed_data:
+        if not data_source_field in data:
             if data_source_field in parent_field_map:
                 data_source_field = parent_field_map[data_source_field]
         
         # 确保数据源字段存在
-        if data_source_field not in processed_data:
-            return processed_data
+        if data_source_field not in data:
+            return data
         
         need_update = False
-        source_value = processed_data[data_source_field]
+        source_value = data[data_source_field]
         if source_value:
             # 情况一：创建记录时
             if not original_data:
@@ -503,7 +469,7 @@ class SubtableField(Field):
                         need_update = True
         
         if not need_update:
-            return processed_data
+            return data
         
         try:
             # 解析数据源为字典列表
@@ -512,11 +478,11 @@ class SubtableField(Field):
             elif isinstance(source_value, list):
                 subtable_data_list = source_value
             else:
-                return processed_data
+                return data
             
             # 确保是字典列表
             if not isinstance(subtable_data_list, list) or not all(isinstance(item, dict) for item in subtable_data_list):
-                return processed_data
+                return data
             
             # 获取子表模型的冲突字段
             conflict_fields = getattr(self.subtable_model.Meta, 'conflict_fields', None)
@@ -554,8 +520,8 @@ class SubtableField(Field):
             if not subtable_has_pk_or_conflict:
                 # 获取主记录当前挂载的子表记录 row_id
                 current_row_ids = []
-                if attr_name in processed_data:
-                    current_row_ids = processed_data[attr_name]
+                if attr_name in data:
+                    current_row_ids = data[attr_name]
                 elif original_data and attr_name in original_data:
                     current_row_ids = original_data[attr_name]
                 
@@ -638,17 +604,17 @@ class SubtableField(Field):
 
             # 将子表记录的 row_id 挂载到当前主记录
             if subtable_row_ids:
-                processed_data[attr_name] = subtable_row_ids
+                data[attr_name] = subtable_row_ids
             else:
                 # 如果没有子表记录，清空主记录的子表字段
-                processed_data[attr_name] = []
+                data[attr_name] = []
         except Exception as e:
             # 添加错误日志，以便于调试
             import traceback
             print(f"Error processing subtable field: {e}")
             print(traceback.format_exc())
 
-        return processed_data
+        return data
     
     def _subtable_data_equal(self, new_value, original_value) -> bool:
         """

@@ -13,8 +13,6 @@ from .utils import (
     AdaptiveRateController, hap_async_timer
 )
 from .connection import HapConnection, AsyncHapConnection, async_upsert, async_bulk_create, async_query
-# from .operations import HapOperations, AsyncHapOperations
-# from .data_objects import HapQuery, HapRowSet, HapQuerySet, AsyncHapQuerySet, set_global_hap_conn, get_global_hap_conn, hap_conn, Q
 from .data_objects import HapRowSet, HapQuerySet, AsyncHapQuerySet, Q
 
 __all__ = [
@@ -32,7 +30,6 @@ __all__ = [
     
     # 模型
     'Model',
-    # 'ModelMeta',
     
     # 工具类
     'HapUtils',
@@ -57,19 +54,11 @@ __all__ = [
     'async_bulk_create',
     'async_query',
     
-    # 操作类
-    # 'HapOperations',
-    # 'AsyncHapOperations',
-    
     # 数据对象
     'Q',
-    # 'HapQuery',
     'HapRowSet',
     'HapQuerySet',
     'AsyncHapQuerySet',
-    # 'set_global_hap_conn',
-    # 'get_global_hap_conn',
-    # 'hap_conn',
 ]
 
 # 版本信息

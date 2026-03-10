@@ -143,7 +143,6 @@ class TokenBucket:
         self.refill_rate = refill_rate
         self.tokens = capacity
         self.last_refill_time = time.time()
-        import threading
         self.lock = threading.Lock()
     
     def consume(self, tokens: int = 1) -> bool:
@@ -1022,8 +1021,6 @@ class AdaptiveRateController:
         self.total_response_time = 0.0
         self.recent_response_times = []
         self.recent_failures = []
-        
-        import threading
         self._lock = threading.Lock()
     
     def record_request(self, success: bool, response_time: float):
@@ -1138,7 +1135,6 @@ class HapApiMonitor:
     
     def __init__(self):
         """初始化监控器"""
-        import threading
         self._lock = threading.Lock()
         self._requests = []
         self._max_records = 1000  # 最多保留 1000 条记录
