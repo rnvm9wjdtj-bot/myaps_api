@@ -430,9 +430,10 @@ class HapUtils:
         """
         
         if exclude_none:
-            data = {k: v for k, v in data.items() if v is not None}
-        else:
-            data = data
+            # 删除值为None的键
+            keys_to_delete = [k for k, v in data.items() if v is None]
+            for k in keys_to_delete:
+                del data[k]
         
         fieldlist = []
         for k, v in data.items():

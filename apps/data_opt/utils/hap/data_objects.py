@@ -394,12 +394,9 @@ class HapRowSet(Generic[ModelType]):
             processed_kwargs = self._process_complex_fields(kwargs, original_data)
             
             # 比较字段值差异，只包含变化的字段
-            changed_data = {}
-            if when_value_equal_then == 'update':
-                # 无论字段值是否变化，都更新
-                changed_data = processed_kwargs
-            else:
-                # 只包含变化的字段
+            if when_value_equal_then != 'update':
+                # 只包含变化的字段，原地修改 processed_kwargs
+                keys_to_delete = []
                 for key, value in processed_kwargs.items():
                     # 确定在 original_data 中使用的键名
                     original_key = key
@@ -409,13 +406,17 @@ class HapRowSet(Generic[ModelType]):
                         original_key = key
                     
                     # 检查字段值是否变化
-                    if original_key not in original_data or not DataProcessor.is_equal(original_data[original_key], value):
-                        changed_data[key] = value
+                    if original_key in original_data and DataProcessor.is_equal(original_data[original_key], value):
+                        keys_to_delete.append(key)
+                
+                # 原地删除不需要更新的字段
+                for key in keys_to_delete:
+                    del processed_kwargs[key]
             
             # 如果有变化的字段，添加到更新组
-            if changed_data:
+            if processed_kwargs:
                 # 转换数据为字段列表，使用字段映射，保留未注册的字段
-                fields_list = HapUtils.convert_data_to_fieldslist(changed_data, field_map=field_map, model=self.model, remain_irrelevant_fields=True)
+                fields_list = HapUtils.convert_data_to_fieldslist(processed_kwargs, field_map=field_map, model=self.model, remain_irrelevant_fields=True)
                 
                 # 按字段列表分组，相同字段列表的模型实例可以一起更新
                 fields_key = str(fields_list)
@@ -1412,45 +1413,315 @@ class AsyncHapQuerySet(Generic[ModelType]):
                 results.extend(batch_result.row_objects)
         return results
     
+    # async def bulk_upsert_parallel(
+    #     self,
+    #     data_list: List[Dict[str, Any]],
+    #     batch_size: int = 100,
+    #     max_concurrency: int = _MAX_CONCURRENCY
+    # ) -> List[ModelType]:
+    #     """并行批量 upsert，提高处理速度
+        
+    #     Args:
+    #         data_list: 要 upsert 的数据列表
+    #         batch_size: 每批处理数量，默认 100
+    #         max_concurrency: 最大并发数，默认 _MAX_CONCURRENCY
+            
+    #     Returns:
+    #         List[ModelType]: 处理后的模型实例列表
+    #     """
+    #     # 分批次
+    #     batches = []
+    #     for i in range(0, len(data_list), batch_size):
+    #         batch = data_list[i:i+batch_size]
+    #         if batch:
+    #             batches.append(batch)
+        
+    #     # 并行处理
+    #     results = []
+    #     semaphore = asyncio.Semaphore(max_concurrency)
+        
+    #     async def process_batch(batch):
+    #         async with semaphore:
+    #             batch_result = await self.upsert(batch)
+    #             return batch_result.row_objects
+        
+    #     tasks = [process_batch(batch) for batch in batches]
+    #     batch_results = await asyncio.gather(*tasks)
+        
+    #     for batch_result in batch_results:
+    #         results.extend(batch_result)
+        
+    #     return results
+
     async def bulk_upsert_parallel(
         self,
         data_list: List[Dict[str, Any]],
         batch_size: int = 100,
-        max_concurrency: int = _MAX_CONCURRENCY
-    ) -> List[ModelType]:
-        """并行批量 upsert，提高处理速度
+        max_concurrency: int = None,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
+        adaptive_rate: bool = True,
+        target_qps: float = None,
+        progress_callback: Callable[[int, int], None] = None,
+        return_partial: bool = True
+    ) -> Dict[str, Any]:
+        """优化版并行批量 upsert，支持错误处理、重试和自适应速率控制
+        
+        针对列表数据的分片并行处理优化版本，提供完善的错误处理、
+        自动重试、进度监控和自适应速率控制功能。
         
         Args:
             data_list: 要 upsert 的数据列表
             batch_size: 每批处理数量，默认 100
-            max_concurrency: 最大并发数，默认 _MAX_CONCURRENCY
+            max_concurrency: 最大并发数，默认根据系统资源自动计算
+            max_retries: 最大重试次数，默认 3
+            retry_delay: 重试延迟（秒），默认 1.0，支持指数退避
+            adaptive_rate: 是否启用自适应速率控制，默认 True
+            target_qps: 目标 QPS，默认从配置获取
+            progress_callback: 进度回调函数，接收 (已处理数量, 总数)
+            return_partial: 是否返回部分结果，默认 True
             
         Returns:
-            List[ModelType]: 处理后的模型实例列表
+            Dict[str, Any]: 包含以下字段的字典
+                - success: 是否全部成功
+                - processed_count: 成功处理的数量
+                - failed_count: 失败的数量
+                - results: 处理后的模型实例列表
+                - failed_batches: 失败的批次信息
+                - stats: 处理统计信息
+                
+        Example:
+            >>> result = await query.bulk_upsert_parallel_v2(
+            ...     data_list,
+            ...     batch_size=100,
+            ...     max_concurrency=4,
+            ...     progress_callback=lambda processed, total: print(f"{processed}/{total}")
+            ... )
+            >>> print(f"成功: {result['processed_count']}, 失败: {result['failed_count']}")
         """
+        import time
+        from dataclasses import dataclass, field
+        from typing import List, Dict, Any, Optional
+        
+        @dataclass
+        class BatchResult:
+            """批次处理结果"""
+            batch_index: int
+            success: bool
+            results: List[ModelType] = field(default_factory=list)
+            error: Optional[str] = None
+            retry_count: int = 0
+            processing_time: float = 0.0
+        
+        @dataclass
+        class ProcessingStats:
+            """处理统计信息"""
+            total_batches: int
+            successful_batches: int = 0
+            failed_batches: int = 0
+            total_processing_time: float = 0.0
+            avg_batch_time: float = 0.0
+            min_batch_time: float = float('inf')
+            max_batch_time: float = 0.0
+            current_qps: float = 0.0
+        
+        if not data_list:
+            return {
+                'success': True,
+                'processed_count': 0,
+                'failed_count': 0,
+                'results': [],
+                'failed_batches': [],
+                'stats': ProcessingStats(total_batches=0).__dict__
+            }
+        
+        # 使用配置的默认值
+        if max_concurrency is None:
+            max_concurrency = min(_MAX_CONCURRENCY, (len(data_list) // batch_size) + 1)
+        
+        if target_qps is None:
+            target_qps = getattr(self._sync_conn, 'qps_limit', 10.0)
+        
         # 分批次
         batches = []
         for i in range(0, len(data_list), batch_size):
             batch = data_list[i:i+batch_size]
             if batch:
-                batches.append(batch)
+                batches.append((i // batch_size, batch))
         
-        # 并行处理
-        results = []
+        total_batches = len(batches)
+        stats = ProcessingStats(total_batches=total_batches)
+        
+        # 自适应速率控制器
+        class AdaptiveController:
+            def __init__(self, initial_concurrency: int, target_qps: float):
+                self.concurrency = initial_concurrency
+                self.target_qps = target_qps
+                self.request_times = []
+                self.last_adjust_time = time.time()
+            
+            def record_request(self, duration: float):
+                self.request_times.append(duration)
+                if len(self.request_times) > 10:
+                    self.request_times.pop(0)
+            
+            def adjust(self):
+                if len(self.request_times) < 5:
+                    return
+                
+                avg_time = sum(self.request_times) / len(self.request_times)
+                current_qps = 1.0 / avg_time if avg_time > 0 else 0
+                
+                if time.time() - self.last_adjust_time > 5:  # 每5秒调整一次
+                    if current_qps < self.target_qps * 0.8:
+                        self.concurrency = min(self.concurrency + 1, _MAX_CONCURRENCY)
+                    elif current_qps > self.target_qps * 1.2:
+                        self.concurrency = max(self.concurrency - 1, 1)
+                    self.last_adjust_time = time.time()
+        
+        controller = AdaptiveController(max_concurrency, target_qps) if adaptive_rate else None
+        
+        # 处理状态
+        processed_count = 0
+        failed_batches = []
+        all_results = []
+        batch_results = [None] * total_batches
+        
+        # 信号量控制并发
         semaphore = asyncio.Semaphore(max_concurrency)
         
-        async def process_batch(batch):
-            async with semaphore:
-                batch_result = await self.upsert(batch)
-                return batch_result.row_objects
+        async def process_batch_with_retry(batch_index: int, batch_data: List[Dict]) -> BatchResult:
+            """处理单个批次，支持重试"""
+            start_time = time.time()
+            
+            for attempt in range(max_retries):
+                try:
+                    async with semaphore:
+                        batch_result = await self.upsert(batch_data)
+                        processing_time = time.time() - start_time
+                        
+                        if controller:
+                            controller.record_request(processing_time)
+                        
+                        return BatchResult(
+                            batch_index=batch_index,
+                            success=True,
+                            results=batch_result.row_objects,
+                            retry_count=attempt,
+                            processing_time=processing_time
+                        )
+                        
+                except Exception as e:
+                    error_msg = str(e)
+                    if attempt < max_retries - 1:
+                        # 指数退避
+                        delay = retry_delay * (2 ** attempt)
+                        console_log.warning(
+                            f"批次 {batch_index} 第 {attempt + 1} 次尝试失败，"
+                            f"{delay}秒后重试: {error_msg}"
+                        )
+                        await asyncio.sleep(delay)
+                    else:
+                        processing_time = time.time() - start_time
+                        return BatchResult(
+                            batch_index=batch_index,
+                            success=False,
+                            error=error_msg,
+                            retry_count=attempt,
+                            processing_time=processing_time
+                        )
+            
+            return BatchResult(batch_index=batch_index, success=False, error="Max retries exceeded")
         
-        tasks = [process_batch(batch) for batch in batches]
-        batch_results = await asyncio.gather(*tasks)
+        # 创建所有任务
+        tasks = []
+        for batch_index, batch_data in batches:
+            task = asyncio.create_task(
+                process_batch_with_retry(batch_index, batch_data),
+                name=f"batch_{batch_index}"
+            )
+            tasks.append(task)
         
-        for batch_result in batch_results:
-            results.extend(batch_result)
+        # 处理完成的任务
+        completed_count = 0
+        for coro in asyncio.as_completed(tasks):
+            try:
+                result: BatchResult = await coro
+                batch_results[result.batch_index] = result
+                completed_count += 1
+                
+                if result.success:
+                    stats.successful_batches += 1
+                    all_results.extend(result.results)
+                    processed_count += len(result.results)
+                else:
+                    stats.failed_batches += 1
+                    failed_batches.append({
+                        'batch_index': result.batch_index,
+                        'error': result.error,
+                        'retry_count': result.retry_count
+                    })
+                
+                # 更新统计
+                stats.total_processing_time += result.processing_time
+                stats.min_batch_time = min(stats.min_batch_time, result.processing_time)
+                stats.max_batch_time = max(stats.max_batch_time, result.processing_time)
+                
+                # 自适应调整
+                if controller and adaptive_rate:
+                    controller.adjust()
+                    # 注意：动态调整信号量比较复杂，这里仅记录建议的并发度
+                    # 实际应用中可以通过其他机制（如连接池大小）来调整
+                    new_limit = controller.concurrency
+                    if new_limit != max_concurrency:
+                        console_log.info(f"建议调整并发度从 {max_concurrency} 到 {new_limit}")
+                
+                # 进度回调
+                if progress_callback:
+                    try:
+                        progress_callback(processed_count, len(data_list))
+                    except Exception as e:
+                        console_log.warning(f"进度回调执行失败: {e}")
+                
+                # 检查是否需要提前返回
+                if not return_partial and not result.success:
+                    # 取消剩余任务
+                    for task in tasks:
+                        if not task.done():
+                            task.cancel()
+                    break
+                    
+            except asyncio.CancelledError:
+                console_log.warning("任务被取消")
+                continue
+            except Exception as e:
+                console_log.error(f"处理批次时发生未预期错误: {e}")
+                stats.failed_batches += 1
         
-        return results
+        # 计算最终统计
+        if stats.successful_batches > 0:
+            stats.avg_batch_time = stats.total_processing_time / stats.successful_batches
+        if stats.total_processing_time > 0:
+            stats.current_qps = processed_count / stats.total_processing_time
+        
+        # 构建返回结果
+        return {
+            'success': stats.failed_batches == 0,
+            'processed_count': processed_count,
+            'failed_count': len(data_list) - processed_count,
+            'results': all_results,
+            'failed_batches': failed_batches,
+            'stats': {
+                'total_batches': stats.total_batches,
+                'successful_batches': stats.successful_batches,
+                'failed_batches': stats.failed_batches,
+                'total_processing_time': round(stats.total_processing_time, 2),
+                'avg_batch_time': round(stats.avg_batch_time, 2),
+                'min_batch_time': round(stats.min_batch_time, 2) if stats.min_batch_time != float('inf') else 0,
+                'max_batch_time': round(stats.max_batch_time, 2),
+                'current_qps': round(stats.current_qps, 2)
+            }
+        }
 
     @hap_async_timer()
     async def upsert_from_generator(
