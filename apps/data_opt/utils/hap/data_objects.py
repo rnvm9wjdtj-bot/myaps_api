@@ -14,7 +14,7 @@ from ._base import console_log, filelog_error, HapConfig, ModelType, _MAX_CONCUR
 from .fields import StrField, NumField, RelationField, ChoiceField, SubtableField
 from .utils import(
     HapUtils, AdaptiveTimeout, EnhancedRetryStrategy, TokenBucket, DecimalEncoder, HapApiMonitor,
-    StringInternPool, DataProcessingPipeline, LightweightRow, ObjectPool, ConnectionPoolWarmer, SmartBatchSizeCalculator,
+    StringInternPool, LightweightRow, ObjectPool, ConnectionPoolWarmer, SmartBatchSizeCalculator,
     AdaptiveRateController, hap_async_timer
 )
 
@@ -930,7 +930,7 @@ class HapQuerySet(Generic[ModelType]):
             row_data = response['data']
 
             # 使用优化的数据处理管道
-            processed_data = DataProcessingPipeline.process_row_data(row_data)
+            processed_data = HapUtils.process_row_data(row_data)
             
             # 创建模型实例
             model_instance = self.model(**processed_data)
@@ -1017,7 +1017,7 @@ class HapQuerySet(Generic[ModelType]):
                 
                 for row_dict in rows:
                     # 使用优化的数据处理管道，一次性处理所有步骤
-                    processed_data = DataProcessingPipeline.process_row_data(row_dict)
+                    processed_data = HapUtils.process_row_data(row_dict)
                     
                     # 创建模型实例
                     model_instance = self.model(**processed_data)
@@ -1103,7 +1103,7 @@ class HapQuerySet(Generic[ModelType]):
                 
                 for row_dict in rows:
                     # 使用优化的数据处理管道
-                    processed_data = DataProcessingPipeline.process_row_data(row_dict)
+                    processed_data = HapUtils.process_row_data(row_dict)
                     
                     # 创建模型实例
                     model_instance = self.model(**processed_data)
@@ -1770,8 +1770,10 @@ class AsyncHapQuerySet(Generic[ModelType]):
         
         if callable(data_source):
             data_generator = data_source()
+        elif hasattr(data_source, '__next__') or hasattr(data_source, '__iter__'):
+            data_generator = data_source  # 直接使用生成器对象
         else:
-            raise ValueError("data_source 必须是生成器函数，请传递函数名而非函数调用结果")
+            raise ValueError("data_source 必须是生成器函数或生成器对象")
         
         if max_retries is None:
             max_retries = _DEFAULT_MAX_RETRIES
@@ -1832,7 +1834,8 @@ class AsyncHapQuerySet(Generic[ModelType]):
                                 success=True
                             )
                         
-                        return result.count()
+                        # 返回实际处理的记录数，而不是 result.count()
+                        return len(data_batch)
                     except Exception as e:
                         response_time = time.time() - start_time
                         console_log.warning(f"批次 {batch_index} 第 {attempt + 1} 次尝试失败: {e}")

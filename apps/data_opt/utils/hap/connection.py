@@ -21,7 +21,7 @@ from ._base import (
 )
 from .utils import(
     HapUtils, AdaptiveTimeout, EnhancedRetryStrategy, TokenBucket, DecimalEncoder, HapApiMonitor,
-    StringInternPool, DataProcessingPipeline, LightweightRow, ObjectPool, ConnectionPoolWarmer, SmartBatchSizeCalculator,
+    StringInternPool, LightweightRow, ObjectPool, ConnectionPoolWarmer, SmartBatchSizeCalculator,
     AdaptiveRateController, hap_async_timer
 )
 from .models import Model
@@ -288,60 +288,31 @@ class HapConnection:
         raise last_exception
 
 
-    def _post(self, endpoint: str, payload: dict):
+    def _request(self, method: str, endpoint: str, **kwargs):
+        """统一的请求方法，处理 QPS 限制和 URL 构建"""
         # QPS限制检查
         self.token_bucket.wait_for_token()
         url = f"{self.base_url}{endpoint}"
         
         response = self._make_request(
-            'POST',
+            method,
             url,
             headers=self.headers,
-            json=payload
+            **kwargs
         )
         return response.json()
 
+    def _post(self, endpoint: str, payload: dict):
+        return self._request('POST', endpoint, json=payload)
 
     def _get(self, endpoint: str, params: dict=None):
-        # QPS限制检查
-        self.token_bucket.wait_for_token()
-        url = f"{self.base_url}{endpoint}"
-        
-        response = self._make_request(
-            'GET',
-            url,
-            headers=self.headers,
-            params=params
-        )
-        return response.json()
-
+        return self._request('GET', endpoint, params=params)
 
     def _patch(self, endpoint: str, payload: dict):
-        # QPS限制检查
-        self.token_bucket.wait_for_token()
-        url = f"{self.base_url}{endpoint}"
-        
-        response = self._make_request(
-            'PATCH',
-            url,
-            headers=self.headers,
-            json=payload
-        )
-        return response.json()
-
+        return self._request('PATCH', endpoint, json=payload)
 
     def _delete(self, endpoint: str, payload: dict=None):
-        # QPS限制检查
-        self.token_bucket.wait_for_token()
-        url = f"{self.base_url}{endpoint}"
-        
-        response = self._make_request(
-            'DELETE',
-            url,
-            headers=self.headers,
-            json=payload
-        )
-        return response.json()
+        return self._request('DELETE', endpoint, json=payload)
 
 
     def register_model(self, model: Type[Model]):
@@ -1020,224 +991,226 @@ class AsyncHapConnection:
     
     # ==================== 批量处理优化（针对生成器）====================
     
-    @hap_async_timer()
-    async def upsert_from_generator(
-        self,
-        model: Type[ModelType],
-        data_source,
-        buffer_size: int = None,
-        max_concurrency: int = None,
-        max_retries: int = None,
-        retry_delay: float = None,
-        adaptive: bool = True,
-        target_qps: float = None,
-        **kwargs
-    ) -> int:
-        """从生成器函数批量 upsert 数据（高性能版本）[已废弃]
+    # @hap_async_timer()
+    # async def upsert_from_generator(
+    #     self,
+    #     model: Type[ModelType],
+    #     data_source,
+    #     buffer_size: int = None,
+    #     max_concurrency: int = None,
+    #     max_retries: int = None,
+    #     retry_delay: float = None,
+    #     adaptive: bool = True,
+    #     target_qps: float = None,
+    #     **kwargs
+    # ) -> int:
+    #     """从生成器函数批量 upsert 数据（高性能版本）[已废弃]
         
-        .. deprecated::
-            请使用新的调用方式：await async_hap.rows(Model).upsert_from_generator(data_generator_func)
-        针对 `pull_incremental_data` 等场景优化，支持批量收集和并发处理。
-        包含错误处理、重试机制和自适应速率控制。
+    #     .. deprecated::
+    #         请使用新的调用方式：await async_hap.rows(Model).upsert_from_generator(data_generator_func)
+    #     针对 `pull_incremental_data` 等场景优化，支持批量收集和并发处理。
+    #     包含错误处理、重试机制和自适应速率控制。
         
-        Args:
-            model: 模型类
-            data_source: 数据生成器函数，每次调用返回一个数据列表的生成器
-            buffer_size: 缓冲区大小，None 时使用自适应调节
-            max_concurrency: 最大并发数，None 时使用自适应调节
-            max_retries: 最大重试次数，None 时使用配置默认值
-            retry_delay: 重试延迟（秒），None 时使用配置默认值
-            adaptive: 是否启用自适应速率控制，默认 True
-            target_qps: 目标 QPS（每秒请求数），None 时自动从 HapConfig 获取
-            **kwargs: 传递给 upsert 的其他参数
+    #     Args:
+    #         model: 模型类
+    #         data_source: 数据生成器函数，每次调用返回一个数据列表的生成器
+    #         buffer_size: 缓冲区大小，None 时使用自适应调节
+    #         max_concurrency: 最大并发数，None 时使用自适应调节
+    #         max_retries: 最大重试次数，None 时使用配置默认值
+    #         retry_delay: 重试延迟（秒），None 时使用配置默认值
+    #         adaptive: 是否启用自适应速率控制，默认 True
+    #         target_qps: 目标 QPS（每秒请求数），None 时自动从 HapConfig 获取
+    #         **kwargs: 传递给 upsert 的其他参数
             
-        Returns:
-            int: 处理的总记录数
+    #     Returns:
+    #         int: 处理的总记录数
             
-        Example:
-            >>> count = await async_hap.rows(MyModel).upsert_from_generator(data_gen_func)
-        """
-        from typing import Callable, Generator
-        import logging
-        import time
+    #     Example:
+    #         >>> count = await async_hap.rows(MyModel).upsert_from_generator(data_gen_func)
+    #     """
+    #     from typing import Callable, Generator
+    #     import logging
+    #     import time
         
-        if callable(data_source):
-            data_generator = data_source()
-        else:
-            raise ValueError("data_source 必须是生成器函数，请传递函数名而非函数调用结果")
+    #     if callable(data_source):
+    #         data_generator = data_source()
+    #     elif hasattr(data_source, '__next__') or hasattr(data_source, '__iter__'):
+    #         data_generator = data_source  # 直接使用生成器对象
+    #     else:
+    #         raise ValueError("data_source 必须是生成器函数或生成器对象")
         
-        # 使用配置的默认值
-        if max_retries is None:
-            max_retries = _DEFAULT_MAX_RETRIES
-        if retry_delay is None:
-            retry_delay = _DEFAULT_RETRY_DELAY
+    #     # 使用配置的默认值
+    #     if max_retries is None:
+    #         max_retries = _DEFAULT_MAX_RETRIES
+    #     if retry_delay is None:
+    #         retry_delay = _DEFAULT_RETRY_DELAY
         
-        # 自动从 HapConfig 获取 QPS 限制
-        if target_qps is None:
-            target_qps = getattr(self._sync_conn, 'qps_limit', 10.0)
-            console_log.info(f"从 HapConfig 自动获取 QPS 限制: {target_qps}")
+    #     # 自动从 HapConfig 获取 QPS 限制
+    #     if target_qps is None:
+    #         target_qps = getattr(self._sync_conn, 'qps_limit', 10.0)
+    #         console_log.info(f"从 HapConfig 自动获取 QPS 限制: {target_qps}")
         
-        # 使用智能批处理大小计算器（如果同步版本已配置）
-        smart_batch_calculator = getattr(self._sync_conn, '_batch_size_calculator', None)
+    #     # 使用智能批处理大小计算器（如果同步版本已配置）
+    #     smart_batch_calculator = getattr(self._sync_conn, '_batch_size_calculator', None)
         
-        # 初始化自适应控制器
-        if adaptive:
-            # 如果提供了 buffer_size，使用提供的值；否则使用智能计算
-            if buffer_size is None and smart_batch_calculator:
-                # 先使用默认值初始化，后续根据实际数据量调整
-                initial_buffer = _DEFAULT_BUFFER_SIZE
-            else:
-                initial_buffer = buffer_size or _DEFAULT_BUFFER_SIZE
+    #     # 初始化自适应控制器
+    #     if adaptive:
+    #         # 如果提供了 buffer_size，使用提供的值；否则使用智能计算
+    #         if buffer_size is None and smart_batch_calculator:
+    #             # 先使用默认值初始化，后续根据实际数据量调整
+    #             initial_buffer = _DEFAULT_BUFFER_SIZE
+    #         else:
+    #             initial_buffer = buffer_size or _DEFAULT_BUFFER_SIZE
             
-            controller = AdaptiveRateController(
-                initial_buffer_size=initial_buffer,
-                initial_concurrency=max_concurrency or _MAX_CONCURRENCY,
-                target_qps=target_qps,
-            )
-            current_buffer_size = controller.buffer_size
-            current_concurrency = controller.concurrency
-        else:
-            # 非自适应模式，使用智能批处理大小
-            if buffer_size is None and smart_batch_calculator:
-                # 先使用默认值，后续根据实际数据调整
-                current_buffer_size = _DEFAULT_BUFFER_SIZE
-            else:
-                current_buffer_size = buffer_size or _DEFAULT_BUFFER_SIZE
-            current_concurrency = max_concurrency or _MAX_CONCURRENCY
+    #         controller = AdaptiveRateController(
+    #             initial_buffer_size=initial_buffer,
+    #             initial_concurrency=max_concurrency or _MAX_CONCURRENCY,
+    #             target_qps=target_qps,
+    #         )
+    #         current_buffer_size = controller.buffer_size
+    #         current_concurrency = controller.concurrency
+    #     else:
+    #         # 非自适应模式，使用智能批处理大小
+    #         if buffer_size is None and smart_batch_calculator:
+    #             # 先使用默认值，后续根据实际数据调整
+    #             current_buffer_size = _DEFAULT_BUFFER_SIZE
+    #         else:
+    #             current_buffer_size = buffer_size or _DEFAULT_BUFFER_SIZE
+    #         current_concurrency = max_concurrency or _MAX_CONCURRENCY
         
-        buffer = []
-        total_count = 0
-        semaphore = asyncio.Semaphore(current_concurrency)
-        tasks = []
+    #     buffer = []
+    #     total_count = 0
+    #     semaphore = asyncio.Semaphore(current_concurrency)
+    #     tasks = []
         
-        async def do_upsert_with_retry(data_batch, batch_index):
-            """带重试和性能监控的 upsert"""
-            nonlocal current_buffer_size, current_concurrency, semaphore
+    #     async def do_upsert_with_retry(data_batch, batch_index):
+    #         """带重试和性能监控的 upsert"""
+    #         nonlocal current_buffer_size, current_concurrency, semaphore
             
-            async with semaphore:
-                start_time = time.time()
-                worksheet_id = getattr(model, '_worksheet_id', model.__name__)
-                endpoint = f"/api/v3/app/worksheets/{worksheet_id}/rows/upsert"
+    #         async with semaphore:
+    #             start_time = time.time()
+    #             worksheet_id = getattr(model, '_worksheet_id', model.__name__)
+    #             endpoint = f"/api/v3/app/worksheets/{worksheet_id}/rows/upsert"
                 
-                for attempt in range(max_retries):
-                    try:
-                        result = await self.upsert(model, data_batch, **kwargs)
-                        response_time = time.time() - start_time
+    #             for attempt in range(max_retries):
+    #                 try:
+    #                     result = await self.upsert(model, data_batch, **kwargs)
+    #                     response_time = time.time() - start_time
                         
-                        # 记录成功请求到自适应控制器
-                        if adaptive:
-                            controller.record_request(True, response_time)
+    #                     # 记录成功请求到自适应控制器
+    #                     if adaptive:
+    #                         controller.record_request(True, response_time)
                         
-                        # 记录到监控器
-                        self._record_monitor(
-                            method="POST",
-                            endpoint=endpoint,
-                            data={"batch_size": len(data_batch)},
-                            response_time=response_time,
-                            success=True
-                        )
+    #                     # 记录到监控器
+    #                     self._record_monitor(
+    #                         method="POST",
+    #                         endpoint=endpoint,
+    #                         data={"batch_size": len(data_batch)},
+    #                         response_time=response_time,
+    #                         success=True
+    #                     )
                         
-                        return result.count()
-                    except Exception as e:
-                        response_time = time.time() - start_time
-                        console_log.warning(f"批次 {batch_index} 第 {attempt + 1} 次尝试失败: {e}")
+    #                     return result.count()
+    #                 except Exception as e:
+    #                     response_time = time.time() - start_time
+    #                     console_log.warning(f"批次 {batch_index} 第 {attempt + 1} 次尝试失败: {e}")
                         
-                        # 记录失败请求到自适应控制器
-                        if adaptive:
-                            controller.record_request(False, response_time)
+    #                     # 记录失败请求到自适应控制器
+    #                     if adaptive:
+    #                         controller.record_request(False, response_time)
                         
-                        # 记录到监控器
-                        self._record_monitor(
-                            method="POST",
-                            endpoint=endpoint,
-                            data={"batch_size": len(data_batch)},
-                            response_time=response_time,
-                            success=False,
-                            error=str(e)
-                        )
+    #                     # 记录到监控器
+    #                     self._record_monitor(
+    #                         method="POST",
+    #                         endpoint=endpoint,
+    #                         data={"batch_size": len(data_batch)},
+    #                         response_time=response_time,
+    #                         success=False,
+    #                         error=str(e)
+    #                     )
                         
-                        if attempt < max_retries - 1:
-                            await asyncio.sleep(retry_delay * (attempt + 1))
-                        else:
-                            console_log.error(f"批次 {batch_index} 最终失败，跳过 {len(data_batch)} 条数据")
-                            return 0
-                return 0
+    #                     if attempt < max_retries - 1:
+    #                         await asyncio.sleep(retry_delay * (attempt + 1))
+    #                     else:
+    #                         console_log.error(f"批次 {batch_index} 最终失败，跳过 {len(data_batch)} 条数据")
+    #                         return 0
+    #             return 0
         
-        batch_index = 0
-        for data in data_generator:
-            buffer.extend(data)
+    #     batch_index = 0
+    #     for data in data_generator:
+    #         buffer.extend(data)
             
-            if len(buffer) >= current_buffer_size:
-                batch_index += 1
+    #         if len(buffer) >= current_buffer_size:
+    #             batch_index += 1
                 
-                # 自适应调整参数
-                if adaptive and batch_index % 5 == 0:
-                    new_buffer_size, new_concurrency = controller.adjust()
+    #             # 自适应调整参数
+    #             if adaptive and batch_index % 5 == 0:
+    #                 new_buffer_size, new_concurrency = controller.adjust()
                     
-                    if new_concurrency != current_concurrency:
-                        # 更新信号量
-                        current_concurrency = new_concurrency
-                        semaphore = asyncio.Semaphore(current_concurrency)
-                        console_log.info(f"自适应调整: 并发数 -> {current_concurrency}")
+    #                 if new_concurrency != current_concurrency:
+    #                     # 更新信号量
+    #                     current_concurrency = new_concurrency
+    #                     semaphore = asyncio.Semaphore(current_concurrency)
+    #                     console_log.info(f"自适应调整: 并发数 -> {current_concurrency}")
                     
-                    if new_buffer_size != current_buffer_size:
-                        current_buffer_size = new_buffer_size
-                        console_log.info(f"自适应调整: 缓冲区 -> {current_buffer_size}")
+    #                 if new_buffer_size != current_buffer_size:
+    #                     current_buffer_size = new_buffer_size
+    #                     console_log.info(f"自适应调整: 缓冲区 -> {current_buffer_size}")
                     
-                    # 定期输出统计信息
-                    if batch_index % 20 == 0:
-                        stats = controller.get_stats()
-                        console_log.info(
-                            f"统计: 成功率={stats['success_rate']:.2%}, "
-                            f"平均响应={stats['avg_response_time']:.2f}s, "
-                            f"当前参数: buffer={current_buffer_size}, concurrency={current_concurrency}"
-                        )
+    #                 # 定期输出统计信息
+    #                 if batch_index % 20 == 0:
+    #                     stats = controller.get_stats()
+    #                     console_log.info(
+    #                         f"统计: 成功率={stats['success_rate']:.2%}, "
+    #                         f"平均响应={stats['avg_response_time']:.2f}s, "
+    #                         f"当前参数: buffer={current_buffer_size}, concurrency={current_concurrency}"
+    #                     )
                 
-                # 提交当前缓冲区的数据
-                tasks.append(asyncio.create_task(
-                    do_upsert_with_retry(buffer[:], batch_index)
-                ))
-                buffer = []
+    #             # 提交当前缓冲区的数据
+    #             tasks.append(asyncio.create_task(
+    #                 do_upsert_with_retry(buffer[:], batch_index)
+    #             ))
+    #             buffer = []
                 
-                # 控制并发数量，避免内存溢出
-                if len(tasks) >= current_concurrency * 2:
-                    done, pending = await asyncio.wait(
-                        tasks, 
-                        return_when=asyncio.FIRST_COMPLETED
-                    )
-                    for task in done:
-                        try:
-                            total_count += await task
-                        except Exception as e:
-                            console_log.error(f"任务执行失败: {e}")
-                    tasks = list(pending)
+    #             # 控制并发数量，避免内存溢出
+    #             if len(tasks) >= current_concurrency * 2:
+    #                 done, pending = await asyncio.wait(
+    #                     tasks, 
+    #                     return_when=asyncio.FIRST_COMPLETED
+    #                 )
+    #                 for task in done:
+    #                     try:
+    #                         total_count += await task
+    #                     except Exception as e:
+    #                         console_log.error(f"任务执行失败: {e}")
+    #                 tasks = list(pending)
         
-        # 处理剩余数据
-        if buffer:
-            batch_index += 1
-            tasks.append(asyncio.create_task(
-                do_upsert_with_retry(buffer, batch_index)
-            ))
+    #     # 处理剩余数据
+    #     if buffer:
+    #         batch_index += 1
+    #         tasks.append(asyncio.create_task(
+    #             do_upsert_with_retry(buffer, batch_index)
+    #         ))
         
-        # 等待所有任务完成
-        if tasks:
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            for result in results:
-                if isinstance(result, int):
-                    total_count += result
-                elif isinstance(result, Exception):
-                    console_log.error(f"任务异常: {result}")
+    #     # 等待所有任务完成
+    #     if tasks:
+    #         results = await asyncio.gather(*tasks, return_exceptions=True)
+    #         for result in results:
+    #             if isinstance(result, int):
+    #                 total_count += result
+    #             elif isinstance(result, Exception):
+    #                 console_log.error(f"任务异常: {result}")
         
-        # 输出最终统计
-        if adaptive:
-            stats = controller.get_stats()
-            console_log.info(
-                f"完成: 总请求={stats['request_count']}, "
-                f"成功率={stats['success_rate']:.2%}, "
-                f"最终参数: buffer={stats['buffer_size']}, concurrency={stats['concurrency']}"
-            )
+    #     # 输出最终统计
+    #     if adaptive:
+    #         stats = controller.get_stats()
+    #         console_log.info(
+    #             f"完成: 总请求={stats['request_count']}, "
+    #             f"成功率={stats['success_rate']:.2%}, "
+    #             f"最终参数: buffer={stats['buffer_size']}, concurrency={stats['concurrency']}"
+    #         )
         
-        return total_count
+    #     return total_count
     
     async def upsert_buffered(
         self,

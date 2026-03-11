@@ -5,512 +5,93 @@ import hashlib
 import requests
 from urllib.parse import quote
 import os
-from typing import Dict, Any, Optional, OrderedDict
+from typing import Dict, Tuple, List, Any, Optional, OrderedDict
 from datetime import datetime, timedelta
 import time
 
 
-from ._base import (
-    console_log, CACHE_JSON, BaseConnection
-)
-
-
-
-class JkyConfig():
-
-    BASE_URL = "https://open.jackyun.com/open/openapi/do"
-    API_VERSION = "V1.0"
-    APP_KEY = CACHE_JSON.get("erp", {}).get("app_key", "")
-    APP_SECRET = CACHE_JSON.get("erp", {}).get("app_secret", "")
-    """
-    ⬆️credential JSON，用于存储吉客云认证信息。文件包含如下结构用于吉客云的认证：
-    {
-        "erp": {
-            "app_key": "...",
-            "app_secret": "..."
-        }
-    }
-    """
-
-
-    PULL_SOURCE :OrderedDict = {
-        "全量公司信息": {
-            "method": "erp.company.query",
-            "biz_content": {"pageIndex": None, "pageSize": None},
-            "field_map": {
-                "groupId": ["groupId", "group"],
-                "currencyCode": ["currencyCode", "currency"],
-            },
-            "data_node": None
-        },
-
-        "全部部门": {
-            "method": "erp.depart.query",
-            "biz_content": {},
-            "data_node": None
-        },
-
-        "全部员工": {
-            "method": "erp.user.search",
-            "biz_content": {
-                "cols": "companyId,companyName,email,mainDepartId,mainDepartName,mobile,realName,userId,userName",
-                "pageIndex": None,
-                "pageSize": None
-            },
-            "data_node": None
-        },
-
-        "全部仓库": {
-            "method": "erp.warehouse.get",
-            "biz_content": {"pageIndex": None, "pageSize": None},
-            "data_node": "warehouseInfo"
-        },
-
-        "全部销售渠道": {
-            "method": "erp.sales.get",
-            "biz_content": {"pageIndex": None, "pageSize": None},
-            "data_node": "salesChannelInfo"
-        },
-
-        "货品全量分类": {
-            "method": "erp.goodscate.get",
-            "biz_content": {},
-            "data_node": None
-        },
-
-        "全量物流公司": {
-            "method": "erp.logistic.get",
-            "biz_content": {"pageIndex": None, "pageSize": None},
-            "data_node": "logisticInfo"
-        },
-
-        "全量结算账户": {
-            "method": "erp-baseinfo.bankaccounts.listNeed",
-            "biz_content": {
-                "pageIndex": None,
-                "pageSize": None,
-                "isIncludeBlockup": 1,
-                "cols": "accId,accName,acctypeCode,companyId,companyName,currId,currName,platAccountId,memo,bankCode,bankName,bankbranch,accOwner,accNumber,internationalBankAccount,swiftCode,countriesRegions,personalAuth,imageUpload"
-            },
-            "data_node": None
-        },
-
-        "更新SKU": {
-            "method": "erp.storage.goodslist",
-            "biz_content": {
-                "startDateModifiedSku": None,
-                "endDateModifiedSku": None,
-                "pageSize": None,
-                "pageIndex": None,
-                "isQueryDelete": 0,
-                "skuIsBlockup": 0,
-                "isBlockup": 0,
-                "isPackageGood": 0
-            },
-            "data_node": "goods"
-        },
-
-        "更新客户信息": {
-            "method": "crm.customer.list",
-            "biz_content": {
-                "gmtModifiedBegin": None,
-                "gmtModifiedEnd": None,
-                "pageSize": None,
-                "pageIndex": None,
-                "hasTotal": 1,
-                "enable": 1
-            },
-            "data_node": None
-        },
-
-        "更新JY单": {
-            "method": "oms.trade.fullinfoget",
-            "biz_content": {
-                "startModified": None,
-                "endModified": None,
-                "pageSize": None,
-                "pageIndex": None,
-                "hasTotal": 1, 
-                "fields": "totalResults,trades,checkTotal,tradeNo,otherFee,chargeCurrency,accountName,payType,payNo,sellerMemo,buyerMemo,goodsDetail,goodsDetail.goodsNo,goodsDetail.goodsName,goodsDetail.specName,goodsDetail.barcode,goodsDetail.sellCount,goodsDetail.unit,goodsDetail.sellPrice,goodsDetail.sellTotal,goodsDetail.cost,goodsDetail.discountTotal,goodsDetail.discountPoint,goodsDetail.taxFee,goodsDetail.shareFavourableFee,goodsDetail.estimateWeight,goodsDetail.goodsMemo,goodsDetail.cateName,goodsDetail.brandName,goodsDetail.goodsTags,goodsDetail.isFit,goodsDetail.isGift,goodsDetail.discountFee,goodsDetail.taxRate,goodsDetail.estimateGoodsVolume,goodsDetail.isPresell,goodsDetail.customerPrice,goodsDetail.customerTotal,goodsDetail.tradeGoodsNo,goodsDetail.tradeGoodsName,goodsDetail.tradeGoodsSpec,goodsDetail.tradeGoodsUnit,goodsDetail.sourceSubtradeNo,goodsDetail.platCode,goodsDetail.platGoodsId,goodsDetail.subTradeId,goodsDetail.goodsDelivery,goodsDelivery.sendCount,goodsDelivery.productionDate,goodsDelivery.expirationDate,goodsDelivery.batchNo,goodsDelivery.expireDate,goodsDelivery.productDate,goodsDetail.platAuthorId,goodsDetail.platAuthorName,goodsDetail.isPlatGift,goodsDetail.goodsPlatDiscountFee,goodsDetail.tradeOrderGoodsDiscountInfoDtoList,tradeOrderGoodsDiscountInfoDtoList.discountFee,tradeOrderGoodsDiscountInfoDtoList.discountName,goodsDetail.shareFavourableAfterFee,goodsDetail.divideSellTotal,goodsDetail.shareOrderDiscountFee,goodsDetail.shareOrderPlatDiscountFee,goodsDetail.sourceTradeNo,goodsDetail.actualSendCount,goodsDetail.platSkuId,goodsDetail.customerTradeNo,goodsDetail.customerSubtradeNo,goodsDetail.PlatCustomData,goodsDetail.assessmentCostLocal,goodsDetail.assessmentGrossProfitLocal,goodsDetail.assessmentGrossProfitPercent,goodsDetail.goodsCompassSourceContentType,goodsDetail.goodsSeller,goodsDetail.inventoryWarehouseId,goodsDetail.inventoryWarehouseName,goodsDetail.specId,goodsDetail.goodsId,goodsDetail.outerId,goodsDetail.apiType,goodsDetail.tradeId,goodsDetail.skuImgUrl,goodsDetail.needProcessCount,goodsDetail.goodsFlagIds,goodsDetail.goodsFlagNames,appendMemo,tradeFrom,register,seller,auditor,reviewer,estimateWeight,packageWeight,tradeCount,goodsTypeCount,freezeReason,abnormalDescription,onlineTradeNo,goodslist,gmtCreate,gmtModified,stockoutNo,confirmTime,departName,lastShipTime,payStatus,chargeCurrencyCode,chargeExchangeRate,tradeStatus,grossProfit,estimateVolume,customerTypeName,customerGradeName,customerTags,customerCode,customerDiscount,specialReminding,blackList,tradeTime,country,state,city,district,town,zip,payTime,countryCode,cityCode,invoiceType,payerName,payerRegno,payerBankAccount,payerPhone,auditTime,payerAddress,invoiceNo,invoiceCode,invoiceStatus,payerBankName,preTypedetail,firstPayment,finalPayment,firstPaytime,finalPaytime,reviewTime,activationTime,customerTotalFee,customerDiscountFee,notifyPickTime,consignTime,orderNo,customerPostFee,shopId,shopName,tradeOrderPayList,customerPayment,companyName,tradeOrderColumnExt,isBillCheck,warehouseCode,warehouseName,logisticName,tradeId,billDate,logisticType,mainPostid,tradeType,totalFee,taxFee,receivedPostFee,discountFee,payment,couponFee,receivedTotal,postFee,isTableSwitch,completeTime,shopcode,signingTime,goodsSerial,otherPaymentFees,tradeOrderGoodsColumnExts,isDelete,localPayment,localExchangeRate,customerAccount,localCurrencyCode,platCompleteTime,buyerOpenUid,tradeOrderAssemblyGoodsDtoList,tradeOrderRefundTime,assemblyGoodsDetail,apiType,logisticCode,agentShopName,tradeStatusExplain,flagIds,flagNames,sysFlagIds,shopTypeCode,sourceAfterNo,ticketCodeList,allCompassSourceContentType,customerName,invoiceAmount,realFee,packageDetail.state,finReceiptTime,extraLogisticNo,warehouseId,id,govSubsidy,pickUpTime,tradeOrderPre,scrollId,chargeType,chargeCurrency,chargeAccount,accountName,payType,payNo,payment,chargeCurrencyCode,chargeExchangeRate,columnExt.tradeId,goodsSerial.subTradeId,goodsSerial.skuId,goodsSerial.serialNo,goodsSerial.serialNo2,expense.expenseFee,expense.expenseItemName,subTradeId,tradeId,tradeOrderAssemblyGoodsDtoList.goodsNo,tradeOrderAssemblyGoodsDtoList.unit,tradeOrderAssemblyGoodsDtoList.specId,tradeOrderAssemblyGoodsDtoList.goodsId,tradeOrderAssemblyGoodsDtoList.tradeId,tradeOrderAssemblyGoodsDtoList.specName,tradeOrderAssemblyGoodsDtoList.goodsName,tradeOrderAssemblyGoodsDtoList.sellCount,tradeOrderAssemblyGoodsDtoList.subTradeId,tradeOrderAssemblyGoodsDtoList.baseUnitSellCount,tradeOrderAssemblyGoodsDtoList.assemblyGoodsDelivery,tradeId,specId,batchNo,expireDate,subTradeId,productDate,packageDetail.state,packageDetail.city,packageDetail.town,packageDetail.district,packageDetail.isGift,packageDetail.barcode,packageDetail.tradeNo,packageDetail.buyerMemo,packageDetail.sellCount,packageDetail.isPlatGift,packageDetail.logisticNo,packageDetail.sellerMemo,packageDetail.consignTime,packageDetail.logisticCode,packageDetail.logisticName,packageDetail.sourceTradeNo,packageDetail.warehouseName,packageDetail.sourceSubtradeNo,frstPaytime,firstPayment,finalPaytime,finalPayment,preTypedetail,sourceTradeNo"
-            },
-            "data_node": "trades"
-        },
-
-        "更新网店订单": {
-            "method": "omsapi-business.order.get",
-            "biz_content": {
-                "startModified": None,
-                "endModified": None,
-                "pageSize": None,
-                "pageIndex": None,
-                "hasTotal": 1
-            },
-            "data_node": None
-        },
-
-        "发货单": {
-            "method": "wms.order.query-info.page",
-            "biz_content": {
-                "startModifyTime": None,
-                "endModifyTime": None,
-                "pageSize": None,
-                "pageIndex": None,
-                "hasTotal": 1
-            },
-            "data_node": None
-        },
-    }
-
-
-
-class JkyConnection(BaseConnection):
-
-    def __init__(self, config: JkyConfig=JkyConfig):
-        self.config = config
-        self.base_url = config.BASE_URL
-        self.credential_keys = ("app_key", "app_secret")
-        self.app_key = config.APP_KEY
-        self.app_secret = config.APP_SECRET
-        super().__init__()
-
-
-    def auth(self):
-        pass
-
-    def sign_payload(self, payload: Dict[str, Any]) -> str:
-        s = ''
-        for k, v in payload.items():
-            k = k.strip()
-            v = str(v).strip()
-            s = f"{s}{k}{v}"
-
-        # s = (app_secret + s + app_secret).lower()
-        s = f"{self.app_secret}{s}{self.app_secret}".lower()
-        md5_hash = hashlib.md5()
-        md5_hash.update(s.encode('utf-8'))
-        sign = md5_hash.hexdigest()
-        payload['sign'] = sign
-        encoded_payload = "&".join(f"{k}={quote(v)}" for k, v in payload.items())
-        return encoded_payload
-
-
-    def call_api(self, base_url, biz_content, method, version, max_retries=3, retry_delay=2, timeout=30) -> Dict[str, Any]:
-        
-        now = datetime.now()
-        timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
-        payload = {
-            "appkey": self.app_key,
-            "bizcontent": biz_content,
-            "contenttype": "json",
-            "method": method,
-            "timestamp": timestamp,
-            "version": version,
-        }
-        encoded_payload = self.sign_payload(payload)
-        url = f"{base_url}?{encoded_payload}"
-        headers = {'Content-Type': 'application/json', 'Accept':'application/json'}
-
-        for attempt in range(max_retries):
-            try:
-                response = self._session.post(url=url, json=payload, headers=headers, timeout=timeout)
-                response_json = response.json()
-                return response_json
-            except requests.exceptions.ChunkedEncodingError as e:
-                if attempt < max_retries - 1:
-                    console_log.error(f"ChunkedEncodingError occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                    continue
-                else:
-                    raise
-            except requests.exceptions.Timeout as e:
-                if attempt < max_retries - 1:
-                    console_log.error(f"Timeout occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                    continue
-                else:
-                    raise
-            except requests.exceptions.ConnectionError as e:
-                if attempt < max_retries - 1:
-                    console_log.error(f"ConnectionError occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                    continue
-                else:
-                    raise
-            except requests.exceptions.RequestException as e:
-                if attempt < max_retries - 1:
-                    console_log.error(f"RequestException occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                    continue
-                else:
-                    raise
-
-
-    def pull_from_source(self, source_name: str, biz_content_format: Optional[Dict[str, Any]]=None):
-        source = self.config.PULL_SOURCE[source_name]
-        method = source["method"]
-        field_map = source.get("field_map", {})
-        biz_content = source["biz_content"]
-        if biz_content_format:
-            biz_content.update(biz_content_format)
-        version = source.get("version", "v1.0")
-        data_node = source["data_node"]
-
-        page_size = 200
-        page_index = 0
-        row_count = 0
-        while True:
-            page_params = {
-                "pageSize": page_size,
-                "pageIndex": page_index
-            }
-            biz_content.update((k, v) for k, v in page_params.items() if k in biz_content)
-            response_json = self.call_api(
-                base_url=self.base_url,
-                biz_content=json.dumps(biz_content),
-                method=method,
-                version=version
-            )
-            result_data = response_json['result']['data']
-            if data_node:
-                result_data = result_data.get(data_node)
-            if not result_data:
-                break
-            data_list = []
-            for row in result_data:
-                data = {}
-                for k, v in row.items():
-                    if k in field_map:
-                        if isinstance(field_map[k], str):
-                            data[field_map[k]] = v
-                        else:
-                            for f in field_map[k]:
-                                data[f] = v
-                    else:
-                        data[k] = v
-                data_list.append(data)
-            page_index += 1
-            current_page_size = len(result_data)
-            row_count += current_page_size
-            console_log.info(f"获取【{source_name}】第【{page_index}】页数据，【{current_page_size}】条，累计【{row_count}】条")
-            yield data_list
-            if current_page_size < page_size or (not "pageSize" in biz_content and page_index > 0):
-                break
-
-
-    def push_into_target(self, *args, **kwargs):
-        return super().push_to_target(*args, **kwargs)
-
-
-
-# from .hap import HapConfig, HapConnection, Model, StrField, NumField, RelationField, SubtableField, ChoiceField, Q
-# from ..utils.hap._base import HapConfig
-# from ..utils.hap.connection import HapConnection, AsyncHapConnection
-# from ..utils.hap.models import Model
-# from ..utils.hap.fields import StrField, NumField, RelationField, SubtableField, ChoiceField
-# from ..utils.hap.data_objects import Q
-
+from apps.data_opt.utils.common import get_session
 from ..utils.hap import *
 
 
 ENUM_DECODER = {
     "bankaccounts": {
         "acctypeCode": {
-            "PDD": "拼多多",
-            "HUIFU": "汇付天下",
-            "paypal": "PayPal",
-            "WXSP": "微信视频号",
-            "SHOPEE": "Shopee",
-            "YOUZAN": "有赞",
-            "SQB": "收钱吧",
-            "LZS": "鹿智深",
-            "YMX": "亚马逊",
-            "TL": "通联",
-            "WFT": "威富通",
-            "NNP": "诺诺支付",
-            "JD": "京东",
-            "ALIPAY": "国际支付宝",
-            "tiktok": "tiktok",
-            "DEWU": "得物",
-            "XHS": "小红书",
-            "Lazada": "LaZaDa",
-            "FXG": "放心购（抖音小店）",
-            "KSXD": "快手小店",
-            "KQB": "快钱",
-            "THIR": "其他",
-            "WECH": "微信",
-            "ALIP": "支付宝",
-            "BANK": "银行",
-            "CASH": "现金"
+            "PDD": "拼多多", "HUIFU": "汇付天下", "paypal": "PayPal", "WXSP": "微信视频号", "SHOPEE": "Shopee", "YOUZAN": "有赞",
+            "SQB": "收钱吧", "LZS": "鹿智深", "YMX": "亚马逊", "TL": "通联", "WFT": "威富通", "NNP": "诺诺支付", "JD": "京东",
+            "ALIPAY": "国际支付宝", "tiktok": "tiktok", "DEWU": "得物", "XHS": "小红书", "Lazada": "LaZaDa",
+            "FXG": "放心购（抖音小店）", "KSXD": "快手小店", "KQB": "快钱", "THIR": "其他", "WECH": "微信", "ALIP": "支付宝",
+            "BANK": "银行", "CASH": "现金"
         }
     },
     "channel": {
         "channelType": {
-            "7": "内部交易渠道",
-            "6": "加盟门店",
-            "5": "分销虚拟店",
-            "4": "货主虚拟店",
-            "3": "销售办公室",
-            "2": "直营门店",
-            "1": "直营网店",
-            "0": "分销办公室"
+            "7": "内部交易渠道", "6": "加盟门店", "5": "分销虚拟店", "4": "货主虚拟店",
+            "3": "销售办公室", "2": "直营门店", "1": "直营网店", "0": "分销办公室"
         }
     },
     "logistic": {
         "linkType": {
-            "2": "自己联系",
-            "1": "平台联系"
+            "2": "自己联系", "1": "平台联系"
         }
     },
     "spu": {
         "goodsAttr": {
-            "3": "原料",
-            "2": "半成品",
-            "1": "成品",
-            "4": "包装材料",
-            "5": "辅料",
-            "6": "资产",
-            "7": "耗材",
-            "8": "服务",
-            "9": "设备",
-            "10": "备件",
-            "11": "费用"
+            "1": "成品", "2": "半成品", "3": "原料", "4": "包装材料", "5": "辅料",
+            "6": "资产", "7": "耗材", "8": "服务", "9": "设备", "10": "备件", "11": "费用"
         },
         "ownerType": {
             "0": "自己"
         },
         "imagePosition": {
-            "main": "主图",
-            "left": "左侧图",
-            "right": "右侧图"
+            "main": "主图", "left": "左侧图", "right": "右侧图"
         }
     },
     "goodscate": {
         "usableRange": {
-            "2": "组合装",
-            "1": "单品",
-            "0": "全部"
+            "0": "全部", "1": "单品", "2": "组合装"
         },
         "imagePosition": {
-            "0": "全部",
-            "1": "单品",
-            "2": "组合装"
+            "0": "全部", "1": "单品", "2": "组合装"
         }
     },
     "trade": {
         "tradeStatus": {
-            "9090": "已完成",
-            "6000": "发货在途",
-            "5030": "已取消-被拆分",
-            "5020": "已取消-被合并",
-            "5010": "已取消",
-            "4041": "代销发货已递交",
-            "4040": "代销发货待递交",
-            "4130": "待发货-部分发货",
-            "4123": "待发货-取消失败",
-            "4122": "待发货-已取消",
-            "4121": "待发货-取消中",
-            "4113": "待发货-递交失败",
-            "4112": "待发货-已递交",
-            "4111": "待发货-递交中",
-            "3010": "虚拟发货",
-            "2040": "采购等待",
-            "2030": "备货等待等生产",
-            "2020": "服务等待",
-            "2010": "备货等待等补货",
-            "2000": "备货等待",
-            "1050": "待复核",
-            "1030": "预售",
-            "1020": "审核中",
-            "1010": "待审核"
+            "9090": "已完成", "6000": "发货在途", "5030": "已取消-被拆分", "5020": "已取消-被合并", "5010": "已取消",
+            "4041": "代销发货已递交", "4040": "代销发货待递交", "4130": "待发货-部分发货", "4123": "待发货-取消失败",
+            "4122": "待发货-已取消", "4121": "待发货-取消中", "4113": "待发货-递交失败", "4112": "待发货-已递交", "4111": "待发货-递交中",
+            "3010": "虚拟发货", "2040": "采购等待", "2030": "备货等待等生产", "2020": "服务等待", "2010": "备货等待等补货",
+            "2000": "备货等待", "1050": "待复核", "1030": "预售", "1020": "审核中", "1010": "待审核"
         },
         "logisticType": {
-            "7": "自有物流",
-            "6": "线下配送",
-            "5": "无需配送",
-            "3": "门店配送",
-            "2": "上门自提",
-            "1": "普通快递"
+            "1": "普通快递", "2": "上门自提", "3": "门店配送", "5": "无需配送", "6": "线下配送", "7": "自有物流"
         },
         "tradeType": {
-            "16": "销售对账差异",
-            "15": "物流买赔",
-            "14": "大B2B业务",
-            "13": "销售返利",
-            "12": "仅退款",
-            "11": "错漏调整",
-            "10": "试销业务",
-            "9": "批发业务(B2B)",
-            "8": "售后退货",
-            "7": "售后发货",
-            "6": "现款现货",
-            "5": "代销售(供货商发货)",
-            "2": "代发货（来自分销）",
-            "1": "零售业务"
+            "1": "零售业务", "2": "代发货（来自分销）", "5": "代销售(供货商发货)", "6": "现款现货", "7": "售后发货",
+            "8": "售后退货", "9": "批发业务(B2B)", "10": "试销业务", "11": "错漏调整", "12": "仅退款",
+            "13": "销售返利", "14": "大B2B业务", "15": "物流买赔", "16": "销售对账差异",
         },
         "payType": {
-            "1": "支付宝",
-            "2": "财付通",
-            "3": "微信支付",
-            "4": "银联支付",
-            "5": "盛付通",
-            "6": "其它",
-            "7": "现金",
-            "8": "储值卡",
-            "9": "扫码付",
-            "10": "挂账",
-            "11": "诺诺支付",
-            "16": "易付宝",
-            "27": "通联支付",
-            "32": "有赞支付",
-            "33": "汇付支付",
-            "35": "商盟支付",
-            "36": "易宝支付",
-            "37": "汇聚支付",
-            "38": "合利宝支付"
+            "1": "支付宝", "2": "财付通", "3": "微信支付", "4": "银联支付", "5": "盛付通", "6": "其它", "7": "现金", "8": "储值卡",
+            "9": "扫码付", "10": "挂账", "11": "诺诺支付", "16": "易付宝", "27": "通联支付", "32": "有赞支付", "33": "汇付支付",
+            "35": "商盟支付", "36": "易宝支付", "37": "汇聚支付", "38": "合利宝支付"
         },
         "tradeFrom": {
-            "1": "网店下载",
-            "2": "手工新建",
-            "3": "订单导入",
-            "4": "吉商城",
-            "6": "售后",
-            "7": "门店",
-            "8": "分销",
-            "9": "吉链采购",
-            "10": "吉链分销",
-            "11": "吉商城分销",
-            "12": "奇门分销",
-            "13": "销售返利",
-            "14": "门店补货"
+            "1": "网店下载", "2": "手工新建", "3": "订单导入", "4": "吉商城", "6": "售后", "7": "门店", "8": "分销", "9": "吉链采购",
+            "10": "吉链分销", "11": "吉商城分销", "12": "奇门分销", "13": "销售返利", "14": "门店补货"
         },
         "payStatus": {
-            "0": "未付款",
-            "5": "部分付款",
-            "9": "已付款"
+            "0": "未付款", "5": "部分付款", "9": "已付款"
         },
         "chargeType": {
-            "1": "担保交易",
-            "2": "银行收款",
-            "3": "现金收款",
-            "4": "货到付款",
-            "5": "欠款计应收",
-            "6": "客户预存款",
-            "7": "多种结算",
-            "8": "退换货冲抵",
-            "9": "电子钱包"
+            "1": "担保交易", "2": "银行收款", "3": "现金收款", "4": "货到付款", "5": "欠款计应收", "6": "客户预存款", "7": "多种结算",
+            "8": "退换货冲抵", "9": "电子钱包"
         }
     },
     "customer": {
         "customerCreateSource": {
-            "1": "手工新增",
-            "2": "Excel导入",
-            "3": "吉会员",
-            "4": "吉商城:",
-            "5": "电商平台",
-            "7": "开放平台",
-            "8": "销售商机",
-            "9": "线下零售",
-            "10": "门店注册"
+            "1": "手工新增", "2": "Excel导入", "3": "吉会员", "4": "吉商城:", "5": "电商平台", "7": "开放平台", "8": "销售商机",
+            "9": "线下零售", "10": "门店注册"
         }
     },
     "": {
@@ -1114,3 +695,262 @@ class Order(Model):
 
     class Meta:
         worksheet_id = "order"
+
+
+
+from ._base import (
+    console_log, CACHE_JSON
+)
+
+
+
+class JkyConfig():
+    """
+    缓存JSON包含如下结构用于吉客云的认证：
+    {
+        "erp": {
+            "app_key": "...",
+            "app_secret": "..."
+        }
+    }
+    """
+    BASE_URL = "https://open.jackyun.com/open/openapi/do"
+    API_VERSION = "V1.0"
+    APP_KEY = CACHE_JSON.get("erp", {}).get("app_key", "")
+    APP_SECRET = CACHE_JSON.get("erp", {}).get("app_secret", "")
+
+
+# 拉取数据配置
+PULL_SOURCE: OrderedDict = {
+    "$Company": {
+        "source_desc": "全量公司信息", "model": Company, "method": "erp.company.query", "data_node": None,
+        "biz_content": {"pageIndex": None, "pageSize": None}
+    },
+    "$Department": {
+        "source_desc": "全部部门", "model": Department, "method": "erp.depart.query", "data_node": None,
+        "biz_content": None
+    },
+    "$Staff": {
+        "source_desc": "全部员工", "model": Staff, "method": "erp.user.search", "data_node": None,
+        "biz_content": {
+            "cols": "companyId,companyName,email,mainDepartId,mainDepartName,mobile,realName,userId,userName",
+            "pageIndex": None, "pageSize": None
+        }
+    },
+    "$BankAccounts": {
+        "source_desc": "全量结算账户", "model": BankAccounts, "method": "erp-baseinfo.bankaccounts.listNeed", "data_node": None,
+        "biz_content": {
+            "pageIndex": None, "pageSize": None, "isIncludeBlockup": 1,
+            "cols": "accId,accName,acctypeCode,companyId,companyName,currId,currName,platAccountId,memo,bankCode,bankName,bankbranch,accOwner,accNumber,internationalBankAccount,swiftCode,countriesRegions,personalAuth,imageUpload"
+        }
+    },
+    "$Channel": {
+        "source_desc": "全部销售渠道", "model": Channel, "method": "erp.sales.get", "data_node": "salesChannelInfo",
+        "biz_content": {"pageIndex": None, "pageSize": None},
+    },
+    "$GoodsCate": {
+        "source_desc": "货品全量分类", "model": GoodsCate, "method": "erp.goodscate.get", "data_node": None,
+        "biz_content": None
+    },
+    "$Warehouse": {
+        "source_desc": "全部仓库", "model": Warehouse, "method": "erp.warehouse.get", "data_node": "warehouseInfo",
+        "biz_content": {"pageIndex": None, "pageSize": None}
+    },
+    "$Logistic": {
+        "source_desc": "全量物流公司", "model": Logistic, "method": "erp.logistic.get", "data_node": "logisticInfo",
+        "biz_content": {"pageIndex": None, "pageSize": None}
+    },
+
+    "&Customer":{
+        "source_desc": "更新客户信息", "model": Customer, "method": "crm.customer.list", "data_node": None,
+        "biz_content": {
+            "gmtModifiedBegin": None, "gmtModifiedEnd": None, "pageSize": None, "pageIndex": None,
+            "hasTotal": 1, "enable": 1
+        },
+        "slice_filter": '{"gmtModifiedBegin": "{slice_start}", "gmtModifiedEnd": "{slice_end}"}', 
+        "add_origin_json": False
+        },
+    "&Sku": {
+        "source_desc": "更新SKU",  "model": Sku, "method": "erp.storage.goodslist", "data_node": "goods",
+        "biz_content": {
+            "startDateModifiedSku": None, "endDateModifiedSku": None, "pageSize": None, "pageIndex": None,
+            "isQueryDelete": 0, "skuIsBlockup": 0, "isBlockup": 0, "isPackageGood": 0
+        },
+        "slice_filter": '{"startDateModifiedSku": "{slice_start}", "endDateModifiedSku": "{slice_end}"}', 
+        "add_origin_json": True,
+    },
+    "&Trade": {
+        "source_desc": "更新JY单", "model": Trade, "method": "oms.trade.fullinfoget","data_node": "trades",
+        "biz_content": {
+            "startModified": None, "endModified": None, "pageSize": None, "pageIndex": None, "hasTotal": 1, 
+            "fields": "totalResults,trades,checkTotal,tradeNo,otherFee,chargeCurrency,accountName,payType,payNo,sellerMemo,buyerMemo,goodsDetail,goodsDetail.goodsNo,goodsDetail.goodsName,goodsDetail.specName,goodsDetail.barcode,goodsDetail.sellCount,goodsDetail.unit,goodsDetail.sellPrice,goodsDetail.sellTotal,goodsDetail.cost,goodsDetail.discountTotal,goodsDetail.discountPoint,goodsDetail.taxFee,goodsDetail.shareFavourableFee,goodsDetail.estimateWeight,goodsDetail.goodsMemo,goodsDetail.cateName,goodsDetail.brandName,goodsDetail.goodsTags,goodsDetail.isFit,goodsDetail.isGift,goodsDetail.discountFee,goodsDetail.taxRate,goodsDetail.estimateGoodsVolume,goodsDetail.isPresell,goodsDetail.customerPrice,goodsDetail.customerTotal,goodsDetail.tradeGoodsNo,goodsDetail.tradeGoodsName,goodsDetail.tradeGoodsSpec,goodsDetail.tradeGoodsUnit,goodsDetail.sourceSubtradeNo,goodsDetail.platCode,goodsDetail.platGoodsId,goodsDetail.subTradeId,goodsDetail.goodsDelivery,goodsDelivery.sendCount,goodsDelivery.productionDate,goodsDelivery.expirationDate,goodsDelivery.batchNo,goodsDelivery.expireDate,goodsDelivery.productDate,goodsDetail.platAuthorId,goodsDetail.platAuthorName,goodsDetail.isPlatGift,goodsDetail.goodsPlatDiscountFee,goodsDetail.tradeOrderGoodsDiscountInfoDtoList,tradeOrderGoodsDiscountInfoDtoList.discountFee,tradeOrderGoodsDiscountInfoDtoList.discountName,goodsDetail.shareFavourableAfterFee,goodsDetail.divideSellTotal,goodsDetail.shareOrderDiscountFee,goodsDetail.shareOrderPlatDiscountFee,goodsDetail.sourceTradeNo,goodsDetail.actualSendCount,goodsDetail.platSkuId,goodsDetail.customerTradeNo,goodsDetail.customerSubtradeNo,goodsDetail.PlatCustomData,goodsDetail.assessmentCostLocal,goodsDetail.assessmentGrossProfitLocal,goodsDetail.assessmentGrossProfitPercent,goodsDetail.goodsCompassSourceContentType,goodsDetail.goodsSeller,goodsDetail.inventoryWarehouseId,goodsDetail.inventoryWarehouseName,goodsDetail.specId,goodsDetail.goodsId,goodsDetail.outerId,goodsDetail.apiType,goodsDetail.tradeId,goodsDetail.skuImgUrl,goodsDetail.needProcessCount,goodsDetail.goodsFlagIds,goodsDetail.goodsFlagNames,appendMemo,tradeFrom,register,seller,auditor,reviewer,estimateWeight,packageWeight,tradeCount,goodsTypeCount,freezeReason,abnormalDescription,onlineTradeNo,goodslist,gmtCreate,gmtModified,stockoutNo,confirmTime,departName,lastShipTime,payStatus,chargeCurrencyCode,chargeExchangeRate,tradeStatus,grossProfit,estimateVolume,customerTypeName,customerGradeName,customerTags,customerCode,customerDiscount,specialReminding,blackList,tradeTime,country,state,city,district,town,zip,payTime,countryCode,cityCode,invoiceType,payerName,payerRegno,payerBankAccount,payerPhone,auditTime,payerAddress,invoiceNo,invoiceCode,invoiceStatus,payerBankName,preTypedetail,firstPayment,finalPayment,firstPaytime,finalPaytime,reviewTime,activationTime,customerTotalFee,customerDiscountFee,notifyPickTime,consignTime,orderNo,customerPostFee,shopId,shopName,tradeOrderPayList,customerPayment,companyName,tradeOrderColumnExt,isBillCheck,warehouseCode,warehouseName,logisticName,tradeId,billDate,logisticType,mainPostid,tradeType,totalFee,taxFee,receivedPostFee,discountFee,payment,couponFee,receivedTotal,postFee,isTableSwitch,completeTime,shopcode,signingTime,goodsSerial,otherPaymentFees,tradeOrderGoodsColumnExts,isDelete,localPayment,localExchangeRate,customerAccount,localCurrencyCode,platCompleteTime,buyerOpenUid,tradeOrderAssemblyGoodsDtoList,tradeOrderRefundTime,assemblyGoodsDetail,apiType,logisticCode,agentShopName,tradeStatusExplain,flagIds,flagNames,sysFlagIds,shopTypeCode,sourceAfterNo,ticketCodeList,allCompassSourceContentType,customerName,invoiceAmount,realFee,packageDetail.state,finReceiptTime,extraLogisticNo,warehouseId,id,govSubsidy,pickUpTime,tradeOrderPre,scrollId,chargeType,chargeCurrency,chargeAccount,accountName,payType,payNo,payment,chargeCurrencyCode,chargeExchangeRate,columnExt.tradeId,goodsSerial.subTradeId,goodsSerial.skuId,goodsSerial.serialNo,goodsSerial.serialNo2,expense.expenseFee,expense.expenseItemName,subTradeId,tradeId,tradeOrderAssemblyGoodsDtoList.goodsNo,tradeOrderAssemblyGoodsDtoList.unit,tradeOrderAssemblyGoodsDtoList.specId,tradeOrderAssemblyGoodsDtoList.goodsId,tradeOrderAssemblyGoodsDtoList.tradeId,tradeOrderAssemblyGoodsDtoList.specName,tradeOrderAssemblyGoodsDtoList.goodsName,tradeOrderAssemblyGoodsDtoList.sellCount,tradeOrderAssemblyGoodsDtoList.subTradeId,tradeOrderAssemblyGoodsDtoList.baseUnitSellCount,tradeOrderAssemblyGoodsDtoList.assemblyGoodsDelivery,tradeId,specId,batchNo,expireDate,subTradeId,productDate,packageDetail.state,packageDetail.city,packageDetail.town,packageDetail.district,packageDetail.isGift,packageDetail.barcode,packageDetail.tradeNo,packageDetail.buyerMemo,packageDetail.sellCount,packageDetail.isPlatGift,packageDetail.logisticNo,packageDetail.sellerMemo,packageDetail.consignTime,packageDetail.logisticCode,packageDetail.logisticName,packageDetail.sourceTradeNo,packageDetail.warehouseName,packageDetail.sourceSubtradeNo,frstPaytime,firstPayment,finalPaytime,finalPayment,preTypedetail,sourceTradeNo"
+        },
+        "slice_filter": '{"startModified": "{slice_start}", "endModified": "{slice_end}"}', 
+        "add_origin_json": True
+    },
+    "&BusinessOrder": {
+        "source_desc": "更新网店订单", "model": BusinessOrder, "method": "omsapi-business.order.get", "data_node": None,
+        "biz_content": {
+            "startModified": None, "endModified": None, "pageSize": None, "pageIndex": None,
+            "hasTotal": 1
+        },
+        "slice_filter": '{"startModified": "{slice_start}", "endModified": "{slice_end}"}', 
+        "add_origin_json": True
+    },
+    "&Order": {
+        "source_desc": "发货单", "model": Order, "method": "wms.order.query-info.page", "data_node": None,
+        "biz_content": {
+            "startModifyTime": None, "endModifyTime": None, "pageSize": None, "pageIndex": None,
+            "hasTotal": 1
+        },
+        "slice_filter": '{"startModifyTime": "{slice_start}", "endModifyTime": "{slice_end}"}', 
+        "add_origin_json": True
+    },
+}
+
+
+class JkyConnection():
+
+    def __init__(self, config: JkyConfig=None):
+        self._session = get_session()
+        self.config = config or JkyConfig
+        self.base_url = self.config.BASE_URL
+        self.credential_keys = ("app_key", "app_secret")
+        self.app_key = self.config.APP_KEY
+        self.app_secret = self.config.APP_SECRET
+
+
+    def sign_payload(self, payload: Dict[str, Any]) -> str:
+        s = ''
+        for k, v in payload.items():
+            k = k.strip()
+            v = str(v).strip()
+            s = f"{s}{k}{v}"
+
+        s = f"{self.app_secret}{s}{self.app_secret}".lower()
+        md5_hash = hashlib.md5()
+        md5_hash.update(s.encode('utf-8'))
+        sign = md5_hash.hexdigest()
+        payload['sign'] = sign
+        encoded_payload = "&".join(f"{k}={quote(v)}" for k, v in payload.items())
+        return encoded_payload
+
+
+    def call_api(self, base_url, biz_content, method, version, max_retries=3, retry_delay=2, timeout=30) -> Dict[str, Any]:
+        
+        now = datetime.now()
+        timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
+        payload = {
+            "appkey": self.app_key,
+            "bizcontent": biz_content,
+            "contenttype": "json",
+            "method": method,
+            "timestamp": timestamp,
+            "version": version,
+        }
+        encoded_payload = self.sign_payload(payload)
+        url = f"{base_url}?{encoded_payload}"
+        headers = {'Content-Type': 'application/json', 'Accept':'application/json'}
+
+        for attempt in range(max_retries):
+            try:
+                response = self._session.post(url=url, json=payload, headers=headers, timeout=timeout)
+                response_json = response.json()
+                return response_json
+            except requests.exceptions.ChunkedEncodingError as e:
+                if attempt < max_retries - 1:
+                    console_log.error(f"ChunkedEncodingError occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    raise
+            except requests.exceptions.Timeout as e:
+                if attempt < max_retries - 1:
+                    console_log.error(f"Timeout occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    raise
+            except requests.exceptions.ConnectionError as e:
+                if attempt < max_retries - 1:
+                    console_log.error(f"ConnectionError occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    raise
+            except requests.exceptions.RequestException as e:
+                if attempt < max_retries - 1:
+                    console_log.error(f"RequestException occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    raise
+
+
+    def pull_from_source(self, source_code: str, slice_timerange: Optional[Tuple[str, str]]=None, other_biz:Optional[Dict]=None):
+        source = PULL_SOURCE[source_code]
+        source_desc = source["source_desc"]
+        method = source["method"]
+        biz_content = source.get("biz_content", {})
+        slice_filter = source.get("slice_filter")
+        if slice_timerange and slice_filter:
+            slice_filter = slice_filter.replace("{slice_start}", slice_timerange[0]).replace("{slice_end}", slice_timerange[1])
+            biz_content.update(json.loads(slice_filter))
+        if other_biz:
+            biz_content.update(other_biz)
+        add_origin_json = source.get("add_origin_json", False)
+        version = source.get("version", "v1.0")
+        data_node = source.get("data_node")
+
+        page_size = 200
+        page_index = 0
+        row_count = 0
+        while True:
+            page_params = {
+                "pageSize": page_size,
+                "pageIndex": page_index
+            }
+            biz_content.update((k, v) for k, v in page_params.items() if k in biz_content)
+            response_json = self.call_api(
+                base_url=self.base_url,
+                biz_content=json.dumps(biz_content),
+                method=method,
+                version=version
+            )
+            result_data = response_json['result']['data']
+            if data_node:
+                result_data = result_data.get(data_node)
+            if not result_data:
+                break
+            if add_origin_json:
+                for row in result_data:
+                    row["jkyOriginJson___"] = json.dumps(row, ensure_ascii=False)
+            page_index += 1
+            current_page_size = len(result_data)
+            row_count += current_page_size
+            console_log.info(f"获取【{source_desc}】第【{page_index}】页数据，【{current_page_size}】条，累计【{row_count}】条")
+            yield result_data
+            if current_page_size < page_size or (not "pageSize" in biz_content and page_index > 0):
+                break
+
+
+    async def data_to_hap(self, async_hap: AsyncHapConnection, source_code: str, slice_timerange: Optional[Tuple[str, str]]=None, other_biz:Optional[Dict]=None):
+        data_gen = self.pull_from_source(source_code, slice_timerange, other_biz)
+        model = PULL_SOURCE[source_code]["model"]
+        time_start = datetime.now()
+        count = await async_hap.rows(model).upsert_from_generator(data_gen, adaptive=True, trigger_workflow=True)
+        time_end = datetime.now()
+        console_log.info(f"成功处理 【{source_code}】【{count}】条，耗时【{time_end - time_start}】")
+
+
+def register_hap_models(hap_conn: HapConnection, source_codes: List[str]):
+    sorted_models: Optional[Dict[str, Model]] = {}
+    for source_code, source in PULL_SOURCE.items():
+        if source_code in source_codes:
+            sorted_models[source_code] = source["model"]
+    hap_conn.register_models(sorted_models.values())
+    return sorted_models
+
+
+
+

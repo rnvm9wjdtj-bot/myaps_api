@@ -261,7 +261,7 @@ class RelationField(Field):
         
         # 检查是否需要更新关联字段
         followwith_field = self.follow_with
-        if not followwith_field in data:
+        if followwith_field not in data:
             field_map = self.model._get_field_map()
             if followwith_field in field_map:
                 followwith_field = field_map[followwith_field]
@@ -299,52 +299,136 @@ class RelationField(Field):
             related_model = self.related_model
         
         try:
-            # 优先从缓存中获取数据
-            relation_data = []
+
+            # 调用实例方法查询关联数据
+            relation_data = self._query_relation_data(
+                code_value=code_value,
+                hap_conn=hap_conn
+        )
+
+            # # 优先从缓存中获取数据
+            # relation_data = []
             
-            # 处理逗号分隔的值
-            code_values = [v.strip() for v in str(code_value).split(',')] if isinstance(code_value, str) else [code_value]
+            # # 处理逗号分隔的值
+            # code_values = [v.strip() for v in str(code_value).split(',')] if isinstance(code_value, str) else [code_value]
             
-            # 检查缓存是否存在
-            if hasattr(hap_conn, 'cache_data') and hasattr(hap_conn, 'cache_indexes'):
-                worksheet_id = related_model.get_worksheet_id()
-                cache_key = followwith_field
-                if worksheet_id in hap_conn.cache_indexes:
-                    # 确定缓存中使用的键名（字段名）
-                    if self.query_field:
-                        # 使用显式指定的查询字段
-                        cache_key = cache_key
-                    else:
-                        # 未指定查询字段，使用关联模型的主键字段
-                        pk_field = related_model.get_pk_field()
-                        if pk_field:
-                            # 获取主键字段的 field_name
-                            pk_field_obj = related_model._get_fields().get(pk_field)
-                            if pk_field_obj:
-                                cache_key = pk_field_obj.field_name
-                            else:
-                                cache_key = pk_field
-                        else:
-                            # 无法确定查询字段，使用默认值
-                            cache_key = followwith_field
+            # # 检查缓存是否存在
+            # if hasattr(hap_conn, 'cache_data') and hasattr(hap_conn, 'cache_indexes'):
+            #     worksheet_id = related_model.get_worksheet_id()
+            #     cache_key = followwith_field
+            #     if worksheet_id in hap_conn.cache_indexes:
+            #         # 确定缓存中使用的键名（字段名）
+            #         if self.query_field:
+            #             # 使用显式指定的查询字段
+            #             cache_key = cache_key
+            #         else:
+            #             # 未指定查询字段，使用关联模型的主键字段
+            #             pk_field = related_model.get_pk_field()
+            #             if pk_field:
+            #                 # 获取主键字段的 field_name
+            #                 pk_field_obj = related_model._get_fields().get(pk_field)
+            #                 if pk_field_obj:
+            #                     cache_key = pk_field_obj.field_name
+            #                 else:
+            #                     cache_key = pk_field
+            #             else:
+            #                 # 无法确定查询字段，使用默认值
+            #                 cache_key = followwith_field
                     
-                    # 检查是否有 code_field_name 的索引
-                    if cache_key in hap_conn.cache_indexes[worksheet_id]:
-                        # 从索引中查找每个 code_value 对应的 row_id
-                        for cv in code_values:
-                            if cv in hap_conn.cache_indexes[worksheet_id][cache_key]:
-                                row_id = hap_conn.cache_indexes[worksheet_id][cache_key][cv]
-                                # 从缓存数据中获取完整信息
-                                if worksheet_id in hap_conn.cache_data and row_id in hap_conn.cache_data[worksheet_id]:
-                                    # 构建关联字段数据，只需要传入 rowid
-                                    relation_data.append(row_id)
+            #         # 检查是否有 code_field_name 的索引
+            #         if cache_key in hap_conn.cache_indexes[worksheet_id]:
+            #             # 从索引中查找每个 code_value 对应的 row_id
+            #             for cv in code_values:
+            #                 if cv in hap_conn.cache_indexes[worksheet_id][cache_key]:
+            #                     row_id = hap_conn.cache_indexes[worksheet_id][cache_key][cv]
+            #                     # 从缓存数据中获取完整信息
+            #                     if worksheet_id in hap_conn.cache_data and row_id in hap_conn.cache_data[worksheet_id]:
+            #                         # 构建关联字段数据，只需要传入 rowid
+            #                         relation_data.append(row_id)
             
-            # 缓存中没有，从 API 查询
-            if not relation_data:
-                # 确定查询时使用的字段名
+            # # 缓存中没有，从 API 查询
+            # if not relation_data:
+            #     # 确定查询时使用的字段名
+            #     if self.query_field:
+            #         # 使用显式指定的查询字段
+            #         query_field = self.query_field
+            #     else:
+            #         # 未指定查询字段，使用关联模型的主键字段
+            #         pk_field = related_model.get_pk_field()
+            #         if pk_field:
+            #             # 获取主键字段的 field_name
+            #             pk_field_obj = related_model._get_fields().get(pk_field)
+            #             if pk_field_obj:
+            #                 query_field = pk_field_obj.field_name
+            #             else:
+            #                 query_field = pk_field
+            #         else:
+            #             # 无法确定查询字段，使用默认值
+            #             query_field = followwith_field
+                
+            #     # 构建查询条件，使用 in 操作符
+            #     from .data_objects import Q
+            #     if len(code_values) > 1:
+            #         # 多个值使用 in 操作符
+            #         filter_expr = Q(**{f"{query_field}__in": code_values})
+            #         related_instances = hap_conn.rows(related_model).filter(filter_expr).all()
+            #         for instance in related_instances.row_objects:
+            #             if hasattr(instance, 'row_id'):
+            #                 relation_data.append(instance.row_id)
+            #                 # 将查询结果添加到缓存中
+            #                 hap_conn._update_cache_for_instance(instance)
+            #     else:
+            #         # 单个值使用 eq 操作符
+            #         filter_expr = Q(**{f"{query_field}__eq": code_values[0]})
+            #         related_instance = hap_conn.rows(related_model).filter(filter_expr).all().first()
+            #         if related_instance and hasattr(related_instance, 'row_id'):
+            #             relation_data = [related_instance.row_id]
+            #             # 将查询结果添加到缓存中
+            #             hap_conn._update_cache_for_instance(related_instance)
+            
+            # 更新关联字段数据
+            if relation_data:
+                data[self.field_name] = relation_data
+        except Exception as e:
+            # 忽略查询错误，保持原始数据
+            pass
+        
+        return data
+
+
+    def _query_relation_data(self, code_value, hap_conn):
+        """
+        查询关联数据并返回关联记录的 row_id 列表
+
+        Args:
+            code_value: 关联值
+            followwith_field: 跟随字段
+            hap_conn: HapConnection 实例
+            
+        Returns:
+            List[Any]: 关联记录的 row_id 列表
+        """
+        relation_data = []
+        followwith_field = self.follow_with
+        # 处理逗号分隔的值
+        code_values = [v.strip() for v in str(code_value).split(',')] if isinstance(code_value, str) else [code_value]
+        
+        # 处理延时导入的模型
+        if isinstance(self.related_model, str):
+            # 从 hap_conn 中获取注册的模型类
+            related_model = hap_conn.get_model(self.related_model)
+        else:
+            related_model = self.related_model
+        
+        # 检查缓存是否存在
+        if hasattr(hap_conn, 'cache_data') and hasattr(hap_conn, 'cache_indexes'):
+            worksheet_id = related_model.get_worksheet_id()
+            cache_key = followwith_field
+            if worksheet_id in hap_conn.cache_indexes:
+                # 确定缓存中使用的键名（字段名）
                 if self.query_field:
                     # 使用显式指定的查询字段
-                    query_field = self.query_field
+                    cache_key = cache_key
                 else:
                     # 未指定查询字段，使用关联模型的主键字段
                     pk_field = related_model.get_pk_field()
@@ -352,42 +436,66 @@ class RelationField(Field):
                         # 获取主键字段的 field_name
                         pk_field_obj = related_model._get_fields().get(pk_field)
                         if pk_field_obj:
-                            query_field = pk_field_obj.field_name
+                            cache_key = pk_field_obj.field_name
                         else:
-                            query_field = pk_field
+                            cache_key = pk_field
                     else:
                         # 无法确定查询字段，使用默认值
-                        query_field = followwith_field
+                        cache_key = followwith_field
                 
-                # 构建查询条件，使用 in 操作符
-                if len(code_values) > 1:
-                    # 多个值使用 in 操作符
-                    from .hap import Q
-                    filter_expr = Q(**{f"{query_field}__in": code_values})
-                    related_instances = hap_conn.rows(related_model).filter(filter_expr).all()
-                    for instance in related_instances.row_objects:
-                        if hasattr(instance, 'row_id'):
-                            relation_data.append(instance.row_id)
-                            # 将查询结果添加到缓存中
-                            hap_conn._update_cache_for_instance(instance)
-                else:
-                    # 单个值使用 eq 操作符
-                    from .hap import Q
-                    filter_expr = Q(**{f"{query_field}__eq": code_values[0]})
-                    related_instance = hap_conn.rows(related_model).filter(filter_expr).all().first()
-                    if related_instance and hasattr(related_instance, 'row_id'):
-                        relation_data = [related_instance.row_id]
-                        # 将查询结果添加到缓存中
-                        hap_conn._update_cache_for_instance(related_instance)
-            
-            # 更新关联字段数据
-            if relation_data:
-                data[attr_name] = relation_data
-        except Exception as e:
-            # 忽略查询错误，保持原始数据
-            pass
+                # 检查是否有 code_field_name 的索引
+                if cache_key in hap_conn.cache_indexes[worksheet_id]:
+                    # 从索引中查找每个 code_value 对应的 row_id
+                    for cv in code_values:
+                        if cv in hap_conn.cache_indexes[worksheet_id][cache_key]:
+                            row_id = hap_conn.cache_indexes[worksheet_id][cache_key][cv]
+                            # 从缓存数据中获取完整信息
+                            if worksheet_id in hap_conn.cache_data and row_id in hap_conn.cache_data[worksheet_id]:
+                                # 构建关联字段数据，只需要传入 rowid
+                                relation_data.append(row_id)
         
-        return data
+        # 缓存中没有，从 API 查询
+        if not relation_data:
+            # 确定查询时使用的字段名
+            if self.query_field:
+                # 使用显式指定的查询字段
+                query_field = self.query_field
+            else:
+                # 未指定查询字段，使用关联模型的主键字段
+                pk_field = related_model.get_pk_field()
+                if pk_field:
+                    # 获取主键字段的 field_name
+                    pk_field_obj = related_model._get_fields().get(pk_field)
+                    if pk_field_obj:
+                        query_field = pk_field_obj.field_name
+                    else:
+                        query_field = pk_field
+                else:
+                    # 无法确定查询字段，使用默认值
+                    query_field = followwith_field
+            
+            # 构建查询条件，使用 in 操作符
+            from .data_objects import Q
+            if len(code_values) > 1:
+                # 多个值使用 in 操作符
+                filter_expr = Q(**{f"{query_field}__in": code_values})
+                related_instances = hap_conn.rows(related_model).filter(filter_expr).all()
+                for instance in related_instances.row_objects:
+                    if hasattr(instance, 'row_id'):
+                        relation_data.append(instance.row_id)
+                        # 将查询结果添加到缓存中
+                        hap_conn._update_cache_for_instance(instance)
+            else:
+                # 单个值使用 eq 操作符
+                filter_expr = Q(**{f"{query_field}__eq": code_values[0]})
+                related_instance = hap_conn.rows(related_model).filter(filter_expr).all().first()
+                if related_instance and hasattr(related_instance, 'row_id'):
+                    relation_data = [related_instance.row_id]
+                    # 将查询结果添加到缓存中
+                    hap_conn._update_cache_for_instance(related_instance)
+        
+        return relation_data
+
 
 
 class SubtableField(Field):
@@ -499,18 +607,27 @@ class SubtableField(Field):
                 
                 # 确保所有需要的字段都存在
                 for sub_attr_name, field_obj in self.subtable_model._get_fields().items():
-                    # 处理关联字段的 follow_with
+                    # 处理关联字段的 follow_with 
                     if isinstance(field_obj, RelationField) and field_obj.follow_with:
                         follow_with = field_obj.follow_with
-                        # 检查 follow_with 字段是否存在
-                        if follow_with not in preprocessed_data:
+                        # field_name = field_obj.field_name
+
+                        if follow_with in preprocessed_data:
+                            code_value = preprocessed_data[follow_with]
+                            relation_data = field_obj._query_relation_data(
+                                code_value=code_value,
+                                hap_conn=hap_conn
+                            )
+                            preprocessed_data[field_obj.field_name] = relation_data
+
+                        else:
                             # 尝试从原始数据中获取
                             subtable_field_map = self.subtable_model._get_field_map()
                             if follow_with in subtable_field_map:
                                 api_field = subtable_field_map[follow_with]
                                 if api_field in subtable_data:
-                                    preprocessed_data[follow_with] = subtable_data[api_field]
-                
+                                    preprocessed_data[field_obj.field_name] = subtable_data[api_field]
+                    # TODO 若子表中出现其他复杂字段，需完善相应逻辑
                 preprocessed_data_list.append(preprocessed_data)
             
             # 检查子表模型是否既没有 pk 也没有 conflict fields
@@ -566,41 +683,6 @@ class SubtableField(Field):
             for model_instance in upserted_row_set.row_objects:
                 if hasattr(model_instance, 'row_id'):
                     subtable_row_ids.append(model_instance.row_id)
-            
-            ## 删除不在 data_source 中的子表记录
-            ## 获取主记录当前挂载的子表记录 row_id
-            # current_row_ids = []
-            # if attr_name in processed_data:
-            #     current_row_ids = processed_data[attr_name]
-            # elif original_data and attr_name in original_data:
-            #     current_row_ids = original_data[attr_name]
-            
-            # # 确保 current_row_ids 是列表
-            # if not isinstance(current_row_ids, list):
-            #     current_row_ids = []
-            
-            # # 找出需要删除的子表记录
-            # rows_to_delete = []
-            # for row_id in current_row_ids:
-            #     if row_id not in subtable_row_ids:
-            #         # 尝试获取对应的模型实例
-            #         try:
-            #             query = hap_conn.rows(self.subtable_model)
-            #             # 使用 row_id 直接查询
-            #             query = query.filter(Q(**{f"row_id__eq": row_id}))
-            #             existing_row = query.first()
-            #             if existing_row:
-            #                 rows_to_delete.append(existing_row)
-            #         except Exception as e:
-            #             # 忽略查询错误，继续处理其他记录
-            #             pass
-            
-            # # 删除不需要保留的子表记录
-            # if rows_to_delete:
-            #     # 创建包含需要删除记录的 HapRowSet 实例
-            #     delete_row_set = HapRowSet(models=rows_to_delete, model=self.subtable_model, hap_conn=hap_conn)
-            #     # 执行删除操作
-            #     delete_row_set.delete()
 
             # 将子表记录的 row_id 挂载到当前主记录
             if subtable_row_ids:

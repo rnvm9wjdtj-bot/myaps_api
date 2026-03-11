@@ -2,7 +2,6 @@
 工具类集合
 """
 
-import os
 import re
 import json
 import time
@@ -10,7 +9,6 @@ import threading
 import requests
 from typing import Dict, Any, Optional, List, Union, Literal, Generator, Type, Callable
 from decimal import Decimal
-from concurrent.futures import ThreadPoolExecutor
 
 
 from ._base import console_log, _MAX_CONCURRENCY, _DEFAULT_BUFFER_SIZE, _ADAPTIVE_MIN_BUFFER_SIZE, _ADAPTIVE_SCALE_UP_FAST, _ADAPTIVE_SCALE_UP_SLOW, _ADAPTIVE_SCALE_DOWN, _ADAPTIVE_SCALE_DOWN_FAST, _DEFAULT_MAX_RETRIES, _DEFAULT_RETRY_DELAY
@@ -222,45 +220,7 @@ class StringInternPool:
 
 
 
-# 数据处理管道 - 将多个处理步骤合并，减少遍历次数
-class DataProcessingPipeline:
-    """数据处理管道，将多个处理步骤合并为一次遍历"""
-    
-    @staticmethod
-    def process_row_data(data: dict) -> dict:
-        """
-        一次性处理行数据，合并多个处理步骤
-        包含：处理选项字段、排除未命名字段、排除系统字段
-        
-        Args:
-            data: 原始数据字典
-            
-        Returns:
-            dict: 处理后的数据字典
-        """
-        if not data:
-            return {}
-        
-        processed = {}
-        for k, v in data.items():
-            if k.startswith('_'):
-                continue
-            
-            if _UUID_PATTERN.match(k.lower()):
-                continue
-            
-            if isinstance(v, list) and v and isinstance(v[0], dict) and 'key' in v[0] and 'value' in v[0]:
-                picked_options = [item['value'] for item in v]
-                v = ','.join(picked_options)
-            
-            processed[k] = v
-        
-        return processed
-    
-    @staticmethod
-    def process_batch(data_list: List[dict]) -> List[dict]:
-        """批量处理数据字典列表"""
-        return [DataProcessingPipeline.process_row_data(data) for data in data_list]
+# 数据处理方法已合并到 HapUtils 类中
 
 
 
@@ -733,6 +693,42 @@ class HapUtils:
             else:
                 processed_data[k] = v
         return processed_data
+    
+    @staticmethod
+    def process_row_data(data: dict) -> dict:
+        """
+        一次性处理行数据，合并多个处理步骤
+        包含：处理选项字段、排除未命名字段、排除系统字段
+        
+        Args:
+            data: 原始数据字典
+            
+        Returns:
+            dict: 处理后的数据字典
+        """
+        if not data:
+            return {}
+        
+        processed = {}
+        for k, v in data.items():
+            if k.startswith('_'):
+                continue
+            
+            if _UUID_PATTERN.match(k.lower()):
+                continue
+            
+            if isinstance(v, list) and v and isinstance(v[0], dict) and 'key' in v[0] and 'value' in v[0]:
+                picked_options = [item['value'] for item in v]
+                v = ','.join(picked_options)
+            
+            processed[k] = v
+        
+        return processed
+    
+    @staticmethod
+    def process_batch(data_list: List[dict]) -> List[dict]:
+        """批量处理数据字典列表"""
+        return [HapUtils.process_row_data(data) for data in data_list]
 
 
 # 连接池预热器

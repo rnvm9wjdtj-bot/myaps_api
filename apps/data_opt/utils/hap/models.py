@@ -9,7 +9,7 @@ from typing import Dict, Any, Optional, List, Type
 from .fields import Field
 from .utils import (
     HapUtils, AdaptiveTimeout, EnhancedRetryStrategy, TokenBucket, DecimalEncoder, HapApiMonitor,
-    StringInternPool, DataProcessingPipeline, LightweightRow, ObjectPool, ConnectionPoolWarmer, SmartBatchSizeCalculator,
+    StringInternPool, LightweightRow, ObjectPool, ConnectionPoolWarmer, SmartBatchSizeCalculator,
     AdaptiveRateController, hap_async_timer
 )
 
