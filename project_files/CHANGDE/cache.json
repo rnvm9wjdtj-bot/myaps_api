@@ -20,5 +20,14 @@
         "adaptive_scale_down_fast": 0.5,
         "default_max_retries": 3,
         "default_retry_delay": 1.0
+    },
+    "last_slice_end": {
+        "^Customer": "2026-03-12 00:00:00",
+        "^Sku": "2026-03-12 00:00:00",
+        "~Trade": "2026-03-12 00:00:00",
+        "^Trade": "2026-03-12 00:00:00",
+        "~BusinessOrder": "2026-03-12 00:00:00",
+        "^BusinessOrder": "2026-03-12 00:00:00",
+        "^Order": "2026-03-12 00:00:00"
     }
 }

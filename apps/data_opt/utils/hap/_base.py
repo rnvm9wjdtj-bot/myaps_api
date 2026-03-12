@@ -3,7 +3,7 @@
 """
 
 import os
-from typing import TypeVar#, Generic, List, Dict, Any, Optional, Union, Literal, Generator, Type, NamedTuple
+from typing import TypeVar
 
 from globalobjects import CACHE_JSON, logger as log_config
 
@@ -35,7 +35,7 @@ class HapConfig:
     # 每个模型缓存的最大记录数
     CACHE_MAX_SIZE = _CACHE_HAP.get("cache_max_size", 10000)
     # 内存阈值（MB），超过时触发清理
-    MEMORY_THRESHOLD_MB = _CACHE_HAP.get("memory_threshold_mb", 1024)
+    MEMORY_THRESHOLD_MB = _CACHE_HAP.get("memory_threshold_mb", 2048)
     # 是否启用内存管理（默认 True）
     ENABLE_MEMORY_MANAGEMENT = _CACHE_HAP.get("enable_memory_management", True)
 

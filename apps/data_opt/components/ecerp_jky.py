@@ -5,7 +5,7 @@ import hashlib
 import requests
 from urllib.parse import quote
 import os
-from typing import Dict, Tuple, List, Any, Optional, OrderedDict
+from typing import Dict, Tuple, List, Any, Optional, OrderedDict, Iterable
 from datetime import datetime, timedelta
 import time
 
@@ -761,46 +761,64 @@ PULL_SOURCE: OrderedDict = {
         "biz_content": {"pageIndex": None, "pageSize": None}
     },
 
-    "&Customer":{
+    "^Customer":{
         "source_desc": "更新客户信息", "model": Customer, "method": "crm.customer.list", "data_node": None,
         "biz_content": {
-            "gmtModifiedBegin": None, "gmtModifiedEnd": None, "pageSize": None, "pageIndex": None,
+            "pageSize": None, "pageIndex": None,
             "hasTotal": 1, "enable": 1
         },
         "slice_filter": '{"gmtModifiedBegin": "{slice_start}", "gmtModifiedEnd": "{slice_end}"}', 
         "add_origin_json": False
         },
-    "&Sku": {
+    "^Sku": {
         "source_desc": "更新SKU",  "model": Sku, "method": "erp.storage.goodslist", "data_node": "goods",
         "biz_content": {
-            "startDateModifiedSku": None, "endDateModifiedSku": None, "pageSize": None, "pageIndex": None,
+            "pageSize": None, "pageIndex": None,
             "isQueryDelete": 0, "skuIsBlockup": 0, "isBlockup": 0, "isPackageGood": 0
         },
         "slice_filter": '{"startDateModifiedSku": "{slice_start}", "endDateModifiedSku": "{slice_end}"}', 
         "add_origin_json": True,
     },
-    "&Trade": {
-        "source_desc": "更新JY单", "model": Trade, "method": "oms.trade.fullinfoget","data_node": "trades",
+    "~BusinessOrder": {
+        "source_desc": "新增网店订单", "model": BusinessOrder, "method": "omsapi-business.order.get", "data_node": None,
         "biz_content": {
-            "startModified": None, "endModified": None, "pageSize": None, "pageIndex": None, "hasTotal": 1, 
-            "fields": "totalResults,trades,checkTotal,tradeNo,otherFee,chargeCurrency,accountName,payType,payNo,sellerMemo,buyerMemo,goodsDetail,goodsDetail.goodsNo,goodsDetail.goodsName,goodsDetail.specName,goodsDetail.barcode,goodsDetail.sellCount,goodsDetail.unit,goodsDetail.sellPrice,goodsDetail.sellTotal,goodsDetail.cost,goodsDetail.discountTotal,goodsDetail.discountPoint,goodsDetail.taxFee,goodsDetail.shareFavourableFee,goodsDetail.estimateWeight,goodsDetail.goodsMemo,goodsDetail.cateName,goodsDetail.brandName,goodsDetail.goodsTags,goodsDetail.isFit,goodsDetail.isGift,goodsDetail.discountFee,goodsDetail.taxRate,goodsDetail.estimateGoodsVolume,goodsDetail.isPresell,goodsDetail.customerPrice,goodsDetail.customerTotal,goodsDetail.tradeGoodsNo,goodsDetail.tradeGoodsName,goodsDetail.tradeGoodsSpec,goodsDetail.tradeGoodsUnit,goodsDetail.sourceSubtradeNo,goodsDetail.platCode,goodsDetail.platGoodsId,goodsDetail.subTradeId,goodsDetail.goodsDelivery,goodsDelivery.sendCount,goodsDelivery.productionDate,goodsDelivery.expirationDate,goodsDelivery.batchNo,goodsDelivery.expireDate,goodsDelivery.productDate,goodsDetail.platAuthorId,goodsDetail.platAuthorName,goodsDetail.isPlatGift,goodsDetail.goodsPlatDiscountFee,goodsDetail.tradeOrderGoodsDiscountInfoDtoList,tradeOrderGoodsDiscountInfoDtoList.discountFee,tradeOrderGoodsDiscountInfoDtoList.discountName,goodsDetail.shareFavourableAfterFee,goodsDetail.divideSellTotal,goodsDetail.shareOrderDiscountFee,goodsDetail.shareOrderPlatDiscountFee,goodsDetail.sourceTradeNo,goodsDetail.actualSendCount,goodsDetail.platSkuId,goodsDetail.customerTradeNo,goodsDetail.customerSubtradeNo,goodsDetail.PlatCustomData,goodsDetail.assessmentCostLocal,goodsDetail.assessmentGrossProfitLocal,goodsDetail.assessmentGrossProfitPercent,goodsDetail.goodsCompassSourceContentType,goodsDetail.goodsSeller,goodsDetail.inventoryWarehouseId,goodsDetail.inventoryWarehouseName,goodsDetail.specId,goodsDetail.goodsId,goodsDetail.outerId,goodsDetail.apiType,goodsDetail.tradeId,goodsDetail.skuImgUrl,goodsDetail.needProcessCount,goodsDetail.goodsFlagIds,goodsDetail.goodsFlagNames,appendMemo,tradeFrom,register,seller,auditor,reviewer,estimateWeight,packageWeight,tradeCount,goodsTypeCount,freezeReason,abnormalDescription,onlineTradeNo,goodslist,gmtCreate,gmtModified,stockoutNo,confirmTime,departName,lastShipTime,payStatus,chargeCurrencyCode,chargeExchangeRate,tradeStatus,grossProfit,estimateVolume,customerTypeName,customerGradeName,customerTags,customerCode,customerDiscount,specialReminding,blackList,tradeTime,country,state,city,district,town,zip,payTime,countryCode,cityCode,invoiceType,payerName,payerRegno,payerBankAccount,payerPhone,auditTime,payerAddress,invoiceNo,invoiceCode,invoiceStatus,payerBankName,preTypedetail,firstPayment,finalPayment,firstPaytime,finalPaytime,reviewTime,activationTime,customerTotalFee,customerDiscountFee,notifyPickTime,consignTime,orderNo,customerPostFee,shopId,shopName,tradeOrderPayList,customerPayment,companyName,tradeOrderColumnExt,isBillCheck,warehouseCode,warehouseName,logisticName,tradeId,billDate,logisticType,mainPostid,tradeType,totalFee,taxFee,receivedPostFee,discountFee,payment,couponFee,receivedTotal,postFee,isTableSwitch,completeTime,shopcode,signingTime,goodsSerial,otherPaymentFees,tradeOrderGoodsColumnExts,isDelete,localPayment,localExchangeRate,customerAccount,localCurrencyCode,platCompleteTime,buyerOpenUid,tradeOrderAssemblyGoodsDtoList,tradeOrderRefundTime,assemblyGoodsDetail,apiType,logisticCode,agentShopName,tradeStatusExplain,flagIds,flagNames,sysFlagIds,shopTypeCode,sourceAfterNo,ticketCodeList,allCompassSourceContentType,customerName,invoiceAmount,realFee,packageDetail.state,finReceiptTime,extraLogisticNo,warehouseId,id,govSubsidy,pickUpTime,tradeOrderPre,scrollId,chargeType,chargeCurrency,chargeAccount,accountName,payType,payNo,payment,chargeCurrencyCode,chargeExchangeRate,columnExt.tradeId,goodsSerial.subTradeId,goodsSerial.skuId,goodsSerial.serialNo,goodsSerial.serialNo2,expense.expenseFee,expense.expenseItemName,subTradeId,tradeId,tradeOrderAssemblyGoodsDtoList.goodsNo,tradeOrderAssemblyGoodsDtoList.unit,tradeOrderAssemblyGoodsDtoList.specId,tradeOrderAssemblyGoodsDtoList.goodsId,tradeOrderAssemblyGoodsDtoList.tradeId,tradeOrderAssemblyGoodsDtoList.specName,tradeOrderAssemblyGoodsDtoList.goodsName,tradeOrderAssemblyGoodsDtoList.sellCount,tradeOrderAssemblyGoodsDtoList.subTradeId,tradeOrderAssemblyGoodsDtoList.baseUnitSellCount,tradeOrderAssemblyGoodsDtoList.assemblyGoodsDelivery,tradeId,specId,batchNo,expireDate,subTradeId,productDate,packageDetail.state,packageDetail.city,packageDetail.town,packageDetail.district,packageDetail.isGift,packageDetail.barcode,packageDetail.tradeNo,packageDetail.buyerMemo,packageDetail.sellCount,packageDetail.isPlatGift,packageDetail.logisticNo,packageDetail.sellerMemo,packageDetail.consignTime,packageDetail.logisticCode,packageDetail.logisticName,packageDetail.sourceTradeNo,packageDetail.warehouseName,packageDetail.sourceSubtradeNo,frstPaytime,firstPayment,finalPaytime,finalPayment,preTypedetail,sourceTradeNo"
+            "pageSize": None, "pageIndex": None,
+            "hasTotal": 1
         },
-        "slice_filter": '{"startModified": "{slice_start}", "endModified": "{slice_end}"}', 
+        "slice_filter": '{"createTimeBegin": "{slice_start}", "createTimeEnd": "{slice_end}"}', 
         "add_origin_json": True
     },
-    "&BusinessOrder": {
+    "^BusinessOrder": {
         "source_desc": "更新网店订单", "model": BusinessOrder, "method": "omsapi-business.order.get", "data_node": None,
         "biz_content": {
-            "startModified": None, "endModified": None, "pageSize": None, "pageIndex": None,
+            "pageSize": None, "pageIndex": None,
             "hasTotal": 1
         },
         "slice_filter": '{"startModified": "{slice_start}", "endModified": "{slice_end}"}', 
         "add_origin_json": True
     },
-    "&Order": {
+    "~Trade": {
+        "source_desc": "新增JY单", "model": Trade, "method": "oms.trade.fullinfoget","data_node": "trades",
+        "biz_content": {
+            "pageSize": None, "pageIndex": None, "hasTotal": 1, 
+            "fields": "totalResults,trades,checkTotal,tradeNo,otherFee,chargeCurrency,accountName,payType,payNo,sellerMemo,buyerMemo,goodsDetail,goodsDetail.goodsNo,goodsDetail.goodsName,goodsDetail.specName,goodsDetail.barcode,goodsDetail.sellCount,goodsDetail.unit,goodsDetail.sellPrice,goodsDetail.sellTotal,goodsDetail.cost,goodsDetail.discountTotal,goodsDetail.discountPoint,goodsDetail.taxFee,goodsDetail.shareFavourableFee,goodsDetail.estimateWeight,goodsDetail.goodsMemo,goodsDetail.cateName,goodsDetail.brandName,goodsDetail.goodsTags,goodsDetail.isFit,goodsDetail.isGift,goodsDetail.discountFee,goodsDetail.taxRate,goodsDetail.estimateGoodsVolume,goodsDetail.isPresell,goodsDetail.customerPrice,goodsDetail.customerTotal,goodsDetail.tradeGoodsNo,goodsDetail.tradeGoodsName,goodsDetail.tradeGoodsSpec,goodsDetail.tradeGoodsUnit,goodsDetail.sourceSubtradeNo,goodsDetail.platCode,goodsDetail.platGoodsId,goodsDetail.subTradeId,goodsDetail.goodsDelivery,goodsDelivery.sendCount,goodsDelivery.productionDate,goodsDelivery.expirationDate,goodsDelivery.batchNo,goodsDelivery.expireDate,goodsDelivery.productDate,goodsDetail.platAuthorId,goodsDetail.platAuthorName,goodsDetail.isPlatGift,goodsDetail.goodsPlatDiscountFee,goodsDetail.tradeOrderGoodsDiscountInfoDtoList,tradeOrderGoodsDiscountInfoDtoList.discountFee,tradeOrderGoodsDiscountInfoDtoList.discountName,goodsDetail.shareFavourableAfterFee,goodsDetail.divideSellTotal,goodsDetail.shareOrderDiscountFee,goodsDetail.shareOrderPlatDiscountFee,goodsDetail.sourceTradeNo,goodsDetail.actualSendCount,goodsDetail.platSkuId,goodsDetail.customerTradeNo,goodsDetail.customerSubtradeNo,goodsDetail.PlatCustomData,goodsDetail.assessmentCostLocal,goodsDetail.assessmentGrossProfitLocal,goodsDetail.assessmentGrossProfitPercent,goodsDetail.goodsCompassSourceContentType,goodsDetail.goodsSeller,goodsDetail.inventoryWarehouseId,goodsDetail.inventoryWarehouseName,goodsDetail.specId,goodsDetail.goodsId,goodsDetail.outerId,goodsDetail.apiType,goodsDetail.tradeId,goodsDetail.skuImgUrl,goodsDetail.needProcessCount,goodsDetail.goodsFlagIds,goodsDetail.goodsFlagNames,appendMemo,tradeFrom,register,seller,auditor,reviewer,estimateWeight,packageWeight,tradeCount,goodsTypeCount,freezeReason,abnormalDescription,onlineTradeNo,goodslist,gmtCreate,gmtModified,stockoutNo,confirmTime,departName,lastShipTime,payStatus,chargeCurrencyCode,chargeExchangeRate,tradeStatus,grossProfit,estimateVolume,customerTypeName,customerGradeName,customerTags,customerCode,customerDiscount,specialReminding,blackList,tradeTime,country,state,city,district,town,zip,payTime,countryCode,cityCode,invoiceType,payerName,payerRegno,payerBankAccount,payerPhone,auditTime,payerAddress,invoiceNo,invoiceCode,invoiceStatus,payerBankName,preTypedetail,firstPayment,finalPayment,firstPaytime,finalPaytime,reviewTime,activationTime,customerTotalFee,customerDiscountFee,notifyPickTime,consignTime,orderNo,customerPostFee,shopId,shopName,tradeOrderPayList,customerPayment,companyName,tradeOrderColumnExt,isBillCheck,warehouseCode,warehouseName,logisticName,tradeId,billDate,logisticType,mainPostid,tradeType,totalFee,taxFee,receivedPostFee,discountFee,payment,couponFee,receivedTotal,postFee,isTableSwitch,completeTime,shopcode,signingTime,goodsSerial,otherPaymentFees,tradeOrderGoodsColumnExts,isDelete,localPayment,localExchangeRate,customerAccount,localCurrencyCode,platCompleteTime,buyerOpenUid,tradeOrderAssemblyGoodsDtoList,tradeOrderRefundTime,assemblyGoodsDetail,apiType,logisticCode,agentShopName,tradeStatusExplain,flagIds,flagNames,sysFlagIds,shopTypeCode,sourceAfterNo,ticketCodeList,allCompassSourceContentType,customerName,invoiceAmount,realFee,packageDetail.state,finReceiptTime,extraLogisticNo,warehouseId,id,govSubsidy,pickUpTime,tradeOrderPre,scrollId,chargeType,chargeCurrency,chargeAccount,accountName,payType,payNo,payment,chargeCurrencyCode,chargeExchangeRate,columnExt.tradeId,goodsSerial.subTradeId,goodsSerial.skuId,goodsSerial.serialNo,goodsSerial.serialNo2,expense.expenseFee,expense.expenseItemName,subTradeId,tradeId,tradeOrderAssemblyGoodsDtoList.goodsNo,tradeOrderAssemblyGoodsDtoList.unit,tradeOrderAssemblyGoodsDtoList.specId,tradeOrderAssemblyGoodsDtoList.goodsId,tradeOrderAssemblyGoodsDtoList.tradeId,tradeOrderAssemblyGoodsDtoList.specName,tradeOrderAssemblyGoodsDtoList.goodsName,tradeOrderAssemblyGoodsDtoList.sellCount,tradeOrderAssemblyGoodsDtoList.subTradeId,tradeOrderAssemblyGoodsDtoList.baseUnitSellCount,tradeOrderAssemblyGoodsDtoList.assemblyGoodsDelivery,tradeId,specId,batchNo,expireDate,subTradeId,productDate,packageDetail.state,packageDetail.city,packageDetail.town,packageDetail.district,packageDetail.isGift,packageDetail.barcode,packageDetail.tradeNo,packageDetail.buyerMemo,packageDetail.sellCount,packageDetail.isPlatGift,packageDetail.logisticNo,packageDetail.sellerMemo,packageDetail.consignTime,packageDetail.logisticCode,packageDetail.logisticName,packageDetail.sourceTradeNo,packageDetail.warehouseName,packageDetail.sourceSubtradeNo,frstPaytime,firstPayment,finalPaytime,finalPayment,preTypedetail,sourceTradeNo"
+        },
+        "slice_filter": '{"startTradeTime": "{slice_start}", "endTradeTime": "{slice_end}"}', 
+        "add_origin_json": False
+    },
+    "^Trade": {
+        "source_desc": "更新JY单", "model": Trade, "method": "oms.trade.fullinfoget","data_node": "trades",
+        "biz_content": {
+            "pageSize": None, "pageIndex": None, "hasTotal": 1, 
+            "fields": "totalResults,trades,checkTotal,tradeNo,otherFee,chargeCurrency,accountName,payType,payNo,sellerMemo,buyerMemo,goodsDetail,goodsDetail.goodsNo,goodsDetail.goodsName,goodsDetail.specName,goodsDetail.barcode,goodsDetail.sellCount,goodsDetail.unit,goodsDetail.sellPrice,goodsDetail.sellTotal,goodsDetail.cost,goodsDetail.discountTotal,goodsDetail.discountPoint,goodsDetail.taxFee,goodsDetail.shareFavourableFee,goodsDetail.estimateWeight,goodsDetail.goodsMemo,goodsDetail.cateName,goodsDetail.brandName,goodsDetail.goodsTags,goodsDetail.isFit,goodsDetail.isGift,goodsDetail.discountFee,goodsDetail.taxRate,goodsDetail.estimateGoodsVolume,goodsDetail.isPresell,goodsDetail.customerPrice,goodsDetail.customerTotal,goodsDetail.tradeGoodsNo,goodsDetail.tradeGoodsName,goodsDetail.tradeGoodsSpec,goodsDetail.tradeGoodsUnit,goodsDetail.sourceSubtradeNo,goodsDetail.platCode,goodsDetail.platGoodsId,goodsDetail.subTradeId,goodsDetail.goodsDelivery,goodsDelivery.sendCount,goodsDelivery.productionDate,goodsDelivery.expirationDate,goodsDelivery.batchNo,goodsDelivery.expireDate,goodsDelivery.productDate,goodsDetail.platAuthorId,goodsDetail.platAuthorName,goodsDetail.isPlatGift,goodsDetail.goodsPlatDiscountFee,goodsDetail.tradeOrderGoodsDiscountInfoDtoList,tradeOrderGoodsDiscountInfoDtoList.discountFee,tradeOrderGoodsDiscountInfoDtoList.discountName,goodsDetail.shareFavourableAfterFee,goodsDetail.divideSellTotal,goodsDetail.shareOrderDiscountFee,goodsDetail.shareOrderPlatDiscountFee,goodsDetail.sourceTradeNo,goodsDetail.actualSendCount,goodsDetail.platSkuId,goodsDetail.customerTradeNo,goodsDetail.customerSubtradeNo,goodsDetail.PlatCustomData,goodsDetail.assessmentCostLocal,goodsDetail.assessmentGrossProfitLocal,goodsDetail.assessmentGrossProfitPercent,goodsDetail.goodsCompassSourceContentType,goodsDetail.goodsSeller,goodsDetail.inventoryWarehouseId,goodsDetail.inventoryWarehouseName,goodsDetail.specId,goodsDetail.goodsId,goodsDetail.outerId,goodsDetail.apiType,goodsDetail.tradeId,goodsDetail.skuImgUrl,goodsDetail.needProcessCount,goodsDetail.goodsFlagIds,goodsDetail.goodsFlagNames,appendMemo,tradeFrom,register,seller,auditor,reviewer,estimateWeight,packageWeight,tradeCount,goodsTypeCount,freezeReason,abnormalDescription,onlineTradeNo,goodslist,gmtCreate,gmtModified,stockoutNo,confirmTime,departName,lastShipTime,payStatus,chargeCurrencyCode,chargeExchangeRate,tradeStatus,grossProfit,estimateVolume,customerTypeName,customerGradeName,customerTags,customerCode,customerDiscount,specialReminding,blackList,tradeTime,country,state,city,district,town,zip,payTime,countryCode,cityCode,invoiceType,payerName,payerRegno,payerBankAccount,payerPhone,auditTime,payerAddress,invoiceNo,invoiceCode,invoiceStatus,payerBankName,preTypedetail,firstPayment,finalPayment,firstPaytime,finalPaytime,reviewTime,activationTime,customerTotalFee,customerDiscountFee,notifyPickTime,consignTime,orderNo,customerPostFee,shopId,shopName,tradeOrderPayList,customerPayment,companyName,tradeOrderColumnExt,isBillCheck,warehouseCode,warehouseName,logisticName,tradeId,billDate,logisticType,mainPostid,tradeType,totalFee,taxFee,receivedPostFee,discountFee,payment,couponFee,receivedTotal,postFee,isTableSwitch,completeTime,shopcode,signingTime,goodsSerial,otherPaymentFees,tradeOrderGoodsColumnExts,isDelete,localPayment,localExchangeRate,customerAccount,localCurrencyCode,platCompleteTime,buyerOpenUid,tradeOrderAssemblyGoodsDtoList,tradeOrderRefundTime,assemblyGoodsDetail,apiType,logisticCode,agentShopName,tradeStatusExplain,flagIds,flagNames,sysFlagIds,shopTypeCode,sourceAfterNo,ticketCodeList,allCompassSourceContentType,customerName,invoiceAmount,realFee,packageDetail.state,finReceiptTime,extraLogisticNo,warehouseId,id,govSubsidy,pickUpTime,tradeOrderPre,scrollId,chargeType,chargeCurrency,chargeAccount,accountName,payType,payNo,payment,chargeCurrencyCode,chargeExchangeRate,columnExt.tradeId,goodsSerial.subTradeId,goodsSerial.skuId,goodsSerial.serialNo,goodsSerial.serialNo2,expense.expenseFee,expense.expenseItemName,subTradeId,tradeId,tradeOrderAssemblyGoodsDtoList.goodsNo,tradeOrderAssemblyGoodsDtoList.unit,tradeOrderAssemblyGoodsDtoList.specId,tradeOrderAssemblyGoodsDtoList.goodsId,tradeOrderAssemblyGoodsDtoList.tradeId,tradeOrderAssemblyGoodsDtoList.specName,tradeOrderAssemblyGoodsDtoList.goodsName,tradeOrderAssemblyGoodsDtoList.sellCount,tradeOrderAssemblyGoodsDtoList.subTradeId,tradeOrderAssemblyGoodsDtoList.baseUnitSellCount,tradeOrderAssemblyGoodsDtoList.assemblyGoodsDelivery,tradeId,specId,batchNo,expireDate,subTradeId,productDate,packageDetail.state,packageDetail.city,packageDetail.town,packageDetail.district,packageDetail.isGift,packageDetail.barcode,packageDetail.tradeNo,packageDetail.buyerMemo,packageDetail.sellCount,packageDetail.isPlatGift,packageDetail.logisticNo,packageDetail.sellerMemo,packageDetail.consignTime,packageDetail.logisticCode,packageDetail.logisticName,packageDetail.sourceTradeNo,packageDetail.warehouseName,packageDetail.sourceSubtradeNo,frstPaytime,firstPayment,finalPaytime,finalPayment,preTypedetail,sourceTradeNo"
+        },
+        "slice_filter": '{"startModified": "{slice_start}", "endModified": "{slice_end}"}', 
+        "add_origin_json": False
+    },
+    "~Order": {
         "source_desc": "发货单", "model": Order, "method": "wms.order.query-info.page", "data_node": None,
         "biz_content": {
-            "startModifyTime": None, "endModifyTime": None, "pageSize": None, "pageIndex": None,
+            "pageSize": None, "pageIndex": None,
             "hasTotal": 1
         },
         "slice_filter": '{"startModifyTime": "{slice_start}", "endModifyTime": "{slice_end}"}', 
@@ -818,6 +836,7 @@ class JkyConnection():
         self.credential_keys = ("app_key", "app_secret")
         self.app_key = self.config.APP_KEY
         self.app_secret = self.config.APP_SECRET
+        self.last_slice_end: str = None
 
 
     def sign_payload(self, payload: Dict[str, Any]) -> str:
@@ -937,19 +956,62 @@ class JkyConnection():
     async def data_to_hap(self, async_hap: AsyncHapConnection, source_code: str, slice_timerange: Optional[Tuple[str, str]]=None, other_biz:Optional[Dict]=None):
         data_gen = self.pull_from_source(source_code, slice_timerange, other_biz)
         model = PULL_SOURCE[source_code]["model"]
+        source_desc = PULL_SOURCE[source_code]["source_desc"]
         time_start = datetime.now()
         count = await async_hap.rows(model).upsert_from_generator(data_gen, adaptive=True, trigger_workflow=True)
         time_end = datetime.now()
-        console_log.info(f"成功处理 【{source_code}】【{count}】条，耗时【{time_end - time_start}】")
+        console_log.info(f"成功处理 【{source_desc}】【{count}】条，耗时【{time_end - time_start}】")
 
 
-def register_hap_models(hap_conn: HapConnection, source_codes: List[str]):
+    def create_cron_task(self, hour, minute, task_name, source_codes: Iterable[str], async_hap: AsyncHapConnection):
+        """工厂函数，动态创建同步数据的定时任务
+        # 创建默认的同步任务（每天22:42执行）
+        # sync_incremental_data = create_cron_task(22, 42, "sync_incremental_data")
+        # 示例：创建其他时间的同步任务
+        # sync_morning_data = create_cron_task(8, 0, "sync_morning_data", _JKY_CONN, source_codes)  # 每天8:00执行
+        # sync_noon_data = create_cron_task(12, 30, "sync_noon_data", _JKY_CONN, source_codes)  # 每天12:30执行
+        Args:
+            hour: 执行小时
+            minute: 执行分钟
+            task_name: 任务名称
+            source_codes: 要同步的数据源列表
+        
+        Returns:
+            装饰后的异步函数
+        """
+        @cron_task(hour=hour, minute=minute)
+        async def sync_task():
+            # 动态生成时间范围（前一天到当天）
+            slice_start = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+            slice_end = datetime.now().strftime("%Y-%m-%d")
+            slice_timerange = (f"{slice_start} 00:00:00", f"{slice_end} 00:00:00")
+            
+            for source_code in source_codes:
+                await self.data_to_hap(async_hap=async_hap, source_code=source_code, slice_timerange=slice_timerange)
+        
+        # 重命名函数，使其更具辨识度
+        sync_task.__name__ = task_name
+        return sync_task
+
+
+    @classmethod
+    def sort_tasks(cls, source_codes: Iterable[str]):
+        sorted_tasks = []
+        for source_code in PULL_SOURCE:
+            if source_code in source_codes:
+                sorted_tasks.append(source_code)
+        return sorted_tasks
+
+
+
+def register_hap_models(hap_conn: HapConnection, source_codes: Iterable[str]):
     sorted_models: Optional[Dict[str, Model]] = {}
     for source_code, source in PULL_SOURCE.items():
         if source_code in source_codes:
             sorted_models[source_code] = source["model"]
     hap_conn.register_models(sorted_models.values())
     return sorted_models
+
 
 
 
