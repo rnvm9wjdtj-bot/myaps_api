@@ -195,7 +195,8 @@ class ChoiceField(StrField):
         
         # 解析值并应用映射
         values = self._parse_values(value_to_process)
-        data[attr_name] = self._apply_mapping(values)
+        # data[attr_name] = self._apply_mapping(values)
+        data[field_name] = self._apply_mapping(values)
         
         return data
 
@@ -262,9 +263,13 @@ class RelationField(Field):
         # 检查是否需要更新关联字段
         followwith_field = self.follow_with
         if followwith_field not in data:
-            field_map = self.model._get_field_map()
-            if followwith_field in field_map:
-                followwith_field = field_map[followwith_field]
+            try:
+                field_map = self.model._get_field_map()
+                if followwith_field in field_map:
+                    followwith_field = field_map[followwith_field]
+            except (AttributeError, KeyError):
+                # 模型没有 _get_field_map 方法或字段不在映射中
+                pass
         
         # 确保 follow_with 字段存在
         if followwith_field not in data:
@@ -280,12 +285,16 @@ class RelationField(Field):
             else:
                 # 确定在 original_data 中使用的键名（字段名）
                 original_key = followwith_field
-                field_map = self.model._get_field_map()
-                if followwith_field in field_map:
-                    # 如果 followwith_field 是属性名，转换为字段名
-                    original_key = field_map[followwith_field]
+                try:
+                    field_map = self.model._get_field_map()
+                    if followwith_field in field_map:
+                        # 如果 followwith_field 是属性名，转换为字段名
+                        original_key = field_map[followwith_field]
+                except (AttributeError, KeyError):
+                    # 模型没有 _get_field_map 方法或字段不在映射中
+                    pass
                 
-                if original_key not in original_data or not DataProcessor.is_equal(original_data[original_key], code_value):
+                if original_key not in original_data or not DataProcessor.is_equal(original_data.get(original_key), code_value):
                     need_update = True
         
         if not need_update or not hap_conn:
@@ -543,13 +552,25 @@ class SubtableField(Field):
             del data[attr_name]
         
         # parent_row = hap_conn.rows(self.model).get_by_rowid(row_id=data.get('row_id'))
-        parent_field_map = self.model._get_field_map()
-        subtable_field_map = self.subtable_model._get_field_map()
+        try:
+            parent_field_map = self.model._get_field_map()
+        except AttributeError:
+            parent_field_map = {}
+        
+        try:
+            subtable_field_map = self.subtable_model._get_field_map()
+        except AttributeError:
+            subtable_field_map = {}
+        
         # 检查数据源字段是否存在
         data_source_field = self.data_source
         if not data_source_field in data:
-            if data_source_field in parent_field_map:
-                data_source_field = parent_field_map[data_source_field]
+            try:
+                if data_source_field in parent_field_map:
+                    data_source_field = parent_field_map[data_source_field]
+            except (AttributeError, KeyError):
+                # 模型没有 _get_field_map 方法或字段不在映射中
+                pass
         
         # 确保数据源字段存在
         if data_source_field not in data:
@@ -565,15 +586,19 @@ class SubtableField(Field):
             else:
                 # 确定在 original_data 中使用的键名（字段名）
                 original_key = data_source_field
-                if data_source_field in parent_field_map:
-                    # 如果 data_source_field 是属性名，转换为字段名
-                    original_key = parent_field_map[data_source_field]
+                try:
+                    if data_source_field in parent_field_map:
+                        # 如果 data_source_field 是属性名，转换为字段名
+                        original_key = parent_field_map[data_source_field]
+                except (AttributeError, KeyError):
+                    # 模型没有 _get_field_map 方法或字段不在映射中
+                    pass
                 
                 if original_key not in original_data:
                     need_update = True
                 else:
                     # 深度比较子表数据内容
-                    if not self._subtable_data_equal(source_value, original_data[original_key]):
+                    if not self._subtable_data_equal(source_value, original_data.get(original_key)):
                         need_update = True
         
         if not need_update:
@@ -597,7 +622,11 @@ class SubtableField(Field):
             
             # 获取子表模型的主键字段
             subtable_pk_field = self.subtable_model.get_pk_field()
-            subtable_pk_field_name = subtable_field_map[subtable_pk_field] if subtable_pk_field else None
+            try:
+                subtable_pk_field_name = subtable_field_map[subtable_pk_field] if subtable_pk_field else None
+            except KeyError:
+                # 主键字段不在字段映射中
+                subtable_pk_field_name = None
             # 预处理子表数据：确保字段名能够被正确地映射到模型的属性名
             preprocessed_data_list = []
             

@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Union, TypeVar, Generic
 import logging
 from datetime import datetime
 import threading
+import time
 
 
 T = TypeVar('T')
@@ -55,21 +56,37 @@ class JSONManager:
     def _save(self) -> None:
         """保存数据到文件"""
         with self._lock:
-            try:
-                # 创建临时文件
-                temp_path = self.filepath.with_suffix('.tmp')
-                with temp_path.open('w', encoding=self.encoding) as f:
-                    json.dump(self._data, f, 
-                             indent=self.indent, 
-                             ensure_ascii=False)
-                
-                # 原子替换
-                temp_path.replace(self.filepath)
-                self._modified = False
-                
-            except Exception as e:
-                logging.error(f"保存失败: {e}")
-                raise
+            max_retries = 3
+            retry_delay = 0.1
+            
+            for attempt in range(max_retries):
+                try:
+                    # 创建临时文件
+                    temp_path = self.filepath.with_suffix('.tmp')
+                    with temp_path.open('w', encoding=self.encoding) as f:
+                        json.dump(self._data, f, 
+                                 indent=self.indent, 
+                                 ensure_ascii=False)
+                    
+                    # 关闭文件句柄后稍作延迟，确保文件完全写入
+                    time.sleep(retry_delay)
+                    
+                    # 原子替换
+                    temp_path.replace(self.filepath)
+                    self._modified = False
+                    return
+                    
+                except PermissionError as e:
+                    if attempt < max_retries - 1:
+                        logging.warning(f"文件被占用，第 {attempt + 1} 次重试: {e}")
+                        time.sleep(retry_delay * (attempt + 1))
+                        continue
+                    else:
+                        logging.error(f"保存失败，已重试 {max_retries} 次: {e}")
+                        raise
+                except Exception as e:
+                    logging.error(f"保存失败: {e}")
+                    raise
     
     def get(self, 
             key: str, 

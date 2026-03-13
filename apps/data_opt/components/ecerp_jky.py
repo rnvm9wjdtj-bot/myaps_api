@@ -10,8 +10,8 @@ from typing import Dict, Tuple, List, Any, Optional, OrderedDict, Iterable, Name
 from datetime import datetime, timedelta
 import time
 
-
-from apps.data_opt.utils.common import get_session
+from ..utils.scheduler import cron_task
+from ..utils.common import get_session
 from ..utils.hap import *
 
 
@@ -225,7 +225,7 @@ class GoodsCate(Model):
     full_name = StrField(field_name="cateFullName", description="分类全路径名称")
     order_index = NumField(field_name="orderIndex", description="序号")
     parent_id = StrField(field_name="parentCateId")
-    parent = RelationField('GoodsCate', field_name="parent", follow_with="parent_id")
+    parent = RelationField(model='GoodsCate', field_name="parent", follow_with="parent_id")
     usable_range = StrField(field_name="usableRange")
     usable_range_display = StrField(field_name="usableRange__display__", follow_with="usable_range", mapper=ENUM_DECODER["goodscate"]["usableRange"])
 
@@ -853,9 +853,24 @@ class JkyConnection():
         self.app_key = self.config.APP_KEY
         self.app_secret = self.config.APP_SECRET
         self.hap_conn = hap_conn
-        hap_conn.register_model(Log)
+        # 自动注册本模块下的所有 Model 子类
+        self._register_all_models()
         self._async_hap: AsyncHapConnection = hap_conn.async_connection()
-        self.pull_tasks: List[JkyPullTask] = []
+
+    def _register_all_models(self):
+        """自动注册当前模块中所有 Model 的子类"""
+        import sys
+        current_module = sys.modules[__name__]
+        models = []
+        for attr_name in dir(current_module):
+            attr = getattr(current_module, attr_name)
+            if (isinstance(attr, type) and 
+                issubclass(attr, Model) and 
+                attr is not Model and
+                attr.__module__ == current_module.__name__):
+                models.append(attr)
+        if models:
+            self.hap_conn.register_models(models)
 
 
     def sign_payload(self, payload: Dict[str, Any]) -> str:
@@ -929,7 +944,7 @@ class JkyConnection():
         source = PULL_SOURCE[source_code]
         source_desc = source["source_desc"]
         method = source["method"]
-        biz_content = source.get("biz_content", {})
+        biz_content = source.get("biz_content", {}) or {}
         slice_filter = source.get("slice_filter")
         if slice_timerange and slice_filter:
             slice_filter = slice_filter.replace("{slice_start}", slice_timerange[0]).replace("{slice_end}", slice_timerange[1])
@@ -967,7 +982,10 @@ class JkyConnection():
             current_page_size = len(result_data)
             row_total_count += current_page_size
             console_log.info(f"【{source_desc}】第【{page_index}】页数据，【{current_page_size}】条，累计【{row_total_count}】条")                
-            asyncio.run(self.log_to_hap(log_type="INFO", msg=f"【{source_desc}】第【{page_index}】页数据，【{current_page_size}】条，累计【{row_total_count}】条", row_count=current_page_size))
+            # 使用线程池执行异步的 log_to_hap 方法，避免在已有事件循环中调用 asyncio.run()
+            # import concurrent.futures
+            # with concurrent.futures.ThreadPoolExecutor() as executor:
+            #     executor.submit(lambda: asyncio.run(self.log_to_hap(log_type="INFO", msg=f"【{source_desc}】第【{page_index}】页数据，【{current_page_size}】条，累计【{row_total_count}】条", row_count=current_page_size)))
             yield result_data
             if current_page_size < page_size or (not "pageSize" in biz_content and page_index > 0):
                 break
@@ -980,7 +998,8 @@ class JkyConnection():
             row_count=row_count,
             msg=msg
         )
-        await self._async_hap.rows(Log).bulk_create([log_data])
+        response = await self._async_hap.rows(Log).bulk_create([log_data])
+        return response
 
 
     async def data_to_hap(self, source_code: str, slice_timerange: Optional[Tuple[str, str]]=None, other_biz:Optional[Dict]=None):
@@ -992,63 +1011,21 @@ class JkyConnection():
         time_end = datetime.now()
         console_log.info(f"成功处理 【{source_desc}】【{count}】条，耗时【{time_end - time_start}】")
 
-    
-    # def register_pull_tasks(self, pull_tasks: List[JkyPullTask]):
-    #     def register_hap_models(source_codes: Iterable[str]):
-    #         sorted_models: Optional[Dict[str, Model]] = {}
-    #         for source_code, source in PULL_SOURCE.items():
-    #             if source_code in source_codes:
-    #                 sorted_models[source_code] = source["model"]
-    #         self.hap_conn.register_models(sorted_models.values())
-    #         return sorted_models
-    #     self.pull_tasks = pull_tasks
-    #     source_codes = {source_code for task in pull_tasks for source_code in task.source_codes}
-    #     self.sorted_models = register_hap_models(source_codes)
-
-
-    # def create_cron_task(self, hour, minute, task_name, source_codes: Iterable[str]):
-    #     """工厂函数，动态创建同步数据的定时任务
-    #     # 创建默认的同步任务（每天22:42执行）
-    #     # sync_incremental_data = create_cron_task(22, 42, "sync_incremental_data")
-    #     # 示例：创建其他时间的同步任务
-    #     # sync_morning_data = create_cron_task(8, 0, "sync_morning_data", _JKY_CONN, source_codes)  # 每天8:00执行
-    #     # sync_noon_data = create_cron_task(12, 30, "sync_noon_data", _JKY_CONN, source_codes)  # 每天12:30执行
-    #     Args:
-    #         hour: 执行小时
-    #         minute: 执行分钟
-    #         task_name: 任务名称
-    #         source_codes: 要同步的数据源列表
-        
-    #     Returns:
-    #         装饰后的异步函数
-    #     """
-    #     @cron_task(hour=hour, minute=minute)
-    #     async def sync_task():
-    #         # 动态生成时间范围（前一天到当天）
-    #         slice_start = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-    #         slice_end = datetime.now().strftime("%Y-%m-%d")
-    #         slice_timerange = (f"{slice_start} 00:00:00", f"{slice_end} 00:00:00")
-            
-    #         for source_code in source_codes:
-    #             await self.data_to_hap(source_code=source_code, slice_timerange=slice_timerange)
-        
-    #     # 重命名函数，使其更具辨识度
-    #     sync_task.__name__ = task_name
-    #     return sync_task
+   
     def create_pull_task(self, exec_minute: int, tasks: List[JkyPullTask], task_name: str=None, cache_json=CACHE_JSON):
         """动态创建拉取数据的定时任务
         Args:
             exec_minute: 执行分钟, 0~59
             task_name: 任务名称
         """
-        # self.pull_tasks.extend(tasks)
+        assert 0 <= exec_minute < 60, "exec_minute must be in range [0, 59]"
         @cron_task(minute=exec_minute)
         async def exec_schedule():
             now = datetime.now()
             hour = int(now.hour)
             this_slice_end = f"{now.strftime('%Y-%m-%d')} {hour:02d}:{exec_minute:02d}:00"
             for task in tasks:
-                if not hour in task.task_hour:
+                if not hour in task.task_hours:
                     continue
                 sorted_src_codes = self.sort_tasks(task.source_codes)
                 for src_code in sorted_src_codes:
@@ -1057,8 +1034,8 @@ class JkyConnection():
                         await self.data_to_hap(src_code)
                     else:
                         # 如果是增量数据
-                        cache_json.set(f"last_slice_end / {src_code}", this_slice_end)
                         last_slice_end = cache_json.get(f"last_slice_end / {src_code}", None)
+                        cache_json.set(f"last_slice_end / {src_code}", this_slice_end)
                         if last_slice_end:
                             slice_timerange = (last_slice_end, this_slice_end)
                             await self.data_to_hap(src_code, slice_timerange)

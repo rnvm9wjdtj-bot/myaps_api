@@ -242,18 +242,24 @@ class HapRowSet(Generic[ModelType]):
         # 遍历所有字段，查找关联字段和文本字段
         # 注意：不处理 SubtableField 类型的字段，因为它会在 upsert 操作中被单独处理
         for attr_name, field in fields.items():
-            if isinstance(field, RelationField):
-                # 调用 RelationField 自身的处理方法
-                processed_data = field.process_relation(processed_data, original_data, self.hap_conn)
-            elif isinstance(field, StrField):
-                # 调用 StrField 自身的处理方法
-                processed_data = field.process_mapping(processed_data, original_data)
-            elif isinstance(field, SubtableField):
-                processed_data = field.process_subtable(processed_data, original_data, self.hap_conn)
+            try:
+                if isinstance(field, RelationField):
+                    # 调用 RelationField 自身的处理方法
+                    processed_data = field.process_relation(processed_data, original_data, self.hap_conn)
+                elif isinstance(field, StrField):
+                    # 调用 StrField 自身的处理方法
+                    processed_data = field.process_mapping(processed_data, original_data)
+                elif isinstance(field, SubtableField):
+                    processed_data = field.process_subtable(processed_data, original_data, self.hap_conn)
+            except KeyError as e:
+                # 捕获 KeyError，确保即使某个字段处理失败，整个数据处理过程也能继续进行
+                console_log.warning(f"处理字段 {attr_name} 时出现 KeyError: {e}")
+                # 继续处理下一个字段
+                continue
         
         return processed_data
-
-    def create(self, **kwargs) -> ModelType:
+    
+    def create(self, trigger_workflow: bool = True, **kwargs) -> ModelType:
         """创建新模型实例"""
         # 处理关联字段
         processed_kwargs = self._process_complex_fields(kwargs)
@@ -265,7 +271,7 @@ class HapRowSet(Generic[ModelType]):
         row_fields = HapUtils.convert_data_to_fieldslist(processed_kwargs, model=self.model)
         payload = {
             "rows": [{"fields": row_fields}],
-            "triggerWorkflow": True
+            "triggerWorkflow": trigger_workflow
         }
         
         # 发送请求
@@ -283,7 +289,7 @@ class HapRowSet(Generic[ModelType]):
         
         raise Exception("Failed to create model instance")
 
-    def bulk_create(self, data_list: List[Dict[str, Any]]) -> List[ModelType]:
+    def bulk_create(self, data_list: List[Dict[str, Any]], trigger_workflow: bool = True) -> List[ModelType]:
         """批量创建模型实例"""
         # 分批处理，每批最多100条
         batch_size = 100
@@ -304,7 +310,7 @@ class HapRowSet(Generic[ModelType]):
             
             payload = {
                 "rows": rows_data,
-                "triggerWorkflow": True
+                "triggerWorkflow": trigger_workflow
             }
             
             # 发送请求
@@ -331,7 +337,7 @@ class HapRowSet(Generic[ModelType]):
                             # 单条创建
                             single_response = self.hap_conn._post(endpoint, {
                                 "rows": [{'fields': HapUtils.convert_data_to_fieldslist(data, model=self.model)}],
-                                "triggerWorkflow": True
+                                "triggerWorkflow": trigger_workflow
                             })
                             if single_response.get('success'):
                                 row_id = single_response.get('data', {}).get('rowIds', [])[0]
@@ -349,7 +355,7 @@ class HapRowSet(Generic[ModelType]):
                     try:
                         single_response = self.hap_conn._post(endpoint, {
                             "rows": [{'fields': HapUtils.convert_data_to_fieldslist(data, model=self.model)}],
-                            "triggerWorkflow": True
+                            "triggerWorkflow": trigger_workflow
                         })
                         if single_response.get('success'):
                             row_id = single_response.get('data', {}).get('rowIds', [])[0]
@@ -365,7 +371,7 @@ class HapRowSet(Generic[ModelType]):
         
         return created_models
 
-    def update(self, **kwargs) -> List[ModelType]:
+    def update(self, trigger_workflow: bool = True, **kwargs) -> List[ModelType]:
         """批量更新模型实例
         
         Args:
@@ -439,21 +445,27 @@ class HapRowSet(Generic[ModelType]):
             payload = {
                 "rowIds": group["row_ids"],
                 "fields": group["fields_list"],
-                "triggerWorkflow": True
+                "triggerWorkflow": trigger_workflow
             }
             
             # 发送请求
             response = self.hap_conn._patch(endpoint=endpoint, payload=payload)
             
             # 处理响应
-            if response.get('success'):
-                # 更新模型实例的属性
-                for model in group["models"]:
-                    for key, value in kwargs.items():
-                        setattr(model, key, value)
-                    updated_models.append(model)
-            else:
-                raise Exception(f"Failed to update model instances: {response.get('error_msg', 'Unknown error')}")
+            # if response.get('success'):
+            #     # 更新模型实例的属性
+            #     for model in group["models"]:
+            #         for key, value in kwargs.items():
+            #             setattr(model, key, value)
+            #         updated_models.append(model)
+            # else:
+            #     console_log.error(f"Failed to update model instances: {response.get('error_msg', 'Unknown error')}")
+            if not response.get('success'):
+                console_log.warning(f"Failed to update model instances: {response.get('error_msg', 'Unknown error')}, model: {self.model.__name__}, row_ids: {group['row_ids']}")
+            for model in group["models"]:
+                for key, value in kwargs.items():
+                    setattr(model, key, value)
+                updated_models.append(model)
         
         # 批量更新缓存
         self.hap_conn._update_cache_for_instances(updated_models)
@@ -548,7 +560,7 @@ class HapRowSet(Generic[ModelType]):
             existing_rows.delete()
         return (None, data_dict)
     
-    def _batch_process_items(self, data_list, pk_field, conflict_fields, when_value_equal_then):
+    def _batch_process_items(self, data_list, pk_field, conflict_fields, when_value_equal_then, trigger_workflow: bool = True):
         """批量处理多个数据项的 upsert 操作"""
         if not data_list:
             return []
@@ -666,7 +678,7 @@ class HapRowSet(Generic[ModelType]):
                 for group in update_groups.values():
                     # 创建 HapRowSet 并执行批量更新
                     row_set = HapRowSet(models=group["models"], model=self.model, hap_conn=self.hap_conn)
-                    updated = row_set.update(**group["data"], when_value_equal_then=when_value_equal_then)
+                    updated = row_set.update(trigger_workflow=trigger_workflow, when_value_equal_then=when_value_equal_then, **group["data"])
                     updated_models.extend(updated)
             except Exception as e:
                 console_log.error(f"批量更新失败: {e}")
@@ -678,7 +690,7 @@ class HapRowSet(Generic[ModelType]):
         created_models = []
         if to_create:
             try:
-                created = self.bulk_create(to_create)
+                created = self.bulk_create(to_create, trigger_workflow)
                 created_models.extend(created)
             except Exception as e:
                 console_log.error(f"批量创建失败: {e}")
@@ -699,7 +711,7 @@ class HapRowSet(Generic[ModelType]):
                         all_models.append(result[0])
                     elif result[1]:  # 需要创建
                         # 尝试单条创建
-                        single_created = self.bulk_create([result[1]])
+                        single_created = self.bulk_create([result[1]], trigger_workflow=False)
                         all_models.extend(single_created)
                 except Exception as e:
                     console_log.error(f"单条处理失败: {data}, 错误: {e}")
@@ -803,7 +815,7 @@ class HapRowSet(Generic[ModelType]):
                     processed_data = {k: v for k, v in processed_data.items() if v is not None}
                 processed_data_list.append(processed_data)
             
-            created_models = self.bulk_create(processed_data_list)
+            created_models = self.bulk_create(processed_data_list, trigger_workflow)
             return HapRowSet(models=created_models, model=self.model, hap_conn=self.hap_conn)
         
         # 调整处理顺序：先判断记录存在，再处理复杂字段
@@ -878,7 +890,8 @@ class HapRowSet(Generic[ModelType]):
                 processed_data_list,
                 pk_field,
                 conflict_fields,
-                when_value_equal_then
+                when_value_equal_then,
+                trigger_workflow
             )
             result_models.extend(all_models)
         else:  # 数据量较小时使用并行处理
@@ -899,7 +912,7 @@ class HapRowSet(Generic[ModelType]):
             
             # 批量创建需要新增的模型
             if create_list:
-                created_models = self.bulk_create(create_list)
+                created_models = self.bulk_create(create_list, trigger_workflow=False)
                 result_models.extend(created_models)
         
         # 批量更新缓存
@@ -1125,11 +1138,11 @@ class HapQuerySet(Generic[ModelType]):
         row_set = HapRowSet(models=[], model=self.model, hap_conn=self.hap_conn)
         return row_set.create(**kwargs)
     
-    def bulk_create(self, data_list: List[Dict[str, Any]]) -> List[ModelType]:
+    def bulk_create(self, data_list: List[Dict[str, Any]], trigger_workflow: bool = True) -> List[ModelType]:
         """批量创建模型实例"""
         # 创建一个空的 HapRowSet 实例，然后调用其 bulk_create 方法
         row_set = HapRowSet(models=[], model=self.model, hap_conn=self.hap_conn)
-        return row_set.bulk_create(data_list)
+        return row_set.bulk_create(data_list, trigger_workflow)
     
     def upsert(self, data_list: List[Dict[str, Any]], exclude_none: bool = True, trigger_workflow: bool = True, when_value_equal_then: Literal['jumpover', 'update'] = 'jumpover') -> 'HapRowSet[ModelType]':
         """批量 upsert 操作"""
@@ -1733,6 +1746,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
         retry_delay: float = None,
         adaptive: bool = True,
         target_qps: float = None,
+        trigger_workflow: bool = True,
         **kwargs
     ) -> int:
         """从生成器函数批量 upsert 数据（高性能版本）
@@ -1818,7 +1832,9 @@ class AsyncHapQuerySet(Generic[ModelType]):
                 start_time = time.time()
                 for attempt in range(max_retries):
                     try:
-                        result = await self.upsert(data_batch, **kwargs)
+                        result = await self.upsert(data_batch, trigger_workflow=trigger_workflow, **kwargs)
+                        console_log.info(f"批次 {batch_index} 第 {attempt + 1} 次尝试成功，处理 {len(data_batch)} 条记录")
+                        
                         response_time = time.time() - start_time
                         
                         if adaptive:
@@ -1834,7 +1850,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
                                 success=True
                             )
                         
-                        # 返回实际处理的记录数，而不是 result.count()
+                        # 返回实际处理的记录数
                         return len(data_batch)
                     except Exception as e:
                         response_time = time.time() - start_time

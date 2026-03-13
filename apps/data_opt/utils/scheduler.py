@@ -138,9 +138,15 @@ class SchedulerManager:
                         # 直接传递coroutine对象给run_coroutine_threadsafe
                         return asyncio.run_coroutine_threadsafe(async_wrapper(), self.main_loop).result()
                     else:
-                        # 如果没有主事件循环，才创建新的
-                        logger.debug("使用新的事件循环执行异步任务")
-                        return asyncio.run(async_wrapper())
+                        # 尝试获取当前运行的事件循环
+                        try:
+                            loop = asyncio.get_running_loop()
+                            logger.debug("使用当前运行的事件循环执行异步任务")
+                            return loop.run_until_complete(async_wrapper())
+                        except RuntimeError:
+                            # 如果没有运行中的事件循环，才创建新的
+                            logger.debug("使用新的事件循环执行异步任务")
+                            return asyncio.run(async_wrapper())
                 except Exception as e:
                     logger.error(f"🚫 执行异步任务时发生错误: {str(e)}", exc_info=True)
                     raise
