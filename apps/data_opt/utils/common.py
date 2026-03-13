@@ -134,9 +134,9 @@ def get_optimized_session(
             logger.info("安装 httpx 以启用 HTTP/2: pip install httpx")
             enable_http2 = False
         except Exception as e:
-            logger.warning(f"启用 HTTP/2 失败: {e}，回退到 requests")
+            logger.warning(f"httpx 初始化失败: {e}，回退到 requests（不支持 HTTP/2）")
             import traceback
-            logger.debug(f"HTTP/2 启用失败详细错误: {traceback.format_exc()}")
+            logger.debug(f"httpx 初始化失败详细错误: {traceback.format_exc()}")
             enable_http2 = False
     
     # 使用标准的 requests.Session

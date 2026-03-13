@@ -1,11 +1,12 @@
 # coding: utf-8
 
 import json
+import asyncio
 import hashlib
 import requests
 from urllib.parse import quote
 import os
-from typing import Dict, Tuple, List, Any, Optional, OrderedDict, Iterable
+from typing import Dict, Tuple, List, Any, Optional, OrderedDict, Iterable, NamedTuple
 from datetime import datetime, timedelta
 import time
 
@@ -456,6 +457,7 @@ class BusinessOrderGoodsDetail(Model):
 class BusinessOrder(Model):
     id = StrField(pk=True, field_name="tradeNo", description="网店订单号")
     sys_flag_ids = StrField(field_name="sysFlagIds", description="订单标记id（平台）")
+    sys_flag_explain = ChoiceField(field_name="sysFlagExplain", description="订单标记描述")
     trade_status_explain = StrField(field_name="tradeStatusExplain", description="订单状态描述")
     syn_status_explain = StrField(field_name="synStatusExplain", description="发货状态描述")
     cur_status_explain = StrField(field_name="curStatusExplain", description="处理状态描述")
@@ -697,11 +699,25 @@ class Order(Model):
         worksheet_id = "order"
 
 
+class Log(Model):
+    date_time = StrField(field_name="date_time", description="日志时间")
+    log_type = StrField(field_name="log_type", description="日志类型")
+    row_count = NumField(field_name="row_count", description="数据行数")
+    msg = StrField(field_name="msg", description="日志内容")
+
+    class Meta:
+        worksheet_id = "log"
+
+
 
 from ._base import (
     console_log, CACHE_JSON
 )
 
+
+class JkyPullTask(NamedTuple):
+    task_hours: Iterable[int]
+    source_codes: Iterable[str]
 
 
 class JkyConfig():
@@ -786,7 +802,7 @@ PULL_SOURCE: OrderedDict = {
             "hasTotal": 1
         },
         "slice_filter": '{"createTimeBegin": "{slice_start}", "createTimeEnd": "{slice_end}"}', 
-        "add_origin_json": True
+        "add_origin_json": False
     },
     "^BusinessOrder": {
         "source_desc": "更新网店订单", "model": BusinessOrder, "method": "omsapi-business.order.get", "data_node": None,
@@ -795,7 +811,7 @@ PULL_SOURCE: OrderedDict = {
             "hasTotal": 1
         },
         "slice_filter": '{"startModified": "{slice_start}", "endModified": "{slice_end}"}', 
-        "add_origin_json": True
+        "add_origin_json": False
     },
     "~Trade": {
         "source_desc": "新增JY单", "model": Trade, "method": "oms.trade.fullinfoget","data_node": "trades",
@@ -829,14 +845,17 @@ PULL_SOURCE: OrderedDict = {
 
 class JkyConnection():
 
-    def __init__(self, config: JkyConfig=None):
+    def __init__(self, hap_conn: HapConnection, config: JkyConfig=None):
         self._session = get_session()
         self.config = config or JkyConfig
         self.base_url = self.config.BASE_URL
         self.credential_keys = ("app_key", "app_secret")
         self.app_key = self.config.APP_KEY
         self.app_secret = self.config.APP_SECRET
-        self.last_slice_end: str = None
+        self.hap_conn = hap_conn
+        hap_conn.register_model(Log)
+        self._async_hap: AsyncHapConnection = hap_conn.async_connection()
+        self.pull_tasks: List[JkyPullTask] = []
 
 
     def sign_payload(self, payload: Dict[str, Any]) -> str:
@@ -923,7 +942,7 @@ class JkyConnection():
 
         page_size = 200
         page_index = 0
-        row_count = 0
+        row_total_count = 0
         while True:
             page_params = {
                 "pageSize": page_size,
@@ -946,52 +965,107 @@ class JkyConnection():
                     row["jkyOriginJson___"] = json.dumps(row, ensure_ascii=False)
             page_index += 1
             current_page_size = len(result_data)
-            row_count += current_page_size
-            console_log.info(f"获取【{source_desc}】第【{page_index}】页数据，【{current_page_size}】条，累计【{row_count}】条")
+            row_total_count += current_page_size
+            console_log.info(f"【{source_desc}】第【{page_index}】页数据，【{current_page_size}】条，累计【{row_total_count}】条")                
+            asyncio.run(self.log_to_hap(log_type="INFO", msg=f"【{source_desc}】第【{page_index}】页数据，【{current_page_size}】条，累计【{row_total_count}】条", row_count=current_page_size))
             yield result_data
             if current_page_size < page_size or (not "pageSize" in biz_content and page_index > 0):
                 break
 
 
-    async def data_to_hap(self, async_hap: AsyncHapConnection, source_code: str, slice_timerange: Optional[Tuple[str, str]]=None, other_biz:Optional[Dict]=None):
+    async def log_to_hap(self, log_type: str, msg: str, row_count: int=None):
+        log_data = Log(
+            date_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            log_type=log_type,
+            row_count=row_count,
+            msg=msg
+        )
+        await self._async_hap.rows(Log).bulk_create([log_data])
+
+
+    async def data_to_hap(self, source_code: str, slice_timerange: Optional[Tuple[str, str]]=None, other_biz:Optional[Dict]=None):
         data_gen = self.pull_from_source(source_code, slice_timerange, other_biz)
         model = PULL_SOURCE[source_code]["model"]
         source_desc = PULL_SOURCE[source_code]["source_desc"]
         time_start = datetime.now()
-        count = await async_hap.rows(model).upsert_from_generator(data_gen, adaptive=True, trigger_workflow=True)
+        count = await self._async_hap.rows(model).upsert_from_generator(data_gen, adaptive=True, trigger_workflow=True)
         time_end = datetime.now()
         console_log.info(f"成功处理 【{source_desc}】【{count}】条，耗时【{time_end - time_start}】")
 
+    
+    # def register_pull_tasks(self, pull_tasks: List[JkyPullTask]):
+    #     def register_hap_models(source_codes: Iterable[str]):
+    #         sorted_models: Optional[Dict[str, Model]] = {}
+    #         for source_code, source in PULL_SOURCE.items():
+    #             if source_code in source_codes:
+    #                 sorted_models[source_code] = source["model"]
+    #         self.hap_conn.register_models(sorted_models.values())
+    #         return sorted_models
+    #     self.pull_tasks = pull_tasks
+    #     source_codes = {source_code for task in pull_tasks for source_code in task.source_codes}
+    #     self.sorted_models = register_hap_models(source_codes)
 
-    def create_cron_task(self, hour, minute, task_name, source_codes: Iterable[str], async_hap: AsyncHapConnection):
-        """工厂函数，动态创建同步数据的定时任务
-        # 创建默认的同步任务（每天22:42执行）
-        # sync_incremental_data = create_cron_task(22, 42, "sync_incremental_data")
-        # 示例：创建其他时间的同步任务
-        # sync_morning_data = create_cron_task(8, 0, "sync_morning_data", _JKY_CONN, source_codes)  # 每天8:00执行
-        # sync_noon_data = create_cron_task(12, 30, "sync_noon_data", _JKY_CONN, source_codes)  # 每天12:30执行
-        Args:
-            hour: 执行小时
-            minute: 执行分钟
-            task_name: 任务名称
-            source_codes: 要同步的数据源列表
+
+    # def create_cron_task(self, hour, minute, task_name, source_codes: Iterable[str]):
+    #     """工厂函数，动态创建同步数据的定时任务
+    #     # 创建默认的同步任务（每天22:42执行）
+    #     # sync_incremental_data = create_cron_task(22, 42, "sync_incremental_data")
+    #     # 示例：创建其他时间的同步任务
+    #     # sync_morning_data = create_cron_task(8, 0, "sync_morning_data", _JKY_CONN, source_codes)  # 每天8:00执行
+    #     # sync_noon_data = create_cron_task(12, 30, "sync_noon_data", _JKY_CONN, source_codes)  # 每天12:30执行
+    #     Args:
+    #         hour: 执行小时
+    #         minute: 执行分钟
+    #         task_name: 任务名称
+    #         source_codes: 要同步的数据源列表
         
-        Returns:
-            装饰后的异步函数
-        """
-        @cron_task(hour=hour, minute=minute)
-        async def sync_task():
-            # 动态生成时间范围（前一天到当天）
-            slice_start = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-            slice_end = datetime.now().strftime("%Y-%m-%d")
-            slice_timerange = (f"{slice_start} 00:00:00", f"{slice_end} 00:00:00")
+    #     Returns:
+    #         装饰后的异步函数
+    #     """
+    #     @cron_task(hour=hour, minute=minute)
+    #     async def sync_task():
+    #         # 动态生成时间范围（前一天到当天）
+    #         slice_start = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    #         slice_end = datetime.now().strftime("%Y-%m-%d")
+    #         slice_timerange = (f"{slice_start} 00:00:00", f"{slice_end} 00:00:00")
             
-            for source_code in source_codes:
-                await self.data_to_hap(async_hap=async_hap, source_code=source_code, slice_timerange=slice_timerange)
+    #         for source_code in source_codes:
+    #             await self.data_to_hap(source_code=source_code, slice_timerange=slice_timerange)
+        
+    #     # 重命名函数，使其更具辨识度
+    #     sync_task.__name__ = task_name
+    #     return sync_task
+    def create_pull_task(self, exec_minute: int, tasks: List[JkyPullTask], task_name: str=None, cache_json=CACHE_JSON):
+        """动态创建拉取数据的定时任务
+        Args:
+            exec_minute: 执行分钟, 0~59
+            task_name: 任务名称
+        """
+        # self.pull_tasks.extend(tasks)
+        @cron_task(minute=exec_minute)
+        async def exec_schedule():
+            now = datetime.now()
+            hour = int(now.hour)
+            this_slice_end = f"{now.strftime('%Y-%m-%d')} {hour:02d}:{exec_minute:02d}:00"
+            for task in tasks:
+                if not hour in task.task_hour:
+                    continue
+                sorted_src_codes = self.sort_tasks(task.source_codes)
+                for src_code in sorted_src_codes:
+                    if src_code.startswith('$'):
+                        # 如果是全量数据
+                        await self.data_to_hap(src_code)
+                    else:
+                        # 如果是增量数据
+                        cache_json.set(f"last_slice_end / {src_code}", this_slice_end)
+                        last_slice_end = cache_json.get(f"last_slice_end / {src_code}", None)
+                        if last_slice_end:
+                            slice_timerange = (last_slice_end, this_slice_end)
+                            await self.data_to_hap(src_code, slice_timerange)
         
         # 重命名函数，使其更具辨识度
-        sync_task.__name__ = task_name
-        return sync_task
+        exec_schedule.__name__ = task_name or f"exec_schedule_{exec_minute:02d}"
+        return exec_schedule
 
 
     @classmethod
@@ -1001,18 +1075,6 @@ class JkyConnection():
             if source_code in source_codes:
                 sorted_tasks.append(source_code)
         return sorted_tasks
-
-
-
-def register_hap_models(hap_conn: HapConnection, source_codes: Iterable[str]):
-    sorted_models: Optional[Dict[str, Model]] = {}
-    for source_code, source in PULL_SOURCE.items():
-        if source_code in source_codes:
-            sorted_models[source_code] = source["model"]
-    hap_conn.register_models(sorted_models.values())
-    return sorted_models
-
-
 
 
 
