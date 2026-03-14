@@ -22,7 +22,7 @@ from ._base import (
 from .utils import(
     HapUtils, AdaptiveTimeout, EnhancedRetryStrategy, TokenBucket, DecimalEncoder, HapApiMonitor,
     StringInternPool, LightweightRow, ObjectPool, ConnectionPoolWarmer, SmartBatchSizeCalculator,
-    AdaptiveRateController, hap_async_timer
+    AdaptiveRateController, WorksheetLogger, hap_async_timer
 )
 from .models import Model
 from .data_objects import HapRowSet, HapQuerySet, AsyncHapQuerySet
@@ -113,7 +113,16 @@ class HapConnection:
         
         # 异步连接实例缓存
         self._async_connection = None
+
+        self._worksheet_logger = None
     
+
+    def set_worksheet_logger(self, worksheet_id: str='Log', app_key: str=None, sign: str=None, base_url: str=None) -> WorksheetLogger:
+        """设置工作表日志记录器"""
+        
+        self._worksheet_logger = WorksheetLogger(self, worksheet_id=worksheet_id, app_key=app_key or self.app_key, sign=sign or self.sign, base_url=base_url or self.base_url)
+        return self._worksheet_logger
+
     
     def async_connection(self, enable_monitor: bool = True) -> 'AsyncHapConnection':
         """创建并返回包装好的异步连接

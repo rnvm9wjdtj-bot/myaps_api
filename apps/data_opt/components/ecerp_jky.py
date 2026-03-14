@@ -700,14 +700,14 @@ class Order(Model):
         worksheet_id = "order"
 
 
-class Log(Model):
+class JkyApiCallLog(Model):
     date_time = StrField(field_name="date_time", description="日志时间")
-    log_type = StrField(field_name="log_type", description="日志类型")
+    log_level = StrField(field_name="log_level", description="日志类型")
     row_count = NumField(field_name="row_count", description="数据行数")
     msg = StrField(field_name="msg", description="日志内容")
 
     class Meta:
-        worksheet_id = "log"
+        worksheet_id = "JkyApiCallLog"
 
 
 
@@ -1027,30 +1027,30 @@ class JkyConnection():
             row_total_count += current_page_size
             console_log.info(f"【{source_desc}】第【{page_index}】页数据，【{current_page_size}】条，累计【{row_total_count}】条")
             # 异步执行日志记录，但不等待其结果，避免影响主流程
-            self.log_to_hap(log_type="INFO", msg=f"【{source_desc}】第【{page_index}】页数据，【{current_page_size}】条，累计【{row_total_count}】条", row_count=current_page_size)
+            self.log_to_hap(log_level="INFO", msg=f"【{source_desc}】第【{page_index}】页数据，【{current_page_size}】条，累计【{row_total_count}】条", row_count=current_page_size)
             yield result_data
             if current_page_size < page_size or (not "pageSize" in biz_content and page_index > 0):
                 break
 
 
-    def log_to_hap(self, log_type: str, msg: str, row_count: int=None):
+    def log_to_hap(self, log_level: str, msg: str, row_count: int=None):
         """异步记录日志到HAP（后台执行，不阻塞主流程）
         
         Args:
-            log_type: 日志类型
+            log_level: 日志类型
             msg: 日志内容
             row_count: 数据行数
         """
-        log_data = Log(
+        log_data = JkyApiCallLog(
             date_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            log_type=log_type,
+            log_level=log_level,
             row_count=row_count,
             msg=msg
         )
         
         async def _do_log():
             try:
-                await self._async_hap.rows(Log).bulk_create([log_data.to_dict()])
+                await self._async_hap.rows(JkyApiCallLog).bulk_create([log_data.to_dict()])
             except Exception as e:
                 console_log.error(f"记录日志失败: {e}")
         

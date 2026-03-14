@@ -761,7 +761,7 @@ class HapRowSet(Generic[ModelType]):
             if not failed_data:
                 break
             retry_failed = []
-            console_log.info(f"第 {retry + 1} 次重试，共 {len(failed_data)} 条数据")
+            console_log.info(f"第【{retry + 1}】次重试，共【{len(failed_data)}】条数据，目标【{self.model.__name__}】")
             for data in failed_data:
                 try:
                     result = self._process_item(data, pk_field, conflict_fields, when_value_equal_then)
@@ -773,7 +773,7 @@ class HapRowSet(Generic[ModelType]):
         
         # 如果仍有失败的数据，记录到错误日志
         if failed_data:
-            filelog_error.error(f"最终失败的数据共 {len(failed_data)} 条: {failed_data}")
+            filelog_error.error(f"最终失败的数据共【{len(failed_data)}】条:{failed_data}")
             # 将失败的数据作为需要创建的数据返回，避免丢失
             for data in failed_data:
                 results.append((None, data))
@@ -1188,6 +1188,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
         self._async_hap = async_hap
         self._sync_query = sync_conn.rows(model)
     
+    
     def _run_in_executor(self, func: Callable, *args, **kwargs) -> asyncio.Future:
         """在线程池中执行同步函数"""
         loop = asyncio.get_event_loop()
@@ -1213,6 +1214,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
         self._sync_query = self._sync_query.filter(*args, **kwargs)
         return self
     
+
     def exclude(self, *args, **kwargs) -> 'AsyncHapQuerySet[ModelType]':
         """添加排除条件
         
@@ -1226,6 +1228,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
         self._sync_query = self._sync_query.exclude(*args, **kwargs)
         return self
     
+
     def order_by(self, *fields: str) -> 'AsyncHapQuerySet[ModelType]':
         """设置排序字段
         
@@ -1238,6 +1241,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
         self._sync_query = self._sync_query.order_by(*fields)
         return self
     
+
     def limit(self, n: int) -> 'AsyncHapQuerySet[ModelType]':
         """设置返回数量限制
         
@@ -1250,6 +1254,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
         self._sync_query.limit = n
         return self
     
+
     def offset(self, n: int) -> 'AsyncHapQuerySet[ModelType]':
         """设置偏移量
         
@@ -1272,6 +1277,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
         """
         return await self._run_in_executor(self._sync_query.all)
     
+
     async def first(self) -> Optional[ModelType]:
         """异步获取第一条结果
         
@@ -1280,6 +1286,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
         """
         return await self._run_in_executor(self._sync_query.first)
     
+
     async def count(self) -> int:
         """异步获取记录数
         
@@ -1288,6 +1295,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
         """
         return await self._run_in_executor(self._sync_query.count)
     
+
     async def stream(self, batch_size: int = 100) -> AsyncGenerator[ModelType, None]:
         """异步流式获取结果
         
@@ -1348,6 +1356,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
             when_value_equal_then=when_value_equal_then
         )
     
+
     @hap_async_timer()
     async def bulk_create(
         self,
@@ -1369,6 +1378,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
             trigger_workflow=trigger_workflow
         )
     
+
     @hap_async_timer()
     async def bulk_update(
         self,
@@ -1390,6 +1400,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
             trigger_workflow=trigger_workflow
         )
     
+
     @hap_async_timer()
     async def delete(self, trigger_workflow: bool = True) -> bool:
         """异步删除模型实例
@@ -1425,46 +1436,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
                 batch_result = await self.upsert(batch, **kwargs)
                 results.extend(batch_result.row_objects)
         return results
-    
-    # async def bulk_upsert_parallel(
-    #     self,
-    #     data_list: List[Dict[str, Any]],
-    #     batch_size: int = 100,
-    #     max_concurrency: int = _MAX_CONCURRENCY
-    # ) -> List[ModelType]:
-    #     """并行批量 upsert，提高处理速度
-        
-    #     Args:
-    #         data_list: 要 upsert 的数据列表
-    #         batch_size: 每批处理数量，默认 100
-    #         max_concurrency: 最大并发数，默认 _MAX_CONCURRENCY
-            
-    #     Returns:
-    #         List[ModelType]: 处理后的模型实例列表
-    #     """
-    #     # 分批次
-    #     batches = []
-    #     for i in range(0, len(data_list), batch_size):
-    #         batch = data_list[i:i+batch_size]
-    #         if batch:
-    #             batches.append(batch)
-        
-    #     # 并行处理
-    #     results = []
-    #     semaphore = asyncio.Semaphore(max_concurrency)
-        
-    #     async def process_batch(batch):
-    #         async with semaphore:
-    #             batch_result = await self.upsert(batch)
-    #             return batch_result.row_objects
-        
-    #     tasks = [process_batch(batch) for batch in batches]
-    #     batch_results = await asyncio.gather(*tasks)
-        
-    #     for batch_result in batch_results:
-    #         results.extend(batch_result)
-        
-    #     return results
+
 
     async def bulk_upsert_parallel(
         self,
@@ -1630,8 +1602,8 @@ class AsyncHapQuerySet(Generic[ModelType]):
                         # 指数退避
                         delay = retry_delay * (2 ** attempt)
                         console_log.warning(
-                            f"批次 {batch_index} 第 {attempt + 1} 次尝试失败，"
-                            f"{delay}秒后重试: {error_msg}"
+                            f"批次【{batch_index}】第【{attempt + 1}】次尝试失败，目标【{self.model.__name__}】"
+                            f"等待【{delay}】秒后重试: {error_msg}"
                         )
                         await asyncio.sleep(delay)
                     else:
@@ -1708,7 +1680,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
                 console_log.warning("任务被取消")
                 continue
             except Exception as e:
-                console_log.error(f"处理批次时发生未预期错误: {e}")
+                console_log.error(f"处理批次【{batch_index}】时发生未预期错误，目标【{self.model.__name__}】: {e}")
                 stats.failed_batches += 1
         
         # 计算最终统计

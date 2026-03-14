@@ -2,16 +2,17 @@
 工具类集合
 """
 
-import re
-import json
-import time
-import threading
-import requests
+import re, json, time, threading, requests, asyncio, functools
 from typing import Dict, Any, Optional, List, Union, Literal, Generator, Type, Callable
 from decimal import Decimal
 
+# 尝试导入 aiohttp，如果未安装则给出提示
+try:
+    import aiohttp
+except ImportError:
+    aiohttp = None
 
-from ._base import console_log, _MAX_CONCURRENCY, _DEFAULT_BUFFER_SIZE, _ADAPTIVE_MIN_BUFFER_SIZE, _ADAPTIVE_SCALE_UP_FAST, _ADAPTIVE_SCALE_UP_SLOW, _ADAPTIVE_SCALE_DOWN, _ADAPTIVE_SCALE_DOWN_FAST, _DEFAULT_MAX_RETRIES, _DEFAULT_RETRY_DELAY
+from ._base import console_log, _SAAS_BASEURL, _MAX_CONCURRENCY, _DEFAULT_BUFFER_SIZE, _ADAPTIVE_MIN_BUFFER_SIZE, _ADAPTIVE_SCALE_UP_FAST, _ADAPTIVE_SCALE_UP_SLOW, _ADAPTIVE_SCALE_DOWN, _ADAPTIVE_SCALE_DOWN_FAST, _DEFAULT_MAX_RETRIES, _DEFAULT_RETRY_DELAY
 
 
 # 预编译正则表达式，提升性能
@@ -1255,12 +1256,214 @@ class HapApiMonitor:
             self._requests.clear()
 
 
+class WorksheetLogger:
+    """高性能异步工作表日志记录器
+    
+    特性：
+    - 连接池复用，避免频繁创建/关闭连接
+    - 批量日志记录，减少 API 调用次数
+    - 后台异步写入，不阻塞主流程
+    - 自动刷新机制，确保日志及时写入
+    """
+    
+    def __init__(self, app_key, sign, worksheet_id='Log', base_url=_SAAS_BASEURL, 
+                 batch_size: int = 10, flush_interval: float = 5.0, max_queue_size: int = 1000):
+        """
+        初始化工作表日志记录器
+        
+        Args:
+            app_key: HAP 应用密钥
+            sign: HAP 应用签名
+            worksheet_id: 工作表 ID，默认 'Log', 工作表要有三列：date_time, log_level, message
+            base_url: HAP API 基础 URL，默认 _SAAS_BASEURL
+            batch_size: 批量写入大小，默认 10
+            flush_interval: 自动刷新间隔（秒），默认 5.0
+            max_queue_size: 最大队列大小，默认 1000
+        """
+        if aiohttp is None:
+            raise ImportError("aiohttp is required for WorksheetLogger. Install it with: pip install aiohttp")
+        
+        self.app_key = app_key
+        self.sign = sign
+        self.worksheet_id = worksheet_id
+        self.base_url = base_url
+        self.headers = {
+            'HAP-Appkey': app_key,
+            'HAP-Sign': sign,
+            "Content-Type": "application/json",
+            "Accept-Encoding": "gzip, deflate"
+        }
+        
+        # 批量写入配置
+        self.batch_size = batch_size
+        self.flush_interval = flush_interval
+        self.max_queue_size = max_queue_size
+        
+        # 日志队列
+        self._log_queue: List[Dict] = []
+        self._queue_lock = threading.Lock()
+        
+        # 连接池（复用 session）
+        self._session: Optional[aiohttp.ClientSession] = None
+        self._session_lock = threading.Lock()
+        
+        # 后台刷新任务
+        self._flush_task: Optional[asyncio.Task] = None
+        self._shutdown = False
+    
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """获取或创建 ClientSession（连接池）"""
+        if self._session is None or self._session.closed:
+            with self._session_lock:
+                if self._session is None or self._session.closed:
+                    connector = aiohttp.TCPConnector(
+                        limit=10,  # 连接池大小
+                        limit_per_host=5,  # 每个主机的连接数
+                        enable_cleanup_closed=True,
+                        force_close=False,
+                    )
+                    timeout = aiohttp.ClientTimeout(total=30, connect=10)
+                    self._session = aiohttp.ClientSession(
+                        connector=connector,
+                        timeout=timeout,
+                        headers=self.headers
+                    )
+        return self._session
+    
+    async def _flush_logs(self, logs: List[Dict]):
+        """批量写入日志到工作表"""
+        if not logs:
+            return
+        
+        try:
+            session = await self._get_session()
+            # 使用批量创建 API 一次性写入多条日志
+            payload = {
+                "triggerWorkflow": False,  # 批量写入时不触发工作流，提高性能
+                "rows": [
+                    {
+                        "fields": [
+                            {"id": "date_time", "value": log["date_time"]},
+                            {"id": "log_level", "value": log["log_level"]},
+                            {"id": "message", "value": log["message"]}
+                        ]
+                    }
+                    for log in logs
+                ]
+            }
+            
+            async with session.post(
+                f"{self.base_url}/v3/app/worksheets/{self.worksheet_id}/rows/batch",
+                json=payload
+            ) as response:
+                result = await response.json()
+                if not result.get("success"):
+                    console_log.error(f"批量写入日志失败: {result.get('error_msg')}")
+        except Exception as e:
+            console_log.error(f"批量写入日志异常: {e}")
+    
+    async def _periodic_flush(self):
+        """定期刷新日志的后台任务"""
+        while not self._shutdown:
+            try:
+                await asyncio.sleep(self.flush_interval)
+                await self.flush()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                console_log.error(f"定期刷新日志异常: {e}")
+    
+    def _start_flush_task(self):
+        """启动后台刷新任务"""
+        if self._flush_task is None or self._flush_task.done():
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    self._flush_task = loop.create_task(self._periodic_flush())
+            except RuntimeError:
+                pass  # 没有运行的事件循环，不启动后台任务
+    
+    async def log(self, message: str, log_level: Literal['INFO', 'WARNING', 'ERROR']='INFO', 
+                  date_time: str = None, immediate: bool = False):
+        """将消息异步写入工作表
+        
+        Args:
+            message: 要写入的消息
+            log_level: 日志级别，默认 INFO
+            date_time: 日志时间，默认当前时间
+            immediate: 是否立即写入，默认 False（批量写入）
+        """
+        if date_time is None:
+            date_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        
+        log_entry = {
+            "date_time": date_time,
+            "log_level": log_level,
+            "message": message
+        }
+        
+        with self._queue_lock:
+            # 检查队列是否已满
+            if len(self._log_queue) >= self.max_queue_size:
+                # 队列已满，丢弃最旧的日志
+                self._log_queue.pop(0)
+                console_log.warning("日志队列已满，丢弃最旧的日志")
+            
+            self._log_queue.append(log_entry)
+            current_size = len(self._log_queue)
+        
+        # 启动后台刷新任务
+        self._start_flush_task()
+        
+        # 如果队列达到批量大小或要求立即写入，则刷新
+        if immediate or current_size >= self.batch_size:
+            await self.flush()
+    
+    async def flush(self):
+        """立即刷新所有待写入的日志"""
+        with self._queue_lock:
+            logs_to_flush = self._log_queue.copy()
+            self._log_queue.clear()
+        
+        if logs_to_flush:
+            await self._flush_logs(logs_to_flush)
+    
+    async def close(self):
+        """关闭日志记录器，刷新所有剩余日志"""
+        self._shutdown = True
+        
+        # 取消后台刷新任务
+        if self._flush_task and not self._flush_task.done():
+            self._flush_task.cancel()
+            try:
+                await self._flush_task
+            except asyncio.CancelledError:
+                pass
+        
+        # 刷新剩余日志
+        await self.flush()
+        
+        # 关闭 session
+        if self._session and not self._session.closed:
+            await self._session.close()
+            self._session = None
+    
+    async def __aenter__(self):
+        """异步上下文管理器入口"""
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """异步上下文管理器出口"""
+        await self.close()
+        return False
+
 
 # 统计 HAP 异步操作执行时间的装饰器
 def hap_async_timer(func: Callable = None, *, operation_name: str = None):
     """统计 HAP 异步操作执行时间的装饰器
     
     用于装饰 async 函数，记录其执行时间、操作名称、数据条数等信息。
+    当装饰 AsyncHapQuerySet 的方法时，会自动从连接中获取 WorksheetLogger。
     
     Args:
         func: 被装饰的函数
@@ -1279,10 +1482,6 @@ def hap_async_timer(func: Callable = None, *, operation_name: str = None):
         >>>     pass
     """
     def decorator(fn: Callable) -> Callable:
-        import time
-        import logging
-        import functools
-        
         @functools.wraps(fn)
         async def wrapper(*args, **kwargs):
             op_name = operation_name or fn.__name__
@@ -1290,6 +1489,17 @@ def hap_async_timer(func: Callable = None, *, operation_name: str = None):
             result = None
             error = None
             data_count = 0
+            
+            # 尝试获取 WorksheetLogger
+            worksheet_logger = None
+            if args:
+                # 检查第一个参数是否是 AsyncHapQuerySet 实例
+                self_arg = args[0]
+                if hasattr(self_arg, '_sync_conn') and hasattr(self_arg._sync_conn, 'set_worksheet_logger'):
+                    try:
+                        worksheet_logger = self_arg._sync_conn.set_worksheet_logger()
+                    except Exception:
+                        pass  # 获取失败时使用默认的 console_log
             
             try:
                 result = await fn(*args, **kwargs)
@@ -1317,13 +1527,13 @@ def hap_async_timer(func: Callable = None, *, operation_name: str = None):
                 
                 log_info = {
                     "operation": op_name,
-                    "elapsed_time": f"{elapsed_time:.3f}s",
+                    "elapsed_time": f"⏱️ {elapsed_time:.3f}s",
                     "data_count": data_count,
                 }
                 
                 if elapsed_time > 0:
                     data_rate_per_second = data_count / elapsed_time
-                    log_info["data_rate_per_second"] = f"{data_rate_per_second:.2f}条/秒"
+                    log_info["data_rate_per_second"] = f"⏱️ {data_rate_per_second:.2f}条/秒"
                 else:
                     log_info["data_rate_per_second"] = "N/A"
                 
@@ -1334,6 +1544,15 @@ def hap_async_timer(func: Callable = None, *, operation_name: str = None):
                 else:
                     log_info["status"] = "SUCCESS"
                     console_log.info(f"HAP异步操作统计 | {log_info}")
+                
+                # 如果找到 WorksheetLogger，也记录到工作表
+                if worksheet_logger:
+                    log_message = f"HAP异步操作统计 | {log_info}"
+                    log_level = 'ERROR' if error else 'INFO'
+                    try:
+                        await worksheet_logger.log(log_message, log_level=log_level)
+                    except Exception as log_error:
+                        console_log.error(f"写入工作表日志失败: {log_error}")
         
         return wrapper
     

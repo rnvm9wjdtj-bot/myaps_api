@@ -13,5 +13,6 @@ _TASKS = [
 
 
 _HAP = HapConnection()
+_HAP.set_worksheet_logger()
 _JKY = JkyConnection(hap_conn=_HAP)
 _JKY.create_pull_task(exec_minute=_MINUTE, tasks=_TASKS)
