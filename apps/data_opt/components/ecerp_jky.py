@@ -778,6 +778,15 @@ PULL_SOURCE: OrderedDict = {
         "biz_content": {"pageIndex": None, "pageSize": None}
     },
 
+    "~Customer":{
+        "source_desc": "新增客户信息", "model": Customer, "method": "crm.customer.list", "data_node": None,
+        "biz_content": {
+            "pageSize": None, "pageIndex": None,
+            "hasTotal": 1, "enable": 1
+        },
+        "slice_filter": '{"gmtCreateBegin": "{slice_start}", "gmtCreateEnd": "{slice_end}"}', 
+        "add_origin_json": False
+    },
     "^Customer":{
         "source_desc": "更新客户信息", "model": Customer, "method": "crm.customer.list", "data_node": None,
         "biz_content": {
@@ -786,7 +795,16 @@ PULL_SOURCE: OrderedDict = {
         },
         "slice_filter": '{"gmtModifiedBegin": "{slice_start}", "gmtModifiedEnd": "{slice_end}"}', 
         "add_origin_json": False
+    },
+    "~Sku": {
+        "source_desc": "新增SKU",  "model": Sku, "method": "erp.storage.goodslist", "data_node": "goods",
+        "biz_content": {
+            "pageSize": None, "pageIndex": None,
+            "isQueryDelete": 0, "skuIsBlockup": 0, "isBlockup": 0, "isPackageGood": 0
         },
+        "slice_filter": '{"startDate": "{slice_start}", "endDate": "{slice_end}"}', 
+        "add_origin_json": True,
+    },
     "^Sku": {
         "source_desc": "更新SKU",  "model": Sku, "method": "erp.storage.goodslist", "data_node": "goods",
         "biz_content": {
@@ -820,7 +838,7 @@ PULL_SOURCE: OrderedDict = {
             "pageSize": None, "pageIndex": None, "hasTotal": 1, 
             "fields": "totalResults,trades,checkTotal,tradeNo,otherFee,chargeCurrency,accountName,payType,payNo,sellerMemo,buyerMemo,goodsDetail,goodsDetail.goodsNo,goodsDetail.goodsName,goodsDetail.specName,goodsDetail.barcode,goodsDetail.sellCount,goodsDetail.unit,goodsDetail.sellPrice,goodsDetail.sellTotal,goodsDetail.cost,goodsDetail.discountTotal,goodsDetail.discountPoint,goodsDetail.taxFee,goodsDetail.shareFavourableFee,goodsDetail.estimateWeight,goodsDetail.goodsMemo,goodsDetail.cateName,goodsDetail.brandName,goodsDetail.goodsTags,goodsDetail.isFit,goodsDetail.isGift,goodsDetail.discountFee,goodsDetail.taxRate,goodsDetail.estimateGoodsVolume,goodsDetail.isPresell,goodsDetail.customerPrice,goodsDetail.customerTotal,goodsDetail.tradeGoodsNo,goodsDetail.tradeGoodsName,goodsDetail.tradeGoodsSpec,goodsDetail.tradeGoodsUnit,goodsDetail.sourceSubtradeNo,goodsDetail.platCode,goodsDetail.platGoodsId,goodsDetail.subTradeId,goodsDetail.goodsDelivery,goodsDelivery.sendCount,goodsDelivery.productionDate,goodsDelivery.expirationDate,goodsDelivery.batchNo,goodsDelivery.expireDate,goodsDelivery.productDate,goodsDetail.platAuthorId,goodsDetail.platAuthorName,goodsDetail.isPlatGift,goodsDetail.goodsPlatDiscountFee,goodsDetail.tradeOrderGoodsDiscountInfoDtoList,tradeOrderGoodsDiscountInfoDtoList.discountFee,tradeOrderGoodsDiscountInfoDtoList.discountName,goodsDetail.shareFavourableAfterFee,goodsDetail.divideSellTotal,goodsDetail.shareOrderDiscountFee,goodsDetail.shareOrderPlatDiscountFee,goodsDetail.sourceTradeNo,goodsDetail.actualSendCount,goodsDetail.platSkuId,goodsDetail.customerTradeNo,goodsDetail.customerSubtradeNo,goodsDetail.PlatCustomData,goodsDetail.assessmentCostLocal,goodsDetail.assessmentGrossProfitLocal,goodsDetail.assessmentGrossProfitPercent,goodsDetail.goodsCompassSourceContentType,goodsDetail.goodsSeller,goodsDetail.inventoryWarehouseId,goodsDetail.inventoryWarehouseName,goodsDetail.specId,goodsDetail.goodsId,goodsDetail.outerId,goodsDetail.apiType,goodsDetail.tradeId,goodsDetail.skuImgUrl,goodsDetail.needProcessCount,goodsDetail.goodsFlagIds,goodsDetail.goodsFlagNames,appendMemo,tradeFrom,register,seller,auditor,reviewer,estimateWeight,packageWeight,tradeCount,goodsTypeCount,freezeReason,abnormalDescription,onlineTradeNo,goodslist,gmtCreate,gmtModified,stockoutNo,confirmTime,departName,lastShipTime,payStatus,chargeCurrencyCode,chargeExchangeRate,tradeStatus,grossProfit,estimateVolume,customerTypeName,customerGradeName,customerTags,customerCode,customerDiscount,specialReminding,blackList,tradeTime,country,state,city,district,town,zip,payTime,countryCode,cityCode,invoiceType,payerName,payerRegno,payerBankAccount,payerPhone,auditTime,payerAddress,invoiceNo,invoiceCode,invoiceStatus,payerBankName,preTypedetail,firstPayment,finalPayment,firstPaytime,finalPaytime,reviewTime,activationTime,customerTotalFee,customerDiscountFee,notifyPickTime,consignTime,orderNo,customerPostFee,shopId,shopName,tradeOrderPayList,customerPayment,companyName,tradeOrderColumnExt,isBillCheck,warehouseCode,warehouseName,logisticName,tradeId,billDate,logisticType,mainPostid,tradeType,totalFee,taxFee,receivedPostFee,discountFee,payment,couponFee,receivedTotal,postFee,isTableSwitch,completeTime,shopcode,signingTime,goodsSerial,otherPaymentFees,tradeOrderGoodsColumnExts,isDelete,localPayment,localExchangeRate,customerAccount,localCurrencyCode,platCompleteTime,buyerOpenUid,tradeOrderAssemblyGoodsDtoList,tradeOrderRefundTime,assemblyGoodsDetail,apiType,logisticCode,agentShopName,tradeStatusExplain,flagIds,flagNames,sysFlagIds,shopTypeCode,sourceAfterNo,ticketCodeList,allCompassSourceContentType,customerName,invoiceAmount,realFee,packageDetail.state,finReceiptTime,extraLogisticNo,warehouseId,id,govSubsidy,pickUpTime,tradeOrderPre,scrollId,chargeType,chargeCurrency,chargeAccount,accountName,payType,payNo,payment,chargeCurrencyCode,chargeExchangeRate,columnExt.tradeId,goodsSerial.subTradeId,goodsSerial.skuId,goodsSerial.serialNo,goodsSerial.serialNo2,expense.expenseFee,expense.expenseItemName,subTradeId,tradeId,tradeOrderAssemblyGoodsDtoList.goodsNo,tradeOrderAssemblyGoodsDtoList.unit,tradeOrderAssemblyGoodsDtoList.specId,tradeOrderAssemblyGoodsDtoList.goodsId,tradeOrderAssemblyGoodsDtoList.tradeId,tradeOrderAssemblyGoodsDtoList.specName,tradeOrderAssemblyGoodsDtoList.goodsName,tradeOrderAssemblyGoodsDtoList.sellCount,tradeOrderAssemblyGoodsDtoList.subTradeId,tradeOrderAssemblyGoodsDtoList.baseUnitSellCount,tradeOrderAssemblyGoodsDtoList.assemblyGoodsDelivery,tradeId,specId,batchNo,expireDate,subTradeId,productDate,packageDetail.state,packageDetail.city,packageDetail.town,packageDetail.district,packageDetail.isGift,packageDetail.barcode,packageDetail.tradeNo,packageDetail.buyerMemo,packageDetail.sellCount,packageDetail.isPlatGift,packageDetail.logisticNo,packageDetail.sellerMemo,packageDetail.consignTime,packageDetail.logisticCode,packageDetail.logisticName,packageDetail.sourceTradeNo,packageDetail.warehouseName,packageDetail.sourceSubtradeNo,frstPaytime,firstPayment,finalPaytime,finalPayment,preTypedetail,sourceTradeNo"
         },
-        "slice_filter": '{"startTradeTime": "{slice_start}", "endTradeTime": "{slice_end}"}', 
+        "slice_filter": '{"startCreated": "{slice_start}", "endCreated": "{slice_end}"}', 
         "add_origin_json": False
     },
     "^Trade": {
@@ -906,42 +924,29 @@ class JkyConnection():
         url = f"{base_url}?{encoded_payload}"
         headers = {'Content-Type': 'application/json', 'Accept':'application/json'}
 
-        for attempt in range(max_retries):
-            try:
-                response = self._session.post(url=url, json=payload, headers=headers, timeout=timeout)
-                response_json = response.json()
-                return response_json
-            except requests.exceptions.ChunkedEncodingError as e:
-                if attempt < max_retries - 1:
-                    console_log.error(f"ChunkedEncodingError occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                    continue
-                else:
-                    raise
-            except requests.exceptions.Timeout as e:
-                if attempt < max_retries - 1:
-                    console_log.error(f"Timeout occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                    continue
-                else:
-                    raise
-            except requests.exceptions.ConnectionError as e:
-                if attempt < max_retries - 1:
-                    console_log.error(f"ConnectionError occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                    continue
-                else:
-                    raise
-            except requests.exceptions.RequestException as e:
-                if attempt < max_retries - 1:
-                    console_log.error(f"RequestException occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                    continue
-                else:
-                    raise
+        def _make_request():
+            response = self._session.post(url=url, json=payload, headers=headers, timeout=timeout)
+            return response.json()
+
+        def _retry_with_backoff_sync(func, max_retries=3, retry_delay=2):
+            """同步函数的重试逻辑
+            """
+            for attempt in range(max_retries):
+                try:
+                    return func()
+                except Exception as e:
+                    error_type = type(e).__name__
+                    if attempt < max_retries - 1:
+                        console_log.error(f"{error_type} occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                        continue
+                    else:
+                        raise
+
+        return _retry_with_backoff_sync(_make_request, max_retries, retry_delay)
+
 
     async def async_call_api(self, base_url, biz_content, method, version, max_retries=3, retry_delay=2, timeout=30) -> Dict[str, Any]:
-        
         now = datetime.now()
         timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
         payload = {
@@ -956,26 +961,27 @@ class JkyConnection():
         url = f"{base_url}?{encoded_payload}"
         headers = {'Content-Type': 'application/json', 'Accept':'application/json'}
 
-        for attempt in range(max_retries):
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(url=url, json=payload, headers=headers, timeout=timeout) as response:
-                        response_json = await response.json()
-                        return response_json
-            except aiohttp.ClientError as e:
-                if attempt < max_retries - 1:
-                    console_log.error(f"ClientError occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
-                    await asyncio.sleep(retry_delay)
-                    continue
-                else:
-                    raise
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    console_log.error(f"Exception occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
-                    await asyncio.sleep(retry_delay)
-                    continue
-                else:
-                    raise
+        async def _make_request():
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url=url, json=payload, headers=headers, timeout=timeout) as response:
+                    return await response.json()
+
+        async def _retry_with_backoff_async(func, max_retries=3, retry_delay=2):
+            """异步函数的重试逻辑
+            """
+            for attempt in range(max_retries):
+                try:
+                    return await func()
+                except Exception as e:
+                    error_type = type(e).__name__
+                    if attempt < max_retries - 1:
+                        console_log.error(f"{error_type} occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
+                        await asyncio.sleep(retry_delay)
+                        continue
+                    else:
+                        raise
+
+        return await _retry_with_backoff_async(_make_request, max_retries, retry_delay)
 
 
     async def pull_from_source(self, source_code: str, slice_timerange: Optional[Tuple[str, str]]=None, other_biz:Optional[Dict]=None):
@@ -1021,21 +1027,35 @@ class JkyConnection():
             row_total_count += current_page_size
             console_log.info(f"【{source_desc}】第【{page_index}】页数据，【{current_page_size}】条，累计【{row_total_count}】条")
             # 异步执行日志记录，但不等待其结果，避免影响主流程
-            asyncio.create_task(self.log_to_hap(log_type="INFO", msg=f"【{source_desc}】第【{page_index}】页数据，【{current_page_size}】条，累计【{row_total_count}】条", row_count=current_page_size))
+            self.log_to_hap(log_type="INFO", msg=f"【{source_desc}】第【{page_index}】页数据，【{current_page_size}】条，累计【{row_total_count}】条", row_count=current_page_size)
             yield result_data
             if current_page_size < page_size or (not "pageSize" in biz_content and page_index > 0):
                 break
 
 
-    async def log_to_hap(self, log_type: str, msg: str, row_count: int=None):
+    def log_to_hap(self, log_type: str, msg: str, row_count: int=None):
+        """异步记录日志到HAP（后台执行，不阻塞主流程）
+        
+        Args:
+            log_type: 日志类型
+            msg: 日志内容
+            row_count: 数据行数
+        """
         log_data = Log(
             date_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             log_type=log_type,
             row_count=row_count,
             msg=msg
         )
-        response = await self._async_hap.rows(Log).bulk_create([log_data.to_dict()])
-        return response
+        
+        async def _do_log():
+            try:
+                await self._async_hap.rows(Log).bulk_create([log_data.to_dict()])
+            except Exception as e:
+                console_log.error(f"记录日志失败: {e}")
+        
+        # 创建后台任务，不阻塞主流程
+        asyncio.create_task(_do_log())
 
 
     async def data_to_hap(self, source_code: str, slice_timerange: Optional[Tuple[str, str]]=None, other_biz:Optional[Dict]=None):

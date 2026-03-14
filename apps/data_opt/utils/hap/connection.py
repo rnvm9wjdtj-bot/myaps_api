@@ -1119,7 +1119,23 @@ class AsyncHapConnection:
         """异步上下文管理器出口"""
         await self.close()
         return False
-
+    
+    def log_to_worksheet(self, model: Type[ModelType], model_instance: ModelType, trigger_workflow: bool = False):
+        """将日志记录到HAP工作表（后台执行，不阻塞主流程）
+        
+        Args:
+            model: 日志模型类
+            trigger_workflow: 是否触发工作流，默认 False
+            model_instance: 日志模型实例
+        """
+        async def _do_log():
+            try:
+                await self.bulk_create(model, [model_instance.to_dict()], trigger_workflow=trigger_workflow)
+            except Exception as e:
+                console_log.error(f"记录日志到HAP失败: {e}")
+        
+        # 创建后台任务，不阻塞主流程
+        asyncio.create_task(_do_log())
 
 
 

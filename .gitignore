@@ -80,3 +80,6 @@ test/
 
 # 临时文件
 *.tmp
+
+# 生产环境配置文件
+project_files/**/prod.json
