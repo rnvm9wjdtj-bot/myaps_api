@@ -1294,8 +1294,15 @@ def hap_async_timer(func: Callable = None, *, operation_name: str = None):
             try:
                 result = await fn(*args, **kwargs)
                 
-                if hasattr(result, 'count'):
-                    data_count = result.count()
+                if isinstance(result, list):
+                    # 对于列表类型，直接使用 len()
+                    data_count = len(result)
+                elif hasattr(result, 'count') and callable(getattr(result, 'count')):
+                    try:
+                        data_count = result.count()
+                    except TypeError:
+                        # 如果 count() 需要参数（如 list.count()），则使用 len()
+                        data_count = len(result)
                 elif hasattr(result, '__len__'):
                     data_count = len(result)
                 elif isinstance(result, int):

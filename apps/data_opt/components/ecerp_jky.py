@@ -4,6 +4,7 @@ import json
 import asyncio
 import hashlib
 import requests
+import aiohttp
 from urllib.parse import quote
 import os
 from typing import Dict, Tuple, List, Any, Optional, OrderedDict, Iterable, NamedTuple
@@ -939,8 +940,45 @@ class JkyConnection():
                 else:
                     raise
 
+    async def async_call_api(self, base_url, biz_content, method, version, max_retries=3, retry_delay=2, timeout=30) -> Dict[str, Any]:
+        
+        now = datetime.now()
+        timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
+        payload = {
+            "appkey": self.app_key,
+            "bizcontent": biz_content,
+            "contenttype": "json",
+            "method": method,
+            "timestamp": timestamp,
+            "version": version,
+        }
+        encoded_payload = self.sign_payload(payload)
+        url = f"{base_url}?{encoded_payload}"
+        headers = {'Content-Type': 'application/json', 'Accept':'application/json'}
 
-    def pull_from_source(self, source_code: str, slice_timerange: Optional[Tuple[str, str]]=None, other_biz:Optional[Dict]=None):
+        for attempt in range(max_retries):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(url=url, json=payload, headers=headers, timeout=timeout) as response:
+                        response_json = await response.json()
+                        return response_json
+            except aiohttp.ClientError as e:
+                if attempt < max_retries - 1:
+                    console_log.error(f"ClientError occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
+                    await asyncio.sleep(retry_delay)
+                    continue
+                else:
+                    raise
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    console_log.error(f"Exception occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
+                    await asyncio.sleep(retry_delay)
+                    continue
+                else:
+                    raise
+
+
+    async def pull_from_source(self, source_code: str, slice_timerange: Optional[Tuple[str, str]]=None, other_biz:Optional[Dict]=None):
         source = PULL_SOURCE[source_code]
         source_desc = source["source_desc"]
         method = source["method"]
@@ -964,7 +1002,7 @@ class JkyConnection():
                 "pageIndex": page_index
             }
             biz_content.update((k, v) for k, v in page_params.items() if k in biz_content)
-            response_json = self.call_api(
+            response_json = await self.async_call_api(
                 base_url=self.base_url,
                 biz_content=json.dumps(biz_content),
                 method=method,
@@ -981,11 +1019,9 @@ class JkyConnection():
             page_index += 1
             current_page_size = len(result_data)
             row_total_count += current_page_size
-            console_log.info(f"【{source_desc}】第【{page_index}】页数据，【{current_page_size}】条，累计【{row_total_count}】条")                
-            # 使用线程池执行异步的 log_to_hap 方法，避免在已有事件循环中调用 asyncio.run()
-            # import concurrent.futures
-            # with concurrent.futures.ThreadPoolExecutor() as executor:
-            #     executor.submit(lambda: asyncio.run(self.log_to_hap(log_type="INFO", msg=f"【{source_desc}】第【{page_index}】页数据，【{current_page_size}】条，累计【{row_total_count}】条", row_count=current_page_size)))
+            console_log.info(f"【{source_desc}】第【{page_index}】页数据，【{current_page_size}】条，累计【{row_total_count}】条")
+            # 异步执行日志记录，但不等待其结果，避免影响主流程
+            asyncio.create_task(self.log_to_hap(log_type="INFO", msg=f"【{source_desc}】第【{page_index}】页数据，【{current_page_size}】条，累计【{row_total_count}】条", row_count=current_page_size))
             yield result_data
             if current_page_size < page_size or (not "pageSize" in biz_content and page_index > 0):
                 break
@@ -998,7 +1034,7 @@ class JkyConnection():
             row_count=row_count,
             msg=msg
         )
-        response = await self._async_hap.rows(Log).bulk_create([log_data])
+        response = await self._async_hap.rows(Log).bulk_create([log_data.to_dict()])
         return response
 
 

@@ -1782,12 +1782,23 @@ class AsyncHapQuerySet(Generic[ModelType]):
         
         model = self._model
         
+        import inspect
+        
         if callable(data_source):
             data_generator = data_source()
         elif hasattr(data_source, '__next__') or hasattr(data_source, '__iter__'):
             data_generator = data_source  # 直接使用生成器对象
+        elif inspect.iscoroutine(data_source):
+            # 处理协程对象
+            data_generator = await data_source
+        elif hasattr(data_source, '__aiter__'):
+            # 直接处理异步生成器对象
+            data_generator = data_source
         else:
-            raise ValueError("data_source 必须是生成器函数或生成器对象")
+            raise ValueError("data_source 必须是生成器函数、生成器对象、协程对象或异步生成器对象")
+        
+        # 检测是否是异步生成器
+        is_async_generator = hasattr(data_generator, '__aiter__')
         
         if max_retries is None:
             max_retries = _DEFAULT_MAX_RETRIES
@@ -1878,48 +1889,95 @@ class AsyncHapQuerySet(Generic[ModelType]):
                 return 0
         
         batch_index = 0
-        for data in data_generator:
-            buffer.extend(data)
-            
-            if len(buffer) >= current_buffer_size:
-                batch_index += 1
+        
+        if is_async_generator:
+            # 处理异步生成器
+            async for data in data_generator:
+                buffer.extend(data)
                 
-                if adaptive and batch_index % 5 == 0:
-                    new_buffer_size, new_concurrency = controller.adjust()
+                if len(buffer) >= current_buffer_size:
+                    batch_index += 1
                     
-                    if new_concurrency != current_concurrency:
-                        current_concurrency = new_concurrency
-                        semaphore = asyncio.Semaphore(current_concurrency)
-                        console_log.info(f"自适应调整: 并发数 -> {current_concurrency}")
+                    if adaptive and batch_index % 5 == 0:
+                        new_buffer_size, new_concurrency = controller.adjust()
+                        
+                        if new_concurrency != current_concurrency:
+                            current_concurrency = new_concurrency
+                            semaphore = asyncio.Semaphore(current_concurrency)
+                            console_log.info(f"自适应调整: 并发数 -> {current_concurrency}")
+                        
+                        if new_buffer_size != current_buffer_size:
+                            current_buffer_size = new_buffer_size
+                            console_log.info(f"自适应调整: 缓冲区 -> {current_buffer_size}")
+                        
+                        if batch_index % 20 == 0:
+                            stats = controller.get_stats()
+                            console_log.info(
+                                f"统计: 成功率={stats['success_rate']:.2%}, "
+                                f"平均响应={stats['avg_response_time']:.2f}s, "
+                                f"当前参数: buffer={current_buffer_size}, concurrency={current_concurrency}"
+                            )
                     
-                    if new_buffer_size != current_buffer_size:
-                        current_buffer_size = new_buffer_size
-                        console_log.info(f"自适应调整: 缓冲区 -> {current_buffer_size}")
+                    tasks.append(asyncio.create_task(
+                        do_upsert_with_retry(buffer[:], batch_index)
+                    ))
+                    buffer = []
                     
-                    if batch_index % 20 == 0:
-                        stats = controller.get_stats()
-                        console_log.info(
-                            f"统计: 成功率={stats['success_rate']:.2%}, "
-                            f"平均响应={stats['avg_response_time']:.2f}s, "
-                            f"当前参数: buffer={current_buffer_size}, concurrency={current_concurrency}"
+                    if len(tasks) >= current_concurrency * 2:
+                        done, pending = await asyncio.wait(
+                            tasks, 
+                            return_when=asyncio.FIRST_COMPLETED
                         )
+                        for task in done:
+                            try:
+                                total_count += await task
+                            except Exception as e:
+                                console_log.error(f"任务执行失败: {e}")
+                        tasks = list(pending)
+        else:
+            # 处理同步生成器
+            for data in data_generator:
+                buffer.extend(data)
                 
-                tasks.append(asyncio.create_task(
-                    do_upsert_with_retry(buffer[:], batch_index)
-                ))
-                buffer = []
-                
-                if len(tasks) >= current_concurrency * 2:
-                    done, pending = await asyncio.wait(
-                        tasks, 
-                        return_when=asyncio.FIRST_COMPLETED
-                    )
-                    for task in done:
-                        try:
-                            total_count += await task
-                        except Exception as e:
-                            console_log.error(f"任务执行失败: {e}")
-                    tasks = list(pending)
+                if len(buffer) >= current_buffer_size:
+                    batch_index += 1
+                    
+                    if adaptive and batch_index % 5 == 0:
+                        new_buffer_size, new_concurrency = controller.adjust()
+                        
+                        if new_concurrency != current_concurrency:
+                            current_concurrency = new_concurrency
+                            semaphore = asyncio.Semaphore(current_concurrency)
+                            console_log.info(f"自适应调整: 并发数 -> {current_concurrency}")
+                        
+                        if new_buffer_size != current_buffer_size:
+                            current_buffer_size = new_buffer_size
+                            console_log.info(f"自适应调整: 缓冲区 -> {current_buffer_size}")
+                        
+                        if batch_index % 20 == 0:
+                            stats = controller.get_stats()
+                            console_log.info(
+                                f"统计: 成功率={stats['success_rate']:.2%}, "
+                                f"平均响应={stats['avg_response_time']:.2f}s, "
+                                f"当前参数: buffer={current_buffer_size}, concurrency={current_concurrency}"
+                            )
+                    
+                    tasks.append(asyncio.create_task(
+                        do_upsert_with_retry(buffer[:], batch_index)
+                    ))
+                    buffer = []
+                    
+                    if len(tasks) >= current_concurrency * 2:
+                        done, pending = await asyncio.wait(
+                            tasks, 
+                            return_when=asyncio.FIRST_COMPLETED
+                        )
+                        for task in done:
+                            try:
+                                total_count += await task
+                            except Exception as e:
+                                console_log.error(f"任务执行失败: {e}")
+                        tasks = list(pending)
         
         if buffer:
             batch_index += 1
