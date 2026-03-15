@@ -1,15 +1,79 @@
 from typing import List, Dict, Any#, Optional, Callable, Union
 import enum
+import hashlib
 
 import pandas as pd, json
 
 
 
 class DataProcessor:
+    # 哈希缓存，用于快速比较
+    _hash_cache = {}
+    _cache_max_size = 1000
 
     @staticmethod
-    def is_equal(val1, val2):
-        """判断两个值是否不同，处理不同类型之间的比较"""
+    def _get_value_hash(val):
+        """
+        计算值的哈希值，用于快速比较
+        
+        Args:
+            val: 任意类型的值
+            
+        Returns:
+            str: 哈希字符串
+        """
+        # 处理 None
+        if val is None:
+            return "none"
+        
+        # 处理枚举值
+        if isinstance(val, enum.Enum):
+            val = val.value
+        
+        # 处理字典和列表（不可哈希类型）
+        if isinstance(val, (dict, list)):
+            try:
+                # 使用 JSON 序列化后计算哈希
+                val_str = json.dumps(val, sort_keys=True, ensure_ascii=False)
+                return hashlib.md5(val_str.encode('utf-8')).hexdigest()
+            except (TypeError, ValueError):
+                # 如果 JSON 序列化失败，使用字符串表示
+                return hashlib.md5(str(val).encode('utf-8')).hexdigest()
+        
+        # 处理字符串
+        if isinstance(val, str):
+            # 尝试解析 JSON 字符串
+            try:
+                parsed = json.loads(val)
+                if isinstance(parsed, (dict, list)):
+                    return DataProcessor._get_value_hash(parsed)
+            except (json.JSONDecodeError, ValueError, TypeError):
+                pass
+            return hashlib.md5(val.encode('utf-8')).hexdigest()
+        
+        # 处理数值和布尔值
+        return hashlib.md5(str(val).encode('utf-8')).hexdigest()
+
+    @staticmethod
+    def is_equal(val1, val2, fast: bool = True):
+        """
+        判断两个值是否相等，处理不同类型之间的比较
+        
+        Args:
+            val1: 第一个值
+            val2: 第二个值
+            fast: 是否使用哈希值快速比较，默认为 True
+            
+        Returns:
+            bool: 两个值是否相等
+        """
+        # 快速模式：使用哈希值比较
+        if fast:
+            hash1 = DataProcessor._get_value_hash(val1)
+            hash2 = DataProcessor._get_value_hash(val2)
+            return hash1 == hash2
+        
+        # 精确模式：深度比较
         # 处理 None 值情况
         if val1 is None and val2 is None:
             return True
@@ -28,7 +92,7 @@ class DataProcessor:
         
         # 如果处理后值不同，使用处理后的值重新比较
         if enum_val1 is not val1 or enum_val2 is not val2:
-            return DataProcessor.is_equal(enum_val1, enum_val2)
+            return DataProcessor.is_equal(enum_val1, enum_val2, fast=False)
         
         # 处理 JSON 字符串与字典/列表的比较
         def try_parse_json(s):
@@ -45,7 +109,7 @@ class DataProcessor:
         
         # 如果解析后类型不同，使用解析后的值重新比较
         if parsed_val1 is not val1 or parsed_val2 is not val2:
-            return DataProcessor.is_equal(parsed_val1, parsed_val2)
+            return DataProcessor.is_equal(parsed_val1, parsed_val2, fast=False)
         
         # 处理列表与逗号分隔字符串的比较
         if isinstance(val1, list) and isinstance(val2, str):

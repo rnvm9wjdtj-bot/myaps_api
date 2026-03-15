@@ -1033,29 +1033,82 @@ class JkyConnection():
                 break
 
 
-    def log_to_hap(self, log_level: str, msg: str, row_count: int=None):
-        """异步记录日志到HAP（后台执行，不阻塞主流程）
-        
+    def log_to_hap(self, log_level: str, msg: str, row_count: int=None, immediate: bool=False,
+                   batch_size: int = 10, flush_interval: float = 60):
+        """异步记录日志到HAP（批量写入，后台执行）
+
         Args:
             log_level: 日志类型
             msg: 日志内容
             row_count: 数据行数
+            immediate: 是否立即写入
+            batch_size: 批量写入大小
+            flush_interval: 自动刷新间隔（秒）
         """
-        log_data = JkyApiCallLog(
-            date_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            log_level=log_level,
-            row_count=row_count,
-            msg=msg
-        )
-        
-        async def _do_log():
+        import threading
+        import time
+
+        # 使用函数属性存储队列和锁
+        if not hasattr(log_to_hap, '_queue'):
+            log_to_hap._queue = []
+            log_to_hap._lock = threading.Lock()
+            log_to_hap._flush_task = None
+            log_to_hap._last_flush_time = time.time()
+
+        # 子函数：添加日志到队列
+        def _add_to_queue():
+            log_data = JkyApiCallLog(
+                date_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                log_level=log_level,
+                row_count=row_count,
+                msg=msg
+            )
+            with log_to_hap._lock:
+                log_to_hap._queue.append(log_data.to_dict())
+                return len(log_to_hap._queue)
+
+        # 子函数：执行批量写入
+        async def _do_batch_write():
+            with log_to_hap._lock:
+                if not log_to_hap._queue:
+                    return
+                logs_to_write = log_to_hap._queue.copy()
+                log_to_hap._queue.clear()
+                log_to_hap._last_flush_time = time.time()
+
             try:
-                await self._async_hap.rows(JkyApiCallLog).bulk_create([log_data.to_dict()])
+                await self._async_hap.rows(JkyApiCallLog).bulk_create(logs_to_write)
             except Exception as e:
-                console_log.error(f"记录日志失败: {e}")
-        
-        # 创建后台任务，不阻塞主流程
-        asyncio.create_task(_do_log())
+                console_log.error(f"批量记录日志失败: {e}")
+
+        # 子函数：启动定时刷新
+        def _start_flush_timer():
+            async def _timer():
+                while True:
+                    await asyncio.sleep(flush_interval)
+                    current_time = time.time()
+                    with log_to_hap._lock:
+                        has_logs = len(log_to_hap._queue) > 0
+                        time_since_last = current_time - log_to_hap._last_flush_time
+
+                    if has_logs and time_since_last >= flush_interval:
+                        await _do_batch_write()
+
+            if log_to_hap._flush_task is None or log_to_hap._flush_task.done():
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        log_to_hap._flush_task = loop.create_task(_timer())
+                except RuntimeError:
+                    pass
+
+        # 主逻辑
+        queue_size = _add_to_queue()
+        _start_flush_timer()
+
+        # 立即写入或达到批量大小时刷新
+        if immediate or queue_size >= batch_size:
+            asyncio.create_task(_do_batch_write())
 
 
     async def data_to_hap(self, source_code: str, slice_timerange: Optional[Tuple[str, str]]=None, other_biz:Optional[Dict]=None):

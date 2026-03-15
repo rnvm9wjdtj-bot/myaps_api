@@ -315,86 +315,6 @@ class RelationField(Field):
                 hap_conn=hap_conn
         )
 
-            # # 优先从缓存中获取数据
-            # relation_data = []
-            
-            # # 处理逗号分隔的值
-            # code_values = [v.strip() for v in str(code_value).split(',')] if isinstance(code_value, str) else [code_value]
-            
-            # # 检查缓存是否存在
-            # if hasattr(hap_conn, 'cache_data') and hasattr(hap_conn, 'cache_indexes'):
-            #     worksheet_id = related_model.get_worksheet_id()
-            #     cache_key = followwith_field
-            #     if worksheet_id in hap_conn.cache_indexes:
-            #         # 确定缓存中使用的键名（字段名）
-            #         if self.query_field:
-            #             # 使用显式指定的查询字段
-            #             cache_key = cache_key
-            #         else:
-            #             # 未指定查询字段，使用关联模型的主键字段
-            #             pk_field = related_model.get_pk_field()
-            #             if pk_field:
-            #                 # 获取主键字段的 field_name
-            #                 pk_field_obj = related_model._get_fields().get(pk_field)
-            #                 if pk_field_obj:
-            #                     cache_key = pk_field_obj.field_name
-            #                 else:
-            #                     cache_key = pk_field
-            #             else:
-            #                 # 无法确定查询字段，使用默认值
-            #                 cache_key = followwith_field
-                    
-            #         # 检查是否有 code_field_name 的索引
-            #         if cache_key in hap_conn.cache_indexes[worksheet_id]:
-            #             # 从索引中查找每个 code_value 对应的 row_id
-            #             for cv in code_values:
-            #                 if cv in hap_conn.cache_indexes[worksheet_id][cache_key]:
-            #                     row_id = hap_conn.cache_indexes[worksheet_id][cache_key][cv]
-            #                     # 从缓存数据中获取完整信息
-            #                     if worksheet_id in hap_conn.cache_data and row_id in hap_conn.cache_data[worksheet_id]:
-            #                         # 构建关联字段数据，只需要传入 rowid
-            #                         relation_data.append(row_id)
-            
-            # # 缓存中没有，从 API 查询
-            # if not relation_data:
-            #     # 确定查询时使用的字段名
-            #     if self.query_field:
-            #         # 使用显式指定的查询字段
-            #         query_field = self.query_field
-            #     else:
-            #         # 未指定查询字段，使用关联模型的主键字段
-            #         pk_field = related_model.get_pk_field()
-            #         if pk_field:
-            #             # 获取主键字段的 field_name
-            #             pk_field_obj = related_model._get_fields().get(pk_field)
-            #             if pk_field_obj:
-            #                 query_field = pk_field_obj.field_name
-            #             else:
-            #                 query_field = pk_field
-            #         else:
-            #             # 无法确定查询字段，使用默认值
-            #             query_field = followwith_field
-                
-            #     # 构建查询条件，使用 in 操作符
-            #     from .data_objects import Q
-            #     if len(code_values) > 1:
-            #         # 多个值使用 in 操作符
-            #         filter_expr = Q(**{f"{query_field}__in": code_values})
-            #         related_instances = hap_conn.rows(related_model).filter(filter_expr).all()
-            #         for instance in related_instances.row_objects:
-            #             if hasattr(instance, 'row_id'):
-            #                 relation_data.append(instance.row_id)
-            #                 # 将查询结果添加到缓存中
-            #                 hap_conn._update_cache_for_instance(instance)
-            #     else:
-            #         # 单个值使用 eq 操作符
-            #         filter_expr = Q(**{f"{query_field}__eq": code_values[0]})
-            #         related_instance = hap_conn.rows(related_model).filter(filter_expr).all().first()
-            #         if related_instance and hasattr(related_instance, 'row_id'):
-            #             relation_data = [related_instance.row_id]
-            #             # 将查询结果添加到缓存中
-            #             hap_conn._update_cache_for_instance(related_instance)
-            
             # 更新关联字段数据
             if relation_data:
                 data[self.field_name] = relation_data
@@ -453,15 +373,18 @@ class RelationField(Field):
                         cache_key = followwith_field
                 
                 # 检查是否有 code_field_name 的索引
-                if cache_key in hap_conn.cache_indexes[worksheet_id]:
-                    # 从索引中查找每个 code_value 对应的 row_id
-                    for cv in code_values:
-                        if cv in hap_conn.cache_indexes[worksheet_id][cache_key]:
-                            row_id = hap_conn.cache_indexes[worksheet_id][cache_key][cv]
-                            # 从缓存数据中获取完整信息
-                            if worksheet_id in hap_conn.cache_data and row_id in hap_conn.cache_data[worksheet_id]:
-                                # 构建关联字段数据，只需要传入 rowid
-                                relation_data.append(row_id)
+                worksheet_indexes = hap_conn.cache_indexes.get(worksheet_id)
+                if worksheet_indexes:
+                    field_index = worksheet_indexes.get(cache_key)
+                    if field_index:
+                        # 从索引中查找每个 code_value 对应的 row_id
+                        worksheet_cache_data = hap_conn.cache_data.get(worksheet_id)
+                        if worksheet_cache_data:
+                            for cv in code_values:
+                                row_id = field_index.get(cv)
+                                if row_id and row_id in worksheet_cache_data:
+                                    # 构建关联字段数据，只需要传入 rowid
+                                    relation_data.append(row_id)
         
         # 缓存中没有，从 API 查询
         if not relation_data:

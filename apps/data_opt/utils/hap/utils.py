@@ -1301,7 +1301,7 @@ class WorksheetLogger:
     """
     
     def __init__(self, app_key, sign, worksheet_id='Log', base_url=_SAAS_BASEURL, hap_conn_desc: str = "",
-                 batch_size: int = 10, flush_interval: float = 5.0, max_queue_size: int = 1000):
+                 batch_size: int = 10, flush_interval: float = 60, max_queue_size: int = 1000):
         """
         初始化工作表日志记录器
         
@@ -1312,7 +1312,7 @@ class WorksheetLogger:
             base_url: HAP API 基础 URL，默认 _SAAS_BASEURL
             hap_conn_desc: HAP 连接描述，默认 ""
             batch_size: 批量写入大小，默认 10
-            flush_interval: 自动刷新间隔（秒），默认 5.0
+            flush_interval: 自动刷新间隔（秒），默认 60
             max_queue_size: 最大队列大小，默认 1000
         """
         if aiohttp is None:
@@ -1530,8 +1530,12 @@ def hap_async_timer(func: Callable = None, *, operation_name: str = None):
             # 尝试获取 WorksheetLogger
             worksheet_logger = None
             sync_hap_conn = None
+            # 根据操作名称判断是否是总计统计，使用不同的标题
+            is_total_operation = op_name in ['upsert_from_generator', 'batch_process', 'sync_all'] or \
+                                (op_name and 'total' in operation_name.lower())
+            abstract_title = "📊 HAP异步操作总计统计" if is_total_operation else "HAP异步操作统计"
             log_info = {
-                "abstract": "HAP异步操作统计",
+                "abstract": abstract_title,
                 "status": "SUCCESS",
                 "elapsed_time": None,
                 "data_count": None,
@@ -1547,7 +1551,7 @@ def hap_async_timer(func: Callable = None, *, operation_name: str = None):
                         sync_hap_conn = self_arg._sync_conn
                         worksheet_logger = sync_hap_conn._worksheet_logger
                         # log_info["conn"] = sync_hap_conn.description
-                        log_info["model"] = self_arg._model.__name__
+                        log_info["model"] = f"📋 {self_arg._model.__name__}"
                     except Exception:
                         pass  # 获取失败时使用默认的 console_log
             
@@ -1609,5 +1613,3 @@ def hap_async_timer(func: Callable = None, *, operation_name: str = None):
         return decorator
     else:
         return decorator(func)
-
-
