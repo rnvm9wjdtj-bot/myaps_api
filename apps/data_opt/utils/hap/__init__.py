@@ -9,7 +9,7 @@ from .models import Model
 from .fields import Field, StrField, NumField, RelationField, ChoiceField, SubtableField
 from .utils import (
     HapUtils, AdaptiveTimeout, EnhancedRetryStrategy, TokenBucket, DecimalEncoder, HapApiMonitor,
-    StringInternPool, LightweightRow, ObjectPool, ConnectionPoolWarmer, SmartBatchSizeCalculator,
+    StringInternPool, LightweightRow, ObjectPool, ConnectionPoolManager, SmartBatchSizeCalculator,
     AdaptiveRateController, hap_async_timer
 )
 from .connection import HapConnection, AsyncHapConnection, async_upsert, async_bulk_create, async_query
@@ -40,7 +40,7 @@ __all__ = [
     'StringInternPool',
     'LightweightRow',
     'ObjectPool',
-    'ConnectionPoolWarmer',
+    'ConnectionPoolManager',
     'SmartBatchSizeCalculator',
     'AdaptiveRateController',
     'HapApiMonitor',

@@ -864,18 +864,6 @@ PULL_SOURCE: OrderedDict = {
 
 class JkyConnection():
 
-    def __init__(self, hap_conn: HapConnection, config: JkyConfig=None):
-        self._session = get_session()
-        self.config = config or JkyConfig
-        self.base_url = self.config.BASE_URL
-        self.credential_keys = ("app_key", "app_secret")
-        self.app_key = self.config.APP_KEY
-        self.app_secret = self.config.APP_SECRET
-        self.hap_conn = hap_conn
-        # 自动注册本模块下的所有 Model 子类
-        self._register_all_models()
-        self._async_hap: AsyncHapConnection = hap_conn.async_connection()
-
     def _register_all_models(self):
         """自动注册当前模块中所有 Model 的子类"""
         import sys
@@ -1033,6 +1021,25 @@ class JkyConnection():
                 break
 
 
+    def __init__(self, hap_conn: HapConnection, config: JkyConfig=None):
+        import threading
+        import time
+        self._session = get_session()
+        self.config = config or JkyConfig
+        self.base_url = self.config.BASE_URL
+        self.credential_keys = ("app_key", "app_secret")
+        self.app_key = self.config.APP_KEY
+        self.app_secret = self.config.APP_SECRET
+        self.hap_conn = hap_conn
+        # 自动注册本模块下的所有 Model 子类
+        self._register_all_models()
+        self._async_hap: AsyncHapConnection = hap_conn.async_connection()
+        # 初始化日志队列和锁
+        self._log_queue = []
+        self._log_lock = threading.Lock()
+        self._log_flush_task = None
+        self._log_last_flush_time = time.time()
+
     def log_to_hap(self, log_level: str, msg: str, row_count: int=None, immediate: bool=False,
                    batch_size: int = 10, flush_interval: float = 60):
         """异步记录日志到HAP（批量写入，后台执行）
@@ -1048,13 +1055,6 @@ class JkyConnection():
         import threading
         import time
 
-        # 使用函数属性存储队列和锁
-        if not hasattr(log_to_hap, '_queue'):
-            log_to_hap._queue = []
-            log_to_hap._lock = threading.Lock()
-            log_to_hap._flush_task = None
-            log_to_hap._last_flush_time = time.time()
-
         # 子函数：添加日志到队列
         def _add_to_queue():
             log_data = JkyApiCallLog(
@@ -1063,18 +1063,18 @@ class JkyConnection():
                 row_count=row_count,
                 msg=msg
             )
-            with log_to_hap._lock:
-                log_to_hap._queue.append(log_data.to_dict())
-                return len(log_to_hap._queue)
+            with self._log_lock:
+                self._log_queue.append(log_data.to_dict())
+                return len(self._log_queue)
 
         # 子函数：执行批量写入
         async def _do_batch_write():
-            with log_to_hap._lock:
-                if not log_to_hap._queue:
+            with self._log_lock:
+                if not self._log_queue:
                     return
-                logs_to_write = log_to_hap._queue.copy()
-                log_to_hap._queue.clear()
-                log_to_hap._last_flush_time = time.time()
+                logs_to_write = self._log_queue.copy()
+                self._log_queue.clear()
+                self._log_last_flush_time = time.time()
 
             try:
                 await self._async_hap.rows(JkyApiCallLog).bulk_create(logs_to_write)
@@ -1087,18 +1087,18 @@ class JkyConnection():
                 while True:
                     await asyncio.sleep(flush_interval)
                     current_time = time.time()
-                    with log_to_hap._lock:
-                        has_logs = len(log_to_hap._queue) > 0
-                        time_since_last = current_time - log_to_hap._last_flush_time
+                    with self._log_lock:
+                        has_logs = len(self._log_queue) > 0
+                        time_since_last = current_time - self._log_last_flush_time
 
                     if has_logs and time_since_last >= flush_interval:
                         await _do_batch_write()
 
-            if log_to_hap._flush_task is None or log_to_hap._flush_task.done():
+            if self._log_flush_task is None or self._log_flush_task.done():
                 try:
                     loop = asyncio.get_event_loop()
                     if loop.is_running():
-                        log_to_hap._flush_task = loop.create_task(_timer())
+                        self._log_flush_task = loop.create_task(_timer())
                 except RuntimeError:
                     pass
 
@@ -1161,6 +1161,3 @@ class JkyConnection():
             if source_code in source_codes:
                 sorted_tasks.append(source_code)
         return sorted_tasks
-
-
-

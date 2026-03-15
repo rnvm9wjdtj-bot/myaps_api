@@ -21,7 +21,7 @@ from ._base import (
 )
 from .utils import(
     HapUtils, AdaptiveTimeout, EnhancedRetryStrategy, TokenBucket, DecimalEncoder, HapApiMonitor,
-    StringInternPool, LightweightRow, ObjectPool, ConnectionPoolWarmer, SmartBatchSizeCalculator,
+    StringInternPool, LightweightRow, ObjectPool, ConnectionPoolManager, SmartBatchSizeCalculator,
     AdaptiveRateController, WorksheetLogger, hap_async_timer
 )
 from .models import Model
@@ -66,16 +66,20 @@ class HapConnection:
             enable_warmup=True,   # 启用连接池预热
         )
         
-        # 初始化连接池预热器并执行预热
-        self._connection_warmer = ConnectionPoolWarmer(
+        # 初始化连接池管理器并执行异步预热
+        self._connection_manager = ConnectionPoolManager(
             session=self.session,
-            max_warm_connections=min(session_pool_size, _DEFAULT_WARM_CONNECTIONS)
+            max_warm_connections=min(session_pool_size, _DEFAULT_WARM_CONNECTIONS),
+            min_pool_size=5,
+            max_pool_size=session_pool_size,
+            health_check_interval=60.0
         )
         # 异步执行预热，不阻塞主流程
-        self._connection_warmer.warm_up(
+        self._connection_manager.warm_up(
             base_url=self.base_url,
             headers=self.headers,
-            timeout=_DEFAULT_WARMUP_TIMEOUT
+            timeout=_DEFAULT_WARMUP_TIMEOUT,
+            async_mode=True
         )
         
         # 初始化自适应超时管理器
@@ -694,6 +698,40 @@ class HapConnection:
         refresh_thread = threading.Thread(target=refresh_cache, daemon=True)
         refresh_thread.start()
         console_log.info("缓存定时刷新任务已启动")
+    
+    def close(self, wait: bool = True, timeout: float = 10.0):
+        """关闭连接，释放资源
+        
+        关闭连接池管理器和线程池，释放所有资源。
+        
+        Args:
+            wait: 是否等待后台任务完成
+            timeout: 等待超时时间（秒）
+        """
+        console_log.info("正在关闭 HAP 连接...")
+        
+        # 关闭连接池管理器
+        if hasattr(self, '_connection_manager') and self._connection_manager:
+            self._connection_manager.shutdown(wait=wait, timeout=timeout)
+        
+        # 关闭线程池
+        if hasattr(self, 'executor') and self.executor:
+            self.executor.shutdown(wait=wait)
+        
+        # 关闭 session
+        if hasattr(self, 'session') and self.session:
+            self.session.close()
+        
+        console_log.info("HAP 连接已关闭")
+    
+    def __enter__(self):
+        """上下文管理器入口"""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """上下文管理器出口"""
+        self.close()
+        return False
 
 
 
@@ -737,7 +775,7 @@ class AsyncHapConnection:
         self._max_workers = sync_conn.max_workers
         self._func_cache = {}
         self._monitor = HapApiMonitor() if enable_monitor else None
-        self._connection_warmer = getattr(sync_conn, '_connection_warmer', None)
+        self._connection_manager = getattr(sync_conn, '_connection_manager', None)
     
     def _run_in_executor(self, func: Callable, *args, **kwargs) -> asyncio.Future:
         """在线程池中执行同步函数

@@ -14,7 +14,7 @@ from ._base import console_log, filelog_error, HapConfig, ModelType, _MAX_CONCUR
 from .fields import StrField, NumField, RelationField, ChoiceField, SubtableField
 from .utils import(
     HapUtils, AdaptiveTimeout, EnhancedRetryStrategy, TokenBucket, DecimalEncoder, HapApiMonitor,
-    StringInternPool, LightweightRow, ObjectPool, ConnectionPoolWarmer, SmartBatchSizeCalculator,
+    StringInternPool, LightweightRow, ObjectPool, ConnectionPoolManager, SmartBatchSizeCalculator,
     AdaptiveRateController, hap_async_timer
 )
 
