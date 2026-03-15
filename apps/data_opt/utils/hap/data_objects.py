@@ -1187,6 +1187,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
         self._executor = executor
         self._async_hap = async_hap
         self._sync_query = sync_conn.rows(model)
+        self._worksheet_logger = sync_conn._worksheet_logger
     
     
     def _run_in_executor(self, func: Callable, *args, **kwargs) -> asyncio.Future:

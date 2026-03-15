@@ -4,9 +4,10 @@
 
 from datetime import datetime
 from typing import Dict, Any, Optional, List, Type
+from tortoise.models import Model as TortoiseBaseModel
 
 # from ._base import ModelType
-from .fields import Field
+from .fields import Field, StrField, NumField
 from .utils import (
     HapUtils, AdaptiveTimeout, EnhancedRetryStrategy, TokenBucket, DecimalEncoder, HapApiMonitor,
     StringInternPool, LightweightRow, ObjectPool, ConnectionPoolWarmer, SmartBatchSizeCalculator,
@@ -346,3 +347,92 @@ class Model:
             self.refresh_stamp = datetime.now().timestamp()
         
         return self
+
+
+    @classmethod
+    def create_from_tortoise(cls, tortoise_model: TortoiseBaseModel, model_name: str) -> Type['Model']:
+        """根据 Tortoise 模型生成 HAP 模型
+        
+        Args:
+            tortoise_model: Tortoise ORM 模型类
+            model_name: HAP 模型名称
+            
+        Returns:
+            Type[Model]: 创建的 HAP 模型类
+        """
+        from tortoise.fields import (
+            CharField, IntField, FloatField, DecimalField,
+            DateField, DatetimeField, TimeField, BooleanField,
+            TextField, UUIDField, JSONField
+        )
+        
+        fields_dict = {}
+        pk_field_name = None
+        
+        for field_name, tortoise_field in tortoise_model._meta.fields_map.items():
+            source_field = getattr(tortoise_field, 'source_field', None) or field_name
+            description = getattr(tortoise_field, 'description', None)
+            is_pk = getattr(tortoise_field, 'pk', False)
+            
+            if is_pk:
+                pk_field_name = field_name
+            
+            if isinstance(tortoise_field, (CharField, TextField, UUIDField)):
+                hap_field = StrField(
+                    field_name=source_field,
+                    description=description,
+                    pk=is_pk
+                )
+            elif isinstance(tortoise_field, (IntField, FloatField, DecimalField)):
+                hap_field = NumField(
+                    field_name=source_field,
+                    description=description,
+                    pk=is_pk
+                )
+            elif isinstance(tortoise_field, (DateField, DatetimeField, TimeField)):
+                hap_field = StrField(
+                    field_name=source_field,
+                    description=description,
+                    pk=is_pk
+                )
+            elif isinstance(tortoise_field, BooleanField):
+                hap_field = StrField(
+                    field_name=source_field,
+                    description=description,
+                    pk=is_pk
+                )
+            elif isinstance(tortoise_field, JSONField):
+                hap_field = StrField(
+                    field_name=source_field,
+                    description=description,
+                    pk=is_pk
+                )
+            else:
+                hap_field = StrField(
+                    field_name=source_field,
+                    description=description,
+                    pk=is_pk
+                )
+            
+            fields_dict[field_name] = hap_field
+        
+        meta_attrs = {
+            'worksheet_id': '',
+            'conflict_fields': None,
+            'cache': None
+        }
+        
+        if pk_field_name:
+            meta_attrs['conflict_fields'] = [pk_field_name]
+        
+        Meta = type('Meta', (), meta_attrs)
+        
+        model_attrs = {
+            'Meta': Meta,
+            '__module__': cls.__module__,
+        }
+        model_attrs.update(fields_dict)
+        
+        hap_model = type(model_name, (Model,), model_attrs)
+        
+        return hap_model

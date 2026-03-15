@@ -117,10 +117,22 @@ class HapConnection:
         self._worksheet_logger = None
     
 
-    def set_worksheet_logger(self, worksheet_id: str='Log', app_key: str=None, sign: str=None, base_url: str=None) -> WorksheetLogger:
-        """设置工作表日志记录器"""
-        
-        self._worksheet_logger = WorksheetLogger(self, worksheet_id=worksheet_id, app_key=app_key or self.app_key, sign=sign or self.sign, base_url=base_url or self.base_url)
+    def set_worksheet_logger(
+        self, 
+        worksheet_id: str = 'Log', 
+        app_key: str = None, 
+        sign: str = None, 
+        base_url: str = None
+    ) -> WorksheetLogger:
+        """设置工作表日志记录器
+        """
+        self._worksheet_logger = WorksheetLogger(
+            worksheet_id=worksheet_id, 
+            app_key=app_key or self.app_key, 
+            sign=sign or self.sign, 
+            base_url=base_url or self.base_url,
+            hap_conn_desc=self.description or "",
+        )
         return self._worksheet_logger
 
     

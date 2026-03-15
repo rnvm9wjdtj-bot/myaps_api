@@ -1266,7 +1266,7 @@ class WorksheetLogger:
     - 自动刷新机制，确保日志及时写入
     """
     
-    def __init__(self, app_key, sign, worksheet_id='Log', base_url=_SAAS_BASEURL, 
+    def __init__(self, app_key, sign, worksheet_id='Log', base_url=_SAAS_BASEURL, hap_conn_desc: str = "",
                  batch_size: int = 10, flush_interval: float = 5.0, max_queue_size: int = 1000):
         """
         初始化工作表日志记录器
@@ -1274,8 +1274,9 @@ class WorksheetLogger:
         Args:
             app_key: HAP 应用密钥
             sign: HAP 应用签名
-            worksheet_id: 工作表 ID，默认 'Log', 工作表要有三列：date_time, log_level, message
+            worksheet_id: 工作表 ID，默认 'Log', 工作表要有四列：conn_desc, date_time, log_level, message
             base_url: HAP API 基础 URL，默认 _SAAS_BASEURL
+            hap_conn_desc: HAP 连接描述，默认 ""
             batch_size: 批量写入大小，默认 10
             flush_interval: 自动刷新间隔（秒），默认 5.0
             max_queue_size: 最大队列大小，默认 1000
@@ -1283,6 +1284,7 @@ class WorksheetLogger:
         if aiohttp is None:
             raise ImportError("aiohttp is required for WorksheetLogger. Install it with: pip install aiohttp")
         
+        self.hap_conn_desc = hap_conn_desc
         self.app_key = app_key
         self.sign = sign
         self.worksheet_id = worksheet_id
@@ -1343,6 +1345,7 @@ class WorksheetLogger:
                 "rows": [
                     {
                         "fields": [
+                            {"id": "conn_desc", "value": self.hap_conn_desc},
                             {"id": "date_time", "value": log["date_time"]},
                             {"id": "log_level", "value": log["log_level"]},
                             {"id": "message", "value": log["message"]}
@@ -1492,12 +1495,16 @@ def hap_async_timer(func: Callable = None, *, operation_name: str = None):
             
             # 尝试获取 WorksheetLogger
             worksheet_logger = None
+            sync_hap_conn = None
+            log_info = {}
             if args:
                 # 检查第一个参数是否是 AsyncHapQuerySet 实例
                 self_arg = args[0]
                 if hasattr(self_arg, '_sync_conn') and hasattr(self_arg._sync_conn, 'set_worksheet_logger'):
                     try:
-                        worksheet_logger = self_arg._sync_conn.set_worksheet_logger()
+                        sync_hap_conn = self_arg._sync_conn
+                        worksheet_logger = sync_hap_conn._worksheet_logger
+                        log_info["conn"] = sync_hap_conn.description
                     except Exception:
                         pass  # 获取失败时使用默认的 console_log
             
@@ -1525,11 +1532,11 @@ def hap_async_timer(func: Callable = None, *, operation_name: str = None):
             finally:
                 elapsed_time = time.time() - start_time
                 
-                log_info = {
+                log_info.update({
                     "operation": op_name,
                     "elapsed_time": f"⏱️ {elapsed_time:.3f}s",
                     "data_count": data_count,
-                }
+                })
                 
                 if elapsed_time > 0:
                     data_rate_per_second = data_count / elapsed_time
