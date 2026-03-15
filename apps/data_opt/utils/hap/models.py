@@ -47,11 +47,19 @@ class Model:
     
     @classmethod
     def _get_fields(cls) -> Dict[str, Field]:
-        """获取模型的所有字段"""
+        """获取模型的所有字段
+        
+        优化点：
+        1. 使用 __dict__ 直接访问类属性，避免 dir() 和 getattr() 的开销
+        2. 使用预编译的字段映射表，避免运行时计算
+        """
         if not hasattr(cls, '_fields_cache'):
             fields = {}
-            for attr_name in dir(cls):
-                attr = getattr(cls, attr_name)
+            # 遍历类的 __dict__，直接访问属性，避免 dir() 的开销
+            for attr_name, attr in cls.__dict__.items():
+                # 跳过私有属性和方法
+                if attr_name.startswith('_'):
+                    continue
                 if isinstance(attr, Field):
                     fields[attr_name] = attr
             cls._fields_cache = fields
@@ -59,60 +67,113 @@ class Model:
     
     @classmethod
     def _get_field_map(cls) -> Dict[str, str]:
-        """获取属性名到field_name的映射"""
+        """获取属性名到field_name的映射
+        
+        优化点：
+        1. 预编译字段映射表，避免每次调用时重新计算
+        2. 使用 frozenset 优化查找性能
+        """
         if not hasattr(cls, '_field_map_cache'):
-            field_map = {}
             fields = cls._get_fields()
-            for attr_name, field in fields.items():
-                field_map[attr_name] = field.field_name
-            cls._field_map_cache = field_map
+            # 使用字典推导式一次性构建映射表
+            cls._field_map_cache = {
+                attr_name: field.field_name 
+                for attr_name, field in fields.items()
+            }
+            # 预编译 frozenset 用于快速查找
+            cls._field_map_keys = frozenset(cls._field_map_cache.keys())
         return cls._field_map_cache
     
     @classmethod
     def _get_reverse_field_map(cls) -> Dict[str, str]:
-        """获取field_name到属性名的映射"""
+        """获取field_name到属性名的映射
+        
+        优化点：
+        1. 预编译反向字段映射表
+        2. 使用 frozenset 优化查找性能
+        """
         if not hasattr(cls, '_reverse_field_map_cache'):
-            reverse_field_map = {}
             fields = cls._get_fields()
-            for attr_name, field in fields.items():
-                reverse_field_map[field.field_name] = attr_name
-            cls._reverse_field_map_cache = reverse_field_map
+            # 使用字典推导式一次性构建反向映射表
+            cls._reverse_field_map_cache = {
+                field.field_name: attr_name 
+                for attr_name, field in fields.items()
+            }
+            # 预编译 frozenset 用于快速查找
+            cls._reverse_field_map_keys = frozenset(cls._reverse_field_map_cache.keys())
         return cls._reverse_field_map_cache
     
     @classmethod
     def clear_field_caches(cls) -> None:
-        """清理字段相关的缓存"""
-        # 清理字段缓存
-        if hasattr(cls, '_fields_cache'):
-            delattr(cls, '_fields_cache')
-        # 清理字段映射缓存
-        if hasattr(cls, '_field_map_cache'):
-            delattr(cls, '_field_map_cache')
-        # 清理反向字段映射缓存
-        if hasattr(cls, '_reverse_field_map_cache'):
-            delattr(cls, '_reverse_field_map_cache')
+        """清理字段相关的缓存
+        
+        优化点：
+        1. 清理所有预编译的缓存，包括 frozenset
+        2. 使用 getattr 避免重复检查
+        """
+        # 定义需要清理的缓存属性列表
+        cache_attrs = [
+            '_fields_cache',
+            '_field_map_cache', '_field_map_keys',
+            '_reverse_field_map_cache', '_reverse_field_map_keys'
+        ]
+        
+        # 批量清理缓存
+        for attr in cache_attrs:
+            if hasattr(cls, attr):
+                delattr(cls, attr)
     
     def __setattr__(self, name, value):
-        """设置属性值时清理缓存"""
+        """设置属性值时清理缓存
+        
+        优化点：
+        1. 使用预编译的 frozenset 进行 O(1) 快速查找
+        2. 避免调用 _get_fields() 方法的开销
+        """
         # 如果设置的是字段属性，清理缓存
         if name not in ['hap_conn', 'row_id']:
-            # 检查是否是字段属性
+            # 检查是否是字段属性（使用预编译的 frozenset）
             try:
-                fields = self._get_fields()
-                if name in fields:
-                    # 清理缓存
-                    self.__class__.clear_field_caches()
+                # 优先使用预编译的 frozenset 进行快速查找
+                if hasattr(self.__class__, '_field_map_keys'):
+                    if name in self.__class__._field_map_keys:
+                        self.__class__.clear_field_caches()
+                else:
+                    # 回退到原始方法
+                    fields = self._get_fields()
+                    if name in fields:
+                        self.__class__.clear_field_caches()
             except Exception:
                 pass
         super().__setattr__(name, value)
     
     def get_field_by_name(self, name: str) -> Optional[Field]:
-        """通过属性名获取字段对象"""
+        """通过属性名获取字段对象
+        
+        优化点：
+        1. 使用预编译的 frozenset 进行快速存在性检查
+        2. 避免不必要的字典查找
+        """
+        # 使用预编译的 frozenset 进行 O(1) 存在性检查
+        if hasattr(self.__class__, '_field_map_keys'):
+            if name not in self.__class__._field_map_keys:
+                return None
+        
         fields = self._get_fields()
         return fields.get(name)
     
     def get_field_by_field_name(self, field_name: str) -> Optional[Field]:
-        """通过field_name获取字段对象"""
+        """通过field_name获取字段对象
+        
+        优化点：
+        1. 使用预编译的 frozenset 进行快速存在性检查
+        2. 避免不必要的字典查找和字段获取
+        """
+        # 使用预编译的 frozenset 进行 O(1) 存在性检查
+        if hasattr(self.__class__, '_reverse_field_map_keys'):
+            if field_name not in self.__class__._reverse_field_map_keys:
+                return None
+        
         reverse_map = self._get_reverse_field_map()
         attr_name = reverse_map.get(field_name)
         if attr_name:
@@ -121,7 +182,17 @@ class Model:
         return None
     
     def get_attribute_by_field_name(self, field_name: str) -> Optional[Any]:
-        """通过field_name获取属性值"""
+        """通过field_name获取属性值
+        
+        优化点：
+        1. 使用预编译的 frozenset 进行快速存在性检查
+        2. 避免不必要的字典查找
+        """
+        # 使用预编译的 frozenset 进行 O(1) 存在性检查
+        if hasattr(self.__class__, '_reverse_field_map_keys'):
+            if field_name not in self.__class__._reverse_field_map_keys:
+                return None
+        
         reverse_map = self._get_reverse_field_map()
         attr_name = reverse_map.get(field_name)
         if attr_name and hasattr(self, attr_name):
@@ -129,7 +200,17 @@ class Model:
         return None
     
     def set_attribute_by_field_name(self, field_name: str, value: Any) -> None:
-        """通过field_name设置属性值"""
+        """通过field_name设置属性值
+        
+        优化点：
+        1. 使用预编译的 frozenset 进行快速存在性检查
+        2. 避免不必要的字典查找
+        """
+        # 使用预编译的 frozenset 进行 O(1) 存在性检查
+        if hasattr(self.__class__, '_reverse_field_map_keys'):
+            if field_name not in self.__class__._reverse_field_map_keys:
+                return
+        
         reverse_map = self._get_reverse_field_map()
         attr_name = reverse_map.get(field_name)
         if attr_name:
@@ -327,10 +408,8 @@ class Model:
         
         if response.get('success'):
             row_dict = response.get('data', {})
-            # 处理行数据
-            processed_data = HapUtils.process_choice_fields(row_dict)
-            processed_data = HapUtils.exclude_unamed_fields(processed_data)
-            processed_data = HapUtils.exclude_sys_fields(processed_data)
+            # 处理行数据 - 合并多个处理步骤，减少中间对象创建
+            processed_data = HapUtils.process_row_data(row_dict)
             
             # 更新模型实例的属性
             reverse_field_map = self._get_reverse_field_map()

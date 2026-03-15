@@ -143,14 +143,6 @@ class HapConnection:
         
         Args:
             enable_monitor: 是否启用 API 监控，默认 True
-            
-        Returns:
-            AsyncHapConnection: 异步 HAP 连接实例
-            
-        Example:
-            >>> hap_conn = HapConnection()
-            >>> async_hap = hap_conn.async_connection()
-            >>> result = await async_hap.upsert(Model, data_list)
         """
         from .connection import AsyncHapConnection
         

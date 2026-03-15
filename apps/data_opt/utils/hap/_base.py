@@ -3,14 +3,156 @@
 """
 
 import os
+import queue
+import threading
 from typing import TypeVar
 
 from globalobjects import CACHE_JSON, logger as log_config
 
 
-console_log = log_config.get_logger(__name__)
+# 初始化日志系统（确保日志监听器已启动）
+log_config.initialize_logging()
+
+# 为 HAP 模块创建专用的异步日志队列
+_hap_log_queue = queue.Queue(-1)
+
+# 创建自定义的异步日志处理器
+class AsyncLogHandler:
+    """异步日志处理器，支持缓冲和批量写入"""
+    def __init__(self, queue_size=100, flush_interval=1.0):
+        self.queue = queue.Queue(maxsize=queue_size)
+        self.flush_interval = flush_interval
+        self.running = True
+        self.buffer = []
+        self.buffer_size = 0
+        self.max_buffer_size = 50
+        self.lock = threading.Lock()
+        
+        # 启动后台刷新线程
+        self.flush_thread = threading.Thread(target=self._flush_loop, daemon=True)
+        self.flush_thread.start()
+    
+    def _flush_loop(self):
+        """后台刷新循环"""
+        while self.running:
+            try:
+                # 等待指定时间或队列中有数据
+                try:
+                    item = self.queue.get(timeout=self.flush_interval)
+                    self._add_to_buffer(item)
+                except queue.Empty:
+                    pass
+                
+                # 检查是否需要刷新
+                self._flush_if_needed()
+            except Exception:
+                pass
+    
+    def _add_to_buffer(self, item):
+        """添加到缓冲区"""
+        with self.lock:
+            self.buffer.append(item)
+            self.buffer_size += 1
+            if self.buffer_size >= self.max_buffer_size:
+                self._flush_buffer()
+    
+    def _flush_if_needed(self):
+        """检查并刷新缓冲区"""
+        with self.lock:
+            if self.buffer:
+                self._flush_buffer()
+    
+    def _flush_buffer(self):
+        """刷新缓冲区"""
+        if not self.buffer:
+            return
+        
+        # 批量处理日志
+        buffer_copy = self.buffer.copy()
+        self.buffer.clear()
+        self.buffer_size = 0
+        
+        # 实际写入日志
+        for level, msg, args, kwargs in buffer_copy:
+            if level == 'debug':
+                _base_console_log.debug(msg, *args, **kwargs)
+            elif level == 'info':
+                _base_console_log.info(msg, *args, **kwargs)
+            elif level == 'warning':
+                _base_console_log.warning(msg, *args, **kwargs)
+            elif level == 'error':
+                _base_console_log.error(msg, *args, **kwargs)
+            elif level == 'critical':
+                _base_console_log.critical(msg, *args, **kwargs)
+    
+    def log(self, level, msg, *args, **kwargs):
+        """记录日志"""
+        try:
+            self.queue.put((level, msg, args, kwargs), block=False)
+        except queue.Full:
+            # 队列满时直接写入
+            if level == 'debug':
+                _base_console_log.debug(msg, *args, **kwargs)
+            elif level == 'info':
+                _base_console_log.info(msg, *args, **kwargs)
+            elif level == 'warning':
+                _base_console_log.warning(msg, *args, **kwargs)
+            elif level == 'error':
+                _base_console_log.error(msg, *args, **kwargs)
+            elif level == 'critical':
+                _base_console_log.critical(msg, *args, **kwargs)
+    
+    def stop(self):
+        """停止日志处理器"""
+        self.running = False
+        self.flush_thread.join(timeout=2.0)
+        self._flush_buffer()
+
+
+# 获取基础日志器
+_base_console_log = log_config.get_logger(__name__)
 filelog_normal = log_config.get_file_logger(__name__, 'default')
 filelog_error = log_config.get_file_logger(__name__, 'error')
+
+# 创建异步日志处理器实例
+_async_log_handler = AsyncLogHandler()
+
+# 创建异步日志包装器
+class AsyncLogger:
+    """异步日志包装器"""
+    def __init__(self, name):
+        self.name = name
+    
+    def debug(self, msg, *args, **kwargs):
+        _async_log_handler.log('debug', msg, *args, **kwargs)
+    
+    def info(self, msg, *args, **kwargs):
+        _async_log_handler.log('info', msg, *args, **kwargs)
+    
+    def warning(self, msg, *args, **kwargs):
+        _async_log_handler.log('warning', msg, *args, **kwargs)
+    
+    def error(self, msg, *args, **kwargs):
+        _async_log_handler.log('error', msg, *args, **kwargs)
+    
+    def critical(self, msg, *args, **kwargs):
+        _async_log_handler.log('critical', msg, *args, **kwargs)
+    
+    def exception(self, msg, *args, **kwargs):
+        # 异常日志直接同步处理
+        _base_console_log.exception(msg, *args, **kwargs)
+
+
+# 替换为异步日志器
+console_log = AsyncLogger(__name__)
+
+
+def shutdown_hap_logging():
+    """关闭 HAP 模块的日志系统"""
+    global _async_log_handler
+    if _async_log_handler:
+        _async_log_handler.stop()
+        console_log.info("✅ HAP 模块日志系统已关闭")
 
 
 # 类型定义

@@ -6,6 +6,34 @@ import re, json, time, threading, requests, asyncio, functools
 from typing import Dict, Any, Optional, List, Union, Literal, Generator, Type, Callable
 from decimal import Decimal
 
+
+# 对象池实现
+class QueryObjectPool:
+    """查询对象池，用于复用查询条件对象"""
+    def __init__(self, max_size=100):
+        self.max_size = max_size
+        self.pool = []
+        self.lock = threading.Lock()
+    
+    def acquire(self):
+        """获取一个对象"""
+        with self.lock:
+            if self.pool:
+                return self.pool.pop()
+        return {}
+    
+    def release(self, obj):
+        """归还一个对象"""
+        with self.lock:
+            if len(self.pool) < self.max_size:
+                # 清空对象内容后归还
+                obj.clear()
+                self.pool.append(obj)
+
+
+# 创建对象池实例
+_query_object_pool = QueryObjectPool()
+
 # 尝试导入 aiohttp，如果未安装则给出提示
 try:
     import aiohttp
@@ -515,41 +543,45 @@ class HapUtils:
             if or_pos != -1:
                 left = parse(expression[:or_pos])
                 right = parse(expression[or_pos + 2:])
-                return {
-                    "type": "group",
-                    "logic": "OR",
-                    "children": [left, right]
-                }
+                # 使用对象池获取字典
+                result = _query_object_pool.acquire()
+                result["type"] = "group"
+                result["logic"] = "OR"
+                result["children"] = [left, right]
+                return result
             
             # 如果找到AND运算符
             elif and_pos != -1:
                 left = parse(expression[:and_pos])
                 right = parse(expression[and_pos + 2:])
-                return {
-                    "type": "group",
-                    "logic": "AND",
-                    "children": [left, right]
-                }
+                # 使用对象池获取字典
+                result = _query_object_pool.acquire()
+                result["type"] = "group"
+                result["logic"] = "AND"
+                result["children"] = [left, right]
+                return result
             
             # 否则，这是一个条件表达式
             else:
                 # 处理 isempty 和 isnotempty 不带等号的情况
                 if '__isempty' in expression:
                     field = expression.replace('__isempty', '')
-                    return {
-                        "type": "condition",
-                        "field": convert_field_name(field.strip()),
-                        "operator": "isempty",
-                        "value": []
-                    }
+                    # 使用对象池获取字典
+                    result = _query_object_pool.acquire()
+                    result["type"] = "condition"
+                    result["field"] = convert_field_name(field.strip())
+                    result["operator"] = "isempty"
+                    result["value"] = []
+                    return result
                 elif '__isnotempty' in expression:
                     field = expression.replace('__isnotempty', '')
-                    return {
-                        "type": "condition",
-                        "field": convert_field_name(field.strip()),
-                        "operator": "isnotempty",
-                        "value": []
-                    }
+                    # 使用对象池获取字典
+                    result = _query_object_pool.acquire()
+                    result["type"] = "condition"
+                    result["field"] = convert_field_name(field.strip())
+                    result["operator"] = "isnotempty"
+                    result["value"] = []
+                    return result
                 # 处理带等号的情况
                 elif '=' in expression:
                     # 分割字段名（包含运算符）和值
@@ -575,12 +607,13 @@ class HapUtils:
                             try:
                                 array_value = json.loads(value)
                                 if isinstance(array_value, list):
-                                    return {
-                                        "type": "condition",
-                                        "field": field,
-                                        "operator": operator,
-                                        "value": array_value
-                                    }
+                                    # 使用对象池获取字典
+                                    result = _query_object_pool.acquire()
+                                    result["type"] = "condition"
+                                    result["field"] = field
+                                    result["operator"] = operator
+                                    result["value"] = array_value
+                                    return result
                             except:
                                 pass
                     
@@ -590,12 +623,13 @@ class HapUtils:
                         stripped_value = value.strip()
                         if stripped_value.startswith('"') and stripped_value.endswith('"'):
                             stripped_value = stripped_value[1:-1]
-                        return {
-                            "type": "condition",
-                            "field": field,
-                            "operator": operator,
-                            "value": stripped_value
-                        }
+                        # 使用对象池获取字典
+                        result = _query_object_pool.acquire()
+                        result["type"] = "condition"
+                        result["field"] = field
+                        result["operator"] = operator
+                        result["value"] = stripped_value
+                        return result
                 return {}
         
         return parse(expression)
@@ -1345,7 +1379,7 @@ class WorksheetLogger:
                 "rows": [
                     {
                         "fields": [
-                            {"id": "conn_desc", "value": self.hap_conn_desc},
+                            {"id": "conn_desc", "value": self.hap_conn_desc, "type": 2},
                             {"id": "date_time", "value": log["date_time"]},
                             {"id": "log_level", "value": log["log_level"]},
                             {"id": "message", "value": log["message"]}
@@ -1496,7 +1530,15 @@ def hap_async_timer(func: Callable = None, *, operation_name: str = None):
             # 尝试获取 WorksheetLogger
             worksheet_logger = None
             sync_hap_conn = None
-            log_info = {}
+            log_info = {
+                "abstract": "HAP异步操作统计",
+                "status": "SUCCESS",
+                "elapsed_time": None,
+                "data_count": None,
+                "data_rate_per_second": None,
+                "model": None,
+                "operation": None,
+            }
             if args:
                 # 检查第一个参数是否是 AsyncHapQuerySet 实例
                 self_arg = args[0]
@@ -1504,7 +1546,8 @@ def hap_async_timer(func: Callable = None, *, operation_name: str = None):
                     try:
                         sync_hap_conn = self_arg._sync_conn
                         worksheet_logger = sync_hap_conn._worksheet_logger
-                        log_info["conn"] = sync_hap_conn.description
+                        # log_info["conn"] = sync_hap_conn.description
+                        log_info["model"] = self_arg._model.__name__
                     except Exception:
                         pass  # 获取失败时使用默认的 console_log
             
@@ -1533,9 +1576,9 @@ def hap_async_timer(func: Callable = None, *, operation_name: str = None):
                 elapsed_time = time.time() - start_time
                 
                 log_info.update({
-                    "operation": op_name,
                     "elapsed_time": f"⏱️ {elapsed_time:.3f}s",
                     "data_count": data_count,
+                    "operation": op_name,
                 })
                 
                 if elapsed_time > 0:
@@ -1547,17 +1590,16 @@ def hap_async_timer(func: Callable = None, *, operation_name: str = None):
                 if error:
                     log_info["status"] = "FAILED"
                     log_info["error"] = str(error)
-                    console_log.warning(f"HAP异步操作统计 | {log_info}")
+                    console_log.warning(f"{log_info}")
                 else:
-                    log_info["status"] = "SUCCESS"
-                    console_log.info(f"HAP异步操作统计 | {log_info}")
+                    # log_info["status"] = "SUCCESS"
+                    console_log.info(f"{log_info}")
                 
                 # 如果找到 WorksheetLogger，也记录到工作表
                 if worksheet_logger:
-                    log_message = f"HAP异步操作统计 | {log_info}"
                     log_level = 'ERROR' if error else 'INFO'
                     try:
-                        await worksheet_logger.log(log_message, log_level=log_level)
+                        await worksheet_logger.log(message=json.dumps(log_info, ensure_ascii=False), log_level=log_level)
                     except Exception as log_error:
                         console_log.error(f"写入工作表日志失败: {log_error}")
         

@@ -23,11 +23,70 @@ if TYPE_CHECKING:
 
 
 
+import threading
+from dataclasses import dataclass
+from typing import Optional, List, Union, Dict, Any
+
+
+# 对象池实现
+class QueryObjectPool:
+    """查询对象池，用于复用查询条件对象"""
+    def __init__(self, max_size=100):
+        self.max_size = max_size
+        self.pool = []
+        self.lock = threading.Lock()
+    
+    def acquire(self):
+        """获取一个对象"""
+        with self.lock:
+            if self.pool:
+                return self.pool.pop()
+        return {}
+    
+    def release(self, obj):
+        """归还一个对象"""
+        with self.lock:
+            if len(self.pool) < self.max_size:
+                # 清空对象内容后归还
+                obj.clear()
+                self.pool.append(obj)
+
+
+# 创建对象池实例
+_query_object_pool = QueryObjectPool()
+
+
+# 数据类定义
+@dataclass
+class Condition:
+    """条件对象"""
+    type: str = "condition"
+    field: str = ""
+    operator: str = ""
+    value: Any = None
+
+
+@dataclass
+class Group:
+    """分组对象"""
+    type: str = "group"
+    logic: str = "AND"
+    children: List[Union[Condition, 'Group']] = None
+    
+    def __post_init__(self):
+        if self.children is None:
+            self.children = []
+
+
 # Q 类，用于构建复杂查询条件
 class Q:
     """
     查询条件类，用于构建复杂的查询条件
     支持 & (AND)、| (OR) 和 ~ (NOT) 操作符
+    优化点：
+    1. 使用对象池复用字典对象
+    2. 实现惰性求值，延迟构建查询条件
+    3. 使用 dataclass 提高可读性和性能
     """
     def __init__(self, *args, **kwargs):
         """
@@ -51,6 +110,10 @@ class Q:
         self.connector = None
         self.children = []
         self.negated = False
+        
+        # 惰性求值相关
+        self._cached_condition = None
+        self._last_field_map = None
     
     def __and__(self, other):
         """AND 操作符"""
@@ -73,6 +136,8 @@ class Q:
     def __invert__(self):
         """NOT 操作符"""
         self.negated = not self.negated
+        # 清除缓存
+        self._cached_condition = None
         return self
     
     def to_filter_condition(self, field_map: Optional[Dict[str, str]] = None) -> dict:
@@ -85,6 +150,10 @@ class Q:
         Returns:
             dict: 符合明道云 API 要求的筛选条件
         """
+        # 惰性求值：检查缓存
+        if self._cached_condition and self._last_field_map == field_map:
+            return self._cached_condition
+        
         # 处理逻辑运算符
         if self.connector:
             children_conditions = []
@@ -94,97 +163,86 @@ class Q:
                     children_conditions.append(child_condition)
             
             if not children_conditions:
-                return {}
-            
-            result = {
-                "type": "group",
-                "logic": self.connector,
-                "children": children_conditions
-            }
+                result = {}
+            else:
+                # 使用对象池获取字典
+                result = _query_object_pool.acquire()
+                result["type"] = "group"
+                result["logic"] = self.connector
+                result["children"] = children_conditions
             
             # 处理 NOT 操作
             if self.negated:
-                return {
-                    "type": "group",
-                    "logic": "NOT",
-                    "children": [result]
-                }
-            
-            return result
-        
-        # 处理单个条件
-        conditions = []
-        for field_op, value in self.conditions.items():
-            if '__' in field_op:
-                field, op = field_op.split('__', 1)
-                operator = op
-            else:
-                continue
-            
-            # 使用 field_map 将属性名转换为 field_name
-            if field_map and field in field_map:
-                field = field_map[field]
-            
-            # 处理需要数组值的运算符
+                not_result = _query_object_pool.acquire()
+                not_result["type"] = "group"
+                not_result["logic"] = "NOT"
+                not_result["children"] = [result]
+                result = not_result
+        else:
+            # 处理单个条件
+            conditions = []
             array_operators = ['in', 'notin', 'contains', 'notcontains', 'concurrent', 'belongsto', 'notbelongsto', 'between', 'notbetween']
             
-            if operator in array_operators:
-                if isinstance(value, list):
-                    condition = {
-                        "type": "condition",
-                        "field": field.strip(),
-                        "operator": operator,
-                        "value": value
-                    }
+            for field_op, value in self.conditions.items():
+                if '__' in field_op:
+                    field, op = field_op.split('__', 1)
+                    operator = op
+                else:
+                    continue
+                
+                # 使用 field_map 将属性名转换为 field_name
+                if field_map and field in field_map:
+                    field = field_map[field]
+                
+                # 使用对象池获取字典
+                condition = _query_object_pool.acquire()
+                condition["type"] = "condition"
+                condition["field"] = field.strip()
+                condition["operator"] = operator
+                
+                if operator in array_operators:
+                    if isinstance(value, list):
+                        condition["value"] = value
+                        conditions.append(condition)
+                    else:
+                        # 不符合条件，归还对象
+                        _query_object_pool.release(condition)
+                elif operator == 'isempty':
+                    # 根据 value 值决定使用 isempty 还是 isnotempty
+                    actual_operator = 'isnotempty' if value is False else 'isempty'
+                    condition["operator"] = actual_operator
+                    condition["value"] = []
                     conditions.append(condition)
-            elif operator == 'isempty':
-                # 根据 value 值决定使用 isempty 还是 isnotempty
-                # 当 value 为 False 时，使用 isnotempty
-                actual_operator = 'isnotempty' if value is False else 'isempty'
-                condition = {
-                    "type": "condition",
-                    "field": field.strip(),
-                    "operator": actual_operator,
-                    "value": []
-                }
-                conditions.append(condition)
-            elif operator == 'isnotempty':
-                # 保持向后兼容，仍然支持 isnotempty
-                condition = {
-                    "type": "condition",
-                    "field": field.strip(),
-                    "operator": operator,
-                    "value": []
-                }
-                conditions.append(condition)
+                elif operator == 'isnotempty':
+                    # 保持向后兼容，仍然支持 isnotempty
+                    condition["value"] = []
+                    conditions.append(condition)
+                else:
+                    condition["value"] = value
+                    conditions.append(condition)
+            
+            if not conditions:
+                result = {}
+            elif len(conditions) == 1:
+                result = conditions[0]
             else:
-                condition = {
-                    "type": "condition",
-                    "field": field.strip(),
-                    "operator": operator,
-                    "value": value
-                }
-                conditions.append(condition)
+                # 使用对象池获取字典
+                result = _query_object_pool.acquire()
+                result["type"] = "group"
+                result["logic"] = "AND"
+                result["children"] = conditions
+            
+            # 处理 NOT 操作
+            if self.negated:
+                not_result = _query_object_pool.acquire()
+                not_result["type"] = "group"
+                not_result["logic"] = "NOT"
+                not_result["children"] = [result]
+                result = not_result
         
-        if not conditions:
-            return {}
-        
-        if len(conditions) == 1:
-            result = conditions[0]
-        else:
-            result = {
-                "type": "group",
-                "logic": "AND",
-                "children": conditions
-            }
-        
-        # 处理 NOT 操作
-        if self.negated:
-            return {
-                "type": "group",
-                "logic": "NOT",
-                "children": [result]
-            }
+        # 缓存结果
+        self._cached_condition = result
+        self._last_field_map = field_map
         
         return result
 
@@ -234,7 +292,8 @@ class HapRowSet(Generic[ModelType]):
         Returns:
             Dict[str, Any]: 处理后的字段数据字典
         """
-        processed_data = data.copy()
+        # processed_data = data.copy()
+        processed_data = data
         
         # 获取模型的所有字段
         fields = self.model._get_fields()
