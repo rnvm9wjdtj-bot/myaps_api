@@ -411,7 +411,7 @@ async def replace_supply(
     "/t_supply/{supplyno}/{materialno}",
     tags=["生产数据 - 供应"],
     summary="删除供应记录",
-    description="根据供应类型、料号、供应号删除供应记录。若为MO PL，还会删除关联的工序记录"
+    description="根据供应类型、料号、供应号删除供应记录。若为MO PL，还会删除关联的工序记录和报工记录"
 )
 async def delete_supply(
     db_name: str = common_params["db_name"],
@@ -428,6 +428,7 @@ async def delete_supply(
     _type = query_result['data'][0]['type']
     if result['success'] and _type in ['PL', 'MO']: # 生产工单还要删除关联的工序记录
         orderwc_delete_result = await db_delete(db_names=db_name, model_or_tablename="t_orderwc", filter_string=filter_string)
+        confirm_delete_result = await db_delete(db_names=db_name, model_or_tablename="t_confirm", filter_string=f"`SupplyNo`='{supplyno}'")
         return standard_response(
             success=1,
             message=f"Supply {supplyno} for material {materialno} of type {_type} deleted successfully.")
@@ -793,6 +794,25 @@ async def create_workreport(
     db_name = db_name.replace(" ", "")
     return await db_bupsert(db_names=db_name, model_or_tablename="t_confirm", data_list=data)
 
+
+@rt.delete(
+    "/t_confirm/{supplyno}/{itemno}",
+    tags=["生产数据 - 报工"],
+    summary="删除报工记录",
+    description="删除报工记录"
+)
+async def delete_workreport(
+    db_name: str = common_params["db_name"],
+    supplyno: str = Path(..., description="工单号"),
+    itemno: str = Path(..., description="工序项目"),
+    x_api_key: str = common_params["x_api_key"]
+    ):
+    db_name = db_name.replace(" ", "")
+    filter_string = f"`SupplyNo`='{supplyno}'"
+    if not itemno == "...":
+        filter_string += f" AND `ItemNo`='{itemno}'"
+    result = await db_delete(db_names=db_name, model_or_tablename="t_confirm", filter_string=filter_string)
+    return result
 
 @rt.patch(
     "/t_confirm",

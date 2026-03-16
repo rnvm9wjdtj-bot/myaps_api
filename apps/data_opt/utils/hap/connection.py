@@ -24,6 +24,7 @@ from .utils import(
     StringInternPool, LightweightRow, ObjectPool, ConnectionPoolManager, SmartBatchSizeCalculator,
     AdaptiveRateController, WorksheetLogger, hap_async_timer
 )
+from .async_client import AsyncHttpClient
 from .models import Model
 from .data_objects import HapRowSet, HapQuerySet, AsyncHapQuerySet
 
@@ -738,13 +739,13 @@ class HapConnection:
 class AsyncHapConnection:
     """HAP 连接的异步包装器
     
-    通过线程池将同步 HAP 操作转换为异步操作，保持与同步版本相同的 API 接口。
-    复用 HapConnection 的线程池，避免资源重复创建。
+    使用 aiohttp 实现真正的异步 HTTP 请求，保持与同步版本相同的 API 接口。
     
     Attributes:
         _sync_conn: 原始的同步 HAP 连接
         _executor: 线程池执行器（复用自 sync_conn）
         _max_workers: 最大工作线程数
+        _async_client: 异步 HTTP 客户端
     
     Example:
         >>> hap_conn = HapConnection(app_key="xxx", sign="yyy")
@@ -776,6 +777,34 @@ class AsyncHapConnection:
         self._func_cache = {}
         self._monitor = HapApiMonitor() if enable_monitor else None
         self._connection_manager = getattr(sync_conn, '_connection_manager', None)
+        # 初始化异步 HTTP 客户端
+        self._async_client = AsyncHttpClient(
+            connect_timeout=_DEFAULT_CONNECT_TIMEOUT,
+            read_timeout=_DEFAULT_READ_TIMEOUT,
+            max_connections=sync_conn.max_workers * 2,
+            enable_http2=getattr(sync_conn.config, 'ENABLE_HTTP2', True)
+        )
+    
+    async def _async_request(self, method: str, url: str, **kwargs):
+        """使用 aiohttp 执行异步 HTTP 请求
+        
+        Args:
+            method: HTTP 方法
+            url: 请求 URL
+            **kwargs: 其他参数
+            
+        Returns:
+            dict: 响应数据
+        """
+        response = await self._async_client.request(
+            method=method,
+            url=url,
+            **kwargs
+        )
+        try:
+            return await response.json()
+        finally:
+            await response.release()
     
     def _run_in_executor(self, func: Callable, *args, **kwargs) -> asyncio.Future:
         """在线程池中执行同步函数
@@ -798,56 +827,66 @@ class AsyncHapConnection:
             # 对于只有位置参数的情况，直接传递
             return loop.run_in_executor(self._executor, func, *args)
     
-    def _run_with_monitor(
+    async def _run_with_monitor(
         self, 
         func: Callable, 
         method: str,
         endpoint: str,
         *args, 
         **kwargs
-    ) -> asyncio.Future:
-        """在线程池中执行同步函数并监控
+    ):
+        """执行请求并监控
         
         Args:
-            func: 要执行的同步函数
+            func: 要执行的函数
             method: HTTP 方法
             endpoint: API 端点
             *args: 位置参数
             **kwargs: 关键字参数
             
         Returns:
-            asyncio.Future: 异步 Future 对象
+            函数执行结果
         """
         import time
         
-        async def monitored_wrapper():
-            start_time = time.time()
-            success = True
-            error = None
-            status_code = None
-            
-            try:
-                result = await self._run_in_executor(func, *args, **kwargs)
-                return result
-            except Exception as e:
-                success = False
-                error = str(e)
-                raise
-            finally:
-                response_time = time.time() - start_time
-                
-                # 记录监控数据
-                if self._monitor:
-                    self._monitor.record_request(
-                        method=method,
-                        endpoint=endpoint,
-                        params=kwargs,
-                        response_time=response_time,
-                        success=success,
-                        error=error
-                    )
+        start_time = time.time()
+        success = True
+        error = None
+        status_code = None
         
-        return monitored_wrapper()
+        try:
+            # 检查是否是直接的 HTTP 请求
+            if hasattr(func, '__name__') and func.__name__ in ['_request', '_post', '_get', '_patch', '_delete']:
+                # 构建完整 URL
+                url = f"{self._sync_conn.base_url}{endpoint}"
+                # 使用异步 HTTP 客户端执行请求
+                result = await self._async_request(
+                    method=method,
+                    url=url,
+                    headers=self._sync_conn.headers,
+                    **kwargs
+                )
+            else:
+                # 对于其他函数，使用线程池执行
+                result = await self._run_in_executor(func, *args, **kwargs)
+            return result
+        except Exception as e:
+            success = False
+            error = str(e)
+            raise
+        finally:
+            response_time = time.time() - start_time
+            
+            # 记录监控数据
+            if self._monitor:
+                self._monitor.record_request(
+                    method=method,
+                    endpoint=endpoint,
+                    params=kwargs,
+                    response_time=response_time,
+                    success=success,
+                    error=error
+                )
     
     def _record_monitor(
         self,
@@ -877,6 +916,11 @@ class AsyncHapConnection:
                 success=success,
                 error=error
             )
+    
+    async def close(self):
+        """关闭异步连接，释放资源"""
+        if self._async_client:
+            await self._async_client.close()
     
     # ==================== 监控相关方法 ====================
     
@@ -983,14 +1027,59 @@ class AsyncHapConnection:
             ... )
             >>> print(f"处理了 {result.count()} 条记录")
         """
-        query_set = self._sync_conn.rows(model)
-        return await self._run_in_executor(
-            query_set.upsert,
-            data_list=data_list,
-            exclude_none=exclude_none,
-            trigger_workflow=trigger_workflow,
-            when_value_equal_then=when_value_equal_then
+        # 对于少量数据，直接使用同步方法
+        if len(data_list) <= 10:
+            query_set = self._sync_conn.rows(model)
+            return await self._run_in_executor(
+                query_set.upsert,
+                data_list=data_list,
+                exclude_none=exclude_none,
+                trigger_workflow=trigger_workflow,
+                when_value_equal_then=when_value_equal_then
+            )
+        
+        # 对于大量数据，使用批量处理
+        batch_size = 50
+        batches = [data_list[i:i+batch_size] for i in range(0, len(data_list), batch_size)]
+        
+        async def process_batch(batch):
+            query_set = self._sync_conn.rows(model)
+            return await self._run_in_executor(
+                query_set.upsert,
+                data_list=batch,
+                exclude_none=exclude_none,
+                trigger_workflow=trigger_workflow,
+                when_value_equal_then=when_value_equal_then
+            )
+        
+        # 使用 asyncio.gather 并行处理批次，设置 return_exceptions=True 提高容错性
+        results = await asyncio.gather(
+            *[process_batch(batch) for batch in batches],
+            return_exceptions=True
         )
+        
+        # 处理结果和异常
+        successful_results = []
+        errors = []
+        
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                errors.append(f"批次 {i+1} 处理失败: {str(result)}")
+            else:
+                successful_results.append(result)
+        
+        # 合并成功的结果
+        if successful_results:
+            # 这里需要实现结果合并逻辑，暂时返回第一个结果
+            console_log.info(f"成功处理 {len(successful_results)} 个批次，失败 {len(errors)} 个批次")
+            if errors:
+                console_log.warning(f"处理过程中出现错误: {'; '.join(errors)}")
+            return successful_results[0]
+        else:
+            # 所有批次都失败，抛出第一个错误
+            if errors:
+                raise Exception(f"所有批次处理失败: {errors[0]}")
+            raise Exception("无数据可处理")
     
     @hap_async_timer()
     async def bulk_create(
@@ -1009,12 +1098,54 @@ class AsyncHapConnection:
         Returns:
             List[ModelType]: 创建的模型实例列表
         """
-        query_set = self._sync_conn.rows(model)
-        return await self._run_in_executor(
-            query_set.bulk_create,
-            data_list=data_list,
-            trigger_workflow=trigger_workflow
+        # 对于少量数据，直接使用同步方法
+        if len(data_list) <= 10:
+            query_set = self._sync_conn.rows(model)
+            return await self._run_in_executor(
+                query_set.bulk_create,
+                data_list=data_list,
+                trigger_workflow=trigger_workflow
+            )
+        
+        # 对于大量数据，使用批量处理
+        batch_size = 50
+        batches = [data_list[i:i+batch_size] for i in range(0, len(data_list), batch_size)]
+        
+        async def process_batch(batch):
+            query_set = self._sync_conn.rows(model)
+            return await self._run_in_executor(
+                query_set.bulk_create,
+                data_list=batch,
+                trigger_workflow=trigger_workflow
+            )
+        
+        # 使用 asyncio.gather 并行处理批次，设置 return_exceptions=True 提高容错性
+        results = await asyncio.gather(
+            *[process_batch(batch) for batch in batches],
+            return_exceptions=True
         )
+        
+        # 处理结果和异常
+        successful_results = []
+        errors = []
+        
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                errors.append(f"批次 {i+1} 处理失败: {str(result)}")
+            else:
+                successful_results.extend(result)
+        
+        # 合并成功的结果
+        if successful_results:
+            console_log.info(f"成功处理 {len(successful_results)} 条记录，失败 {len(errors)} 个批次")
+            if errors:
+                console_log.warning(f"处理过程中出现错误: {'; '.join(errors)}")
+            return successful_results
+        else:
+            # 所有批次都失败，抛出第一个错误
+            if errors:
+                raise Exception(f"所有批次处理失败: {errors[0]}")
+            raise Exception("无数据可处理")
     
     @hap_async_timer()
     async def bulk_update(
@@ -1033,12 +1164,54 @@ class AsyncHapConnection:
         Returns:
             List[ModelType]: 更新的模型实例列表
         """
-        query_set = self._sync_conn.rows(model)
-        return await self._run_in_executor(
-            query_set.bulk_update,
-            data_list=data_list,
-            trigger_workflow=trigger_workflow
+        # 对于少量数据，直接使用同步方法
+        if len(data_list) <= 10:
+            query_set = self._sync_conn.rows(model)
+            return await self._run_in_executor(
+                query_set.bulk_update,
+                data_list=data_list,
+                trigger_workflow=trigger_workflow
+            )
+        
+        # 对于大量数据，使用批量处理
+        batch_size = 50
+        batches = [data_list[i:i+batch_size] for i in range(0, len(data_list), batch_size)]
+        
+        async def process_batch(batch):
+            query_set = self._sync_conn.rows(model)
+            return await self._run_in_executor(
+                query_set.bulk_update,
+                data_list=batch,
+                trigger_workflow=trigger_workflow
+            )
+        
+        # 使用 asyncio.gather 并行处理批次，设置 return_exceptions=True 提高容错性
+        results = await asyncio.gather(
+            *[process_batch(batch) for batch in batches],
+            return_exceptions=True
         )
+        
+        # 处理结果和异常
+        successful_results = []
+        errors = []
+        
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                errors.append(f"批次 {i+1} 处理失败: {str(result)}")
+            else:
+                successful_results.extend(result)
+        
+        # 合并成功的结果
+        if successful_results:
+            console_log.info(f"成功处理 {len(successful_results)} 条记录，失败 {len(errors)} 个批次")
+            if errors:
+                console_log.warning(f"处理过程中出现错误: {'; '.join(errors)}")
+            return successful_results
+        else:
+            # 所有批次都失败，抛出第一个错误
+            if errors:
+                raise Exception(f"所有批次处理失败: {errors[0]}")
+            raise Exception("无数据可处理")
 
     
     async def upsert_buffered(

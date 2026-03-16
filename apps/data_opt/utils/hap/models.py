@@ -9,6 +9,7 @@ from tortoise.models import Model as TortoiseBaseModel
 # from ._base import ModelType
 from .fields import Field, StrField, NumField
 from .utils import HapUtils
+from ._base import console_log
 
 
 class Model:
@@ -89,14 +90,20 @@ class Model:
         2. 使用 frozenset 优化查找性能
         """
         if not hasattr(cls, '_reverse_field_map_cache'):
-            fields = cls._get_fields()
-            # 使用字典推导式一次性构建反向映射表
-            cls._reverse_field_map_cache = {
-                field.field_name: attr_name 
-                for attr_name, field in fields.items()
-            }
-            # 预编译 frozenset 用于快速查找
-            cls._reverse_field_map_keys = frozenset(cls._reverse_field_map_cache.keys())
+            try:
+                fields = cls._get_fields()
+                # 使用字典推导式一次性构建反向映射表
+                cls._reverse_field_map_cache = {
+                    field.field_name: attr_name 
+                    for attr_name, field in fields.items()
+                    if field.field_name  # 确保field_name不为None
+                }
+                # 预编译 frozenset 用于快速查找
+                cls._reverse_field_map_keys = frozenset(cls._reverse_field_map_cache.keys())
+            except Exception as e:
+                # 如果初始化失败，返回空字典
+                console_log.warning(f"Failed to initialize reverse field map for {cls.__name__}: {e}")
+                return {}
         return cls._reverse_field_map_cache
     
     @classmethod

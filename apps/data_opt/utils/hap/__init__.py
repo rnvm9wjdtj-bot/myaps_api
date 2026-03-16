@@ -12,6 +12,7 @@ from .utils import (
     StringInternPool, LightweightRow, ObjectPool, ConnectionPoolManager, SmartBatchSizeCalculator,
     AdaptiveRateController, hap_async_timer
 )
+from .async_client import AsyncHttpClient
 from .connection import HapConnection, AsyncHapConnection, async_upsert, async_bulk_create, async_query
 from .data_objects import HapRowSet, HapQuerySet, AsyncHapQuerySet, Q
 
@@ -44,6 +45,7 @@ __all__ = [
     'SmartBatchSizeCalculator',
     'AdaptiveRateController',
     'HapApiMonitor',
+    'AsyncHttpClient',
     'hap_async_timer',
     
     # 连接类

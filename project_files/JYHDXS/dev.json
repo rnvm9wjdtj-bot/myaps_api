@@ -9,13 +9,13 @@
         "THIS_DB_PASSWORD": null,
         "THIS_DB_NAME": null,
         "MYAPS_VERSION": "P",
-        "MYAPS_BASE_URL": "http://192.168.1.193:8092",
-        "MYAPS_DB_HOST": "192.168.1.193",
+        "MYAPS_BASE_URL": "http://172.16.101.197:8092",
+        "MYAPS_DB_HOST": "172.16.101.197",
         "MYAPS_DB_PORT": 3333,
         "MYAPS_DB_USER": "root",
         "MYAPS_DB_PASSWORD": "E9damw0o@#$",
-        "MYAPS_DB_SET": "dev",
-        "MYAPS_MAIN_DB": "dev"
+        "MYAPS_DB_SET": "hdtest",
+        "MYAPS_MAIN_DB": "hdtest"
     },
     "erp": {
         "base_url": "http://192.168.1.170:8001",
