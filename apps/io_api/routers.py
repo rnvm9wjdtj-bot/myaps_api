@@ -408,30 +408,27 @@ async def replace_supply(
 
 
 @rt.delete(
-    "/t_supply/{supplyno}/{materialno}",
+    "/t_supply/{supplyno}",
     tags=["生产数据 - 供应"],
     summary="删除供应记录",
-    description="根据供应类型、料号、供应号删除供应记录。若为MO PL，还会删除关联的工序记录和报工记录"
+    description="根据供应号删除供应记录。若为MO PL，还会删除关联的工序记录和报工记录"
 )
 async def delete_supply(
     db_name: str = common_params["db_name"],
     supplyno: str = Path(..., description="要删除的供应记录的供应号"),
-    materialno: str = Path(..., description="料号"),
     x_api_key: str = common_params["x_api_key"]
     ):
     db_name = db_name.replace(" ", "")
     filter_string = f"`SupplyNo`='{supplyno}'"
-    if not materialno == "...":
-        filter_string += f" AND `MaterialNo`='{materialno}'"
     query_result = await db_query(db_name=db_name, model_or_tablename="t_supply", filter_string=filter_string)
     result = await db_delete(db_names=db_name, model_or_tablename="t_supply", filter_string=filter_string)
     _type = query_result['data'][0]['type']
-    if result['success'] and _type in ['PL', 'MO']: # 生产工单还要删除关联的工序记录
+    if result['success']: # 删除关联的工序记录、报工
         orderwc_delete_result = await db_delete(db_names=db_name, model_or_tablename="t_orderwc", filter_string=filter_string)
-        confirm_delete_result = await db_delete(db_names=db_name, model_or_tablename="t_confirm", filter_string=f"`SupplyNo`='{supplyno}'")
+        confirm_delete_result = await db_delete(db_names=db_name, model_or_tablename="t_confirm", filter_string=filter_string)
         return standard_response(
             success=1,
-            message=f"Supply {supplyno} for material {materialno} of type {_type} deleted successfully.")
+            message=f"Supply {supplyno} deleted successfully.")
     else:
         return standard_response(
             status_code=result["status_code"],
@@ -610,6 +607,26 @@ async def get_mo_by_time(
     return result
 
 
+
+@rt.get(
+    "/v_supply_complete",
+    tags=["生产数据 - 报工"],
+    summary="查询报工记录",
+    description="查询报工记录"
+    )
+async def query_workreport(
+    db_name: str = common_params["db_name"],
+    x_api_key: str = common_params["x_api_key"]
+    ):
+    """
+    查询报工记录
+    db_name: str，数据库名称，多个数据库名称用逗号分隔
+    """
+    db_name = db_name.replace(" ", "")
+    return await db_query(db_name=db_name, model_or_tablename="v_supply_complete")
+
+
+
 @rt.get(
     "/v_orderwc",
     tags=["报表 - 工序报表"],
@@ -775,7 +792,6 @@ async def get_matdailyqtyreport(
     return standard_response(status_code=status.HTTP_200_OK, meta={'total': len(result)}, data=result)
 
 
-
 @rt.post(
     "/t_confirm",
     tags=["生产数据 - 报工"],
@@ -792,6 +808,7 @@ async def create_workreport(
     db_name: str，数据库名称，多个数据库名称用逗号分隔
     """
     db_name = db_name.replace(" ", "")
+    # await db_query(db_name=db_name, model_or_tablename="t_orderwc", filter_string=f"`SupplyNo`='{supplyno}' AND `ItemNo`='{itemno}'")
     return await db_bupsert(db_names=db_name, model_or_tablename="t_confirm", data_list=data)
 
 
@@ -813,6 +830,7 @@ async def delete_workreport(
         filter_string += f" AND `ItemNo`='{itemno}'"
     result = await db_delete(db_names=db_name, model_or_tablename="t_confirm", filter_string=filter_string)
     return result
+
 
 @rt.patch(
     "/t_confirm",

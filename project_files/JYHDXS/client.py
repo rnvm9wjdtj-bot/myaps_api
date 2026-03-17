@@ -75,21 +75,21 @@ def sap_post(url: str, session: requests.Session, interface_id: str, data: dict)
     }
 
 
-async def refresh_workreport(supplyno: str):
-    """
-    刷新单条报工数据
-    """
-    response = requests.get(f"{mes_url}/business/productionDetail/detailApsVo?orderNos={supplyno}")
-    response.raise_for_status()
-    response_json = response.json()
-    workreport_data = response_json['data']
+# async def refresh_workreport(supplyno: str):
+#     """
+#     刷新单条报工数据
+#     """
+#     response = requests.get(f"{mes_url}/business/productionDetail/detailApsVo?orderNos={supplyno}")
+#     response.raise_for_status()
+#     response_json = response.json()
+#     workreport_data = response_json['data']
 
-    await db_delete(db_names=MYAPS_MAIN_DB, model_or_tablename='t_confirm', filter_string=f"`SupplyNo` = '{supplyno}'")
-    if not workreport_data:
-        return
-    [d.pop('workcenter') for d in workreport_data]
-    await db_bupsert(db_names=MYAPS_MAIN_DB, model_or_tablename='t_confirm', data_list=workreport_data)
-    return workreport_data
+#     await db_delete(db_names=MYAPS_MAIN_DB, model_or_tablename='t_confirm', filter_string=f"`SupplyNo` = '{supplyno}'")
+#     if not workreport_data:
+#         return
+#     [d.pop('workcenter') for d in workreport_data]
+#     await db_bupsert(db_names=MYAPS_MAIN_DB, model_or_tablename='t_confirm', data_list=workreport_data)
+#     return workreport_data
 
 #################################################################################
 # ⬇️定时任务设置
@@ -120,13 +120,33 @@ def refresh_stock(dbs: str = None):
     """
     filelog_normal.info("⏰ 开始执行刷新库存任务")
     dbs = dbs or MYAPS_DB_SET
-    response = None
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    mo_complete_data = requests.get(url=f"{THIS_BASE_URL}/api/v_supply_complete?db_name=hdtest").json().get('data', [])
+
+    df_mo_complete = pd.DataFrame(mo_complete_data)
+    mto_vir_st = (df_mo_complete[df_mo_complete['category'] == 'MTO']
+            [['materialno', 'vendorno', 'finalopqty', 'category', 'avail_date']]
+            .groupby('vendorno', as_index=False)
+            .agg({
+                'finalopqty': 'sum',
+                'materialno': 'first',
+                'category': 'first',
+                'avail_date': 'first',
+            }))
+    mto_vir_st['supplyno'] = mto_vir_st['vendorno'] +'-' +mto_vir_st['materialno']
+    mto_vir_st['type'] = 'ST'
+    mto_vir_st['priority'] = 0
+    mto_vir_st['status'] = 'NEW'
+    mto_vir_st['dt_req'] = df_mo_complete['avail_date']
+    mto_vir_st['create_date'] = now
+    mto_vir_st['itemno'] = pdv.ITEMNO
+    mto_vir_st.rename(columns={'finalopqty': 'avail_qty'}, inplace=True)
+
     try:
-        response = sap_session.get(url=f"{sap_url1}", headers={'interface': 'stock', 'werks': werks})
-        data = response.json()['data']
-        stock = pd.DataFrame(data)
-        stock = stock.astype({
+        sap_stock_response = sap_session.get(url=f"{sap_url1}", headers={'interface': 'stock', 'werks': werks})
+        sap_st_data = sap_stock_response.json().get('data', [])
+        df_sap_st = pd.DataFrame(sap_st_data)
+        df_sap_st = df_sap_st.astype({
             'werks': 'str',
             'matnr': 'str',
             'lgort': 'str',
@@ -134,16 +154,16 @@ def refresh_stock(dbs: str = None):
             'labst2': 'int32',
             'charg': 'str'
         })
-        stock['avail_qty'] = stock['labst'] + stock['labst2']
-        stock['supplyno'] = stock['werks'] + '-' + stock['matnr'] # 注意不要用f string，否则supplyno会变成所有料号的超长字符串
-        stock['type'] = 'ST'
-        stock['priority'] = 0
-        stock['avail_date'] = now
-        stock['dt_req'] = now
-        stock['status'] = 'NEW'
-        stock['category'] = ''
-        stock['create_date'] = now
-        stock = (stock
+        df_sap_st['avail_qty'] = df_sap_st['labst'] + df_sap_st['labst2']
+        df_sap_st['supplyno'] = df_sap_st['werks'] + '-' + df_sap_st['matnr'] # 注意不要用f string，否则supplyno会变成所有料号的超长字符串
+        df_sap_st['type'] = 'ST'
+        df_sap_st['priority'] = 0
+        df_sap_st['avail_date'] = now
+        df_sap_st['dt_req'] = now
+        df_sap_st['status'] = 'NEW'
+        df_sap_st['category'] = ''
+        df_sap_st['create_date'] = now
+        df_sap_st = (df_sap_st
                         .groupby(['supplyno'], as_index=False)
                         .agg({
                             'matnr': 'first',
@@ -156,21 +176,24 @@ def refresh_stock(dbs: str = None):
                             'category': 'first',
                             'create_date': 'first',
                         })) 
-        stock = stock.rename(columns={
+        df_sap_st = df_sap_st.rename(columns={
             'matnr': 'materialno',
         })
-        stock['itemno'] = pdv.ITEMNO
-        stock_data = stock.to_dict(orient='records')
-        refresh_result = requests.put(url=f"{THIS_BASE_URL}/api/t_supply/type/ST?db_name={dbs}", json=stock_data)
+        df_sap_st['itemno'] = pdv.ITEMNO
+
+        stock_data_total = pd.concat([df_sap_st, mto_vir_st], axis=0, ignore_index=True)
+        stock_data_total.fillna('', inplace=True)
+
+        refresh_result = requests.put(url=f"{THIS_BASE_URL}/api/t_supply/type/ST?db_name={dbs}", json=stock_data_total.to_dict(orient='records'))
         if refresh_result.json()['success']:
             filelog_normal.info(f"✅ 刷新库存任务执行完成，账套：{dbs}")
         else:
             filelog_error.error(f"🚫 刷新库存任务执行失败: {refresh_result.json()['message']}")
-        response = standard_response(message=f"刷新库存任务执行完成，账套：{dbs}")
+        sap_stock_response = standard_response(message=f"刷新库存任务执行完成，账套：{dbs}")
     except Exception as e:
         filelog_error.error(f"🚫 刷新库存任务执行失败: {str(e)}")
-        response = standard_response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, success=0, message=f"刷新库存任务执行失败: {str(e)}")
-    return response
+        sap_stock_response = standard_response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, success=0, message=f"刷新库存任务执行失败: {str(e)}")
+    return sap_stock_response
 
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2))
@@ -242,7 +265,7 @@ def push_seasonpr_to_srm():
         filelog_error.error(f"推送季度要货计划到SRM失败：\n{response.json()}  ")
 
 
-  
+
 #################################################################################
 # ⬇️APS行动
 #################################################################################

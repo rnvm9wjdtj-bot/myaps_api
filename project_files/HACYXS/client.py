@@ -33,9 +33,6 @@ _USE_NATIVENO = False
 session = get_session()
 hap_conn = None
 
-# hap_conn = hap.HapConnection()
-# hap_conn.regist_worksheet(hap.get_maindata_worksheetinfo())
-
 
 tplus_conn = yonyou_tplus.TplusConnection()
 tplus_conn.auth()
@@ -44,20 +41,6 @@ tplus_conn.auth()
 #################################################################################
 # ⬇️ 项目可复用逻辑
 #################################################################################
-# def get_maindata_from_erp_to_hap():
-#     if not hap_conn:
-#         return
-    # material = tplus_conn.pull_from_source(source_name='material')
-    # hap_conn.worksheet('t_material').upsert(material)
-
-    # workcenter = tplus_conn.pull_from_source(source_name='workcenter')
-    # hap_conn.worksheet('t_workcenter').upsert(workcenter)
-
-    # bom = tplus_conn.pull_from_source(source_name='bom')      # 先拉BOM，顺便获取BOM CODES，以便后续获取工艺路线
-    # hap_conn.worksheet('t_mat_wc_bom').upsert(bom)
-
-    # route = tplus_conn.pull_from_source(source_name='route')
-    # hap_conn.worksheet('t_mat_wc').upsert(route)
 
 
 def refresh_stock():
@@ -121,12 +104,6 @@ def push_pr():
 #################################################################################
 # ⬇️ 定时任务
 #################################################################################
-# @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(-1))
-# def get_maindata_from_erp_to_hap_task(*args, **kwargs):
-#     console_log.info("⏰ 开始执行获取主数据定时任务")
-#     maindata = get_maindata_from_erp_to_hap()
-#     console_log.info("⏰ 获取主数据定时任务执行完成")
-
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute())
 def refresh_stock_task(*args, **kwargs):
