@@ -6,9 +6,9 @@ _MINUTE = 0
 
 _TASKS = [
     # JkyPullTask(task_hours=(19, ), source_codes=['$Company', '$Department']),
-    JkyPullTask(task_hours=(0, ), source_codes=['$Company', '$Department', '$Staff', '$BankAccounts', '$Channel', '$GoodsCate', '$Warehouse', '$Logistic']),
+    JkyPullTask(task_hours=(0, ), source_codes=['$Company', '$Department', '$Staff', '$BankAccounts', '$Channel', '$GoodsCate', '$Warehouse', '$Logistic', '^Customer', '^Sku']),
     JkyPullTask(task_hours=(0,2,4,6,8,9,10,11,12,13,14,15,16,17,18,19,20,21,23), source_codes=['~Customer', '~Sku', '~BusinessOrder', '~Trade', '~Order']),
-    JkyPullTask(task_hours=(6,12,15), source_codes=['^Customer', '^Sku', '^BusinessOrder', '^Trade']),
+    JkyPullTask(task_hours=(6,8,9,10,11,12,13,14,15,16,17), source_codes=['^BusinessOrder', '^Trade'])
 ]
 
 
