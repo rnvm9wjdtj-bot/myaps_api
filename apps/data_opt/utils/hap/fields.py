@@ -24,12 +24,14 @@ class Field(ABC):
         self.description = description
         self.field_name = field_name
         self.model: Optional[Type['Model']] = None
+        self.attr_name: Optional[str] = None  # 保存属性名
     
     def __set_name__(self, owner, name):
         # 当 field_name 未提供时，使用属性名作为默认值
         if self.field_name is None:
             self.field_name = name
         self.model = owner
+        self.attr_name = name  # 直接保存属性名
 
 
 # 文本字段
@@ -50,20 +52,26 @@ class StrField(Field):
     
     def _get_attr_name(self) -> str:
         """获取当前字段在模型中的属性名"""
-        if self.model:
-            reverse_field_map = self.model._get_reverse_field_map()
-            attr_name = reverse_field_map.get(self.field_name, None)
-            if attr_name:
-                return attr_name
+        # 直接返回在 __set_name__ 中保存的属性名
+        if self.attr_name:
+            return self.attr_name
         return self.field_name
     
     def _resolve_field_name(self, field_name: str) -> str:
         """将属性名解析为字段名"""
         if not self.model:
             return field_name
-        if field_name not in self.model._get_field_map():
-            return field_name
-        return self.model._get_field_map()[field_name]
+        
+        # 直接尝试从 __dict__ 中查找字段，避免调用 _get_field_map 造成循环依赖
+        try:
+            if hasattr(self.model, field_name):
+                field_obj = getattr(self.model, field_name)
+                if isinstance(field_obj, Field) and field_obj.field_name:
+                    return field_obj.field_name
+        except Exception:
+            pass
+        
+        return field_name
     
     def _check_need_update(self, processed_data: Dict[str, Any], original_data: Optional[Dict[str, Any]], followwith_field: str) -> bool:
         """检查是否需要更新映射字段"""
@@ -187,11 +195,12 @@ class ChoiceField(StrField):
             
             value_to_process = data[followwith_field]
         else:
-            model_fieldmap = self.model._get_field_map()
-            field_name = model_fieldmap.get(attr_name)
+            # 直接使用 self.field_name，避免调用 _get_field_map()
+            field_name = self.field_name
             if field_name not in data and attr_name not in data:
                 return data
-            value_to_process = data[field_name]
+            # 尝试从 field_name 或 attr_name 中获取值
+            value_to_process = data.get(field_name) or data.get(attr_name)
         
         # 解析值并应用映射
         values = self._parse_values(value_to_process)
@@ -264,11 +273,13 @@ class RelationField(Field):
         followwith_field = self.follow_with
         if followwith_field not in data:
             try:
-                field_map = self.model._get_field_map()
-                if followwith_field in field_map:
-                    followwith_field = field_map[followwith_field]
+                # 直接尝试从模型属性中查找，避免调用 _get_field_map()
+                if hasattr(self.model, followwith_field):
+                    field_obj = getattr(self.model, followwith_field)
+                    if isinstance(field_obj, Field) and field_obj.field_name:
+                        followwith_field = field_obj.field_name
             except (AttributeError, KeyError):
-                # 模型没有 _get_field_map 方法或字段不在映射中
+                # 模型没有对应属性或字段
                 pass
         
         # 确保 follow_with 字段存在
@@ -286,12 +297,13 @@ class RelationField(Field):
                 # 确定在 original_data 中使用的键名（字段名）
                 original_key = followwith_field
                 try:
-                    field_map = self.model._get_field_map()
-                    if followwith_field in field_map:
-                        # 如果 followwith_field 是属性名，转换为字段名
-                        original_key = field_map[followwith_field]
+                    # 直接尝试从模型属性中查找，避免调用 _get_field_map()
+                    if hasattr(self.model, followwith_field):
+                        field_obj = getattr(self.model, followwith_field)
+                        if isinstance(field_obj, Field) and field_obj.field_name:
+                            original_key = field_obj.field_name
                 except (AttributeError, KeyError):
-                    # 模型没有 _get_field_map 方法或字段不在映射中
+                    # 模型没有对应属性或字段
                     pass
                 
                 if original_key not in original_data or not DataProcessor.is_equal(original_data.get(original_key), code_value):
@@ -463,8 +475,8 @@ class SubtableField(Field):
         # 获取当前字段在模型中的属性名
         attr_name = None
         if self.model:
-            parent_reverse_field_map = self.model._get_reverse_field_map()
-            attr_name = parent_reverse_field_map.get(self.field_name, None)
+            # 直接使用保存的 attr_name，避免调用 _get_reverse_field_map()
+            attr_name = self.attr_name
         if not attr_name:
             # 如果无法获取属性名，使用字段名作为后备
             attr_name = self.field_name
@@ -475,24 +487,21 @@ class SubtableField(Field):
             del data[attr_name]
         
         # parent_row = hap_conn.rows(self.model).get_by_rowid(row_id=data.get('row_id'))
-        try:
-            parent_field_map = self.model._get_field_map()
-        except AttributeError:
-            parent_field_map = {}
-        
-        try:
-            subtable_field_map = self.subtable_model._get_field_map()
-        except AttributeError:
-            subtable_field_map = {}
+        # 不使用 _get_field_map()，直接在需要时从模型属性中查找
+        parent_field_map = {}
+        subtable_field_map = {}
         
         # 检查数据源字段是否存在
         data_source_field = self.data_source
         if not data_source_field in data:
             try:
-                if data_source_field in parent_field_map:
-                    data_source_field = parent_field_map[data_source_field]
+                # 直接从模型属性中查找字段
+                if hasattr(self.model, data_source_field):
+                    field_obj = getattr(self.model, data_source_field)
+                    if isinstance(field_obj, Field) and field_obj.field_name:
+                        data_source_field = field_obj.field_name
             except (AttributeError, KeyError):
-                # 模型没有 _get_field_map 方法或字段不在映射中
+                # 模型没有对应属性或字段
                 pass
         
         # 确保数据源字段存在
@@ -510,11 +519,13 @@ class SubtableField(Field):
                 # 确定在 original_data 中使用的键名（字段名）
                 original_key = data_source_field
                 try:
-                    if data_source_field in parent_field_map:
-                        # 如果 data_source_field 是属性名，转换为字段名
-                        original_key = parent_field_map[data_source_field]
+                    # 直接从模型属性中查找字段
+                    if hasattr(self.model, data_source_field):
+                        field_obj = getattr(self.model, data_source_field)
+                        if isinstance(field_obj, Field) and field_obj.field_name:
+                            original_key = field_obj.field_name
                 except (AttributeError, KeyError):
-                    # 模型没有 _get_field_map 方法或字段不在映射中
+                    # 模型没有对应属性或字段
                     pass
                 
                 if original_key not in original_data:
@@ -574,11 +585,19 @@ class SubtableField(Field):
 
                         else:
                             # 尝试从原始数据中获取
-                            subtable_field_map = self.subtable_model._get_field_map()
-                            if follow_with in subtable_field_map:
-                                api_field = subtable_field_map[follow_with]
-                                if api_field in subtable_data:
-                                    preprocessed_data[field_obj.field_name] = subtable_data[api_field]
+                            api_field = follow_with
+                            try:
+                                # 直接从子表模型属性中查找字段
+                                if hasattr(self.subtable_model, follow_with):
+                                    sub_field_obj = getattr(self.subtable_model, follow_with)
+                                    if isinstance(sub_field_obj, Field) and sub_field_obj.field_name:
+                                        api_field = sub_field_obj.field_name
+                            except (AttributeError, KeyError):
+                                # 子表模型没有对应属性或字段
+                                pass
+                            
+                            if api_field in subtable_data:
+                                preprocessed_data[field_obj.field_name] = subtable_data[api_field]
                     # TODO 若子表中出现其他复杂字段，需完善相应逻辑
                 preprocessed_data_list.append(preprocessed_data)
             

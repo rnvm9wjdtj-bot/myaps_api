@@ -159,23 +159,26 @@ class ApsAction(ApsBaseAction):
                 mo_in_tplus = (tplus_conn.pull_from_source(source_name='mo_single', filter={"voucherID": tplus_mo_id}))[0]
                 tplus_mo_code = mo_in_tplus['Code']
                 # 从 T+ 中提取 MO 详情中的第一个详情记录的 ID 作为 _entryid
-                tplus_mo_entryid = mo_in_tplus['ManufactureOrderDetails'][0]['ID'] 
+                tplus_mo_entryid = mo_in_tplus['ManufactureOrderDetails'][0]['ID']
+                mo_material_details = mo_in_tplus['ManufactureOrderDetails'][0]['ManufactureOrderMaterialDetails']
+                mo_material_details_id = mo_material_details[0]['ID']
                 
                 # 审批接口，要在领料申请前批准
                 a = tplus_conn.push_into_target(target_name='mo_approve', push_data={'voucherID': tplus_mo_id})
                 # 推送领料申请
-                b = cls.push_rs(mdlist_or_supplyno=demand_list, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid)
+                b = cls.push_rs(mdlist_or_supplyno=demand_list, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid, mo_material_details_id=mo_material_details_id)
                 # 最后再更改工单信息，一定放在最后一步，否则工单号变更太早，前面若有用原生供应号查询都会失败
                 c = cls._pl_release_success(plno=supplyno, msg=mo_push_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
             except Exception as e:
                 tplus_mo_entryid = None
+                console_log.error(f"Error extracting entry ID from T+ MO: {e}")
                 filelog_error.error(f"Error extracting entry ID from T+ MO: {e}")
         else:
             a = cls._pl_release_failed(plno=supplyno, msg=mo_push_response_json['message'], msg_from='T+')
             
 
     @classmethod
-    def push_rs(cls, mdlist_or_supplyno: str | list[dict], tplus_mo_id: str, tplus_mo_entryid: str):
+    def push_rs(cls, mdlist_or_supplyno: str | list[dict], tplus_mo_id: str, tplus_mo_entryid: str, mo_material_details_id: str):
         """
         推送领料申请到T+
         🅰 mdlist_or_supplyno: 材料需求列表或工单号
@@ -188,7 +191,7 @@ class ApsAction(ApsBaseAction):
         else:
             rs_data = mdlist_or_supplyno
             demandno = rs_data[0]['demandno']
-        rs_push_response = tplus_conn.push_into_target(target_name='rs', push_data=rs_data, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid, use_nativeno=_USE_NATIVENO)
+        rs_push_response = tplus_conn.push_into_target(target_name='rs', push_data=rs_data, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid, mo_material_details_id=mo_material_details_id, use_nativeno=_USE_NATIVENO)
         rs_push_response_json = rs_push_response.json()
         if str(rs_push_response_json['code']) == '0': # 创建成功
             a = cls._rs_push_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))

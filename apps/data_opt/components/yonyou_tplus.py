@@ -281,7 +281,8 @@ class TplusPushRs(PydanticModel):
             mr = {}
             mr['IdSourceVoucherType'] = "69"
             mr['SourceVoucherId'] = values['tplus_mo_id']
-            mr['SourceVoucherDetailId'] = values['tplus_mo_entryid']
+            # mr['SourceVoucherDetailId'] = values['tplus_mo_entryid']
+            mr['SourceVoucherDetailId'] = values['mo_material_details_id']
             mr['Inventory'] = {'Code': entry['materialno']}
             mr['BaseQuantity'] = entry['req_qty'] * -1
             mr_details.append(mr)
@@ -737,6 +738,7 @@ class TplusConnection(BaseConnection):
             tplus_mo_id = kwargs['tplus_mo_id'] # 这个一定会有
             # 尝试从 kwargs 中提取 tplus_mo_entryid
             tplus_mo_entryid = kwargs.get('tplus_mo_entryid')
+            mo_material_details_id = kwargs.get('mo_material_details_id')
             # 如果提取不到，就尝试调用 T+ 接口查询 MO 记录
             if not (tplus_mo_id and tplus_mo_entryid):
                 try:
@@ -752,6 +754,7 @@ class TplusConnection(BaseConnection):
             # 结果计入推送数据，以便后续通过字段映射的配置直接取值
             push_data['tplus_mo_id'] = tplus_mo_id
             push_data['tplus_mo_entryid'] = tplus_mo_entryid
+            push_data['mo_material_details_id'] = mo_material_details_id
         elif target_name == 'pr':
             pass
 

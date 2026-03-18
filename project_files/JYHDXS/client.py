@@ -121,26 +121,27 @@ def refresh_stock(dbs: str = None):
     filelog_normal.info("⏰ 开始执行刷新库存任务")
     dbs = dbs or MYAPS_DB_SET
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    mo_complete_data = requests.get(url=f"{THIS_BASE_URL}/api/v_supply_complete?db_name=hdtest").json().get('data', [])
-
-    df_mo_complete = pd.DataFrame(mo_complete_data)
-    mto_vir_st = (df_mo_complete[df_mo_complete['category'] == 'MTO']
-            [['materialno', 'vendorno', 'finalopqty', 'category', 'avail_date']]
-            .groupby('vendorno', as_index=False)
-            .agg({
-                'finalopqty': 'sum',
-                'materialno': 'first',
-                'category': 'first',
-                'avail_date': 'first',
-            }))
-    mto_vir_st['supplyno'] = mto_vir_st['vendorno'] +'-' +mto_vir_st['materialno']
-    mto_vir_st['type'] = 'ST'
-    mto_vir_st['priority'] = 0
-    mto_vir_st['status'] = 'NEW'
-    mto_vir_st['dt_req'] = df_mo_complete['avail_date']
-    mto_vir_st['create_date'] = now
-    mto_vir_st['itemno'] = pdv.ITEMNO
-    mto_vir_st.rename(columns={'finalopqty': 'avail_qty'}, inplace=True)
+    mo_complete_data = requests.get(url=f"{THIS_BASE_URL}/api/v_supply_complete?db_name=hdtest").json().get('data')
+    mto_vir_st = None
+    if mo_complete_data:
+        df_mo_complete = pd.DataFrame(mo_complete_data)
+        mto_vir_st = (df_mo_complete[df_mo_complete['category'] == 'MTO']
+                [['materialno', 'vendorno', 'finalopqty', 'category', 'avail_date']]
+                .groupby('vendorno', as_index=False)
+                .agg({
+                    'finalopqty': 'sum',
+                    'materialno': 'first',
+                    'category': 'first',
+                    'avail_date': 'first',
+                }))
+        mto_vir_st['supplyno'] = mto_vir_st['materialno'] + '-' + mto_vir_st['vendorno']
+        mto_vir_st['type'] = 'ST'
+        mto_vir_st['priority'] = 0
+        mto_vir_st['status'] = 'NEW'
+        mto_vir_st['dt_req'] = mto_vir_st['avail_date']
+        mto_vir_st['create_date'] = now
+        mto_vir_st['itemno'] = pdv.ITEMNO
+        mto_vir_st.rename(columns={'finalopqty': 'avail_qty'}, inplace=True)
 
     try:
         sap_stock_response = sap_session.get(url=f"{sap_url1}", headers={'interface': 'stock', 'werks': werks})
@@ -155,7 +156,7 @@ def refresh_stock(dbs: str = None):
             'charg': 'str'
         })
         df_sap_st['avail_qty'] = df_sap_st['labst'] + df_sap_st['labst2']
-        df_sap_st['supplyno'] = df_sap_st['werks'] + '-' + df_sap_st['matnr'] # 注意不要用f string，否则supplyno会变成所有料号的超长字符串
+        df_sap_st['supplyno'] = df_sap_st['matnr'] + '-' + df_sap_st['werks'] # 注意不要用f string，否则supplyno会变成所有料号的超长字符串
         df_sap_st['type'] = 'ST'
         df_sap_st['priority'] = 0
         df_sap_st['avail_date'] = now
@@ -181,7 +182,10 @@ def refresh_stock(dbs: str = None):
         })
         df_sap_st['itemno'] = pdv.ITEMNO
 
-        stock_data_total = pd.concat([df_sap_st, mto_vir_st], axis=0, ignore_index=True)
+        if mto_vir_st is not None:
+            stock_data_total = pd.concat([df_sap_st, mto_vir_st], axis=0, ignore_index=True)
+        else:
+            stock_data_total = df_sap_st
         stock_data_total.fillna('', inplace=True)
 
         refresh_result = requests.put(url=f"{THIS_BASE_URL}/api/t_supply/type/ST?db_name={dbs}", json=stock_data_total.to_dict(orient='records'))

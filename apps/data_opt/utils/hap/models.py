@@ -49,17 +49,24 @@ class Model:
         优化点：
         1. 使用 __dict__ 直接访问类属性，避免 dir() 和 getattr() 的开销
         2. 使用预编译的字段映射表，避免运行时计算
+        3. 先转换为列表迭代，避免字典变化导致的迭代错误
         """
         if not hasattr(cls, '_fields_cache'):
-            fields = {}
-            # 遍历类的 __dict__，直接访问属性，避免 dir() 的开销
-            for attr_name, attr in cls.__dict__.items():
-                # 跳过私有属性和方法
-                if attr_name.startswith('_'):
-                    continue
-                if isinstance(attr, Field):
-                    fields[attr_name] = attr
-            cls._fields_cache = fields
+            try:
+                fields = {}
+                # 先转换为列表，避免迭代过程中字典变化
+                items = list(cls.__dict__.items())
+                # 遍历类的 __dict__，直接访问属性，避免 dir() 的开销
+                for attr_name, attr in items:
+                    # 跳过私有属性和方法
+                    if attr_name.startswith('_'):
+                        continue
+                    if isinstance(attr, Field):
+                        fields[attr_name] = attr
+                cls._fields_cache = fields
+            except Exception as e:
+                console_log.warning(f"Failed to initialize fields cache for {cls.__name__}: {e}")
+                return {}
         return cls._fields_cache
     
     @classmethod
@@ -71,14 +78,19 @@ class Model:
         2. 使用 frozenset 优化查找性能
         """
         if not hasattr(cls, '_field_map_cache'):
-            fields = cls._get_fields()
-            # 使用字典推导式一次性构建映射表
-            cls._field_map_cache = {
-                attr_name: field.field_name 
-                for attr_name, field in fields.items()
-            }
-            # 预编译 frozenset 用于快速查找
-            cls._field_map_keys = frozenset(cls._field_map_cache.keys())
+            try:
+                fields = cls._get_fields()
+                # 使用字典推导式一次性构建映射表
+                cls._field_map_cache = {
+                    attr_name: field.field_name 
+                    for attr_name, field in fields.items()
+                }
+                # 预编译 frozenset 用于快速查找
+                cls._field_map_keys = frozenset(cls._field_map_cache.keys())
+            except Exception as e:
+                # 如果初始化失败，返回空字典
+                console_log.warning(f"Failed to initialize field map for {cls.__name__}: {e}")
+                return {}
         return cls._field_map_cache
     
     @classmethod
