@@ -3,6 +3,7 @@
 import requests, uuid, asyncio#, logging#, os, atexit
 import pandas as pd
 from datetime import datetime
+from typing import List
 
 from fastapi import status
 from dateutil.relativedelta import relativedelta
@@ -19,8 +20,6 @@ from .._base import (
 #################################################################################
 # ⬇️对象及项目参数
 #################################################################################
-hap_conn = None
-
 erp = CACHE_JSON.get("erp", {})
 sap_url1 = erp.get("base_url", "") + '/zrestful_test2?sap-client=800'  # 库存
 sap_url2 = erp.get("base_url", "") + '/zrestful_plan?sap-client=' + erp.get("sap-client")  # 计划
@@ -93,86 +92,66 @@ def refresh_stock(dbs: str = None):
     刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据
     db: 对哪些账套生效，多个账套用逗号分隔
     """
+    def get_sap_stock_data():
+        """
+        从SAP系统获取1600厂全部库存数据
+        """
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        try:
+            sap_stock_response = sap_session.get(url=f"{sap_url1}", headers={'interface': 'stock', 'werks': werks})
+            sap_st_data = sap_stock_response.json().get('data', [])
+            df_sap_st = pd.DataFrame(sap_st_data)
+            df_sap_st = df_sap_st.astype({
+                'werks': 'str',
+                'matnr': 'str',
+                'lgort': 'str',
+                'labst': 'int32',
+                'labst2': 'int32',
+                'charg': 'str'
+            })
+            df_sap_st['avail_qty'] = df_sap_st['labst'] + df_sap_st['labst2']
+            df_sap_st['supplyno'] = df_sap_st['matnr'] + '-' + df_sap_st['werks'] # 注意不要用f string，否则supplyno会变成所有料号的超长字符串
+            df_sap_st['type'] = 'ST'
+            df_sap_st['priority'] = 0
+            df_sap_st['avail_date'] = now
+            df_sap_st['dt_req'] = now
+            df_sap_st['status'] = 'NEW'
+            df_sap_st['category'] = ''
+            df_sap_st['create_date'] = now
+            df_sap_st = (df_sap_st
+                            .groupby(['supplyno'], as_index=False)
+                            .agg({
+                                'matnr': 'first',
+                                'avail_qty': 'sum',
+                                'type': 'first',
+                                'avail_date': 'first',
+                                'dt_req': 'first',
+                                'priority': 'first',
+                                'status': 'first',
+                                'category': 'first',
+                                'create_date': 'first',
+                            })) 
+            df_sap_st = df_sap_st.rename(columns={
+                'matnr': 'materialno',
+            })
+            df_sap_st['itemno'] = pdv.ITEMNO
+        except Exception as e:
+            filelog_error.error(f"🚫 获取SAP库存失败: {str(e)}")
+            df_sap_st = None
+        return df_sap_st
+
     filelog_normal.info("⏰ 开始执行刷新库存任务")
     dbs = dbs or MYAPS_DB_SET
-    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    mo_complete_data = requests.get(url=f"{THIS_BASE_URL}/api/v_supply_complete?db_name=hdtest").json().get('data')
-    mto_vir_st = None
-    if mo_complete_data:
-        df_mo_complete = pd.DataFrame(mo_complete_data)
-        mto_vir_st = (df_mo_complete[df_mo_complete['category'] == 'MTO']
-                [['materialno', 'vendorno', 'finalopqty', 'category', 'avail_date']]
-                .groupby('vendorno', as_index=False)
-                .agg({
-                    'finalopqty': 'sum',
-                    'materialno': 'first',
-                    'category': 'first',
-                    'avail_date': 'first',
-                }))
-        mto_vir_st['supplyno'] = mto_vir_st['materialno'] + '-' + mto_vir_st['vendorno']
-        mto_vir_st['type'] = 'ST'
-        mto_vir_st['priority'] = 0
-        mto_vir_st['status'] = 'NEW'
-        mto_vir_st['dt_req'] = mto_vir_st['avail_date']
-        mto_vir_st['create_date'] = now
-        mto_vir_st['itemno'] = pdv.ITEMNO
-        mto_vir_st.rename(columns={'finalopqty': 'avail_qty'}, inplace=True)
+    mto_vir_st = ApsStaticFunctions.mto_workreport_to_virtual_stock()
+    df_sap_st = get_sap_stock_data()
 
-    try:
-        sap_stock_response = sap_session.get(url=f"{sap_url1}", headers={'interface': 'stock', 'werks': werks})
-        sap_st_data = sap_stock_response.json().get('data', [])
-        df_sap_st = pd.DataFrame(sap_st_data)
-        df_sap_st = df_sap_st.astype({
-            'werks': 'str',
-            'matnr': 'str',
-            'lgort': 'str',
-            'labst': 'int32',
-            'labst2': 'int32',
-            'charg': 'str'
-        })
-        df_sap_st['avail_qty'] = df_sap_st['labst'] + df_sap_st['labst2']
-        df_sap_st['supplyno'] = df_sap_st['matnr'] + '-' + df_sap_st['werks'] # 注意不要用f string，否则supplyno会变成所有料号的超长字符串
-        df_sap_st['type'] = 'ST'
-        df_sap_st['priority'] = 0
-        df_sap_st['avail_date'] = now
-        df_sap_st['dt_req'] = now
-        df_sap_st['status'] = 'NEW'
-        df_sap_st['category'] = ''
-        df_sap_st['create_date'] = now
-        df_sap_st = (df_sap_st
-                        .groupby(['supplyno'], as_index=False)
-                        .agg({
-                            'matnr': 'first',
-                            'avail_qty': 'sum',
-                            'type': 'first',
-                            'avail_date': 'first',
-                            'dt_req': 'first',
-                            'priority': 'first',
-                            'status': 'first',
-                            'category': 'first',
-                            'create_date': 'first',
-                        })) 
-        df_sap_st = df_sap_st.rename(columns={
-            'matnr': 'materialno',
-        })
-        df_sap_st['itemno'] = pdv.ITEMNO
-
-        if mto_vir_st is not None:
-            stock_data_total = pd.concat([df_sap_st, mto_vir_st], axis=0, ignore_index=True)
-        else:
-            stock_data_total = df_sap_st
-        stock_data_total.fillna('', inplace=True)
-
-        refresh_result = requests.put(url=f"{THIS_BASE_URL}/api/t_supply/type/ST?db_name={dbs}", json=stock_data_total.to_dict(orient='records'))
-        if refresh_result.json()['success']:
-            filelog_normal.info(f"✅ 刷新库存任务执行完成，账套：{dbs}")
-        else:
-            filelog_error.error(f"🚫 刷新库存任务执行失败: {refresh_result.json()['message']}")
-        sap_stock_response = standard_response(message=f"刷新库存任务执行完成，账套：{dbs}")
-    except Exception as e:
-        filelog_error.error(f"🚫 刷新库存任务执行失败: {str(e)}")
-        sap_stock_response = standard_response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, success=0, message=f"刷新库存任务执行失败: {str(e)}")
-    return sap_stock_response
+    if mto_vir_st is not None:
+        stock_data_total = pd.concat([df_sap_st, mto_vir_st], axis=0, ignore_index=True)
+    else:
+        stock_data_total = df_sap_st
+    stock_data_total.fillna('', inplace=True)
+    ApsStaticFunctions.refresh_stock(stock_data_total.to_dict(orient='records'), dbs)
+    console_log.info(f"✅ 刷新库存任务执行完成")
 
 
 def push_pr(period: int = 30, groupdates: List[str] | str = None):
@@ -196,76 +175,43 @@ def push_pr(period: int = 30, groupdates: List[str] | str = None):
         filelog_error.error(f"推送要货计划到SRM失败：\n{response.json()}")
 
 
-#################################################################################
-# ⬇️定时任务设置
-#################################################################################
-
-@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute())
-def refresh_stock_task():
-    console_log.info(f"⏰ 开始执行刷新库存任务")
-    refresh_stock()
-    console_log.info(f"✅ 刷新库存任务执行完成")
-
-
-@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2))
-def confirm_workreport():
-    """
-    确认报工记录
-    """
-    filelog_normal.info("⏰ 开始执行确认报工记录任务")
-    ApsStaticFunctions.confirm_workreport()
-    console_log.info(f"✅ 确认报工记录任务执行完成")
-
-
-
-@cron_task(hour=23, minute=50)
-# @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23", minute="0,5,10,15,20,25,30,35,40,45,50,55")
-# @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23", minute="0,10,20,30,40,50")
 def push_weekpr_to_srm():
-    # 推送周要货计划到SRM
-    # pr_data = ApsStaticFunctions.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=30, field_map=srm_field_map)
-    # timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    # for item in pr_data:
-    #     item["plant"] = "1000"
-    #     item["bu_code"] = werks
-    #     item["version"] = timestamp
-    # filelog_normal.info(f"推送周要货计划到SRM：\n{pr_data}")
-    # response = requests.post(
-    #     url=f"{srm_url}/jbl/service/execute/SRM_RECEIVE_PUSHED_DEMAND_PLAN_SERVICE",
-    #     headers=srm_headers, json={"demand_plan": pr_data})
-    # if response.json().get("body", {}).get("status", "").lower() == "success":
-    #     filelog_normal.info(f"推送周要货计划到SRM：\n{pr_data}")
-    # else:
-    #     filelog_error.error(f"推送周要货计划到SRM失败：\n{response.json()}")
     console_log.info(f"⏰ 开始执行推送周要货计划到SRM任务")
     push_pr(period=30)
+    console_log.info(f"✅ 推送周要货计划到SRM任务执行完成")
 
 
-
-@cron_task(day=1, hour=0, minute=5)
-def push_seasonpr_to_srm():
-    # 每月初推送季度要货计划到SRM
-    # 生成下三个月的月底日期列表
-    console_log.info(f"⏰ 开始执行推送季度要货计划到SRM任务")
+def push_monthpr_to_srm():
+    console_log.info(f"⏰ 开始执行推送月度要货计划到SRM任务")
     date_list = [
         (datetime.now().replace(day=1) + relativedelta(months=i + 1) - relativedelta(days=1)).strftime('%Y-%m-%d')
         for i in range(3)
     ]
     push_pr(period=90, groupdates=date_list)
-    # pr_data = ApsStaticFunctions.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=90, groupdates=','.join(date_list), field_map=srm_field_map)
-    # timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    # for item in pr_data:
-    #     item["plant"] = "1000"
-    #     item["bu_code"] = werks
-    #     item["version"] = timestamp
-    # response = requests.post(
-    #     url=f"{srm_url}/jbl/service/execute/SRM_RECEIVE_PUSHED_DEMAND_PLAN_SERVICE",
-    #     headers=srm_headers, json={"demand_plan": pr_data})
-    # if response.json().get("body", {}).get("status", "").lower() == "success":
-    #     filelog_normal.info(f"推送季度要货计划到SRM：\n{pr_data}")
-    # else:
-    #     filelog_error.error(f"推送季度要货计划到SRM失败：\n{response.json()}  ")
+    console_log.info(f"✅ 推送月度要货计划到SRM任务执行完成")
+#################################################################################
+# ⬇️定时任务设置
+#################################################################################
 
+@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute())
+def task_refresh_stock():
+    refresh_stock()
+
+
+@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2))
+def task_confirm_workreport():
+    ApsStaticFunctions.confirm_workreport()
+
+
+@cron_task(hour=23, minute=50)
+# @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23", minute="0,5,10,15,20,25,30,35,40,45,50,55")
+def task_push_weekpr_to_srm():
+    push_weekpr_to_srm()
+
+
+@cron_task(day=1, hour=0, minute=5)
+def task_push_seasonpr_to_srm():
+    push_monthpr_to_srm()
 
 
 #################################################################################

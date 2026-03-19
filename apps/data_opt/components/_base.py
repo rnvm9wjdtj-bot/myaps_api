@@ -7,7 +7,7 @@ import pandas as pd
 from datetime import date, datetime
 from pydantic import BaseModel as PydanticModel
 
-from config.settings import THIS_BASE_URL, MYAPS_MAIN_DB
+from config.settings import THIS_BASE_URL, MYAPS_MAIN_DB, MYAPS_DB_SET
 from apps.data_opt.utils.common import get_session, convert_timeunit, clean_value
 from apps.data_opt.utils.data_processor import DataProcessor
 from apps.io_api.schemas import (
@@ -60,15 +60,56 @@ class BaseConnection(ABC):
 class ApsStaticFunctions:
 
     @staticmethod
-    def confirm_workreport():
+    def mto_workreport_to_virtual_stock(db:str=MYAPS_MAIN_DB):
+        """
+        将报工数据 转化为 虚拟库存 数据，只处理MTO报工
+        🅰 db: 账套名称，默认MYAPS_MAIN_DB
+        """
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        mo_complete_data = SESSION.get(url=f"{THIS_BASE_URL}/api/v_supply_complete?db_name={db}").json().get('data')
+        df_mto_vir_st = None
+        if mo_complete_data:
+            df_mo_complete = pd.DataFrame(mo_complete_data)
+            df_mto_vir_st = (df_mo_complete[df_mo_complete['category'] == 'MTO']
+                    [['materialno', 'vendorno', 'finalopqty', 'category', 'avail_date']]
+                    .groupby('vendorno', as_index=False)
+                    .agg({
+                        'finalopqty': 'sum',
+                        'materialno': 'first',
+                        'category': 'first',
+                        'avail_date': 'first',
+                    }))
+            df_mto_vir_st['supplyno'] = df_mto_vir_st['materialno'] + '-' + df_mto_vir_st['vendorno']
+            df_mto_vir_st['type'] = 'ST'
+            df_mto_vir_st['priority'] = 0
+            df_mto_vir_st['status'] = 'NEW'
+            df_mto_vir_st['dt_req'] = df_mto_vir_st['avail_date']
+            df_mto_vir_st['create_date'] = now
+            df_mto_vir_st['itemno'] = pdv.ITEMNO
+            df_mto_vir_st.rename(columns={'finalopqty': 'avail_qty'}, inplace=True)
+        return df_mto_vir_st
+
+
+    @staticmethod
+    def refresh_stock(stock_data:List[Dict[str, Any]], dbs:str=MYAPS_DB_SET):
+        refresh_result = SESSION.put(url=f"{THIS_BASE_URL}/api/t_supply/type/ST?db_name={dbs}", json=stock_data)
+        if refresh_result.json()['success']:
+            filelog_normal.info(f"✅ 刷新库存任务执行完成，账套：{dbs}")
+        else:
+            filelog_error.error(f"🚫 刷新库存任务执行失败: {refresh_result.json()['message']}")
+
+
+    @staticmethod
+    def confirm_workreport(db_name:str=MYAPS_MAIN_DB):
         """
         确认 工作报工 数据
         🅰 workreport_data: 工作报工数据
         🅰 db_name: 账套名称，默认MYAPS_MAIN_DB
         """
-        db_name = MYAPS_MAIN_DB
+        filelog_normal.info("⏰ 开始执行确认报工记录任务")
         response = SESSION.patch(f"{THIS_BASE_URL}/api/t_confirm?db_name={db_name}")
         response.raise_for_status()
+        console_log.info(f"✅ 确认报工记录任务执行完成")
         return response.json()
 
 

@@ -103,21 +103,21 @@ def push_pr():
 #################################################################################
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute())
-def refresh_stock_task(*args, **kwargs):
+def task_refresh_stock(*args, **kwargs):
     console_log.info("⏰ 开始执行刷新库存定时任务")
     stock = refresh_stock()
     console_log.info("⏰ 刷新库存定时任务执行完成")
 
 
 # @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1))
-def push_pr_task(*args, **kwargs):
+def task_push_pr(*args, **kwargs):
     console_log.info("⏰ 开始执行推送请购单定时任务")
     pr = push_pr()
     console_log.info("⏰ 推送请购单定时任务执行完成")
 
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2))
-def confirm_workreport():
+def task_confirm_workreport():
     """
     确认报工记录
     """
