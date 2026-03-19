@@ -66,40 +66,20 @@ class ApsBaseAction(ABC):
     @classmethod
     @abstractmethod
     def push_rs(cls, supplymo_detaildata: Dict, *args, **kwargs):
-        """
-        调用存储过程将demand type由DM变更为RS时自动调用
-        """
         pass
 
 
     @classmethod
-    def _get_supplymo_detaildata(cls, supplyno: str):
+    def confirm_workreport(cls):
         """
-        获取工单计划单详情
-        Args:
-            supplyno: 工单号
-        Returns:
-            工单计划单详情
+        确认 工作报工 数据
+        🅰 workreport_data: 工作报工数据
+        🅰 db_name: 账套名称，默认cls.main_db
         """
-        supply_response = cls._session.get(f"{cls.this_base_url}/api/v_supply_mo/{supplyno}?db_name={cls.main_db}")
-        supply_response_json = supply_response.json()
-        supplymo_detaildata = supply_response_json['data'][0]
-        return supplymo_detaildata
-
-    
-    @classmethod
-    def _get_demand_datalist(cls, demandno: str) -> List[Dict]:
-        """
-        获取工单原料需求
-        Args:
-            demandno: 需求编号，根据 APS pegging 算法，也即供应号
-        Returns:
-            工单原料需求详情
-        """
-        demand_response = cls._session.get(f"{cls.this_base_url}/api/v_demand/{demandno}?db_name={cls.main_db}")
-        demand_response_json = demand_response.json()
-        demand_detaildata = demand_response_json['data']
-        return demand_detaildata
+        db_name = cls.main_db
+        response = cls._session.patch(f"{cls.this_base_url}/api/t_confirm?db_name={db_name}")
+        response.raise_for_status()
+        return response.json()
 
 
     @classmethod
@@ -301,6 +281,36 @@ class ApsBaseAction(ABC):
 
 
     @classmethod
+    def _get_supplymo_detaildata(cls, supplyno: str):
+        """
+        获取工单计划单详情
+        Args:
+            supplyno: 工单号
+        Returns:
+            工单计划单详情
+        """
+        supply_response = cls._session.get(f"{cls.this_base_url}/api/v_supply_mo/{supplyno}?db_name={cls.main_db}")
+        supply_response_json = supply_response.json()
+        supplymo_detaildata = supply_response_json['data'][0]
+        return supplymo_detaildata
+
+    
+    @classmethod
+    def _get_demand_datalist(cls, demandno: str) -> List[Dict]:
+        """
+        获取工单原料需求
+        Args:
+            demandno: 需求编号，根据 APS pegging 算法，也即供应号
+        Returns:
+            工单原料需求详情
+        """
+        demand_response = cls._session.get(f"{cls.this_base_url}/api/v_demand/{demandno}?db_name={cls.main_db}")
+        demand_response_json = demand_response.json()
+        demand_detaildata = demand_response_json['data']
+        return demand_detaildata
+
+
+    @classmethod
     def get_dategrouped_pr(cls, db_name: str=None, period: int|str=30, groupdates: Optional[str]=None, field_map: dict=None):
         """
         从数据库获取按日期分组的计划任务数据
@@ -338,19 +348,6 @@ class ApsBaseAction(ABC):
         return result
 
 
-    @classmethod
-    def confirm_workreport(cls):
-        """
-        确认 工作报工 数据
-        🅰 workreport_data: 工作报工数据
-        🅰 db_name: 账套名称，默认cls.main_db
-        """
-        db_name = cls.main_db
-        response = cls._session.patch(f"{cls.this_base_url}/api/t_confirm?db_name={db_name}")
-        response.raise_for_status()
-        return response.json()
-
-
     # @classmethod
     # @abstractmethod
     # def when_mo_close(cls, mo_data: dict, *args, **kwargs):
@@ -361,44 +358,44 @@ class ApsBaseAction(ABC):
     #     pass
 
 ######### HAP MODEL #########
-from apps.data_opt.utils.hap import Model as HapModel, StrField, NumField, RelationField, SubtableField, ChoiceField
+# from apps.data_opt.utils.hap import Model as HapModel, StrField, NumField, RelationField, SubtableField, ChoiceField
 
 
-class Material(HapModel):   
-    materialno = StrField(pk=True)
-    description = StrField()
-    size = StrField()
-    plant = StrField()
-    planner = StrField()
-    fifo = NumField()
-    leadday = NumField()
-    expday = NumField()
-    grday = NumField()
-    abc = StrField()
-    unit = StrField()
-    price = NumField()
-    groupno = StrField()
-    type_ = StrField(field_name="type")
-    phantom = StrField()
-    phantommin = NumField()
-    firmday = NumField()
-    daygap = NumField()
-    candelay = StrField()
-    lotsize = StrField()
-    lotfix = NumField()
-    lotmin = NumField()
-    lotmax = NumField()
-    lotround = NumField()
-    lotss = NumField()
-    lotpoint = NumField()
-    lottop = NumField()
-    planitem = StrField()
-    preday = NumField()
-    subday = NumField()
-    free1 = StrField()
-    free2 = StrField()
-    free3 = StrField()
-    memo = StrField()
+# class Material(HapModel):   
+#     materialno = StrField(pk=True)
+#     description = StrField()
+#     size = StrField()
+#     plant = StrField()
+#     planner = StrField()
+#     fifo = NumField()
+#     leadday = NumField()
+#     expday = NumField()
+#     grday = NumField()
+#     abc = StrField()
+#     unit = StrField()
+#     price = NumField()
+#     groupno = StrField()
+#     type_ = StrField(field_name="type")
+#     phantom = StrField()
+#     phantommin = NumField()
+#     firmday = NumField()
+#     daygap = NumField()
+#     candelay = StrField()
+#     lotsize = StrField()
+#     lotfix = NumField()
+#     lotmin = NumField()
+#     lotmax = NumField()
+#     lotround = NumField()
+#     lotss = NumField()
+#     lotpoint = NumField()
+#     lottop = NumField()
+#     planitem = StrField()
+#     preday = NumField()
+#     subday = NumField()
+#     free1 = StrField()
+#     free2 = StrField()
+#     free3 = StrField()
+#     memo = StrField()
 
-    class Meta:
-        table_name = "t_material"
+#     class Meta:
+#         table_name = "t_material"

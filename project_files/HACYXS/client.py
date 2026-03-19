@@ -20,7 +20,7 @@ from .._base import (
 # 导入统一日志配置（用于直接使用）
 from globalobjects import logger as log_config
 
-from apps.data_opt.components import yonyou_tplus
+from apps.data_opt.components.yonyou_tplus import TplusConnection, BaseConnection
 
 
 # 将 APS 原生的 supplyno 、demandno 等字段，直接推送到 T+ 中，作为单据编号
@@ -34,7 +34,7 @@ session = get_session()
 hap_conn = None
 
 
-tplus_conn = yonyou_tplus.TplusConnection()
+tplus_conn = TplusConnection()
 tplus_conn.auth()
 
 

@@ -9,6 +9,7 @@ from dateutil.relativedelta import relativedelta
 
 
 from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
+from apps.data_opt.components._base import BaseConnection
 from .._base import (
     get_scheduler_minute,
     ApsBaseAction, filelog_error, filelog_normal, console_log, standard_response, get_session,
@@ -20,11 +21,6 @@ from .._base import (
 # ⬇️对象及项目参数
 #################################################################################
 hap_conn = None
-
- 
-#################################################################################
-# ⬇️项目可复用逻辑
-#################################################################################
 
 erp = CACHE_JSON.get("erp", {})
 sap_url1 = erp.get("base_url", "") + '/zrestful_test2?sap-client=800'  # 库存
@@ -41,6 +37,24 @@ mes = CACHE_JSON.get("mes", {})
 mes_url = mes.get("base_url", "")
 
 
+srm = CACHE_JSON.get("srm", {})
+srm_url = srm.get("base_url", "")
+srm_headers = {
+    "Authorization": srm.get("Authorization", ""),
+    "Content-Type": "application/json",
+}
+srm_field_map = {
+    "materialno": "material_no", "description": "description", "size": "size",
+    "type": "type", "abc": "abc", "planner": "planner", "datestr": "datestr",
+    "物料来源": "name", "首期库存": "stock_qty", "累计盈余": "cumulative_balance",
+    "期间合计需求": "total_demand", "期间合计供应": "total_supply", "期间盈余": "daily_balance",
+    "期间": "original_datestr", "期间要货数": "current_order_quantity",
+    "期初盈余": "initial_surplus", "期末盈余": "last_surplus", "要求交期": "datestr",
+}
+
+#################################################################################
+# ⬇️项目可复用逻辑
+#################################################################################
 
 def sap_post(url: str, session: requests.Session, interface_id: str, data: dict):
     """
@@ -75,44 +89,6 @@ def sap_post(url: str, session: requests.Session, interface_id: str, data: dict)
     }
 
 
-# async def refresh_workreport(supplyno: str):
-#     """
-#     刷新单条报工数据
-#     """
-#     response = requests.get(f"{mes_url}/business/productionDetail/detailApsVo?orderNos={supplyno}")
-#     response.raise_for_status()
-#     response_json = response.json()
-#     workreport_data = response_json['data']
-
-#     await db_delete(db_names=MYAPS_MAIN_DB, model_or_tablename='t_confirm', filter_string=f"`SupplyNo` = '{supplyno}'")
-#     if not workreport_data:
-#         return
-#     [d.pop('workcenter') for d in workreport_data]
-#     await db_bupsert(db_names=MYAPS_MAIN_DB, model_or_tablename='t_confirm', data_list=workreport_data)
-#     return workreport_data
-
-#################################################################################
-# ⬇️定时任务设置
-#################################################################################
-
-# @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1))
-# async def refresh_all_mo_workreport():
-#     """
-#     刷新所有报工数据
-#     """
-#     filelog_normal.info("⏰ 开始执行刷新所有报工数据任务")
-#     db = MYAPS_MAIN_DB
-#     query_response = await db_query(db_name=db, model_or_tablename='v_supply_mo', filter_string="`Status` in ('E2A','REL','CNF')")
-#     if not query_response['success']:
-#         return
-#     supplynos_list = [item['supplyno'] for item in query_response['data']]
-#     for supplyno in supplynos_list:
-#         await refresh_workreport(supplyno)
-#         filelog_normal.info(f"✅ 已刷新报工数据: {supplyno}")
-#     return
-
-
-@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute())
 def refresh_stock(dbs: str = None):
     """
     刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据
@@ -200,6 +176,38 @@ def refresh_stock(dbs: str = None):
     return sap_stock_response
 
 
+def push_pr(period: int = 30, groupdates: List[str] | str = None):
+    if groupdates:
+        if isinstance(groupdates, list):
+            groupdates = ','.join(groupdates)
+
+    pr_data = BaseConnection.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=period, field_map=srm_field_map, groupdates=groupdates)
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    for item in pr_data:
+        item["plant"] = "1000"
+        item["bu_code"] = werks
+        item["version"] = timestamp
+    filelog_normal.info(f"推送要货计划到SRM：\n{pr_data}")
+    response = requests.post(
+        url=f"{srm_url}/jbl/service/execute/SRM_RECEIVE_PUSHED_DEMAND_PLAN_SERVICE",
+        headers=srm_headers, json={"demand_plan": pr_data})
+    if response.json().get("body", {}).get("status", "").lower() == "success":
+        filelog_normal.info(f"推送要货计划到SRM成功")
+    else:
+        filelog_error.error(f"推送要货计划到SRM失败：\n{response.json()}")
+
+
+#################################################################################
+# ⬇️定时任务设置
+#################################################################################
+
+@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute())
+def refresh_stock_task(dbs: str = None):
+    console_log.info(f"⏰ 开始执行刷新库存任务")
+    refresh_stock()
+    console_log.info(f"✅ 刷新库存任务执行完成")
+
+
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2))
 def confirm_workreport():
     """
@@ -207,42 +215,31 @@ def confirm_workreport():
     """
     filelog_normal.info("⏰ 开始执行确认报工记录任务")
     ApsAction.confirm_workreport()
+    console_log.info(f"✅ 确认报工记录任务执行完成")
 
 
-srm = CACHE_JSON.get("srm", {})
-srm_url = srm.get("base_url", "")
-srm_headers = {
-    "Authorization": srm.get("Authorization", ""),
-    "Content-Type": "application/json",
-}
-srm_field_map = {
-    "materialno": "material_no", "description": "description", "size": "size",
-    "type": "type", "abc": "abc", "planner": "planner", "datestr": "datestr",
-    "物料来源": "name", "首期库存": "stock_qty", "累计盈余": "cumulative_balance",
-    "期间合计需求": "total_demand", "期间合计供应": "total_supply", "期间盈余": "daily_balance",
-    "期间": "original_datestr", "期间要货数": "current_order_quantity",
-    "期初盈余": "initial_surplus", "期末盈余": "last_surplus", "要求交期": "datestr",
-}
 
 @cron_task(hour=23, minute=50)
 # @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23", minute="0,5,10,15,20,25,30,35,40,45,50,55")
 # @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23", minute="0,10,20,30,40,50")
 def push_weekpr_to_srm():
     # 推送周要货计划到SRM
-    pr_data = ApsBaseAction.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=30, field_map=srm_field_map)
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    for item in pr_data:
-        item["plant"] = "1000"
-        item["bu_code"] = werks
-        item["version"] = timestamp
-    filelog_normal.info(f"推送周要货计划到SRM：\n{pr_data}")
-    response = requests.post(
-        url=f"{srm_url}/jbl/service/execute/SRM_RECEIVE_PUSHED_DEMAND_PLAN_SERVICE",
-        headers=srm_headers, json={"demand_plan": pr_data})
-    if response.json().get("body", {}).get("status", "").lower() == "success":
-        filelog_normal.info(f"推送周要货计划到SRM：\n{pr_data}")
-    else:
-        filelog_error.error(f"推送周要货计划到SRM失败：\n{response.json()}")
+    # pr_data = BaseConnection.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=30, field_map=srm_field_map)
+    # timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    # for item in pr_data:
+    #     item["plant"] = "1000"
+    #     item["bu_code"] = werks
+    #     item["version"] = timestamp
+    # filelog_normal.info(f"推送周要货计划到SRM：\n{pr_data}")
+    # response = requests.post(
+    #     url=f"{srm_url}/jbl/service/execute/SRM_RECEIVE_PUSHED_DEMAND_PLAN_SERVICE",
+    #     headers=srm_headers, json={"demand_plan": pr_data})
+    # if response.json().get("body", {}).get("status", "").lower() == "success":
+    #     filelog_normal.info(f"推送周要货计划到SRM：\n{pr_data}")
+    # else:
+    #     filelog_error.error(f"推送周要货计划到SRM失败：\n{response.json()}")
+    console_log.info(f"⏰ 开始执行推送周要货计划到SRM任务")
+    push_pr(period=30)
 
 
 
@@ -250,23 +247,25 @@ def push_weekpr_to_srm():
 def push_seasonpr_to_srm():
     # 每月初推送季度要货计划到SRM
     # 生成下三个月的月底日期列表
+    console_log.info(f"⏰ 开始执行推送季度要货计划到SRM任务")
     date_list = [
         (datetime.now().replace(day=1) + relativedelta(months=i + 1) - relativedelta(days=1)).strftime('%Y-%m-%d')
         for i in range(3)
     ]
-    pr_data = ApsBaseAction.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=90, groupdates=','.join(date_list), field_map=srm_field_map)
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    for item in pr_data:
-        item["plant"] = "1000"
-        item["bu_code"] = werks
-        item["version"] = timestamp
-    response = requests.post(
-        url=f"{srm_url}/jbl/service/execute/SRM_RECEIVE_PUSHED_DEMAND_PLAN_SERVICE",
-        headers=srm_headers, json={"demand_plan": pr_data})
-    if response.json().get("body", {}).get("status", "").lower() == "success":
-        filelog_normal.info(f"推送季度要货计划到SRM：\n{pr_data}")
-    else:
-        filelog_error.error(f"推送季度要货计划到SRM失败：\n{response.json()}  ")
+    push_pr(period=90, groupdates=date_list)
+    # pr_data = BaseConnection.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=90, groupdates=','.join(date_list), field_map=srm_field_map)
+    # timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    # for item in pr_data:
+    #     item["plant"] = "1000"
+    #     item["bu_code"] = werks
+    #     item["version"] = timestamp
+    # response = requests.post(
+    #     url=f"{srm_url}/jbl/service/execute/SRM_RECEIVE_PUSHED_DEMAND_PLAN_SERVICE",
+    #     headers=srm_headers, json={"demand_plan": pr_data})
+    # if response.json().get("body", {}).get("status", "").lower() == "success":
+    #     filelog_normal.info(f"推送季度要货计划到SRM：\n{pr_data}")
+    # else:
+    #     filelog_error.error(f"推送季度要货计划到SRM失败：\n{response.json()}  ")
 
 
 
