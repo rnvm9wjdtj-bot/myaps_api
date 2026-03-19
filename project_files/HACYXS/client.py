@@ -12,7 +12,7 @@ from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULE
 from .._base import (
     MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, get_scheduler_minute,
     cron_task, filelog_normal, filelog_error, CACHE_JSON,
-    ApsBaseAction, DataProcessor,
+    DataProcessor,
     filelog_normal, console_log, standard_response, get_session, 
     db_delete, db_bupsert, db_query
 )
@@ -22,9 +22,6 @@ from globalobjects import logger as log_config
 
 from apps.data_opt.components.yonyou_tplus import TplusConnection, BaseConnection
 
-
-# 将 APS 原生的 supplyno 、demandno 等字段，直接推送到 T+ 中，作为单据编号
-_USE_NATIVENO = False
 
 #################################################################################
 # ⬇️ 项目对象及参数
@@ -100,7 +97,7 @@ def push_pr():
     pr_query = db_query(db_name=MYAPS_MAIN_DB, model_or_tablename='t_supply', filter_string=f"`Type`='PR' AND `Status` IN ('NEW','CRE')")
     if pr_query['success']:
         pr_list = pr_query['data']
-        tplus_conn.push_into_target(target_name='pr', push_data=pr_list, use_nativeno=_USE_NATIVENO)
+        tplus_conn.push_into_target(target_name='pr', push_data=pr_list)
 #################################################################################
 # ⬇️ 定时任务
 #################################################################################
@@ -132,7 +129,7 @@ def confirm_workreport():
 #################################################################################
 
 
-class ApsAction(ApsBaseAction):
+class ApsAction():
 
     @classmethod
     def click_release_button(cls, supplyno: str):
@@ -141,12 +138,12 @@ class ApsAction(ApsBaseAction):
         🅰 supplyno: PL计划单编号
         """
         # 材料需求
-        demand_list = ApsBaseAction._get_demand_datalist(demandno=supplyno)
+        demand_list = BaseConnection._get_demand_datalist(demandno=supplyno)
         # PL及工序详情
-        supplymo_detaildata = ApsBaseAction._get_supplymo_detaildata(supplyno=supplyno)
+        supplymo_detaildata = BaseConnection._get_supplymo_detaildata(supplyno=supplyno)
         supplymo_detaildata['demand_list'] = demand_list
 
-        mo_push_response = tplus_conn.push_into_target(target_name='mo_single', push_data=supplymo_detaildata, use_nativeno=_USE_NATIVENO)
+        mo_push_response = tplus_conn.push_into_target(target_name='mo_single', push_data=supplymo_detaildata)
         mo_push_response_json = mo_push_response.json()
 
         if str(mo_push_response_json['code']) == '0': # 响应错误码为0，MO 创建成功
@@ -186,12 +183,12 @@ class ApsAction(ApsBaseAction):
         🅰 tplus_mo_entryid: T+ 中 MO 详情记录id
         """
         if isinstance(mdlist_or_supplyno, str):
-            rs_data = ApsBaseAction._get_demand_datalist(demandno=mdlist_or_supplyno)     # 从 APS 查询 RS 领料数据，以工单号  为依据查找
+            rs_data = BaseConnection._get_demand_datalist(demandno=mdlist_or_supplyno)     # 从 APS 查询 RS 领料数据，以工单号  为依据查找
             demandno = mdlist_or_supplyno
         else:
             rs_data = mdlist_or_supplyno
             demandno = rs_data[0]['demandno']
-        rs_push_response = tplus_conn.push_into_target(target_name='rs', push_data=rs_data, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid, mo_material_details_id=mo_material_details_id, use_nativeno=_USE_NATIVENO)
+        rs_push_response = tplus_conn.push_into_target(target_name='rs', push_data=rs_data, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid, mo_material_details_id=mo_material_details_id)
         rs_push_response_json = rs_push_response.json()
         if str(rs_push_response_json['code']) == '0': # 创建成功
             a = cls._rs_push_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))

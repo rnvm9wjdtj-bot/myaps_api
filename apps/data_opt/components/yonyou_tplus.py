@@ -482,7 +482,7 @@ class TplusConnection(BaseConnection):
         self.credential_keys = ("app_key", "app_secret", "access_token", "refresh_token", "org_id", "_auth_at_")
         for key in self.credential_keys:
             setattr(self, key, self.cache_file.get("erp", {}).get(key, ""))
-        super().__init__(config)
+        super().__init__()
 
 
     def auth(self):
@@ -608,6 +608,19 @@ class TplusConnection(BaseConnection):
                 data_list.extend([{v: row.get(k) for k, v in field_map.items()} for row in raw_data])
 
         elif source_name == 'bom':
+            def process_bomdata(bomdata_list: list, field_map: dict):
+                """
+                处理BOM数据，提取产品编码、产品名称、组件编码、组件名称、组件数量
+                """
+                self.config._BOM_CODES = set[str]()
+                processed_data = []
+                for item in bomdata_list:
+                    self.config._BOM_CODES.add(item['Code'])
+                    flat_item = DataProcessor.expand_parent_child_data(item, 'BOMChilds')
+                    for row in flat_item:
+                        processed_data.append({v: row.get(k) for k, v in field_map.items()})
+                return processed_data
+
             params = {
                 "PageIndex": 1,
                 "PageSize": 100,    # 数据量太大，单次不宜太多。官方默认值为20，最大支持500
@@ -626,8 +639,7 @@ class TplusConnection(BaseConnection):
                 if not raw_data:
                     break
                 params["PageIndex"] += 1
-
-                data_list.extend(self._process_bomdata(raw_data, field_map=field_map))
+                data_list.extend(process_bomdata(raw_data, field_map=field_map))
 
         elif source_name == 'route':
             bom_codes = self.config._BOM_CODES
@@ -635,14 +647,24 @@ class TplusConnection(BaseConnection):
             data_list = []
             # 使用线程池并行处理POST请求
             from concurrent.futures import ThreadPoolExecutor, as_completed
-            
+
+            def process_route_data(data: dict, field_map: dict):
+                    """
+                    处理工艺路线数据，提取产品编码、产品名称、详情
+                    """
+                    flat_item = DataProcessor.expand_parent_child_data(data, 'BOMProcessDTOs')
+                    processed_data = []
+                    for row in flat_item:
+                        processed_data.append({v: row.get(k) for k, v in field_map.items()})
+                    return processed_data
+
             def get_route_by_bomcode(bom_code):
                 payload = {
                     "dto": {"code": bom_code}
                 }
                 response = self._post(endpoint=endpoint, data=payload)
                 bom_data = response.json()[0]     # 变量名没错，确实是 bom
-                return self._process_route_data(bom_data, field_map=field_map)
+                return process_route_data(bom_data, field_map=field_map)
             
             # 创建线程池，最大线程数为10
             with ThreadPoolExecutor(max_workers=10) as executor:
@@ -682,46 +704,12 @@ class TplusConnection(BaseConnection):
         return data_list
 
 
-    def _process_route_data(self, data: dict, field_map: dict):
-        """
-        处理工艺路线数据，提取产品编码、产品名称、详情
-        Args:
-            route_data: 原始路由数据列表
-        Returns:
-            处理后的路由数据列表
-        """
-        flat_item = DataProcessor.expand_parent_child_data(data, 'BOMProcessDTOs')
-        processed_data = []
-        for row in flat_item:
-            processed_data.append({v: row.get(k) for k, v in field_map.items()})
-        return processed_data
-
-
-    def _process_bomdata(self, bomdata_list: list, field_map: dict):
-        """
-        处理BOM数据，提取产品编码、产品名称、组件编码、组件名称、组件数量
-        Args:
-            bom_data: 原始BOM数据列表
-        Returns:
-            处理后的BOM数据列表
-        """
-        self.config._BOM_CODES = set[str]()
-        processed_data = []
-        for item in bomdata_list:
-            self.config._BOM_CODES.add(item['Code'])
-            flat_item = DataProcessor.expand_parent_child_data(item, 'BOMChilds')
-            for row in flat_item:
-                processed_data.append({v: row.get(k) for k, v in field_map.items()})
-        return processed_data
-
-
-    def push_into_target(self, target_name: str, push_data: dict | list[dict], use_nativeno: bool = False, **kwargs):
+    def push_into_target(self, target_name: str, push_data: dict | list[dict], **kwargs):
         """
         推送数据到T+
         Args:
             target_name: 目标名称
             push_data: APS数据库查询结果， MO为字典格式， RS、PR为列表格式先合并清洗
-            use_nativeno: 是否使用 APS 原生编号，默认False
         Returns:
 
         """
@@ -761,9 +749,6 @@ class TplusConnection(BaseConnection):
 
         if target_name in ('mo_single', 'rs', 'pr'):
             dto = pydantic_model(**push_data).model_dump()
-            if use_nativeno:
-                nativeno = push_data.get('supplyno') or push_data.get('demandno')
-                dto['Code'] = nativeno
             payload = {"dto": dto}
             response = self._post(endpoint=endpoint, data=payload)
             return response
@@ -773,3 +758,34 @@ class TplusConnection(BaseConnection):
             return response
         else:
             raise ValueError(f"❌ 未知的目标名称: {target_name}")
+
+    
+    def push_mo(self, supplyno: str, auto_push_rs: bool = True):
+        # 材料需求
+        demand_list = BaseConnection._get_demand_datalist(demandno=supplyno)
+        # PL及工序详情
+        supplymo_detaildata = BaseConnection._get_supplymo_detaildata(supplyno=supplyno)
+        supplymo_detaildata['demand_list'] = demand_list
+
+        mo_push_response = self.push_into_target(target_name='mo_single', push_data=supplymo_detaildata)
+        mo_push_response_json = mo_push_response.json()
+
+
+    def push_rs(self, mdlist_or_supplyno: str | list[dict], tplus_mo_id: str, tplus_mo_entryid: str, mo_material_details_id: str):
+        if isinstance(mdlist_or_supplyno, str):
+            rs_data = BaseConnection._get_demand_datalist(demandno=mdlist_or_supplyno)     # 从 APS 查询 RS 领料数据，以工单号  为依据查找
+            demandno = mdlist_or_supplyno
+        else:
+            rs_data = mdlist_or_supplyno
+            demandno = rs_data[0]['demandno']
+        rs_push_response = tplus_conn.push_into_target(target_name='rs', push_data=rs_data, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid, mo_material_details_id=mo_material_details_id)
+        rs_push_response_json = rs_push_response.json()
+        if str(rs_push_response_json['code']) == '0': # 创建成功
+            a = cls._rs_push_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
+        else:
+            filelog_error.error(f"❌ 领料申请推送失败，对应工单：{demandno}，错误信息：{rs_push_response_json['message']}")
+            a = cls._rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+')
+
+
+    def push_pr():
+        pass

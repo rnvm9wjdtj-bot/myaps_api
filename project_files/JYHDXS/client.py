@@ -9,10 +9,9 @@ from dateutil.relativedelta import relativedelta
 
 
 from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
-from apps.data_opt.components._base import BaseConnection
 from .._base import (
     get_scheduler_minute,
-    ApsBaseAction, filelog_error, filelog_normal, console_log, standard_response, get_session,
+    ApsStaticFunctions, filelog_error, filelog_normal, console_log, standard_response, get_session,
     cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, CACHE_JSON, pdv
 )
 
@@ -181,7 +180,7 @@ def push_pr(period: int = 30, groupdates: List[str] | str = None):
         if isinstance(groupdates, list):
             groupdates = ','.join(groupdates)
 
-    pr_data = BaseConnection.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=period, field_map=srm_field_map, groupdates=groupdates)
+    pr_data = ApsStaticFunctions._get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=period, field_map=srm_field_map, groupdates=groupdates)
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     for item in pr_data:
         item["plant"] = "1000"
@@ -202,7 +201,7 @@ def push_pr(period: int = 30, groupdates: List[str] | str = None):
 #################################################################################
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute())
-def refresh_stock_task(dbs: str = None):
+def refresh_stock_task():
     console_log.info(f"⏰ 开始执行刷新库存任务")
     refresh_stock()
     console_log.info(f"✅ 刷新库存任务执行完成")
@@ -214,7 +213,7 @@ def confirm_workreport():
     确认报工记录
     """
     filelog_normal.info("⏰ 开始执行确认报工记录任务")
-    ApsAction.confirm_workreport()
+    ApsStaticFunctions.confirm_workreport()
     console_log.info(f"✅ 确认报工记录任务执行完成")
 
 
@@ -224,7 +223,7 @@ def confirm_workreport():
 # @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23", minute="0,10,20,30,40,50")
 def push_weekpr_to_srm():
     # 推送周要货计划到SRM
-    # pr_data = BaseConnection.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=30, field_map=srm_field_map)
+    # pr_data = ApsStaticFunctions.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=30, field_map=srm_field_map)
     # timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     # for item in pr_data:
     #     item["plant"] = "1000"
@@ -253,7 +252,7 @@ def push_seasonpr_to_srm():
         for i in range(3)
     ]
     push_pr(period=90, groupdates=date_list)
-    # pr_data = BaseConnection.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=90, groupdates=','.join(date_list), field_map=srm_field_map)
+    # pr_data = ApsStaticFunctions.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=90, groupdates=','.join(date_list), field_map=srm_field_map)
     # timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     # for item in pr_data:
     #     item["plant"] = "1000"
@@ -270,39 +269,35 @@ def push_seasonpr_to_srm():
 
 
 #################################################################################
-# ⬇️APS行动
+# ⬇️APS事件
 #################################################################################
 
-class ApsAction(ApsBaseAction):
+def onclick_release_button(supplyno: str):
+    supplymo_detaildata = ApsStaticFunctions._get_supplymo_detaildata(supplyno=supplyno)
+    try:
+        start_datetime: str = supplymo_detaildata['dt_ordstart'].split(" ")[0]
+        end_datetime: str = supplymo_detaildata['dt_ordend'].split(" ")[0]
+        orderwc: list = supplymo_detaildata['orderwc']
 
-    @classmethod
-    def click_release_button(cls, supplyno: str):
-        supplymo_detaildata = cls._get_supplymo_detaildata(supplyno=supplyno)
-        try:
-            start_datetime: str = supplymo_detaildata['dt_ordstart'].split(" ")[0]
-            end_datetime: str = supplymo_detaildata['dt_ordend'].split(" ")[0]
-            orderwc: list = supplymo_detaildata['orderwc']
+        data = {
+            "WERKS": werks,  # 工厂
+            "MATNR": supplymo_detaildata['materialno'],
+            "AUART": "ZP01",  # 订单类型
+            "VERID": "SAP",    # 生产版本
+            "GSTRP": start_datetime,  # 基本开始日期
+            "GLTRP": end_datetime,  # 基本完成日期
+            "GAMNG": supplymo_detaildata['avail_qty'],  # 总订单数量
+            "WEMPF": "SAP",  # 产线代码
+            "BACKUP1": ','.join([i['workcenter'] for i in orderwc])
+        }
 
-            data = {
-                "WERKS": werks,  # 工厂
-                "MATNR": supplymo_detaildata['materialno'],
-                "AUART": "ZP01",  # 订单类型
-                "VERID": "SAP",    # 生产版本
-                "GSTRP": start_datetime,  # 基本开始日期
-                "GLTRP": end_datetime,  # 基本完成日期
-                "GAMNG": supplymo_detaildata['avail_qty'],  # 总订单数量
-                "WEMPF": "SAP",  # 产线代码
-                "BACKUP1": ','.join([i['workcenter'] for i in orderwc])
-            }
-
-            sap_response = sap_post(url=sap_url2, session=sap_session, interface_id="ZPP_PLAN_ORD_CREATE", data=data)
-            sap_response_json = sap_response['response_json']
-            sap_mo_data = sap_response_json['BODY'][0]
-            
-            if sap_mo_data['STATUS'] == 'S':
-                cls._pl_release_success(plno=supplyno, mono=sap_mo_data['AUFNR'], msg=sap_mo_data['MESSAGE'], msg_from='ERP')
-            else:
-                cls._pl_release_failed(plno=supplyno, msg=sap_mo_data['MESSAGE'], msg_from='ERP')
-        except Exception as e:
-            cls._pl_release_failed(plno=supplyno, msg=str(e), msg_from='API')
-
+        sap_response = sap_post(url=sap_url2, session=sap_session, interface_id="ZPP_PLAN_ORD_CREATE", data=data)
+        sap_response_json = sap_response['response_json']
+        sap_mo_data = sap_response_json['BODY'][0]
+        
+        if sap_mo_data['STATUS'] == 'S':
+            ApsStaticFunctions._pl_release_success(plno=supplyno, mono=sap_mo_data['AUFNR'], msg=sap_mo_data['MESSAGE'], msg_from='ERP')
+        else:
+            ApsStaticFunctions._pl_release_failed(plno=supplyno, msg=sap_mo_data['MESSAGE'], msg_from='ERP')
+    except Exception as e:
+        ApsStaticFunctions._pl_release_failed(plno=supplyno, msg=str(e), msg_from='API')
