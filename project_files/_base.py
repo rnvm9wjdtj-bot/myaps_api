@@ -24,7 +24,7 @@ from apps.io_api.utils.db_operation import db_delete, db_bupsert, call_dbprocdur
 from apps.data_opt.utils.scheduler import cron_task
 from apps.data_opt.utils.common import add_basic_auth_requests
 from apps.data_opt.utils.data_processor import DataProcessor
-from apps.data_opt.components._base import BaseConnection, ApsStaticFunctions
+from apps.data_opt.components._base import BaseConnection, ApsHelpers
 
 
 # 配置日志

@@ -15,7 +15,7 @@ from ._base import (
     PydanticModel,
     console_log, filelog_normal, filelog_error,
     DataProcessor, globalconst, CACHE_JSON, pdv,
-    BaseConnection, ApsStaticFunctions, convert_timeunit, clean_value,
+    BaseConnection, ApsHelpers, convert_timeunit, clean_value,
     BaseModel as PydanticModel, model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold, AcceptSupply, AcceptConfirm,
@@ -402,6 +402,7 @@ class TplusConfig:
             "org_id": "",
             "_auth_at_": "2023-12-01 00:00:00"
         }
+    }
     """
     BASE_URL = "https://openapi.chanjet.com"
     TOKEN_EXPIRE_SECONDS = 12 * 3600     # 设token有效期为12hr
@@ -673,9 +674,9 @@ class TplusConnection(BaseConnection):
         endpoint = MoCreateInterface.endpoint
         pydantic_model = TplusCreateMo
         # 材料需求
-        demand_list = ApsStaticFunctions._get_demand_datalist(demandno=supplyno)
+        demand_list = ApsHelpers._get_demand_datalist(demandno=supplyno)
         # PL及工序详情
-        supplymo_detaildata = ApsStaticFunctions._get_supplymo_detaildata(supplyno=supplyno)
+        supplymo_detaildata = ApsHelpers._get_supplymo_detaildata(supplyno=supplyno)
         supplymo_detaildata['demand_list'] = demand_list
         dto = pydantic_model(**supplymo_detaildata).model_dump()
         payload = {"dto": dto}
@@ -699,9 +700,9 @@ class TplusConnection(BaseConnection):
                 _x_b = self.push_rs(mdlist_or_supplyno=demand_list, tplus_mo_data_or_id=tplus_mo_data)
 
             # 调用存储过程更改工单信息，❗一定放在最后一步，否则工单号变更太早，前面若有用原生供应号查询都会失败
-            _x_c = ApsStaticFunctions._pl_release_success(plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
+            _x_c = ApsHelpers._pl_release_success(plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
         else:
-            _x_d = ApsStaticFunctions._pl_release_failed(plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+')
+            _x_d = ApsHelpers._pl_release_failed(plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+')
 
 
     def push_rs(self, mdlist_or_supplyno: str | list[dict], tplus_mo_data_or_id: dict | str | int):
@@ -713,7 +714,7 @@ class TplusConnection(BaseConnection):
         endpoint = RsCreateInterface.endpoint
         pydantic_model = TplusCreateRs
         if isinstance(mdlist_or_supplyno, str):
-            rs_data = ApsStaticFunctions._get_demand_datalist(demandno=mdlist_or_supplyno)     # 查询 指定工单号所需物料
+            rs_data = ApsHelpers._get_demand_datalist(demandno=mdlist_or_supplyno)     # 查询 指定工单号所需物料
             demandno = mdlist_or_supplyno
         else:
             rs_data = mdlist_or_supplyno
@@ -741,10 +742,10 @@ class TplusConnection(BaseConnection):
         response = self._post(endpoint=endpoint, data=payload)
         rs_push_response_json = response.json()
         if str(rs_push_response_json['code']) == '0': # 创建成功
-            ApsStaticFunctions._rs_push_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
+            ApsHelpers._rs_push_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
         else:
             filelog_error.error(f"❌ 领料申请推送失败，对应工单：{demandno}，错误信息：{rs_push_response_json['message']}")
-            ApsStaticFunctions._rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+')
+            ApsHelpers._rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+')
 
 
     def create_pr():

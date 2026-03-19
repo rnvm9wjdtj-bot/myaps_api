@@ -12,7 +12,7 @@ from dateutil.relativedelta import relativedelta
 from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
 from .._base import (
     get_scheduler_minute,
-    ApsStaticFunctions, filelog_error, filelog_normal, console_log, standard_response, get_session,
+    ApsHelpers, filelog_error, filelog_normal, console_log, standard_response, get_session,
     cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, CACHE_JSON, pdv
 )
 
@@ -142,7 +142,7 @@ def refresh_stock(dbs: str = None):
 
     filelog_normal.info("⏰ 开始执行刷新库存任务")
     dbs = dbs or MYAPS_DB_SET
-    mto_vir_st = ApsStaticFunctions.mto_workreport_to_virtual_stock()
+    mto_vir_st = ApsHelpers.mto_workreport_to_virtual_stock()
     df_sap_st = get_sap_stock_data()
 
     if mto_vir_st is not None:
@@ -150,7 +150,7 @@ def refresh_stock(dbs: str = None):
     else:
         stock_data_total = df_sap_st
     stock_data_total.fillna('', inplace=True)
-    ApsStaticFunctions.refresh_stock(stock_data_total.to_dict(orient='records'), dbs)
+    ApsHelpers.refresh_stock(stock_data_total.to_dict(orient='records'), dbs)
     console_log.info(f"✅ 刷新库存任务执行完成")
 
 
@@ -159,7 +159,7 @@ def push_pr(period: int = 30, groupdates: List[str] | str = None):
         if isinstance(groupdates, list):
             groupdates = ','.join(groupdates)
 
-    pr_data = ApsStaticFunctions._get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=period, field_map=srm_field_map, groupdates=groupdates)
+    pr_data = ApsHelpers._get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=period, field_map=srm_field_map, groupdates=groupdates)
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     for item in pr_data:
         item["plant"] = "1000"
@@ -200,7 +200,7 @@ def task_refresh_stock():
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2))
 def task_confirm_workreport():
-    ApsStaticFunctions.confirm_workreport()
+    ApsHelpers.confirm_workreport()
 
 
 @cron_task(hour=23, minute=50)
@@ -219,7 +219,7 @@ def task_push_seasonpr_to_srm():
 #################################################################################
 
 def onclick_mo_release_button(supplyno: str):
-    supplymo_detaildata = ApsStaticFunctions._get_supplymo_detaildata(supplyno=supplyno)
+    supplymo_detaildata = ApsHelpers._get_supplymo_detaildata(supplyno=supplyno)
     try:
         start_datetime: str = supplymo_detaildata['dt_ordstart'].split(" ")[0]
         end_datetime: str = supplymo_detaildata['dt_ordend'].split(" ")[0]
@@ -242,8 +242,8 @@ def onclick_mo_release_button(supplyno: str):
         sap_mo_data = sap_response_json['BODY'][0]
         
         if sap_mo_data['STATUS'] == 'S':
-            ApsStaticFunctions._pl_release_success(plno=supplyno, mono=sap_mo_data['AUFNR'], msg=sap_mo_data['MESSAGE'], msg_from='ERP')
+            ApsHelpers._pl_release_success(plno=supplyno, mono=sap_mo_data['AUFNR'], msg=sap_mo_data['MESSAGE'], msg_from='ERP')
         else:
-            ApsStaticFunctions._pl_release_failed(plno=supplyno, msg=sap_mo_data['MESSAGE'], msg_from='ERP')
+            ApsHelpers._pl_release_failed(plno=supplyno, msg=sap_mo_data['MESSAGE'], msg_from='ERP')
     except Exception as e:
-        ApsStaticFunctions._pl_release_failed(plno=supplyno, msg=str(e), msg_from='API')
+        ApsHelpers._pl_release_failed(plno=supplyno, msg=str(e), msg_from='API')

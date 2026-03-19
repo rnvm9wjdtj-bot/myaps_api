@@ -57,7 +57,7 @@ class BaseConnection(ABC):
         pass
 
 
-class ApsStaticFunctions:
+class ApsHelpers:
 
     @staticmethod
     def mto_workreport_to_virtual_stock(db:str=MYAPS_MAIN_DB):
@@ -319,7 +319,7 @@ class ApsStaticFunctions:
 
 
     @staticmethod
-    def _get_demand_datalist(cls, demandno: str) -> List[Dict]:
+    def _get_demand_datalist(demandno: str) -> List[Dict]:
         """
         获取工单原料需求
         Args:
