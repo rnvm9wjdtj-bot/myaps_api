@@ -41,7 +41,7 @@ class BaseConnection(ABC):
         pass
 
 
-    @abstractmethod
+    # @abstractmethod
     def pull_from_source(self, *args, **kwargs):
         """
         从目标系统获取数据
@@ -49,7 +49,7 @@ class BaseConnection(ABC):
         pass
 
 
-    @abstractmethod
+    # @abstractmethod
     def push_into_target(self, *args, **kwargs):
         """
         推送数据到目标系统

@@ -218,7 +218,7 @@ def task_push_seasonpr_to_srm():
 # ⬇️APS事件
 #################################################################################
 
-def onclick_release_button(supplyno: str):
+def onclick_mo_release_button(supplyno: str):
     supplymo_detaildata = ApsStaticFunctions._get_supplymo_detaildata(supplyno=supplyno)
     try:
         start_datetime: str = supplymo_detaildata['dt_ordstart'].split(" ")[0]

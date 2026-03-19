@@ -40,10 +40,5 @@ def handle_update_supply(database: str, table: str, data: dict, data_diff: dict)
 
     # 确认/下达生产计划单PL (当PL状态从NEW或CRE变为A2E时)
     if type_now == 'PL' and status_now == OrderStatusEnum.A2E.value and status_before in ["NEW", "CRE"]:
-        project_client.onclick_release_button(no_now)
-
-
-    # # 工单关闭
-    # if type_now == 'MO' and status_now == OrderStatusEnum.CMP.value:
-    #     project_client.ApsAction.when_mo_close(data_now)
+        project_client.onclick_mo_release_button(no_now)
 

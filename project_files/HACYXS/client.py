@@ -12,7 +12,7 @@ from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULE
 from .._base import (
     MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, get_scheduler_minute,
     cron_task, filelog_normal, filelog_error, CACHE_JSON,
-    DataProcessor,
+    DataProcessor, ApsStaticFunctions,
     filelog_normal, console_log, standard_response, get_session, 
     db_delete, db_bupsert, db_query
 )
@@ -27,9 +27,7 @@ from apps.data_opt.components.yonyou_tplus import TplusConnection, BaseConnectio
 # ⬇️ 项目对象及参数
 #################################################################################
 
-session = get_session()
-hap_conn = None
-
+SESSION = get_session()
 
 tplus_conn = TplusConnection()
 tplus_conn.auth()
@@ -49,32 +47,19 @@ def refresh_stock():
     timestamp = current_time.strftime('%d%H%M')
     
     # 获取原始库存数据
-    stock = tplus_conn.pull_from_source(source_name='stock')
+    stock = tplus_conn.pull_stock()
     
     # 使用pandas进行数据汇总
     if stock:
         df = pd.DataFrame(stock)
         # 按materialno分组，avail_qty求和，其他字段取first
         grouped = df.groupby('materialno').agg(
-            avail_qty=('avail_qty', 'sum'),
-            matver=('matver', 'first'),
-            itemno=('itemno', 'first'),
-            type=('type', 'first'),
-            category=('category', 'first'),
-            priority=('priority', 'first'),
-            status=('status', 'first'),
-            create_date=('create_date', 'first'),
-            avail_date=('avail_date', 'first'),
-            dt_req=('dt_req', 'first'),
-            avail_end_date=('avail_end_date', 'first'),
-            batchno=('batchno', 'first'),
-            vendorno=('vendorno', 'first'),
-            partnerno=('partnerno', 'first'),
-            partnername=('partnername', 'first'),
-            free1=('free1', 'first'),
-            free2=('free2', 'first'),
-            free3=('free3', 'first'),
-            memo=('memo', 'first')
+            avail_qty=('avail_qty', 'sum'), matver=('matver', 'first'), itemno=('itemno', 'first'),
+            type=('type', 'first'), category=('category', 'first'), priority=('priority', 'first'),
+            status=('status', 'first'), create_date=('create_date', 'first'), avail_date=('avail_date', 'first'),
+            dt_req=('dt_req', 'first'), avail_end_date=('avail_end_date', 'first'), batchno=('batchno', 'first'),
+            vendorno=('vendorno', 'first'), partnerno=('partnerno', 'first'), partnername=('partnername', 'first'),
+            free1=('free1', 'first'), free2=('free2', 'first'), free3=('free3', 'first'), memo=('memo', 'first')
         ).reset_index()
         # 生成supplyno字段为materialno@timestamp
         grouped['supplyno'] = grouped['materialno'] + '@' + timestamp
@@ -83,14 +68,8 @@ def refresh_stock():
     else:
         aggregated_stock = []
 
-    global session
-    refresh_result = session.put(url=f"{THIS_BASE_URL}/api/t_supply/type/ST?db_name={MYAPS_DB_SET}", json=aggregated_stock)
-    if refresh_result.json()['success']:
-        filelog_normal.info(f"✅ 刷新库存任务执行完成，账套：{MYAPS_DB_SET}")
-    else:
-        filelog_error.error(f"🚫 刷新库存任务执行失败: {refresh_result.json()['message']}")
-    
-    return aggregated_stock
+    ApsStaticFunctions.refresh_stock(aggregated_stock)
+
 
 
 def push_pr():
@@ -122,14 +101,17 @@ def task_confirm_workreport():
     确认报工记录
     """
     console_log.info("⏰ 开始执行确认报工记录任务")
-    ApsAction.confirm_workreport()
+    ApsStaticFunctions.confirm_workreport()
     console_log.info("⏰ 确认报工记录任务执行完成")
 #################################################################################
 # ⬇️ 数据库事件
 #################################################################################
 
+def onclick_mo_release_button(supplyno: str):
+    tplus_conn.create_mo(supplyno=supplyno)
 
-class ApsAction():
+
+class XXXXXXXXXX():
 
     @classmethod
     def click_release_button(cls, supplyno: str):
@@ -138,9 +120,9 @@ class ApsAction():
         🅰 supplyno: PL计划单编号
         """
         # 材料需求
-        demand_list = BaseConnection._get_demand_datalist(demandno=supplyno)
+        demand_list = ApsStaticFunctions._get_demand_datalist(demandno=supplyno)
         # PL及工序详情
-        supplymo_detaildata = BaseConnection._get_supplymo_detaildata(supplyno=supplyno)
+        supplymo_detaildata = ApsStaticFunctions._get_supplymo_detaildata(supplyno=supplyno)
         supplymo_detaildata['demand_list'] = demand_list
 
         mo_push_response = tplus_conn.push_into_target(target_name='mo_single', push_data=supplymo_detaildata)
@@ -171,32 +153,22 @@ class ApsAction():
                 console_log.error(f"Error extracting entry ID from T+ MO: {e}")
                 filelog_error.error(f"Error extracting entry ID from T+ MO: {e}")
         else:
-            a = cls._pl_release_failed(plno=supplyno, msg=mo_push_response_json['message'], msg_from='T+')
+            a = ApsStaticFunctions._pl_release_failed(plno=supplyno, msg=mo_push_response_json['message'], msg_from='T+')
             
 
-    @classmethod
-    def push_rs(cls, mdlist_or_supplyno: str | list[dict], tplus_mo_id: str, tplus_mo_entryid: str, mo_material_details_id: str):
-        """
-        推送领料申请到T+
-        🅰 mdlist_or_supplyno: 材料需求列表或工单号
-        🅰 tplus_mo_id: T+ 中 MO id
-        🅰 tplus_mo_entryid: T+ 中 MO 详情记录id
-        """
-        if isinstance(mdlist_or_supplyno, str):
-            rs_data = BaseConnection._get_demand_datalist(demandno=mdlist_or_supplyno)     # 从 APS 查询 RS 领料数据，以工单号  为依据查找
-            demandno = mdlist_or_supplyno
-        else:
-            rs_data = mdlist_or_supplyno
-            demandno = rs_data[0]['demandno']
-        rs_push_response = tplus_conn.push_into_target(target_name='rs', push_data=rs_data, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid, mo_material_details_id=mo_material_details_id)
-        rs_push_response_json = rs_push_response.json()
-        if str(rs_push_response_json['code']) == '0': # 创建成功
-            a = cls._rs_push_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
-        else:
-            filelog_error.error(f"❌ 领料申请推送失败，对应工单：{demandno}，错误信息：{rs_push_response_json['message']}")
-            a = cls._rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+')
-
-
     # @classmethod
-    # def when_mo_close(cls, mo_data: dict, *args, **kwargs):
-    #     pass
+    # def push_rs(cls, mdlist_or_supplyno: str | list[dict], tplus_mo_id: str, tplus_mo_entryid: str, mo_material_details_id: str):
+
+    #     if isinstance(mdlist_or_supplyno, str):
+    #         rs_data = ApsStaticFunctions._get_demand_datalist(demandno=mdlist_or_supplyno)     # 从 APS 查询 RS 领料数据，以工单号  为依据查找
+    #         demandno = mdlist_or_supplyno
+    #     else:
+    #         rs_data = mdlist_or_supplyno
+    #         demandno = rs_data[0]['demandno']
+    #     rs_push_response = tplus_conn.push_into_target(target_name='rs', push_data=rs_data, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid, mo_material_details_id=mo_material_details_id)
+    #     rs_push_response_json = rs_push_response.json()
+    #     if str(rs_push_response_json['code']) == '0': # 创建成功
+    #         a = ApsStaticFunctions._rs_push_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
+    #     else:
+    #         filelog_error.error(f"❌ 领料申请推送失败，对应工单：{demandno}，错误信息：{rs_push_response_json['message']}")
+    #         a = ApsStaticFunctions._rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+')

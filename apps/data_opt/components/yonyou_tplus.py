@@ -3,8 +3,10 @@
 """
 import json
 import os
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Literal, Optional, NamedTuple
 from datetime import datetime, timedelta
+
+from pydantic import InstanceOf
 
 from config.settings import MYAPS_MAIN_DB
 
@@ -13,7 +15,7 @@ from ._base import (
     PydanticModel,
     console_log, filelog_normal, filelog_error,
     DataProcessor, globalconst, CACHE_JSON, pdv,
-    BaseConnection, convert_timeunit, clean_value,
+    BaseConnection, ApsStaticFunctions, convert_timeunit, clean_value,
     BaseModel as PydanticModel, model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold, AcceptSupply, AcceptConfirm,
@@ -78,8 +80,6 @@ class TplusPullMaterial(AcceptMaterial):
         # cleaned_values['free3'] = values['']
         values = cleaned_values
         return values
-# reset_default_values(TplusMaterial, required_fields=('materialno', 'description'))
-
 
 
 class TplusPullWorkcenter(AcceptWorkcenter):
@@ -107,8 +107,6 @@ class TplusPullWorkcenter(AcceptWorkcenter):
         # cleaned_values['setupno'] = values['']
         # cleaned_values['grpno'] = values['']
         return cleaned_values
-# reset_default_values(TplusWorkcenter, required_fields=('workcenter', 'workcentername'))
-
 
 
 class TplusPullMatWc(AcceptMatWc):
@@ -139,7 +137,6 @@ class TplusPullMatWc(AcceptMatWc):
         return cleaned_values
 
 
-
 class TplusPullMatWcBom(AcceptMatWcBom):
 
     matver: Optional[str] = Field(None)
@@ -168,7 +165,6 @@ class TplusPullMatWcBom(AcceptMatWcBom):
         return cleaned_values
 
 
-
 class TplusPullStock(AcceptSupply):
 
     type: str = Field('ST')
@@ -193,7 +189,7 @@ class TplusPullStock(AcceptSupply):
         return cleaned_values
 
 
-class TplusPushMo(PydanticModel):
+class TplusCreateMo(PydanticModel):
     """
     整理推送T+MO数据
     """
@@ -251,7 +247,7 @@ class TplusPushMo(PydanticModel):
         return cleaned_values
 
 
-class TplusPushRs(PydanticModel):
+class TplusCreateRs(PydanticModel):
     """
     整理推送T+领料申请数据
     """
@@ -290,7 +286,7 @@ class TplusPushRs(PydanticModel):
         return cleaned_values
 
 
-class TplusPushPr(PydanticModel):
+class TplusCreatePr(PydanticModel):
     """
     整理推送T+请购单数据
     """
@@ -311,6 +307,86 @@ class TplusPushPr(PydanticModel):
         cleaned_values['PurchaseRequisitionDetails'] = []
         pass
 
+
+class TplusPullInterface(NamedTuple):
+    endpoint: str
+    field_map: Optional[dict[str, str]] = {}
+    base_filter: Optional[dict[str, Any]] = {}
+    remark: Optional[str] = ''
+
+
+MaterialPullInterface = TplusPullInterface(
+    endpoint="/tplus/api/v2/inventory/Query",
+    field_map={
+        "ID": "ID", "Disabled": "是否停用", "Code": "编码", "Name": "名称", "Specification": "规格型号",
+        "InventoryClassCode": "存货分类Code", "InventoryClassName": "存货分类Name",
+        "UnitName": "单位Name", "BaseUnitName": "主计量单位Name", "UnitByManufactureName": "生产常用单位Name",
+        "IsMaterial": "是否物料", "IsPurchase": "是否采购", "IsMadeSelf": "是否自制", "IsMadeRequest": "是否委外",
+        "IsSuite": "是否套件", "IsPhantom": "是否虚拟件", "AvagCost": "平均成本", "Expired": "保质期", "ExpiredUnitName": "保质期单位",
+        "IsNeedQualityInspection": "是否需要检验", "Ts": "时间戳",
+    },
+    base_filter={"Disabled": False, "IsMaterial": True, "Ts": None}
+)
+
+WorkcenterPullInterface = TplusPullInterface(
+    endpoint="/tplus/api/v2/WorkCenter/QueryPage",
+    field_map={"ID": "ID", "Code": "编码", "Name": "名称", "Disabled": "是否停用"},
+)
+
+RoutingPullInterface = TplusPullInterface(
+    endpoint="/tplus/api/v2/bom/Query",  # 不用 "/tplus/api/v2/routing/Query", 因为 T+ 的工艺路线是抽象的，具体到物料的工艺路线是在 BOM 中定义的
+    field_map={
+        "ID": "ID", "Inventory / Code": "父件编码", "Inventory / Name": "父件名称", "BOMProcessDTOs / SequenceNumber": "加工顺序",
+        "BOMProcessDTOs / Process / Code": "工序编码", "BOMProcessDTOs / Process / Name": "工序名称", "BOMProcessDTOs / Process / KeyProcess": "是否关键工序",
+        "BOMProcessDTOs / Process / Workshop": "生产车间", "BOMProcessDTOs / Process / WorkCenter": "工作中心",
+        "BOMProcessDTOs / Process / Equipment": "生产设备", "BOMProcessDTOs / Process / StandardWorkingHours": "标准工时",
+    },
+)
+
+BomDataPullInterface = TplusPullInterface(
+    endpoint="/tplus/api/v2/bom/QueryPage",
+    field_map={
+        "ID": "ID", "Disabled": "是否停用", "Code": "父件编码", "Name": "父件名称", "Version": "版本号", "IsPhantom": "是否虚拟",
+        "Unit / Name": "计量单位", "ProduceQuantity": "生产数量", "BOMChilds / Code": "子件编码", "BOMChilds / Name": "子件名称",
+        "BOMChilds / Unit / Name": "子件计量单位", "BOMChilds / RequiredQuantity": "需用数量", "BOMChilds / WasteRate": "损耗率",
+    },
+)
+
+StockPullInterface = TplusPullInterface(
+    endpoint="/tplus/api/v2/currentStock/Query",
+    field_map={"InventoryCode": "存货编码", "ExistingQuantity": "现存量", "TS": "时间戳"},
+    base_filter={"IsIncludeZero": True},
+    remark="现存量查询 https://open.chanjet.com/docs/file/apiFile/tcloud/tjqt/xcl?id=30875，以 现存量字段 为库存数导入",
+)
+
+SingleMoQueryInterface = TplusPullInterface(
+    endpoint="/tplus/api/v2/ManufactureOrderOpenApi/GetVoucherDTO",
+    field_map={"ID": "ID", "Code": "编码", "ExternalCode": "外部编码"},
+)
+
+
+class TplusPushInterface(NamedTuple):
+    endpoint: str
+    remark: Optional[str] = ''
+
+
+MoApproveInterface = TplusPushInterface(
+    endpoint="/tplus/api/v2/ManufactureOrderOpenApi/Audit",
+)
+
+
+MoCreateInterface = TplusPushInterface(
+    endpoint="/tplus/api/v2/ManufactureOrderOpenApi/Create",
+)
+
+
+RsCreateInterface = TplusPushInterface(
+    endpoint="/tplus/api/v2/MaterialRequestOpenApi/Create",
+)
+
+PrCreateInterface = TplusPushInterface(
+    endpoint="/tplus/api/v2/PurchaseRequisitionOpenApi/Create",
+)
 
 
 class TplusConfig:
@@ -334,138 +410,6 @@ class TplusConfig:
     PAGE_SIZE = 1000
 
     _BOM_CODES = None  # 缓存已处理的BOM编码，用于取工艺路线（因为 T+ 的工艺路线是抽象的，具体到物料的工艺路线是在 BOM 中定义的，而只有通过具体BOM编号查询BOM时，才会展示工艺路线详情
-
-    PULL_SOURCE = {
-        "material": {
-            "endpoint": "/tplus/api/v2/inventory/Query",
-            "field_map": {
-                "ID": "ID", "Disabled": "是否停用", "Code": "编码", "Name": "名称",
-                "Specification": "规格型号", "InventoryClassCode": "存货分类Code", "InventoryClassName": "存货分类Name",
-                "UnitName": "单位Name", "BaseUnitName": "主计量单位Name",
-                "UnitByManufactureName": "生产常用单位Name",
-                "IsMaterial": "是否物料", "IsPurchase": "是否采购",
-                "IsMadeSelf": "是否自制", "IsMadeRequest": "是否委外",
-                "IsSuite": "是否套件", "IsPhantom": "是否虚拟件",
-                "AvagCost": "平均成本", "Expired": "保质期", "ExpiredUnitName": "保质期单位",
-                "IsNeedQualityInspection": "是否需要检验",
-                "Ts": "时间戳",
-            },
-            "base_filter": {
-                "Disabled": False,
-                "IsMaterial": True,
-                "Ts": None
-            },
-            "pydantic_model": TplusPullMaterial,
-        },
-
-        "workcenter": {
-            "endpoint": "/tplus/api/v2/WorkCenter/QueryPage",
-            "field_map": {
-                "ID": "ID", "Code": "编码", "Name": "名称", "Disabled": "是否停用"
-            },
-            "base_filter": {},
-            "pydantic_model": TplusPullWorkcenter,
-        },
-
-        "route": {
-            "endpoint": "/tplus/api/v2/bom/Query",  # 不用 "/tplus/api/v2/routing/Query", 因为 T+ 的工艺路线是抽象的，具体到物料的工艺路线是在 BOM 中定义的
-            "field_map": {
-                "ID": "ID", "Inventory / Code": "父件编码", "Inventory / Name": "名父件称",
-                "BOMProcessDTOs / SequenceNumber": "加工顺序",
-                "BOMProcessDTOs / Process / Code": "工序编码", "BOMProcessDTOs / Process / Name": "工序名称",
-                "BOMProcessDTOs / Process / KeyProcess": "是否关键工序",
-                "BOMProcessDTOs / Process / Workshop": "生产车间", "BOMProcessDTOs / Process / WorkCenter": "工作中心",
-                "BOMProcessDTOs / Process / Equipment": "生产设备", "BOMProcessDTOs / Process / StandardWorkingHours": "标准工时",
-            },
-            "base_filter": {},
-            "pydantic_model": TplusPullMatWc,
-        },
-
-        "bom": {
-            "endpoint": "/tplus/api/v2/bom/QueryPage",
-            "field_map": {
-                "ID": "ID", "Disabled": "是否停用", "Code": "父件编码", "Name": "父件名称", "Version": "版本号",
-                "IsPhantom": "是否虚拟", "Unit / Name": "计量单位", "ProduceQuantity": "生产数量",
-                "BOMChilds / Code": "子件编码", "BOMChilds / Name": "子件名称",
-                "BOMChilds / Unit / Name": "子件计量单位", "BOMChilds / RequiredQuantity": "需用数量", 
-                "BOMChilds / WasteRate": "损耗率",
-            },
-            "base_filter": {},
-            "pydantic_model": TplusPullMatWcBom,
-        },
-
-        "stock": {
-            "endpoint": "/tplus/api/v2/currentStock/Query",
-            # 现存量查询 https://open.chanjet.com/docs/file/apiFile/tcloud/tjqt/xcl?id=30875，以 现存量字段 为库存数导入
-            "field_map": {
-                "InventoryCode": "存货编码",
-                # "AvailableQuantity": "可用量",
-                "ExistingQuantity": "现存量",
-                "TS": "时间戳",
-            },
-            "base_filter": {
-                "IsIncludeZero": True
-            },
-            "pydantic_model": TplusPullStock,
-        },
-
-        "workreport": {
-            "endpoint": "/tplus/api/v2/reportQuery/GetReportData",
-            # 工序汇报单列表查询 https://open.chanjet.com/docs/file/apiFile/tcloud/t+dj/t+gxhbd?id=32107
-            "field_map": {},
-            "base_filter": {},
-            "pydantic_model": None,
-        },
-
-        "mo_single": {
-            "endpoint": "/tplus/api/v2/ManufactureOrderOpenApi/GetVoucherDTO",
-            "field_map": {
-                "ID": "ID", "Code": "编码", "ExternalCode": "外部编码",
-            },
-            "base_filter": {},
-            "pydantic_model": None,
-        },
-    }
-
-
-    PUSH_TARGET = {
-        "mo_single": {
-            "endpoint": "/tplus/api/v2/ManufactureOrderOpenApi/Create",
-            "pydantic_model": TplusPushMo,
-        },
-
-        "mo_approve": {
-            "endpoint": "/tplus/api/v2/ManufactureOrderOpenApi/Audit",
-            "pydantic_model": None,
-        },
-
-        "rs": { # 领料申请，supply RS
-            "endpoint": "/tplus/api/v2/MaterialRequestOpenApi/Create",
-            "pydantic_model": TplusPushRs,
-        },
-
-        "pr": { # 采购申请 supply PR
-            "endpoint": "/tplus/api/v2/PurchaseRequisitionOpenApi/Create",
-            "field_map": {
-                # "[]": "PurchaseRequisitionDetails",
-
-                "ExternalCode": "supplyno",
-                # "Code": "supplyno",   # 注释掉，Code 字段不传，让 T+ 自行生成编码
-                "RequisitionPerson / Code": "$RequisitionPerson",
-                "PurchaseRequisitionDetails / Inventory / Code": "materialno",
-                "PurchaseRequisitionDetails / Unit / Name": "unit",
-                "PurchaseRequisitionDetails / Quantity": "avail_qty",
-                "PurchaseRequisitionDetails / RequireDate": "avail_date",
-                # "PurchaseRequisitionDetails / IdSourceVoucherType": "$IdSourceVoucherType",
-                # "PurchaseRequisitionDetails / SourceVoucherCode": "dt_ordend",
-                # "PurchaseRequisitionDetails / SourceVoucherDetailId": "dt_ordend",
-            },
-            "static_values": {
-                "RequisitionPerson": CACHE_JSON.get("erp", {}).get("$PrRequisitionPerson", ""),
-                "IdSourceVoucherType": "43",    # 来源单据的单据类型ID  43：销售订单  预测单：68
-            },
-        },
-    }
 
 
 
@@ -546,6 +490,7 @@ class TplusConnection(BaseConnection):
         Returns:
             响应JSON数据
         """
+        self.auth()
         headers = {
             "appKey": self.app_key,
             "appSecret": self.app_secret,
@@ -557,235 +502,250 @@ class TplusConnection(BaseConnection):
         return response
 
 
-    def pull_from_source(self, source_name: str, filter: dict=None, only_today: bool=False, pydantic_model: PydanticModel=None, **kwargs):
-        """
-        获取畅捷通数据列表
-        Args:
-            source_name: 表单名称
-            filter: 查询过滤条件，默认None，仅在material、workcenter、bom表单有效
-            only_today: 是否仅获取今天更新的数据，默认False，对 route（工艺路线） 表单无效
-        Returns:
-            数据列表
-        """
-        self.auth()
-        source_name = source_name.lower()
-        endpoint = self.config.PULL_SOURCE[source_name]['endpoint']
-        field_map = self.config.PULL_SOURCE[source_name]['field_map']
-        pydantic_model = pydantic_model or self.config.PULL_SOURCE[source_name].get('pydantic_model')
-        base_filter = self.config.PULL_SOURCE[source_name].get('base_filter', {})
-
+    def _pull_simple_data(self, pull_interface: TplusPullInterface, filter: dict=None, pydantic_model: PydanticModel=None):
+        endpoint = pull_interface.endpoint
+        field_map = pull_interface.field_map
+        base_filter = pull_interface.base_filter
+        params = {
+            "PageIndex": 1,
+            "PageSize": self.config.PAGE_SIZE,
+            "SelectFields": ",".join(field_map.keys()),
+            **base_filter,
+        }
         if filter:
-            filter.update(base_filter)
-        else:
-            filter = base_filter or {}
-
-        if only_today:
-            today = datetime.now().strftime("%Y-%m-%d")
-            filter["UpdateDateBegin"] = f"{today} 00:00:00"
-            filter["UpdateDateEnd"] = f"{today} 23:59:59"
-
-        if source_name in ('material', 'workcenter', 'stock'):
-            params = {
-                "PageIndex": 1,
-                "PageSize": self.config.PAGE_SIZE,
-                "SelectFields": ",".join(field_map.keys()),
-            }
             params.update(filter)
 
-            data_list = []
-            while True:
-                response = self._post(endpoint=endpoint, data={"param": params})
-                resp_json = response.json()
-                try:
-                    raw_data = resp_json['Data']
-                except:
-                    raw_data = resp_json
-                if not raw_data:
-                    break
-                params["PageIndex"] += 1
-                ts_value = raw_data[-1].get("Ts") or raw_data[-1].get("TS")
-                params["Ts"] = ts_value
-                data_list.extend([{v: row.get(k) for k, v in field_map.items()} for row in raw_data])
-
-        elif source_name == 'bom':
-            def process_bomdata(bomdata_list: list, field_map: dict):
-                """
-                处理BOM数据，提取产品编码、产品名称、组件编码、组件名称、组件数量
-                """
-                self.config._BOM_CODES = set[str]()
-                processed_data = []
-                for item in bomdata_list:
-                    self.config._BOM_CODES.add(item['Code'])
-                    flat_item = DataProcessor.expand_parent_child_data(item, 'BOMChilds')
-                    for row in flat_item:
-                        processed_data.append({v: row.get(k) for k, v in field_map.items()})
-                return processed_data
-
-            params = {
-                "PageIndex": 1,
-                "PageSize": 100,    # 数据量太大，单次不宜太多。官方默认值为20，最大支持500
-            }
-            params.update(filter)
-
-            data_list = []
-
-            while True:
-                response = self._post(endpoint=endpoint, data={"param": params})
-                resp_json = response.json()
-                try:
-                    raw_data = resp_json['Data']
-                except:
-                    raw_data = resp_json
-                if not raw_data:
-                    break
-                params["PageIndex"] += 1
-                data_list.extend(process_bomdata(raw_data, field_map=field_map))
-
-        elif source_name == 'route':
-            bom_codes = self.config._BOM_CODES
-            assert bom_codes, "请先拉取BOM数据，获取BOM CODES"
-            data_list = []
-            # 使用线程池并行处理POST请求
-            from concurrent.futures import ThreadPoolExecutor, as_completed
-
-            def process_route_data(data: dict, field_map: dict):
-                    """
-                    处理工艺路线数据，提取产品编码、产品名称、详情
-                    """
-                    flat_item = DataProcessor.expand_parent_child_data(data, 'BOMProcessDTOs')
-                    processed_data = []
-                    for row in flat_item:
-                        processed_data.append({v: row.get(k) for k, v in field_map.items()})
-                    return processed_data
-
-            def get_route_by_bomcode(bom_code):
-                payload = {
-                    "dto": {"code": bom_code}
-                }
-                response = self._post(endpoint=endpoint, data=payload)
-                bom_data = response.json()[0]     # 变量名没错，确实是 bom
-                return process_route_data(bom_data, field_map=field_map)
-            
-            # 创建线程池，最大线程数为10
-            with ThreadPoolExecutor(max_workers=10) as executor:
-                # 提交所有任务
-                future_to_bom = {executor.submit(get_route_by_bomcode, bom_code): bom_code for bom_code in bom_codes}
-                # 收集结果
-                for future in as_completed(future_to_bom):
-                    bom_code = future_to_bom[future]
-                    try:
-                        result = future.result()
-                        data_list.extend(result)
-                    except Exception as exc:
-                        console_log.error(f"处理BOM编码 {bom_code} 时出错: {exc}")
-            
-            self.config._BOM_CODES = None
-            
-        elif source_name == 'workreport':
-            params = {
-                "pageIndex": 0,     # 这个接口的第一页是0，不是1。。。
-                "pageSize": 1000,   # 这里必须用小驼峰，大驼峰会报错
-                "selectFields": ",".join(field_map.keys()),
-            }
-
-        elif source_name == 'mo_single':
-            # 这是查询单个mo的接口
-            response = self._post(endpoint=endpoint, data={"param": filter})
-            # filter 的值可以是：
-            # filter = { "voucherID": 1 }
-            # filter = { "voucherCode": "MO-2026-01-0008" }
-            # filter = { "externalCode": "1464077493719531520" }
+        data_list = []
+        while True:
+            response = self._post(endpoint=endpoint, data={"param": params})
             resp_json = response.json()
-            mo_data = resp_json['data']
-            data_list = [mo_data]
-
+            try:
+                raw_data = resp_json['Data']
+            except:
+                raw_data = resp_json
+            if not raw_data:
+                break
+            params["PageIndex"] += 1
+            ts_value = raw_data[-1].get("Ts") or raw_data[-1].get("TS")
+            params["Ts"] = ts_value
+            data_list.extend([{v: row.get(k) for k, v in field_map.items()} for row in raw_data])
+            
         if pydantic_model:
             data_list = [pydantic_model(**item).model_dump() for item in data_list]
         return data_list
 
 
-    def push_into_target(self, target_name: str, push_data: dict | list[dict], **kwargs):
-        """
-        推送数据到T+
-        Args:
-            target_name: 目标名称
-            push_data: APS数据库查询结果， MO为字典格式， RS、PR为列表格式先合并清洗
-        Returns:
-
-        """
-        self.auth()
-        target_name = target_name.lower()
-        endpoint = self.config.PUSH_TARGET[target_name]['endpoint']
-        pydantic_model = self.config.PUSH_TARGET[target_name].get('pydantic_model')
-        
-        # 先合并、清洗数据
-        if target_name == 'rs':
-            # 先合并一下表头，以适配 T+ 数据结构
-            push_data = DataProcessor.merge_common_fields(data=push_data, merge_with=["demandno", "type", "status", "create_date"], entries_key="_entries_")  
-
-            tplus_mo_id = kwargs['tplus_mo_id'] # 这个一定会有
-            # 尝试从 kwargs 中提取 tplus_mo_entryid
-            tplus_mo_entryid = kwargs.get('tplus_mo_entryid')
-            mo_material_details_id = kwargs.get('mo_material_details_id')
-            # 如果提取不到，就尝试调用 T+ 接口查询 MO 记录
-            if not (tplus_mo_id and tplus_mo_entryid):
-                try:
-                    mo_in_tplus = self.pull_from_source(source_name='mo_single', filter={"voucherID": tplus_mo_id})[0]
-                    tplus_mo_id = mo_in_tplus['ID']
-                    tplus_mo_entryid = mo_in_tplus['ManufactureOrderDetails'][0]['ID']
-                except:
-                    pass
-            if not (tplus_mo_id and tplus_mo_entryid):
-                # 如果调用接口查询也没有结果，就报错
-                filelog_error.error(f"❌ 未在 T+ 中找到对应 MO 记录，demandno: {push_data['demandno']}，领料申请推送失败，对应工单：{push_data['demandno']}")
-                return
-            # 结果计入推送数据，以便后续通过字段映射的配置直接取值
-            push_data['tplus_mo_id'] = tplus_mo_id
-            push_data['tplus_mo_entryid'] = tplus_mo_entryid
-            push_data['mo_material_details_id'] = mo_material_details_id
-        elif target_name == 'pr':
-            pass
-
-
-        if target_name in ('mo_single', 'rs', 'pr'):
-            dto = pydantic_model(**push_data).model_dump()
-            payload = {"dto": dto}
-            response = self._post(endpoint=endpoint, data=payload)
-            return response
-        elif target_name == 'mo_approve':
-            payload = {"param": push_data}
-            response = self._post(endpoint=endpoint, data=payload)
-            return response
-        else:
-            raise ValueError(f"❌ 未知的目标名称: {target_name}")
-
+    def pull_material(self, filter: dict=None, pull_interface: TplusPullInterface=MaterialPullInterface, pydantic_model: PydanticModel=TplusPullMaterial):
+        return self._pull_simple_data(pull_interface=pull_interface, filter=filter, pydantic_model=pydantic_model)
     
-    def push_mo(self, supplyno: str, auto_push_rs: bool = True):
+    
+    def pull_workcenter(self, filter: dict=None, pull_interface: TplusPullInterface=WorkcenterPullInterface, pydantic_model: PydanticModel=TplusPullWorkcenter):
+        return self._pull_simple_data(pull_interface=pull_interface, filter=filter, pydantic_model=pydantic_model)
+
+
+    def pull_stock(self, filter: dict=None, pull_interface: TplusPullInterface=StockPullInterface, pydantic_model: PydanticModel=TplusPullStock):
+        return self._pull_simple_data(pull_interface=pull_interface, filter=filter, pydantic_model=pydantic_model)
+
+
+    def pull_routing(self, only_today: bool = False, pull_interface: TplusPullInterface=RoutingPullInterface, pydantic_model: PydanticModel=TplusPullMatWc):
+        bom_codes = self.config._BOM_CODES
+        assert bom_codes, "请先拉取BOM数据，获取BOM CODES"
+        endpoint = pull_interface.endpoint
+        field_map = pull_interface.field_map
+        base_filter = pull_interface.base_filter
+        params = {
+            "PageIndex": 1,
+            "PageSize": self.config.PAGE_SIZE,
+            "SelectFields": ",".join(field_map.keys()),
+            **base_filter,
+        }       
+        if only_today:
+            today = datetime.now().strftime("%Y-%m-%d")
+            params.update({"UpdateDateBegin": f"{today} 00:00:00", "UpdateDateEnd": f"{today} 23:59:59"})
+        
+        data_list = []
+        # 使用线程池并行处理POST请求
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def process_route_data(data: dict, field_map: dict):
+                """
+                处理工艺路线数据，提取产品编码、产品名称、详情
+                """
+                flat_item = DataProcessor.expand_parent_child_data(data, 'BOMProcessDTOs')
+                processed_data = []
+                for row in flat_item:
+                    processed_data.append({v: row.get(k) for k, v in field_map.items()})
+                return processed_data
+
+        def get_route_by_bomcode(bom_code):
+            payload = {
+                "dto": {"code": bom_code}
+            }
+            response = self._post(endpoint=endpoint, data=payload)
+            bom_data = response.json()[0]     # 变量名没错，确实是 bom
+            return process_route_data(bom_data, field_map=field_map)
+        
+        # 创建线程池，最大线程数为10
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            # 提交所有任务
+            future_to_bom = {executor.submit(get_route_by_bomcode, bom_code): bom_code for bom_code in bom_codes}
+            # 收集结果
+            for future in as_completed(future_to_bom):
+                bom_code = future_to_bom[future]
+                try:
+                    result = future.result()
+                    data_list.extend(result)
+                except Exception as exc:
+                    console_log.error(f"处理BOM编码 {bom_code} 时出错: {exc}")
+        
+        self.config._BOM_CODES = None
+        data_list = [pydantic_model(**item).model_dump() for item in data_list]
+        return data_list
+
+
+    def pull_bom(self, only_today: bool = False, pull_interface: TplusPullInterface=BomDataPullInterface, pydantic_model: PydanticModel=TplusPullMatWcBom):
+        def process_bomdata(bomdata_list: list, field_map: dict):
+            """
+            处理BOM数据，提取产品编码、产品名称、组件编码、组件名称、组件数量
+            """
+            self.config._BOM_CODES = set[str]()
+            processed_data = []
+            for item in bomdata_list:
+                self.config._BOM_CODES.add(item['Code'])
+                flat_item = DataProcessor.expand_parent_child_data(item, 'BOMChilds')
+                for row in flat_item:
+                    processed_data.append({v: row.get(k) for k, v in field_map.items()})
+            return processed_data
+
+        endpoint = pull_interface.endpoint
+        field_map = pull_interface.field_map
+        base_filter = pull_interface.base_filter
+        params = {
+            "PageIndex": 1,
+            "PageSize": 100,    # 数据量太大，单次不宜太多。官方默认值为20，最大支持500
+            **base_filter,
+        }       
+        if only_today:
+            today = datetime.now().strftime("%Y-%m-%d")
+            params.update({"UpdateDateBegin": f"{today} 00:00:00", "UpdateDateEnd": f"{today} 23:59:59"})
+
+        params.update(filter)
+
+        data_list = []
+
+        while True:
+            response = self._post(endpoint=endpoint, data={"param": params})
+            resp_json = response.json()
+            try:
+                raw_data = resp_json['Data']
+            except:
+                raw_data = resp_json
+            if not raw_data:
+                break
+            params["PageIndex"] += 1
+            data_list.extend(process_bomdata(raw_data, field_map=field_map))
+
+        data_list = [pydantic_model(**item).model_dump() for item in data_list]
+        return data_list
+
+
+    def query_mo(self, index_value: str | int, filter_field: Literal['voucherID', 'voucherCode', 'externalCode']='voucherID') -> dict:
+        """
+        查询单个工单详情
+        """
+        endpoint = SingleMoQueryInterface.endpoint
+        payload = {"param": {filter_field: index_value}}
+        response = self._post(endpoint=endpoint, data=payload)
+        resp_json = response.json()
+        try:
+            return resp_json['data']
+        except:
+            return None
+        
+    
+    def create_mo(self, supplyno: str, auto_push_rs: bool = True):
+        def approve_mo(tplus_moid):
+            endpoint = MoApproveInterface.endpoint
+            payload = {"param": {'voucherID': tplus_moid}}
+            response = self._post(endpoint=endpoint, data=payload)
+            return response.json()
+
+        endpoint = MoCreateInterface.endpoint
+        pydantic_model = TplusCreateMo
         # 材料需求
-        demand_list = BaseConnection._get_demand_datalist(demandno=supplyno)
+        demand_list = ApsStaticFunctions._get_demand_datalist(demandno=supplyno)
         # PL及工序详情
-        supplymo_detaildata = BaseConnection._get_supplymo_detaildata(supplyno=supplyno)
+        supplymo_detaildata = ApsStaticFunctions._get_supplymo_detaildata(supplyno=supplyno)
         supplymo_detaildata['demand_list'] = demand_list
+        dto = pydantic_model(**supplymo_detaildata).model_dump()
+        payload = {"dto": dto}
+        mo_create_response = self._post(endpoint=endpoint, data=payload)
+        mo_create_response_json = mo_create_response.json()
 
-        mo_push_response = self.push_into_target(target_name='mo_single', push_data=supplymo_detaildata)
-        mo_push_response_json = mo_push_response.json()
+        if str(mo_create_response_json['code']) == '0': # 响应错误码为0，MO 创建成功
+            # 从响应中提取 data
+            response_data = mo_create_response_json['data']
+            tplus_mo_id = response_data['ID']
+            tplus_mo_code = response_data['Code']
+            # 审批 MO ，要在领料申请前批准
+            _x_a = approve_mo(tplus_moid=tplus_mo_id)
+            # 查询推送成功的 MO 在 T+ 中的详情
+            tplus_mo_data = self.query_mo(index_value=tplus_mo_id)
+            # 从 T+ 中提取 MO 详情中的第一个详情记录的 ID 作为 _entryid
+            tplus_mo_entryid = tplus_mo_data['ManufactureOrderDetails'][0]['ID']
+
+            if auto_push_rs:
+                # 推送领料申请
+                _x_b = self.push_rs(mdlist_or_supplyno=demand_list, tplus_mo_data_or_id=tplus_mo_data)
+
+            # 调用存储过程更改工单信息，❗一定放在最后一步，否则工单号变更太早，前面若有用原生供应号查询都会失败
+            _x_c = ApsStaticFunctions._pl_release_success(plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
+        else:
+            _x_d = ApsStaticFunctions._pl_release_failed(plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+')
 
 
-    def push_rs(self, mdlist_or_supplyno: str | list[dict], tplus_mo_id: str, tplus_mo_entryid: str, mo_material_details_id: str):
+    def push_rs(self, mdlist_or_supplyno: str | list[dict], tplus_mo_data_or_id: dict | str | int):
+        """
+        创建领料申请
+        🅰 mdlist_or_supplyno: 材料需求列表或工单号
+        🅰 tplus_mo_data: T+ MO 数据
+        """
+        endpoint = RsCreateInterface.endpoint
+        pydantic_model = TplusCreateRs
         if isinstance(mdlist_or_supplyno, str):
-            rs_data = BaseConnection._get_demand_datalist(demandno=mdlist_or_supplyno)     # 从 APS 查询 RS 领料数据，以工单号  为依据查找
+            rs_data = ApsStaticFunctions._get_demand_datalist(demandno=mdlist_or_supplyno)     # 查询 指定工单号所需物料
             demandno = mdlist_or_supplyno
         else:
             rs_data = mdlist_or_supplyno
             demandno = rs_data[0]['demandno']
-        rs_push_response = tplus_conn.push_into_target(target_name='rs', push_data=rs_data, tplus_mo_id=tplus_mo_id, tplus_mo_entryid=tplus_mo_entryid, mo_material_details_id=mo_material_details_id)
-        rs_push_response_json = rs_push_response.json()
+
+        if isinstance(tplus_mo_data_or_id, dict):
+            mo_data = tplus_mo_data_or_id
+        else:
+            mo_data = self.query_mo(index_value=tplus_mo_data_or_id)
+
+        processed_rsdata = DataProcessor.merge_common_fields(data=rs_data, merge_with=["demandno", "type", "status", "create_date"], entries_key="_entries_")
+
+        mo_id = mo_data['ID']
+        tplus_mo_entryid = mo_data['ManufactureOrderDetails'][0]['ID']
+        mo_material_details = mo_data['ManufactureOrderDetails'][0]['ManufactureOrderMaterialDetails']
+        mo_material_details_id = mo_material_details[0]['ID']
+
+        # 推送领料申请
+        processed_rsdata['tplus_mo_id'] = mo_id
+        processed_rsdata['tplus_mo_entryid'] = tplus_mo_entryid
+        processed_rsdata['mo_material_details_id'] = mo_material_details_id
+
+        dto = pydantic_model(**processed_rsdata).model_dump()
+        payload = {"dto": dto}
+        response = self._post(endpoint=endpoint, data=payload)
+        rs_push_response_json = response.json()
         if str(rs_push_response_json['code']) == '0': # 创建成功
-            a = cls._rs_push_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
+            ApsStaticFunctions._rs_push_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
         else:
             filelog_error.error(f"❌ 领料申请推送失败，对应工单：{demandno}，错误信息：{rs_push_response_json['message']}")
-            a = cls._rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+')
+            ApsStaticFunctions._rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+')
 
 
-    def push_pr():
+    def create_pr():
         pass
