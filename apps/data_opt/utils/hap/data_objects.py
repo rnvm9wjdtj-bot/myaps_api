@@ -971,7 +971,7 @@ class HapRowSet(Generic[ModelType]):
             
             # 批量创建需要新增的模型
             if create_list:
-                created_models = self.bulk_create(create_list, trigger_workflow=False)
+                created_models = self.bulk_create(create_list, trigger_workflow=trigger_workflow)
                 result_models.extend(created_models)
         
         # 批量更新缓存

@@ -424,7 +424,7 @@ class TplusConfig:
 
 class TplusConnection(BaseConnection):
     
-    def __init__(self, config: TplusConfig=TplusConfig):
+    def __init__(self, config: TplusConfig=TplusConfig()):
         """
         初始化畅捷通连接
         """
@@ -481,7 +481,7 @@ class TplusConnection(BaseConnection):
 
 
     def _get(self, endpoint: str, params: dict=None):
-        self.auth()
+        # self.auth()
         response = self._session.get(f"{self.base_url}{endpoint}", headers={
             "appKey": self.app_key,
             "appSecret": self.app_secret,
@@ -500,7 +500,7 @@ class TplusConnection(BaseConnection):
         Returns:
             响应JSON数据
         """
-        self.auth()
+        # self.auth()
         headers = {
             "appKey": self.app_key,
             "appSecret": self.app_secret,
@@ -513,6 +513,7 @@ class TplusConnection(BaseConnection):
 
 
     def _pull_simple_data(self, pull_interface: TplusPullInterface, filter: dict=None, pydantic_model: PydanticModel=None):
+        self.auth()
         endpoint = pull_interface.endpoint
         field_map = pull_interface.field_map
         base_filter = pull_interface.base_filter
@@ -575,6 +576,7 @@ class TplusConnection(BaseConnection):
     def pull_routing(self, only_today: bool = False, pull_interface: TplusPullInterface=RoutingPullInterface, pydantic_model: PydanticModel=TplusPullMatWc):
         bom_codes = self._BOM_CODES
         assert bom_codes, "请先拉取BOM数据，获取BOM CODES"
+        self.auth()
         endpoint = pull_interface.endpoint
         field_map = pull_interface.field_map
         base_filter = pull_interface.base_filter
@@ -641,7 +643,8 @@ class TplusConnection(BaseConnection):
                 for row in flat_item:
                     processed_data.append({v: row.get(k) for k, v in field_map.items()})
             return processed_data
-
+        
+        self.auth()
         endpoint = pull_interface.endpoint
         field_map = pull_interface.field_map
         base_filter = pull_interface.base_filter
@@ -678,6 +681,7 @@ class TplusConnection(BaseConnection):
         """
         查询单个工单详情
         """
+        self.auth()
         endpoint = SingleMoQueryInterface.endpoint
         payload = {"param": {filter_field: index_value}}
         response = self._post(endpoint=endpoint, data=payload)
@@ -694,7 +698,8 @@ class TplusConnection(BaseConnection):
             payload = {"param": {'voucherID': tplus_moid}}
             response = self._post(endpoint=endpoint, data=payload)
             return response.json()
-
+        
+        self.auth()
         endpoint = MoCreateInterface.endpoint
         pydantic_model = TplusCreateMo
         # 材料需求

@@ -93,7 +93,9 @@ class ApsHelpers:
 
 
     @staticmethod
-    def refresh_stock(stock_data:List[Dict[str, Any]], dbs:str=MYAPS_DB_SET):
+    def refresh_stock(stock_data:Union[List[Dict[str, Any]], pd.DataFrame], dbs:str=MYAPS_DB_SET):
+        if isinstance(stock_data, pd.DataFrame):
+            stock_data = stock_data.to_dict('records')
         refresh_result = SESSION.put(url=f"{THIS_BASE_URL}/api/t_supply/type/ST?db_name={dbs}", json=stock_data)
         if refresh_result.json()['success']:
             filelog_normal.info(f"✅ 刷新库存任务执行完成，账套：{dbs}")

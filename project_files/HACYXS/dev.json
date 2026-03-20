@@ -30,7 +30,11 @@
   },
   "hap": {
     "app_key": "601ae007d84ca95a",
-    "app_secret": "ODVlMzNjYzA1ZTg1Yzg3YjI0NmQ5NTFmZGQ3OTk1MWYzMjE4M2JiMzYyNDEzMGU3NTY5YzI0YzEzYTYyYTExZA=="
+    "sign": "ODVlMzNjYzA1ZTg1Yzg3YjI0NmQ5NTFmZGQ3OTk1MWYzMjE4M2JiMzYyNDEzMGU3NTY5YzI0YzEzYTYyYTExZA==",
+    "max_workers": 4,
+    "max_concurrency": 4,
+    "enable_http2": false,
+    "warm_connections": 2
   },
   "defaults": {
     "auto_matver": true,

@@ -444,7 +444,7 @@ class Model:
 
 
     @classmethod
-    def create_from_tortoise(cls, tortoise_model: TortoiseBaseModel, model_name: str) -> Type['Model']:
+    def create_from_tortoise(cls, tortoise_model: TortoiseBaseModel, model_name: str, worksheet_id: str= None) -> Type['Model']:
         """根据 Tortoise 模型生成 HAP 模型
         
         Args:
@@ -511,7 +511,7 @@ class Model:
             fields_dict[field_name] = hap_field
         
         meta_attrs = {
-            'worksheet_id': '',
+            'worksheet_id': worksheet_id or (tortoise_model._meta.db_table if hasattr(tortoise_model._meta, 'db_table') else model_name),
             'conflict_fields': None,
             'cache': None
         }

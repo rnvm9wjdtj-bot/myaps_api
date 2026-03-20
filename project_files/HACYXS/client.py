@@ -38,7 +38,7 @@ def refresh_stock():
     # 获取原始库存数据
     stock_data = tplus_conn.pull_stock()
     if stock_data:
-        ApsHelpers.refresh_stock(stock_data.to_dict('records'))
+        ApsHelpers.refresh_stock(stock_data)
 
 
 def push_pr():
