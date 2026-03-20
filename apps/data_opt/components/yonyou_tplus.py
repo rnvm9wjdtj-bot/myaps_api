@@ -5,6 +5,7 @@ import json
 import os
 from typing import Dict, Any, Literal, Optional, NamedTuple
 from datetime import datetime, timedelta
+import pandas as pd
 
 from pydantic import InstanceOf
 
@@ -12,7 +13,7 @@ from config.settings import MYAPS_MAIN_DB
 
 
 from ._base import (
-    PydanticModel,
+    PydanticModel, JSONManager,
     console_log, filelog_normal, filelog_error,
     DataProcessor, globalconst, CACHE_JSON, pdv,
     BaseConnection, ApsHelpers, convert_timeunit, clean_value,
@@ -30,6 +31,9 @@ from ._base import (
 在 @model_validator 中需要将：
 无法通过处理原生数据获取的联合索引字段设为  "🈳❗"  占位，以保证能构成完整的联合索引
 """
+
+MERGE_ENTRIY_KEY = '_entries_'
+
 class TplusPullMaterial(AcceptMaterial):
 
     size: Optional[str] = Field(None)   # 需要客户在HAP中填写的字段统一设为 None。
@@ -267,20 +271,24 @@ class TplusCreateRs(PydanticModel):
         cleaned_values = {}
         cleaned_values['ExternalCode'] = values['demandno']
         cleaned_values['VoucherType'] = {"Code": "ST1039"}
-        cleaned_values['VoucherDate'] = values["_entries_"][0]['req_date']
+        cleaned_values['VoucherDate'] = values[MERGE_ENTRIY_KEY][0]['req_date']
         cleaned_values['BusiType'] = {"Code": "MR01"}
         erp_config = CACHE_JSON.get("erp", {})
         cleaned_values['Department'] = {"Code": erp_config.get("$MoDepartment", "")}
 
+        aps_demand_qty = {_['materialno']: _ for _ in values[MERGE_ENTRIY_KEY]}
+        tplus_material_details = values["mo_material_details"]
         mr_details = []
-        for entry in values["_entries_"]:
+
+        for md in tplus_material_details:
             mr = {}
+            materialno = md['Inventory']['Code']
             mr['IdSourceVoucherType'] = "69"
             mr['SourceVoucherId'] = values['tplus_mo_id']
             # mr['SourceVoucherDetailId'] = values['tplus_mo_entryid']
-            mr['SourceVoucherDetailId'] = values['mo_material_details_id']
-            mr['Inventory'] = {'Code': entry['materialno']}
-            mr['BaseQuantity'] = entry['req_qty'] * -1
+            mr['SourceVoucherDetailId'] = md['ID']
+            mr['Inventory'] = {'Code': materialno}
+            mr['BaseQuantity'] = abs(aps_demand_qty.get(materialno, {}).get('req_qty', 0))
             mr_details.append(mr)
         cleaned_values['MaterialRequestDetails'] = mr_details
         return cleaned_values
@@ -390,7 +398,6 @@ PrCreateInterface = TplusPushInterface(
 
 
 class TplusConfig:
-    CACHE_FILE = CACHE_JSON
     """
     ⬆️缓存文件用于存储畅捷通认证信息。文件包含如下结构用于T+的认证：
     {
@@ -404,14 +411,15 @@ class TplusConfig:
         }
     }
     """
-    BASE_URL = "https://openapi.chanjet.com"
-    TOKEN_EXPIRE_SECONDS = 12 * 3600     # 设token有效期为12hr
-    AUTH_ENDPOINT = "/auth/v2/refreshToken"
-    # 默认分页大小，注意最大不得超过1000
-    PAGE_SIZE = 1000
-
-    _BOM_CODES = None  # 缓存已处理的BOM编码，用于取工艺路线（因为 T+ 的工艺路线是抽象的，具体到物料的工艺路线是在 BOM 中定义的，而只有通过具体BOM编号查询BOM时，才会展示工艺路线详情
-
+    def __init__(self, cache_file: str | JSONManager = CACHE_JSON):
+        if isinstance(cache_file, str):
+            self.CACHE_FILE = JSONManager(cache_file)
+        else:
+            self.CACHE_FILE = cache_file
+        self.base_url = self.CACHE_FILE.get("erp", {}).get("base_url", "https://openapi.chanjet.com")
+        self.token_expire_seconds = self.CACHE_FILE.get("erp", {}).get("token_expire_seconds", 12 * 3600)     # 设token有效期为12hr
+        # 默认分页大小，上限1000
+        self.max_page_size = min(self.CACHE_FILE.get("erp", {}).get("max_page_size", 1000), 1000)    
 
 
 class TplusConnection(BaseConnection):
@@ -421,25 +429,26 @@ class TplusConnection(BaseConnection):
         初始化畅捷通连接
         """
         self.config = config
-        self.base_url = config.BASE_URL
-        self.cache_file = config.CACHE_FILE
+        self.base_url = self.config.base_url
+        self.cache_file = self.config.CACHE_FILE
         # 从缓存文件中读取认证信息，并将其设置为类实例属性
         self.credential_keys = ("app_key", "app_secret", "access_token", "refresh_token", "org_id", "_auth_at_")
         for key in self.credential_keys:
             setattr(self, key, self.cache_file.get("erp", {}).get(key, ""))
+        self._BOM_CODES = None  # 缓存已处理的BOM编码，用于取工艺路线（因为 T+ 的工艺路线是抽象的，具体到物料的工艺路线是在 BOM 中定义的，而只有通过具体BOM编号查询BOM时，才会展示工艺路线详情 
         super().__init__()
 
 
     def auth(self):
         assert self.access_token and self.refresh_token, "畅捷通token缺失"
         if self._auth_at_:
-            expire_time = datetime.strptime(self._auth_at_, "%Y-%m-%d %H:%M:%S") + timedelta(seconds=self.config.TOKEN_EXPIRE_SECONDS)
+            expire_time = datetime.strptime(self._auth_at_, "%Y-%m-%d %H:%M:%S") + timedelta(seconds=self.config.token_expire_seconds)
             if datetime.now() < expire_time:
                 console_log.info(f"✅ 畅捷通 token 仍在有效期内，有效期至: {expire_time.strftime('%Y-%m-%d %H:%M:%S')}")
                 return self.access_token
 
         auth_response = self._session.get(
-            url=f"{self.base_url}{self.config.AUTH_ENDPOINT}",
+            url=f"{self.base_url}/auth/v2/refreshToken",
             params={
                 "grantType": "refresh_token",
                 "refreshToken": self.refresh_token,
@@ -509,7 +518,7 @@ class TplusConnection(BaseConnection):
         base_filter = pull_interface.base_filter
         params = {
             "PageIndex": 1,
-            "PageSize": self.config.PAGE_SIZE,
+            "PageSize": self.config.max_page_size,
             "SelectFields": ",".join(field_map.keys()),
             **base_filter,
         }
@@ -545,18 +554,33 @@ class TplusConnection(BaseConnection):
 
 
     def pull_stock(self, filter: dict=None, pull_interface: TplusPullInterface=StockPullInterface, pydantic_model: PydanticModel=TplusPullStock):
-        return self._pull_simple_data(pull_interface=pull_interface, filter=filter, pydantic_model=pydantic_model)
+        stock_data = self._pull_simple_data(pull_interface=pull_interface, filter=filter, pydantic_model=pydantic_model)
+        if stock_data:
+            timestamp = datetime.now().strftime('%m%d-%H%M')
+            df = pd.DataFrame(stock_data)
+            # 按materialno分组，avail_qty求和，其他字段取first
+            sum_cols = ['avail_qty']
+            first_cols = [col for col in df.columns if col not in ['materialno'] + sum_cols]
+            agg_dict = {col: 'first' for col in first_cols}
+            agg_dict.update({col: 'sum' for col in sum_cols})
+
+            aggregated_stock = df.groupby('materialno').agg(agg_dict).reset_index()
+            # 生成supplyno字段为materialno@timestamp
+            aggregated_stock['supplyno'] = aggregated_stock['materialno'] + '@' + timestamp
+            return aggregated_stock
+        else:
+            return None
 
 
     def pull_routing(self, only_today: bool = False, pull_interface: TplusPullInterface=RoutingPullInterface, pydantic_model: PydanticModel=TplusPullMatWc):
-        bom_codes = self.config._BOM_CODES
+        bom_codes = self._BOM_CODES
         assert bom_codes, "请先拉取BOM数据，获取BOM CODES"
         endpoint = pull_interface.endpoint
         field_map = pull_interface.field_map
         base_filter = pull_interface.base_filter
         params = {
             "PageIndex": 1,
-            "PageSize": self.config.PAGE_SIZE,
+            "PageSize": self.config.max_page_size,
             "SelectFields": ",".join(field_map.keys()),
             **base_filter,
         }       
@@ -599,7 +623,7 @@ class TplusConnection(BaseConnection):
                 except Exception as exc:
                     console_log.error(f"处理BOM编码 {bom_code} 时出错: {exc}")
         
-        self.config._BOM_CODES = None
+        self._BOM_CODES = None
         data_list = [pydantic_model(**item).model_dump() for item in data_list]
         return data_list
 
@@ -609,10 +633,10 @@ class TplusConnection(BaseConnection):
             """
             处理BOM数据，提取产品编码、产品名称、组件编码、组件名称、组件数量
             """
-            self.config._BOM_CODES = set[str]()
+            self._BOM_CODES = set[str]()
             processed_data = []
             for item in bomdata_list:
-                self.config._BOM_CODES.add(item['Code'])
+                self._BOM_CODES.add(item['Code'])
                 flat_item = DataProcessor.expand_parent_child_data(item, 'BOMChilds')
                 for row in flat_item:
                     processed_data.append({v: row.get(k) for k, v in field_map.items()})
@@ -725,17 +749,19 @@ class TplusConnection(BaseConnection):
         else:
             mo_data = self.query_mo(index_value=tplus_mo_data_or_id)
 
-        processed_rsdata = DataProcessor.merge_common_fields(data=rs_data, merge_with=["demandno", "type", "status", "create_date"], entries_key="_entries_")
+        processed_rsdata = DataProcessor.merge_common_fields(data=rs_data, merge_with=["demandno", "type", "status", "create_date"], entries_key=MERGE_ENTRIY_KEY)
 
         mo_id = mo_data['ID']
+        mo_code = mo_data['Code']
         tplus_mo_entryid = mo_data['ManufactureOrderDetails'][0]['ID']
         mo_material_details = mo_data['ManufactureOrderDetails'][0]['ManufactureOrderMaterialDetails']
-        mo_material_details_id = mo_material_details[0]['ID']
+        # mo_material_details_id = mo_material_details[0]['ID']
 
         # 推送领料申请
         processed_rsdata['tplus_mo_id'] = mo_id
         processed_rsdata['tplus_mo_entryid'] = tplus_mo_entryid
-        processed_rsdata['mo_material_details_id'] = mo_material_details_id
+        # processed_rsdata['mo_material_details_id'] = mo_material_details_id
+        processed_rsdata['mo_material_details'] = mo_material_details
 
         dto = pydantic_model(**processed_rsdata).model_dump()
         payload = {"dto": dto}
@@ -744,8 +770,7 @@ class TplusConnection(BaseConnection):
         if str(rs_push_response_json['code']) == '0': # 创建成功
             ApsHelpers._rs_push_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
         else:
-            filelog_error.error(f"❌ 领料申请推送失败，对应工单：{demandno}，错误信息：{rs_push_response_json['message']}")
-            ApsHelpers._rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+')
+            ApsHelpers._rs_push_failed(rsno=demandno, msg=f"❌ 领料申请推送失败，对应工单：{mo_code}，错误信息：{rs_push_response_json['message']}，数据：{processed_rsdata}", msg_from='T+')
 
 
     def create_pr():

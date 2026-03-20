@@ -34,39 +34,11 @@ tplus_conn.auth()
 # ⬇️ 项目可复用逻辑
 #################################################################################
 
-
 def refresh_stock():
-    import pandas as pd
-    from datetime import datetime
-    
-    # 获取当前时间并格式化为ddhhmm
-    current_time = datetime.now()
-    timestamp = current_time.strftime('%d%H%M')
-    
     # 获取原始库存数据
-    stock = tplus_conn.pull_stock()
-    
-    # 使用pandas进行数据汇总
-    if stock:
-        df = pd.DataFrame(stock)
-        # 按materialno分组，avail_qty求和，其他字段取first
-        grouped = df.groupby('materialno').agg(
-            avail_qty=('avail_qty', 'sum'), matver=('matver', 'first'), itemno=('itemno', 'first'),
-            type=('type', 'first'), category=('category', 'first'), priority=('priority', 'first'),
-            status=('status', 'first'), create_date=('create_date', 'first'), avail_date=('avail_date', 'first'),
-            dt_req=('dt_req', 'first'), avail_end_date=('avail_end_date', 'first'), batchno=('batchno', 'first'),
-            vendorno=('vendorno', 'first'), partnerno=('partnerno', 'first'), partnername=('partnername', 'first'),
-            free1=('free1', 'first'), free2=('free2', 'first'), free3=('free3', 'first'), memo=('memo', 'first')
-        ).reset_index()
-        # 生成supplyno字段为materialno@timestamp
-        grouped['supplyno'] = grouped['materialno'] + '@' + timestamp
-        # 转换为字典列表
-        aggregated_stock = grouped.to_dict('records')
-    else:
-        aggregated_stock = []
-
-    ApsHelpers.refresh_stock(aggregated_stock)
-
+    stock_data = tplus_conn.pull_stock()
+    if stock_data:
+        ApsHelpers.refresh_stock(stock_data.to_dict('records'))
 
 
 def push_pr():

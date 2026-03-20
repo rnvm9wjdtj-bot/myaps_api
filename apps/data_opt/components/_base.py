@@ -18,6 +18,8 @@ from apps.io_api.schemas import (
 from apps.io_api.models import TSupply, TDemand
 from apps.io_api.utils.db_operation import db_query
 from globalobjects import globalconst, logger as log_config, CACHE_JSON, ProjectDefaultValues as pdv
+from globalobjects.json_manager import JSONManager
+
 
 # 获取统一日志器
 console_log = log_config.get_logger(__name__)
@@ -238,6 +240,7 @@ class ApsHelpers:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
             console_log.info(f"开始更新RS失败状态: {rsno}")
+            filelog_error.error(f"❌ 领料申请推送失败，对应工单：{rsno}，错误信息：{msg}")
             response = SESSION.patch(f'{THIS_BASE_URL}/api/t_demand/{rsno}/.../...?db_name={MYAPS_MAIN_DB}', json={
                 'memo': memo,
             })
