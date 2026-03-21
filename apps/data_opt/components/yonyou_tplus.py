@@ -413,13 +413,13 @@ class TplusConfig:
     """
     def __init__(self, cache_file: str | JSONManager = CACHE_JSON):
         if isinstance(cache_file, str):
-            self.CACHE_FILE = JSONManager(cache_file)
+            self.cache_file = JSONManager(cache_file)
         else:
-            self.CACHE_FILE = cache_file
-        self.base_url = self.CACHE_FILE.get("erp", {}).get("base_url", "https://openapi.chanjet.com")
-        self.token_expire_seconds = self.CACHE_FILE.get("erp", {}).get("token_expire_seconds", 12 * 3600)     # 设token有效期为12hr
+            self.cache_file = cache_file
+        self.base_url = self.cache_file.get("erp", {}).get("base_url", "https://openapi.chanjet.com")
+        self.token_expire_seconds = self.cache_file.get("erp", {}).get("token_expire_seconds", 12 * 3600)     # 设token有效期为12hr
         # 默认分页大小，上限1000
-        self.max_page_size = min(self.CACHE_FILE.get("erp", {}).get("max_page_size", 1000), 1000)    
+        self.max_page_size = min(self.cache_file.get("erp", {}).get("max_page_size", 1000), 1000)    
 
 
 class TplusConnection(BaseConnection):
@@ -430,7 +430,7 @@ class TplusConnection(BaseConnection):
         """
         self.config = config
         self.base_url = self.config.base_url
-        self.cache_file = self.config.CACHE_FILE
+        self.cache_file = self.config.cache_file
         # 从缓存文件中读取认证信息，并将其设置为类实例属性
         self.credential_keys = ("app_key", "app_secret", "access_token", "refresh_token", "org_id", "_auth_at_")
         for key in self.credential_keys:
@@ -475,8 +475,9 @@ class TplusConnection(BaseConnection):
             console_log.info(f"✅ 畅捷通token刷新成功")
             return self.access_token
         else:
-            filelog_error.error(f"🚫 获取畅捷通token失败: {auth_response}")
-            raise Exception(f"🚫 获取畅捷通token失败: {auth_response}")
+            msg = f"🚫 获取畅捷通token失败: {auth_response}"
+            filelog_error.error(msg)
+            raise Exception(msg)
 
 
 
@@ -693,6 +694,12 @@ class TplusConnection(BaseConnection):
         
     
     def create_mo(self, supplyno: str, auto_push_rs: bool = True):
+        """
+        创建MO
+        :param supplyno: APS 中的 PL号
+        :param auto_push_rs: 是否自动推送领料申请
+        :return:
+        """
         def approve_mo(tplus_moid):
             endpoint = MoApproveInterface.endpoint
             payload = {"param": {'voucherID': tplus_moid}}
@@ -731,7 +738,7 @@ class TplusConnection(BaseConnection):
             # 调用存储过程更改工单信息，❗一定放在最后一步，否则工单号变更太早，前面若有用原生供应号查询都会失败
             _x_c = ApsHelpers._pl_release_success(plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
         else:
-            _x_d = ApsHelpers._pl_release_failed(plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+')
+            _x_d = ApsHelpers._pl_release_failed(plno=supplyno, msg=mo_create_response_json['message'], data=payload, msg_from='T+')
 
 
     def push_rs(self, mdlist_or_supplyno: str | list[dict], tplus_mo_data_or_id: dict | str | int):
@@ -775,8 +782,13 @@ class TplusConnection(BaseConnection):
         if str(rs_push_response_json['code']) == '0': # 创建成功
             ApsHelpers._rs_push_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
         else:
-            ApsHelpers._rs_push_failed(rsno=demandno, msg=f"❌ 领料申请推送失败，对应工单：{mo_code}，错误信息：{rs_push_response_json['message']}，数据：{processed_rsdata}", msg_from='T+')
+            ApsHelpers._rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], data=processed_rsdata, msg_from='T+')
 
 
-    def create_pr():
+    def create_pr(self, supplyno: str):
+        """
+        创建采购申请
+        :param supplyno: APS 中的 PR 号
+        :return:
+        """
         pass

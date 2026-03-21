@@ -1,13 +1,6 @@
 """
 淮安超越橡塑项目文件
 """
-# import requests, logging, os, asyncio
-# import pandas as pd
-# from datetime import datetime
-# from typing import Callable
-# from fastapi import status
-
-
 from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR, SCHEDULER_MINUTE
 from .._base import (
     get_scheduler_minute, cron_task, filelog_normal, filelog_error, console_log, CACHE_JSON,
@@ -19,29 +12,25 @@ from globalobjects import logger as log_config
 
 from apps.data_opt.components.yonyou_tplus import TplusConnection, BaseConnection
 
-
 #################################################################################
 # ⬇️ 项目对象及参数
 #################################################################################
-
 SESSION = get_session()
 
 tplus_conn = TplusConnection()
 tplus_conn.auth()
-
 
 #################################################################################
 # ⬇️ 项目可复用逻辑
 #################################################################################
 
 def refresh_stock():
-    # 获取原始库存数据
     stock_data = tplus_conn.pull_stock()
     if stock_data:
         ApsHelpers.refresh_stock(stock_data)
 
 
-def push_pr():
+def push_pr(supplyno: str):
     pr_query = db_query(db_name=MYAPS_MAIN_DB, model_or_tablename='t_supply', filter_string=f"`Type`='PR' AND `Status` IN ('NEW','CRE')")
     if pr_query['success']:
         pr_list = pr_query['data']
@@ -49,27 +38,21 @@ def push_pr():
 #################################################################################
 # ⬇️ 定时任务
 #################################################################################
-
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute())
 def task_refresh_stock(*args, **kwargs):
-    console_log.info("⏰ 开始执行刷新库存定时任务")
-    stock = refresh_stock()
-    console_log.info("⏰ 刷新库存定时任务执行完成")
-
+    refresh_stock()
 
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2))
 def task_confirm_workreport():
-    """
-    确认报工记录
-    """
-    console_log.info("⏰ 开始执行确认报工记录任务")
     ApsHelpers.confirm_workreport()
-    console_log.info("⏰ 确认报工记录任务执行完成")
+
 #################################################################################
 # ⬇️ 数据库事件
 #################################################################################
 
-def onclick_mo_release_button(supplyno: str):
+def on_pl_status_a2e(supplyno: str):
     tplus_conn.create_mo(supplyno=supplyno)
 
+def on_pr_status_a2e(supplyno: str):
+    push_pr(supplyno=supplyno)

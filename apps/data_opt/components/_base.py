@@ -176,9 +176,9 @@ class ApsHelpers:
 
 
     @staticmethod
-    def _pl_release_failed(plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, msg_from: str=None):
+    def _pl_release_failed(plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, data: dict=None, msg_from: str=None):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_msg = f"🚫 推送计划任务执行失败，账套：{MYAPS_MAIN_DB}，PL单号：{plno}"
+        log_msg = f"🚫 推送计划任务执行失败，账套：{MYAPS_MAIN_DB}，PL单号：{plno}，错误信息：{msg}，数据：{data}"
         console_log.error(log_msg)
         filelog_error.error(log_msg)
         memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
@@ -230,7 +230,7 @@ class ApsHelpers:
 
 
     @staticmethod
-    def _rs_push_failed(rsno: str, msg: str=None, msg_from: str=None):
+    def _rs_push_failed(rsno: str, msg: str=None, data: dict=None, msg_from: str=None):
         """
         当推送 RS 至 ERP 失败时，调用该方法更新 RS 状态
         Args:
@@ -242,7 +242,7 @@ class ApsHelpers:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
             console_log.info(f"开始更新RS失败状态: {rsno}")
-            filelog_error.error(f"❌ 领料申请推送失败，对应工单：{rsno}，错误信息：{msg}")
+            filelog_error.error(f"❌ 领料申请推送失败，对应工单：{rsno}，错误信息：{msg}，数据：{data}")
             response = SESSION.patch(f'{THIS_BASE_URL}/api/t_demand/{rsno}/.../...?db_name={MYAPS_MAIN_DB}', json={
                 'memo': memo,
             })

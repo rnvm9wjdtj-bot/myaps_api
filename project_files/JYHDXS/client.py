@@ -218,7 +218,7 @@ def task_push_seasonpr_to_srm():
 # ⬇️APS事件
 #################################################################################
 
-def onclick_mo_release_button(supplyno: str):
+def on_pl_status_a2e(supplyno: str):
     supplymo_detaildata = ApsHelpers._get_supplymo_detaildata(supplyno=supplyno)
     try:
         start_datetime: str = supplymo_detaildata['dt_ordstart'].split(" ")[0]
@@ -244,6 +244,6 @@ def onclick_mo_release_button(supplyno: str):
         if sap_mo_data['STATUS'] == 'S':
             ApsHelpers._pl_release_success(plno=supplyno, mono=sap_mo_data['AUFNR'], msg=sap_mo_data['MESSAGE'], msg_from='ERP')
         else:
-            ApsHelpers._pl_release_failed(plno=supplyno, msg=sap_mo_data['MESSAGE'], msg_from='ERP')
+            ApsHelpers._pl_release_failed(plno=supplyno, msg=sap_mo_data['MESSAGE'], data=data, msg_from='ERP')
     except Exception as e:
-        ApsHelpers._pl_release_failed(plno=supplyno, msg=str(e), msg_from='API')
+        ApsHelpers._pl_release_failed(plno=supplyno, msg=str(e), data=data, msg_from='API')

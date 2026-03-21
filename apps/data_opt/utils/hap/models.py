@@ -139,27 +139,8 @@ class Model:
                 delattr(cls, attr)
     
     def __setattr__(self, name, value):
-        """设置属性值时清理缓存
-        
-        优化点：
-        1. 使用预编译的 frozenset 进行 O(1) 快速查找
-        2. 避免调用 _get_fields() 方法的开销
+        """设置属性值
         """
-        # 如果设置的是字段属性，清理缓存
-        if name not in ['hap_conn', 'row_id']:
-            # 检查是否是字段属性（使用预编译的 frozenset）
-            try:
-                # 优先使用预编译的 frozenset 进行快速查找
-                if hasattr(self.__class__, '_field_map_keys'):
-                    if name in self.__class__._field_map_keys:
-                        self.__class__.clear_field_caches()
-                else:
-                    # 回退到原始方法
-                    fields = self._get_fields()
-                    if name in fields:
-                        self.__class__.clear_field_caches()
-            except Exception:
-                pass
         super().__setattr__(name, value)
     
     def get_field_by_name(self, name: str) -> Optional[Field]:

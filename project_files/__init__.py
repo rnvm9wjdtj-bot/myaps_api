@@ -40,5 +40,17 @@ def handle_update_supply(database: str, table: str, data: dict, data_diff: dict)
 
     # 确认/下达生产计划单PL (当PL状态从NEW或CRE变为A2E时)
     if type_now == 'PL' and status_now == OrderStatusEnum.A2E.value and status_before in ["NEW", "CRE"]:
-        project_client.onclick_mo_release_button(no_now)
+        try:
+            project_client.on_pl_status_a2e(no_now)
+        except Exception as e:
+            pass
+
+    
+    # 推送采购申请PR
+    if type_now == 'PR' and status_now == OrderStatusEnum.A2E.value and status_before in ["NEW", "CRE"]:
+        try:
+            project_client.on_pr_status_a2e(no_now)
+        except Exception as e:
+            pass
+
 
