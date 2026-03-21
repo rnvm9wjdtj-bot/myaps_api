@@ -25,6 +25,30 @@ except:
 # ⬇️MYAPS数据库事件HOOK
 #################################################################################
 from apps.data_opt.utils.mysqlmonitor import mysql_monitor
+from globalobjects import EVENT_AGGREGATOR
+
+
+def batch_process_pr_events(pr_data_list: list[dict]):
+    """批量处理PR状态变更事件"""
+    try:
+        for pr_data in pr_data_list:
+            try:
+                project_client.on_pr_status_a2e(pr_data)
+            except Exception as e:
+                pass
+    except Exception as e:
+        pass
+
+
+# 注册PR事件处理
+EVENT_AGGREGATOR.register(
+    event_type="|pr_status_a2e|",
+    handler=batch_process_pr_events,
+    # dedup_key=lambda x: x,
+    # batch_size=50,
+    # flush_interval=5
+)
+
 
 
 @mysql_monitor.on_update_for_table("t_supply", database=MYAPS_MAIN_DB)
@@ -36,21 +60,18 @@ def handle_update_supply(database: str, table: str, data: dict, data_diff: dict)
     data_now = dict_to_lower_keys(data['new'])
     type_now = data_now['type']
     status_now = data_now['status']
-    no_now = data_now['supplyno']
+    # no_now = data_now['supplyno']
 
     # 确认/下达生产计划单PL (当PL状态从NEW或CRE变为A2E时)
-    if type_now == 'PL' and status_now == OrderStatusEnum.A2E.value and status_before in ["NEW", "CRE"]:
+    if type_now == 'PL' and status_now == "A2E" and status_before in ["NEW", "CRE"]:
         try:
-            project_client.on_pl_status_a2e(no_now)
+            project_client.on_pl_status_a2e(data_now)
         except Exception as e:
             pass
 
     
-    # 推送采购申请PR
-    if type_now == 'PR' and status_now == OrderStatusEnum.A2E.value and status_before in ["NEW", "CRE"]:
-        try:
-            project_client.on_pr_status_a2e(no_now)
-        except Exception as e:
-            pass
+    # 推送采购申请PR - 使用事件聚合器
+    # if type_now == 'PR' and status_now == "A2E" and status_before in ["NEW", "CRE"]:
+    #     EVENT_AGGREGATOR.add("|pr_status_a2e|", data_now)
 
 

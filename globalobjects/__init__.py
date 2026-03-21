@@ -1,16 +1,23 @@
 import os
 from pathlib import Path
-from .json_manager import JSONManager
-
-
 current_dir = Path(__file__).resolve().parent
 root_dir = current_dir.parent
-
 pf_dir = os.getenv("PROJECT_DIR")
+
+
+
+from .json_manager import JSONManager
 cache_filename = os.getenv("CACHE_FILENAME") or "cache.json"
 if pf_dir is None:
     raise ValueError("❌ PROJECT_DIR 环境变量未设置，请在 .env 文件中设置 PROJECT_DIR")
 CACHE_JSON = JSONManager(f"{root_dir}/project_files/{pf_dir}/{cache_filename}")
+
+
+
+from .event_aggregator import get_global_handler_aggregator
+EVENT_AGGREGATOR = get_global_handler_aggregator()
+
+
 
 
 class ProjectDefaultValues:
@@ -64,3 +71,5 @@ class ProjectDefaultValues:
 
 
     WORKREPORT_STATUS = defaults.get("workreport_status", "N")  # 默认报工状态，N 未报工，Y 已报工，一般应为 N，由定时任务统一确认
+
+

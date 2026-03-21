@@ -373,6 +373,13 @@ SingleMoQueryInterface = TplusPullInterface(
 )
 
 
+# NewPoQueryInterface = TplusPullInterface(
+#     endpoint="/tplus/api/v2/PurchaseOrderOpenApi/FindVoucherList",
+#     field_map={"ID": "ID", "Code": "编码", "ExternalCode": "外部编码"},
+#     base_filter={"Status": "NEW"},
+# )
+
+
 class TplusPushInterface(NamedTuple):
     endpoint: str
     remark: Optional[str] = ''

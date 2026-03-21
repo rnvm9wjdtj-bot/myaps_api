@@ -218,7 +218,12 @@ def task_push_seasonpr_to_srm():
 # ⬇️APS事件
 #################################################################################
 
-def on_pl_status_a2e(supplyno: str):
+def on_pl_status_a2e(supplyno_or_data: str | dict):
+    if isinstance(supplyno_or_data, str):
+        supplyno = supplyno_or_data
+    else:
+        supplyno = supplyno_or_data['supplyno']
+
     supplymo_detaildata = ApsHelpers._get_supplymo_detaildata(supplyno=supplyno)
     try:
         start_datetime: str = supplymo_detaildata['dt_ordstart'].split(" ")[0]
