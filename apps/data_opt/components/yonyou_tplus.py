@@ -7,7 +7,7 @@ from typing import Dict, Any, Literal, Optional, NamedTuple
 from datetime import datetime, timedelta
 import pandas as pd
 
-from pydantic import InstanceOf
+# from pydantic import InstanceOf
 
 from config.settings import MYAPS_MAIN_DB
 
@@ -34,7 +34,7 @@ from ._base import (
 
 MERGE_ENTRIY_KEY = '_entries_'
 
-class TplusPullMaterial(AcceptMaterial):
+class MaterialPullModel(AcceptMaterial):
 
     size: Optional[str] = Field(None)   # 需要客户在HAP中填写的字段统一设为 None。
     candelay: Optional[str] = Field(None)   # 需要客户在HAP中填写的字段统一设为 None。
@@ -86,7 +86,7 @@ class TplusPullMaterial(AcceptMaterial):
         return values
 
 
-class TplusPullWorkcenter(AcceptWorkcenter):
+class WorkcenterPullModel(AcceptWorkcenter):
 
     class Config:
         extra = 'allow'
@@ -113,7 +113,7 @@ class TplusPullWorkcenter(AcceptWorkcenter):
         return cleaned_values
 
 
-class TplusPullMatWc(AcceptMatWc):
+class RoutePullModel(AcceptMatWc):
 
     matver: Optional[str] = Field(None)
     itemno: Optional[str] = Field(None)
@@ -141,7 +141,7 @@ class TplusPullMatWc(AcceptMatWc):
         return cleaned_values
 
 
-class TplusPullMatWcBom(AcceptMatWcBom):
+class BomPullModel(AcceptMatWcBom):
 
     matver: Optional[str] = Field(None)
     itemno: Optional[str] = Field(None)
@@ -169,7 +169,7 @@ class TplusPullMatWcBom(AcceptMatWcBom):
         return cleaned_values
 
 
-class TplusPullStock(AcceptSupply):
+class StockPullModel(AcceptSupply):
 
     type: str = Field('ST')
     priority: int = Field(0)
@@ -190,10 +190,14 @@ class TplusPullStock(AcceptSupply):
         cleaned_values['create_date'] = now
         cleaned_values['avail_date'] = now
         cleaned_values['dt_req'] = now
+        cleaned_values['category'] = 'MTS'
+        cleaned_values['type'] = 'ST'
+        cleaned_values['priority'] = 0
+        cleaned_values['status'] = 'CRE'
         return cleaned_values
 
 
-class TplusCreateMo(PydanticModel):
+class MoPushModel(PydanticModel):
     """
     整理推送T+MO数据
     """
@@ -251,7 +255,7 @@ class TplusCreateMo(PydanticModel):
         return cleaned_values
 
 
-class TplusCreateRs(PydanticModel):
+class RsPushModel(PydanticModel):
     """
     整理推送T+领料申请数据
     """
@@ -294,7 +298,7 @@ class TplusCreateRs(PydanticModel):
         return cleaned_values
 
 
-class TplusCreatePr(PydanticModel):
+class PrPushModel(PydanticModel):
     """
     整理推送T+请购单数据
     """
@@ -316,14 +320,14 @@ class TplusCreatePr(PydanticModel):
         pass
 
 
-class TplusPullInterface(NamedTuple):
+class PullInterface(NamedTuple):
     endpoint: str
     field_map: Optional[dict[str, str]] = {}
     base_filter: Optional[dict[str, Any]] = {}
     remark: Optional[str] = ''
 
 
-MaterialPullInterface = TplusPullInterface(
+MaterialPullInterface = PullInterface(
     endpoint="/tplus/api/v2/inventory/Query",
     field_map={
         "ID": "ID", "Disabled": "是否停用", "Code": "编码", "Name": "名称", "Specification": "规格型号",
@@ -336,12 +340,12 @@ MaterialPullInterface = TplusPullInterface(
     base_filter={"Disabled": False, "IsMaterial": True, "Ts": None}
 )
 
-WorkcenterPullInterface = TplusPullInterface(
+WorkcenterPullInterface = PullInterface(
     endpoint="/tplus/api/v2/WorkCenter/QueryPage",
     field_map={"ID": "ID", "Code": "编码", "Name": "名称", "Disabled": "是否停用"},
 )
 
-RoutingPullInterface = TplusPullInterface(
+RoutingPullInterface = PullInterface(
     endpoint="/tplus/api/v2/bom/Query",  # 不用 "/tplus/api/v2/routing/Query", 因为 T+ 的工艺路线是抽象的，具体到物料的工艺路线是在 BOM 中定义的
     field_map={
         "ID": "ID", "Inventory / Code": "父件编码", "Inventory / Name": "父件名称", "BOMProcessDTOs / SequenceNumber": "加工顺序",
@@ -351,7 +355,7 @@ RoutingPullInterface = TplusPullInterface(
     },
 )
 
-BomDataPullInterface = TplusPullInterface(
+BomPullInterface = PullInterface(
     endpoint="/tplus/api/v2/bom/QueryPage",
     field_map={
         "ID": "ID", "Disabled": "是否停用", "Code": "父件编码", "Name": "父件名称", "Version": "版本号", "IsPhantom": "是否虚拟",
@@ -360,46 +364,46 @@ BomDataPullInterface = TplusPullInterface(
     },
 )
 
-StockPullInterface = TplusPullInterface(
+StockPullInterface = PullInterface(
     endpoint="/tplus/api/v2/currentStock/Query",
     field_map={"InventoryCode": "存货编码", "ExistingQuantity": "现存量", "TS": "时间戳"},
     base_filter={"IsIncludeZero": True},
     remark="现存量查询 https://open.chanjet.com/docs/file/apiFile/tcloud/tjqt/xcl?id=30875，以 现存量字段 为库存数导入",
 )
 
-SingleMoQueryInterface = TplusPullInterface(
+SingleMoQueryInterface = PullInterface(
     endpoint="/tplus/api/v2/ManufactureOrderOpenApi/GetVoucherDTO",
     field_map={"ID": "ID", "Code": "编码", "ExternalCode": "外部编码"},
 )
 
 
-# NewPoQueryInterface = TplusPullInterface(
+# NewPoPullInterface = TplusPullInterface(
 #     endpoint="/tplus/api/v2/PurchaseOrderOpenApi/FindVoucherList",
 #     field_map={"ID": "ID", "Code": "编码", "ExternalCode": "外部编码"},
 #     base_filter={"Status": "NEW"},
 # )
 
 
-class TplusPushInterface(NamedTuple):
+class PushInterface(NamedTuple):
     endpoint: str
     remark: Optional[str] = ''
 
 
-MoApproveInterface = TplusPushInterface(
+MoApproveInterface = PushInterface(
     endpoint="/tplus/api/v2/ManufactureOrderOpenApi/Audit",
 )
 
 
-MoCreateInterface = TplusPushInterface(
+MoCreateInterface = PushInterface(
     endpoint="/tplus/api/v2/ManufactureOrderOpenApi/Create",
 )
 
 
-RsCreateInterface = TplusPushInterface(
+RsCreateInterface = PushInterface(
     endpoint="/tplus/api/v2/MaterialRequestOpenApi/Create",
 )
 
-PrCreateInterface = TplusPushInterface(
+PrCreateInterface = PushInterface(
     endpoint="/tplus/api/v2/PurchaseRequisitionOpenApi/Create",
 )
 
@@ -520,7 +524,7 @@ class TplusConnection(BaseConnection):
         return response
 
 
-    def _pull_simple_data(self, pull_interface: TplusPullInterface, filter: dict=None, pydantic_model: PydanticModel=None):
+    def _pull_simple_data(self, pull_interface: PullInterface, filter: dict=None, pydantic_model: PydanticModel=None):
         self.auth()
         endpoint = pull_interface.endpoint
         field_map = pull_interface.field_map
@@ -550,19 +554,19 @@ class TplusConnection(BaseConnection):
             data_list.extend([{v: row.get(k) for k, v in field_map.items()} for row in raw_data])
             
         if pydantic_model:
-            data_list = [pydantic_model(**item).model_dump() for item in data_list]
+            data_list = [pydantic_model(**item).model_dump(exclude_unset=True) for item in data_list]
         return data_list
 
 
-    def pull_material(self, filter: dict=None, pull_interface: TplusPullInterface=MaterialPullInterface, pydantic_model: PydanticModel=TplusPullMaterial):
+    def pull_material(self, filter: dict=None, pull_interface: PullInterface=MaterialPullInterface, pydantic_model: PydanticModel=MaterialPullModel):
         return self._pull_simple_data(pull_interface=pull_interface, filter=filter, pydantic_model=pydantic_model)
     
     
-    def pull_workcenter(self, filter: dict=None, pull_interface: TplusPullInterface=WorkcenterPullInterface, pydantic_model: PydanticModel=TplusPullWorkcenter):
+    def pull_workcenter(self, filter: dict=None, pull_interface: PullInterface=WorkcenterPullInterface, pydantic_model: PydanticModel=WorkcenterPullModel):
         return self._pull_simple_data(pull_interface=pull_interface, filter=filter, pydantic_model=pydantic_model)
 
 
-    def pull_stock(self, filter: dict=None, pull_interface: TplusPullInterface=StockPullInterface, pydantic_model: PydanticModel=TplusPullStock):
+    def pull_stock(self, filter: dict=None, pull_interface: PullInterface=StockPullInterface, pydantic_model: PydanticModel=StockPullModel, return_df: bool = True):
         stock_data = self._pull_simple_data(pull_interface=pull_interface, filter=filter, pydantic_model=pydantic_model)
         if stock_data:
             timestamp = datetime.now().strftime('%m%d-%H%M')
@@ -576,12 +580,16 @@ class TplusConnection(BaseConnection):
             aggregated_stock = df.groupby('materialno').agg(agg_dict).reset_index()
             # 生成supplyno字段为materialno@timestamp
             aggregated_stock['supplyno'] = aggregated_stock['materialno'] + '@' + timestamp
+            # aggregated_stock['type'] = 'ST'
+            # aggregated_stock['category'] = 'MTS'
+            if not return_df:
+                aggregated_stock =  aggregated_stock.to_dict(orient='records')
             return aggregated_stock
         else:
             return None
 
 
-    def pull_routing(self, only_today: bool = False, pull_interface: TplusPullInterface=RoutingPullInterface, pydantic_model: PydanticModel=TplusPullMatWc):
+    def pull_routing(self, only_today: bool = False, pull_interface: PullInterface=RoutingPullInterface, pydantic_model: PydanticModel=RoutePullModel):
         bom_codes = self._BOM_CODES
         assert bom_codes, "请先拉取BOM数据，获取BOM CODES"
         self.auth()
@@ -638,7 +646,7 @@ class TplusConnection(BaseConnection):
         return data_list
 
 
-    def pull_bom(self, only_today: bool = False, pull_interface: TplusPullInterface=BomDataPullInterface, pydantic_model: PydanticModel=TplusPullMatWcBom):
+    def pull_bom(self, only_today: bool = False, pull_interface: PullInterface=BomPullInterface, pydantic_model: PydanticModel=BomPullModel):
         def process_bomdata(bomdata_list: list, field_map: dict):
             """
             处理BOM数据，提取产品编码、产品名称、组件编码、组件名称、组件数量
@@ -715,7 +723,7 @@ class TplusConnection(BaseConnection):
         
         self.auth()
         endpoint = MoCreateInterface.endpoint
-        pydantic_model = TplusCreateMo
+        pydantic_model = MoPushModel
         # 材料需求
         demand_list = ApsHelpers._get_demand_datalist(demandno=supplyno)
         # PL及工序详情
@@ -755,7 +763,7 @@ class TplusConnection(BaseConnection):
         🅰 tplus_mo_data: T+ MO 数据
         """
         endpoint = RsCreateInterface.endpoint
-        pydantic_model = TplusCreateRs
+        pydantic_model = RsPushModel
         if isinstance(mdlist_or_supplyno, str):
             rs_data = ApsHelpers._get_demand_datalist(demandno=mdlist_or_supplyno)     # 查询 指定工单号所需物料
             demandno = mdlist_or_supplyno

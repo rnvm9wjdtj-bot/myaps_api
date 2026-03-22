@@ -29,7 +29,7 @@ tplus_conn.auth()
 #################################################################################
 
 def refresh_stock():
-    stock_data = tplus_conn.pull_stock()
+    stock_data = tplus_conn.pull_stock(return_df=False)
     if stock_data:
         ApsHelpers.refresh_stock(stock_data)
 

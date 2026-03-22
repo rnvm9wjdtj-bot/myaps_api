@@ -164,8 +164,6 @@ _SAAS_BASEURL = "https://api.mingdao.com"
 
 class HapConfig:
     """HAP 配置类"""
-
-
     def __init__(self, cache_file: str | JSONManager = CACHE_JSON):
         if isinstance(cache_file, str):
             self.cache_file = JSONManager(cache_file)
@@ -173,23 +171,23 @@ class HapConfig:
             self.cache_file = cache_file
         
         CACHE_HAP = self.cache_file.get("hap", {})
-        MAX_WORKERS = CACHE_HAP.get("max_workers", os.cpu_count() * 10)
+        self.MAX_WORKERS = CACHE_HAP.get("max_workers", os.cpu_count() * 10)
         # 调用刷新函数时，距离上次刷新超过这个秒数，才会刷新行数据，否则直接返回缓存数据
-        REFRESH_INTERVAL_SECONDS = 60
-        BASE_URL = CACHE_HAP.get("base_url", _SAAS_BASEURL)
+        self.REFRESH_INTERVAL_SECONDS = 60
+        self.BASE_URL = CACHE_HAP.get("base_url", _SAAS_BASEURL)
         # QPS 限制，SAAS环境默认 50
-        QPS_LIMIT = 50 if BASE_URL == _SAAS_BASEURL else 1000
-        APP_KEY = CACHE_HAP.get("app_key", "")
-        SIGN = CACHE_HAP.get("sign", "")
-        DESCRIPTION = CACHE_HAP.get("description", "")
+        self.QPS_LIMIT = 50 if self.BASE_URL == _SAAS_BASEURL else 1000
+        self.APP_KEY = CACHE_HAP.get("app_key", "")
+        self.SIGN = CACHE_HAP.get("sign", "")
+        self.DESCRIPTION = CACHE_HAP.get("description", "")
         # 是否启用 HTTP/2 支持，当私有部署时默认启用
-        ENABLE_HTTP2 = CACHE_HAP.get("enable_http2", True) and BASE_URL != _SAAS_BASEURL
+        self.ENABLE_HTTP2 = CACHE_HAP.get("enable_http2", True) and self.BASE_URL != _SAAS_BASEURL
         # 每个模型缓存的最大记录数
-        CACHE_MAX_SIZE = CACHE_HAP.get("cache_max_size", 10000)
+        self.CACHE_MAX_SIZE = CACHE_HAP.get("cache_max_size", 10000)
         # 内存阈值（MB），超过时触发清理
-        MEMORY_THRESHOLD_MB = CACHE_HAP.get("memory_threshold_mb", 2048)
+        self.MEMORY_THRESHOLD_MB = CACHE_HAP.get("memory_threshold_mb", 2048)
         # 是否启用内存管理（默认 True）
-        ENABLE_MEMORY_MANAGEMENT = CACHE_HAP.get("enable_memory_management", True)
+        self.ENABLE_MEMORY_MANAGEMENT = CACHE_HAP.get("enable_memory_management", True)
 
 # 配置常量
 _MAX_CONCURRENCY = _CACHE_HAP.get("max_concurrency", os.cpu_count() * 8)

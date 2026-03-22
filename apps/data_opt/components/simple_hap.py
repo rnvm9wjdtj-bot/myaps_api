@@ -458,17 +458,21 @@ class HapConnection:
         return response.json()
 
 
-    def worksheet(self, worksheet_id: str) -> 'HapWorksheet':
+    def worksheet(self, worksheet: str | WorksheetProperty) -> 'HapWorksheet':
         """获取工作表对象
         
         Args:
-            worksheet_id: 工作表ID或名称
+            worksheet: 工作表ID或名称或工作表属性对象
             
         Returns:
             HapWorksheet: 工作表对象
         """
+        if isinstance(worksheet, WorksheetProperty):
+            worksheet_id = worksheet.worksheet_id
+        else:
+            worksheet_id = worksheet
         assert worksheet_id in self.worksheets_info, f"Worksheet {worksheet_id} is not registered."
-        return HapWorksheet(worksheet_id=worksheet_id, hap_conn=self)
+        return HapWorksheet(worksheet_id=worksheet_id,_conn=self)
 
 
     def regist_worksheet(self, worksheet_info: WorksheetProperty | List[WorksheetProperty]):

@@ -160,7 +160,7 @@ class ApsHelpers:
             console_log.info(f"开始更新PL状态为MO: {plno}, 目标状态: {to_status}, MO单号: {mono}")
             response = SESSION.patch(f'{THIS_BASE_URL}/api/t_supply/{plno}?db_name={MYAPS_MAIN_DB}', json={
                 'status': to_status,
-                'apiex_code': str(mono),
+                'apiex_sn': str(mono),
                 'apiex_id': str(_id or ""),
                 'apiex_entryid': str(_entryid or ""),
                 'supplyno': str(mono),

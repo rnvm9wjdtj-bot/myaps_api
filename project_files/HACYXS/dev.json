@@ -22,8 +22,8 @@
     "app_key": "UG69s1P1",
     "app_secret": "F1A51CB0AD5275BF6FAA46270AF1CF37",
     "refresh_token": "4368d1ca4f3d46fca865e0d85d731a29",
-    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJpc3YiLCJpc3MiOiJjaGFuamV0IiwidXNlcklkIjoiMzk2MjUxNzMxNzA5OTU0Iiwib3JnSWQiOiIxMjQxNzU3OTMzNjA5NDUzIiwiYWNjZXNzX3Rva2VuIjoiYmMtZjhlMmU1MTEtNGQ4ZS00ZWNjLTg2OGQtNmU5YjNhMDYyMmM0IiwiYXVkIjoiaXN2IiwibmJmIjoxNzc0MDU2NDMzLCJhcHBJZCI6IjU4Iiwic2NvcGUiOiJhdXRoX2FsbCIsImFwcEtleSI6IlVHNjlzMVAxIiwiaWQiOiI4ZDc1ODc5OC1jYmU5LTQ4MWEtODBiNS02MjI2NDE4NjczNmQiLCJleHAiOjE3NzQ1NzQ4MzMsImlhdCI6MTc3NDA1NjQzMywib3JnQWNjb3VudCI6InV3aWF4ZnVlc2E2OCJ9.nl2fVZSqJdZprN5gEfUysj2CnSlRGjAbOV-l92PuP9k",
-    "_auth_at_": "2026-03-21 09:28:20",
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJpc3YiLCJpc3MiOiJjaGFuamV0IiwidXNlcklkIjoiMzk2MjUxNzMxNzA5OTU0Iiwib3JnSWQiOiIxMjQxNzU3OTMzNjA5NDUzIiwiYWNjZXNzX3Rva2VuIjoiYmMtZjhlMmU1MTEtNGQ4ZS00ZWNjLTg2OGQtNmU5YjNhMDYyMmM0IiwiYXVkIjoiaXN2IiwibmJmIjoxNzc0MTQwOTEwLCJhcHBJZCI6IjU4Iiwic2NvcGUiOiJhdXRoX2FsbCIsImFwcEtleSI6IlVHNjlzMVAxIiwiaWQiOiJjYWRhZGE4My0yYzEzLTQwZDMtYmYzMS01NGEwNTczZTg0NjIiLCJleHAiOjE3NzQ2NTkzMTAsImlhdCI6MTc3NDE0MDkxMCwib3JnQWNjb3VudCI6InV3aWF4ZnVlc2E2OCJ9.LvuNnIjlO_e0uVswPwSmEgSMGfEjb0QXG_RLsGVaabE",
+    "_auth_at_": "2026-03-22 08:55:10",
     "$MoBusiType": "PT01",
     "$MoDepartment": "1",
     "$PrRequisitionPerson": "001"
@@ -35,6 +35,11 @@
     "max_concurrency": 4,
     "enable_http2": false,
     "warm_connections": 2
+  },
+  "#hap": {
+    "base_url": "http://146.56.216.100:8880/api",
+    "app_key": "a01972a050e376a4",
+    "sign": "MjZlMTc2ZTZmNTc1ZDYxMzg1OWQ4ZjM3ZDg4MTRhNzBmZWRjMTcxNDNkYjg3OTQwMjNlN2JlYjU5YjM4MTBmZg=="
   },
   "defaults": {
     "auto_matver": true,

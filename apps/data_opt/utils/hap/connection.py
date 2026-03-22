@@ -30,7 +30,7 @@ from .data_objects import HapRowSet, HapQuerySet, AsyncHapQuerySet
 
 
 class HapConnection:
-    def __init__(self, config: HapConfig=HapConfig):
+    def __init__(self, config: HapConfig=HapConfig()):
         self.config = config
         self.base_url = config.BASE_URL
         self.app_key = config.APP_KEY
