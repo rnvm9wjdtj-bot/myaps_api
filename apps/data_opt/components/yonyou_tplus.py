@@ -242,16 +242,21 @@ class MoPushModel(PydanticModel):
         cleaned_values['VoucherDate'] = values['dt_ordstart']
         cleaned_values['IsMaterialRequest'] = True
         cleaned_values['Memo'] = values['vendorno']
-        cleaned_values['ManufactureOrderDetails'] = [
-            {
-                'Inventory': {'Code': values['materialno']},
-                'Unit': {'Name': values.get('unit', "")},
-                'Quantity': values['avail_qty'],
-                'PreStartDate': values['dt_ordstart'],
-                'PreFinishDate': values['dt_ordend'],
-                'ManufactureOrderMaterialDetails': momd,
-            }
-        ]
+        mod = {
+            'Inventory': {'Code': values['materialno']},
+            'Unit': {'Name': values.get('unit', "")},
+            'Quantity': values['avail_qty'],
+            'PreStartDate': values['dt_ordstart'],
+            'PreFinishDate': values['dt_ordend'],
+            'ManufactureOrderMaterialDetails': momd,
+        }
+        so = values.get('so')
+        if so:
+            mod['SaleOrderCode'] = values.get('vendorno', "")
+            mod['idsourceVoucherType'] = "43"   # 销售订单
+            mod['SourceVoucherDetailId'] = so[0]['apiex_entryid']
+        cleaned_values['ManufactureOrderDetails'] = [mod]
+
         return cleaned_values
 
 
@@ -580,8 +585,7 @@ class TplusConnection(BaseConnection):
             aggregated_stock = df.groupby('materialno').agg(agg_dict).reset_index()
             # 生成supplyno字段为materialno@timestamp
             aggregated_stock['supplyno'] = aggregated_stock['materialno'] + '@' + timestamp
-            # aggregated_stock['type'] = 'ST'
-            # aggregated_stock['category'] = 'MTS'
+
             if not return_df:
                 aggregated_stock =  aggregated_stock.to_dict(orient='records')
             return aggregated_stock
@@ -708,11 +712,12 @@ class TplusConnection(BaseConnection):
             return None
         
     
-    def create_mo(self, supplyno: str, auto_push_rs: bool = True):
+    def create_mo(self, supplyno: str, auto_push_rs: bool = True, remain_native_supplyno: bool = True):
         """
         创建MO
         :param supplyno: APS 中的 PL号
         :param auto_push_rs: 是否自动推送领料申请
+        :param remain_native_supplyno: 是否保留原生供应号，若为 false 则使用 T+ 生成的工单号作为 MO 供应号
         :return:
         """
         def approve_mo(tplus_moid):
@@ -729,7 +734,9 @@ class TplusConnection(BaseConnection):
         # PL及工序详情
         supplymo_detaildata = ApsHelpers._get_supplymo_detaildata(supplyno=supplyno)
         supplymo_detaildata['demand_list'] = demand_list
-        dto = pydantic_model(**supplymo_detaildata).model_dump()
+        dto = pydantic_model(**supplymo_detaildata).model_dump(exclude_unset=True)
+        if remain_native_supplyno:
+            dto['Code'] = supplyno
         payload = {"dto": dto}
         mo_create_response = self._post(endpoint=endpoint, data=payload)
         mo_create_response_json = mo_create_response.json()
@@ -751,16 +758,19 @@ class TplusConnection(BaseConnection):
                 _x_b = self.push_rs(mdlist_or_supplyno=demand_list, tplus_mo_data_or_id=tplus_mo_data)
 
             # 调用存储过程更改工单信息，❗一定放在最后一步，否则工单号变更太早，前面若有用原生供应号查询都会失败
-            _x_c = ApsHelpers._pl_release_success(plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
+            if remain_native_supplyno:
+                _x_c = ApsHelpers._pl_release_success(native_plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+', _id=tplus_mo_id, _entryid=tplus_mo_entryid)
+            else:
+                _x_c = ApsHelpers._pl_release_success(native_plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
         else:
-            _x_d = ApsHelpers._pl_release_failed(plno=supplyno, msg=mo_create_response_json['message'], data=payload, msg_from='T+')
+            _x_d = ApsHelpers._pl_release_failed(native_plno=supplyno, msg=mo_create_response_json['message'], data=payload, msg_from='T+')
 
 
     def push_rs(self, mdlist_or_supplyno: str | list[dict], tplus_mo_data_or_id: dict | str | int):
         """
         创建领料申请
         🅰 mdlist_or_supplyno: 材料需求列表或工单号
-        🅰 tplus_mo_data: T+ MO 数据
+        🅰 tplus_mo_data_or_id: T+ MO 数据 或 记录ID
         """
         endpoint = RsCreateInterface.endpoint
         pydantic_model = RsPushModel
@@ -800,10 +810,10 @@ class TplusConnection(BaseConnection):
             ApsHelpers._rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], data=processed_rsdata, msg_from='T+')
 
 
-    def create_pr(self, supplyno: str):
+    def create_pr(self, data_list: list[dict]):
         """
         创建采购申请
-        :param supplyno: APS 中的 PR 号
+        :param data_list: APS 中的 PR 数据列表
         :return:
         """
         pass

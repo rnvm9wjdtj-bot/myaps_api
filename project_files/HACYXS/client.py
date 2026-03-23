@@ -19,7 +19,11 @@ from apps.data_opt.components.yonyou_tplus import TplusConnection, BaseConnectio
 #################################################################################
 # ⬇️ 项目对象及参数
 #################################################################################
+REMAIN_NATIVE_SUPPLYNO = True
+
 SESSION = get_session()
+
+
 
 tplus_conn = TplusConnection()
 tplus_conn.auth()
@@ -60,12 +64,14 @@ def on_pl_status_a2e(supplyno_or_data: str | dict):
         supplyno = supplyno_or_data
     elif isinstance(supplyno_or_data, dict):
         supplyno = supplyno_or_data['supplyno']
-    tplus_conn.create_mo(supplyno=supplyno)
+    tplus_conn.create_mo(supplyno=supplyno, remain_native_supplyno=REMAIN_NATIVE_SUPPLYNO)
 
 
-def on_pr_status_a2e(supplyno_or_data: str | dict):
-    if isinstance(supplyno_or_data, str):
-        supplyno = supplyno_or_data
-    elif isinstance(supplyno_or_data, dict):
-        supplyno = supplyno_or_data['supplyno']
-    tplus_conn.create_pr(supplyno=supplyno)
+def on_pr_created(pr_data_list: list[dict]):
+
+    # if isinstance(supplyno_or_data, str):
+    #     supplyno = supplyno_or_data
+    # elif isinstance(supplyno_or_data, dict):
+    #     supplyno = supplyno_or_data['supplyno']
+    # tplus_conn.create_pr(supplyno=supplyno)
+    pass

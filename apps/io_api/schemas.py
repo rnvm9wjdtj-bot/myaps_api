@@ -337,7 +337,7 @@ class AcceptMatWcBom(BaseModel):
     qty: float = Field(..., ge=0, description='数量', example=2.0)
     offsethour: int = Field(0, description='偏置+/-(小时)', example=0)
     treeno: int = Field(None, description='层级', example=1)
-    mto: gc.YesNoEnum = Field(gc.YesNoEnum.YES, example="N", description='MTO')
+    mto: gc.YesNoEnum = Field(gc.YesNoEnum.NO, example="N", description='MTO')
     scrap: float = Field(0, ge=0, description='报废率%', example=0.0)
     alt: gc.YesNoEnum = Field(gc.YesNoEnum.NO, example="N", description='Y/N是否是替代')
     memo: str = Field(None, max_length=255, description='备注', example="标准BOM组件")

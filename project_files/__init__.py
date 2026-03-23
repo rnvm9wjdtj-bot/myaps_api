@@ -33,7 +33,7 @@ def batch_process_pr_events(pr_data_list: list[dict]):
     try:
         for pr_data in pr_data_list:
             try:
-                project_client.on_pr_status_a2e(pr_data)
+                project_client.on_pr_created(pr_data)
             except Exception as e:
                 pass
     except Exception as e:
@@ -42,7 +42,7 @@ def batch_process_pr_events(pr_data_list: list[dict]):
 
 # 注册PR事件处理
 EVENT_AGGREGATOR.register(
-    event_type="|pr_status_a2e|",
+    event_type="|pr_created|",
     handler=batch_process_pr_events,
     # dedup_key=lambda x: x,
     # batch_size=50,
@@ -54,6 +54,8 @@ EVENT_AGGREGATOR.register(
 @mysql_monitor.on_update_for_table("t_supply", database=MYAPS_MAIN_DB)
 def handle_update_supply(database: str, table: str, data: dict, data_diff: dict):
     """处理t_supply表的更新事件"""
+    from apps.data_opt.components._base import ApsHelpers
+
     data_before = dict_to_lower_keys(data['old'])
     status_before = data_before['status']
 
@@ -72,6 +74,28 @@ def handle_update_supply(database: str, table: str, data: dict, data_diff: dict)
     
     # 推送采购申请PR - 使用事件聚合器
     # if type_now == 'PR' and status_now == "A2E" and status_before in ["NEW", "CRE"]:
-    #     EVENT_AGGREGATOR.add("|pr_status_a2e|", data_now)
+    #     EVENT_AGGREGATOR.add("|pr_created|", data_now)
 
 
+@mysql_monitor.on_insert_for_table("t_supply", database=MYAPS_MAIN_DB)
+def handle_insert_supply(database: str, table: str, data: dict):
+    """处理t_supply表的插入事件"""
+    from apps.data_opt.components._base import ApsHelpers
+
+    data_now = dict_to_lower_keys(data)
+    type_now = data_now['type']
+    status_now = data_now['status']
+    # no_now = data_now['supplyno']
+
+    # 确认/下达生产计划单PL (当PL状态从NEW或CRE变为A2E时)
+    if type_now == 'PL' and status_now == "A2E" and status_before in ["NEW", "CRE"]:
+        try:
+            project_client.on_pl_status_a2e(data_now)
+        except Exception as e:
+            pass
+
+    
+    # 推送采购申请PR - 使用事件聚合器
+    # if type_now == 'PR' and status_now == "A2E" and status_before in ["NEW", "CRE"]:
+    #     EVENT_AGGREGATOR.add("|pr_created|", data_now)
+   

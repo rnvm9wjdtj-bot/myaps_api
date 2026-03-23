@@ -118,47 +118,48 @@ class ApsHelpers:
 
 
     @staticmethod
-    def _pl_release_success(plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _id: str=None, _entryid: str=None):
+    def _pl_release_success(native_plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _id: str=None, _entryid: str=None):
         """
         通过调用自路由修改PL的Type、Status、SupplyNo、Memo等字段，作为私有方法在 def click_release_button() 中被直接调用
-        🅰 plno: PL计划单编号
-        🅰 mono: MO号，可选，若非None则更改PL的SupplyNo
+        🅰 native_plno: 原生PL计划单编号
+        🅰 mono: MO号，可选，若传值则更改PL的原生SupplyNo
         🅰 to_status: 转化成MO后，Status设为哪个状态，默认'REL'
         🅰 msg: 外部系统返回信息
         🅰 msg_from: 外部系统名称
         🅰 _id: 外部系统返回的 MO ID
         🅰 _entryid: 外部系统返回的 MO 详情 ID（对于某些有表头的ERP，具体的 MO 是存在于子表中的，有单独的行记录id
         """
+        mono = mono or native_plno
         try:
-            console_log.info(f"开始查询PL信息: {plno}")
-            query_result = SESSION.get(f"{THIS_BASE_URL}/api/v_supply_mo/{plno}?db_name={MYAPS_MAIN_DB}")
+            console_log.info(f"开始查询PL信息: {native_plno}")
+            query_result = SESSION.get(f"{THIS_BASE_URL}/api/v_supply_mo/{native_plno}?db_name={MYAPS_MAIN_DB}")
             console_log.info(f"查询PL信息响应: {query_result.status_code}")
             query_result_json = query_result.json()
 
             if query_result_json['success'] == 0:
-                console_log.error(f"Error querying supply {plno}: {query_result_json['message']}")
+                console_log.error(f"Error querying supply {native_plno}: {query_result_json['message']}")
                 return standard_response(status_code=query_result_json['status_code'], success=0, message=query_result_json['message'])
 
             query_data = query_result_json['data']
             if not query_data or len(query_data) > 1:
-                filelog_error.error(f"Error querying supply {plno}: multiple records matched.")
-                return standard_response(success=0, message=f"PL {plno} not found or multiple records matched.")
+                filelog_error.error(f"Error querying supply {native_plno}: multiple records matched.")
+                return standard_response(success=0, message=f"PL {native_plno} not found or multiple records matched.")
 
             if query_data[0]["type"] != "PL":
-                filelog_error.error(f"Error querying supply {plno}: not a PL.")
-                return standard_response(status_code=400, success=0, message=f"Supply {plno} is not a PL.")
+                filelog_error.error(f"Error querying supply {native_plno}: not a PL.")
+                return standard_response(status_code=400, success=0, message=f"Supply {native_plno} is not a PL.")
 
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            log_msg = f"✅ 推送计划任务执行成功，账套：{MYAPS_MAIN_DB}，PL单号：{plno}，MO单号：{mono or plno}"
+            log_msg = f"✅ 推送计划任务执行成功，账套：{MYAPS_MAIN_DB}，PL单号：{native_plno}，MO单号：{mono}"
             console_log.info(log_msg)
             filelog_normal.info(log_msg)
             memo = json.dumps({
                 "msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now,
-                "native_no": plno, "_code": mono, "_id": _id, "_entryid": _entryid}, ensure_ascii=False
+                "native_no": native_plno, "_code": mono, "_id": _id, "_entryid": _entryid}, ensure_ascii=False
             )
 
-            console_log.info(f"开始更新PL状态为MO: {plno}, 目标状态: {to_status}, MO单号: {mono}")
-            response = SESSION.patch(f'{THIS_BASE_URL}/api/t_supply/{plno}?db_name={MYAPS_MAIN_DB}', json={
+            console_log.info(f"开始更新PL状态为MO: {native_plno}, 目标状态: {to_status}, MO单号: {mono}")
+            response = SESSION.patch(f'{THIS_BASE_URL}/api/t_supply/{native_plno}?db_name={MYAPS_MAIN_DB}', json={
                 'status': to_status,
                 'apiex_sn': str(mono),
                 'apiex_id': str(_id or ""),
@@ -176,16 +177,16 @@ class ApsHelpers:
 
 
     @staticmethod
-    def _pl_release_failed(plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, data: dict=None, msg_from: str=None):
+    def _pl_release_failed(native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, data: dict=None, msg_from: str=None):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_msg = f"🚫 推送计划任务执行失败，账套：{MYAPS_MAIN_DB}，PL单号：{plno}，错误信息：{msg}，数据：{data}"
+        log_msg = f"🚫 推送计划任务执行失败，账套：{MYAPS_MAIN_DB}，PL单号：{native_plno}，错误信息：{msg}，数据：{data}"
         console_log.error(log_msg)
         filelog_error.error(log_msg)
         memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
         
         try:
-            console_log.info(f"开始更新PL状态: {plno}, 目标状态: {to_status}")
-            response = SESSION.patch(f'{THIS_BASE_URL}/api/t_supply/{plno}/...?db_name={MYAPS_MAIN_DB}', json={
+            console_log.info(f"开始更新PL状态: {native_plno}, 目标状态: {to_status}")
+            response = SESSION.patch(f'{THIS_BASE_URL}/api/t_supply/{native_plno}/...?db_name={MYAPS_MAIN_DB}', json={
                 'status': to_status,    # ❗❗失败情况下，状态务必回撤为 CRE 或 NEW ，否则后续无法再次下达
                 'memo': memo,
             })
@@ -311,7 +312,7 @@ class ApsHelpers:
     @staticmethod
     def _get_supplymo_detaildata(supplyno: str):
         """
-        获取工单计划单详情
+        获取工单的工序详情、及MTO销售订单信息
         Args:
             supplyno: 工单号
         Returns:

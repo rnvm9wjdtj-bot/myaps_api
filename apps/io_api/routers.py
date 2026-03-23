@@ -577,7 +577,8 @@ async def get_mo_by_supplyno(
             so_query_result = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{vendorno}' AND `Type`='SO'")
             so_data = so_query_result['data']
             if so_data:
-                result['data'][0]['so'] = so_data[0]
+                result['data'][0]['so'] = so_data
+                
         if prev_mo:
             result['data'][0]['prev_mo'] = await get_prev_mo(supplyno)
         if next_mo:
