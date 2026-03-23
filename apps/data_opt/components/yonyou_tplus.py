@@ -33,6 +33,7 @@ from ._base import (
 """
 
 MERGE_ENTRIY_KEY = '_entries_'
+CACHE_ERP = CACHE_JSON.get("erp", {})
 
 class MaterialPullModel(AcceptMaterial):
 
@@ -232,13 +233,11 @@ class MoPushModel(PydanticModel):
                     'IsMaterialRequest': True,
                 })
 
-
         cleaned_values['ExternalCode'] = values['supplyno']
         cleaned_values['StartDate'] = values['dt_ordstart']
         cleaned_values['FinishDate'] = values['dt_ordend']
-        erp_config = CACHE_JSON.get("erp", {})
-        cleaned_values['BusiType'] = {'Code': erp_config.get("$MoBusiType", "")}
-        cleaned_values['Department'] = {'Code': erp_config.get("$MoDepartment", "")}
+        cleaned_values['BusiType'] = {'Code': CACHE_ERP.get("$MoBusiType", "")}
+        cleaned_values['Department'] = {'Code': CACHE_ERP.get("$MoDepartment", "")}
         cleaned_values['VoucherDate'] = values['dt_ordstart']
         cleaned_values['IsMaterialRequest'] = True
         cleaned_values['Memo'] = values['vendorno']
@@ -282,9 +281,7 @@ class RsPushModel(PydanticModel):
         cleaned_values['VoucherType'] = {"Code": "ST1039"}
         cleaned_values['VoucherDate'] = values[MERGE_ENTRIY_KEY][0]['req_date']
         cleaned_values['BusiType'] = {"Code": "MR01"}
-        erp_config = CACHE_JSON.get("erp", {})
-        cleaned_values['Department'] = {"Code": erp_config.get("$MoDepartment", "")}
-
+        cleaned_values['Department'] = {"Code": CACHE_ERP.get("$MoDepartment", "")}
         aps_demand_qty = {_['materialno']: _ for _ in values[MERGE_ENTRIY_KEY]}
         tplus_material_details = values["mo_material_details"]
         mr_details = []
@@ -318,11 +315,10 @@ class PrPushModel(PydanticModel):
     @classmethod
     def model_valid(cls, values: Dict[str, Any]):
         cleaned_values = {}
-        cleaned_values['ExternalCode'] = values['aupplyno']
-        erp_config = CACHE_JSON.get("erp", {})
-        cleaned_values['RequisitionPerson'] = {"Code": erp_config.get("$RequisitionPerson", "")}
+        cleaned_values['ExternalCode'] = values['supplyno']
+        cleaned_values['RequisitionPerson'] = {"Code": CACHE_ERP.get("$RequisitionPerson", "")}
         cleaned_values['PurchaseRequisitionDetails'] = []
-        pass
+
 
 
 class PullInterface(NamedTuple):
@@ -432,10 +428,11 @@ class TplusConfig:
             self.cache_file = JSONManager(cache_file)
         else:
             self.cache_file = cache_file
-        self.base_url = self.cache_file.get("erp", {}).get("base_url", "https://openapi.chanjet.com")
-        self.token_expire_seconds = self.cache_file.get("erp", {}).get("token_expire_seconds", 12 * 3600)     # 设token有效期为12hr
+        cache_erp = self.cache_file.get("erp", {})
+        self.base_url = cache_erp.get("base_url", "https://openapi.chanjet.com")
+        self.token_expire_seconds = cache_erp.get("token_expire_seconds", 12 * 3600)     # 设token有效期为12hr
         # 默认分页大小，上限1000
-        self.max_page_size = min(self.cache_file.get("erp", {}).get("max_page_size", 1000), 1000)    
+        self.max_page_size = min(cache_erp.get("max_page_size", 1000), 1000)    
 
 
 class TplusConnection(BaseConnection):
@@ -449,8 +446,9 @@ class TplusConnection(BaseConnection):
         self.cache_file = self.config.cache_file
         # 从缓存文件中读取认证信息，并将其设置为类实例属性
         self.credential_keys = ("app_key", "app_secret", "access_token", "refresh_token", "org_id", "_auth_at_")
+        cache_erp = self.cache_file.get("erp", {})
         for key in self.credential_keys:
-            setattr(self, key, self.cache_file.get("erp", {}).get(key, ""))
+            setattr(self, key, cache_erp.get(key, ""))
         self._BOM_CODES = None  # 缓存已处理的BOM编码，用于取工艺路线（因为 T+ 的工艺路线是抽象的，具体到物料的工艺路线是在 BOM 中定义的，而只有通过具体BOM编号查询BOM时，才会展示工艺路线详情 
         super().__init__()
 
@@ -571,7 +569,7 @@ class TplusConnection(BaseConnection):
         return self._pull_simple_data(pull_interface=pull_interface, filter=filter, pydantic_model=pydantic_model)
 
 
-    def pull_stock(self, filter: dict=None, pull_interface: PullInterface=StockPullInterface, pydantic_model: PydanticModel=StockPullModel, return_df: bool = True):
+    def pull_stock(self, filter: dict=None, pull_interface: PullInterface=StockPullInterface, pydantic_model: PydanticModel=StockPullModel):
         stock_data = self._pull_simple_data(pull_interface=pull_interface, filter=filter, pydantic_model=pydantic_model)
         if stock_data:
             timestamp = datetime.now().strftime('%m%d-%H%M')
@@ -585,10 +583,7 @@ class TplusConnection(BaseConnection):
             aggregated_stock = df.groupby('materialno').agg(agg_dict).reset_index()
             # 生成supplyno字段为materialno@timestamp
             aggregated_stock['supplyno'] = aggregated_stock['materialno'] + '@' + timestamp
-
-            if not return_df:
-                aggregated_stock =  aggregated_stock.to_dict(orient='records')
-            return aggregated_stock
+            return aggregated_stock.to_dict(orient='records')
         else:
             return None
 
@@ -712,7 +707,7 @@ class TplusConnection(BaseConnection):
             return None
         
     
-    def create_mo(self, supplyno: str, auto_push_rs: bool = True, remain_native_supplyno: bool = True):
+    def create_mo(self, supplyno: str, auto_push_rs: bool = True, remain_native_supplyno: bool = True, pydantic_model: PydanticModel=MoPushModel):
         """
         创建MO
         :param supplyno: APS 中的 PL号
@@ -728,11 +723,10 @@ class TplusConnection(BaseConnection):
         
         self.auth()
         endpoint = MoCreateInterface.endpoint
-        pydantic_model = MoPushModel
         # 材料需求
         demand_list = ApsHelpers._get_demand_datalist(demandno=supplyno)
         # PL及工序详情
-        supplymo_detaildata = ApsHelpers._get_supplymo_detaildata(supplyno=supplyno)
+        supplymo_detaildata = ApsHelpers._get_supplymo_detaildata(supplyno=supplyno, get_prev_mo=True)
         supplymo_detaildata['demand_list'] = demand_list
         dto = pydantic_model(**supplymo_detaildata).model_dump(exclude_unset=True)
         if remain_native_supplyno:
@@ -745,7 +739,7 @@ class TplusConnection(BaseConnection):
             # 从响应中提取 data
             response_data = mo_create_response_json['data']
             tplus_mo_id = response_data['ID']
-            tplus_mo_code = response_data['Code']
+            tplus_mo_code = supplyno if remain_native_supplyno else response_data['Code']
             # 审批 MO ，要在领料申请前批准
             _x_a = approve_mo(tplus_moid=tplus_mo_id)
             # 查询推送成功的 MO 在 T+ 中的详情
@@ -758,10 +752,7 @@ class TplusConnection(BaseConnection):
                 _x_b = self.push_rs(mdlist_or_supplyno=demand_list, tplus_mo_data_or_id=tplus_mo_data)
 
             # 调用存储过程更改工单信息，❗一定放在最后一步，否则工单号变更太早，前面若有用原生供应号查询都会失败
-            if remain_native_supplyno:
-                _x_c = ApsHelpers._pl_release_success(native_plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+', _id=tplus_mo_id, _entryid=tplus_mo_entryid)
-            else:
-                _x_c = ApsHelpers._pl_release_success(native_plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
+            _x_c = ApsHelpers._pl_release_success(native_plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
         else:
             _x_d = ApsHelpers._pl_release_failed(native_plno=supplyno, msg=mo_create_response_json['message'], data=payload, msg_from='T+')
 

@@ -310,15 +310,17 @@ class ApsHelpers:
 
 
     @staticmethod
-    def _get_supplymo_detaildata(supplyno: str):
+    def _get_supplymo_detaildata(supplyno: str, get_prev_mo:bool=False, get_next_mo:bool=False):
         """
         获取工单的工序详情、及MTO销售订单信息
         Args:
             supplyno: 工单号
+            get_prev_mo: 是否查询前 前置 工单
+            get_next_mo: 是否查询后 后置 工单
         Returns:
             工单计划单详情
         """
-        supply_response = SESSION.get(f"{THIS_BASE_URL}/api/v_supply_mo/{supplyno}?db_name={MYAPS_MAIN_DB}")
+        supply_response = SESSION.get(f"{THIS_BASE_URL}/api/v_supply_mo/{supplyno}?db_name={MYAPS_MAIN_DB}&prev_mo={get_prev_mo}&next_mo={get_next_mo}")
         supply_response_json = supply_response.json()
         supplymo_detaildata = supply_response_json['data'][0]
         return supplymo_detaildata

@@ -239,7 +239,7 @@ class DbManager:
                 "data": [dict_to_lower_keys(item) for item in all_data]
             }
             
-            logger.info(f"数据查询完成: {response}")
+            logger.debug(f"数据查询完成: {response}")
             return response
             
         except Exception as e:

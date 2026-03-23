@@ -429,7 +429,7 @@ async def db_update_by_index(
     model_or_tablename: TortoiseBaseModel | str,
     index_dict: Dict[str, Any],
     new_values_dict: Dict[str, Any],
-    not_found_behavior: Literal["insert", "error", "skip"] = "error"
+    not_found_behavior: Literal["insert", "error", "skip"] = "skip"
 ):
     """
     基于索引更新记录，支持更新联合主键字段

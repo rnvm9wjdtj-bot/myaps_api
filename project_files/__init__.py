@@ -80,19 +80,19 @@ def handle_update_supply(database: str, table: str, data: dict, data_diff: dict)
 @mysql_monitor.on_insert_for_table("t_supply", database=MYAPS_MAIN_DB)
 def handle_insert_supply(database: str, table: str, data: dict):
     """处理t_supply表的插入事件"""
-    from apps.data_opt.components._base import ApsHelpers
+    # from apps.data_opt.components._base import ApsHelpers
 
-    data_now = dict_to_lower_keys(data)
-    type_now = data_now['type']
-    status_now = data_now['status']
-    # no_now = data_now['supplyno']
+    # data_now = dict_to_lower_keys(data)
+    # type_now = data_now['type']
+    # status_now = data_now['status']
+    # # no_now = data_now['supplyno']
 
-    # 确认/下达生产计划单PL (当PL状态从NEW或CRE变为A2E时)
-    if type_now == 'PL' and status_now == "A2E" and status_before in ["NEW", "CRE"]:
-        try:
-            project_client.on_pl_status_a2e(data_now)
-        except Exception as e:
-            pass
+    # # 确认/下达生产计划单PL (当PL状态从NEW或CRE变为A2E时)
+    # if type_now == 'PL' and status_now == "A2E" and status_before in ["NEW", "CRE"]:
+    #     try:
+    #         project_client.on_pl_status_a2e(data_now)
+    #     except Exception as e:
+    #         pass
 
     
     # 推送采购申请PR - 使用事件聚合器

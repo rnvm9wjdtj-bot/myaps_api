@@ -2,6 +2,7 @@
 淮安超越橡塑项目文件
 需要 ERP 推送的数据：
 - 各种主数据
+- 销售订单SO 
 - 审批好的新 PO 及后续执行情况
 - 报工数据
 """
@@ -12,28 +13,26 @@ from .._base import (
 )
 
 # 导入统一日志配置（用于直接使用）
-from globalobjects import logger as log_config
+# from globalobjects import logger as log_config
 
-from apps.data_opt.components.yonyou_tplus import TplusConnection, BaseConnection
+from apps.data_opt.components.yonyou_tplus import TplusConnection, BaseConnection, MoPushModel
 
 #################################################################################
 # ⬇️ 项目对象及参数
 #################################################################################
-REMAIN_NATIVE_SUPPLYNO = True
+REMAIN_NATIVE_SUPPLYNO = True   # 本项目需要推送 MO 前后关系，所以必须保留原生供应号，否则会导致关系断开
 
 SESSION = get_session()
 
-
-
 tplus_conn = TplusConnection()
-tplus_conn.auth()
+# tplus_conn.auth()
 
 #################################################################################
 # ⬇️ 项目可复用逻辑
 #################################################################################
 
 def refresh_stock():
-    stock_data = tplus_conn.pull_stock(return_df=False)
+    stock_data = tplus_conn.pull_stock()
     if stock_data:
         ApsHelpers.refresh_stock(stock_data)
 
@@ -47,11 +46,11 @@ def refresh_stock():
 # ⬇️ 定时任务
 #################################################################################
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute())
-def task_refresh_stock(*args, **kwargs):
+def task_refresh_stock():
     refresh_stock()
 
 
-@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2))
+@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1))
 def task_confirm_workreport():
     ApsHelpers.confirm_workreport()
 

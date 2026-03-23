@@ -157,7 +157,7 @@ async def get_meta():
     tags=["主数据 - 物料"],
     summary="新增或修改物料",
     description="根据🗝️【料号】新增或修改物料"
-    )
+)
 async def post_material(
     data: List[AcceptMaterial] = Body(..., description="新增或修改的物料数据"),
     db_name: str = common_params["db_name"],
@@ -173,7 +173,7 @@ async def post_material(
     tags=["主数据 - 工作中心"],
     summary="新增或修改工作中心",
     description="根据🗝️【工作中心编号】新增或修改工作中心"
-    )
+)
 async def post_workcenter(
     data: List[AcceptWorkcenter],
     db_name: str = common_params["db_name"],
@@ -193,12 +193,12 @@ async def post_workcenter(
     tags=["主数据 - 工序"],
     summary="新增或修改工序",
     description="根据🗝️【料号+产线版本号+工序项目】形成的联合索引新增或修改工序记录"
-    )
+)
 async def post_mat_wc(
     data: List[AcceptMatWc | Dict],
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
-    ):
+):
     db_name = db_name.replace(" ", "")
     return await db_bupsert(db_names=db_name, model_or_tablename="t_mat_wc", data_list=data)
 
@@ -208,12 +208,12 @@ async def post_mat_wc(
     tags=["主数据 - 产线版本"],
     summary="新增或修改产线版本",
     description="根据🗝️【料号+产线版本号】形成的联合索引新增或修改产线版本记录"
-    )
+)
 async def post_mat_ver(
     data: List[AcceptMatVer | Dict],
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
-    ):
+):
     db_name = db_name.replace(" ", "")
     return await db_bupsert(db_names=db_name, model_or_tablename="t_mat_ver", data_list=data)
 
@@ -223,12 +223,12 @@ async def post_mat_ver(
     tags=["主数据 - BOM"],
     summary="新增或修改BOM",
     description="根据🗝️【产品料号+子件料号+产线版本号+工序项目】形成的联合索引新增或修改BOM记录"
-    )
+)
 async def post_mat_wc_bom(
     data: List[AcceptMatWcBom | Dict],
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
-    ):
+):
     db_name = db_name.replace(" ", "")
     return await db_bupsert(db_names=db_name, model_or_tablename="t_mat_wc_bom", data_list=data)
 
@@ -238,12 +238,12 @@ async def post_mat_wc_bom(
     tags=["主数据 - 模具"],
     summary="新增或修改模具",
     description="根据🗝️【模具编号】新增或修改模具"
-    )
+)
 async def post_mold(
     data: List[AcceptMold | Dict],
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
-    ):
+):
     db_name = db_name.replace(" ", "")
     return await db_bupsert(db_names=db_name, model_or_tablename="t_mold", data_list=data)
 
@@ -253,12 +253,12 @@ async def post_mold(
     tags=["主数据 - 机台模具"],
     summary="新增或修改机台模具",
     description="根据🗝️【料号+工作中心+工序项目+模具编号】形成的联合索引新增或修改机台模具记录"
-    )
+)
 async def post_mat_wc_mold(
     data: List[AcceptMatWcMold | Dict],
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
-    ):
+):
     db_name = db_name.replace(" ", "")
     return await db_bupsert(db_names=db_name, model_or_tablename="t_mat_wc_mold", data_list=data)
 
@@ -291,8 +291,6 @@ async def get_supply(
     #             so_data = so_query_result['data']
     #             if so_data:
     #                 item['so'] = so_data[0]
-
-    
     return standard_response(data=supply_data)
 
 
@@ -300,12 +298,12 @@ async def get_supply(
     tags=["生产数据 - 供应"],
     summary="新增或修改供应记录（供应来源包含：生产生产计划PL、生产工单MO、库存ST、采购订单PO）",
     description="根据🗝️【料号+供应号】新增或修改供应记录"
-    )
+)
 async def post_supply(
     data: List[AcceptSupply | Dict],
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
-    ):
+):
     db_name = db_name.replace(" ", "")
     return await db_bupsert(db_names=db_name, model_or_tablename="t_supply", data_list=data)
 
@@ -321,9 +319,10 @@ async def patch_supply_by_materialno(
     supplyno: str = Path(..., description="要修改的供应记录的供应号"),
     materialno: str = Path(..., description="料号"),
     data: ModifySupply = Body(..., description="修改为这些信息"),
+    if_not_exist: str = Body("skip", enum=["skip", "insert"], description="如果不存在如何处理"),
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
-    ):
+):
     db_name = db_name.replace(" ", "")
     if isinstance(data, ModifySupply):
         data = data.model_dump(exclude_unset=True)
@@ -338,7 +337,7 @@ async def patch_supply_by_materialno(
         model_or_tablename="t_supply",
         index_dict=index_dict,
         new_values_dict=data,
-        not_found_behavior="skip"
+        not_found_behavior=if_not_exist
     )
 
 
@@ -381,13 +380,13 @@ async def patch_supply(
     tags=["生产数据 - 供应"],
     summary="按类型替换供应记录",
     description="根据供应类型删除所有该类型的供应记录，然后新增这些供应记录。可用于库存刷新等场景"
-    )
+)
 async def replace_supply(
     db_name: str = common_params["db_name"],
     type_: str = Path(..., enum=['PL', 'MO', 'PR', 'PO', 'ST'], description="供应类型"),
     data: List[AcceptSupply | Dict] = Body(..., description="替换为这些供应记录"),
     x_api_key: str = common_params["x_api_key"]
-    ):
+):
     wrong_type_count = 0
     for item in data:
         if item['type'] != type_:
@@ -417,7 +416,7 @@ async def delete_supply(
     db_name: str = common_params["db_name"],
     supplyno: str = Path(..., description="要删除的供应记录的供应号"),
     x_api_key: str = common_params["x_api_key"]
-    ):
+):
     db_name = db_name.replace(" ", "")
     filter_string = f"`SupplyNo`='{supplyno}'"
     query_result = await db_query(db_name=db_name, model_or_tablename="t_supply", filter_string=filter_string)
@@ -472,12 +471,12 @@ async def get_demand(
     tags=["生产数据 - 需求"],
     summary="新增或修改需求记录（需求来源包含：销售订单SO、计划需求DM、工单预留RS、预测FC、安全库存SS）",
     description="根据🗝️【料号+需求号+项目号】新增或修改需求记录"
-    )
+)
 async def post_demand(
     data: List[AcceptDemand | Dict],
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
-    ):
+):
     db_name = db_name.replace(" ", "")
     return await db_bupsert(db_names=db_name, model_or_tablename="t_demand", data_list=data)
 
@@ -495,6 +494,7 @@ async def patch_demand(
     itemno: str = Path(..., description="项目号"),
     data: ModifyDemand = Body(..., description="修改为这些信息"),
     db_name: str = common_params["db_name"],
+    if_not_exist: str = Body("skip", enum=["skip", "insert"], description="如果不存在如何处理"),
     x_api_key: str = common_params["x_api_key"]
 ):
     db_name = db_name.replace(" ", "")
@@ -511,7 +511,7 @@ async def patch_demand(
         model_or_tablename="t_demand",
         index_dict=index_dict,
         new_values_dict=new_values_dict,
-        not_found_behavior="skip",
+        not_found_behavior=if_not_exist,
     )
 
     return response
@@ -527,8 +527,8 @@ async def patch_demand(
 async def get_mo_by_supplyno(
     db_name: str = common_params["db_name"],
     supplyno: str = Path(..., description="工单（供应）号"),
-    prev_mo: int = Query(0, description="是否查询前 前置 工单，1 为查询，0 为不查询"),
-    next_mo: int = Query(0, description="是否查询后 后置 工单，1 为查询，0 为不查询"),
+    prev_mo: bool = Query(False, description="是否查询前 前置 工单"),
+    next_mo: bool = Query(False, description="是否查询后 后置 工单"),
     # x_api_key: str = common_params["x_api_key"]
 ):
 
@@ -614,11 +614,11 @@ async def get_mo_by_time(
     tags=["生产数据 - 报工"],
     summary="查询报工记录",
     description="查询报工记录"
-    )
+)
 async def query_workreport(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
-    ):
+):
     """
     查询报工记录
     db_name: str，数据库名称，多个数据库名称用逗号分隔
@@ -675,7 +675,7 @@ async def get_matdailyqtyreport(
         period: int | str = Query(default=30, description="查询时间范围（天）"),
         groupdates: Optional[str] = Query(default=None, description="分组日期，逗号分隔"),
         materialno: Optional[str] = Query(default=None, description="料号，多个料号用逗号分隔")
-    ):
+):
     """
     获取按日期分组的库存动态报表，用于指导采购决策。
     period: 查询时间范围（天）或截止日期字符串，默认30天。
@@ -798,12 +798,12 @@ async def get_matdailyqtyreport(
     tags=["生产数据 - 报工"],
     summary="新增报工记录",
     description="新增报工记录"
-    )
+)
 async def create_workreport(
     data: List[AcceptConfirm | Dict],
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
-    ):
+):
     """
     新增报工记录
     db_name: str，数据库名称，多个数据库名称用逗号分隔
@@ -824,7 +824,7 @@ async def delete_workreport(
     supplyno: str = Path(..., description="工单号"),
     itemno: str = Path(..., description="工序项目"),
     x_api_key: str = common_params["x_api_key"]
-    ):
+):
     db_name = db_name.replace(" ", "")
     filter_string = f"`SupplyNo`='{supplyno}'"
     if not itemno == "...":
@@ -838,11 +838,11 @@ async def delete_workreport(
     tags=["生产数据 - 报工"],
     summary="确认报工记录",
     description="确认报工记录"
-    )
+)
 async def confirm_workreport(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
-    ):
+):
     """
     确认报工记录
     db_name: str，数据库名称，多个数据库名称用逗号分隔
