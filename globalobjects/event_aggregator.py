@@ -45,8 +45,9 @@ class EventAggregator:
         # 缓冲区：{group_key: {dedup_key: event}}
         self._buffer: Dict[str, Dict[str, Any]] = defaultdict(dict)
         self._lock = threading.RLock()
+        self._condition = threading.Condition(self._lock)
         self._running = False
-        self._timer = None
+        self._condition_thread = None
         
     def add(self, event: Any):
         """添加单个事件到缓冲区"""
@@ -66,6 +67,8 @@ class EventAggregator:
             # 检查是否达到批量大小
             total_count = sum(len(events) for events in self._buffer.values())
             if total_count >= self.batch_size:
+                # 达到批量大小，通知条件变量线程
+                self._condition.notify()
                 self._flush()
     
     def add_batch(self, events: List[Any]):
@@ -93,31 +96,42 @@ class EventAggregator:
         except Exception as e:
             logger.error(f"批量处理事件失败: {e}")
     
-    def _timer_callback(self):
-        """定时器回调"""
-        if self._running:
-            self._flush()
-            self._start_timer()
-    
-    def _start_timer(self):
-        """启动定时器"""
-        self._timer = threading.Timer(self.flush_interval, self._timer_callback)
-        self._timer.daemon = True
-        self._timer.start()
+    def _condition_thread_func(self):
+        """条件变量线程函数"""
+        while self._running:
+            with self._lock:
+                # 等待直到有事件通知或超时
+                # 计算当前缓冲区大小
+                total_count = sum(len(events) for events in self._buffer.values())
+                # 如果缓冲区为空，等待指定时间
+                if total_count == 0:
+                    # 等待指定的刷新间隔
+                    self._condition.wait(timeout=self.flush_interval)
+                # 无论是否有通知，检查是否需要刷新
+                # 1. 缓冲区不为空
+                # 2. 或者达到刷新间隔（即使缓冲区为空也刷新）
+                if self._buffer:
+                    self._flush()
     
     def start(self):
         """启动聚合器"""
         if not self._running:
             self._running = True
-            self._start_timer()
+            # 启动条件变量线程
+            self._condition_thread = threading.Thread(target=self._condition_thread_func)
+            self._condition_thread.daemon = True
+            self._condition_thread.start()
             logger.info("事件聚合器已启动")
     
     def stop(self):
         """停止聚合器"""
         self._running = False
-        if self._timer:
-            self._timer.cancel()
-            self._timer = None
+        # 通知条件变量线程结束
+        with self._lock:
+            self._condition.notify()
+        if self._condition_thread:
+            self._condition_thread.join(timeout=1.0)
+            self._condition_thread = None
         # 停止前刷新剩余事件
         self._flush()
         logger.info("事件聚合器已停止")
@@ -217,3 +231,162 @@ _global_handler_aggregator = MultiEventAggregator()
 def get_global_handler_aggregator() -> MultiEventAggregator:
     """获取全局处理事件聚合管理器"""
     return _global_handler_aggregator
+
+
+# 使用示例
+if __name__ == "__main__":
+    import time
+    
+    # 示例1: 基本使用
+    def basic_handler(events):
+        print(f"基本处理: 收到 {len(events)} 个事件")
+        for event in events:
+            print(f"  - 事件: {event}")
+    
+    # 创建聚合器
+    aggregator1 = EventAggregator(
+        handler=basic_handler,
+        batch_size=5,
+        flush_interval=2.0
+    )
+    
+    # 启动聚合器
+    aggregator1.start()
+    
+    # 添加事件
+    print("示例1: 基本使用")
+    for i in range(7):
+        aggregator1.add(f"事件{i}")
+        time.sleep(0.5)
+    
+    # 等待一段时间让聚合器处理事件
+    time.sleep(3)
+    
+    # 停止聚合器
+    aggregator1.stop()
+    
+    print("\n" + "-" * 50 + "\n")
+    
+    # 示例2: 使用去重功能
+    def dedup_handler(events):
+        print(f"去重处理: 收到 {len(events)} 个事件")
+        for event in events:
+            print(f"  - 事件: {event}")
+    
+    # 去重函数: 使用事件内容作为去重键
+    def dedup_key_func(event):
+        return event
+    
+    aggregator2 = EventAggregator(
+        handler=dedup_handler,
+        dedup_key=dedup_key_func,
+        batch_size=3,
+        flush_interval=1.0
+    )
+    
+    aggregator2.start()
+    
+    print("示例2: 使用去重功能")
+    # 添加重复事件
+    aggregator2.add("重复事件")
+    aggregator2.add("唯一事件1")
+    aggregator2.add("重复事件")  # 这个会被去重
+    aggregator2.add("唯一事件2")
+    aggregator2.add("重复事件")  # 这个会被去重
+    
+    time.sleep(2)
+    aggregator2.stop()
+    
+    print("\n" + "-" * 50 + "\n")
+    
+    # 示例3: 使用分组功能
+    def group_handler(events):
+        print(f"分组处理: 收到 {len(events)} 个事件")
+        for event in events:
+            print(f"  - 事件: {event}")
+    
+    # 分组函数: 根据事件类型分组
+    def group_key_func(event):
+        return event["type"]
+    
+    aggregator3 = EventAggregator(
+        handler=group_handler,
+        group_key=group_key_func,
+        batch_size=4,
+        flush_interval=1.5
+    )
+    
+    aggregator3.start()
+    
+    print("示例3: 使用分组功能")
+    # 添加不同类型的事件
+    aggregator3.add({"type": "user", "data": "用户1"})
+    aggregator3.add({"type": "order", "data": "订单1"})
+    aggregator3.add({"type": "user", "data": "用户2"})
+    aggregator3.add({"type": "order", "data": "订单2"})
+    aggregator3.add({"type": "user", "data": "用户3"})
+    
+    time.sleep(2)
+    aggregator3.stop()
+    
+    print("\n" + "-" * 50 + "\n")
+    
+    # 示例4: 使用MultiEventAggregator
+    def user_handler(events):
+        print(f"用户事件处理: 收到 {len(events)} 个事件")
+    
+    def order_handler(events):
+        print(f"订单事件处理: 收到 {len(events)} 个事件")
+    
+    multi_aggregator = MultiEventAggregator()
+    
+    # 注册不同类型的事件处理器
+    multi_aggregator.register(
+        event_type="user",
+        handler=user_handler,
+        batch_size=3,
+        flush_interval=1.0
+    ).register(
+        event_type="order",
+        handler=order_handler,
+        batch_size=2,
+        flush_interval=1.5
+    )
+    
+    print("示例4: 使用MultiEventAggregator")
+    # 添加不同类型的事件
+    multi_aggregator.add("user", "用户事件1")
+    multi_aggregator.add("order", "订单事件1")
+    multi_aggregator.add("user", "用户事件2")
+    multi_aggregator.add("order", "订单事件2")
+    multi_aggregator.add("user", "用户事件3")
+    
+    time.sleep(2)
+    multi_aggregator.stop()
+    
+    print("\n" + "-" * 50 + "\n")
+    
+    # 示例5: 使用全局聚合器
+    def global_handler(events):
+        print(f"全局处理: 收到 {len(events)} 个事件")
+    
+    global_aggregator = get_global_handler_aggregator()
+    
+    # 注册事件类型
+    global_aggregator.register(
+        event_type="global_event",
+        handler=global_handler,
+        batch_size=4,
+        flush_interval=2.0
+    )
+    
+    print("示例5: 使用全局聚合器")
+    # 添加事件
+    for i in range(6):
+        global_aggregator.add("global_event", f"全局事件{i}")
+        time.sleep(0.3)
+    
+    time.sleep(3)
+    global_aggregator.stop("global_event")
+    
+    print("\n所有示例执行完成！")

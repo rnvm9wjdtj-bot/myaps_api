@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta
 # from re import S
 # from this import d
-from typing import List, Dict, Optional#, Any, Literal
+from typing import List, Dict, Optional, Literal#, Any
 import inspect, functools, pandas as pd
 # import httpx
 
@@ -319,14 +319,14 @@ async def patch_supply_by_materialno(
     supplyno: str = Path(..., description="要修改的供应记录的供应号"),
     materialno: str = Path(..., description="料号"),
     data: ModifySupply = Body(..., description="修改为这些信息"),
-    if_not_exist: str = Body("skip", enum=["skip", "insert"], description="如果不存在如何处理"),
+    if_not_exist: Literal["skip", "insert"] = Query("skip", description="如果不存在如何处理"),
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
 ):
     db_name = db_name.replace(" ", "")
     if isinstance(data, ModifySupply):
         data = data.model_dump(exclude_unset=True)
-
+        # data = data.model_dump()
     if "supplyno" in data:
         data.pop("supplyno")    # 从data中移除supplyno，防止意外修改 供应号
     index_dict = {"SupplyNo": supplyno}
@@ -365,7 +365,8 @@ async def patch_supply(
             message=f"Supply {supplyno} is not a PL.")
 
     if isinstance(data, ModifySupply):
-        data = data.model_dump(exclude_unset=True, exclude_none=True)
+        # data = data.model_dump(exclude_unset=True, exclude_none=True)
+        data = data.model_dump(exclude_none=True)
     data['materialno'] = query_data[0]['materialno']
     # 如果未指定供应号，则延用
     if not data.get('supplyno'):
@@ -494,7 +495,7 @@ async def patch_demand(
     itemno: str = Path(..., description="项目号"),
     data: ModifyDemand = Body(..., description="修改为这些信息"),
     db_name: str = common_params["db_name"],
-    if_not_exist: str = Body("skip", enum=["skip", "insert"], description="如果不存在如何处理"),
+    if_not_exist: Literal["skip", "insert"] = Query("skip", description="如果不存在如何处理"),
     x_api_key: str = common_params["x_api_key"]
 ):
     db_name = db_name.replace(" ", "")
@@ -504,7 +505,8 @@ async def patch_demand(
     if not itemno == "...":
         index_dict["ItemNo"] = itemno
 
-    new_values_dict = data.model_dump(exclude_unset=True, exclude_none=True)
+    # new_values_dict = data.model_dump(exclude_unset=True, exclude_none=True)
+    new_values_dict = data.model_dump(exclude_none=True)
     # new_values_dict['apiex_sn'] = demandno    # 已在MOA2E存储过程修改
     response = await db_update_by_index(
         db_names=db_name,

@@ -15,7 +15,8 @@ from .._base import (
 # 导入统一日志配置（用于直接使用）
 # from globalobjects import logger as log_config
 
-from apps.data_opt.components.yonyou_tplus import TplusConnection, BaseConnection, MoPushModel
+from apps.data_opt.components.yonyou_tplus import TplusConnection, BaseConnection, MoPushModel, model_validator
+from typing import Dict, Any
 
 #################################################################################
 # ⬇️ 项目对象及参数
@@ -57,13 +58,30 @@ def task_confirm_workreport():
 #################################################################################
 # ⬇️ 数据库事件
 #################################################################################
+class CustomMoPushModel(MoPushModel):
+
+    class Config:
+        extra = 'allow'
+
+    @model_validator(mode="before")
+    @classmethod
+    def model_valid(cls, values: Dict[str, Any]):
+        cleaned_values = MoPushModel.model_valid(values)
+        pre_mo = values.get('prev_mo')
+        if pre_mo:
+            pre_mo_sn = pre_mo[0].get('supplyno')
+            if pre_mo_sn:
+                cleaned_values['ManufactureOrderDetails'][0]['priuserdefnvc1'] = pre_mo_sn
+        return cleaned_values
+
+
 
 def on_pl_status_a2e(supplyno_or_data: str | dict):
     if isinstance(supplyno_or_data, str):
         supplyno = supplyno_or_data
     elif isinstance(supplyno_or_data, dict):
         supplyno = supplyno_or_data['supplyno']
-    tplus_conn.create_mo(supplyno=supplyno, remain_native_supplyno=REMAIN_NATIVE_SUPPLYNO)
+    tplus_conn.create_mo(supplyno=supplyno, remain_native_supplyno=REMAIN_NATIVE_SUPPLYNO, pydantic_model=CustomMoPushModel)
 
 
 def on_pr_created(pr_data_list: list[dict]):

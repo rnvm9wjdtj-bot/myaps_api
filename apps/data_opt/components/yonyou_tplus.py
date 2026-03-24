@@ -249,11 +249,11 @@ class MoPushModel(PydanticModel):
             'PreFinishDate': values['dt_ordend'],
             'ManufactureOrderMaterialDetails': momd,
         }
-        so = values.get('so')
-        if so:
-            mod['SaleOrderCode'] = values.get('vendorno', "")
-            mod['idsourceVoucherType'] = "43"   # 销售订单
-            mod['SourceVoucherDetailId'] = so[0]['apiex_entryid']
+        # so = values.get('so')
+        # if so:
+        #     mod['SaleOrderCode'] = values.get('vendorno', "")
+        #     mod['idsourceVoucherType'] = "43"   # 销售订单
+        #     mod['SourceVoucherDetailId'] = so[0].get('apiex_entryid') or ''
         cleaned_values['ManufactureOrderDetails'] = [mod]
 
         return cleaned_values
@@ -557,7 +557,8 @@ class TplusConnection(BaseConnection):
             data_list.extend([{v: row.get(k) for k, v in field_map.items()} for row in raw_data])
             
         if pydantic_model:
-            data_list = [pydantic_model(**item).model_dump(exclude_unset=True) for item in data_list]
+            # data_list = [pydantic_model(**item).model_dump(exclude_unset=True) for item in data_list]
+            data_list = [pydantic_model(**item).model_dump(exclude_none=True) for item in data_list]
         return data_list
 
 
@@ -728,7 +729,8 @@ class TplusConnection(BaseConnection):
         # PL及工序详情
         supplymo_detaildata = ApsHelpers._get_supplymo_detaildata(supplyno=supplyno, get_prev_mo=True)
         supplymo_detaildata['demand_list'] = demand_list
-        dto = pydantic_model(**supplymo_detaildata).model_dump(exclude_unset=True)
+        # dto = pydantic_model(**supplymo_detaildata).model_dump(exclude_unset=True)
+        dto = pydantic_model(**supplymo_detaildata).model_dump(exclude_none=True)
         if remain_native_supplyno:
             dto['Code'] = supplyno
         payload = {"dto": dto}
@@ -757,14 +759,13 @@ class TplusConnection(BaseConnection):
             _x_d = ApsHelpers._pl_release_failed(native_plno=supplyno, msg=mo_create_response_json['message'], data=payload, msg_from='T+')
 
 
-    def push_rs(self, mdlist_or_supplyno: str | list[dict], tplus_mo_data_or_id: dict | str | int):
+    def push_rs(self, mdlist_or_supplyno: str | list[dict], tplus_mo_data_or_id: dict | str | int, pydantic_model:PydanticModel=RsPushModel):
         """
         创建领料申请
         🅰 mdlist_or_supplyno: 材料需求列表或工单号
         🅰 tplus_mo_data_or_id: T+ MO 数据 或 记录ID
         """
         endpoint = RsCreateInterface.endpoint
-        pydantic_model = RsPushModel
         if isinstance(mdlist_or_supplyno, str):
             rs_data = ApsHelpers._get_demand_datalist(demandno=mdlist_or_supplyno)     # 查询 指定工单号所需物料
             demandno = mdlist_or_supplyno
