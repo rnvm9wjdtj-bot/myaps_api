@@ -45,7 +45,7 @@ MYAPS_DB_USER = os.getenv("MYAPS_DB_USER") or json_env_config.get("MYAPS_DB_USER
 MYAPS_DB_PASSWORD = os.getenv("MYAPS_DB_PASSWORD") or json_env_config.get("MYAPS_DB_PASSWORD")
 MYAPS_DB_SET = os.getenv("MYAPS_DB_SET") or json_env_config.get("MYAPS_DB_SET")
 if not MYAPS_DB_SET:
-    console_log.warning("⚠️ MYAPS_DB_SET 环境变量未设置")
+    console_log.warning_msg("环境变量配置", "MYAPS_DB_SET 未设置")
     MYAPS_DB_SET = ""
 MYAPS_DBSET_LIST = MYAPS_DB_SET.split(",")
 MYAPS_MAIN_DB = os.getenv("MYAPS_MAIN_DB") or json_env_config.get("MYAPS_MAIN_DB")

@@ -2,13 +2,15 @@ import base64, requests, json, ast, re#,os,
 
 from globalobjects import logger as log_config
 
-# 获取日志器
-logger = log_config.get_logger(__name__)
+
 from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
 from typing import Optional, Dict, Union
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+
+# 获取日志器
+logger = log_config.get_logger(__name__)
 
 
 def get_session(
@@ -78,7 +80,7 @@ def get_optimized_session(
     if enable_http2:
         try:
             import httpx
-            logger.info("使用 httpx 启用 HTTP/2 支持")
+            logger.success("HTTP/2", "", "启用支持")
             client = httpx.Client(
                 http2=True,
                 timeout=httpx.Timeout(
@@ -130,14 +132,11 @@ def get_optimized_session(
             
             return HttpxSessionWrapper(client)
         except ImportError:
-            logger.warning("httpx 未安装，回退到 requests（不支持 HTTP/2）")
-            logger.info("安装 httpx 以启用 HTTP/2: pip install httpx")
-            enable_http2 = False
+            logger.warning_msg("HTTP/2", "", "httpx未安装，回退到requests")
         except Exception as e:
-            logger.warning(f"httpx 初始化失败: {e}，回退到 requests（不支持 HTTP/2）")
+            logger.warning_msg("HTTP/2初始化", "", f"失败：{e}，回退到requests")
             import traceback
-            logger.debug(f"httpx 初始化失败详细错误: {traceback.format_exc()}")
-            enable_http2 = False
+            logger.debug(f"httpx初始化失败详细错误：{traceback.format_exc()}")
     
     # 使用标准的 requests.Session
     request_session = get_session(
@@ -235,7 +234,7 @@ def map_dict_keys(dict_list, key_mapper):
         # 返回映射后的字典字符串
         return mapped_data_list
     except (ValueError, SyntaxError) as e:
-        logger.error(f"Error mapping keys: {e}")
+        logger.fail("键名映射", "", str(e))
         return None
 
 
@@ -311,7 +310,7 @@ def parallel_executor(max_workers=10):
                         else:
                             results.append(result)
                     except Exception as exc:
-                        logger.error(f"处理 {item} 时出错: {exc}")
+                        logger.fail("并行处理", str(item), str(exc))
             return results
         return wrapper
     return decorator

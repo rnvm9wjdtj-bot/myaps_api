@@ -77,9 +77,9 @@ def sap_post(url: str, session: requests.Session, interface_id: str, data: dict)
     response_json = {}
     if response.status_code == status.HTTP_200_OK:
         response_json = response.json()
-        file_log.info(f"✅ POST请求成功，状态码：{response.status_code}，响应内容：{response_json}")
+        file_log.success("POST请求", "", f"状态码{response.status_code}，响应{response_json}")
     else:
-        file_log.error(f"🚫 POST请求失败，状态码：{response.status_code}，响应内容：{response.text}")
+        file_log.fail("POST请求", "", f"状态码{response.status_code}，响应{response.text}")
     return {
         'status_code': response.status_code,
         'response_text': response.text,
@@ -136,11 +136,11 @@ def refresh_stock(dbs: str = None):
             })
             df_sap_st['itemno'] = pdv.ITEMNO
         except Exception as e:
-            file_log.error(f"🚫 获取SAP库存失败: {str(e)}")
+            file_log.fail("SAP库存获取", "", str(e))
             df_sap_st = None
         return df_sap_st
 
-    file_log.info("⏰ 开始执行刷新库存任务")
+    file_log.start("刷新库存任务")
     dbs = dbs or MYAPS_DB_SET
     mto_vir_st = ApsHelpers.mto_workreport_to_virtual_stock()
     df_sap_st = get_sap_stock_data()
@@ -151,7 +151,7 @@ def refresh_stock(dbs: str = None):
         stock_data_total = df_sap_st
     stock_data_total.fillna('', inplace=True)
     ApsHelpers.refresh_stock(stock_data_total.to_dict(orient='records'), dbs)
-    console_log.info(f"✅ 刷新库存任务执行完成")
+    console_log.success("刷新库存任务", "", "执行完成")
 
 
 def push_pr(period: int = 30, groupdates: List[str] | str = None):
@@ -176,19 +176,19 @@ def push_pr(period: int = 30, groupdates: List[str] | str = None):
 
 
 def push_weekpr_to_srm():
-    console_log.info(f"⏰ 开始执行推送周要货计划到SRM任务")
+    console_log.start("推送周要货计划到SRM任务")
     push_pr(period=30)
-    console_log.info(f"✅ 推送周要货计划到SRM任务执行完成")
+    console_log.success("推送周要货计划到SRM任务", "", "执行完成")
 
 
 def push_monthpr_to_srm():
-    console_log.info(f"⏰ 开始执行推送月度要货计划到SRM任务")
+    console_log.start("推送月度要货计划到SRM任务")
     date_list = [
         (datetime.now().replace(day=1) + relativedelta(months=i + 1) - relativedelta(days=1)).strftime('%Y-%m-%d')
         for i in range(3)
     ]
     push_pr(period=90, groupdates=date_list)
-    console_log.info(f"✅ 推送月度要货计划到SRM任务执行完成")
+    console_log.success("推送月度要货计划到SRM任务", "", "执行完成")
 #################################################################################
 # ⬇️定时任务设置
 #################################################################################

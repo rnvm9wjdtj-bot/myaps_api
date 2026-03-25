@@ -100,7 +100,7 @@ class AsyncHttpClient:
             )
             return response
         except Exception as e:
-            console_log.error(f"异步HTTP请求失败: {url}, 错误: {e}")
+            console_log.fail("异步HTTP请求", url, str(e))
             raise
     
     async def get(

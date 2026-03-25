@@ -133,6 +133,445 @@ LOG_CONFIG = {
     }
 }
 
+
+class LogHelper:
+    """
+    统一日志格式化工具类
+    
+    提供标准化的日志消息格式，确保项目中所有日志输出风格一致。
+    
+    使用示例:
+        >>> console_log.info(LogHelper.success("推送采购申请", "单号PR001", "共5条"))
+        >>> console_log.error(LogHelper.error("查询PL", "PL001", "网络超时"))
+        >>> console_log.info(LogHelper.start("同步任务", "账套A01"))
+    """
+    
+    class Emoji:
+        SUCCESS = "✅"
+        FAIL = "❌"
+        ERROR = "🚫"
+        WARNING = "⚠️"
+        CRITICAL = "💥"
+        START = "⏰"
+        STOP = "🛑"
+        
+        INSERT = "📥"
+        UPDATE = "🔄"
+        DELETE = "🗑️"
+        QUERY = "🔍"
+        
+        CONNECT = "🔗"
+        DISCONNECT = "🔌"
+        CACHE = "💾"
+        TIMER = "⏱️"
+        SYNC = "🔄"
+        
+        DEBUG = "🔍"
+        INFO = "ℹ️"
+    
+    class Template:
+        SUCCESS = "{emoji} {action}成功：{subject}"
+        SUCCESS_WITH_DETAILS = "{emoji} {action}成功：{subject}，{details}"
+        
+        FAIL = "{emoji} {action}失败：{subject}"
+        FAIL_WITH_REASON = "{emoji} {action}失败：{subject} - {reason}"
+        
+        START = "{emoji} 开始{action}：{subject}"
+        STOP = "{emoji} 结束{action}：{subject}"
+        
+        STATUS_CHANGE = "{emoji} {subject}状态变更：{old_status} -> {new_status}"
+        
+        API_RESPONSE = "{emoji} {api_name}响应：{status_code}"
+        API_RESPONSE_WITH_DATA = "{emoji} {api_name}响应：{status_code}，{details}"
+        
+        QUERY_RESULT = "{emoji} 查询{target}：{result}"
+        QUERY_RESULT_WITH_COUNT = "{emoji} 查询{target}成功：共{count}条"
+        
+        DATA_INSERT = "{emoji} 插入{target}：{subject}"
+        DATA_INSERT_WITH_COUNT = "{emoji} 插入{target}成功：共{count}条"
+        
+        DATA_UPDATE = "{emoji} 更新{target}：{subject}"
+        DATA_UPDATE_WITH_COUNT = "{emoji} 更新{target}成功：共{count}条"
+        
+        DATA_DELETE = "{emoji} 删除{target}：{subject}"
+        DATA_DELETE_WITH_COUNT = "{emoji} 删除{target}成功：共{count}条"
+        
+        WARNING = "{emoji} {subject}：{message}"
+        ERROR = "{emoji} {subject}：{message}"
+    
+    @staticmethod
+    def success(action: str, subject: str, details: str = "") -> str:
+        """
+        格式化成功消息
+        
+        Args:
+            action: 操作名称，如"推送采购申请"、"同步库存"
+            subject: 操作主体，如"单号PR001"、"账套A01"
+            details: 额外详情，如"共5条"、"耗时10秒"
+        
+        Returns:
+            格式化后的日志消息
+        
+        Example:
+            >>> LogHelper.success("推送采购申请", "单号PR001", "共5条")
+            '✅ 推送采购申请成功：单号PR001，共5条'
+        """
+        if details:
+            return LogHelper.Template.SUCCESS_WITH_DETAILS.format(
+                emoji=LogHelper.Emoji.SUCCESS,
+                action=action,
+                subject=subject,
+                details=details
+            )
+        return LogHelper.Template.SUCCESS.format(
+            emoji=LogHelper.Emoji.SUCCESS,
+            action=action,
+            subject=subject
+        )
+    
+    @staticmethod
+    def fail(action: str, subject: str, reason: str = "") -> str:
+        """
+        格式化失败消息
+        
+        Args:
+            action: 操作名称
+            subject: 操作主体
+            reason: 失败原因
+        
+        Returns:
+            格式化后的日志消息
+        
+        Example:
+            >>> LogHelper.fail("推送采购申请", "单号PR001", "网络超时")
+            '❌ 推送采购申请失败：单号PR001 - 网络超时'
+        """
+        if reason:
+            return LogHelper.Template.FAIL_WITH_REASON.format(
+                emoji=LogHelper.Emoji.FAIL,
+                action=action,
+                subject=subject,
+                reason=reason
+            )
+        return LogHelper.Template.FAIL.format(
+            emoji=LogHelper.Emoji.FAIL,
+            action=action,
+            subject=subject
+        )
+    
+    @staticmethod
+    def error(action: str, subject: str, reason: str = "") -> str:
+        """
+        格式化错误消息（与fail类似，使用不同的emoji）
+        
+        Args:
+            action: 操作名称
+            subject: 操作主体
+            reason: 错误原因
+        
+        Returns:
+            格式化后的日志消息
+        """
+        if reason:
+            return f"{LogHelper.Emoji.ERROR} {action}失败：{subject} - {reason}"
+        return f"{LogHelper.Emoji.ERROR} {action}失败：{subject}"
+    
+    @staticmethod
+    def start(action: str, subject: str = "") -> str:
+        """
+        格式化开始消息
+        
+        Args:
+            action: 操作名称
+            subject: 操作主体（可选）
+        
+        Returns:
+            格式化后的日志消息
+        
+        Example:
+            >>> LogHelper.start("同步任务", "账套A01")
+            '⏰ 开始同步任务：账套A01'
+        """
+        if subject:
+            return LogHelper.Template.START.format(
+                emoji=LogHelper.Emoji.START,
+                action=action,
+                subject=subject
+            )
+        return f"{LogHelper.Emoji.START} 开始{action}"
+    
+    @staticmethod
+    def stop(action: str, subject: str = "") -> str:
+        """
+        格式化结束消息
+        
+        Args:
+            action: 操作名称
+            subject: 操作主体（可选）
+        
+        Returns:
+            格式化后的日志消息
+        """
+        if subject:
+            return LogHelper.Template.STOP.format(
+                emoji=LogHelper.Emoji.STOP,
+                action=action,
+                subject=subject
+            )
+        return f"{LogHelper.Emoji.STOP} 结束{action}"
+    
+    @staticmethod
+    def status_change(subject: str, old_status: str, new_status: str) -> str:
+        """
+        格式化状态变更消息
+        
+        Args:
+            subject: 操作主体
+            old_status: 旧状态
+            new_status: 新状态
+        
+        Returns:
+            格式化后的日志消息
+        
+        Example:
+            >>> LogHelper.status_change("PL001", "待处理", "已确认")
+            '🔄 PL001状态变更：待处理 -> 已确认'
+        """
+        return LogHelper.Template.STATUS_CHANGE.format(
+            emoji=LogHelper.Emoji.UPDATE,
+            subject=subject,
+            old_status=old_status,
+            new_status=new_status
+        )
+    
+    @staticmethod
+    def api_response(api_name: str, status_code: int, details: str = "") -> str:
+        """
+        格式化API响应消息
+        
+        Args:
+            api_name: API名称
+            status_code: HTTP状态码
+            details: 额外详情（可选）
+        
+        Returns:
+            格式化后的日志消息
+        
+        Example:
+            >>> LogHelper.api_response("更新PL状态", 200)
+            '✅ 更新PL状态响应：200'
+        """
+        emoji = LogHelper.Emoji.SUCCESS if 200 <= status_code < 300 else LogHelper.Emoji.FAIL
+        if details:
+            return LogHelper.Template.API_RESPONSE_WITH_DATA.format(
+                emoji=emoji,
+                api_name=api_name,
+                status_code=status_code,
+                details=details
+            )
+        return LogHelper.Template.API_RESPONSE.format(
+            emoji=emoji,
+            api_name=api_name,
+            status_code=status_code
+        )
+    
+    @staticmethod
+    def query(target: str, result: str = "", count: int = None) -> str:
+        """
+        格式化查询消息
+        
+        Args:
+            target: 查询目标
+            result: 查询结果描述
+            count: 结果数量（可选）
+        
+        Returns:
+            格式化后的日志消息
+        
+        Example:
+            >>> LogHelper.query("PL信息", count=10)
+            '✅ 查询PL信息成功：共10条'
+        """
+        if count is not None:
+            return LogHelper.Template.QUERY_RESULT_WITH_COUNT.format(
+                emoji=LogHelper.Emoji.SUCCESS,
+                target=target,
+                count=count
+            )
+        if result:
+            return LogHelper.Template.QUERY_RESULT.format(
+                emoji=LogHelper.Emoji.QUERY,
+                target=target,
+                result=result
+            )
+        return f"{LogHelper.Emoji.QUERY} 开始查询{target}"
+    
+    @staticmethod
+    def insert(target: str, subject: str = "", count: int = None) -> str:
+        """
+        格式化插入消息
+        
+        Args:
+            target: 插入目标表/集合
+            subject: 插入主体（可选）
+            count: 插入数量（可选）
+        
+        Returns:
+            格式化后的日志消息
+        """
+        if count is not None:
+            return LogHelper.Template.DATA_INSERT_WITH_COUNT.format(
+                emoji=LogHelper.Emoji.INSERT,
+                target=target,
+                count=count
+            )
+        if subject:
+            return LogHelper.Template.DATA_INSERT.format(
+                emoji=LogHelper.Emoji.INSERT,
+                target=target,
+                subject=subject
+            )
+        return f"{LogHelper.Emoji.INSERT} 插入{target}"
+    
+    @staticmethod
+    def update(target: str, subject: str = "", count: int = None) -> str:
+        """
+        格式化更新消息
+        
+        Args:
+            target: 更新目标表/集合
+            subject: 更新主体（可选）
+            count: 更新数量（可选）
+        
+        Returns:
+            格式化后的日志消息
+        """
+        if count is not None:
+            return LogHelper.Template.DATA_UPDATE_WITH_COUNT.format(
+                emoji=LogHelper.Emoji.UPDATE,
+                target=target,
+                count=count
+            )
+        if subject:
+            return LogHelper.Template.DATA_UPDATE.format(
+                emoji=LogHelper.Emoji.UPDATE,
+                target=target,
+                subject=subject
+            )
+        return f"{LogHelper.Emoji.UPDATE} 更新{target}"
+    
+    @staticmethod
+    def delete(target: str, subject: str = "", count: int = None) -> str:
+        """
+        格式化删除消息
+        
+        Args:
+            target: 删除目标表/集合
+            subject: 删除主体（可选）
+            count: 删除数量（可选）
+        
+        Returns:
+            格式化后的日志消息
+        """
+        if count is not None:
+            return LogHelper.Template.DATA_DELETE_WITH_COUNT.format(
+                emoji=LogHelper.Emoji.DELETE,
+                target=target,
+                count=count
+            )
+        if subject:
+            return LogHelper.Template.DATA_DELETE.format(
+                emoji=LogHelper.Emoji.DELETE,
+                target=target,
+                subject=subject
+            )
+        return f"{LogHelper.Emoji.DELETE} 删除{target}"
+    
+    @staticmethod
+    def warning(subject: str, message: str) -> str:
+        """
+        格式化警告消息
+        
+        Args:
+            subject: 警告主体
+            message: 警告信息
+        
+        Returns:
+            格式化后的日志消息
+        """
+        return LogHelper.Template.WARNING.format(
+            emoji=LogHelper.Emoji.WARNING,
+            subject=subject,
+            message=message
+        )
+    
+    @staticmethod
+    def sync(action: str, subject: str = "", details: str = "") -> str:
+        """
+        格式化同步消息
+        
+        Args:
+            action: 同步操作名称
+            subject: 同步主体
+            details: 额外详情
+        
+        Returns:
+            格式化后的日志消息
+        """
+        if details:
+            return f"{LogHelper.Emoji.SYNC} {action}：{subject}，{details}"
+        if subject:
+            return f"{LogHelper.Emoji.SYNC} {action}：{subject}"
+        return f"{LogHelper.Emoji.SYNC} {action}"
+    
+    @staticmethod
+    def connect(target: str, status: str = "成功") -> str:
+        """
+        格式化连接消息
+        
+        Args:
+            target: 连接目标
+            status: 连接状态
+        
+        Returns:
+            格式化后的日志消息
+        """
+        emoji = LogHelper.Emoji.CONNECT if status == "成功" else LogHelper.Emoji.ERROR
+        return f"{emoji} 连接{target}{status}"
+    
+    @staticmethod
+    def disconnect(target: str) -> str:
+        """
+        格式化断开连接消息
+        
+        Args:
+            target: 断开目标
+        
+        Returns:
+            格式化后的日志消息
+        """
+        return f"{LogHelper.Emoji.DISCONNECT} 断开{target}连接"
+    
+    @staticmethod
+    def cache(action: str, target: str = "", details: str = "") -> str:
+        """
+        格式化缓存消息
+        
+        Args:
+            action: 缓存操作（如"刷新"、"清理"）
+            target: 缓存目标
+            details: 额外详情
+        
+        Returns:
+            格式化后的日志消息
+        """
+        if details:
+            return f"{LogHelper.Emoji.CACHE} {action}缓存：{target}，{details}"
+        if target:
+            return f"{LogHelper.Emoji.CACHE} {action}缓存：{target}"
+        return f"{LogHelper.Emoji.CACHE} {action}缓存"
+
+
 # 存储多个logger实例和对应的listener
 logger_instances = {}
 listeners = {}
@@ -650,16 +1089,286 @@ class ColoredLogger(logging.Logger):
         else:
             super().critical(msg, *args, **kwargs)
 
-# 注册彩色日志器类
-logging.setLoggerClass(ColoredLogger)
+class SmartLogger(ColoredLogger):
+    """
+    智能日志器类，扩展便捷方法，支持同时输出到控制台和文件
+    
+    使用示例:
+        >>> console_log.success("推送采购申请", "单号PR001", "共5条")
+        >>> console_log.fail("查询PL", "PL001", "网络超时")  # 自动同时写入文件
+        >>> console_log.start("同步任务", "账套A01")
+    """
+    
+    _file_logger = None
+    _auto_file_enabled = True
+    
+    def set_file_logger(self, file_logger) -> None:
+        """
+        设置关联的文件日志器
+        
+        Args:
+            file_logger: 文件日志器实例
+        """
+        self._file_logger = file_logger
+    
+    def enable_auto_file(self) -> None:
+        """启用自动文件日志（默认启用）"""
+        self._auto_file_enabled = True
+    
+    def disable_auto_file(self) -> None:
+        """禁用自动文件日志"""
+        self._auto_file_enabled = False
+    
+    def _log_to_file(self, level: int, msg: str) -> None:
+        """
+        同时写入文件日志
+        
+        Args:
+            level: 日志级别
+            msg: 日志消息
+        """
+        if self._auto_file_enabled and self._file_logger:
+            self._file_logger.log(level, msg)
+    
+    def success(self, action: str, subject: str = "", details: str = "", to_file: bool = False) -> None:
+        """
+        记录成功消息
+        
+        Args:
+            action: 操作名称
+            subject: 操作主体
+            details: 额外详情
+            to_file: 是否同时写入文件
+        """
+        msg = LogHelper.success(action, subject, details)
+        self.info(msg)
+        if to_file:
+            self._log_to_file(logging.INFO, msg)
+    
+    def fail(self, action: str, subject: str = "", reason: str = "", to_file: bool = True) -> None:
+        """
+        记录失败消息（默认同时写入文件）
+        
+        Args:
+            action: 操作名称
+            subject: 操作主体
+            reason: 失败原因
+            to_file: 是否同时写入文件，默认True
+        """
+        msg = LogHelper.fail(action, subject, reason)
+        self.error(msg)
+        if to_file:
+            self._log_to_file(logging.ERROR, msg)
+    
+    def start(self, action: str, subject: str = "", to_file: bool = False) -> None:
+        """
+        记录开始消息
+        
+        Args:
+            action: 操作名称
+            subject: 操作主体
+            to_file: 是否同时写入文件
+        """
+        msg = LogHelper.start(action, subject)
+        self.info(msg)
+        if to_file:
+            self._log_to_file(logging.INFO, msg)
+    
+    def stop(self, action: str, subject: str = "", to_file: bool = False) -> None:
+        """
+        记录结束消息
+        
+        Args:
+            action: 操作名称
+            subject: 操作主体
+            to_file: 是否同时写入文件
+        """
+        msg = LogHelper.stop(action, subject)
+        self.info(msg)
+        if to_file:
+            self._log_to_file(logging.INFO, msg)
+    
+    def status_change(self, subject: str, old_status: str, new_status: str, to_file: bool = False) -> None:
+        """
+        记录状态变更消息
+        
+        Args:
+            subject: 操作主体
+            old_status: 旧状态
+            new_status: 新状态
+            to_file: 是否同时写入文件
+        """
+        msg = LogHelper.status_change(subject, old_status, new_status)
+        self.info(msg)
+        if to_file:
+            self._log_to_file(logging.INFO, msg)
+    
+    def api_response(self, api_name: str, status_code: int, details: str = "", to_file: bool = False) -> None:
+        """
+        记录API响应消息
+        
+        Args:
+            api_name: API名称
+            status_code: HTTP状态码
+            details: 额外详情
+            to_file: 是否同时写入文件
+        """
+        msg = LogHelper.api_response(api_name, status_code, details)
+        if 200 <= status_code < 300:
+            self.info(msg)
+            if to_file:
+                self._log_to_file(logging.INFO, msg)
+        else:
+            self.error(msg)
+            self._log_to_file(logging.ERROR, msg)
+    
+    def query(self, target: str, result: str = "", count: int = None, to_file: bool = False) -> None:
+        """
+        记录查询消息
+        
+        Args:
+            target: 查询目标
+            result: 查询结果描述
+            count: 结果数量
+            to_file: 是否同时写入文件
+        """
+        msg = LogHelper.query(target, result, count)
+        self.info(msg)
+        if to_file:
+            self._log_to_file(logging.INFO, msg)
+    
+    def insert(self, target: str, subject: str = "", count: int = None, to_file: bool = False) -> None:
+        """
+        记录插入消息
+        
+        Args:
+            target: 插入目标
+            subject: 插入主体
+            count: 插入数量
+            to_file: 是否同时写入文件
+        """
+        msg = LogHelper.insert(target, subject, count)
+        self.info(msg)
+        if to_file:
+            self._log_to_file(logging.INFO, msg)
+    
+    def update(self, target: str, subject: str = "", count: int = None, to_file: bool = False) -> None:
+        """
+        记录更新消息
+        
+        Args:
+            target: 更新目标
+            subject: 更新主体
+            count: 更新数量
+            to_file: 是否同时写入文件
+        """
+        msg = LogHelper.update(target, subject, count)
+        self.info(msg)
+        if to_file:
+            self._log_to_file(logging.INFO, msg)
+    
+    def delete(self, target: str, subject: str = "", count: int = None, to_file: bool = False) -> None:
+        """
+        记录删除消息
+        
+        Args:
+            target: 删除目标
+            subject: 删除主体
+            count: 删除数量
+            to_file: 是否同时写入文件
+        """
+        msg = LogHelper.delete(target, subject, count)
+        self.info(msg)
+        if to_file:
+            self._log_to_file(logging.INFO, msg)
+    
+    def warning_msg(self, subject: str, message: str, to_file: bool = True) -> None:
+        """
+        记录警告消息（默认同时写入文件）
+        
+        Args:
+            subject: 警告主体
+            message: 警告信息
+            to_file: 是否同时写入文件，默认True
+        """
+        msg = LogHelper.warning(subject, message)
+        self.warning(msg)
+        if to_file:
+            self._log_to_file(logging.WARNING, msg)
+    
+    def sync(self, action: str, subject: str = "", details: str = "", to_file: bool = False) -> None:
+        """
+        记录同步消息
+        
+        Args:
+            action: 同步操作名称
+            subject: 同步主体
+            details: 额外详情
+            to_file: 是否同时写入文件
+        """
+        msg = LogHelper.sync(action, subject, details)
+        self.info(msg)
+        if to_file:
+            self._log_to_file(logging.INFO, msg)
+    
+    def connect(self, target: str, status: str = "成功", to_file: bool = False) -> None:
+        """
+        记录连接消息
+        
+        Args:
+            target: 连接目标
+            status: 连接状态
+            to_file: 是否同时写入文件
+        """
+        msg = LogHelper.connect(target, status)
+        if status == "成功":
+            self.info(msg)
+            if to_file:
+                self._log_to_file(logging.INFO, msg)
+        else:
+            self.error(msg)
+            self._log_to_file(logging.ERROR, msg)
+    
+    def disconnect(self, target: str, to_file: bool = False) -> None:
+        """
+        记录断开连接消息
+        
+        Args:
+            target: 断开目标
+            to_file: 是否同时写入文件
+        """
+        msg = LogHelper.disconnect(target)
+        self.info(msg)
+        if to_file:
+            self._log_to_file(logging.INFO, msg)
+    
+    def cache(self, action: str, target: str = "", details: str = "", to_file: bool = False) -> None:
+        """
+        记录缓存消息
+        
+        Args:
+            action: 缓存操作
+            target: 缓存目标
+            details: 额外详情
+            to_file: 是否同时写入文件
+        """
+        msg = LogHelper.cache(action, target, details)
+        self.info(msg)
+        if to_file:
+            self._log_to_file(logging.INFO, msg)
 
-def setup_logger(name: str, level: str = 'INFO') -> logging.Logger:
+
+# 注册智能日志器类
+logging.setLoggerClass(SmartLogger)
+
+def setup_logger(name: str, level: str = 'INFO', auto_file: bool = True) -> logging.Logger:
     """
     设置日志器
     
     Args:
         name: 日志器名称
         level: 日志级别
+        auto_file: 是否自动关联文件日志器（支持 to_file 参数），默认True
         
     Returns:
         配置好的日志器实例
@@ -674,6 +1383,11 @@ def setup_logger(name: str, level: str = 'INFO') -> logging.Logger:
     
     # 配置控制台日志
     setup_console_logger(logger, get_log_level(level))
+    
+    # 自动关联文件日志器
+    if auto_file:
+        file_logger = get_file_logger(name)
+        logger.set_file_logger(file_logger)
     
     # 存储日志器实例
     _loggers[name] = logger
@@ -757,10 +1471,16 @@ def get_logger(name: Optional[str] = None, include_file: bool = False) -> loggin
     
     Args:
         name: 日志器名称，默认使用调用模块的名称
-        include_file: 是否包含文件日志
+        include_file: 是否包含文件日志（已废弃，现在自动支持 to_file 参数）
         
     Returns:
         配置好的日志器实例
+        
+    Note:
+        返回的日志器支持 to_file 参数，可控制是否同时写入文件：
+        - console_log.fail(...)  # 默认 to_file=True，自动写入文件
+        - console_log.success(...)  # 默认 to_file=False，仅控制台
+        - console_log.success(..., to_file=True)  # 强制写入文件
     """
     # 如果没有提供名称，自动获取调用模块的名称
     if name is None:

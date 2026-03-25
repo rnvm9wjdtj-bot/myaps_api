@@ -79,5 +79,4 @@ def handle_pl_status_a2e(supplyno_or_data: str | dict):
 
 
 def batch_handle_pr_created(pr_data_list: list[dict]):
-    aggred_data = ApsHelpers.aggregate_pr_data(pr_data_list)
-    tplus_conn.push_pr(aggred_data)
+    tplus_conn.push_pr(pr_data_list, aggregate=True)

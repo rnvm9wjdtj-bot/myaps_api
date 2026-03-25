@@ -10,11 +10,12 @@
 
 import threading
 import time
-import logging
 from collections import defaultdict
 from typing import Callable, Any, List, Dict, Set
 
-logger = logging.getLogger(__name__)
+from globalobjects import logger as log_config
+
+logger = log_config.get_logger(__name__)
 
 
 class EventAggregator:
@@ -91,10 +92,10 @@ class EventAggregator:
             for g_key, events_dict in buffer_copy.items():
                 events = list(events_dict.values())
                 if events:
-                    logger.debug(f"处理分组 {g_key} 的 {len(events)} 个事件")
+                    logger.debug(f"处理分组{g_key}的{len(events)}个事件")
                     self.handler(events)
         except Exception as e:
-            logger.error(f"批量处理事件失败: {e}")
+            logger.fail("批量处理事件", "", str(e))
     
     def _condition_thread_func(self):
         """条件变量线程函数"""
@@ -121,7 +122,7 @@ class EventAggregator:
             self._condition_thread = threading.Thread(target=self._condition_thread_func)
             self._condition_thread.daemon = True
             self._condition_thread.start()
-            logger.info("事件聚合器已启动")
+            logger.start("事件聚合器")
     
     def stop(self):
         """停止聚合器"""
@@ -134,7 +135,7 @@ class EventAggregator:
             self._condition_thread = None
         # 停止前刷新剩余事件
         self._flush()
-        logger.info("事件聚合器已停止")
+        logger.stop("事件聚合器")
     
     def flush_now(self):
         """立即刷新缓冲区"""

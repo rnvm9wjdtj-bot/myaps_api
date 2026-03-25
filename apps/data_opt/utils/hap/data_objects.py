@@ -311,9 +311,7 @@ class HapRowSet(Generic[ModelType]):
                 elif isinstance(field, SubtableField):
                     processed_data = field.process_subtable(processed_data, original_data, self.hap_conn)
             except KeyError as e:
-                # 捕获 KeyError，确保即使某个字段处理失败，整个数据处理过程也能继续进行
-                console_log.warning(f"处理字段 {attr_name} 时出现 KeyError: {e}")
-                # 继续处理下一个字段
+                console_log.warning_msg("字段处理", f"{attr_name}出现KeyError：{e}")
                 continue
         
         return processed_data
@@ -387,13 +385,10 @@ class HapRowSet(Generic[ModelType]):
                             self.row_objects.append(model_instance)
                             created_models.append(model_instance)
                 else:
-                    # 记录失败信息
                     error_msg = response.get('error_msg', 'Unknown error')
-                    console_log.error(f"批量创建失败，批次 {i//batch_size + 1}: {error_msg}")
-                    # 尝试单条创建失败的数据
+                    console_log.fail("批量创建", f"批次{i//batch_size + 1}", error_msg)
                     for data in processed_batch_data:
                         try:
-                            # 单条创建
                             single_response = self.hap_conn._post(endpoint, {
                                 "rows": [{'fields': HapUtils.convert_data_to_fieldslist(data, model=self.model)}],
                                 "triggerWorkflow": trigger_workflow
@@ -405,11 +400,9 @@ class HapRowSet(Generic[ModelType]):
                                 self.row_objects.append(model_instance)
                                 created_models.append(model_instance)
                         except Exception as e:
-                            console_log.error(f"单条创建失败: {data}, 错误: {e}")
+                            console_log.fail("单条创建", str(data), str(e))
             except Exception as e:
-                # 捕获网络等异常
-                console_log.error(f"批量创建请求失败，批次 {i//batch_size + 1}: {e}")
-                # 尝试单条创建
+                console_log.fail("批量创建请求", f"批次{i//batch_size + 1}", str(e))
                 for data in processed_batch_data:
                     try:
                         single_response = self.hap_conn._post(endpoint, {
@@ -423,7 +416,7 @@ class HapRowSet(Generic[ModelType]):
                             self.row_objects.append(model_instance)
                             created_models.append(model_instance)
                     except Exception as single_error:
-                        console_log.error(f"单条创建失败: {data}, 错误: {single_error}")
+                        console_log.fail("单条创建", str(data), str(single_error))
         
         # 批量更新缓存
         self.hap_conn._update_cache_for_instances(created_models)
@@ -520,7 +513,7 @@ class HapRowSet(Generic[ModelType]):
             # else:
             #     console_log.error(f"Failed to update model instances: {response.get('error_msg', 'Unknown error')}")
             if not response.get('success'):
-                console_log.warning(f"Failed to update model instances: {response.get('error_msg', 'Unknown error')}, model: {self.model.__name__}, row_ids: {group['row_ids']}")
+                console_log.warning_msg("批量更新", f"{self.model.__name__}：{response.get('error_msg', 'Unknown error')}")
             for model in group["models"]:
                 for key, value in kwargs.items():
                     setattr(model, key, value)
@@ -701,14 +694,12 @@ class HapRowSet(Generic[ModelType]):
                             # 没有找到记录，需要创建
                             to_create.append(data_dict)
                     except Exception as e:
-                        console_log.error(f"查询数据失败: {data_dict}, 错误: {e}")
-                        # 查询失败，作为需要创建处理
+                        console_log.fail("查询数据", str(data_dict), str(e))
                         to_create.append(data_dict)
                 else:
                     to_create.append(data_dict)
         except Exception as e:
-            console_log.error(f"构建查询条件失败: {e}")
-            # 所有数据都作为需要创建处理
+            console_log.fail("构建查询条件", "", str(e))
             to_create.extend(data_list)
         
         # 批量更新
@@ -740,8 +731,7 @@ class HapRowSet(Generic[ModelType]):
                     updated = row_set.update(trigger_workflow=trigger_workflow, when_value_equal_then=when_value_equal_then, **group["data"])
                     updated_models.extend(updated)
             except Exception as e:
-                console_log.error(f"批量更新失败: {e}")
-                # 更新失败，将这些数据作为需要创建处理
+                console_log.fail("批量更新", "", str(e))
                 for model_instance, data_dict in to_update:
                     to_create.append(data_dict)
         
@@ -752,8 +742,7 @@ class HapRowSet(Generic[ModelType]):
                 created = self.bulk_create(to_create, trigger_workflow)
                 created_models.extend(created)
             except Exception as e:
-                console_log.error(f"批量创建失败: {e}")
-                # 创建失败，记录为失败数据
+                console_log.fail("批量创建", "", str(e))
                 failed_data.extend(to_create)
         
         # 合并结果
@@ -761,7 +750,7 @@ class HapRowSet(Generic[ModelType]):
         
         # 如果有失败数据，尝试单条处理
         if failed_data:
-            console_log.info(f"尝试单条处理 {len(failed_data)} 条失败数据")
+            console_log.info(f"尝试单条处理{len(failed_data)}条失败数据")
             for data in failed_data:
                 try:
                     # 单条 upsert
@@ -773,7 +762,7 @@ class HapRowSet(Generic[ModelType]):
                         single_created = self.bulk_create([result[1]], trigger_workflow=False)
                         all_models.extend(single_created)
                 except Exception as e:
-                    console_log.error(f"单条处理失败: {data}, 错误: {e}")
+                    console_log.fail("单条处理", str(data), str(e))
         
         return all_models
 
@@ -820,13 +809,13 @@ class HapRowSet(Generic[ModelType]):
             if not failed_data:
                 break
             retry_failed = []
-            console_log.info(f"第【{retry + 1}】次重试，共【{len(failed_data)}】条数据，目标【{self.model.__name__}】")
+            console_log.info(f"第{retry + 1}次重试，共{len(failed_data)}条数据，目标{self.model.__name__}")
             for data in failed_data:
                 try:
                     result = self._process_item(data, pk_field, conflict_fields, when_value_equal_then)
                     results.append(result)
                 except Exception as exc:
-                    console_log.error(f"重试处理 {data} 时出错: {exc}")
+                    console_log.fail("重试处理", str(data), str(exc))
                     retry_failed.append(data)
             failed_data = retry_failed
         
@@ -1659,11 +1648,10 @@ class AsyncHapQuerySet(Generic[ModelType]):
                 except Exception as e:
                     error_msg = str(e)
                     if attempt < max_retries - 1:
-                        # 指数退避
                         delay = retry_delay * (2 ** attempt)
-                        console_log.warning(
-                            f"批次【{batch_index}】第【{attempt + 1}】次尝试失败，目标【{self.model.__name__}】"
-                            f"等待【{delay}】秒后重试: {error_msg}"
+                        console_log.warning_msg(
+                            "批次重试",
+                            f"批次{batch_index}第{attempt + 1}次失败，目标{self.model.__name__}，等待{delay}秒后重试：{error_msg}"
                         )
                         await asyncio.sleep(delay)
                     else:
@@ -1719,28 +1707,25 @@ class AsyncHapQuerySet(Generic[ModelType]):
                     # 实际应用中可以通过其他机制（如连接池大小）来调整
                     new_limit = controller.concurrency
                     if new_limit != max_concurrency:
-                        console_log.info(f"建议调整并发度从 {max_concurrency} 到 {new_limit}")
+                        console_log.info(f"建议调整并发度从{max_concurrency}到{new_limit}")
                 
-                # 进度回调
                 if progress_callback:
                     try:
                         progress_callback(processed_count, len(data_list))
                     except Exception as e:
-                        console_log.warning(f"进度回调执行失败: {e}")
+                        console_log.warning_msg("进度回调", f"执行失败：{e}")
                 
-                # 检查是否需要提前返回
                 if not return_partial and not result.success:
-                    # 取消剩余任务
                     for task in tasks:
                         if not task.done():
                             task.cancel()
                     break
                     
             except asyncio.CancelledError:
-                console_log.warning("任务被取消")
+                console_log.warning_msg("任务", "被取消")
                 continue
             except Exception as e:
-                console_log.error(f"处理批次【{batch_index}】时发生未预期错误，目标【{self.model.__name__}】: {e}")
+                console_log.fail("批次处理", f"批次{batch_index}，目标{self.model.__name__}", str(e))
                 stats.failed_batches += 1
         
         # 计算最终统计
@@ -1839,7 +1824,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
         
         if target_qps is None:
             target_qps = getattr(self._sync_conn, 'qps_limit', 10.0)
-            console_log.info(f"从 HapConfig 自动获取 QPS 限制: {target_qps}")
+            console_log.info(f"从HapConfig自动获取QPS限制：{target_qps}")
         
         smart_batch_calculator = getattr(self._sync_conn, '_batch_size_calculator', None)
         
@@ -1876,7 +1861,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
                 for attempt in range(max_retries):
                     try:
                         result = await self.upsert(data_batch, trigger_workflow=trigger_workflow, **kwargs)
-                        console_log.info(f"批次 {batch_index} 第 {attempt + 1} 次尝试成功，处理 {len(data_batch)} 条记录")
+                        console_log.success("批次处理", f"批次{batch_index}", f"第{attempt + 1}次尝试成功，处理{len(data_batch)}条")
                         
                         response_time = time.time() - start_time
                         
@@ -1897,7 +1882,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
                         return len(data_batch)
                     except Exception as e:
                         response_time = time.time() - start_time
-                        console_log.warning(f"批次 {batch_index} 第 {attempt + 1} 次尝试失败: {e}")
+                        console_log.warning_msg("批次尝试", f"批次{batch_index}第{attempt + 1}次失败：{e}")
                         
                         if adaptive:
                             controller.record_request(False, response_time)
@@ -1916,7 +1901,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
                         if attempt < max_retries - 1:
                             await asyncio.sleep(retry_delay * (attempt + 1))
                         else:
-                            console_log.error(f"批次 {batch_index} 最终失败，跳过 {len(data_batch)} 条数据")
+                            console_log.fail("批次处理", f"批次{batch_index}", f"最终失败，跳过{len(data_batch)}条")
                             return 0
                 return 0
         
@@ -1936,18 +1921,18 @@ class AsyncHapQuerySet(Generic[ModelType]):
                         if new_concurrency != current_concurrency:
                             current_concurrency = new_concurrency
                             semaphore = asyncio.Semaphore(current_concurrency)
-                            console_log.info(f"自适应调整: 并发数 -> {current_concurrency}")
+                            console_log.info(f"自适应调整：并发数 -> {current_concurrency}")
                         
                         if new_buffer_size != current_buffer_size:
                             current_buffer_size = new_buffer_size
-                            console_log.info(f"自适应调整: 缓冲区 -> {current_buffer_size}")
+                            console_log.info(f"自适应调整：缓冲区 -> {current_buffer_size}")
                         
                         if batch_index % 20 == 0:
                             stats = controller.get_stats()
                             console_log.info(
-                                f"统计: 成功率={stats['success_rate']:.2%}, "
-                                f"平均响应={stats['avg_response_time']:.2f}s, "
-                                f"当前参数: buffer={current_buffer_size}, concurrency={current_concurrency}"
+                                f"统计：成功率={stats['success_rate']:.2%}，"
+                                f"平均响应={stats['avg_response_time']:.2f}s，"
+                                f"当前参数：buffer={current_buffer_size}，concurrency={current_concurrency}"
                             )
                     
                     tasks.append(asyncio.create_task(
@@ -1964,10 +1949,9 @@ class AsyncHapQuerySet(Generic[ModelType]):
                             try:
                                 total_count += await task
                             except Exception as e:
-                                console_log.error(f"任务执行失败: {e}")
+                                console_log.fail("任务执行", "", str(e))
                         tasks = list(pending)
         else:
-            # 处理同步生成器
             for data in data_generator:
                 buffer.extend(data)
                 
@@ -1980,18 +1964,18 @@ class AsyncHapQuerySet(Generic[ModelType]):
                         if new_concurrency != current_concurrency:
                             current_concurrency = new_concurrency
                             semaphore = asyncio.Semaphore(current_concurrency)
-                            console_log.info(f"自适应调整: 并发数 -> {current_concurrency}")
+                            console_log.info(f"自适应调整：并发数 -> {current_concurrency}")
                         
                         if new_buffer_size != current_buffer_size:
                             current_buffer_size = new_buffer_size
-                            console_log.info(f"自适应调整: 缓冲区 -> {current_buffer_size}")
+                            console_log.info(f"自适应调整：缓冲区 -> {current_buffer_size}")
                         
                         if batch_index % 20 == 0:
                             stats = controller.get_stats()
                             console_log.info(
-                                f"统计: 成功率={stats['success_rate']:.2%}, "
-                                f"平均响应={stats['avg_response_time']:.2f}s, "
-                                f"当前参数: buffer={current_buffer_size}, concurrency={current_concurrency}"
+                                f"统计：成功率={stats['success_rate']:.2%}，"
+                                f"平均响应={stats['avg_response_time']:.2f}s，"
+                                f"当前参数：buffer={current_buffer_size}，concurrency={current_concurrency}"
                             )
                     
                     tasks.append(asyncio.create_task(
@@ -2008,7 +1992,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
                             try:
                                 total_count += await task
                             except Exception as e:
-                                console_log.error(f"任务执行失败: {e}")
+                                console_log.fail("任务执行", "", str(e))
                         tasks = list(pending)
         
         if buffer:
@@ -2023,7 +2007,7 @@ class AsyncHapQuerySet(Generic[ModelType]):
                 try:
                     total_count += await task
                 except Exception as e:
-                    console_log.error(f"任务执行失败: {e}")
+                    console_log.fail("任务执行", "", str(e))
         
-        console_log.info(f"upsert_from_generator 完成，总处理 {total_count} 条记录")
+        console_log.success("upsert_from_generator", "", f"总处理{total_count}条记录")
         return total_count

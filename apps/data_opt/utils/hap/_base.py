@@ -8,6 +8,7 @@ import threading
 from typing import TypeVar
 
 from globalobjects import CACHE_JSON, logger as log_config
+from globalobjects.logger import LogHelper
 from globalobjects.json_manager import JSONManager
 
 
@@ -113,6 +114,7 @@ class AsyncLogHandler:
 # 获取基础日志器
 _base_console_log = log_config.get_logger(__name__)
 file_log = log_config.get_file_logger(__name__)
+filelog_error = log_config.get_file_logger(__name__ + '.error')
 
 # 创建异步日志处理器实例
 _async_log_handler = AsyncLogHandler()
@@ -139,8 +141,60 @@ class AsyncLogger:
         _async_log_handler.log('critical', msg, *args, **kwargs)
     
     def exception(self, msg, *args, **kwargs):
-        # 异常日志直接同步处理
         _base_console_log.exception(msg, *args, **kwargs)
+    
+    def success(self, action: str, subject: str = "", details: str = "", to_file: bool = False):
+        _async_log_handler.log('info', LogHelper.success(action, subject, details))
+    
+    def fail(self, action: str, subject: str = "", reason: str = "", to_file: bool = True):
+        _async_log_handler.log('error', LogHelper.fail(action, subject, reason))
+    
+    def start(self, action: str, subject: str = "", to_file: bool = False):
+        _async_log_handler.log('info', LogHelper.start(action, subject))
+    
+    def stop(self, action: str, subject: str = "", to_file: bool = False):
+        _async_log_handler.log('info', LogHelper.stop(action, subject))
+    
+    def status_change(self, subject: str, old_status: str, new_status: str, to_file: bool = False):
+        _async_log_handler.log('info', LogHelper.status_change(subject, old_status, new_status))
+    
+    def api_response(self, api_name: str, status_code: int, details: str = "", to_file: bool = False):
+        msg = LogHelper.api_response(api_name, status_code, details)
+        if 200 <= status_code < 300:
+            _async_log_handler.log('info', msg)
+        else:
+            _async_log_handler.log('error', msg)
+    
+    def query(self, target: str, result: str = "", count: int = None, to_file: bool = False):
+        _async_log_handler.log('info', LogHelper.query(target, result, count))
+    
+    def insert(self, target: str, subject: str = "", count: int = None, to_file: bool = False):
+        _async_log_handler.log('info', LogHelper.insert(target, subject, count))
+    
+    def update(self, target: str, subject: str = "", count: int = None, to_file: bool = False):
+        _async_log_handler.log('info', LogHelper.update(target, subject, count))
+    
+    def delete(self, target: str, subject: str = "", count: int = None, to_file: bool = False):
+        _async_log_handler.log('info', LogHelper.delete(target, subject, count))
+    
+    def warning_msg(self, subject: str, message: str, to_file: bool = True):
+        _async_log_handler.log('warning', LogHelper.warning(subject, message))
+    
+    def sync(self, action: str, subject: str = "", details: str = "", to_file: bool = False):
+        _async_log_handler.log('info', LogHelper.sync(action, subject, details))
+    
+    def connect(self, target: str, status: str = "成功", to_file: bool = False):
+        msg = LogHelper.connect(target, status)
+        if status == "成功":
+            _async_log_handler.log('info', msg)
+        else:
+            _async_log_handler.log('error', msg)
+    
+    def disconnect(self, target: str, to_file: bool = False):
+        _async_log_handler.log('info', LogHelper.disconnect(target))
+    
+    def cache(self, action: str, target: str = "", details: str = "", to_file: bool = False):
+        _async_log_handler.log('info', LogHelper.cache(action, target, details))
 
 
 # 替换为异步日志器
@@ -152,7 +206,7 @@ def shutdown_hap_logging():
     global _async_log_handler
     if _async_log_handler:
         _async_log_handler.stop()
-        console_log.info("✅ HAP 模块日志系统已关闭")
+        console_log.stop("HAP模块日志系统")
 
 
 # 类型定义

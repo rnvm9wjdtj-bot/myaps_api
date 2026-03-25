@@ -316,25 +316,23 @@ class PrPushModel(PydanticModel):
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values: Dict[str, Any]):
+        now_stamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+        today = datetime.now().strftime("%Y-%m-%d")
+        cleaned_values = {
+            'VoucherDate': today,
+            'ExternalCode': now_stamp,
+            'RequisitionPerson': {"Code": CACHE_ERP.get("$RequisitionPerson", "")}
+        }
         # 处理直接传递列表的情况
         if isinstance(values, list):
             data_list = values
-            cleaned_values = {
-                'VoucherDate': datetime.now().strftime("%Y-%m-%d"),
-                'ExternalCode': "",
-                'RequisitionPerson': {"Code": CACHE_ERP.get("$RequisitionPerson", "")}
-            }
+
         else:
             # 处理通过 data 关键字参数传递的情况
             if 'data' in values:
                 data_list = values['data']
             else:
                 data_list = values
-            cleaned_values = {
-                'VoucherDate': datetime.now().strftime("%Y-%m-%d"),
-                'ExternalCode': values.get('supplyno', ""),
-                'RequisitionPerson': {"Code": CACHE_ERP.get("$RequisitionPerson", "")}
-            }
         
         prd = []
         for _ in data_list:
@@ -345,7 +343,6 @@ class PrPushModel(PydanticModel):
             
             prd.append({
                 'Inventory': {'Code': _['materialno']},
-                # 'Unit': {'Name': _.get('unit', "")},
                 'Unit': {},
                 'Quantity': _['avail_qty'],
                 'RequireDate': avail_date,
@@ -492,7 +489,7 @@ class TplusConnection(BaseConnection):
         if self._auth_at_:
             expire_time = datetime.strptime(self._auth_at_, "%Y-%m-%d %H:%M:%S") + timedelta(seconds=self.config.token_expire_seconds)
             if datetime.now() < expire_time:
-                console_log.info(f"✅ 畅捷通 token 仍在有效期内，有效期至: {expire_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                console_log.info(f"畅捷通token有效，有效期至：{expire_time.strftime('%Y-%m-%d %H:%M:%S')}")
                 return self.access_token
 
         auth_response = self._session.get(
@@ -520,11 +517,11 @@ class TplusConnection(BaseConnection):
                 "access_token": self.access_token,
                 "refresh_token": self.refresh_token})
             self.cache_file.save()
-            console_log.info(f"✅ 畅捷通token刷新成功")
+            console_log.success("畅捷通token刷新")
             return self.access_token
         else:
-            msg = f"🚫 获取畅捷通token失败: {auth_response}"
-            file_log.error(msg)
+            msg = f"获取畅捷通token失败：{auth_response}"
+            file_log.fail("畅捷通token", "", msg)
             raise Exception(msg)
 
 
@@ -675,7 +672,7 @@ class TplusConnection(BaseConnection):
                     result = future.result()
                     data_list.extend(result)
                 except Exception as exc:
-                    console_log.error(f"处理BOM编码 {bom_code} 时出错: {exc}")
+                    console_log.fail("BOM处理", bom_code, str(exc))
         
         self._BOM_CODES = None
         data_list = [pydantic_model(**item).model_dump() for item in data_list]
@@ -838,17 +835,23 @@ class TplusConnection(BaseConnection):
             ApsHelpers._rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], data=processed_rsdata, msg_from='T+')
 
 
-    def push_pr(self, data_list: list[dict], pydantic_model:PydanticModel=PrPushModel):
+    def push_pr(self, data_list: list[dict], pydantic_model:PydanticModel=PrPushModel, aggregate: bool=True):
         """
         推送采购申请
-        :param data_list: APS 中的 PR 数据（或聚合后的数据）
+        :param data_list: APS 中的 PR 数据
+        :param aggregate: 是否聚合数据（['materialno', 'avail_date', 'vendorno']），默认True
         """
+        if aggregate:
+            data_list = ApsHelpers.aggregate_pr_data(data_list)
         tplus_pr_data = pydantic_model(data=data_list).model_dump(exclude_none=True)
         payload = {"dto": tplus_pr_data}
         endpoint = PrCreateInterface.endpoint
         response = self._post(endpoint=endpoint, data=payload)
-        # pr_push_response_json = response.json()
-        # if str(pr_push_response_json['code']) == '0': # 创建成功
-        #     ApsHelpers._pr_push_success(prno=tplus_pr_data['Code'], msg=pr_push_response_json['message'], msg_from='T+', _code=pr_push_response_json['data'].get('Code'), _id=pr_push_response_json['data'].get('ID'))
-        # else:
-        #     ApsHelpers._pr_push_failed(prno=tplus_pr_data['Code'], msg=pr_push_response_json['message'], data=tplus_pr_data, msg_from='T+')
+        pr_push_response_json = response.json()
+        if str(pr_push_response_json['code']) == '0':
+            console_log.success("推送采购申请", "", str(payload))
+        else:
+            error_msg = f"推送采购申请失败，错误信息：{pr_push_response_json['message']}，数据：{payload}"
+            console_log.fail("推送采购申请", "", error_msg)
+            file_log.fail("推送采购申请", "", error_msg)
+

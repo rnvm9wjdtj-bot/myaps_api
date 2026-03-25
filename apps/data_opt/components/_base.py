@@ -17,6 +17,7 @@ from apps.io_api.schemas import (
 )
 from apps.io_api.models import TSupply, TDemand
 from apps.io_api.utils.db_operation import db_query
+from apps.io_api.utils.common import standard_response
 from globalobjects import globalconst, logger as log_config, CACHE_JSON, ProjectDefaultValues as pdv
 from globalobjects.json_manager import JSONManager
 
@@ -97,9 +98,9 @@ class ApsHelpers:
             stock_data = stock_data.to_dict('records')
         refresh_result = SESSION.put(url=f"{THIS_BASE_URL}/api/t_supply/type/ST?db_name={dbs}", json=stock_data)
         if refresh_result.json()['success']:
-            file_log.info(f"✅ 刷新库存任务执行完成，账套：{dbs}")
+            file_log.success("刷新库存", "", f"账套{dbs}")
         else:
-            file_log.error(f"🚫 刷新库存任务执行失败: {refresh_result.json()['message']}")
+            file_log.fail("刷新库存", "", refresh_result.json()['message'])
 
 
     @staticmethod
@@ -109,10 +110,10 @@ class ApsHelpers:
         🅰 workreport_data: 工作报工数据
         🅰 db_name: 账套名称，默认MYAPS_MAIN_DB
         """
-        file_log.info("⏰ 开始执行确认报工记录任务")
+        file_log.start("确认报工记录任务")
         response = SESSION.patch(f"{THIS_BASE_URL}/api/t_confirm?db_name={db_name}")
         response.raise_for_status()
-        console_log.info(f"✅ 确认报工记录任务执行完成")
+        console_log.success("确认报工记录任务")
         return response.json()
 
 
@@ -130,34 +131,34 @@ class ApsHelpers:
         """
         mono = mono or native_plno
         try:
-            console_log.info(f"开始查询PL信息: {native_plno}")
+            console_log.query("PL信息", native_plno, "")
             query_result = SESSION.get(f"{THIS_BASE_URL}/api/v_supply_mo/{native_plno}?db_name={MYAPS_MAIN_DB}")
-            console_log.info(f"查询PL信息响应: {query_result.status_code}")
+            console_log.info(f"查询PL信息响应：{query_result.status_code}")
             query_result_json = query_result.json()
 
             if query_result_json['success'] == 0:
-                console_log.error(f"Error querying supply {native_plno}: {query_result_json['message']}")
+                console_log.fail("PL查询", native_plno, query_result_json['message'])
                 return standard_response(status_code=query_result_json['status_code'], success=0, message=query_result_json['message'])
 
             query_data = query_result_json['data']
             if not query_data or len(query_data) > 1:
-                file_log.error(f"Error querying supply {native_plno}: multiple records matched.")
+                file_log.fail("PL查询", native_plno, "未找到或多条匹配")
                 return standard_response(success=0, message=f"PL {native_plno} not found or multiple records matched.")
 
             if query_data[0]["type"] != "PL":
-                file_log.error(f"Error querying supply {native_plno}: not a PL.")
+                file_log.fail("PL查询", native_plno, "非PL类型")
                 return standard_response(status_code=400, success=0, message=f"Supply {native_plno} is not a PL.")
 
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            log_msg = f"✅ 推送计划任务执行成功，账套：{MYAPS_MAIN_DB}，PL单号：{native_plno}，MO单号：{mono}"
-            console_log.info(log_msg)
-            file_log.info(log_msg)
+            log_msg = f"推送计划任务成功，账套{MYAPS_MAIN_DB}，PL单号{native_plno}，MO单号{mono}"
+            console_log.success("计划任务推送", "", log_msg)
+            file_log.success("计划任务推送", "", log_msg)
             memo = json.dumps({
                 "msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now,
                 "native_no": native_plno, "_code": mono, "_id": _id, "_entryid": _entryid}, ensure_ascii=False
             )
 
-            console_log.info(f"开始更新PL状态为MO: {native_plno}, 目标状态: {to_status}, MO单号: {mono}")
+            console_log.update("PL状态", native_plno, f"目标状态{to_status}，MO单号{mono}")
             response = SESSION.patch(f'{THIS_BASE_URL}/api/t_supply/{native_plno}?db_name={MYAPS_MAIN_DB}', json={
                 'status': to_status,
                 'apiex_sn': str(mono),
@@ -166,145 +167,110 @@ class ApsHelpers:
                 'supplyno': str(mono),
                 'memo': memo,
             })
-            console_log.info(f"更新PL状态为MO响应: {response.status_code}, {response.text}")
+            console_log.info(f"更新PL状态响应：{response.status_code}，{response.text}")
             return response
         except Exception as e:
-            error_msg = f"更新PL状态为MO时发生网络错误: {str(e)}"
-            file_log.error(error_msg)
-            console_log.error(error_msg)
+            error_msg = f"更新PL状态为MO时发生网络错误：{str(e)}"
+            file_log.fail("PL状态更新", native_plno, error_msg)
+            console_log.fail("PL状态更新", native_plno, error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
 
 
     @staticmethod
     def _pl_release_failed(native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, data: dict=None, msg_from: str=None):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_msg = f"🚫 推送计划任务执行失败，账套：{MYAPS_MAIN_DB}，PL单号：{native_plno}，错误信息：{msg}，数据：{data}"
-        console_log.error(log_msg)
-        file_log.error(log_msg)
+        log_msg = f"推送计划任务失败，账套{MYAPS_MAIN_DB}，PL单号{native_plno}，错误信息{msg}，数据{data}"
+        console_log.fail("计划任务推送", native_plno, log_msg)
+        file_log.fail("计划任务推送", native_plno, log_msg)
         memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
         
         try:
-            console_log.info(f"开始更新PL状态: {native_plno}, 目标状态: {to_status}")
+            console_log.update("PL状态", native_plno, f"目标状态{to_status}")
             response = SESSION.patch(f'{THIS_BASE_URL}/api/t_supply/{native_plno}/...?db_name={MYAPS_MAIN_DB}', json={
-                'status': to_status,    # ❗❗失败情况下，状态务必回撤为 CRE 或 NEW ，否则后续无法再次下达
+                'status': to_status,
                 'memo': memo,
             })
-            console_log.info(f"更新PL状态响应: {response.status_code}, {response.text}")
+            console_log.info(f"更新PL状态响应：{response.status_code}，{response.text}")
             return response
         except Exception as e:
-            error_msg = f"更新PL状态时发生网络错误: {str(e)}"
-            file_log.error(error_msg)
-            console_log.error(error_msg)
-            # 可以考虑添加重试逻辑
+            error_msg = f"更新PL状态时发生网络错误：{str(e)}"
+            file_log.fail("PL状态更新", native_plno, error_msg)
+            console_log.fail("PL状态更新", native_plno, error_msg)
             return None
 
 
     @staticmethod
     def _rs_push_success(rsno: str, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
-        """
-        当推送 领料申请 RS 至 ERP 成功时，调用该方法更新 RS
-        Args:
-            rsno: RS 号
-            msg: 外部系统返回信息
-            msg_from: 外部系统名称
-            _code: 外部系统返回的 领料单 编号
-            _id: 外部系统返回的 领料单 ID
-            _entryid: 外部系统返回的 领料单 详情 ID（对于某些有表头的ERP，具体的 领料申请 是存在于子表中的，有单独的行记录id
-        """
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": rsno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
             
-            console_log.info(f"开始更新RS状态: {rsno}, 目标状态: {to_status}")
+            console_log.update("RS状态", rsno, f"目标状态{to_status}")
             response = SESSION.patch(f'{THIS_BASE_URL}/api/t_demand/{rsno}/.../...?db_name={MYAPS_MAIN_DB}', json={
                 'status': to_status,
                 'memo': memo,
             })
-            console_log.info(f"更新RS状态响应: {response.status_code}, {response.text}")
+            console_log.info(f"更新RS状态响应：{response.status_code}，{response.text}")
             return response
         except Exception as e:
-            error_msg = f"更新RS状态时发生网络错误: {str(e)}"
-            file_log.error(error_msg)
-            console_log.error(error_msg)
+            error_msg = f"更新RS状态时发生网络错误：{str(e)}"
+            file_log.fail("RS状态更新", rsno, error_msg)
+            console_log.fail("RS状态更新", rsno, error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
 
 
     @staticmethod
     def _rs_push_failed(rsno: str, msg: str=None, data: dict=None, msg_from: str=None):
-        """
-        当推送 RS 至 ERP 失败时，调用该方法更新 RS 状态
-        Args:
-            rsno: RS 号
-            msg: 外部系统返回信息
-            msg_from: 外部系统名称
-        """
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
-            console_log.info(f"开始更新RS失败状态: {rsno}")
-            file_log.error(f"❌ 领料申请推送失败，对应工单：{rsno}，错误信息：{msg}，数据：{data}")
+            console_log.update("RS失败状态", rsno, "")
+            file_log.fail("领料申请推送", rsno, f"错误信息{msg}，数据{data}")
             response = SESSION.patch(f'{THIS_BASE_URL}/api/t_demand/{rsno}/.../...?db_name={MYAPS_MAIN_DB}', json={
                 'memo': memo,
             })
-            console_log.info(f"更新RS失败状态响应: {response.status_code}, {response.text}")
+            console_log.info(f"更新RS失败状态响应：{response.status_code}，{response.text}")
             return response
         except Exception as e:
-            error_msg = f"更新RS失败状态时发生网络错误: {str(e)}"
-            file_log.error(error_msg)
-            console_log.error(error_msg)
+            error_msg = f"更新RS失败状态时发生网络错误：{str(e)}"
+            file_log.fail("RS状态更新", rsno, error_msg)
+            console_log.fail("RS状态更新", rsno, error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
 
 
     @staticmethod
     def _pr_push_success(prno: str, msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
-        """ TODO
-        当推送 PR 至 ERP 成功时，调用该方法更新 PR
-        Args:
-            prno: PR 号
-            msg: 外部系统返回信息
-            msg_from: 外部系统名称
-            _code: 外部系统返回的 请购单 编号
-            _id: 外部系统返回的 请购单 ID
-            _entryid: 外部系统返回的 请购单 详情 ID（对于某些有表头的ERP，具体的 请购申请 是存在于子表中的，有单独的行记录id
-        """
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": prno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
-            console_log.info(f"开始更新PR状态: {prno}")
+            console_log.update("PR状态", prno, "")
             response = SESSION.patch(f'{THIS_BASE_URL}/api/t_supply/{prno}/...?db_name={MYAPS_MAIN_DB}', json={
                 'memo': memo,
             })
-            console_log.info(f"更新PR状态响应: {response.status_code}, {response.text}")
+            console_log.info(f"更新PR状态响应：{response.status_code}，{response.text}")
             return response
         except Exception as e:
-            error_msg = f"更新PR状态时发生网络错误: {str(e)}"
-            file_log.error(error_msg)
-            console_log.error(error_msg)
+            error_msg = f"更新PR状态时发生网络错误：{str(e)}"
+            file_log.fail("PR状态更新", prno, error_msg)
+            console_log.fail("PR状态更新", prno, error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
 
 
     @staticmethod
     def _pr_push_failed(prno: str, msg: str=None, msg_from: str=None):
-        """ TODO
-        当推送 PR 至 ERP 失败时，调用该方法更新 PR 状态
-        Args:
-            prno: PR 号
-            msg: 外部系统返回信息
-            msg_from: 外部系统名称
-        """
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
-            console_log.info(f"开始更新PR失败状态: {prno}")
+            console_log.update("PR失败状态", prno, "")
             response = SESSION.patch(f'{THIS_BASE_URL}/api/t_supply/{prno}/...?db_name={MYAPS_MAIN_DB}', json={
                 'memo': memo,
             })
-            console_log.info(f"更新PR失败状态响应: {response.status_code}, {response.text}")
+            console_log.info(f"更新PR失败状态响应：{response.status_code}，{response.text}")
             return response
         except Exception as e:
-            error_msg = f"更新PR失败状态时发生网络错误: {str(e)}"
-            file_log.error(error_msg)
-            console_log.error(error_msg)
+            error_msg = f"更新PR失败状态时发生网络错误：{str(e)}"
+            file_log.fail("PR状态更新", prno, error_msg)
+            console_log.fail("PR状态更新", prno, error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
 
 

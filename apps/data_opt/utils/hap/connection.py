@@ -221,7 +221,7 @@ class HapConnection:
             memory_mb = memory_info.rss / 1024 / 1024
             
             if memory_mb > self._memory_threshold_mb:
-                console_log.warning(f"内存使用过高 ({memory_mb:.1f}MB)，开始清理缓存...")
+                console_log.warning_msg("内存使用", f"过高({memory_mb:.1f}MB)，开始清理缓存")
                 self._cleanup_cache()
                 return True
         except ImportError:
@@ -249,7 +249,7 @@ class HapConnection:
                             if row_id in index_dict:
                                 del index_dict[row_id]
                 
-                console_log.info(f"已清理缓存 {worksheet_id}，释放 {items_to_remove} 条记录")
+                console_log.cache("清理", worksheet_id, f"释放{items_to_remove}条记录")
 
 
     def _make_request(self, method: str, url: str, **kwargs) -> requests.Response:
@@ -414,8 +414,7 @@ class HapConnection:
                             # 添加字段值到索引
                             self.cache_indexes[worksheet_id][normalized_field][field_value] = row_id
             except Exception as e:
-                # 缓存失败时记录错误，但不影响模型注册
-                console_log.error(f"缓存模型 {model.__name__} 失败: {str(e)}")
+                console_log.fail("缓存模型", model.__name__, str(e))
 
 
     def register_models(self, models: List[Type[Model]]):
@@ -689,16 +688,15 @@ class HapConnection:
                             # 刷新缓存
                             if latest_instances.count() > 0:
                                 self._update_cache_for_instances(latest_instances.row_objects)
-                                console_log.info(f"已刷新模型 {model_class.__name__} 的缓存，更新了 {latest_instances.count()} 条记录")
+                                console_log.cache("刷新", model_class.__name__, f"更新{latest_instances.count()}条记录")
                         except Exception as e:
-                            console_log.error(f"刷新模型 {model_class.__name__} 的缓存失败: {str(e)}")
+                            console_log.fail("刷新缓存", model_class.__name__, str(e))
                 except Exception as e:
-                    console_log.error(f"缓存刷新任务执行失败: {str(e)}")
+                    console_log.fail("缓存刷新任务", "", str(e))
         
-        # 启动后台线程执行定时刷新
         refresh_thread = threading.Thread(target=refresh_cache, daemon=True)
         refresh_thread.start()
-        console_log.info("缓存定时刷新任务已启动")
+        console_log.start("缓存定时刷新任务")
     
     def close(self, wait: bool = True, timeout: float = 10.0):
         """关闭连接，释放资源
@@ -709,21 +707,18 @@ class HapConnection:
             wait: 是否等待后台任务完成
             timeout: 等待超时时间（秒）
         """
-        console_log.info("正在关闭 HAP 连接...")
+        console_log.stop("HAP连接")
         
-        # 关闭连接池管理器
         if hasattr(self, '_connection_manager') and self._connection_manager:
             self._connection_manager.shutdown(wait=wait, timeout=timeout)
         
-        # 关闭线程池
         if hasattr(self, 'executor') and self.executor:
             self.executor.shutdown(wait=wait)
         
-        # 关闭 session
         if hasattr(self, 'session') and self.session:
             self.session.close()
         
-        console_log.info("HAP 连接已关闭")
+        console_log.disconnect("HAP")
     
     def __enter__(self):
         """上下文管理器入口"""
@@ -1070,10 +1065,9 @@ class AsyncHapConnection:
         
         # 合并成功的结果
         if successful_results:
-            # 这里需要实现结果合并逻辑，暂时返回第一个结果
-            console_log.info(f"成功处理 {len(successful_results)} 个批次，失败 {len(errors)} 个批次")
+            console_log.success("批量处理", "", f"成功{len(successful_results)}批次，失败{len(errors)}批次")
             if errors:
-                console_log.warning(f"处理过程中出现错误: {'; '.join(errors)}")
+                console_log.warning_msg("批量处理错误", '; '.join(errors))
             return successful_results[0]
         else:
             # 所有批次都失败，抛出第一个错误
@@ -1137,9 +1131,9 @@ class AsyncHapConnection:
         
         # 合并成功的结果
         if successful_results:
-            console_log.info(f"成功处理 {len(successful_results)} 条记录，失败 {len(errors)} 个批次")
+            console_log.success("批量创建", "", f"成功{len(successful_results)}条，失败{len(errors)}批次")
             if errors:
-                console_log.warning(f"处理过程中出现错误: {'; '.join(errors)}")
+                console_log.warning_msg("批量创建错误", '; '.join(errors))
             return successful_results
         else:
             # 所有批次都失败，抛出第一个错误
@@ -1203,9 +1197,9 @@ class AsyncHapConnection:
         
         # 合并成功的结果
         if successful_results:
-            console_log.info(f"成功处理 {len(successful_results)} 条记录，失败 {len(errors)} 个批次")
+            console_log.success("批量更新", "", f"成功{len(successful_results)}条，失败{len(errors)}批次")
             if errors:
-                console_log.warning(f"处理过程中出现错误: {'; '.join(errors)}")
+                console_log.warning_msg("批量更新错误", '; '.join(errors))
             return successful_results
         else:
             # 所有批次都失败，抛出第一个错误
@@ -1356,7 +1350,7 @@ class AsyncHapConnection:
             try:
                 await self.bulk_create(model, [model_instance.to_dict()], trigger_workflow=trigger_workflow)
             except Exception as e:
-                console_log.error(f"记录日志到HAP失败: {e}")
+                console_log.fail("记录日志到HAP", "", str(e))
         
         # 创建后台任务，不阻塞主流程
         asyncio.create_task(_do_log())

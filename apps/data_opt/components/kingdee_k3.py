@@ -225,7 +225,7 @@ class K3Connection(BaseConnection):
             gmt_time = gmt_time.replace(tzinfo=gmt_timezone)
             # 转换为系统默认时区时间
             expire_time = gmt_time.astimezone()
-            logger.debug(f"Cookie解析成功，GMT过期时间: {gmt_time}, 系统时区过期时间: {expire_time}")
+            logger.debug(f"Cookie解析成功，GMT过期时间{gmt_time}，系统时区过期时间{expire_time}")
             return cookie_value, expire_time
         except (IndexError, ValueError, http.cookies.CookieError) as e:
             raise ConnectionError(f"Cookie解析失败: {e}")
@@ -308,7 +308,7 @@ class K3Connection(BaseConnection):
             )
             # 处理响应
             if 'ErrorCode' in response.text:
-                logger.error(f"查询失败: {response.text}")
+                logger.fail("K3查询", "", response.text)
                 break
             data = []
             raw_data = response.json()

@@ -1008,15 +1008,14 @@ class ConnectionPoolManager:
                     'last_used': time.time()
                 }
             
-            console_log.info(f"连接池预热完成: {base_url}, 成功 {success_count}/{self._max_warm_connections}")
+            console_log.success("连接池预热", base_url, f"成功{success_count}/{self._max_warm_connections}")
             
-            # 启动健康检查线程
             self._start_health_check()
             
             return True
             
         except Exception as e:
-            console_log.error(f"连接池预热失败: {base_url}, 错误: {e}")
+            console_log.fail("连接池预热", base_url, str(e))
             return False
     
     def _warmup_single_connection(
@@ -1026,7 +1025,6 @@ class ConnectionPoolManager:
         timeout,
         connection_id
     ):
-        """预热单个连接"""
         try:
             response = self._session.head(
                 base_url,
@@ -1037,10 +1035,10 @@ class ConnectionPoolManager:
                 console_log.debug(f"连接池预热成功 [{connection_id}/{self._max_warm_connections}]: {base_url}")
                 return True
             else:
-                console_log.warning(f"连接池预热返回状态码 {response.status_code}: {base_url}")
+                console_log.warning_msg("连接池预热", f"状态码{response.status_code}：{base_url}")
                 return False
         except Exception as e:
-            console_log.warning(f"连接池预热请求失败 [{connection_id}]: {e}")
+            console_log.warning_msg("连接池预热请求", f"失败[{connection_id}]：{e}")
             return False
     
     def _start_health_check(self):
@@ -1060,7 +1058,7 @@ class ConnectionPoolManager:
                 self._perform_health_check()
                 self._adjust_pool_size()
             except Exception as e:
-                console_log.error(f"健康检查循环出错: {e}")
+                console_log.fail("健康检查循环", "", str(e))
             
             # 等待下一次检查
             self._shutdown_event.wait(self._health_check_interval)
@@ -1098,14 +1096,14 @@ class ConnectionPoolManager:
                 
                 if not is_healthy:
                     self._unhealthy_connections.add(url)
-                    console_log.warning(f"连接不健康: {url}, 状态码: {response.status_code}")
+                    console_log.warning_msg("连接健康检查", f"不健康：{url}，状态码{response.status_code}")
                 else:
                     if url in self._unhealthy_connections:
                         self._unhealthy_connections.remove(url)
                     
             except Exception as e:
                 self._unhealthy_connections.add(url)
-                console_log.warning(f"连接健康检查失败: {url}, 错误: {e}")
+                console_log.warning_msg("连接健康检查", f"失败：{url}，{e}")
     
     def _adjust_pool_size(self):
         """根据使用情况动态调整连接池大小"""
@@ -1135,14 +1133,13 @@ class ConnectionPoolManager:
             # 响应时间高或错误率高，增加连接池
             if avg_response_time > 1.0 or error_rate > 0.1:
                 new_pool_size = min(self._current_pool_size + 5, self._max_pool_size)
-                console_log.info(f"增加连接池大小: {self._current_pool_size} -> {new_pool_size} "
-                               f"(平均响应: {avg_response_time:.3f}s, 错误率: {error_rate:.2%})")
+                console_log.info(f"增加连接池大小：{self._current_pool_size} -> {new_pool_size} "
+                               f"(平均响应{avg_response_time:.3f}s，错误率{error_rate:.2%})")
             
-            # 响应时间低且错误率低，减少连接池
             elif avg_response_time < 0.1 and error_rate == 0 and self._current_pool_size > self._min_pool_size:
                 new_pool_size = max(self._current_pool_size - 2, self._min_pool_size)
-                console_log.info(f"减少连接池大小: {self._current_pool_size} -> {new_pool_size} "
-                               f"(平均响应: {avg_response_time:.3f}s, 错误率: {error_rate:.2%})")
+                console_log.info(f"减少连接池大小：{self._current_pool_size} -> {new_pool_size} "
+                               f"(平均响应{avg_response_time:.3f}s，错误率{error_rate:.2%})")
             
             if new_pool_size != self._current_pool_size:
                 self._current_pool_size = new_pool_size
@@ -1164,7 +1161,7 @@ class ConnectionPoolManager:
             self._session.mount("http://", adapter)
             self._session.mount("https://", adapter)
         except Exception as e:
-            console_log.warning(f"更新连接池大小失败: {e}")
+            console_log.warning_msg("更新连接池大小", str(e))
     
     def is_warmed(self, base_url):
         """检查是否已预热"""
@@ -1193,13 +1190,12 @@ class ConnectionPoolManager:
                     self._warmed_urls.discard(url)
                     if url in self._connection_stats:
                         del self._connection_stats[url]
-                    console_log.info(f"清理不健康连接: {url}")
+                    console_log.cache("清理", "不健康连接", url)
         
         self._unhealthy_connections.clear()
     
     def shutdown(self, wait=True, timeout=10.0):
-        """关闭连接池管理器"""
-        console_log.info("正在关闭连接池管理器...")
+        console_log.stop("连接池管理器")
         self._shutdown_event.set()
         
         if wait:
@@ -1208,10 +1204,9 @@ class ConnectionPoolManager:
             if self._health_check_thread and self._health_check_thread.is_alive():
                 self._health_check_thread.join(timeout=timeout)
         
-        # 清理不健康的连接
         self.cleanup_unhealthy_connections()
         
-        console_log.info("连接池管理器已关闭")
+        console_log.disconnect("连接池管理器")
 
 
 
@@ -1775,12 +1770,11 @@ class WorksheetLogger:
             ) as response:
                 result = await response.json()
                 if not result.get("success"):
-                    console_log.error(f"批量写入日志失败: {result.get('error_msg')}")
+                    console_log.fail("批量写入日志", "", result.get('error_msg', ''))
         except Exception as e:
-            console_log.error(f"批量写入日志异常: {e}")
+            console_log.fail("批量写入日志", "", str(e))
     
     async def _periodic_flush(self):
-        """定期刷新日志的后台任务"""
         while not self._shutdown:
             try:
                 await asyncio.sleep(self.flush_interval)
@@ -1788,7 +1782,7 @@ class WorksheetLogger:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                console_log.error(f"定期刷新日志异常: {e}")
+                console_log.fail("定期刷新日志", "", str(e))
     
     def _start_flush_task(self):
         """启动后台刷新任务"""
@@ -1824,7 +1818,7 @@ class WorksheetLogger:
             if len(self._log_queue) >= self.max_queue_size:
                 # 队列已满，丢弃最旧的日志
                 self._log_queue.pop(0)
-                console_log.warning("日志队列已满，丢弃最旧的日志")
+                console_log.warning_msg("日志队列", "已满，丢弃最旧的日志")
             
             self._log_queue.append(log_entry)
             current_size = len(self._log_queue)
@@ -1974,18 +1968,16 @@ def hap_async_timer(func: Callable = None, *, operation_name: str = ""):
                 if error:
                     log_info["status"] = "FAILED"
                     log_info["error"] = str(error)
-                    console_log.warning(f"{log_info}")
+                    console_log.warning_msg("异步操作", str(log_info))
                 else:
-                    # log_info["status"] = "SUCCESS"
                     console_log.info(f"{log_info}")
                 
-                # 如果找到 WorksheetLogger，也记录到工作表
                 if worksheet_logger:
                     log_level = 'ERROR' if error else 'INFO'
                     try:
                         await worksheet_logger.log(message=json.dumps(log_info, ensure_ascii=False), log_level=log_level)
                     except Exception as log_error:
-                        console_log.error(f"写入工作表日志失败: {log_error}")
+                        console_log.fail("写入工作表日志", "", str(log_error))
         
         return wrapper
     

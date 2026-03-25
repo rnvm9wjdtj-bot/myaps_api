@@ -159,11 +159,11 @@ class DbManager:
                 "results": results
             }
             
-            logger.info(f"存储过程调用完成: {response}")
+            logger.success("存储过程调用", procedure_name, f"执行时间{execution_time:.3f}秒")
             return response
             
         except Exception as e:
-            logger.error(f"存储过程调用失败: {e}")
+            logger.fail("存储过程调用", procedure_name, str(e))
             raise
     
 
@@ -239,11 +239,11 @@ class DbManager:
                 "data": [dict_to_lower_keys(item) for item in all_data]
             }
             
-            logger.debug(f"数据查询完成: {response}")
+            logger.debug(f"数据查询完成：{response}")
             return response
             
         except Exception as e:
-            logger.error(f"数据查询失败: {e}")
+            logger.fail("数据查询", table_name, str(e))
             raise
     
 
@@ -295,11 +295,11 @@ class DbManager:
                 "connection_name": self.connection_name
             }
             
-            logger.info(f"数据删除完成: {response}")
+            logger.success("数据删除", table_name, f"影响{affected_rows}行")
             return response
             
         except Exception as e:
-            logger.error(f"数据删除失败: {e}")
+            logger.fail("数据删除", table_name, str(e))
             raise
     
 
@@ -316,12 +316,12 @@ class DbManager:
             execution_time = (datetime.now() - start_time).total_seconds()
             
             if description:
-                logger.info(f"{description} - 执行时间: {execution_time:.3f}秒")
+                logger.info(f"{description} - 执行时间：{execution_time:.3f}秒")
             
             return result[0] if result else 0
         except Exception as e:
-            logger.error(f"SQL 执行失败: {e}")
-            logger.error(f"SQL: {sql[:200]}...")
+            logger.fail("SQL执行", description, str(e))
+            logger.debug(f"SQL：{sql[:200]}...")
             raise
     
 
@@ -658,14 +658,14 @@ class DbManager:
                 "update_fields": update_fields
             }
             
-            logger.info(f"批量 upsert 完成: {response}")
+            logger.success("批量upsert", "", f"插入{result['inserted']}条，更新{result['updated']}条")
             return response
             
         except IntegrityError as e:
-            logger.error(f"数据完整性错误: {e}")
+            logger.fail("数据完整性", "", str(e))
             raise
         except Exception as e:
-            logger.error(f"批量 upsert 失败: {e}")
+            logger.fail("批量upsert", "", str(e))
             # 保留异常处理的特殊逻辑，因为它涉及到不同的异常处理策略
             transaction_mode = self.use_transaction if use_transaction is None else use_transaction
             if transaction_mode:
@@ -947,7 +947,7 @@ class DbManager:
             connection_name: 新的数据库连接名称
         """
         self.connection_name = connection_name
-        logger.info(f"已切换数据库连接至: {connection_name}")
+        logger.info(f"已切换数据库连接至：{connection_name}")
 
 
     @with_transaction
@@ -1064,11 +1064,11 @@ class DbManager:
                 "execution_time": execution_time
             }
             
-            logger.info(f"基于索引更新完成: {response}")
+            logger.success("索引更新", "", f"影响{affected_rows}行")
             return response
             
         except Exception as e:
-            logger.error(f"基于索引更新失败: {e}")
+            logger.fail("索引更新", "", str(e))
             raise
 
 

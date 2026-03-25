@@ -8,7 +8,6 @@
 """
 
 import os
-import logging
 import base64
 from io import BytesIO
 from typing import Dict, Optional, Union, Tuple, Any
@@ -21,10 +20,9 @@ from qrcode.image.svg import SvgImage#, SvgFragmentImage
 import barcode
 from barcode.writer import ImageWriter, SVGWriter
 from PIL import Image, ImageDraw, ImageFont
+from globalobjects import logger as log_config
 
-# 设置日志
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger = log_config.get_logger(__name__)
 
 def create_qrcode(
     content: str,
@@ -63,7 +61,7 @@ def create_qrcode(
         Union[PIL.Image.Image, bytes]: 生成的二维码图片对象（像素图）或SVG字符串（矢量图）
     """
     try:
-        logger.info(f"生成二维码，内容: {content[:50]}{'...' if len(content) > 50 else ''}, 格式: {image_format}")
+        logger.query("二维码", f"内容长度{len(content)}")
         
         # 处理纠错级别参数（支持字符串或常量）
         if isinstance(error_correction, str):
@@ -100,7 +98,7 @@ def create_qrcode(
             img.save(buffer)
             svg_data = buffer.getvalue()
             
-            logger.info("SVG二维码生成成功")
+            logger.success("生成SVG二维码")
             return svg_data
         
         # 生成像素图
@@ -118,7 +116,7 @@ def create_qrcode(
             
             # 添加logo
             if add_logo and os.path.exists(add_logo):
-                logger.info(f"添加logo: {add_logo}")
+                logger.info(f"添加logo：{add_logo}")
                 logo = Image.open(add_logo)
                 logo = logo.resize(logo_size, Image.Resampling.LANCZOS)
                 
@@ -166,11 +164,11 @@ def create_qrcode(
                 
                 img = new_img
             
-            logger.info("二维码生成成功")
+            logger.success("生成二维码")
             return img
         
     except Exception as e:
-        logger.error(f"生成二维码失败: {e}")
+        logger.fail("生成二维码", "", str(e))
         raise
 
 def create_barcode(
@@ -208,7 +206,7 @@ def create_barcode(
         Union[PIL.Image.Image, bytes]: 生成的条形码图片对象（像素图）或SVG字符串（矢量图）
     """
     try:
-        logger.info(f"生成条形码，类型: {barcode_type}, 内容: {content}, 格式: {image_format}")
+        logger.query("条形码", f"类型{barcode_type}，内容{content}")
         
         # 检查条形码类型是否支持
         if barcode_type not in barcode.PROVIDED_BARCODES:
@@ -238,7 +236,7 @@ def create_barcode(
             buffer.seek(0)
             svg_data = buffer.getvalue()
             
-            logger.info("SVG条形码生成成功")
+            logger.success("生成SVG条形码")
             return svg_data
         
         else:
@@ -302,11 +300,11 @@ def create_barcode(
                 
                 img = new_img
             
-            logger.info("条形码生成成功")
+            logger.success("生成条形码")
             return img
         
     except Exception as e:
-        logger.error(f"生成条形码失败: {e}")
+        logger.fail("生成条形码", "", str(e))
         raise
 
 def save_image(
@@ -328,7 +326,7 @@ def save_image(
         str: 保存成功的文件路径
     """
     try:
-        logger.info(f"保存图片到: {file_path}")
+        logger.info(f"保存图片：{file_path}")
         
         # 确保目录存在
         dir_path = os.path.dirname(file_path)
@@ -352,11 +350,11 @@ def save_image(
             else:
                 image.save(file_path, format=image_format, quality=quality)
         
-        logger.info(f"图片保存成功: {file_path}")
+        logger.success("保存图片", file_path)
         return file_path
         
     except Exception as e:
-        logger.error(f"保存图片失败: {e}")
+        logger.fail("保存图片", file_path, str(e))
         raise
 
 def image_to_base64(
@@ -386,7 +384,7 @@ def image_to_base64(
             base64_str = base64.b64encode(buffer.getvalue()).decode('utf-8')
             return f"data:image/{image_format.lower()};base64,{base64_str}"
     except Exception as e:
-        logger.error(f"图片转BASE64失败: {e}")
+        logger.fail("图片转BASE64", "", str(e))
         raise
 
 

@@ -6,14 +6,13 @@
 
 import time
 import random
-import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union
 import urllib.error
 import urllib.request
 import json
+from globalobjects import logger as log_config
 
-# 设置日志
-logger = logging.getLogger(__name__)
+logger = log_config.get_logger(__name__)
 
 # 类型变量\T = TypeVar('T')
 
@@ -225,10 +224,10 @@ class NetworkRequestor:
                 if retry_count < self.config.max_retries and self._should_retry(e, e.code):
                     retry_count += 1
                     delay = self._exponential_backoff(retry_count)
-                    logger.warning(f"HTTP请求失败，状态码: {e.code}, 将在 {delay:.2f} 秒后重试 (尝试 {retry_count}/{self.config.max_retries})")
+                    logger.warning_msg("HTTP请求重试", f"状态码{e.code}，{delay:.2f}秒后重试 ({retry_count}/{self.config.max_retries})")
                     time.sleep(delay)
                 else:
-                    logger.error(f"HTTP请求失败，状态码: {e.code}, 错误: {e.reason}")
+                    logger.fail("HTTP请求", f"状态码{e.code}", str(e.reason))
                     return response
                 
             except Exception as e:
@@ -242,10 +241,10 @@ class NetworkRequestor:
                 if retry_count < self.config.max_retries and self._should_retry(e):
                     retry_count += 1
                     delay = self._exponential_backoff(retry_count)
-                    logger.warning(f"请求失败，错误: {str(e)}, 将在 {delay:.2f} 秒后重试 (尝试 {retry_count}/{self.config.max_retries})")
+                    logger.warning_msg("请求重试", f"{str(e)}，{delay:.2f}秒后重试 ({retry_count}/{self.config.max_retries})")
                     time.sleep(delay)
                 else:
-                    logger.error(f"请求失败，错误: {str(e)}")
+                    logger.fail("网络请求", "", str(e))
                     return response
         
         # 理论上不会到达这里
@@ -304,30 +303,28 @@ class TransactionalRequest:
                 
                 if not op_success:
                     success = False
-                    logger.error(f"事务操作 {i+1} 失败，开始执行补偿操作")
+                    logger.fail(f"事务操作{i+1}", "", "开始执行补偿操作")
                     break
             
-            # 如果事务失败，执行补偿操作
             if not success:
                 for func, args, kwargs in reversed(self._compensations):
                     try:
                         func(*args, **kwargs)
-                        logger.info(f"补偿操作 {func.__name__} 执行成功")
+                        logger.success("补偿操作", func.__name__)
                     except Exception as e:
-                        logger.error(f"补偿操作 {func.__name__} 执行失败: {str(e)}")
+                        logger.fail("补偿操作", func.__name__, str(e))
             
             return success, results
             
         except Exception as e:
-            logger.error(f"事务执行失败: {str(e)}, 开始执行补偿操作")
+            logger.fail("事务执行", "", f"{str(e)}，开始执行补偿操作")
             
-            # 执行补偿操作
             for func, args, kwargs in reversed(self._compensations):
                 try:
                     func(*args, **kwargs)
-                    logger.info(f"补偿操作 {func.__name__} 执行成功")
+                    logger.success("补偿操作", func.__name__)
                 except Exception as ce:
-                    logger.error(f"补偿操作 {func.__name__} 执行失败: {str(ce)}")
+                    logger.fail("补偿操作", func.__name__, str(ce))
             
             return False, results
 

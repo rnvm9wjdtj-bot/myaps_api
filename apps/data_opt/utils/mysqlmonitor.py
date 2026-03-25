@@ -177,16 +177,16 @@ class MySQLBinlogMonitor:
                                 self._table_schemas[database][table] = columns
                                 logger.debug(f"预加载表结构: {database}.{table} -> {len(columns)}列")
                             except Exception as e:
-                                logger.warning(f"🚫 无法获取表 {database}.{table} 结构: {e}")
+                                logger.warning_msg("表结构获取", f"{database}.{table}", str(e))
                                 
                 except Exception as e:
-                    logger.warning(f"🚫 预加载数据库 {database} 表结构失败: {e}")
+                    logger.warning_msg("数据库预加载", database, str(e))
             
             total_tables = sum(len(tables) for tables in self._table_schemas.values())
-            logger.info(f"✅ 成功预加载 {len(self._table_schemas)} 个数据库，共 {total_tables} 个表的结构")
+            logger.success("表结构预加载", "", f"{len(self._table_schemas)}个数据库，共{total_tables}个表")
                     
         except Exception as e:
-            logger.warning(f"❌ 预加载表结构失败: {e}")
+            logger.fail("表结构预加载", "", str(e))
 
     def _get_correct_table_name(self, database, table_name):
         """获取正确的表名（解决大小写问题）"""
@@ -239,17 +239,17 @@ class MySQLBinlogMonitor:
                         self._table_schemas[database] = {}
                     self._table_schemas[database][correct_table_name] = columns
                     
-                    logger.info(f"✅ 实时获取表结构成功: {database}.{correct_table_name} -> {len(columns)}列")
+                    logger.success("表结构获取", f"{database}.{correct_table_name}", f"{len(columns)}列")
                     return columns
                 except Exception as e:
-                    logger.warning(f"🚫 获取表 {database}.{correct_table_name} 结构失败: {e}")
+                    logger.warning_msg("表结构获取", f"{database}.{correct_table_name}", str(e))
             
             conn.close()
                 
         except Exception as e:
-            logger.warning(f"🚫 连接数据库 {database} 失败: {e}")
+            logger.warning_msg("数据库连接", database, str(e))
         
-        logger.warning(f"🚫 无法获取表 {database}.{correct_table_name} 的列结构")
+        logger.warning_msg("表结构获取", f"{database}.{correct_table_name}", "无法获取列结构")
         return None
 
     def _map_data_with_column_names(self, database, table_name, data):
@@ -385,7 +385,7 @@ class MySQLBinlogMonitor:
                     break
                     
                 wait_time = min(2 ** retry_count, 60)
-                logger.error(f"🚫 Binlog连接失败，{wait_time}秒后重试 ({retry_count}/{max_retries}): {e}")
+                logger.fail("Binlog连接", "", f"{wait_time}秒后重试 ({retry_count}/{max_retries})：{e}")
                 
                 for _ in range(wait_time * 10):
                     if not self.running:
@@ -393,7 +393,7 @@ class MySQLBinlogMonitor:
                     time.sleep(0.1)
         
         if retry_count >= max_retries:
-            logger.error("🚫 达到最大重试次数，停止监控")
+            logger.fail("Binlog连接", "", "达到最大重试次数，停止监控")
 
     def _start_binlog_stream(self):
         """启动Binlog流 - 支持多数据库"""
@@ -418,36 +418,33 @@ class MySQLBinlogMonitor:
         # 如果指定了数据库，只监控这些数据库
         if self.mysql_settings.get("databases"):
             stream_config["only_schemas"] = self.mysql_settings["databases"]
-            logger.info(f"🔭 监控数据库: {', '.join(self.mysql_settings['databases'])}")
+            logger.info(f"监控数据库：{', '.join(self.mysql_settings['databases'])}")
         else:
-            logger.info("✅ 监控所有数据库")
+            logger.info("监控所有数据库")
         
         try:
             stream = BinLogStreamReader(**stream_config)
-            logger.info("✅ 开始监控MySQL Binlog...")
+            logger.success("Binlog监控", "", "开始监控")
             
             for binlogevent in stream:
                 if not self.running:
                     break
                 
-                # 直接在当前线程中执行，避免创建新线程导致的事件循环冲突
                 self._run_async_event(binlogevent)
 
         except Exception as e:
-            logger.error(f"🚫 Binlog流处理错误: {e}")
+            logger.fail("Binlog流处理", "", str(e))
             raise
         finally:
             if 'stream' in locals():
                 stream.close()
-                logger.info("✅ Binlog流已关闭")
+                logger.success("Binlog流", "", "已关闭")
 
     def _run_async_event(self, event):
-        """在新线程中运行事件"""
         try:
-            # 使用线程池并行处理事件
             self._thread_pool.submit(self.process_binlog_event, event)
         except Exception as e:
-            logger.error(f"🚫 处理事件时出错: {e}")
+            logger.fail("事件处理", "", str(e))
     
     def _run_handler(self, handler, *args, **kwargs):
         """运行处理器函数，支持同步和异步函数"""
@@ -467,7 +464,7 @@ class MySQLBinlogMonitor:
                     finally:
                         loop.close()
         except Exception as e:
-            logger.error(f"❌ 执行处理器失败: {e}")
+            logger.fail("处理器执行", "", str(e))
         
 
     def process_binlog_event(self, event):
@@ -567,16 +564,15 @@ class MySQLBinlogMonitor:
                             for handler in update_handlers:
                                 self._run_handler(handler, schema, table, change_data, data_diff)
                         except Exception as e:
-                            logger.error(f"❌ 访问特定表处理器列表失败: {e}")
+                            logger.fail("表处理器访问", "", str(e))
                     
-                    # 调用无数据库前缀的处理器
                     if table in self._table_filters:
                         try:
                             update_handlers = self._table_filters[table].get("update", [])
                             for handler in update_handlers:
                                 self._run_handler(handler, schema, table, change_data, data_diff)
                         except Exception as e:
-                            logger.error(f"❌ 访问无数据库前缀处理器列表失败: {e}")
+                            logger.fail("表处理器访问", "", str(e))
                             
             elif isinstance(event, DeleteRowsEvent):
                 batch_count = len(event.rows)
@@ -614,7 +610,7 @@ class MySQLBinlogMonitor:
                             self._run_handler(handler, schema, table, mapped_data)
                             
         except Exception as e:
-            logger.error(f"🚫 处理Binlog事件错误: {e}")
+            logger.fail("Binlog事件处理", "", str(e))
 
     def _check_data_quality(self, database, table, data, event_type):
         """检查数据质量，检测是否有UNKNOWN_COL"""
@@ -649,10 +645,10 @@ class MySQLBinlogMonitor:
         # 关闭线程池
         try:
             self._thread_pool.shutdown(wait=True)
-            logger.info("✅ 线程池已关闭")
+            logger.success("线程池", "", "已关闭")
         except Exception as e:
-            logger.error(f"🚫 关闭线程池时出错: {e}")
-        logger.info("✅ Binlog监控已停止")
+            logger.fail("线程池关闭", "", str(e))
+        logger.success("Binlog监控", "", "已停止")
 
     @staticmethod
     def get_mysql_config(is_single_db=True):

@@ -65,7 +65,7 @@ class Model:
                         fields[attr_name] = attr
                 cls._fields_cache = fields
             except Exception as e:
-                console_log.warning(f"Failed to initialize fields cache for {cls.__name__}: {e}")
+                console_log.warning_msg(f"初始化字段缓存", f"{cls.__name__}: {e}")
                 return {}
         return cls._fields_cache
     
@@ -88,8 +88,7 @@ class Model:
                 # 预编译 frozenset 用于快速查找
                 cls._field_map_keys = frozenset(cls._field_map_cache.keys())
             except Exception as e:
-                # 如果初始化失败，返回空字典
-                console_log.warning(f"Failed to initialize field map for {cls.__name__}: {e}")
+                console_log.warning_msg(f"初始化字段映射", f"{cls.__name__}: {e}")
                 return {}
         return cls._field_map_cache
     
@@ -113,8 +112,7 @@ class Model:
                 # 预编译 frozenset 用于快速查找
                 cls._reverse_field_map_keys = frozenset(cls._reverse_field_map_cache.keys())
             except Exception as e:
-                # 如果初始化失败，返回空字典
-                console_log.warning(f"Failed to initialize reverse field map for {cls.__name__}: {e}")
+                console_log.warning_msg(f"初始化反向字段映射", f"{cls.__name__}: {e}")
                 return {}
         return cls._reverse_field_map_cache
     
