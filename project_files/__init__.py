@@ -120,4 +120,3 @@ def handle_insert_supply(database: str, table: str, data: dict):
 #     type_now = data_now['type']
 
 #     if type_now == 'RS' and type_before == 'DM':
-#         aps_pr_created_event.add_event(data_now)

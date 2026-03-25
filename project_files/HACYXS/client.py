@@ -37,11 +37,6 @@ def refresh_stock():
         ApsHelpers.refresh_stock(stock_data)
 
 
-# def push_pr(supplyno: str):
-#     pr_query = db_query(db_name=MYAPS_MAIN_DB, model_or_tablename='t_supply', filter_string=f"`Type`='PR' AND `Status` IN ('NEW','CRE')")
-#     if pr_query['success']:
-#         pr_list = pr_query['data']
-#         tplus_conn.push_into_target(target_name='pr', push_data=pr_list)
 #################################################################################
 # ⬇️ 定时任务
 #################################################################################
@@ -75,7 +70,6 @@ class CustomMoPushModel(MoPushModel):
         return cleaned_values
 
 
-
 def handle_pl_status_a2e(supplyno_or_data: str | dict):
     if isinstance(supplyno_or_data, str):
         supplyno = supplyno_or_data
@@ -84,11 +78,6 @@ def handle_pl_status_a2e(supplyno_or_data: str | dict):
     tplus_conn.create_mo(supplyno=supplyno, remain_native_supplyno=REMAIN_NATIVE_SUPPLYNO, pydantic_model=CustomMoPushModel)
 
 
-def on_pr_created(pr_data_list: list[dict]):
-
-    # if isinstance(supplyno_or_data, str):
-    #     supplyno = supplyno_or_data
-    # elif isinstance(supplyno_or_data, dict):
-    #     supplyno = supplyno_or_data['supplyno']
-    # tplus_conn.create_pr(supplyno=supplyno)
-    pass
+def batch_handle_pr_created(pr_data_list: list[dict]):
+    aggred_data = ApsHelpers.aggregate_pr_data(pr_data_list)
+    tplus_conn.push_pr(aggred_data)

@@ -372,3 +372,40 @@ class ApsHelpers:
                 mapped_item[field_map.get(k, k)] = v
             result.append(mapped_item)
         return result
+
+
+    @staticmethod
+    def aggregate_pr_data(pr_data_list: list[dict], group_by: list=['materialno', 'avail_date', 'vendorno']) -> list[dict]:
+        """
+        聚合 PR avail_qty 字段
+        Args:
+            pr_data_list: PR 数据列表
+        Returns:
+            聚合后的 PR 数据列表
+        """
+        import pandas as pd
+        
+        pr_datetime_fields = ('avail_date', 'create_date', 'avail_end_date', 'sys_date', 'sys_stamp')
+
+        if not pr_data_list:
+            return []
+        
+        df = pd.DataFrame(pr_data_list)
+        
+        keep_cols = ['materialno', 'category', 'avail_qty', 'create_date', 'avail_date', 'vendorno']
+        df = df[[col for col in keep_cols if col in df.columns]]
+        
+        for field in group_by:
+            if field in pr_datetime_fields and field in df.columns:
+                df[field] = pd.to_datetime(df[field], errors='coerce').dt.date
+        
+        agg_dict = {'avail_qty': 'sum'}
+        other_cols = [col for col in df.columns if col not in group_by and col != 'avail_qty']
+        for col in other_cols:
+            agg_dict[col] = 'last'
+        
+        result_df = df.groupby(group_by, dropna=False).agg(agg_dict).reset_index()
+        
+        result_df = result_df.replace({pd.NA: None, pd.NaT: None, float('nan'): None})
+        
+        return result_df.to_dict('records')

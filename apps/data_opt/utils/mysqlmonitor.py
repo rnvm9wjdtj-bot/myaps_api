@@ -483,10 +483,10 @@ class MySQLBinlogMonitor:
                 if batch_count > 1:
                     logger.info(f"📥 InsertTo {schema}.{table}: 批量插入 {batch_count} 条记录")
                 for row in event.rows:
-                    if hasattr(row, 'values'):
-                        data = row.values
-                    elif isinstance(row, dict) and 'values' in row:
+                    if isinstance(row, dict) and 'values' in row:
                         data = row['values']
+                    elif hasattr(row, 'values'):
+                        data = row.values
                     else:
                         data = row
                     
@@ -498,20 +498,23 @@ class MySQLBinlogMonitor:
                     if batch_count == 1:
                         logger.info(f"📥 InsertTo {schema}.{table}: {self._format_dict_for_log(mapped_data)}")
                     
+                    # 将数据包装成字典格式，与UPDATE事件保持一致
+                    insert_data = {"new": mapped_data}
+                    
                     # 调用全局处理器
                     for handler in self._insert_handlers:
-                        self._run_handler(handler, schema, table, mapped_data)
+                        self._run_handler(handler, schema, table, insert_data)
                     
                     # 调用特定表处理器
                     full_table_name = self._get_full_table_name(schema, table)
                     if full_table_name in self._table_filters:
                         for handler in self._table_filters[full_table_name]["insert"]:
-                            self._run_handler(handler, schema, table, mapped_data)
+                            self._run_handler(handler, schema, table, insert_data)
                     
                     # 调用无数据库前缀的处理器（向后兼容）
                     if table in self._table_filters:
                         for handler in self._table_filters[table]["insert"]:
-                            self._run_handler(handler, schema, table, mapped_data)
+                            self._run_handler(handler, schema, table, insert_data)
                             
             elif isinstance(event, UpdateRowsEvent):
                 batch_count = len(event.rows)

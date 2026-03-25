@@ -4,7 +4,7 @@
 import json
 import os
 from typing import Dict, Any, Literal, Optional, NamedTuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import pandas as pd
 
 # from pydantic import InstanceOf
@@ -304,9 +304,11 @@ class PrPushModel(PydanticModel):
     """
     整理推送T+请购单数据
     """
-    ExternalCode: str = Field()
-    RequisitionPerson: dict = Field()
-    PurchaseRequisitionDetails: list[dict] = Field()
+    ExternalCode: str = Field(None)
+    Code: str = Field(None)
+    VoucherDate: str = Field(None)
+    RequisitionPerson: dict = Field(...)
+    PurchaseRequisitionDetails: list[dict] = Field(...)
 
     class Config:
         extra = 'allow'
@@ -314,11 +316,43 @@ class PrPushModel(PydanticModel):
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values: Dict[str, Any]):
-        cleaned_values = {}
-        cleaned_values['ExternalCode'] = values['supplyno']
-        cleaned_values['RequisitionPerson'] = {"Code": CACHE_ERP.get("$RequisitionPerson", "")}
-        cleaned_values['PurchaseRequisitionDetails'] = []
+        # 处理直接传递列表的情况
+        if isinstance(values, list):
+            data_list = values
+            cleaned_values = {
+                'VoucherDate': datetime.now().strftime("%Y-%m-%d"),
+                'ExternalCode': "",
+                'RequisitionPerson': {"Code": CACHE_ERP.get("$RequisitionPerson", "")}
+            }
+        else:
+            # 处理通过 data 关键字参数传递的情况
+            if 'data' in values:
+                data_list = values['data']
+            else:
+                data_list = values
+            cleaned_values = {
+                'VoucherDate': datetime.now().strftime("%Y-%m-%d"),
+                'ExternalCode': values.get('supplyno', ""),
+                'RequisitionPerson': {"Code": CACHE_ERP.get("$RequisitionPerson", "")}
+            }
+        
+        prd = []
+        for _ in data_list:
+            # 确保日期字段是字符串格式
+            avail_date = _['avail_date']
+            if isinstance(avail_date, (date, datetime)):
+                avail_date = avail_date.strftime('%Y-%m-%d')
+            
+            prd.append({
+                'Inventory': {'Code': _['materialno']},
+                # 'Unit': {'Name': _.get('unit', "")},
+                'Unit': {},
+                'Quantity': _['avail_qty'],
+                'RequireDate': avail_date,
+            })
 
+        cleaned_values['PurchaseRequisitionDetails'] = prd
+        return cleaned_values
 
 
 class PullInterface(NamedTuple):
@@ -582,6 +616,8 @@ class TplusConnection(BaseConnection):
             agg_dict.update({col: 'sum' for col in sum_cols})
 
             aggregated_stock = df.groupby('materialno').agg(agg_dict).reset_index()
+            # 替换缺失值为None
+            aggregated_stock = aggregated_stock.replace({pd.NA: None, pd.NaT: None, float('nan'): None})
             # 生成supplyno字段为materialno@timestamp
             aggregated_stock['supplyno'] = aggregated_stock['materialno'] + '@' + timestamp
             return aggregated_stock.to_dict(orient='records')
@@ -802,10 +838,17 @@ class TplusConnection(BaseConnection):
             ApsHelpers._rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], data=processed_rsdata, msg_from='T+')
 
 
-    def create_pr(self, data_list: list[dict]):
+    def push_pr(self, data_list: list[dict], pydantic_model:PydanticModel=PrPushModel):
         """
-        创建采购申请
-        :param data_list: APS 中的 PR 数据列表
-        :return:
+        推送采购申请
+        :param data_list: APS 中的 PR 数据（或聚合后的数据）
         """
-        pass
+        tplus_pr_data = pydantic_model(data=data_list).model_dump(exclude_none=True)
+        payload = {"dto": tplus_pr_data}
+        endpoint = PrCreateInterface.endpoint
+        response = self._post(endpoint=endpoint, data=payload)
+        # pr_push_response_json = response.json()
+        # if str(pr_push_response_json['code']) == '0': # 创建成功
+        #     ApsHelpers._pr_push_success(prno=tplus_pr_data['Code'], msg=pr_push_response_json['message'], msg_from='T+', _code=pr_push_response_json['data'].get('Code'), _id=pr_push_response_json['data'].get('ID'))
+        # else:
+        #     ApsHelpers._pr_push_failed(prno=tplus_pr_data['Code'], msg=pr_push_response_json['message'], data=tplus_pr_data, msg_from='T+')
