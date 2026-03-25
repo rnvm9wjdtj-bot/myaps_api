@@ -8,7 +8,7 @@
 """
 from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR, SCHEDULER_MINUTE
 from .._base import (
-    get_scheduler_minute, cron_task, filelog_normal, filelog_error, console_log, CACHE_JSON,
+    get_scheduler_minute, cron_task, file_log, console_log, CACHE_JSON,
     ApsHelpers, get_session, db_delete, db_bupsert, db_query
 )
 
@@ -26,7 +26,6 @@ REMAIN_NATIVE_SUPPLYNO = True   # 本项目需要推送 MO 前后关系，所以
 SESSION = get_session()
 
 tplus_conn = TplusConnection()
-# tplus_conn.auth()
 
 #################################################################################
 # ⬇️ 项目可复用逻辑
@@ -71,12 +70,13 @@ class CustomMoPushModel(MoPushModel):
         if pre_mo:
             pre_mo_sn = pre_mo[0].get('supplyno')
             if pre_mo_sn:
-                cleaned_values['ManufactureOrderDetails'][0]['priuserdefnvc1'] = pre_mo_sn
+                cleaned_values['ManufactureOrderDetails'][0]['DynamicPropertyKeys'] = ['priuserdefnvc1']
+                cleaned_values['ManufactureOrderDetails'][0]['DynamicPropertyValues'] = [pre_mo_sn]
         return cleaned_values
 
 
 
-def on_pl_status_a2e(supplyno_or_data: str | dict):
+def handle_pl_status_a2e(supplyno_or_data: str | dict):
     if isinstance(supplyno_or_data, str):
         supplyno = supplyno_or_data
     elif isinstance(supplyno_or_data, dict):

@@ -23,8 +23,7 @@ from globalobjects.json_manager import JSONManager
 
 # 获取统一日志器
 console_log = log_config.get_logger(__name__)
-filelog_normal = log_config.get_file_logger(__name__, 'default')
-filelog_error = log_config.get_file_logger(__name__, 'error')
+file_log = log_config.get_file_logger(__name__)
 
 SESSION = get_session()
 
@@ -98,9 +97,9 @@ class ApsHelpers:
             stock_data = stock_data.to_dict('records')
         refresh_result = SESSION.put(url=f"{THIS_BASE_URL}/api/t_supply/type/ST?db_name={dbs}", json=stock_data)
         if refresh_result.json()['success']:
-            filelog_normal.info(f"✅ 刷新库存任务执行完成，账套：{dbs}")
+            file_log.info(f"✅ 刷新库存任务执行完成，账套：{dbs}")
         else:
-            filelog_error.error(f"🚫 刷新库存任务执行失败: {refresh_result.json()['message']}")
+            file_log.error(f"🚫 刷新库存任务执行失败: {refresh_result.json()['message']}")
 
 
     @staticmethod
@@ -110,7 +109,7 @@ class ApsHelpers:
         🅰 workreport_data: 工作报工数据
         🅰 db_name: 账套名称，默认MYAPS_MAIN_DB
         """
-        filelog_normal.info("⏰ 开始执行确认报工记录任务")
+        file_log.info("⏰ 开始执行确认报工记录任务")
         response = SESSION.patch(f"{THIS_BASE_URL}/api/t_confirm?db_name={db_name}")
         response.raise_for_status()
         console_log.info(f"✅ 确认报工记录任务执行完成")
@@ -142,17 +141,17 @@ class ApsHelpers:
 
             query_data = query_result_json['data']
             if not query_data or len(query_data) > 1:
-                filelog_error.error(f"Error querying supply {native_plno}: multiple records matched.")
+                file_log.error(f"Error querying supply {native_plno}: multiple records matched.")
                 return standard_response(success=0, message=f"PL {native_plno} not found or multiple records matched.")
 
             if query_data[0]["type"] != "PL":
-                filelog_error.error(f"Error querying supply {native_plno}: not a PL.")
+                file_log.error(f"Error querying supply {native_plno}: not a PL.")
                 return standard_response(status_code=400, success=0, message=f"Supply {native_plno} is not a PL.")
 
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             log_msg = f"✅ 推送计划任务执行成功，账套：{MYAPS_MAIN_DB}，PL单号：{native_plno}，MO单号：{mono}"
             console_log.info(log_msg)
-            filelog_normal.info(log_msg)
+            file_log.info(log_msg)
             memo = json.dumps({
                 "msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now,
                 "native_no": native_plno, "_code": mono, "_id": _id, "_entryid": _entryid}, ensure_ascii=False
@@ -171,7 +170,7 @@ class ApsHelpers:
             return response
         except Exception as e:
             error_msg = f"更新PL状态为MO时发生网络错误: {str(e)}"
-            filelog_error.error(error_msg)
+            file_log.error(error_msg)
             console_log.error(error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
 
@@ -181,7 +180,7 @@ class ApsHelpers:
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_msg = f"🚫 推送计划任务执行失败，账套：{MYAPS_MAIN_DB}，PL单号：{native_plno}，错误信息：{msg}，数据：{data}"
         console_log.error(log_msg)
-        filelog_error.error(log_msg)
+        file_log.error(log_msg)
         memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
         
         try:
@@ -194,7 +193,7 @@ class ApsHelpers:
             return response
         except Exception as e:
             error_msg = f"更新PL状态时发生网络错误: {str(e)}"
-            filelog_error.error(error_msg)
+            file_log.error(error_msg)
             console_log.error(error_msg)
             # 可以考虑添加重试逻辑
             return None
@@ -225,7 +224,7 @@ class ApsHelpers:
             return response
         except Exception as e:
             error_msg = f"更新RS状态时发生网络错误: {str(e)}"
-            filelog_error.error(error_msg)
+            file_log.error(error_msg)
             console_log.error(error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
 
@@ -243,7 +242,7 @@ class ApsHelpers:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
             console_log.info(f"开始更新RS失败状态: {rsno}")
-            filelog_error.error(f"❌ 领料申请推送失败，对应工单：{rsno}，错误信息：{msg}，数据：{data}")
+            file_log.error(f"❌ 领料申请推送失败，对应工单：{rsno}，错误信息：{msg}，数据：{data}")
             response = SESSION.patch(f'{THIS_BASE_URL}/api/t_demand/{rsno}/.../...?db_name={MYAPS_MAIN_DB}', json={
                 'memo': memo,
             })
@@ -251,7 +250,7 @@ class ApsHelpers:
             return response
         except Exception as e:
             error_msg = f"更新RS失败状态时发生网络错误: {str(e)}"
-            filelog_error.error(error_msg)
+            file_log.error(error_msg)
             console_log.error(error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
 
@@ -279,7 +278,7 @@ class ApsHelpers:
             return response
         except Exception as e:
             error_msg = f"更新PR状态时发生网络错误: {str(e)}"
-            filelog_error.error(error_msg)
+            file_log.error(error_msg)
             console_log.error(error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
 
@@ -304,7 +303,7 @@ class ApsHelpers:
             return response
         except Exception as e:
             error_msg = f"更新PR失败状态时发生网络错误: {str(e)}"
-            filelog_error.error(error_msg)
+            file_log.error(error_msg)
             console_log.error(error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
 

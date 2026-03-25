@@ -24,8 +24,8 @@ class EventAggregator:
                  handler: Callable[[List[Any]], None],
                  group_key: Callable[[Any], str] = None,
                  dedup_key: Callable[[Any], str] = None,
-                 batch_size: int = 100,
-                 flush_interval: float = 1.0):
+                 batch_size: int = 10000,
+                 flush_interval: float = 5.0):
         """
         初始化事件聚合器
         
@@ -69,7 +69,7 @@ class EventAggregator:
             if total_count >= self.batch_size:
                 # 达到批量大小，通知条件变量线程
                 self._condition.notify()
-                self._flush()
+
     
     def add_batch(self, events: List[Any]):
         """批量添加事件"""
@@ -153,8 +153,8 @@ class MultiEventAggregator:
                  handler: Callable[[List[Any]], None],
                  group_key: Callable[[Any], str] = None,
                  dedup_key: Callable[[Any], str] = None,
-                 batch_size: int = 100,
-                 flush_interval: float = 5) -> 'MultiEventAggregator':
+                 batch_size: int = 10000,
+                 flush_interval: float = 5.0) -> 'MultiEventAggregator':
         """
         注册一个事件类型的聚合器
         

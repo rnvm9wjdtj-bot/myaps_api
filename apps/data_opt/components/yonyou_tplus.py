@@ -14,7 +14,7 @@ from config.settings import MYAPS_MAIN_DB
 
 from ._base import (
     PydanticModel, JSONManager,
-    console_log, filelog_normal, filelog_error,
+    console_log, file_log,
     DataProcessor, globalconst, CACHE_JSON, pdv,
     BaseConnection, ApsHelpers, convert_timeunit, clean_value,
     BaseModel as PydanticModel, model_validator, Field,
@@ -230,7 +230,7 @@ class MoPushModel(PydanticModel):
                     'SonNeededQuantity': demand['req_qty'] * -1,
                     'SonScaleQuantity': demand['req_qty'] * -1,
                     'Quantity': demand['req_qty'] * -1,
-                    'IsMaterialRequest': True,
+                    # 'IsMaterialRequest': True,    # 启用领料申请（明细行）
                 })
 
         cleaned_values['ExternalCode'] = values['supplyno']
@@ -239,7 +239,7 @@ class MoPushModel(PydanticModel):
         cleaned_values['BusiType'] = {'Code': CACHE_ERP.get("$MoBusiType", "")}
         cleaned_values['Department'] = {'Code': CACHE_ERP.get("$MoDepartment", "")}
         cleaned_values['VoucherDate'] = values['dt_ordstart']
-        cleaned_values['IsMaterialRequest'] = True
+        cleaned_values['IsMaterialRequest'] = True  # 启用领料申请（MO单据头）
         cleaned_values['Memo'] = values['vendorno']
         mod = {
             'Inventory': {'Code': values['materialno']},
@@ -490,7 +490,7 @@ class TplusConnection(BaseConnection):
             return self.access_token
         else:
             msg = f"🚫 获取畅捷通token失败: {auth_response}"
-            filelog_error.error(msg)
+            file_log.error(msg)
             raise Exception(msg)
 
 

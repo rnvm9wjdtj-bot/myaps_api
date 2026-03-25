@@ -12,7 +12,7 @@ from dateutil.relativedelta import relativedelta
 from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
 from .._base import (
     get_scheduler_minute,
-    ApsHelpers, filelog_error, filelog_normal, console_log, standard_response, get_session,
+    ApsHelpers, file_log, console_log, standard_response, get_session,
     cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, CACHE_JSON, pdv
 )
 
@@ -77,9 +77,9 @@ def sap_post(url: str, session: requests.Session, interface_id: str, data: dict)
     response_json = {}
     if response.status_code == status.HTTP_200_OK:
         response_json = response.json()
-        filelog_normal.info(f"✅ POST请求成功，状态码：{response.status_code}，响应内容：{response_json}")
+        file_log.info(f"✅ POST请求成功，状态码：{response.status_code}，响应内容：{response_json}")
     else:
-        filelog_error.error(f"🚫 POST请求失败，状态码：{response.status_code}，响应内容：{response.text}")
+        file_log.error(f"🚫 POST请求失败，状态码：{response.status_code}，响应内容：{response.text}")
     return {
         'status_code': response.status_code,
         'response_text': response.text,
@@ -136,11 +136,11 @@ def refresh_stock(dbs: str = None):
             })
             df_sap_st['itemno'] = pdv.ITEMNO
         except Exception as e:
-            filelog_error.error(f"🚫 获取SAP库存失败: {str(e)}")
+            file_log.error(f"🚫 获取SAP库存失败: {str(e)}")
             df_sap_st = None
         return df_sap_st
 
-    filelog_normal.info("⏰ 开始执行刷新库存任务")
+    file_log.info("⏰ 开始执行刷新库存任务")
     dbs = dbs or MYAPS_DB_SET
     mto_vir_st = ApsHelpers.mto_workreport_to_virtual_stock()
     df_sap_st = get_sap_stock_data()
@@ -165,14 +165,14 @@ def push_pr(period: int = 30, groupdates: List[str] | str = None):
         item["plant"] = "1000"
         item["bu_code"] = werks
         item["version"] = timestamp
-    filelog_normal.info(f"推送要货计划到SRM：\n{pr_data}")
+    file_log.info(f"推送要货计划到SRM：\n{pr_data}")
     response = requests.post(
         url=f"{srm_url}/jbl/service/execute/SRM_RECEIVE_PUSHED_DEMAND_PLAN_SERVICE",
         headers=srm_headers, json={"demand_plan": pr_data})
     if response.json().get("body", {}).get("status", "").lower() == "success":
-        filelog_normal.info(f"推送要货计划到SRM成功")
+        file_log.info(f"推送要货计划到SRM成功")
     else:
-        filelog_error.error(f"推送要货计划到SRM失败：\n{response.json()}")
+        file_log.error(f"推送要货计划到SRM失败：\n{response.json()}")
 
 
 def push_weekpr_to_srm():
@@ -218,7 +218,7 @@ def task_push_seasonpr_to_srm():
 # ⬇️APS事件
 #################################################################################
 
-def on_pl_status_a2e(supplyno_or_data: str | dict):
+def handle_pl_status_a2e(supplyno_or_data: str | dict):
     if isinstance(supplyno_or_data, str):
         supplyno = supplyno_or_data
     else:
@@ -249,6 +249,7 @@ def on_pl_status_a2e(supplyno_or_data: str | dict):
         if sap_mo_data['STATUS'] == 'S':
             ApsHelpers._pl_release_success(native_plno=supplyno, mono=sap_mo_data['AUFNR'], msg=sap_mo_data['MESSAGE'], msg_from='ERP')
         else:
-            ApsHelpers._pl_release_failed(plno=supplyno, msg=sap_mo_data['MESSAGE'], data=data, msg_from='ERP')
+            ApsHelpers._pl_release_failed(native_plno=supplyno, msg=sap_mo_data['MESSAGE'], data=data, msg_from='ERP')
     except Exception as e:
-        ApsHelpers._pl_release_failed(plno=supplyno, msg=str(e), data=data, msg_from='API')
+        ApsHelpers._pl_release_failed(native_plno=supplyno, msg=str(e), data=data, msg_from='API')
+

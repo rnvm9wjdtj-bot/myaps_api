@@ -28,11 +28,7 @@ from apps.data_opt.components._base import BaseConnection, ApsHelpers
 
 
 # 配置日志
-filelog_normal = log_config.get_file_logger(__name__, 'default')
-filelog_error = log_config.get_file_logger(__name__, 'error')
-
-
-# 获取统一日志器
+file_log = log_config.get_file_logger(__name__)
 console_log = log_config.get_logger(__name__)
 
 

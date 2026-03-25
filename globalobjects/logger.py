@@ -192,8 +192,10 @@ class DatePrefixRotatingFileHandler(TimedRotatingFileHandler):
             name_without_ext, ext = os.path.splitext(filename)
             get_module_logger().debug(f"原始文件名: {filename}")
             
+            # 计算日志文件的实际日期（轮替前的一天）
+            log_date = current_time - 86400  # 减去一天的秒数
             # 生成带日期前缀的文件名
-            date_prefix = time.strftime("%Y%m%d", time.localtime(current_time))
+            date_prefix = time.strftime("%Y%m%d", time.localtime(log_date))
             
             # 新的文件名格式：[日期前缀]_[原始文件名][扩展名]
             new_filename = f"{date_prefix}_{name_without_ext}{ext}"
@@ -679,42 +681,83 @@ def setup_logger(name: str, level: str = 'INFO') -> logging.Logger:
     return logger
 
 
-def get_file_logger(name: str, log_type: str = 'default') -> logging.Logger:
+class SmartFileHandler(logging.Handler):
+    """智能文件处理器，根据日志级别选择对应文件"""
+    
+    def __init__(self, name: str):
+        super().__init__()
+        self.name = name
+        # 直接创建不同类型的文件日志器
+        self.default_logger = setup_file_logging(name, "app.log")  # app.log (INFO及以上)
+        self.default_logger.setLevel(logging.INFO)
+        self.error_logger = setup_file_logging(name, "error.log")  # error.log (ERROR及以上)
+        self.error_logger.setLevel(logging.ERROR)
+        self.debug_logger = setup_file_logging(name, "debug.log")  # debug.log (所有级别)
+        self.debug_logger.setLevel(logging.DEBUG)
+    
+    def emit(self, record):
+        """根据日志级别选择对应文件"""
+        # DEBUG 级别只写入 debug.log
+        if record.levelno == logging.DEBUG:
+            self.debug_logger.handle(record)
+        # INFO/WARNING 级别写入 app.log
+        elif record.levelno in (logging.INFO, logging.WARNING):
+            self.default_logger.handle(record)
+        # ERROR/CRITICAL 级别同时写入 error.log 和 app.log
+        elif record.levelno >= logging.ERROR:
+            self.error_logger.handle(record)
+            self.default_logger.handle(record)
+
+
+def _create_smart_file_logger(name: str) -> logging.Logger:
     """
-    获取文件日志器
+    创建智能文件日志器，根据日志级别自动选择文件
     
     Args:
         name: 日志器名称
-        log_type: 日志类型，可选值: default, error, debug
         
     Returns:
-        配置好的文件日志器实例
+        智能文件日志器实例
     """
-    key = f"{name}:{log_type}"
-    if key in _file_loggers:
-        return _file_loggers[key]
+    # 创建基础日志器
+    logger = logging.getLogger(f"smart_{name}")
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
     
-    # 获取日志配置
-    config = LOG_CONFIG.get(log_type, LOG_CONFIG['default'])
-    
-    # 使用 file_timed_logger 设置文件日志
-    logger = setup_file_logging(name, config['filename'])
-    logger.setLevel(get_log_level(config['level']))
-    
-    # 存储文件日志器实例
-    _file_loggers[key] = logger
+    # 添加智能文件处理器
+    smart_handler = SmartFileHandler(name)
+    logger.addHandler(smart_handler)
     
     return logger
 
 
-def get_logger(name: Optional[str] = None, include_file: bool = False, log_type: str = 'default') -> logging.Logger:
+def get_file_logger(name: str) -> logging.Logger:
+    """
+    获取智能文件日志器，根据级别自动选择文件
+    
+    Args:
+        name: 日志器名称
+        
+    Returns:
+        配置好的智能文件日志器实例
+    """
+    # 创建智能文件日志器
+    key = f"{name}:smart"
+    if key in _file_loggers:
+        return _file_loggers[key]
+    
+    logger = _create_smart_file_logger(name)
+    _file_loggers[key] = logger
+    return logger
+
+
+def get_logger(name: Optional[str] = None, include_file: bool = False) -> logging.Logger:
     """
     获取统一的日志器
     
     Args:
         name: 日志器名称，默认使用调用模块的名称
         include_file: 是否包含文件日志
-        log_type: 日志类型，可选值: default, error, debug
         
     Returns:
         配置好的日志器实例
@@ -738,7 +781,7 @@ def get_logger(name: Optional[str] = None, include_file: bool = False, log_type:
     
     # 如果需要文件日志，添加文件处理器
     if include_file:
-        file_logger = get_file_logger(name, log_type)
+        file_logger = get_file_logger(name)
         # 确保文件日志器的处理器被正确添加
         for handler in file_logger.handlers:
             if handler not in logger.handlers:
@@ -1094,16 +1137,29 @@ if __name__ == "__main__":
     except Exception as e:
         logger.exception("发生了一个异常")
     
-    # 5. 测试文件日志
-    print("\n5. 测试文件日志:")
-    # 获取默认文件日志器
-    file_logger = get_file_logger("file_test", "default")
+    # 5. 测试智能文件日志器
+    print("\n5. 测试智能文件日志器:")
+    file_logger = get_file_logger("file_test")
     file_logger.info("这是一条写入文件的 INFO 日志")
     file_logger.error("这是一条写入文件的 ERROR 日志")
     
-    # 获取错误文件日志器
-    error_logger = get_file_logger("file_test", "error")
-    error_logger.error("这是一条写入错误文件的日志")
+    # 5.1 测试智能文件日志器
+    print("\n5.1 测试智能文件日志器:")
+    smart_logger = get_file_logger("smart_test")
+    print("   ✅ 创建智能文件日志器")
+    # 启动文件日志监听器（确保新创建的监听器被启动）
+    start_all_listeners()
+    print("   ✅ 启动文件日志监听器")
+    # 测试不同级别的日志
+    smart_logger.debug("这是一条智能 DEBUG 级别的日志")
+    smart_logger.info("这是一条智能 INFO 级别的日志")
+    smart_logger.warning("这是一条智能 WARNING 级别的日志")
+    smart_logger.error("这是一条智能 ERROR 级别的日志")
+    smart_logger.critical("这是一条智能 CRITICAL 级别的日志")
+    # 等待日志写入
+    import time
+    time.sleep(0.5)
+    print("   ✅ 智能文件日志器测试完成")
     
     # 6. 使用便捷函数
     print("\n6. 使用便捷函数:")
@@ -1131,3 +1187,6 @@ if __name__ == "__main__":
     print("\n文件日志使用:")
     print("file_logger = log_config.get_file_logger(__name__, 'default')")
     print("file_logger.info('文件日志内容')")
+    print("\n智能文件日志器使用:")
+    print("smart_logger = log_config.get_file_logger(__name__, smart=True)")
+    print("smart_logger.info('智能文件日志内容')")

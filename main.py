@@ -21,7 +21,7 @@ from globalobjects import logger as log_config
 from apps.io_api.routers import rt as io_rt
 from apps.io_api.utils.common import register_exception_handlers
 from apps.data_opt.routers import rt as do_rt
-# from apps.data_opt.common import register_exception_handlers as register_data_manager_exception_handlers
+
 
 # 导入全局MySQL监控实例
 from apps.data_opt.utils.mysqlmonitor import mysql_monitor

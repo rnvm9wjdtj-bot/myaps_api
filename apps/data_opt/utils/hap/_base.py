@@ -112,8 +112,7 @@ class AsyncLogHandler:
 
 # 获取基础日志器
 _base_console_log = log_config.get_logger(__name__)
-filelog_normal = log_config.get_file_logger(__name__, 'default')
-filelog_error = log_config.get_file_logger(__name__, 'error')
+file_log = log_config.get_file_logger(__name__)
 
 # 创建异步日志处理器实例
 _async_log_handler = AsyncLogHandler()
