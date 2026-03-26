@@ -31,10 +31,10 @@ tplus_conn = TplusConnection()
 # ⬇️ 项目可复用逻辑
 #################################################################################
 
-def refresh_stock():
+def refresh_stock(dbs: str=MYAPS_DB_SET):
     stock_data = tplus_conn.pull_stock()
     if stock_data:
-        ApsHelpers.refresh_stock(stock_data)
+        ApsHelpers.refresh_supply(stock_data, dbs=dbs)
 
 
 #################################################################################
@@ -76,6 +76,17 @@ def handle_pl_status_a2e(supplyno_or_data: str | dict):
     elif isinstance(supplyno_or_data, dict):
         supplyno = supplyno_or_data['supplyno']
     tplus_conn.create_mo(supplyno=supplyno, remain_native_supplyno=REMAIN_NATIVE_SUPPLYNO, pydantic_model=CustomMoPushModel)
+
+
+def handle_pl_typeto_mo(supplyno_or_data: str | dict):
+    if isinstance(supplyno_or_data, str):
+        supplyno = supplyno_or_data
+    elif isinstance(supplyno_or_data, dict):
+        supplyno = supplyno_or_data['supplyno']
+        # tplus_mo_id = supplyno_or_data['apiex_id']
+    mo_data = tplus_conn.query_mo(index_value=supplyno, filter_field='voucherCode')
+    if mo_data:
+        tplus_conn.push_rs(mdlist_or_supplyno=supplyno, tplus_mo_data_or_id=mo_data)    
 
 
 def batch_handle_pr_created(pr_data_list: list[dict]):

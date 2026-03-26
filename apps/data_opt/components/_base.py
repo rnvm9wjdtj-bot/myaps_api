@@ -93,14 +93,14 @@ class ApsHelpers:
 
 
     @staticmethod
-    def refresh_stock(stock_data:Union[List[Dict[str, Any]], pd.DataFrame], dbs:str=MYAPS_DB_SET):
-        if isinstance(stock_data, pd.DataFrame):
-            stock_data = stock_data.to_dict('records')
-        refresh_result = SESSION.put(url=f"{THIS_BASE_URL}/api/t_supply/type/ST?db_name={dbs}", json=stock_data)
+    def refresh_supply(supply_data:Union[List[Dict[str, Any]], pd.DataFrame], type_:Literal['ST', 'SO']='ST', dbs:str=MYAPS_DB_SET):
+        if isinstance(supply_data, pd.DataFrame):
+            supply_data = supply_data.to_dict('records')
+        refresh_result = SESSION.put(url=f"{THIS_BASE_URL}/api/t_supply/type/{type_}?db_name={dbs}", json=supply_data)
         if refresh_result.json()['success']:
-            logger.success("刷新库存", "", f"账套{dbs}")
+            logger.success("刷新供应数据", f"type_{type_}", f"账套{dbs}")
         else:
-            logger.fail("刷新库存", "", refresh_result.json()['message'])
+            logger.fail("刷新供应数据", f"type_{type_}", refresh_result.json()['message'])
 
 
     @staticmethod

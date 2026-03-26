@@ -786,9 +786,9 @@ class TplusConnection(BaseConnection):
             # 从 T+ 中提取 MO 详情中的第一个详情记录的 ID 作为 _entryid
             tplus_mo_entryid = tplus_mo_data['ManufactureOrderDetails'][0]['ID']
 
-            if auto_push_rs:
-                # 推送领料申请
-                _x_b = self.push_rs(mdlist_or_supplyno=demand_list, tplus_mo_data_or_id=tplus_mo_data)
+            # if auto_push_rs:
+            #     # 推送领料申请
+            #     _x_b = self.push_rs(mdlist_or_supplyno=demand_list, tplus_mo_data_or_id=tplus_mo_data)
 
             # 调用存储过程更改工单信息，❗一定放在最后一步，否则工单号变更太早，前面若有用原生供应号查询都会失败
             _x_c = ApsHelpers._pl_release_success(native_plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)

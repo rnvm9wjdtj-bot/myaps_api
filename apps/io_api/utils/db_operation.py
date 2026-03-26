@@ -115,23 +115,39 @@ async def db_query(db_name: str, model_or_tablename: TortoiseBaseModel | str, fi
 
 
 
-async def preprocess_data(data_list: List[PydanticSchema | Dict[str, Any]], conflict_fields: Optional[Tuple[str, ...]] = None) -> List[ProcessedData]:
+async def preprocess_data(data_list: List[PydanticSchema | Dict[str, Any]], model_class: Optional[TortoiseBaseModel] = None, conflict_fields: Optional[Tuple[str, ...]] = None) -> List[ProcessedData]:
     """
     预处理数据，将Pydantic模型转换为字典，并可选地基于冲突字段去重
     
     Args:
         data_list: 原始数据列表，可以是PydanticSchema对象或字典
+        model_class: Tortoise模型类，用于过滤字段（可选）
         conflict_fields: 冲突字段元组，用于去重（可选）
         
     Returns:
         预处理后的数据列表
     """
     processed_list = []
+    
+    # 获取模型字段列表（如果提供了模型类）
+    model_fields = set()
+    if model_class:
+        model_fields = set(model_class._meta.fields_map.keys())
+    
     for data_item in data_list:
         # 获取原始输入数据
         raw_input_data = get_raw_input_data(data_item)
         # 转换为字典
         processed_dict = convert_to_dict(data_item, exclude_none=True)
+        
+        # 如果提供了模型类，过滤掉不在模型中的字段
+        if model_class:
+            filtered_dict = {}
+            for key, value in processed_dict.items():
+                if key in model_fields:
+                    filtered_dict[key] = value
+            processed_dict = filtered_dict
+        
         # 深拷贝用于创建操作
         create_dict = deepcopy(processed_dict)
         # 添加到处理列表
@@ -279,7 +295,7 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
     model_key = DbManager._get_conflict_fields(mdl)
     
     # 预处理数据，并基于冲突字段去重
-    processed_data_list = await preprocess_data(data_list, conflict_fields=model_key)
+    processed_data_list = await preprocess_data(data_list, model_class=mdl, conflict_fields=model_key)
     # 初始化统计信息
     success_db = []
     create_count_total = 0
@@ -293,6 +309,15 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
     # 格式化数据用于日志记录，将枚举和Decimal等类型转换为字符串
     formatted_data = format_data_for_logging(upsert_data_list)
     logger.insert("批量upsert", mdl._meta.db_table, f"接收{origin_total}条，去重后{len(upsert_data_list)}条")
+    
+    # 检查upsert_data_list是否为空
+    if not upsert_data_list:
+        logger.warning("批量upsert", mdl._meta.db_table, "没有可处理的数据")
+        return standard_response(
+            data=data_list,
+            message=f"生效{len(success_db)}个账套，无数据处理",
+            meta={"origin_total": origin_total, "success_db": success_db}
+        )
     
     update_fields = [field for field in upsert_data_list[0].keys() if field not in model_key]
     

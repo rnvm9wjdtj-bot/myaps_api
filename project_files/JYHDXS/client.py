@@ -87,7 +87,7 @@ def sap_post(url: str, session: requests.Session, interface_id: str, data: dict)
     }
 
 
-def refresh_stock(dbs: str = None):
+def refresh_stock(dbs: str=MYAPS_DB_SET):
     """
     刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据
     db: 对哪些账套生效，多个账套用逗号分隔
@@ -141,7 +141,6 @@ def refresh_stock(dbs: str = None):
         return df_sap_st
 
     file_log.start("刷新库存任务")
-    dbs = dbs or MYAPS_DB_SET
     mto_vir_st = ApsHelpers.mto_workreport_to_virtual_stock()
     df_sap_st = get_sap_stock_data()
 
@@ -150,7 +149,7 @@ def refresh_stock(dbs: str = None):
     else:
         stock_data_total = df_sap_st
     stock_data_total.fillna('', inplace=True)
-    ApsHelpers.refresh_stock(stock_data_total.to_dict(orient='records'), dbs)
+    ApsHelpers.refresh_supply(stock_data_total.to_dict(orient='records'), dbs=dbs)
 
 
 

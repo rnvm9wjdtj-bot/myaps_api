@@ -73,7 +73,7 @@ class ApsEvent:
 
 aps_pl_status_a2e_event = ApsEvent(event_type="|pl_status_a2e|", single_handler="handle_pl_status_a2e", batch_handler="batch_handle_pl_status_a2e", description="PL 单据下达")
 aps_pr_created_event = ApsEvent(event_type="|pr_created|", single_handler="handle_pr_created", batch_handler="batch_handle_pr_created", description="PR 单据 创建")
-# aps_dm_typeto_rs_event = ApsEvent(event_type="|dm_typeto_rs|", single_handler="handle_dm_typeto_rs", batch_handler="batch_handle_dm_typeto_rs", description="DM 变更为 RS")
+aps_pl_typeto_mo_event = ApsEvent(event_type="|pl_typeto_mo|", single_handler="handle_pl_typeto_mo", batch_handler="batch_handle_pl_typeto_mo", description="PL 变更为 MO")
 
 
 
@@ -83,17 +83,21 @@ def handle_update_supply(database: str, table: str, data: dict, data_diff: dict)
     from apps.data_opt.components._base import ApsHelpers
 
     data_before = dict_to_lower_keys(data['old'])
+    type_before = data_before['type']
     status_before = data_before['status']
 
     data_now = dict_to_lower_keys(data['new'])
     type_now = data_now['type']
     status_now = data_now['status']
 
-    # 工单管理界面中，通过点击按钮下达生产计划单PL
     if type_now == 'PL' and status_now == "A2E" and status_before in ["NEW", "CRE"]:
+        # 工单管理界面中，通过点击按钮下达生产计划单PL
         aps_pl_status_a2e_event.add_event(data_now)
-
-
+    elif type_before == 'PL' and type_now == 'MO':
+        # 当 PL 转化为 MO (PL下达成功)
+        aps_pl_typeto_mo_event.add_event(data_now)
+    
+    
 
 @mysql_monitor.on_insert_for_table("t_supply", database=MYAPS_MAIN_DB)
 def handle_insert_supply(database: str, table: str, data: dict):
@@ -109,14 +113,3 @@ def handle_insert_supply(database: str, table: str, data: dict):
    
 
 
-# @mysql_monitor.on_update_for_table("t_demand", database=MYAPS_MAIN_DB)
-# def handle_update_demand(database: str, table: str, data: dict, data_diff: dict):
-#     """处理t_demand表的更新事件"""
-#     from apps.data_opt.components._base import ApsHelpers
-#     data_before = dict_to_lower_keys(data['old'])
-#     type_before = data_before['type']
-
-#     data_now = dict_to_lower_keys(data['new'])
-#     type_now = data_now['type']
-
-#     if type_now == 'RS' and type_before == 'DM':

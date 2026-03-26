@@ -1,5 +1,6 @@
 import os, uvicorn, asyncio#, hashlib
 from dotenv import load_dotenv
+from uvicorn.protocols.websockets.websockets_impl import WebSocketProtocol
 
 # 加载环境变量
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -257,7 +258,8 @@ if __name__ == "__main__":
         port=PORT,
         log_level="info",
         access_log=False,
-        log_config=LOGGING_CONFIG
+        log_config=LOGGING_CONFIG,
+        ws="websockets"
     )
 
 
