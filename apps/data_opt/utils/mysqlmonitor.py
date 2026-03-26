@@ -35,9 +35,11 @@ from pymysqlreplication.row_event import (
 )
 
 from config.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_DBMONITOR
+from globalobjects import logger as log_config
+import os
 
-
-logger = logging.getLogger(__name__)
+LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
+logger = log_config.get_logger(__name__, level=LOG_LEVEL)
 
 class MySQLBinlogMonitor:
     # 单例模式实现

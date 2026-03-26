@@ -14,7 +14,7 @@ from config.settings import MYAPS_MAIN_DB
 
 from ._base import (
     PydanticModel, JSONManager,
-    console_log, file_log,
+    logger,
     DataProcessor, globalconst, CACHE_JSON, pdv,
     BaseConnection, ApsHelpers, convert_timeunit, clean_value,
     BaseModel as PydanticModel, model_validator, Field,
@@ -436,6 +436,11 @@ RsCreateInterface = PushInterface(
     endpoint="/tplus/api/v2/MaterialRequestOpenApi/Create",
 )
 
+PrApproveInterface = PushInterface(
+    endpoint="/tplus/api/v2/PurchaseRequisitionOpenApi/Audit",
+)
+
+
 PrCreateInterface = PushInterface(
     endpoint="/tplus/api/v2/PurchaseRequisitionOpenApi/Create",
 )
@@ -490,7 +495,7 @@ class TplusConnection(BaseConnection):
         if self._auth_at_:
             expire_time = datetime.strptime(self._auth_at_, "%Y-%m-%d %H:%M:%S") + timedelta(seconds=self.config.token_expire_seconds)
             if datetime.now() < expire_time:
-                console_log.info(f"畅捷通token有效，有效期至：{expire_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                logger.info(f"畅捷通token有效，有效期至：{expire_time.strftime('%Y-%m-%d %H:%M:%S')}")
                 return self.access_token
 
         auth_response = self._session.get(
@@ -518,13 +523,11 @@ class TplusConnection(BaseConnection):
                 "access_token": self.access_token,
                 "refresh_token": self.refresh_token})
             self.cache_file.save()
-            console_log.success("畅捷通token刷新")
+            logger.success("畅捷通token刷新")
             return self.access_token
         else:
-            msg = f"获取畅捷通token失败：{auth_response}"
-            file_log.fail("畅捷通token", "", msg)
-            raise Exception(msg)
-
+            logger.fail("获取畅捷通token", "", auth_response)
+            raise Exception(auth_response.get("message", ""))
 
 
     def _get(self, endpoint: str, params: dict=None):
@@ -673,7 +676,7 @@ class TplusConnection(BaseConnection):
                     result = future.result()
                     data_list.extend(result)
                 except Exception as exc:
-                    console_log.fail("BOM处理", bom_code, str(exc))
+                    logger.fail("BOM处理", bom_code, str(exc))
         
         self._BOM_CODES = None
         data_list = [pydantic_model(**item).model_dump() for item in data_list]
@@ -842,6 +845,12 @@ class TplusConnection(BaseConnection):
         :param data_list: APS 中的 PR 数据
         :param aggregate: 是否聚合数据（['materialno', 'avail_date', 'vendorno']），默认True
         """
+        def approve_pr(tplus_pr_id):
+            endpoint = PrApproveInterface.endpoint
+            payload = {"param": {'voucherID': tplus_pr_id}}
+            response = self._post(endpoint=endpoint, data=payload)
+            return response.json()
+            
         if aggregate:
             data_list = ApsHelpers.aggregate_pr_data(data_list)
         tplus_pr_data = pydantic_model(data=data_list).model_dump(exclude_none=True)
@@ -850,9 +859,13 @@ class TplusConnection(BaseConnection):
         response = self._post(endpoint=endpoint, data=payload)
         pr_push_response_json = response.json()
         if str(pr_push_response_json['code']) == '0':
-            console_log.success("推送采购申请", "", str(payload))
+            logger.success("推送请购单", str(payload))
+            pr_approve_response_json = approve_pr(tplus_pr_id=pr_push_response_json['data'].get('ID'))
+            if str(pr_approve_response_json['code']) == '0':
+                logger.success("审批请购单", str(payload))
+            else:
+                logger.fail("审批请购单", str(payload), pr_approve_response_json['message'])
         else:
-            error_msg = f"推送采购申请失败，错误信息：{pr_push_response_json['message']}，数据：{payload}"
-            console_log.fail("推送采购申请", "", error_msg)
-            file_log.fail("推送采购申请", "", error_msg)
+            logger.fail("推送请购单", str(payload), pr_push_response_json['message'])
+
 

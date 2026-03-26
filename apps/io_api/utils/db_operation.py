@@ -6,7 +6,7 @@ from fastapi import status
 from tortoise.models import Model as TortoiseBaseModel
 from pydantic import BaseModel as PydanticSchema
 
-from config.settings import MYAPS_DB_SET
+from config.settings import MYAPS_DB_SET, LOG_LEVEL
 from globalobjects.db_manager import get_db_managers, DbManager
 from globalobjects import logger as log_config
 
@@ -37,10 +37,8 @@ from ..models import TABLE_MODEL_MAPPING
 
 
 # 获取控制台日志器
-console_log = log_config.get_logger(__name__)
+logger = log_config.get_logger(__name__, level=LOG_LEVEL)
 
-# 获取文件日志器
-file_log = log_config.get_file_logger(__name__)
 
 
 def process_model_or_tablename(model_or_tablename: TortoiseBaseModel | str) -> Tuple[Optional[TortoiseBaseModel], str]:
@@ -58,8 +56,7 @@ def process_model_or_tablename(model_or_tablename: TortoiseBaseModel | str) -> T
     else:
         table_name = model_or_tablename
         if table_name not in TABLE_MODEL_MAPPING.keys():
-            # if not table_name.lower().startswith('v_'):
-            #     file_logger.error(f"❌↑未找到对应模型（table_name：{table_name}），禁止查询 —— db_query")
+
             return None, table_name
         else:
             return TABLE_MODEL_MAPPING[table_name], table_name
@@ -193,7 +190,7 @@ async def db_supsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
 
     valid_dbs = validate_databases(db_names)
     if not valid_dbs:
-        file_log.fail("数据库验证", "", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
+        logger.fail("数据库验证", "", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -248,7 +245,7 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
     # 验证账套
     valid_dbs = validate_databases(db_names)
     if not valid_dbs:
-        file_log.fail("数据库验证", "", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
+        logger.fail("数据库验证", "", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -295,7 +292,7 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
 
     # 格式化数据用于日志记录，将枚举和Decimal等类型转换为字符串
     formatted_data = format_data_for_logging(upsert_data_list)
-    file_log.insert("批量upsert", mdl._meta.db_table, f"接收{origin_total}条，去重后{len(upsert_data_list)}条")
+    logger.insert("批量upsert", mdl._meta.db_table, f"接收{origin_total}条，去重后{len(upsert_data_list)}条")
     
     update_fields = [field for field in upsert_data_list[0].keys() if field not in model_key]
     
@@ -329,10 +326,10 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
             update_count = result.get("updated", 0)
             create_count_total += create_count
             update_count_total += update_count
-            file_log.insert("账套生效", db_name, f"新增{create_count}条，修改{update_count}条")
+            logger.insert("账套生效", db_name, f"新增{create_count}条，修改{update_count}条")
             success_db.append({"db_name": db_name, "create": create_count, "update": update_count})
         
-        file_log.success("批量upsert", f"{table_name}@{db_names}", f"生效{len(success_db)}个账套，新增{create_count_total}条，修改{update_count_total}条")
+        logger.success("批量upsert", f"{table_name}@{db_names}", f"生效{len(success_db)}个账套，新增{create_count_total}条，修改{update_count_total}条")
         
         return standard_response(
             data=data_list,
@@ -341,7 +338,7 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
         )
         
     except Exception as e:
-        file_log.fail("批量upsert", f"{mdl._meta.db_table}@[{db_names}]", str(e))
+        logger.fail("批量upsert", f"{mdl._meta.db_table}@[{db_names}]", str(e))
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -371,14 +368,14 @@ async def db_delete(db_names: str, model_or_tablename: TortoiseBaseModel | str, 
 
             count = exe_result.get("affected_rows", 0)
             total_count += count
-            file_log.delete("SQL删除", f"{table_name}@{db_name}", f"条件{filter_string}，删除{count}条")
-        file_log.success("SQL删除", f"{table_name}@{db_names}", f"共删除{total_count}条")
+            logger.delete("SQL删除", f"{table_name}@{db_name}", f"条件{filter_string}，删除{count}条")
+        logger.success("SQL删除", f"{table_name}@{db_names}", f"共删除{total_count}条")
         return standard_response(
             meta={"affect_count": total_count, "affect_dbs": ", ".join(valid_dbs)}
         )
         
     except Exception as e:
-        file_log.fail("SQL删除", f"{table_name}@{db_names}", f"条件{filter_string}，{str(e)}")
+        logger.fail("SQL删除", f"{table_name}@{db_names}", f"条件{filter_string}，{str(e)}")
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -405,14 +402,14 @@ async def call_dbprocdure(db_names: str, procedure_name: str, params_list: List[
             exe_result = await db_manager.call_stored_procedure(procedure_name=procedure_name, params_list=params_list)
             affect_rows = exe_result.get('affected_rows', 0)
             total_affect_count += affect_rows
-            file_log.success("存储过程调用", f"{procedure_name}@{db_name}", f"影响{affect_rows}条记录")
+            logger.success("存储过程调用", f"{procedure_name}@{db_name}", f"影响{affect_rows}条记录")
             meta[db_name] = affect_rows
         return standard_response(
             message=f"调用存储过程`{procedure_name}`@{db_name}成功，影响{total_affect_count}条记录",
             meta=meta
         )
     except Exception as e:
-        file_log.fail("存储过程调用", f"{procedure_name}@{db_names}", str(e))
+        logger.fail("存储过程调用", f"{procedure_name}@{db_names}", str(e))
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -456,7 +453,7 @@ async def db_update_by_index(
 
     valid_dbs = validate_databases(db_names)
     if not valid_dbs:
-        file_log.fail("数据库验证", "", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
+        logger.fail("数据库验证", "", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -476,8 +473,8 @@ async def db_update_by_index(
             db_manager = get_db_manager(db_name)
 
 
-            console_log.debug(f"index_dict: {index_dict}")
-            console_log.debug(f"new_values_dict: {new_values_dict}")
+            logger.debug(f"index_dict: {index_dict}")
+            logger.debug(f"new_values_dict: {new_values_dict}")
 
 
             result = await db_manager.update_by_index(
@@ -490,7 +487,7 @@ async def db_update_by_index(
             if result['success']:
                 success_db.append(db_name)
                 affect_count_total += result['affected_rows']
-                file_log.update("索引更新", f"{table_name}@{db_name}", f"操作{result['operation_type']}，影响{result['affected_rows']}条")
+                logger.update("索引更新", f"{table_name}@{db_name}", f"操作{result['operation_type']}，影响{result['affected_rows']}条")
 
         return standard_response(
             meta={
@@ -501,7 +498,7 @@ async def db_update_by_index(
             data=[index_dict, new_values_dict]
         )
     except Exception as e:
-        file_log.fail("索引更新", f"{table_name}@[{db_names}]", str(e))
+        logger.fail("索引更新", f"{table_name}@[{db_names}]", str(e))
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

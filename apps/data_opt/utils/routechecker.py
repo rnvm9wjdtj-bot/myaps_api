@@ -5,6 +5,11 @@ from typing import List, Dict, Any, DefaultDict
 from collections import defaultdict
 
 from fastapi.responses import StreamingResponse
+from globalobjects import logger as log_config
+from config.settings import LOG_LEVEL
+
+
+logger = log_config.get_logger(__name__, level=LOG_LEVEL)
 
 
 HAP_CTRLID = {
@@ -75,7 +80,7 @@ class RouteChecker:
         except:
             itemno_prefix = 'P'
             itemno_width = 2
-            print(f"⚠️ 未配置 ItemNo 前缀和宽度，默认使用 {itemno_prefix} 作为前缀，宽度为 {itemno_width}")
+            logger.warning_msg("配置警告", f"未配置 ItemNo 前缀和宽度，默认使用 {itemno_prefix} 作为前缀，宽度为 {itemno_width}")
         
         # 转换为DataFrame
         df_data = []
@@ -134,7 +139,7 @@ class RouteChecker:
             except:
                 itemno_prefix = 'P'
                 itemno_width = 2
-                print(f"⚠️ 未配置 ItemNo 前缀和宽度，默认使用 {itemno_prefix} 作为前缀，宽度为 {itemno_width}")
+                logger.warning_msg("配置警告", f"未配置 ItemNo 前缀和宽度，默认使用 {itemno_prefix} 作为前缀，宽度为 {itemno_width}")
             
             # 处理缺失的ItemNo
             if self.sortno_col in df.columns:

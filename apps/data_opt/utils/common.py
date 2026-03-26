@@ -7,10 +7,11 @@ from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
 from typing import Optional, Dict, Union
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from config.settings import LOG_LEVEL
 
 
 # 获取日志器
-logger = log_config.get_logger(__name__)
+logger = log_config.get_logger(__name__, level=LOG_LEVEL)
 
 
 def get_session(

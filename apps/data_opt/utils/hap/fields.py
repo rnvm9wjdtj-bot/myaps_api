@@ -7,6 +7,11 @@ from typing import Dict, Any, Optional, Type, Union, List, TYPE_CHECKING
 
 from ..data_processor import DataProcessor
 from .utils import HapUtils
+from globalobjects import logger as log_config
+from config.settings import LOG_LEVEL
+
+
+logger = log_config.get_logger(__name__, level=LOG_LEVEL)
 
 if TYPE_CHECKING:
     from .data_objects import Q, HapRowSet, HapQuerySet, AsyncHapQuerySet
@@ -664,8 +669,8 @@ class SubtableField(Field):
         except Exception as e:
             # 添加错误日志，以便于调试
             import traceback
-            print(f"Error processing subtable field: {e}")
-            print(traceback.format_exc())
+            logger.error_msg("处理子表字段时出错", f"处理子表字段时出错: {e}")
+            logger.error_msg("错误详情", f"错误详情:\n{traceback.format_exc()}")
 
         return data
     

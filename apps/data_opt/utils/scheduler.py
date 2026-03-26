@@ -10,9 +10,11 @@ from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
 
 from globalobjects import logger as log_config
+import os
 
+LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 # 获取统一日志器
-logger = log_config.get_logger(__name__)
+logger = log_config.get_logger(__name__, level=LOG_LEVEL)
 
 class TaskRegistry:
     """任务注册表，用于收集和管理所有定时任务"""

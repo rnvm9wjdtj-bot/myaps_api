@@ -712,7 +712,7 @@ class JkyApiCallLog(Model):
 
 
 from ._base import (
-    console_log, CACHE_JSON
+    logger, CACHE_JSON
 )
 
 
@@ -926,7 +926,7 @@ class JkyConnection():
                 except Exception as e:
                     error_type = type(e).__name__
                     if attempt < max_retries - 1:
-                        console_log.error(f"{error_type} occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
+                        logger.error(f"{error_type} occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
                         time.sleep(retry_delay)
                         continue
                     else:
@@ -964,7 +964,7 @@ class JkyConnection():
                 except Exception as e:
                     error_type = type(e).__name__
                     if attempt < max_retries - 1:
-                        console_log.error(f"{error_type} occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
+                        logger.error(f"{error_type} occurred (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay} seconds...")
                         await asyncio.sleep(retry_delay)
                         continue
                     else:
@@ -1014,7 +1014,7 @@ class JkyConnection():
             page_index += 1
             current_page_size = len(result_data)
             row_total_count += current_page_size
-            console_log.info(f"【{source_desc}】第【{page_index}】页数据，【{current_page_size}】条，累计【{row_total_count}】条")
+            logger.info(f"【{source_desc}】第【{page_index}】页数据，【{current_page_size}】条，累计【{row_total_count}】条")
             # 异步执行日志记录，但不等待其结果，避免影响主流程
             self.log_to_hap(log_level="INFO", msg=f"【{source_desc}】第【{page_index}】页数据，【{current_page_size}】条，累计【{row_total_count}】条", row_count=current_page_size)
             yield result_data
@@ -1080,7 +1080,7 @@ class JkyConnection():
             try:
                 await self._async_hap.rows(JkyApiCallLog).bulk_create(logs_to_write)
             except Exception as e:
-                console_log.error(f"批量记录日志失败: {e}")
+                logger.error(f"批量记录日志失败: {e}")
 
         # 子函数：启动定时刷新
         def _start_flush_timer():
@@ -1119,7 +1119,7 @@ class JkyConnection():
         time_start = datetime.now()
         count = await self._async_hap.rows(model).upsert_from_generator(data_gen, adaptive=True, trigger_workflow=True)
         time_end = datetime.now()
-        console_log.info(f"成功处理 【{source_desc}】【{count}】条，耗时【{time_end - time_start}】")
+        logger.info(f"成功处理 【{source_desc}】【{count}】条，耗时【{time_end - time_start}】")
 
    
     def create_pull_task(self, exec_minute: int, tasks: List[JkyPullTask], task_name: str=None, cache_json=CACHE_JSON):

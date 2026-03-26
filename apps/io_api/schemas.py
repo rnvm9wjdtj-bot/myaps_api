@@ -478,17 +478,16 @@ class AcceptSupply(BaseModel):
     matver: Optional[str] = Field(None, max_length=32, example=pdv.MATVER, description='产线版本')
     itemno: str = Field(None, max_length=6, description='项目号', example=pdv.ITEMNO)
     type: gc.SupplyTypeEnum = Field(..., example="MO", description='类型 PL-生产计划 MO-生产工单 ST-库存 PO-采购订单')
-    category: gc.ProductCategoryEnum = Field(gc.ProductCategoryEnum.MTS, example="MTO", description='分类(MTO/MTS)')
-    priority: int = Field(..., description='优先级', example=1)
-    status: gc.OrderStatusEnum = Field(None,
-        example="NEW", description='状态 NEW-新增 CRE-已创建 SCH-计划 REL-已发布 PNF-已报工, CMP-已完成')
+    category: gc.ProductCategoryEnum = Field(gc.ProductCategoryEnum.MTS, example="MTS", description='分类(MTO/MTS)')
+    priority: int = Field(0, description='优先级', example=0)
+    status: gc.OrderStatusEnum = Field("CRE", example="CRE", description='状态 NEW-新增 CRE-已创建 SCH-计划 REL-已发布 PNF-已报工, CMP-已完成')
     avail_qty: float = Field(..., ge=0, description='可用数量', example=100.0)
     create_date: Optional[str] = Field(None, description='创建日期', example="2023-01-01")
     avail_date: str = Field(..., description='可用日期 / 开工日期', example="2023-01-01")
     dt_req: str = Field(..., description='需求日期 / 完工日期', example="2023-01-07")
     avail_end_date: Optional[str] = Field(None, description='可用结束日期', example="2023-01-07")
     batchno: Optional[str] = Field(None, max_length=64, description='批次号', example="BATCH001")
-    vendorno: Optional[str] = Field(None, max_length=64, description='供应商编号', example="V001")
+    vendorno: Optional[str] = Field(None, max_length=64, description='源销售订单号', example="SO001")
     partnerno: Optional[str] = Field(None, max_length=64, description='合作商编号', example="P001")
     partnername: Optional[str] = Field(None, max_length=255, description='合作商名称', example="合作伙伴A")
     free1: Optional[str] = Field(None, max_length=255, description='自定义1', example="自定义内容。。。")
@@ -529,8 +528,14 @@ class AcceptSupply(BaseModel):
         _cache_raw_input_data(cls, values)
         if values.get('itemno') in gc.NONE_AND_EMPTY:
             values['itemno'] = pdv.ITEMNO
+        if values.get("create_date") in gc.NONE_AND_EMPTY:
+            values["create_date"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if values.get("category") == gc.ProductCategoryEnum.MTO and values.get("vendorno") in gc.NONE_AND_EMPTY:
             raise ValueError("MTO订单号vendorno不能为空")
+        if values.get("status") not in gc.OrderStatusEnum.__members__:
+            values["status"] = gc.OrderStatusEnum.CRE
+        if values.get("avail_end_date") in gc.NONE_AND_EMPTY:
+            values["avail_end_date"] = "9999-12-31 00:00:00"
         return values
 
     @model_validator(mode='after')

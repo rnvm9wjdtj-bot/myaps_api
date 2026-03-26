@@ -15,7 +15,8 @@
     "MYAPS_DB_USER": "root",
     "MYAPS_DB_PASSWORD": "E9damw0o@#$",
     "MYAPS_DB_SET": "aps1,aps2",
-    "MYAPS_MAIN_DB": "aps1"
+    "MYAPS_MAIN_DB": "aps1",
+    "LOG_LEVEL": "DEBUG"
   },
   "erp": {
     "org_id": "",

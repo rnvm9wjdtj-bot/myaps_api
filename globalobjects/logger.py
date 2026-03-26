@@ -801,193 +801,203 @@ class SmartLogger(logging.Logger):
     
     def debug(self, msg, *args, **kwargs):
         """记录 DEBUG 级别的日志"""
-        if TERMINAL_SUPPORTS_ANSI:
-            try:
-                # 获取当前时间
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                
-                # 格式化日志消息
-                formatted_msg = msg % args
-                
-                # 使用ANSI颜色代码
-                print(f"{ANSI_COLORS['DEBUG']}{timestamp} - DEBUG - {formatted_msg}{ANSI_COLORS['RESET']}")
-            except Exception:
-                # 如果出错，使用原始方法
+        # 检查当前日志器的级别
+        if self.isEnabledFor(logging.DEBUG):
+            if TERMINAL_SUPPORTS_ANSI:
+                try:
+                    # 获取当前时间
+                    timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                    
+                    # 格式化日志消息
+                    formatted_msg = msg % args
+                    
+                    # 使用ANSI颜色代码
+                    print(f"{ANSI_COLORS['DEBUG']}{timestamp} - DEBUG - {formatted_msg}{ANSI_COLORS['RESET']}")
+                except Exception:
+                    # 如果出错，使用原始方法
+                    super().debug(msg, *args, **kwargs)
+            elif SUPPORT_WINDOWS_API:
+                try:
+                    # 获取当前时间
+                    timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                    
+                    # 格式化日志消息
+                    formatted_msg = msg % args
+                    
+                    # 设置控制台颜色
+                    ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['DEBUG'])
+                    
+                    # 输出日志消息
+                    print(f"{timestamp} - DEBUG - {formatted_msg}")
+                    
+                    # 恢复原始颜色
+                    ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
+                except Exception:
+                    # 如果出错，使用原始方法
+                    super().debug(msg, *args, **kwargs)
+            else:
+                # 如果不支持任何颜色输出，使用原始方法
                 super().debug(msg, *args, **kwargs)
-        elif SUPPORT_WINDOWS_API:
-            try:
-                # 获取当前时间
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                
-                # 格式化日志消息
-                formatted_msg = msg % args
-                
-                # 设置控制台颜色
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['DEBUG'])
-                
-                # 输出日志消息
-                print(f"{timestamp} - DEBUG - {formatted_msg}")
-                
-                # 恢复原始颜色
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
-            except Exception:
-                # 如果出错，使用原始方法
-                super().debug(msg, *args, **kwargs)
-        else:
-            # 如果不支持任何颜色输出，使用原始方法
-            super().debug(msg, *args, **kwargs)
     
     def info(self, msg, *args, **kwargs):
         """记录 INFO 级别的日志"""
-        if TERMINAL_SUPPORTS_ANSI:
-            try:
-                # 获取当前时间
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                
-                # 格式化日志消息
-                formatted_msg = msg % args
-                
-                # 使用ANSI颜色代码
-                print(f"{ANSI_COLORS['INFO']}{timestamp} - INFO - {formatted_msg}{ANSI_COLORS['RESET']}")
-            except Exception:
-                # 如果出错，使用原始方法
+        # 检查当前日志器的级别
+        if self.isEnabledFor(logging.INFO):
+            if TERMINAL_SUPPORTS_ANSI:
+                try:
+                    # 获取当前时间
+                    timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                    
+                    # 格式化日志消息
+                    formatted_msg = msg % args
+                    
+                    # 使用ANSI颜色代码
+                    print(f"{ANSI_COLORS['INFO']}{timestamp} - INFO - {formatted_msg}{ANSI_COLORS['RESET']}")
+                except Exception:
+                    # 如果出错，使用原始方法
+                    super().info(msg, *args, **kwargs)
+            elif SUPPORT_WINDOWS_API:
+                try:
+                    # 获取当前时间
+                    timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                    
+                    # 格式化日志消息
+                    formatted_msg = msg % args
+                    
+                    # 设置控制台颜色
+                    ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['INFO'])
+                    
+                    # 输出日志消息
+                    print(f"{timestamp} - INFO - {formatted_msg}")
+                    
+                    # 恢复原始颜色
+                    ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
+                except Exception:
+                    # 如果出错，使用原始方法
+                    super().info(msg, *args, **kwargs)
+            else:
+                # 如果不支持任何颜色输出，使用原始方法
                 super().info(msg, *args, **kwargs)
-        elif SUPPORT_WINDOWS_API:
-            try:
-                # 获取当前时间
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                
-                # 格式化日志消息
-                formatted_msg = msg % args
-                
-                # 设置控制台颜色
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['INFO'])
-                
-                # 输出日志消息
-                print(f"{timestamp} - INFO - {formatted_msg}")
-                
-                # 恢复原始颜色
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
-            except Exception:
-                # 如果出错，使用原始方法
-                super().info(msg, *args, **kwargs)
-        else:
-            # 如果不支持任何颜色输出，使用原始方法
-            super().info(msg, *args, **kwargs)
     
     def warning(self, msg, *args, **kwargs):
         """记录 WARNING 级别的日志"""
-        if TERMINAL_SUPPORTS_ANSI:
-            try:
-                # 获取当前时间
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                
-                # 格式化日志消息
-                formatted_msg = msg % args
-                
-                # 使用ANSI颜色代码
-                print(f"{ANSI_COLORS['WARNING']}{timestamp} - WARNING - {formatted_msg}{ANSI_COLORS['RESET']}")
-            except Exception:
-                # 如果出错，使用原始方法
+        # 检查当前日志器的级别
+        if self.isEnabledFor(logging.WARNING):
+            if TERMINAL_SUPPORTS_ANSI:
+                try:
+                    # 获取当前时间
+                    timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                    
+                    # 格式化日志消息
+                    formatted_msg = msg % args
+                    
+                    # 使用ANSI颜色代码
+                    print(f"{ANSI_COLORS['WARNING']}{timestamp} - WARNING - {formatted_msg}{ANSI_COLORS['RESET']}")
+                except Exception:
+                    # 如果出错，使用原始方法
+                    super().warning(msg, *args, **kwargs)
+            elif SUPPORT_WINDOWS_API:
+                try:
+                    # 获取当前时间
+                    timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                    
+                    # 格式化日志消息
+                    formatted_msg = msg % args
+                    
+                    # 设置控制台颜色
+                    ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['WARNING'])
+                    
+                    # 输出日志消息
+                    print(f"{timestamp} - WARNING - {formatted_msg}")
+                    
+                    # 恢复原始颜色
+                    ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
+                except Exception:
+                    # 如果出错，使用原始方法
+                    super().warning(msg, *args, **kwargs)
+            else:
+                # 如果不支持任何颜色输出，使用原始方法
                 super().warning(msg, *args, **kwargs)
-        elif SUPPORT_WINDOWS_API:
-            try:
-                # 获取当前时间
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                
-                # 格式化日志消息
-                formatted_msg = msg % args
-                
-                # 设置控制台颜色
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['WARNING'])
-                
-                # 输出日志消息
-                print(f"{timestamp} - WARNING - {formatted_msg}")
-                
-                # 恢复原始颜色
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
-            except Exception:
-                # 如果出错，使用原始方法
-                super().warning(msg, *args, **kwargs)
-        else:
-            # 如果不支持任何颜色输出，使用原始方法
-            super().warning(msg, *args, **kwargs)
     
     def error(self, msg, *args, **kwargs):
         """记录 ERROR 级别的日志"""
-        if TERMINAL_SUPPORTS_ANSI:
-            try:
-                # 获取当前时间
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                
-                # 格式化日志消息
-                formatted_msg = msg % args
-                
-                # 使用ANSI颜色代码
-                print(f"{ANSI_COLORS['ERROR']}{timestamp} - ERROR - {formatted_msg}{ANSI_COLORS['RESET']}")
-            except Exception:
-                # 如果出错，使用原始方法
+        # 检查当前日志器的级别
+        if self.isEnabledFor(logging.ERROR):
+            if TERMINAL_SUPPORTS_ANSI:
+                try:
+                    # 获取当前时间
+                    timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                    
+                    # 格式化日志消息
+                    formatted_msg = msg % args
+                    
+                    # 使用ANSI颜色代码
+                    print(f"{ANSI_COLORS['ERROR']}{timestamp} - ERROR - {formatted_msg}{ANSI_COLORS['RESET']}")
+                except Exception:
+                    # 如果出错，使用原始方法
+                    super().error(msg, *args, **kwargs)
+            elif SUPPORT_WINDOWS_API:
+                try:
+                    # 获取当前时间
+                    timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                    
+                    # 格式化日志消息
+                    formatted_msg = msg % args
+                    
+                    # 设置控制台颜色
+                    ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['ERROR'])
+                    
+                    # 输出日志消息
+                    print(f"{timestamp} - ERROR - {formatted_msg}")
+                    
+                    # 恢复原始颜色
+                    ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
+                except Exception:
+                    # 如果出错，使用原始方法
+                    super().error(msg, *args, **kwargs)
+            else:
+                # 如果不支持任何颜色输出，使用原始方法
                 super().error(msg, *args, **kwargs)
-        elif SUPPORT_WINDOWS_API:
-            try:
-                # 获取当前时间
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                
-                # 格式化日志消息
-                formatted_msg = msg % args
-                
-                # 设置控制台颜色
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['ERROR'])
-                
-                # 输出日志消息
-                print(f"{timestamp} - ERROR - {formatted_msg}")
-                
-                # 恢复原始颜色
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
-            except Exception:
-                # 如果出错，使用原始方法
-                super().error(msg, *args, **kwargs)
-        else:
-            # 如果不支持任何颜色输出，使用原始方法
-            super().error(msg, *args, **kwargs)
     
     def critical(self, msg, *args, **kwargs):
         """记录 CRITICAL 级别的日志"""
-        if TERMINAL_SUPPORTS_ANSI:
-            try:
-                # 获取当前时间
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                
-                # 格式化日志消息
-                formatted_msg = msg % args
-                
-                # 使用ANSI颜色代码
-                print(f"{ANSI_COLORS['CRITICAL']}{timestamp} - CRITICAL - {formatted_msg}{ANSI_COLORS['RESET']}")
-            except Exception:
-                # 如果出错，使用原始方法
+        # 检查当前日志器的级别
+        if self.isEnabledFor(logging.CRITICAL):
+            if TERMINAL_SUPPORTS_ANSI:
+                try:
+                    # 获取当前时间
+                    timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                    
+                    # 格式化日志消息
+                    formatted_msg = msg % args
+                    
+                    # 使用ANSI颜色代码
+                    print(f"{ANSI_COLORS['CRITICAL']}{timestamp} - CRITICAL - {formatted_msg}{ANSI_COLORS['RESET']}")
+                except Exception:
+                    # 如果出错，使用原始方法
+                    super().critical(msg, *args, **kwargs)
+            elif SUPPORT_WINDOWS_API:
+                try:
+                    # 获取当前时间
+                    timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                    
+                    # 格式化日志消息
+                    formatted_msg = msg % args
+                    
+                    # 设置控制台颜色
+                    ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['CRITICAL'])
+                    
+                    # 输出日志消息
+                    print(f"{timestamp} - CRITICAL - {formatted_msg}")
+                    
+                    # 恢复原始颜色
+                    ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
+                except Exception:
+                    # 如果出错，使用原始方法
+                    super().critical(msg, *args, **kwargs)
+            else:
+                # 如果不支持任何颜色输出，使用原始方法
                 super().critical(msg, *args, **kwargs)
-        elif SUPPORT_WINDOWS_API:
-            try:
-                # 获取当前时间
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                
-                # 格式化日志消息
-                formatted_msg = msg % args
-                
-                # 设置控制台颜色
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['CRITICAL'])
-                
-                # 输出日志消息
-                print(f"{timestamp} - CRITICAL - {formatted_msg}")
-                
-                # 恢复原始颜色
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
-            except Exception:
-                # 如果出错，使用原始方法
-                super().critical(msg, *args, **kwargs)
-        else:
-            # 如果不支持任何颜色输出，使用原始方法
-            super().critical(msg, *args, **kwargs)
     
     def success(self, action: str, subject: str = "", details: str = "", to_file: bool = False) -> None:
         """
@@ -1322,12 +1332,13 @@ def get_file_logger(name: str) -> logging.Logger:
     return logger
 
 
-def get_logger(name: Optional[str] = None) -> logging.Logger:
+def get_logger(name: Optional[str] = None, level: str = 'INFO') -> logging.Logger:
     """
     获取统一的日志器
     
     Args:
         name: 日志器名称，默认使用调用模块的名称
+        level: 日志级别，默认 'INFO'，可设置为 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'
         
     Returns:
         配置好的日志器实例
@@ -1353,7 +1364,7 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
                 del frame
     
     # 获取基础日志器
-    logger = setup_logger(name)
+    logger = setup_logger(name, level=level)
     
     return logger
 

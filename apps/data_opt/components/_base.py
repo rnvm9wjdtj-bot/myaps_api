@@ -22,9 +22,9 @@ from globalobjects import globalconst, logger as log_config, CACHE_JSON, Project
 from globalobjects.json_manager import JSONManager
 
 
-# 获取统一日志器
-console_log = log_config.get_logger(__name__)
-file_log = log_config.get_file_logger(__name__)
+
+logger = log_config.get_logger(__name__)
+
 
 SESSION = get_session()
 
@@ -98,9 +98,9 @@ class ApsHelpers:
             stock_data = stock_data.to_dict('records')
         refresh_result = SESSION.put(url=f"{THIS_BASE_URL}/api/t_supply/type/ST?db_name={dbs}", json=stock_data)
         if refresh_result.json()['success']:
-            file_log.success("刷新库存", "", f"账套{dbs}")
+            logger.success("刷新库存", "", f"账套{dbs}")
         else:
-            file_log.fail("刷新库存", "", refresh_result.json()['message'])
+            logger.fail("刷新库存", "", refresh_result.json()['message'])
 
 
     @staticmethod
@@ -110,10 +110,10 @@ class ApsHelpers:
         🅰 workreport_data: 工作报工数据
         🅰 db_name: 账套名称，默认MYAPS_MAIN_DB
         """
-        file_log.start("确认报工记录任务")
+        logger.start("确认报工记录任务")
         response = SESSION.patch(f"{THIS_BASE_URL}/api/t_confirm?db_name={db_name}")
         response.raise_for_status()
-        console_log.success("确认报工记录任务")
+        logger.success("确认报工记录任务")
         return response.json()
 
 
@@ -131,34 +131,33 @@ class ApsHelpers:
         """
         mono = mono or native_plno
         try:
-            console_log.query("PL信息", native_plno, "")
+            logger.query("PL信息", native_plno, "")
             query_result = SESSION.get(f"{THIS_BASE_URL}/api/v_supply_mo/{native_plno}?db_name={MYAPS_MAIN_DB}")
-            console_log.info(f"查询PL信息响应：{query_result.status_code}")
+            logger.info(f"查询PL信息响应：{query_result.status_code}")
             query_result_json = query_result.json()
 
             if query_result_json['success'] == 0:
-                console_log.fail("PL查询", native_plno, query_result_json['message'])
+                logger.fail("PL查询", native_plno, query_result_json['message'])
                 return standard_response(status_code=query_result_json['status_code'], success=0, message=query_result_json['message'])
 
             query_data = query_result_json['data']
             if not query_data or len(query_data) > 1:
-                file_log.fail("PL查询", native_plno, "未找到或多条匹配")
+                logger.fail("PL查询", native_plno, "未找到或多条匹配", to_file=True)
                 return standard_response(success=0, message=f"PL {native_plno} not found or multiple records matched.")
 
             if query_data[0]["type"] != "PL":
-                file_log.fail("PL查询", native_plno, "非PL类型")
+                logger.fail("PL查询", native_plno, "非PL类型", to_file=True)
                 return standard_response(status_code=400, success=0, message=f"Supply {native_plno} is not a PL.")
 
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             log_msg = f"推送计划任务成功，账套{MYAPS_MAIN_DB}，PL单号{native_plno}，MO单号{mono}"
-            console_log.success("计划任务推送", "", log_msg)
-            file_log.success("计划任务推送", "", log_msg)
+            logger.success("计划任务推送", "", log_msg, to_file=True)
             memo = json.dumps({
                 "msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now,
                 "native_no": native_plno, "_code": mono, "_id": _id, "_entryid": _entryid}, ensure_ascii=False
             )
 
-            console_log.update("PL状态", native_plno, f"目标状态{to_status}，MO单号{mono}")
+            logger.update("PL状态", native_plno, f"目标状态{to_status}，MO单号{mono}")
             response = SESSION.patch(f'{THIS_BASE_URL}/api/t_supply/{native_plno}?db_name={MYAPS_MAIN_DB}', json={
                 'status': to_status,
                 'apiex_sn': str(mono),
@@ -167,12 +166,11 @@ class ApsHelpers:
                 'supplyno': str(mono),
                 'memo': memo,
             })
-            console_log.info(f"更新PL状态响应：{response.status_code}，{response.text}")
+            logger.info(f"更新PL状态响应：{response.status_code}，{response.text}")
             return response
         except Exception as e:
             error_msg = f"更新PL状态为MO时发生网络错误：{str(e)}"
-            file_log.fail("PL状态更新", native_plno, error_msg)
-            console_log.fail("PL状态更新", native_plno, error_msg)
+            logger.fail("PL状态更新", native_plno, error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
 
 
@@ -180,22 +178,20 @@ class ApsHelpers:
     def _pl_release_failed(native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, data: dict=None, msg_from: str=None):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_msg = f"推送计划任务失败，账套{MYAPS_MAIN_DB}，PL单号{native_plno}，错误信息{msg}，数据{data}"
-        console_log.fail("计划任务推送", native_plno, log_msg)
-        file_log.fail("计划任务推送", native_plno, log_msg)
+        logger.fail("计划任务推送", native_plno, log_msg)
         memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
         
         try:
-            console_log.update("PL状态", native_plno, f"目标状态{to_status}")
+            logger.update("PL状态", native_plno, f"目标状态{to_status}")
             response = SESSION.patch(f'{THIS_BASE_URL}/api/t_supply/{native_plno}/...?db_name={MYAPS_MAIN_DB}', json={
                 'status': to_status,
                 'memo': memo,
             })
-            console_log.info(f"更新PL状态响应：{response.status_code}，{response.text}")
+            logger.info(f"更新PL状态响应：{response.status_code}，{response.text}")
             return response
         except Exception as e:
             error_msg = f"更新PL状态时发生网络错误：{str(e)}"
-            file_log.fail("PL状态更新", native_plno, error_msg)
-            console_log.fail("PL状态更新", native_plno, error_msg)
+            logger.fail("PL状态更新", native_plno, error_msg)
             return None
 
 
@@ -205,17 +201,16 @@ class ApsHelpers:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": rsno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
             
-            console_log.update("RS状态", rsno, f"目标状态{to_status}")
+            logger.update("RS状态", rsno, f"目标状态{to_status}")
             response = SESSION.patch(f'{THIS_BASE_URL}/api/t_demand/{rsno}/.../...?db_name={MYAPS_MAIN_DB}', json={
                 'status': to_status,
                 'memo': memo,
             })
-            console_log.info(f"更新RS状态响应：{response.status_code}，{response.text}")
+            logger.info(f"更新RS状态响应：{response.status_code}，{response.text}")
             return response
         except Exception as e:
             error_msg = f"更新RS状态时发生网络错误：{str(e)}"
-            file_log.fail("RS状态更新", rsno, error_msg)
-            console_log.fail("RS状态更新", rsno, error_msg)
+            logger.fail("RS状态更新", rsno, error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
 
 
@@ -224,17 +219,16 @@ class ApsHelpers:
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
-            console_log.update("RS失败状态", rsno, "")
-            file_log.fail("领料申请推送", rsno, f"错误信息{msg}，数据{data}")
+            logger.update("RS失败状态", rsno, "")
+            logger.fail("领料申请推送", rsno, f"错误信息{msg}，数据{data}", to_file=True)
             response = SESSION.patch(f'{THIS_BASE_URL}/api/t_demand/{rsno}/.../...?db_name={MYAPS_MAIN_DB}', json={
                 'memo': memo,
             })
-            console_log.info(f"更新RS失败状态响应：{response.status_code}，{response.text}")
+            logger.info(f"更新RS失败状态响应：{response.status_code}，{response.text}")
             return response
         except Exception as e:
             error_msg = f"更新RS失败状态时发生网络错误：{str(e)}"
-            file_log.fail("RS状态更新", rsno, error_msg)
-            console_log.fail("RS状态更新", rsno, error_msg)
+            logger.fail("RS状态更新", rsno, error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
 
 
@@ -243,16 +237,15 @@ class ApsHelpers:
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": prno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
-            console_log.update("PR状态", prno, "")
+            logger.update("PR状态", prno, "")
             response = SESSION.patch(f'{THIS_BASE_URL}/api/t_supply/{prno}/...?db_name={MYAPS_MAIN_DB}', json={
                 'memo': memo,
             })
-            console_log.info(f"更新PR状态响应：{response.status_code}，{response.text}")
+            logger.info(f"更新PR状态响应：{response.status_code}，{response.text}")
             return response
         except Exception as e:
             error_msg = f"更新PR状态时发生网络错误：{str(e)}"
-            file_log.fail("PR状态更新", prno, error_msg)
-            console_log.fail("PR状态更新", prno, error_msg)
+            logger.fail("PR状态更新", prno, error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
 
 
@@ -261,16 +254,15 @@ class ApsHelpers:
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
-            console_log.update("PR失败状态", prno, "")
+            logger.update("PR失败状态", prno, "")
             response = SESSION.patch(f'{THIS_BASE_URL}/api/t_supply/{prno}/...?db_name={MYAPS_MAIN_DB}', json={
                 'memo': memo,
             })
-            console_log.info(f"更新PR失败状态响应：{response.status_code}，{response.text}")
+            logger.info(f"更新PR失败状态响应：{response.status_code}，{response.text}")
             return response
         except Exception as e:
             error_msg = f"更新PR失败状态时发生网络错误：{str(e)}"
-            file_log.fail("PR状态更新", prno, error_msg)
-            console_log.fail("PR状态更新", prno, error_msg)
+            logger.fail("PR状态更新", prno, error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
 
 

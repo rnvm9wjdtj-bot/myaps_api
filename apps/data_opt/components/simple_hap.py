@@ -9,7 +9,7 @@ from decimal import Decimal
 
 from ..utils.data_processor import DataProcessor
 from ..utils.common import parallel_executor
-from ._base import get_session, file_log, console_log
+from ._base import get_session, logger
 
 
 # 调用刷新函数时，距离上次刷新超过这个秒数，才会刷新行数据，否则直接返回缓存数据
@@ -947,7 +947,7 @@ class HapRowsQuery:
         
         # 如果数据量过大，抛出警告
         if total_count > 10000:
-            print(f"警告：数据量较大 ({total_count} 条)，可能会导致内存溢出。建议使用 stream() 方法。")
+            logger.warning_msg("数据量警告", f"数据量较大 ({total_count} 条)，可能会导致内存溢出。建议使用 stream() 方法。")
         
         # 计算需要的页数
         page_size = min(self.limit, self.page_size) if self.limit else self.page_size

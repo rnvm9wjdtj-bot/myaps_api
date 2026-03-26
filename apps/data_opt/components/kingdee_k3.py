@@ -8,6 +8,7 @@ from typing import Dict, Any#NamedTuple, List#, Callable, Literal,
 # import requests
 
 from globalobjects import logger as log_config
+import os
 
 from ._base import (
     BaseConnection, convert_timeunit, clean_value, #reset_default_values,
@@ -17,8 +18,9 @@ from ._base import (
     CACHE_JSON
 )
 
+LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 # 获取日志器
-logger = log_config.get_logger(__name__)
+logger = log_config.get_logger(__name__, level=LOG_LEVEL)
 
 
 

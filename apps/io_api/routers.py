@@ -380,7 +380,7 @@ async def patch_supply(
 @rt.put("/t_supply/type/{type_}",
     tags=["生产数据 - 供应"],
     summary="按类型替换供应记录",
-    description="根据供应类型删除所有该类型的供应记录，然后新增这些供应记录。可用于库存刷新等场景"
+    description="根据供应类型删除所有该类型的供应记录，然后新增这些供应记录。可用于库存、PO等单据刷新"
 )
 async def replace_supply(
     db_name: str = common_params["db_name"],
@@ -390,7 +390,7 @@ async def replace_supply(
 ):
     wrong_type_count = 0
     for item in data:
-        if item['type'] != type_:
+        if item.get('type') != type_:
             wrong_type_count += 1
     if wrong_type_count > 0:
         return standard_response(

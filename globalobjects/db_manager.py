@@ -10,9 +10,11 @@ from tortoise.exceptions import IntegrityError
 from config.settings import MYAPS_DBSET_LIST
 from apps.io_api.utils.common import dict_to_lower_keys
 from globalobjects import logger as log_config
+import os
 
+LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 # 获取统一日志器
-logger = log_config.get_logger(__name__)
+logger = log_config.get_logger(__name__, level=LOG_LEVEL)
 
 
 def with_transaction(func):

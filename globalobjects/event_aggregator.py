@@ -7,7 +7,7 @@
 3. 支持去重
 4. 支持分组处理
 """
-
+import os
 import threading
 import time
 from collections import defaultdict
@@ -15,7 +15,12 @@ from typing import Callable, Any, List, Dict, Set
 
 from globalobjects import logger as log_config
 
-logger = log_config.get_logger(__name__)
+import os
+LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
+
+logger = log_config.get_logger(__name__, level=LOG_LEVEL)
+
+
 
 
 class EventAggregator:
