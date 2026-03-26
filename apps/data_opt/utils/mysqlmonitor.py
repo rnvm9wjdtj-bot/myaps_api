@@ -175,18 +175,18 @@ class MySQLBinlogMonitor:
                                 cursor.execute(f"DESCRIBE `{table}`")
                                 columns = [row[0] for row in cursor.fetchall()]
                                 self._table_schemas[database][table] = columns
-                                logger.debug(f"预加载表结构: {database}.{table} -> {len(columns)}列")
+                                logger.debug(f"预加载表结构: {table}@{database} -> {len(columns)}列")
                             except Exception as e:
-                                logger.warning_msg("表结构获取", f"{database}.{table}", str(e))
+                                logger.warning_msg("表结构获取", f"{table}@{database}", str(e))
                                 
                 except Exception as e:
-                    logger.warning_msg("数据库预加载", database, str(e))
+                    logger.warning_msg("数据库预加载", f"@{database}",  str(e))
             
             total_tables = sum(len(tables) for tables in self._table_schemas.values())
-            logger.success("表结构预加载", "", f"{len(self._table_schemas)}个数据库，共{total_tables}个表")
+            logger.success("表结构预加载", f"@{database}", f"{len(self._table_schemas)}个数据库，共{total_tables}个表")
                     
         except Exception as e:
-            logger.fail("表结构预加载", "", str(e))
+            logger.fail("表结构预加载", f"@{database}", str(e))
 
     def _get_correct_table_name(self, database, table_name):
         """获取正确的表名（解决大小写问题）"""
@@ -424,7 +424,7 @@ class MySQLBinlogMonitor:
         
         try:
             stream = BinLogStreamReader(**stream_config)
-            logger.success("Binlog监控", "", "开始监控")
+            logger.success("Binlog监控", f"@{MYAPS_MAIN_DB}", "开始监控")
             
             for binlogevent in stream:
                 if not self.running:
@@ -645,10 +645,10 @@ class MySQLBinlogMonitor:
         # 关闭线程池
         try:
             self._thread_pool.shutdown(wait=True)
-            logger.success("线程池", "", "已关闭")
+            logger.success("线程池", f"{self._thread_pool}", "已关闭")
         except Exception as e:
-            logger.fail("线程池关闭", "", str(e))
-        logger.success("Binlog监控", "", "已停止")
+            logger.fail("线程池关闭", f"{self._thread_pool}", str(e))
+        logger.success("Binlog监控", f"@{MYAPS_MAIN_DB}", "已停止")
 
     @staticmethod
     def get_mysql_config(is_single_db=True):

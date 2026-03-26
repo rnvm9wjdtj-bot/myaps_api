@@ -185,16 +185,16 @@ class LogHelper:
         API_RESPONSE_WITH_DATA = "{emoji} {api_name}响应：{status_code}，{details}"
         
         QUERY_RESULT = "{emoji} 查询{target}：{result}"
-        QUERY_RESULT_WITH_COUNT = "{emoji} 查询{target}成功：共{count}条"
+        QUERY_RESULT_WITH_COUNT = "{emoji} 查询{target}成功：共{count}条数据"
         
         DATA_INSERT = "{emoji} 插入{target}：{subject}"
-        DATA_INSERT_WITH_COUNT = "{emoji} 插入{target}成功：共{count}条"
+        DATA_INSERT_WITH_COUNT = "{emoji} 插入{target}成功：共{count}条数据"
         
         DATA_UPDATE = "{emoji} 更新{target}：{subject}"
-        DATA_UPDATE_WITH_COUNT = "{emoji} 更新{target}成功：共{count}条"
+        DATA_UPDATE_WITH_COUNT = "{emoji} 更新{target}成功：共{count}条数据"
         
         DATA_DELETE = "{emoji} 删除{target}：{subject}"
-        DATA_DELETE_WITH_COUNT = "{emoji} 删除{target}成功：共{count}条"
+        DATA_DELETE_WITH_COUNT = "{emoji} 删除{target}成功：共{count}条数据"
         
         WARNING = "{emoji} {subject}：{message}"
         ERROR = "{emoji} {subject}：{message}"
@@ -576,16 +576,6 @@ class LogHelper:
 logger_instances = {}
 listeners = {}
 
-# 存储日志器实例
-_loggers: Dict[str, logging.Logger] = {}
-_file_loggers: Dict[str, logging.Logger] = {}
-
-# 是否已初始化
-_initialized = False
-
-# 模块日志器
-_module_logger = None
-
 
 class DatePrefixRotatingFileHandler(TimedRotatingFileHandler):
     """自定义的按时间轮转的文件处理器，支持日期前缀"""
@@ -597,39 +587,32 @@ class DatePrefixRotatingFileHandler(TimedRotatingFileHandler):
         self.encoding = kwargs.get('encoding', 'utf-8')
         # 计算初始轮替时间
         self.rolloverAt = self.computeRollover(int(time.time()))
-        get_module_logger().debug(f"初始化轮替时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.rolloverAt))}")
     
     def emit(self, record):
         """重写 emit 方法，确保轮替检查能够正常执行"""
         # 检查是否需要轮替
         current_time = int(time.time())
         if current_time >= self.rolloverAt:
-            get_module_logger().debug(f"触发轮替检查，当前时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(current_time))}, 轮替时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.rolloverAt))}")
             self.doRollover()
         super().emit(record)
     
     def doRollover(self):
         """重写轮转方法，实现日期前缀"""
-        get_module_logger().debug("开始执行轮替操作")
         if self.stream:
             self.stream.close()
             self.stream = None
-            get_module_logger().debug("已关闭当前日志流")
             
         # 获取当前时间
         current_time = int(time.time())
-        get_module_logger().debug(f"当前时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(current_time))}")
         
         # 计算下一次轮转的时间
         self.rolloverAt = self.computeRollover(current_time)
-        get_module_logger().debug(f"下一次轮替时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.rolloverAt))}")
         
         # 处理文件名
         if self.backupCount > 0:
             # 获取原始文件名的信息
             base_dir, filename = os.path.split(self.baseFilename)
             name_without_ext, ext = os.path.splitext(filename)
-            get_module_logger().debug(f"原始文件名: {filename}")
             
             # 计算日志文件的实际日期（轮替前的一天）
             log_date = current_time - 86400  # 减去一天的秒数
@@ -639,12 +622,10 @@ class DatePrefixRotatingFileHandler(TimedRotatingFileHandler):
             # 新的文件名格式：[日期前缀]_[原始文件名][扩展名]
             new_filename = f"{date_prefix}_{name_without_ext}{ext}"
             new_filepath = os.path.join(base_dir, new_filename)
-            get_module_logger().debug(f"新文件名: {new_filename}")
             
             # 如果文件已存在，先删除
             if os.path.exists(new_filepath):
                 os.remove(new_filepath)
-                get_module_logger().debug(f"已删除已存在的文件: {new_filepath}")
             
             # 重命名当前文件（带重试机制，解决Windows文件占用问题）
             if os.path.exists(self.baseFilename):
@@ -653,38 +634,19 @@ class DatePrefixRotatingFileHandler(TimedRotatingFileHandler):
                 for attempt in range(max_retries):
                     try:
                         os.rename(self.baseFilename, new_filepath)
-                        get_module_logger().debug(f"已重命名文件: {self.baseFilename} -> {new_filepath}")
                         break
                     except PermissionError:
                         if attempt < max_retries - 1:
-                            get_module_logger().debug(f"文件被占用，等待后重试 ({attempt + 1}/{max_retries})")
                             time.sleep(retry_delay)
                         else:
-                            get_module_logger().error(f"重命名文件失败，已达到最大重试次数: {self.baseFilename}")
                             raise
         
         # 重新打开文件
         self.mode = 'a'
         self.stream = self._open()
-        get_module_logger().debug(f"已重新打开日志文件: {self.baseFilename}")
-        get_module_logger().debug("轮替操作完成")
 
 
-def get_module_logger() -> logging.Logger:
-    """获取模块日志器"""
-    global _module_logger
-    if _module_logger is None:
-        _module_logger = logging.getLogger(__name__)
-        _module_logger.setLevel(logging.DEBUG)
-        _module_logger.propagate = False
-        
-        # 配置控制台日志
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(logging.DEBUG)
-        formatter = logging.Formatter(DEFAULT_LOG_FORMAT)
-        console_handler.setFormatter(formatter)
-        _module_logger.addHandler(console_handler)
-    return _module_logger
+
 
 
 def setup_file_logging(log_name: str, log_filename='app.log') -> logging.Logger:
@@ -720,7 +682,6 @@ def setup_file_logging(log_name: str, log_filename='app.log') -> logging.Logger:
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
     # 创建按时间轮替的 FileHandler（支持日期前缀）
-    get_module_logger().debug(f"创建日志处理器: {log_filename}")
     timed_handler = DatePrefixRotatingFileHandler(
         filename=os.path.join(log_dir, log_filename),
         when='midnight',
@@ -746,7 +707,6 @@ def setup_file_logging(log_name: str, log_filename='app.log') -> logging.Logger:
     logger_instances[logger_key] = logger
 
     # 注意：这里不在这里启动 listener，而是在 lifespan 的启动阶段启动
-    get_module_logger().debug(f"日志配置完成: {logger_key}")
     return logger
 
 
@@ -755,9 +715,8 @@ def start_all_listeners():
     for key, listener in listeners.items():
         try:
             listener.start()
-            get_module_logger().debug(f"已启动日志监听器: {key}")
         except Exception as e:
-            get_module_logger().error(f"启动日志监听器失败 {key}: {e}")
+            pass
 
 
 def close_logging():
@@ -796,300 +755,10 @@ def get_log_level(level_name: str) -> int:
     return LOG_LEVELS.get(level_name.upper(), logging.INFO)
 
 
-def setup_console_logger(logger: logging.Logger, level: int = logging.INFO) -> None:
-    """
-    配置控制台日志处理器（支持彩色输出）
-    
-    Args:
-        logger: 日志器实例
-        level: 日志级别
-    """
-    # 移除已有的控制台处理器
-    for handler in logger.handlers:
-        if isinstance(handler, logging.StreamHandler):
-            logger.removeHandler(handler)
-    
-    # 移除logger的所有处理器
-    for handler in logger.handlers[:]:
-        logger.removeHandler(handler)
-    
-    # 设置logger的级别
-    logger.setLevel(level)
-    
-    # 重写logger的debug、info、warning、error和critical方法
-    original_debug = logger.debug
-    original_info = logger.info
-    original_warning = logger.warning
-    original_error = logger.error
-    original_critical = logger.critical
-    
-    def debug_wrapper(msg, *args, **kwargs):
-        """包装debug方法，添加彩色输出"""
-        if TERMINAL_SUPPORTS_ANSI:
-            try:
-                # 获取当前时间
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                
-                # 格式化日志消息
-                formatted_msg = msg % args
-                
-                # 使用ANSI颜色代码
-                print(f"{ANSI_COLORS['DEBUG']}{timestamp} - DEBUG - {formatted_msg}{ANSI_COLORS['RESET']}")
-            except Exception:
-                # 如果出错，使用原始方法
-                original_debug(msg, *args, **kwargs)
-        elif SUPPORT_WINDOWS_API:
-            try:
-                # 获取当前时间
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                
-                # 格式化日志消息
-                formatted_msg = msg % args
-                
-                # 设置控制台颜色
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['DEBUG'])
-                
-                # 输出日志消息
-                print(f"{timestamp} - DEBUG - {formatted_msg}")
-                
-                # 恢复原始颜色
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
-            except Exception:
-                # 如果出错，使用原始方法
-                original_debug(msg, *args, **kwargs)
-        else:
-            # 如果不支持任何颜色输出，使用原始方法
-            original_debug(msg, *args, **kwargs)
-    
-    def info_wrapper(msg, *args, **kwargs):
-        """包装info方法，添加彩色输出"""
-        if TERMINAL_SUPPORTS_ANSI:
-            try:
-                # 获取当前时间
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                
-                # 格式化日志消息
-                formatted_msg = msg % args
-                
-                # 使用ANSI颜色代码
-                print(f"{ANSI_COLORS['INFO']}{timestamp} - INFO - {formatted_msg}{ANSI_COLORS['RESET']}")
-            except Exception:
-                # 如果出错，使用原始方法
-                original_info(msg, *args, **kwargs)
-        elif SUPPORT_WINDOWS_API:
-            try:
-                # 获取当前时间
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                
-                # 格式化日志消息
-                formatted_msg = msg % args
-                
-                # 设置控制台颜色
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['INFO'])
-                
-                # 输出日志消息
-                print(f"{timestamp} - INFO - {formatted_msg}")
-                
-                # 恢复原始颜色
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
-            except Exception:
-                # 如果出错，使用原始方法
-                original_info(msg, *args, **kwargs)
-        else:
-            # 如果不支持任何颜色输出，使用原始方法
-            original_info(msg, *args, **kwargs)
-    
-    def warning_wrapper(msg, *args, **kwargs):
-        """包装warning方法，添加彩色输出"""
-        if TERMINAL_SUPPORTS_ANSI:
-            try:
-                # 获取当前时间
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                
-                # 格式化日志消息
-                formatted_msg = msg % args
-                
-                # 使用ANSI颜色代码
-                print(f"{ANSI_COLORS['WARNING']}{timestamp} - WARNING - {formatted_msg}{ANSI_COLORS['RESET']}")
-            except Exception:
-                # 如果出错，使用原始方法
-                original_warning(msg, *args, **kwargs)
-        elif SUPPORT_WINDOWS_API:
-            try:
-                # 获取当前时间
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                
-                # 格式化日志消息
-                formatted_msg = msg % args
-                
-                # 设置控制台颜色
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['WARNING'])
-                
-                # 输出日志消息
-                print(f"{timestamp} - WARNING - {formatted_msg}")
-                
-                # 恢复原始颜色
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
-            except Exception:
-                # 如果出错，使用原始方法
-                original_warning(msg, *args, **kwargs)
-        else:
-            # 如果不支持任何颜色输出，使用原始方法
-            original_warning(msg, *args, **kwargs)
-    
-    def error_wrapper(msg, *args, **kwargs):
-        """包装error方法，添加彩色输出"""
-        if TERMINAL_SUPPORTS_ANSI:
-            try:
-                # 获取当前时间
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                
-                # 格式化日志消息
-                formatted_msg = msg % args
-                
-                # 使用ANSI颜色代码
-                print(f"{ANSI_COLORS['ERROR']}{timestamp} - ERROR - {formatted_msg}{ANSI_COLORS['RESET']}")
-            except Exception:
-                # 如果出错，使用原始方法
-                original_error(msg, *args, **kwargs)
-        elif SUPPORT_WINDOWS_API:
-            try:
-                # 获取当前时间
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                
-                # 格式化日志消息
-                formatted_msg = msg % args
-                
-                # 设置控制台颜色
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['ERROR'])
-                
-                # 输出日志消息
-                print(f"{timestamp} - ERROR - {formatted_msg}")
-                
-                # 恢复原始颜色
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
-            except Exception:
-                # 如果出错，使用原始方法
-                original_error(msg, *args, **kwargs)
-        else:
-            # 如果不支持任何颜色输出，使用原始方法
-            original_error(msg, *args, **kwargs)
-    
-    def critical_wrapper(msg, *args, **kwargs):
-        """包装critical方法，添加彩色输出"""
-        if TERMINAL_SUPPORTS_ANSI:
-            try:
-                # 获取当前时间
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                
-                # 格式化日志消息
-                formatted_msg = msg % args
-                
-                # 使用ANSI颜色代码
-                print(f"{ANSI_COLORS['CRITICAL']}{timestamp} - CRITICAL - {formatted_msg}{ANSI_COLORS['RESET']}")
-            except Exception:
-                # 如果出错，使用原始方法
-                original_critical(msg, *args, **kwargs)
-        elif SUPPORT_WINDOWS_API:
-            try:
-                # 获取当前时间
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-                
-                # 格式化日志消息
-                formatted_msg = msg % args
-                
-                # 设置控制台颜色
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['CRITICAL'])
-                
-                # 输出日志消息
-                print(f"{timestamp} - CRITICAL - {formatted_msg}")
-                
-                # 恢复原始颜色
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
-            except Exception:
-                # 如果出错，使用原始方法
-                original_critical(msg, *args, **kwargs)
-        else:
-            # 如果不支持任何颜色输出，使用原始方法
-            original_critical(msg, *args, **kwargs)
-    
-    # 替换logger的方法
-    logger.debug = debug_wrapper
-    logger.info = info_wrapper
-    logger.warning = warning_wrapper
-    logger.error = error_wrapper
-    logger.critical = critical_wrapper
 
 
-# 定义一个彩色日志器类
-class ColoredLogger(logging.Logger):
-    """彩色日志器类"""
-    def debug(self, msg, *args, **kwargs):
-        """记录 DEBUG 级别的日志"""
-        # 直接使用Windows API设置控制台颜色
-        if SUPPORT_WINDOWS_API:
-            try:
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['DEBUG'])
-                super().debug(msg, *args, **kwargs)
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
-            except Exception:
-                super().debug(msg, *args, **kwargs)
-        else:
-            super().debug(msg, *args, **kwargs)
-    
-    def info(self, msg, *args, **kwargs):
-        """记录 INFO 级别的日志"""
-        # 直接使用Windows API设置控制台颜色
-        if SUPPORT_WINDOWS_API:
-            try:
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['INFO'])
-                super().info(msg, *args, **kwargs)
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
-            except Exception:
-                super().info(msg, *args, **kwargs)
-        else:
-            super().info(msg, *args, **kwargs)
-    
-    def warning(self, msg, *args, **kwargs):
-        """记录 WARNING 级别的日志"""
-        # 直接使用Windows API设置控制台颜色
-        if SUPPORT_WINDOWS_API:
-            try:
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['WARNING'])
-                super().warning(msg, *args, **kwargs)
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
-            except Exception:
-                super().warning(msg, *args, **kwargs)
-        else:
-            super().warning(msg, *args, **kwargs)
-    
-    def error(self, msg, *args, **kwargs):
-        """记录 ERROR 级别的日志"""
-        # 直接使用Windows API设置控制台颜色
-        if SUPPORT_WINDOWS_API:
-            try:
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['ERROR'])
-                super().error(msg, *args, **kwargs)
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
-            except Exception:
-                super().error(msg, *args, **kwargs)
-        else:
-            super().error(msg, *args, **kwargs)
-    
-    def critical(self, msg, *args, **kwargs):
-        """记录 CRITICAL 级别的日志"""
-        # 直接使用Windows API设置控制台颜色
-        if SUPPORT_WINDOWS_API:
-            try:
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['CRITICAL'])
-                super().critical(msg, *args, **kwargs)
-                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
-            except Exception:
-                super().critical(msg, *args, **kwargs)
-        else:
-            super().critical(msg, *args, **kwargs)
 
-class SmartLogger(ColoredLogger):
+class SmartLogger(logging.Logger):
     """
     智能日志器类，扩展便捷方法，支持同时输出到控制台和文件
     
@@ -1129,6 +798,196 @@ class SmartLogger(ColoredLogger):
         """
         if self._auto_file_enabled and self._file_logger:
             self._file_logger.log(level, msg)
+    
+    def debug(self, msg, *args, **kwargs):
+        """记录 DEBUG 级别的日志"""
+        if TERMINAL_SUPPORTS_ANSI:
+            try:
+                # 获取当前时间
+                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                
+                # 格式化日志消息
+                formatted_msg = msg % args
+                
+                # 使用ANSI颜色代码
+                print(f"{ANSI_COLORS['DEBUG']}{timestamp} - DEBUG - {formatted_msg}{ANSI_COLORS['RESET']}")
+            except Exception:
+                # 如果出错，使用原始方法
+                super().debug(msg, *args, **kwargs)
+        elif SUPPORT_WINDOWS_API:
+            try:
+                # 获取当前时间
+                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                
+                # 格式化日志消息
+                formatted_msg = msg % args
+                
+                # 设置控制台颜色
+                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['DEBUG'])
+                
+                # 输出日志消息
+                print(f"{timestamp} - DEBUG - {formatted_msg}")
+                
+                # 恢复原始颜色
+                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
+            except Exception:
+                # 如果出错，使用原始方法
+                super().debug(msg, *args, **kwargs)
+        else:
+            # 如果不支持任何颜色输出，使用原始方法
+            super().debug(msg, *args, **kwargs)
+    
+    def info(self, msg, *args, **kwargs):
+        """记录 INFO 级别的日志"""
+        if TERMINAL_SUPPORTS_ANSI:
+            try:
+                # 获取当前时间
+                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                
+                # 格式化日志消息
+                formatted_msg = msg % args
+                
+                # 使用ANSI颜色代码
+                print(f"{ANSI_COLORS['INFO']}{timestamp} - INFO - {formatted_msg}{ANSI_COLORS['RESET']}")
+            except Exception:
+                # 如果出错，使用原始方法
+                super().info(msg, *args, **kwargs)
+        elif SUPPORT_WINDOWS_API:
+            try:
+                # 获取当前时间
+                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                
+                # 格式化日志消息
+                formatted_msg = msg % args
+                
+                # 设置控制台颜色
+                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['INFO'])
+                
+                # 输出日志消息
+                print(f"{timestamp} - INFO - {formatted_msg}")
+                
+                # 恢复原始颜色
+                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
+            except Exception:
+                # 如果出错，使用原始方法
+                super().info(msg, *args, **kwargs)
+        else:
+            # 如果不支持任何颜色输出，使用原始方法
+            super().info(msg, *args, **kwargs)
+    
+    def warning(self, msg, *args, **kwargs):
+        """记录 WARNING 级别的日志"""
+        if TERMINAL_SUPPORTS_ANSI:
+            try:
+                # 获取当前时间
+                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                
+                # 格式化日志消息
+                formatted_msg = msg % args
+                
+                # 使用ANSI颜色代码
+                print(f"{ANSI_COLORS['WARNING']}{timestamp} - WARNING - {formatted_msg}{ANSI_COLORS['RESET']}")
+            except Exception:
+                # 如果出错，使用原始方法
+                super().warning(msg, *args, **kwargs)
+        elif SUPPORT_WINDOWS_API:
+            try:
+                # 获取当前时间
+                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                
+                # 格式化日志消息
+                formatted_msg = msg % args
+                
+                # 设置控制台颜色
+                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['WARNING'])
+                
+                # 输出日志消息
+                print(f"{timestamp} - WARNING - {formatted_msg}")
+                
+                # 恢复原始颜色
+                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
+            except Exception:
+                # 如果出错，使用原始方法
+                super().warning(msg, *args, **kwargs)
+        else:
+            # 如果不支持任何颜色输出，使用原始方法
+            super().warning(msg, *args, **kwargs)
+    
+    def error(self, msg, *args, **kwargs):
+        """记录 ERROR 级别的日志"""
+        if TERMINAL_SUPPORTS_ANSI:
+            try:
+                # 获取当前时间
+                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                
+                # 格式化日志消息
+                formatted_msg = msg % args
+                
+                # 使用ANSI颜色代码
+                print(f"{ANSI_COLORS['ERROR']}{timestamp} - ERROR - {formatted_msg}{ANSI_COLORS['RESET']}")
+            except Exception:
+                # 如果出错，使用原始方法
+                super().error(msg, *args, **kwargs)
+        elif SUPPORT_WINDOWS_API:
+            try:
+                # 获取当前时间
+                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                
+                # 格式化日志消息
+                formatted_msg = msg % args
+                
+                # 设置控制台颜色
+                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['ERROR'])
+                
+                # 输出日志消息
+                print(f"{timestamp} - ERROR - {formatted_msg}")
+                
+                # 恢复原始颜色
+                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
+            except Exception:
+                # 如果出错，使用原始方法
+                super().error(msg, *args, **kwargs)
+        else:
+            # 如果不支持任何颜色输出，使用原始方法
+            super().error(msg, *args, **kwargs)
+    
+    def critical(self, msg, *args, **kwargs):
+        """记录 CRITICAL 级别的日志"""
+        if TERMINAL_SUPPORTS_ANSI:
+            try:
+                # 获取当前时间
+                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                
+                # 格式化日志消息
+                formatted_msg = msg % args
+                
+                # 使用ANSI颜色代码
+                print(f"{ANSI_COLORS['CRITICAL']}{timestamp} - CRITICAL - {formatted_msg}{ANSI_COLORS['RESET']}")
+            except Exception:
+                # 如果出错，使用原始方法
+                super().critical(msg, *args, **kwargs)
+        elif SUPPORT_WINDOWS_API:
+            try:
+                # 获取当前时间
+                timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+                
+                # 格式化日志消息
+                formatted_msg = msg % args
+                
+                # 设置控制台颜色
+                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['CRITICAL'])
+                
+                # 输出日志消息
+                print(f"{timestamp} - CRITICAL - {formatted_msg}")
+                
+                # 恢复原始颜色
+                ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
+            except Exception:
+                # 如果出错，使用原始方法
+                super().critical(msg, *args, **kwargs)
+        else:
+            # 如果不支持任何颜色输出，使用原始方法
+            super().critical(msg, *args, **kwargs)
     
     def success(self, action: str, subject: str = "", details: str = "", to_file: bool = False) -> None:
         """
@@ -1373,16 +1232,14 @@ def setup_logger(name: str, level: str = 'INFO', auto_file: bool = True) -> logg
     Returns:
         配置好的日志器实例
     """
-    if name in _loggers:
-        return _loggers[name]
+    logger_key = f"{name}:console"
+    if logger_key in logger_instances:
+        return logger_instances[logger_key]
     
     # 创建日志器
     logger = logging.getLogger(name)
     logger.setLevel(get_log_level(level))
     logger.propagate = False  # 防止日志传播
-    
-    # 配置控制台日志
-    setup_console_logger(logger, get_log_level(level))
     
     # 自动关联文件日志器
     if auto_file:
@@ -1390,7 +1247,7 @@ def setup_logger(name: str, level: str = 'INFO', auto_file: bool = True) -> logg
         logger.set_file_logger(file_logger)
     
     # 存储日志器实例
-    _loggers[name] = logger
+    logger_instances[logger_key] = logger
     
     return logger
 
@@ -1457,21 +1314,20 @@ def get_file_logger(name: str) -> logging.Logger:
     """
     # 创建智能文件日志器
     key = f"{name}:smart"
-    if key in _file_loggers:
-        return _file_loggers[key]
+    if key in logger_instances:
+        return logger_instances[key]
     
     logger = _create_smart_file_logger(name)
-    _file_loggers[key] = logger
+    logger_instances[key] = logger
     return logger
 
 
-def get_logger(name: Optional[str] = None, include_file: bool = False) -> logging.Logger:
+def get_logger(name: Optional[str] = None) -> logging.Logger:
     """
     获取统一的日志器
     
     Args:
         name: 日志器名称，默认使用调用模块的名称
-        include_file: 是否包含文件日志（已废弃，现在自动支持 to_file 参数）
         
     Returns:
         配置好的日志器实例
@@ -1499,14 +1355,6 @@ def get_logger(name: Optional[str] = None, include_file: bool = False) -> loggin
     # 获取基础日志器
     logger = setup_logger(name)
     
-    # 如果需要文件日志，添加文件处理器
-    if include_file:
-        file_logger = get_file_logger(name)
-        # 确保文件日志器的处理器被正确添加
-        for handler in file_logger.handlers:
-            if handler not in logger.handlers:
-                logger.addHandler(handler)
-    
     return logger
 
 
@@ -1514,11 +1362,6 @@ def initialize_logging() -> None:
     """
     初始化日志系统
     """
-    global _initialized
-    
-    if _initialized:
-        return
-    
     # 配置根日志器
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
@@ -1527,55 +1370,12 @@ def initialize_logging() -> None:
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
     
-    # 定义一个使用Windows API的彩色StreamHandler
-    class WindowsColorStreamHandler(logging.StreamHandler):
-        """使用Windows API设置控制台颜色的StreamHandler"""
-        def __init__(self, stream=None):
-            super().__init__(stream)
-        
-        def emit(self, record):
-            # 直接使用Windows API输出彩色日志
-            try:
-                # 使用全局的控制台句柄
-                global hConsole, original_color, SUPPORT_WINDOWS_API, LEVEL_COLORS
-                
-                # 检查是否支持Windows API
-                if SUPPORT_WINDOWS_API and hConsole:
-                    # 获取对应级别的颜色
-                    color = LEVEL_COLORS.get(record.levelname, original_color)
-                    
-                    # 设置控制台颜色
-                    ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, color)
-                    
-                    # 调用父类的emit方法
-                    super().emit(record)
-                    
-                    # 恢复原始颜色
-                    ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
-                else:
-                    # 如果不支持Windows API，直接调用父类的emit方法
-                    super().emit(record)
-            except Exception:
-                # 如果出错，调用父类的emit方法
-                super().emit(record)
-    
-    # 使用basicConfig函数配置根日志器
-    logging.basicConfig(
-        level=logging.INFO,
-        format=DEFAULT_LOG_FORMAT,
-        handlers=[
-            WindowsColorStreamHandler()
-        ]
-    )
-    
     # 配置第三方库的日志级别，减少噪音
     logging.getLogger('httpx').setLevel(logging.WARNING)
     logging.getLogger('httpcore').setLevel(logging.WARNING)
     
     # 启动文件日志监听器
     start_all_listeners()
-    
-    _initialized = True
     
     # 记录初始化信息
     logger = get_logger(__name__)
@@ -1586,21 +1386,15 @@ def shutdown_logging() -> None:
     """
     关闭日志系统
     """
-    global _initialized
-    
-    if not _initialized:
-        return
-    
     # 关闭所有文件日志
     close_logging()
     
     # 清理日志器实例
-    _loggers.clear()
-    _file_loggers.clear()
+    logger_instances.clear()
     
-    _initialized = False
-    
-    get_module_logger().info("✅ 日志系统已关闭")
+    # 记录关闭信息
+    logger = get_logger(__name__)
+    logger.info("✅ 日志系统已关闭")
 
 
 # 便捷函数

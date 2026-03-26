@@ -230,7 +230,7 @@ class MoPushModel(PydanticModel):
                     'SonNeededQuantity': demand['req_qty'] * -1,
                     'SonScaleQuantity': demand['req_qty'] * -1,
                     'Quantity': demand['req_qty'] * -1,
-                    # 'IsMaterialRequest': True,    # 启用领料申请（明细行）
+                    'IsMaterialRequest': True,    # 启用领料申请（明细行）
                 })
 
         cleaned_values['ExternalCode'] = values['supplyno']
@@ -321,6 +321,7 @@ class PrPushModel(PydanticModel):
         cleaned_values = {
             'VoucherDate': today,
             'ExternalCode': now_stamp,
+            'Code': now_stamp,
             'RequisitionPerson': {"Code": CACHE_ERP.get("$RequisitionPerson", "")}
         }
         # 处理直接传递列表的情况

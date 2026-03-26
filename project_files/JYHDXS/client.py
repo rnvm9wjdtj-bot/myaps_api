@@ -98,8 +98,8 @@ def refresh_stock(dbs: str = None):
         """
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         try:
-            sap_stock_response = sap_session.get(url=f"{sap_url1}", headers={'interface': 'stock', 'werks': werks})
-            sap_st_data = sap_stock_response.json().get('data', [])
+            sap_stock_response = sap_session.get(url=f"{sap_url1}", headers={'interface': 'stock', 'werks': werks}).json()
+            sap_st_data = sap_stock_response.get('data', [])
             df_sap_st = pd.DataFrame(sap_st_data)
             df_sap_st = df_sap_st.astype({
                 'werks': 'str',
@@ -151,7 +151,7 @@ def refresh_stock(dbs: str = None):
         stock_data_total = df_sap_st
     stock_data_total.fillna('', inplace=True)
     ApsHelpers.refresh_stock(stock_data_total.to_dict(orient='records'), dbs)
-    console_log.success("刷新库存任务", "", "执行完成")
+
 
 
 def push_pr(period: int = 30, groupdates: List[str] | str = None):

@@ -332,7 +332,7 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
             file_log.insert("账套生效", db_name, f"新增{create_count}条，修改{update_count}条")
             success_db.append({"db_name": db_name, "create": create_count, "update": update_count})
         
-        file_log.success("批量upsert", "", f"生效{len(success_db)}个账套，新增{create_count_total}条，修改{update_count_total}条")
+        file_log.success("批量upsert", f"{table_name}@{db_names}", f"生效{len(success_db)}个账套，新增{create_count_total}条，修改{update_count_total}条")
         
         return standard_response(
             data=data_list,
@@ -372,7 +372,7 @@ async def db_delete(db_names: str, model_or_tablename: TortoiseBaseModel | str, 
             count = exe_result.get("affected_rows", 0)
             total_count += count
             file_log.delete("SQL删除", f"{table_name}@{db_name}", f"条件{filter_string}，删除{count}条")
-        file_log.success("SQL删除", "", f"共删除{total_count}条，{table_name}@[{','.join(valid_dbs)}]")
+        file_log.success("SQL删除", f"{table_name}@{db_names}", f"共删除{total_count}条")
         return standard_response(
             meta={"affect_count": total_count, "affect_dbs": ", ".join(valid_dbs)}
         )
@@ -405,10 +405,10 @@ async def call_dbprocdure(db_names: str, procedure_name: str, params_list: List[
             exe_result = await db_manager.call_stored_procedure(procedure_name=procedure_name, params_list=params_list)
             affect_rows = exe_result.get('affected_rows', 0)
             total_affect_count += affect_rows
-            file_log.success("存储过程调用", f"{procedure_name}@{db_name}", f"影响{affect_rows}条")
+            file_log.success("存储过程调用", f"{procedure_name}@{db_name}", f"影响{affect_rows}条记录")
             meta[db_name] = affect_rows
         return standard_response(
-            message=f"调用存储过程`{procedure_name}`成功，影响{total_affect_count}条记录",
+            message=f"调用存储过程`{procedure_name}`@{db_name}成功，影响{total_affect_count}条记录",
             meta=meta
         )
     except Exception as e:

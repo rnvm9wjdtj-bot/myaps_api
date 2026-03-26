@@ -78,11 +78,11 @@ class SchedulerManager:
             self._add_registered_jobs()
             
             self._initialized = True
-            logger.success("调度器初始化", "", f"共注册{len(task_registry.tasks)}个定时任务")
+            logger.success("调度器初始化", f"self.scheduler", f"共注册{len(task_registry.tasks)}个定时任务")
             return True
             
         except Exception as e:
-            logger.fail("调度器初始化", "", str(e))
+            logger.fail("调度器初始化", f"self.scheduler", str(e))
             return False
     
     def _add_registered_jobs(self):
@@ -172,28 +172,28 @@ class SchedulerManager:
     
     def start(self) -> bool:
         if not self._initialized:
-            logger.fail("调度器启动", "", "未初始化")
+            logger.fail("调度器启动", f"{self.scheduler}", "未初始化")
             return False
             
         try:
             if self.scheduler and not self.scheduler.running:
                 self.scheduler.start()
-                logger.success("调度器", "", "已启动")
+                logger.success("调度器", f"{self.scheduler}",  "已启动")
                 return True
             else:
-                logger.success("调度器", "", "已在运行中")
+                logger.success("调度器", f"{self.scheduler}", "已在运行中")
                 return True
         except Exception as e:
-            logger.fail("调度器启动", "", str(e))
+            logger.fail("调度器启动", f"{self.scheduler}", str(e))
             return False
     
     def shutdown(self):
         try:
             if self.scheduler and self.scheduler.running:
                 self.scheduler.shutdown(wait=True)
-                logger.success("调度器", "", "已关闭")
+                logger.success("调度器", f"{self.scheduler}",  "已关闭")
         except Exception as e:
-            logger.fail("调度器关闭", "", str(e))
+                logger.fail("调度器关闭", f"{self.scheduler}", str(e))
     
     def get_jobs_info(self) -> List[Dict]:
         """获取所有任务信息"""

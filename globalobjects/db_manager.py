@@ -604,7 +604,7 @@ class DbManager:
         """
         
         start_time = datetime.now()
-        
+        db_table = model_class._meta.db_table
         try:
             # 获取冲突字段（需要在计算默认update_fields之前获取）
             if conflict_fields is None:
@@ -658,14 +658,14 @@ class DbManager:
                 "update_fields": update_fields
             }
             
-            logger.success("批量upsert", "", f"插入{result['inserted']}条，更新{result['updated']}条")
+            logger.success("批量upsert", f"{db_table}", f"插入{result['inserted']}条，更新{result['updated']}条")
             return response
             
         except IntegrityError as e:
-            logger.fail("数据完整性", "", str(e))
+            logger.fail("数据完整性", f"{db_table}", str(e))
             raise
         except Exception as e:
-            logger.fail("批量upsert", "", str(e))
+            logger.fail("批量upsert", f"{db_table}", str(e))
             # 保留异常处理的特殊逻辑，因为它涉及到不同的异常处理策略
             transaction_mode = self.use_transaction if use_transaction is None else use_transaction
             if transaction_mode:
@@ -1064,7 +1064,7 @@ class DbManager:
                 "execution_time": execution_time
             }
             
-            logger.success("索引更新", "", f"影响{affected_rows}行")
+            logger.success("索引更新", f"{table_name}", f"影响{affected_rows}行")
             return response
             
         except Exception as e:
