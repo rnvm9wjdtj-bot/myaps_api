@@ -90,4 +90,4 @@ def handle_pl_typeto_mo(supplyno_or_data: str | dict):
 
 
 def batch_handle_pr_created(pr_data_list: list[dict]):
-    tplus_conn.push_pr(pr_data_list, aggregate=True)
+    tplus_conn.push_pr(pr_data_list)

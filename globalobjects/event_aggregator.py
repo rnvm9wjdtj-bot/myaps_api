@@ -189,12 +189,16 @@ class MultiEventAggregator:
     
     def add(self, event_type: str, event: Any):
         """添加事件到指定类型的聚合器"""
+        logger.start(f"添加事件到聚合器，刷新间隔{self._aggregators[event_type].flush_interval}秒", event_type)
+        logger.debug(f"{event}")
         with self._lock:
             if event_type in self._aggregators:
                 self._aggregators[event_type].add(event)
     
     def add_batch(self, event_type: str, events: List[Any]):
         """批量添加事件到指定类型的聚合器"""
+        logger.start(f"批量添加事件到聚合器，刷新间隔{self._aggregators[event_type].flush_interval}秒", event_type)
+        logger.debug(f"{events}")
         with self._lock:
             if event_type in self._aggregators:
                 self._aggregators[event_type].add_batch(events)
@@ -221,6 +225,7 @@ class MultiEventAggregator:
         Args:
             event_type: 指定事件类型，None表示刷新所有
         """
+        logger.start(f"立即刷新聚合器{event_type}，刷新间隔{self._aggregators[event_type].flush_interval}秒")
         with self._lock:
             if event_type:
                 if event_type in self._aggregators:

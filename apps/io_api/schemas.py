@@ -594,7 +594,7 @@ class AcceptDemand(BaseModel):
     category: gc.ProductCategoryEnum = Field(gc.ProductCategoryEnum.MTS, example="MTS", description='分类(MTO/MTS)')
     priority: int = Field(..., description='优先级', example=1)
     workcenter: str = Field(None, max_length=32, description='工作中心', example="WC001")
-    status: gc.OrderStatusEnum = Field(..., example="NEW", description=f'状态 {list(gc.OrderStatusEnum.__members__.keys())}')
+    status: gc.OrderStatusEnum = Field("CRE", example="CRE", description=f'状态 {list(gc.OrderStatusEnum.__members__.keys())}')
     req_qty: float = Field(..., description='需求数量（须为负数，若输入正数则自动转为负数）', example=-100.0)
     req_date: datetime = Field(..., description='需求日期', example="2023-01-07T10:00:00")
     refno: Optional[str] = Field(None, max_length=64, description='MTO订单号', example="MTO123456")

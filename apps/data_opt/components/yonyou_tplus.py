@@ -230,7 +230,7 @@ class MoPushModel(PydanticModel):
                     'SonNeededQuantity': demand['req_qty'] * -1,
                     'SonScaleQuantity': demand['req_qty'] * -1,
                     'Quantity': demand['req_qty'] * -1,
-                    'IsMaterialRequest': True,    # 启用领料申请（明细行）
+                    # 'IsMaterialRequest': True,    # 启用领料申请（明细行）
                 })
 
         cleaned_values['ExternalCode'] = values['supplyno']
@@ -316,10 +316,10 @@ class PrPushModel(PydanticModel):
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values: Dict[str, Any]):
-        now_stamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
-        today = datetime.now().strftime("%Y-%m-%d")
+        now_stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        vo_date = datetime.now().strftime("%Y-%m-%d")
         cleaned_values = {
-            'VoucherDate': today,
+            'VoucherDate': None,    # 单据日期需要校验，不能晚于最早的物料需求日期
             'ExternalCode': now_stamp,
             'Code': now_stamp,
             'RequisitionPerson': {"Code": CACHE_ERP.get("$RequisitionPerson", "")}
@@ -336,12 +336,17 @@ class PrPushModel(PydanticModel):
                 data_list = values
         
         prd = []
+        earliest_req_date = vo_date
         for _ in data_list:
             # 确保日期字段是字符串格式
+            # 校验并更新最早的物料需求日期            
             avail_date = _['avail_date']
+
             if isinstance(avail_date, (date, datetime)):
                 avail_date = avail_date.strftime('%Y-%m-%d')
             
+            if avail_date < earliest_req_date:
+                earliest_req_date = avail_date
             prd.append({
                 'Inventory': {'Code': _['materialno']},
                 'Unit': {},
@@ -350,6 +355,7 @@ class PrPushModel(PydanticModel):
             })
 
         cleaned_values['PurchaseRequisitionDetails'] = prd
+        cleaned_values['VoucherDate'] = earliest_req_date
         return cleaned_values
 
 
@@ -445,6 +451,10 @@ PrCreateInterface = PushInterface(
     endpoint="/tplus/api/v2/PurchaseRequisitionOpenApi/Create",
 )
 
+PrDeleteInterface = PushInterface(
+    endpoint="/tplus/api/v2/PurchaseRequisitionOpenApi/Delete",
+)
+
 
 class TplusConfig:
     """
@@ -495,7 +505,7 @@ class TplusConnection(BaseConnection):
         if self._auth_at_:
             expire_time = datetime.strptime(self._auth_at_, "%Y-%m-%d %H:%M:%S") + timedelta(seconds=self.config.token_expire_seconds)
             if datetime.now() < expire_time:
-                logger.info(f"畅捷通token有效，有效期至：{expire_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                logger.debug(f"畅捷通token有效，有效期至：{expire_time.strftime('%Y-%m-%d %H:%M:%S')}")
                 return self.access_token
 
         auth_response = self._session.get(
@@ -523,10 +533,10 @@ class TplusConnection(BaseConnection):
                 "access_token": self.access_token,
                 "refresh_token": self.refresh_token})
             self.cache_file.save()
-            logger.success("畅捷通token刷新")
+            logger.debug(f"畅捷通token刷新为：{self.access_token}")
             return self.access_token
         else:
-            logger.fail("获取畅捷通token", "", auth_response)
+            logger.fail("获取畅捷通token", auth_response, )
             raise Exception(auth_response.get("message", ""))
 
 
@@ -771,9 +781,9 @@ class TplusConnection(BaseConnection):
         if remain_native_supplyno:
             dto['Code'] = supplyno
         payload = {"dto": dto}
+        logger.debug(f"向 T+ 推送生产加工单，发送数据：{json.dumps(payload, ensure_ascii=False)}")
         mo_create_response = self._post(endpoint=endpoint, data=payload)
         mo_create_response_json = mo_create_response.json()
-
         if str(mo_create_response_json['code']) == '0': # 响应错误码为0，MO 创建成功
             # 从响应中提取 data
             response_data = mo_create_response_json['data']
@@ -785,7 +795,7 @@ class TplusConnection(BaseConnection):
             tplus_mo_data = self.query_mo(index_value=tplus_mo_id)
             # 从 T+ 中提取 MO 详情中的第一个详情记录的 ID 作为 _entryid
             tplus_mo_entryid = tplus_mo_data['ManufactureOrderDetails'][0]['ID']
-
+            
             # if auto_push_rs:
             #     # 推送领料申请
             #     _x_b = self.push_rs(mdlist_or_supplyno=demand_list, tplus_mo_data_or_id=tplus_mo_data)
@@ -831,6 +841,7 @@ class TplusConnection(BaseConnection):
 
         dto = pydantic_model(**processed_rsdata).model_dump()
         payload = {"dto": dto}
+        logger.debug(f"向 T+ 推送领料申请，发送数据：{json.dumps(payload, ensure_ascii=False)}")
         response = self._post(endpoint=endpoint, data=payload)
         rs_push_response_json = response.json()
         if str(rs_push_response_json['code']) == '0': # 创建成功
@@ -839,33 +850,61 @@ class TplusConnection(BaseConnection):
             ApsHelpers._rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], data=processed_rsdata, msg_from='T+')
 
 
-    def push_pr(self, data_list: list[dict], pydantic_model:PydanticModel=PrPushModel, aggregate: bool=True):
+    def push_pr(self, data_list: list[dict]=None, pydantic_model:PydanticModel=PrPushModel):
         """
         推送采购申请
         :param data_list: APS 中的 PR 数据
-        :param aggregate: 是否聚合数据（['materialno', 'avail_date', 'vendorno']），默认True
         """
-        def approve_pr(tplus_pr_id):
+        def approve_pr(tplus_pr_code):
             endpoint = PrApproveInterface.endpoint
-            payload = {"param": {'voucherID': tplus_pr_id}}
+            # payload = {"param": {'voucherID': tplus_pr_id}}
+            payload = {"param": {'voucherCode': tplus_pr_code}}
             response = self._post(endpoint=endpoint, data=payload)
-            return response.json()
-            
-        if aggregate:
-            data_list = ApsHelpers.aggregate_pr_data(data_list)
-        tplus_pr_data = pydantic_model(data=data_list).model_dump(exclude_none=True)
+            response_json = response.json()
+            if str(response_json['code']) == '0':
+                logger.success("审批请购单", tplus_pr_code)
+            else:
+                logger.fail("审批请购单", tplus_pr_code, response_json['message'])
+            return response_json
+        
+        if not data_list:
+            data_list = ApsHelpers.get_new_pr_data()
+            if not data_list:
+                logger.debug("没有新的请购单数据")
+                return
+
+        agg_data_list = ApsHelpers.aggregate_pr_data(data_list)
+        tplus_pr_data = pydantic_model(data=agg_data_list).model_dump(exclude_none=True)
         payload = {"dto": tplus_pr_data}
+        logger.debug(f"向 T+ 推送请购单，发送数据：{json.dumps(payload, ensure_ascii=False)}")
         endpoint = PrCreateInterface.endpoint
         response = self._post(endpoint=endpoint, data=payload)
         pr_push_response_json = response.json()
         if str(pr_push_response_json['code']) == '0':
-            logger.success("推送请购单", str(payload))
-            pr_approve_response_json = approve_pr(tplus_pr_id=pr_push_response_json['data'].get('ID'))
-            if str(pr_approve_response_json['code']) == '0':
-                logger.success("审批请购单", str(payload))
-            else:
-                logger.fail("审批请购单", str(payload), pr_approve_response_json['message'])
+            tplus_pr_id = pr_push_response_json['data'].get('ID')
+            tplus_pr_code = pr_push_response_json['data'].get('Code')
+            for _ in data_list:
+                ApsHelpers._pr_push_success(prno=_['supplyno'], msg=pr_push_response_json['message'], msg_from='T+', _code=tplus_pr_code, _id=tplus_pr_id)
+            
+            # 审批请购单
+            approve_pr(tplus_pr_code=tplus_pr_code)
+        
         else:
-            logger.fail("推送请购单", str(payload), pr_push_response_json['message'])
+            for _ in data_list:
+                ApsHelpers._pr_push_failed(prno=_['supplyno'], msg=pr_push_response_json['message'], msg_from='T+', push_data=payload)
 
 
+    def delete_pr(self, tplus_pr_code: str):
+        """
+        删除采购申请（仅能删除未审核的）
+        :param tplus_pr_code: T+ 采购申请编号
+        """
+        endpoint = PrDeleteInterface.endpoint
+        payload = {"param": {'voucherCode': tplus_pr_code}}
+        response = self._post(endpoint=endpoint, data=payload)
+        response_json = response.json()
+        if str(response_json['code']) == '0':
+            logger.success("删除请购单", tplus_pr_code)
+        else:
+            logger.fail("删除请购单", tplus_pr_code, response_json['message'])
+       

@@ -74,7 +74,7 @@ class ApsEvent:
 aps_pl_status_a2e_event = ApsEvent(event_type="|pl_status_a2e|", single_handler="handle_pl_status_a2e", batch_handler="batch_handle_pl_status_a2e", description="PL 单据下达")
 aps_pr_created_event = ApsEvent(event_type="|pr_created|", single_handler="handle_pr_created", batch_handler="batch_handle_pr_created", description="PR 单据 创建")
 aps_pl_typeto_mo_event = ApsEvent(event_type="|pl_typeto_mo|", single_handler="handle_pl_typeto_mo", batch_handler="batch_handle_pl_typeto_mo", description="PL 变更为 MO")
-
+aps_pr_deleted_event = ApsEvent(event_type="|pr_deleted|", single_handler="handle_pr_deleted", batch_handler="batch_handle_pr_deleted", description="PR 单据 删除")
 
 
 @mysql_monitor.on_update_for_table("t_supply", database=MYAPS_MAIN_DB)
@@ -94,7 +94,7 @@ def handle_update_supply(database: str, table: str, data: dict, data_diff: dict)
         # 工单管理界面中，通过点击按钮下达生产计划单PL
         aps_pl_status_a2e_event.add_event(data_now)
     elif type_before == 'PL' and type_now == 'MO':
-        # 当 PL 转化为 MO (PL下达成功)
+        # 当 PL下达成功后，推送领料申请（RS）
         aps_pl_typeto_mo_event.add_event(data_now)
     
     
@@ -113,3 +113,16 @@ def handle_insert_supply(database: str, table: str, data: dict):
    
 
 
+@mysql_monitor.on_delete_for_table("t_supply", database=MYAPS_MAIN_DB)
+def handle_delete_supply(database: str, table: str, data: dict):
+    """处理t_supply表的删除事件"""
+    from apps.data_opt.components._base import ApsHelpers
+
+    new_data = dict_to_lower_keys(data['new'])
+    type_ = new_data['type']
+    status_now = new_data['status']
+
+    if type_ == 'PR':
+        # TODO 当 PR 单据被删除时，删除 ERP 中的采购申请单据
+        aps_pr_deleted_event.add_event(new_data)
+   

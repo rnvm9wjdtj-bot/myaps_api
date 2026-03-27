@@ -6,6 +6,7 @@ from Crypto.Util.Padding import unpad
 import pandas as pd
 from datetime import date, datetime
 from pydantic import BaseModel as PydanticModel
+from tortoise.expressions import Q
 
 from config.settings import THIS_BASE_URL, MYAPS_MAIN_DB, MYAPS_DB_SET
 from apps.data_opt.utils.common import get_session, convert_timeunit, clean_value
@@ -182,7 +183,7 @@ class ApsHelpers:
         memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
         
         try:
-            logger.update("PL状态", native_plno, f"目标状态{to_status}")
+            # logger.update("PL状态", f"{native_plno} -> 目标状态{to_status}", 1)
             response = SESSION.patch(f'{THIS_BASE_URL}/api/t_supply/{native_plno}/...?db_name={MYAPS_MAIN_DB}', json={
                 'status': to_status,
                 'memo': memo,
@@ -215,21 +216,68 @@ class ApsHelpers:
 
 
     @staticmethod
-    def _rs_push_failed(rsno: str, msg: str=None, data: dict=None, msg_from: str=None):
+    def _rs_push_failed(rsno: str, msg: str=None, data: dict=None, msg_from: str=None, push_data: dict | list=None):
+        logger.fail("推送 RS", json.dumps(push_data, ensure_ascii=False), msg)
+
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
-            logger.update("RS失败状态", rsno, "")
-            logger.fail("领料申请推送", rsno, f"错误信息{msg}，数据{data}", to_file=True)
             response = SESSION.patch(f'{THIS_BASE_URL}/api/t_demand/{rsno}/.../...?db_name={MYAPS_MAIN_DB}', json={
                 'memo': memo,
             })
-            logger.info(f"更新RS失败状态响应：{response.status_code}，{response.text}")
             return response
         except Exception as e:
             error_msg = f"更新RS失败状态时发生网络错误：{str(e)}"
             logger.fail("RS状态更新", rsno, error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
+
+
+    @staticmethod
+    def get_new_pr_data():
+        from apps.io_api.utils.db_operation import db_query
+
+        pr_data_list = db_query(MYAPS_MAIN_DB, "v_supply", "`Type`='PR' AND `Status`='NEW'").get('data')
+        return pr_data_list
+
+
+    @staticmethod
+    def aggregate_pr_data(pr_data_list: list[dict]=None, group_by: list=['materialno', 'avail_date', 'vendorno']) -> list[dict]:
+        """
+        聚合 PR avail_qty 字段
+        Args:
+            pr_data_list: PR 数据列表，若为None则查询主账套中状态为 NEW 的 PR 数据
+            group_by: 分组字段，默认['materialno', 'avail_date', 'vendorno']
+        Returns:
+            聚合后的 PR 数据列表
+        """
+        import pandas as pd
+
+        if not pr_data_list:
+            pr_data_list = ApsHelpers.get_new_pr_data()
+            if not pr_data_list:
+                return []
+
+        pr_datetime_fields = ('avail_date', 'create_date', 'avail_end_date', 'sys_date', 'sys_stamp')
+
+        df = pd.DataFrame(pr_data_list)
+        
+        keep_cols = ['materialno', 'category', 'avail_qty', 'create_date', 'avail_date', 'vendorno']
+        df = df[[col for col in keep_cols if col in df.columns]]
+        
+        for field in group_by:
+            if field in pr_datetime_fields and field in df.columns:
+                df[field] = pd.to_datetime(df[field], errors='coerce').dt.date
+        
+        agg_dict = {'avail_qty': 'sum'}
+        other_cols = [col for col in df.columns if col not in group_by and col != 'avail_qty']
+        for col in other_cols:
+            agg_dict[col] = 'last'
+        
+        result_df = df.groupby(group_by, dropna=False).agg(agg_dict).reset_index()
+        
+        result_df = result_df.replace({pd.NA: None, pd.NaT: None, float('nan'): None})
+        
+        return result_df.to_dict('records')
 
 
     @staticmethod
@@ -240,6 +288,10 @@ class ApsHelpers:
             logger.update("PR状态", prno, "")
             response = SESSION.patch(f'{THIS_BASE_URL}/api/t_supply/{prno}/...?db_name={MYAPS_MAIN_DB}', json={
                 'memo': memo,
+                'status': 'CRE',
+                'apiex_sn': _code,
+                'apiex_id': _id,
+                'apiex_entryid': _entryid,
             })
             logger.info(f"更新PR状态响应：{response.status_code}，{response.text}")
             return response
@@ -250,15 +302,15 @@ class ApsHelpers:
 
 
     @staticmethod
-    def _pr_push_failed(prno: str, msg: str=None, msg_from: str=None):
+    def _pr_push_failed(prno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None):
+        logger.fail("推送 PR", json.dumps(push_data, ensure_ascii=False), msg)
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
-            logger.update("PR失败状态", prno, "")
             response = SESSION.patch(f'{THIS_BASE_URL}/api/t_supply/{prno}/...?db_name={MYAPS_MAIN_DB}', json={
                 'memo': memo,
+                'status': 'NEW',
             })
-            logger.info(f"更新PR失败状态响应：{response.status_code}，{response.text}")
             return response
         except Exception as e:
             error_msg = f"更新PR失败状态时发生网络错误：{str(e)}"
@@ -332,38 +384,3 @@ class ApsHelpers:
         return result
 
 
-    @staticmethod
-    def aggregate_pr_data(pr_data_list: list[dict], group_by: list=['materialno', 'avail_date', 'vendorno']) -> list[dict]:
-        """
-        聚合 PR avail_qty 字段
-        Args:
-            pr_data_list: PR 数据列表
-        Returns:
-            聚合后的 PR 数据列表
-        """
-        import pandas as pd
-        
-        pr_datetime_fields = ('avail_date', 'create_date', 'avail_end_date', 'sys_date', 'sys_stamp')
-
-        if not pr_data_list:
-            return []
-        
-        df = pd.DataFrame(pr_data_list)
-        
-        keep_cols = ['materialno', 'category', 'avail_qty', 'create_date', 'avail_date', 'vendorno']
-        df = df[[col for col in keep_cols if col in df.columns]]
-        
-        for field in group_by:
-            if field in pr_datetime_fields and field in df.columns:
-                df[field] = pd.to_datetime(df[field], errors='coerce').dt.date
-        
-        agg_dict = {'avail_qty': 'sum'}
-        other_cols = [col for col in df.columns if col not in group_by and col != 'avail_qty']
-        for col in other_cols:
-            agg_dict[col] = 'last'
-        
-        result_df = df.groupby(group_by, dropna=False).agg(agg_dict).reset_index()
-        
-        result_df = result_df.replace({pd.NA: None, pd.NaT: None, float('nan'): None})
-        
-        return result_df.to_dict('records')
