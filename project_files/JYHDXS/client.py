@@ -248,7 +248,7 @@ def handle_pl_status_a2e(supplyno_or_data: str | dict):
         if sap_mo_data['STATUS'] == 'S':
             ApsHelpers._pl_release_success(native_plno=supplyno, mono=sap_mo_data['AUFNR'], msg=sap_mo_data['MESSAGE'], msg_from='ERP')
         else:
-            ApsHelpers._pl_release_failed(native_plno=supplyno, msg=sap_mo_data['MESSAGE'], data=data, msg_from='ERP')
+            ApsHelpers._pl_release_failed(native_plno=supplyno, msg=sap_mo_data['MESSAGE'], push_data=data, msg_from='ERP')
     except Exception as e:
-        ApsHelpers._pl_release_failed(native_plno=supplyno, msg=str(e), data=data, msg_from='API')
+        ApsHelpers._pl_release_failed(native_plno=supplyno, msg=str(e), push_data=data, msg_from='API')
 

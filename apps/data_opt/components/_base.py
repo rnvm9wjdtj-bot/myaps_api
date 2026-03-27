@@ -154,8 +154,8 @@ class ApsHelpers:
                 return standard_response(status_code=400, success=0, message=f"Supply {native_plno} is not a PL.")
 
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            log_msg = f"推送计划任务成功，账套{MYAPS_MAIN_DB}，PL单号{native_plno}，MO单号{mono}"
-            logger.success("计划任务推送", "", log_msg, to_file=True)
+            logger.success("推送 MO", f"原供应号{native_plno}", f"MO单号{mono}", to_file=True)
+
             memo = json.dumps({
                 "msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now,
                 "native_no": native_plno, "_code": mono, "_id": _id, "_entryid": _entryid}, ensure_ascii=False
@@ -179,10 +179,9 @@ class ApsHelpers:
 
 
     @staticmethod
-    def _pl_release_failed(native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, data: dict=None, msg_from: str=None):
+    def _pl_release_failed(native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, push_data: dict=None, msg_from: str=None):
+        logger.fail("推送 MO", json.dumps(push_data, ensure_ascii=False), msg)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_msg = f"推送计划任务失败，账套{MYAPS_MAIN_DB}，PL单号{native_plno}，错误信息{msg}，数据{data}"
-        logger.fail("计划任务推送", native_plno, log_msg)
         memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
         
         try:
@@ -219,7 +218,7 @@ class ApsHelpers:
 
 
     @staticmethod
-    def _rs_push_failed(rsno: str, msg: str=None, data: dict=None, msg_from: str=None, push_data: dict | list=None):
+    def _rs_push_failed(rsno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None):
         logger.fail("推送 RS", json.dumps(push_data, ensure_ascii=False), msg)
 
         try:
