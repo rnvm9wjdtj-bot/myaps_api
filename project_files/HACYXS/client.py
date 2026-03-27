@@ -80,15 +80,16 @@ class CustomMoPushModel(MoPushModel):
                 md.pop('IsMaterialRequest')
                 # cleaned_values['IsMaterialRequest'] = False
         
-        # 构建前置工单关系
-        pre_mo = values.get('prev_mo')
-        if pre_mo:
-            pre_mo_sn = pre_mo[0].get('supplyno')
-            if pre_mo_sn:
+        # 构建后续工单关系
+        next_mos: list[dict] = values.get('next_mo')
+        if next_mos:
+            # next_mo_sn = {_['supplyno']: _['avail_qty'] for _ in next_mos}
+            next_mo_sn = ','.join([_['supplyno'] for _ in next_mos])
+            if next_mo_sn:
                 # cleaned_values['ManufactureOrderDetails'][0]['DynamicPropertyKeys'] = ['priuserdefnvc1']
-                # cleaned_values['ManufactureOrderDetails'][0]['DynamicPropertyValues'] = [pre_mo_sn]
+                # cleaned_values['ManufactureOrderDetails'][0]['DynamicPropertyValues'] = [next_mo_sn]
                 mo_details['DynamicPropertyKeys'] = ['priuserdefnvc1']
-                mo_details['DynamicPropertyValues'] = [pre_mo_sn]
+                mo_details['DynamicPropertyValues'] = [next_mo_sn]
         return cleaned_values
 
 

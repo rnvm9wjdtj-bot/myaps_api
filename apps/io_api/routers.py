@@ -544,7 +544,7 @@ async def get_mo_by_supplyno(
     db_name: str = common_params["db_name"],
     supplyno: str = Path(..., description="工单（供应）号"),
     prev_mo: bool = Query(False, description="是否查询前 前置 工单"),
-    next_mo: bool = Query(False, description="是否查询后 后置 工单"),
+    next_mo: bool = Query(False, description="是否查询后 后续 工单"),
     # x_api_key: str = common_params["x_api_key"]
 ):
 
