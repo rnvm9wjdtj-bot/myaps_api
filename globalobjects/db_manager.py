@@ -67,16 +67,14 @@ class DbManager:
     @asynccontextmanager
     async def get_connection(self):
         """
-        异步上下文管理器，用于安全地获取和自动释放Tortoise ORM的数据库连接
+        异步上下文管理器，用于安全地获取Tortoise ORM的数据库连接
+        注意：Tortoise会自动管理连接的获取和释放，不需要手动关闭连接
         
         Yields:
             Tortoise数据库连接对象
         """
-        try:
-            connection = Tortoise.get_connection(self.connection_name)
-            yield connection
-        finally:
-            connection.close()
+        connection = Tortoise.get_connection(self.connection_name)
+        yield connection
 
 
     @classmethod
@@ -169,15 +167,16 @@ class DbManager:
             raise
     
 
-    async def query_data(self, table_name: str, filter_string: str = '', order_string: str = '', batch_size: int = 1000) -> Dict[str, Any]:
+    async def query_data(self, table_name: str, filter_string: str = '', order_string: str = '', batch_size: int = 1000, max_retries: int = 3) -> Dict[str, Any]:
         """
-        查询数据库表数据
+        查询数据库表数据，支持重试机制
         
         Args:
             table_name: 表名
             filter_string: WHERE条件字符串（可选）
             order_string: ORDER BY排序字符串（可选）
             batch_size: 分批次查询的批次大小（默认1000）
+            max_retries: 最大重试次数（默认3次）
             
         Returns:
             包含查询结果的字典，包括成功状态、数据列表、总数、执行时间等
@@ -185,68 +184,87 @@ class DbManager:
         Raises:
             Exception: 如果查询失败
         """
-        start_time = datetime.now()
+        retry_count = 0
+        last_exception = None
         
-        try:
-            # 使用Tortoise的连接池机制，不需要手动关闭连接
-            # Tortoise会自动管理连接的获取和释放
-            conn = Tortoise.get_connection(self.connection_name)
+        while retry_count <= max_retries:
+            start_time = datetime.now()
             
-            # 构建WHERE和ORDER子句
-            where = f" WHERE {filter_string}" if filter_string else ''
-            order = f" ORDER BY {order_string}" if order_string else ''
-            
-            # 先获取数据总条数
-            count_sql = f'SELECT COUNT(*) as total FROM `{table_name}` {where}'
-            count_result = await conn.execute_query(count_sql)
-            total = count_result[1][0].get('total', 0)
-            
-            # 查询数据
-            all_data = []
-            
-            if total <= batch_size:
-                # 数据量不大，直接查询全部
-                sql = f'SELECT * FROM `{table_name}` {where} {order}'
-                _, data = await conn.execute_query(sql)
-                all_data.extend(data)
-            else:
-                # 数据量过大，分批次查询
-                offset = 0
-                while offset < total:
-                    # 构建带LIMIT和OFFSET的分页查询SQL
-                    sql = f'SELECT * FROM `{table_name}` {where} {order} LIMIT {batch_size} OFFSET {offset}'
-                    _, batch_data = await conn.execute_query(sql)
-                    all_data.extend(batch_data)
-                    offset += batch_size
-                    
-                    # 如果当前批次数据不足batch_size，说明已经获取完所有数据
-                    if len(batch_data) < batch_size:
-                        break
-            
-            execution_time = (datetime.now() - start_time).total_seconds()
-            
-            # 更新统计信息
-            self.stats['total_processed'] += total
-            self.stats['batches_executed'] += (total + batch_size - 1) // batch_size
-            self.stats['last_execution_time'] = execution_time
-            
-            response = {
-                "success": True,
-                "table_name": table_name,
-                "filter": filter_string,
-                "order": order_string,
-                "execution_time": execution_time,
-                "total": total,
-                "batch_size": batch_size,
-                "data": [dict_to_lower_keys(item) for item in all_data]
-            }
-            
-            logger.debug(f"数据查询完成：{response}")
-            return response
-            
-        except Exception as e:
-            logger.fail("数据查询", table_name, str(e))
-            raise
+            try:
+                # 使用Tortoise的连接池机制，不需要手动关闭连接
+                # Tortoise会自动管理连接的获取和释放
+                conn = Tortoise.get_connection(self.connection_name)
+                
+                # 构建WHERE和ORDER子句
+                where = f" WHERE {filter_string}" if filter_string else ''
+                order = f" ORDER BY {order_string}" if order_string else ''
+                
+                # 先获取数据总条数
+                count_sql = f'SELECT COUNT(*) as total FROM `{table_name}` {where}'
+                count_result = await conn.execute_query(count_sql)
+                total = count_result[1][0].get('total', 0)
+                
+                # 查询数据
+                all_data = []
+                
+                if total <= batch_size:
+                    # 数据量不大，直接查询全部
+                    sql = f'SELECT * FROM `{table_name}` {where} {order}'
+                    _, data = await conn.execute_query(sql)
+                    all_data.extend(data)
+                else:
+                    # 数据量过大，分批次查询
+                    offset = 0
+                    while offset < total:
+                        # 构建带LIMIT和OFFSET的分页查询SQL
+                        sql = f'SELECT * FROM `{table_name}` {where} {order} LIMIT {batch_size} OFFSET {offset}'
+                        _, batch_data = await conn.execute_query(sql)
+                        all_data.extend(batch_data)
+                        offset += batch_size
+                        
+                        # 如果当前批次数据不足batch_size，说明已经获取完所有数据
+                        if len(batch_data) < batch_size:
+                            break
+                
+                execution_time = (datetime.now() - start_time).total_seconds()
+                
+                # 更新统计信息
+                self.stats['total_processed'] += total
+                self.stats['batches_executed'] += (total + batch_size - 1) // batch_size
+                self.stats['last_execution_time'] = execution_time
+                
+                response = {
+                    "success": True,
+                    "table_name": table_name,
+                    "filter": filter_string,
+                    "order": order_string,
+                    "execution_time": execution_time,
+                    "total": total,
+                    "batch_size": batch_size,
+                    "data": [dict_to_lower_keys(item) for item in all_data]
+                }
+                
+                if retry_count > 0:
+                    logger.success(f"数据查询成功（第{retry_count + 1}次重试）", table_name, f"执行时间{execution_time:.3f}秒")
+                
+                logger.debug(f"数据查询完成：{response}")
+                return response
+                
+            except Exception as e:
+                last_exception = e
+                retry_count += 1
+                
+                if retry_count <= max_retries:
+                    logger.warning(f"数据查询失败，将进行第{retry_count}次重试", table_name, str(e))
+                    import asyncio
+                    await asyncio.sleep(1)  # 等待1秒后重试
+                else:
+                    logger.fail("数据查询", table_name, str(e))
+                    raise
+        
+        # 理论上不会走到这里，但为了代码完整性
+        if last_exception:
+            raise last_exception
     
 
     @with_transaction

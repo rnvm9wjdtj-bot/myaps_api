@@ -725,8 +725,25 @@ class AcceptConfirm(BaseModel):
         _cache_raw_input_data(cls, values)
         # 基本验证和默认值设置
         values["status"] = pdv.WORKREPORT_STATUS
-        if values.get("recorddt") in gc.NONE_AND_EMPTY:
+        
+        # 处理 recorddt 字段，支持时间戳转换
+        recorddt = values.get("recorddt")
+        if recorddt in gc.NONE_AND_EMPTY:
             values["recorddt"] = datetime.now()
+        else:
+            try:
+                # 尝试将时间戳转换为 datetime
+                if isinstance(recorddt, (int, float, str)):
+                    timestamp = float(recorddt)
+                    # 判断是毫秒还是秒
+                    if timestamp > 10000000000:  # 毫秒时间戳
+                        values["recorddt"] = datetime.fromtimestamp(timestamp / 1000)
+                    else:  # 秒时间戳
+                        values["recorddt"] = datetime.fromtimestamp(timestamp)
+            except (ValueError, TypeError):
+                # 如果转换失败，保持原样让 Pydantic 处理
+                pass
+        
         return values
 
     @model_validator(mode='after')
