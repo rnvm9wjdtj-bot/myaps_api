@@ -15,7 +15,7 @@ from .._base import (
 # 导入统一日志配置（用于直接使用）
 # from globalobjects import logger as log_config
 
-from apps.data_opt.components.yonyou_tplus import TplusConnection, BaseConnection, MoPushModel, model_validator
+from apps.data_opt.components.yonyou_tplus import TplusConnection, RsPushModel, MoPushModel, model_validator
 from typing import Dict, Any
 
 #################################################################################
@@ -61,13 +61,63 @@ class CustomMoPushModel(MoPushModel):
     @classmethod
     def model_valid(cls, values: Dict[str, Any]):
         cleaned_values = MoPushModel.model_valid(values)
+
+        mo_details = cleaned_values['ManufactureOrderDetails'][0]
+        mo_material_details: list[dict] = mo_details['ManufactureOrderMaterialDetails']
+
+        # 优化：批量查询所有物料的 free1 字段
+        materialnos = ','.join([md['Inventory']['Code'] for md in mo_material_details])
+        materials = SESSION.get(f"{THIS_BASE_URL}/api/v_material/{materialnos}")
+        materials = materials.json()['data']
+        materials = {item['materialno']: item for item in materials}
+        
+        for md in mo_material_details:
+            materialno = md['Inventory']['Code']
+            free1 = materials.get(materialno, {}).get('free1')
+            if free1 == 'Y':    # 该物料为倒冲料
+                md['Warehouse'] = {'Code': '5'} # 倒冲料仓库
+                # md['IsMaterialRequest'] = False # 无需领料
+                md.pop('IsMaterialRequest')
+                # cleaned_values['IsMaterialRequest'] = False
+        
+        # 构建前置工单关系
         pre_mo = values.get('prev_mo')
         if pre_mo:
             pre_mo_sn = pre_mo[0].get('supplyno')
             if pre_mo_sn:
-                cleaned_values['ManufactureOrderDetails'][0]['DynamicPropertyKeys'] = ['priuserdefnvc1']
-                cleaned_values['ManufactureOrderDetails'][0]['DynamicPropertyValues'] = [pre_mo_sn]
+                # cleaned_values['ManufactureOrderDetails'][0]['DynamicPropertyKeys'] = ['priuserdefnvc1']
+                # cleaned_values['ManufactureOrderDetails'][0]['DynamicPropertyValues'] = [pre_mo_sn]
+                mo_details['DynamicPropertyKeys'] = ['priuserdefnvc1']
+                mo_details['DynamicPropertyValues'] = [pre_mo_sn]
         return cleaned_values
+
+
+class CustomRsPushModel(RsPushModel):
+
+    class Config:
+        extra = 'allow'
+
+    @model_validator(mode="before")
+    @classmethod
+    def model_valid(cls, values: Dict[str, Any]):
+        cleaned_values = RsPushModel.model_valid(values)
+
+        mr_details:list[dict] = cleaned_values['MaterialRequestDetails']
+        materialnos = ','.join([md['Inventory']['Code'] for md in mr_details])
+        materials = SESSION.get(f"{THIS_BASE_URL}/api/v_material/{materialnos}")
+        materials = materials.json()['data']
+        materials = {item['materialno']: item for item in materials}
+        
+        mr_details2 = []
+        for md in mr_details:
+            materialno = md['Inventory']['Code']
+            free1 = materials.get(materialno, {}).get('free1')
+            if free1 != 'Y':    # 该物料 不为 倒冲料
+                mr_details2.append(md)
+        
+        cleaned_values['MaterialRequestDetails'] = mr_details2
+        return cleaned_values
+
 
 
 def handle_pl_status_a2e(supplyno_or_data: str | dict):
@@ -86,7 +136,7 @@ def handle_pl_typeto_mo(supplyno_or_data: str | dict):
         # tplus_mo_id = supplyno_or_data['apiex_id']
     mo_data = tplus_conn.query_mo(index_value=supplyno, filter_field='voucherCode')
     if mo_data:
-        tplus_conn.push_rs(mdlist_or_supplyno=supplyno, tplus_mo_data_or_id=mo_data)    
+        tplus_conn.push_rs(mdlist_or_supplyno=supplyno, tplus_mo_data_or_id=mo_data, pydantic_model=CustomRsPushModel)    
 
 
 def batch_handle_pr_created(pr_data_list: list[dict]):

@@ -17,7 +17,7 @@ from ._base import (
     logger,
     DataProcessor, globalconst, CACHE_JSON, pdv,
     BaseConnection, ApsHelpers, convert_timeunit, clean_value,
-    BaseModel as PydanticModel, model_validator, Field,
+    model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold, AcceptSupply, AcceptConfirm,
     db_query, TSupply, TDemand
@@ -230,7 +230,7 @@ class MoPushModel(PydanticModel):
                     'SonNeededQuantity': demand['req_qty'] * -1,
                     'SonScaleQuantity': demand['req_qty'] * -1,
                     'Quantity': demand['req_qty'] * -1,
-                    # 'IsMaterialRequest': True,    # 启用领料申请（明细行）
+                    'IsMaterialRequest': True,    # 启用领料申请（明细行）
                 })
 
         cleaned_values['ExternalCode'] = values['supplyno']

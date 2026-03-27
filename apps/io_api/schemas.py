@@ -523,19 +523,28 @@ class AcceptSupply(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values):
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if values.get("apiex_id") not in gc.NONE_AND_EMPTY and values.get("apiex_entryid") in gc.NONE_AND_EMPTY:
             values["apiex_entryid"] = values["apiex_id"]
         _cache_raw_input_data(cls, values)
         if values.get('itemno') in gc.NONE_AND_EMPTY:
             values['itemno'] = pdv.ITEMNO
-        if values.get("create_date") in gc.NONE_AND_EMPTY:
-            values["create_date"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        if values.get("category") == gc.ProductCategoryEnum.MTO and values.get("vendorno") in gc.NONE_AND_EMPTY:
-            raise ValueError("MTO订单号vendorno不能为空")
         if values.get("status") not in gc.OrderStatusEnum.__members__:
             values["status"] = gc.OrderStatusEnum.CRE
+        if values.get("create_date") in gc.NONE_AND_EMPTY:
+            values["create_date"] = now
         if values.get("avail_end_date") in gc.NONE_AND_EMPTY:
             values["avail_end_date"] = "9999-12-31 00:00:00"
+        if values.get("avail_date") in gc.NONE_AND_EMPTY:
+            values["avail_date"] = now
+        if values.get("dt_req") in gc.NONE_AND_EMPTY:
+            values["dt_req"] = now
+        # if values.get("category") == gc.ProductCategoryEnum.MTO and values.get("vendorno") in gc.NONE_AND_EMPTY:
+        #     raise ValueError("MTO订单号vendorno不能为空")
+        if values.get("vendorno"):
+            values["category"] = gc.ProductCategoryEnum.MTO
+        else:
+            values["category"] = gc.ProductCategoryEnum.MTS
         return values
 
     @model_validator(mode='after')

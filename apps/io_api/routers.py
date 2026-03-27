@@ -152,6 +152,20 @@ async def get_meta():
     )
     
 
+
+@rt.get("/v_material/{materialnos}")
+async def get_material(
+    materialnos: str = Path(..., description="料号，多个用逗号隔开"),
+    db_name: str = common_params["db_name"]
+):
+    db_name = db_name.replace(" ", "")
+    materialnos = ",".join([f"'{_}'" for _ in materialnos.split(",")])
+    filter_string = f"`MaterialNo` IN ({materialnos})"
+    materials = await db_query(db_name=db_name, model_or_tablename="v_material", filter_string=filter_string)
+    return materials
+
+
+
 @rt.post(
     "/t_material",
     tags=["主数据 - 物料"],

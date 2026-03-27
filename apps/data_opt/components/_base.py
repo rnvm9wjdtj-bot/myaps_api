@@ -1,18 +1,18 @@
 import json
 from pathlib import Path
-from typing import List, Dict, Optional, Literal, Callable, Union, Any
+from typing import List, Dict, Optional, Literal, Callable, Union, Any, Type
 from abc import ABC, abstractmethod
 from Crypto.Util.Padding import unpad
 import pandas as pd
 from datetime import date, datetime
 from pydantic import BaseModel as PydanticModel
-from tortoise.expressions import Q
+
 
 from config.settings import THIS_BASE_URL, MYAPS_MAIN_DB, MYAPS_DB_SET
 from apps.data_opt.utils.common import get_session, convert_timeunit, clean_value
 from apps.data_opt.utils.data_processor import DataProcessor
 from apps.io_api.schemas import (
-    BaseModel, model_validator, Field,
+    model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold, AcceptSupply, AcceptConfirm
 )
@@ -95,8 +95,11 @@ class ApsHelpers:
 
     @staticmethod
     def refresh_supply(supply_data:Union[List[Dict[str, Any]], pd.DataFrame], type_:Literal['ST', 'SO']='ST', dbs:str=MYAPS_DB_SET):
+        from apps.io_api.schemas import AcceptSupply
+
         if isinstance(supply_data, pd.DataFrame):
             supply_data = supply_data.to_dict('records')
+        supply_data = [AcceptSupply(**item).model_dump() for item in supply_data]
         refresh_result = SESSION.put(url=f"{THIS_BASE_URL}/api/t_supply/type/{type_}?db_name={dbs}", json=supply_data)
         if refresh_result.json()['success']:
             logger.success("刷新供应数据", f"type_{type_}", f"账套{dbs}")
@@ -382,5 +385,3 @@ class ApsHelpers:
                 mapped_item[field_map.get(k, k)] = v
             result.append(mapped_item)
         return result
-
-

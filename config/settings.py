@@ -77,6 +77,8 @@ for db in MYAPS_DBSET_LIST:
             "database": db,
             "charset": "utf8mb4",
             "connect_timeout": 5,  # 添加连接超时设置
+            "minsize": 3,  # 保持最小连接数
+            "maxsize": 10,  # 最大连接连接数
         }
     }
 
@@ -89,7 +91,9 @@ if THIS_DB_NAME:
             "port": THIS_DB_PORT,
             "user": THIS_DB_USER,
             "password": THIS_DB_PASSWORD,
-            "database": THIS_DB_NAME
+            "database": THIS_DB_NAME,
+            "min_size": 3,  # 保持最小连接数
+            "max_size": 10,  # 最大连接数
         }
     }
 
