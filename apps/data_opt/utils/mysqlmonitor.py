@@ -485,7 +485,11 @@ class MySQLBinlogMonitor:
                     if isinstance(row, dict) and 'values' in row:
                         data = row['values']
                     elif hasattr(row, 'values'):
-                        data = row.values
+                        # 检查values是否是方法
+                        if callable(row.values):
+                            data = row.values()
+                        else:
+                            data = row.values
                     else:
                         data = row
                     
@@ -521,8 +525,15 @@ class MySQLBinlogMonitor:
                     logger.debug(f"🔄 Update {schema}.{table}: 批量更新 {batch_count} 条记录")
                 for row in event.rows:
                     if hasattr(row, 'before_values') and hasattr(row, 'after_values'):
-                        old_data = row.before_values
-                        new_data = row.after_values
+                        # 检查before_values和after_values是否是方法
+                        if callable(row.before_values):
+                            old_data = row.before_values()
+                        else:
+                            old_data = row.before_values
+                        if callable(row.after_values):
+                            new_data = row.after_values()
+                        else:
+                            new_data = row.after_values
                     elif isinstance(row, dict) and 'before_values' in row and 'after_values' in row:
                         old_data = row['before_values']
                         new_data = row['after_values']
@@ -581,13 +592,20 @@ class MySQLBinlogMonitor:
                 if batch_count > 1:
                     logger.debug(f"🗑️ DeleteFrom {schema}.{table}: 批量删除 {batch_count} 条记录")
                 for row in event.rows:
-                    if hasattr(row, 'values'):
-                        data = row.values
-                    elif isinstance(row, dict) and 'values' in row:
+                    if isinstance(row, dict) and 'values' in row:
                         data = row['values']
                     else:
-                        data = row
-                    
+                        if hasattr(row, 'values'):
+                            # 检查values是否是方法
+                            if callable(row.values):
+                                data = row.values()
+                            else:
+                                data = row.values
+                        elif isinstance(row, dict) and 'values' in row:
+                            data = row['values']
+                        else:
+                            data = row
+                        
                     mapped_data = self._map_data_with_column_names(schema, table, data)
                     
                     # 检查数据质量

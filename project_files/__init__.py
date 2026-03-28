@@ -116,11 +116,11 @@ def handle_delete_supply(database: str, table: str, data: dict):
     """处理t_supply表的删除事件"""
     from apps.data_opt.components._base import ApsHelpers
 
-    new_data = dict_to_lower_keys(data['new'])
-    type_ = new_data['type']
-    status_now = new_data['status']
+    deleted_data = dict_to_lower_keys(data)
+    type_ = deleted_data['type']
+    status_now = deleted_data['status']
 
-    if type_ == 'PR':
-        # TODO 当 PR 单据被删除时，删除 ERP 中的采购申请单据
-        aps_pr_deleted_event.add_event(new_data)
+    # if type_ == 'PR':
+    #     # TODO 当 PR 单据被删除时，删除 ERP 中的采购申请单据
+    #     aps_pr_deleted_event.add_event(deleted_data)
    
