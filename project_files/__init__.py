@@ -5,14 +5,13 @@
 import os, importlib, json, requests
 from typing import NamedTuple
 
-from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL, console_log
+from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL
 from globalobjects.globalconst import OrderStatusEnum
 from apps.io_api.utils.common import dict_to_lower_keys
 from globalobjects import logger as log_config
 
 
-console_log = log_config.get_logger(__name__)
-file_log = log_config.get_file_logger(__name__)
+logger = log_config.get_logger(__name__)
 
 
 project_dir = os.getenv("PROJECT_DIR")
@@ -61,9 +60,8 @@ class ApsEvent:
             for event_data in events_data_list:
                 self.single_handle_func(event_data)
         else:
-            log_msg = f"{self.warning_msg}数据：\n{json.dumps(events_data_list, ensure_ascii=False)}"
-            console_log.warning(log_msg)
-            file_log.warning(log_msg)
+            log_msg = f"⚠️ {self.warning_msg}数据：\n{json.dumps(events_data_list, ensure_ascii=False)}"
+            logger.debug(log_msg)
 
     
     def add_event(self, event_data: dict):

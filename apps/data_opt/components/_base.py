@@ -6,6 +6,8 @@ from Crypto.Util.Padding import unpad
 import pandas as pd
 from datetime import date, datetime
 from pydantic import BaseModel as PydanticModel
+import requests
+import time
 
 
 from config.settings import THIS_BASE_URL, MYAPS_MAIN_DB, MYAPS_DB_SET
@@ -63,13 +65,64 @@ class BaseConnection(ABC):
 class ApsHelpers:
 
     @staticmethod
+    def _call_api(method: str, url: str, **kwargs) -> Dict[str, Any]:
+        """
+        通用 API 调用方法，包含错误处理、超时设置和重试机制
+        
+        Args:
+            method: HTTP 方法，如 'GET', 'POST', 'PATCH', 'PUT'
+            url: API 地址
+            **kwargs: 其他参数，如 json, timeout 等
+        
+        Returns:
+            API 返回的 JSON 数据
+        
+        Raises:
+            Exception: API 调用失败
+        """
+        max_retries = 3
+        retry_count = 0
+        timeout = kwargs.pop('timeout', (30, 60))
+        
+        while retry_count < max_retries:
+            try:
+                if method.upper() == 'GET':
+                    response = SESSION.get(url, timeout=timeout, **kwargs)
+                elif method.upper() == 'POST':
+                    response = SESSION.post(url, timeout=timeout, **kwargs)
+                elif method.upper() == 'PATCH':
+                    response = SESSION.patch(url, timeout=timeout, **kwargs)
+                elif method.upper() == 'PUT':
+                    response = SESSION.put(url, timeout=timeout, **kwargs)
+                elif method.upper() == 'DELETE':
+                    response = SESSION.delete(url, timeout=timeout, **kwargs)
+                else:
+                    raise ValueError(f"不支持的 HTTP 方法: {method}")
+                
+                response.raise_for_status()  # 检查 HTTP 状态码
+                return response.json()
+                
+            except (requests.RequestException, ValueError, KeyError) as e:
+                retry_count += 1
+                logger.warning(f"API 调用失败，第{retry_count}次重试: {str(e)}")
+                if retry_count >= max_retries:
+                    logger.fail("API 调用", url, str(e))
+                    raise
+                time.sleep(1 * retry_count)  # 指数退避策略
+        
+        # 理论上不会走到这里
+        raise Exception("API 调用失败：达到最大重试次数")
+
+    @staticmethod
     def mto_workreport_to_virtual_stock(db:str=MYAPS_MAIN_DB):
         """
         将报工数据 转化为 虚拟库存 数据，只处理MTO报工
         🅰 db: 账套名称，默认MYAPS_MAIN_DB
         """
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        mo_complete_data = SESSION.get(url=f"{THIS_BASE_URL}/api/v_supply_complete?db_name={db}").json().get('data')
+        url = f"{THIS_BASE_URL}/api/v_supply_complete?db_name={db}"
+        response_json = ApsHelpers._call_api('GET', url)
+        mo_complete_data = response_json.get('data')
         df_mto_vir_st = None
         if mo_complete_data:
             df_mo_complete = pd.DataFrame(mo_complete_data)
@@ -100,11 +153,12 @@ class ApsHelpers:
         if isinstance(supply_data, pd.DataFrame):
             supply_data = supply_data.to_dict('records')
         supply_data = [AcceptSupply(**item).model_dump() for item in supply_data]
-        refresh_result = SESSION.put(url=f"{THIS_BASE_URL}/api/t_supply/type/{type_}?db_name={dbs}", json=supply_data)
-        if refresh_result.json()['success']:
+        url = f"{THIS_BASE_URL}/api/t_supply/type/{type_}?db_name={dbs}"
+        refresh_result_json = ApsHelpers._call_api('PUT', url, json=supply_data)
+        if refresh_result_json.get('success'):
             logger.success("刷新供应数据", f"type_{type_}", f"账套{dbs}")
         else:
-            logger.fail("刷新供应数据", f"type_{type_}", refresh_result.json()['message'])
+            logger.fail("刷新供应数据", f"type_{type_}", refresh_result_json.get('message'))
 
 
     @staticmethod
@@ -115,10 +169,10 @@ class ApsHelpers:
         🅰 db_name: 账套名称，默认MYAPS_MAIN_DB
         """
         logger.start("确认报工记录任务")
-        response = SESSION.patch(f"{THIS_BASE_URL}/api/t_confirm?db_name={db_name}")
-        response.raise_for_status()
+        url = f"{THIS_BASE_URL}/api/t_confirm?db_name={db_name}"
+        response_json = ApsHelpers._call_api('PATCH', url)
         logger.success("确认报工记录任务")
-        return response.json()
+        return response_json
 
 
     @staticmethod
@@ -136,20 +190,20 @@ class ApsHelpers:
         mono = mono or native_plno
         try:
             logger.query("PL信息", native_plno, "")
-            query_result = SESSION.get(f"{THIS_BASE_URL}/api/v_supply_mo/{native_plno}?db_name={MYAPS_MAIN_DB}")
-            logger.info(f"查询PL信息响应：{query_result.status_code}")
-            query_result_json = query_result.json()
+            query_url = f"{THIS_BASE_URL}/api/v_supply_mo/{native_plno}?db_name={MYAPS_MAIN_DB}"
+            query_result_json = ApsHelpers._call_api('GET', query_url)
+            logger.info(f"查询PL信息响应：成功")
 
-            if query_result_json['success'] == 0:
-                logger.fail("PL查询", native_plno, query_result_json['message'])
-                return standard_response(status_code=query_result_json['status_code'], success=0, message=query_result_json['message'])
+            if query_result_json.get('success') == 0:
+                logger.fail("PL查询", native_plno, query_result_json.get('message'))
+                return standard_response(status_code=query_result_json.get('status_code', 500), success=0, message=query_result_json.get('message'))
 
-            query_data = query_result_json['data']
+            query_data = query_result_json.get('data', [])
             if not query_data or len(query_data) > 1:
                 logger.fail("PL查询", native_plno, "未找到或多条匹配", to_file=True)
                 return standard_response(success=0, message=f"PL {native_plno} not found or multiple records matched.")
 
-            if query_data[0]["type"] != "PL":
+            if query_data[0].get("type") != "PL":
                 logger.fail("PL查询", native_plno, "非PL类型", to_file=True)
                 return standard_response(status_code=400, success=0, message=f"Supply {native_plno} is not a PL.")
 
@@ -162,16 +216,18 @@ class ApsHelpers:
             )
 
             logger.update("PL状态", native_plno, f"目标状态{to_status}，MO单号{mono}")
-            response = SESSION.patch(f'{THIS_BASE_URL}/api/t_supply/{native_plno}?db_name={MYAPS_MAIN_DB}', json={
+            patch_url = f'{THIS_BASE_URL}/api/t_supply/{native_plno}?db_name={MYAPS_MAIN_DB}'
+            patch_data = {
                 'status': to_status,
                 'apiex_sn': str(mono),
                 'apiex_id': str(_id or ""),
                 'apiex_entryid': str(_entryid or ""),
                 'supplyno': str(mono),
                 'memo': memo,
-            })
-            logger.info(f"更新PL状态响应：{response.status_code}，{response.text}")
-            return response
+            }
+            response_json = ApsHelpers._call_api('PATCH', patch_url, json=patch_data)
+            logger.info(f"更新PL状态响应：成功")
+            return response_json
         except Exception as e:
             error_msg = f"更新PL状态为MO时发生网络错误：{str(e)}"
             logger.fail("PL状态更新", native_plno, error_msg)
@@ -185,13 +241,13 @@ class ApsHelpers:
         memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
         
         try:
-            # logger.update("PL状态", f"{native_plno} -> 目标状态{to_status}", 1)
-            response = SESSION.patch(f'{THIS_BASE_URL}/api/t_supply/{native_plno}/...?db_name={MYAPS_MAIN_DB}', json={
+            url = f'{THIS_BASE_URL}/api/t_supply/{native_plno}/...?db_name={MYAPS_MAIN_DB}'
+            response_json = ApsHelpers._call_api('PATCH', url, json={
                 'status': to_status,
                 'memo': memo,
             })
-            logger.info(f"更新PL状态响应：{response.status_code}，{response.text}")
-            return response
+            logger.info(f"更新PL状态响应：成功")
+            return response_json
         except Exception as e:
             error_msg = f"更新PL状态时发生网络错误：{str(e)}"
             logger.fail("PL状态更新", native_plno, error_msg)
@@ -205,12 +261,13 @@ class ApsHelpers:
             memo = json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": rsno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
             
             logger.update("RS状态", rsno, f"目标状态{to_status}")
-            response = SESSION.patch(f'{THIS_BASE_URL}/api/t_demand/{rsno}/.../...?db_name={MYAPS_MAIN_DB}', json={
+            url = f'{THIS_BASE_URL}/api/t_demand/{rsno}/.../...?db_name={MYAPS_MAIN_DB}'
+            response_json = ApsHelpers._call_api('PATCH', url, json={
                 'status': to_status,
                 'memo': memo,
             })
-            logger.info(f"更新RS状态响应：{response.status_code}，{response.text}")
-            return response
+            logger.info(f"更新RS状态响应：成功")
+            return response_json
         except Exception as e:
             error_msg = f"更新RS状态时发生网络错误：{str(e)}"
             logger.fail("RS状态更新", rsno, error_msg)
@@ -224,10 +281,11 @@ class ApsHelpers:
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
-            response = SESSION.patch(f'{THIS_BASE_URL}/api/t_demand/{rsno}/.../...?db_name={MYAPS_MAIN_DB}', json={
+            url = f'{THIS_BASE_URL}/api/t_demand/{rsno}/.../...?db_name={MYAPS_MAIN_DB}'
+            response_json = ApsHelpers._call_api('PATCH', url, json={
                 'memo': memo,
             })
-            return response
+            return response_json
         except Exception as e:
             error_msg = f"更新RS失败状态时发生网络错误：{str(e)}"
             logger.fail("RS状态更新", rsno, error_msg)
@@ -288,15 +346,16 @@ class ApsHelpers:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": prno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
             logger.update("PR状态", prno, "")
-            response = SESSION.patch(f'{THIS_BASE_URL}/api/t_supply/{prno}/...?db_name={MYAPS_MAIN_DB}', json={
+            url = f'{THIS_BASE_URL}/api/t_supply/{prno}/...?db_name={MYAPS_MAIN_DB}'
+            response_json = ApsHelpers._call_api('PATCH', url, json={
                 'memo': memo,
                 'status': 'CRE',
                 'apiex_sn': _code,
                 'apiex_id': _id,
                 'apiex_entryid': _entryid,
             })
-            logger.info(f"更新PR状态响应：{response.status_code}，{response.text}")
-            return response
+            logger.info(f"更新PR状态响应：成功")
+            return response_json
         except Exception as e:
             error_msg = f"更新PR状态时发生网络错误：{str(e)}"
             logger.fail("PR状态更新", prno, error_msg)
@@ -309,11 +368,12 @@ class ApsHelpers:
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
-            response = SESSION.patch(f'{THIS_BASE_URL}/api/t_supply/{prno}/...?db_name={MYAPS_MAIN_DB}', json={
+            url = f'{THIS_BASE_URL}/api/t_supply/{prno}/...?db_name={MYAPS_MAIN_DB}'
+            response_json = ApsHelpers._call_api('PATCH', url, json={
                 'memo': memo,
                 'status': 'NEW',
             })
-            return response
+            return response_json
         except Exception as e:
             error_msg = f"更新PR失败状态时发生网络错误：{str(e)}"
             logger.fail("PR状态更新", prno, error_msg)
@@ -331,10 +391,13 @@ class ApsHelpers:
         Returns:
             工单计划单详情
         """
-        supply_response = SESSION.get(f"{THIS_BASE_URL}/api/v_supply_mo/{supplyno}?db_name={MYAPS_MAIN_DB}&prev_mo={get_prev_mo}&next_mo={get_next_mo}")
-        supply_response_json = supply_response.json()
-        supplymo_detaildata = supply_response_json['data'][0]
-        return supplymo_detaildata
+        url = f"{THIS_BASE_URL}/api/v_supply_mo/{supplyno}?db_name={MYAPS_MAIN_DB}&prev_mo={get_prev_mo}&next_mo={get_next_mo}"
+        supply_response_json = ApsHelpers._call_api('GET', url)
+        
+        if supply_response_json.get('success') != 0 and supply_response_json.get('data'):
+            return supply_response_json['data'][0]
+        else:
+            raise Exception(f"API返回错误: {supply_response_json.get('message', '未知错误')}")
 
 
     @staticmethod
@@ -346,10 +409,9 @@ class ApsHelpers:
         Returns:
             工单原料需求详情
         """
-        demand_response = SESSION.get(f"{THIS_BASE_URL}/api/v_demand/{demandno}?db_name={MYAPS_MAIN_DB}")
-        demand_response_json = demand_response.json()
-        demand_detaildata = demand_response_json['data']
-        return demand_detaildata
+        url = f"{THIS_BASE_URL}/api/v_demand/{demandno}?db_name={MYAPS_MAIN_DB}"
+        demand_response_json = ApsHelpers._call_api('GET', url)
+        return demand_response_json.get('data', [])
 
 
     @staticmethod
@@ -362,9 +424,9 @@ class ApsHelpers:
         🅰 field_map: 字段映射，默认None
         """
         db_name = db_name or MYAPS_MAIN_DB
-        response = SESSION.get(f"{THIS_BASE_URL}/api/v_matdailyqtyreport?db_name={db_name}&period={period}&groupdates={groupdates}")
-        response.raise_for_status()
-        data = response.json().get('data', [])
+        url = f"{THIS_BASE_URL}/api/v_matdailyqtyreport?db_name={db_name}&period={period}&groupdates={groupdates}"
+        response_json = ApsHelpers._call_api('GET', url)
+        data = response_json.get('data', [])
         field_map = field_map or {
             'materialno': '料号',
             'datestr': '交期',

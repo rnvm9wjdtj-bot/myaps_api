@@ -19,29 +19,42 @@ def get_session(
     allowed_methods: list = ["HEAD", "GET", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"],
     pool_connections: int = 10,
     pool_maxsize: int = 10,
-    connect_timeout: float = 10.0,
-    read_timeout: float = 30.0,
+    connect_timeout: float = 15.0,
+    read_timeout: float = 60.0,
+    backoff_factor: float = 1.0,
 ):
     # 配置重试策略
     retry_strategy = Retry(
         total=retries,  # 总重试次数
-        backoff_factor=0.5,  # 重试间隔因子，每次重试间隔 = backoff_factor * (2 ** (重试次数 - 1))
+        backoff_factor=backoff_factor,  # 重试间隔因子，每次重试间隔 = backoff_factor * (2 ** (重试次数 - 1))
         status_forcelist=[429, 500, 502, 503, 504],  # 需要重试的HTTP状态码
-        allowed_methods=allowed_methods  # 允许重试的HTTP方法
+        allowed_methods=allowed_methods,  # 允许重试的HTTP方法
+        # 处理连接错误
+        respect_retry_after_header=True,  # 尊重服务器返回的Retry-After头
     )
 
     # 配置连接池
     adapter = HTTPAdapter(
         max_retries=retry_strategy,
         pool_connections=pool_connections,  # 连接池中的最大连接数
-        pool_maxsize=pool_maxsize  # 连接池中每个主机的最大连接数
+        pool_maxsize=pool_maxsize,  # 连接池中每个主机的最大连接数
+        pool_block=False  # 连接池满时不阻塞，而是创建新连接
     )
 
     # 创建Session实例
     request_session = requests.Session()
 
-    # 设置默认超时时间（连接超时10秒，读取超时30秒）
+    # 设置默认超时时间（连接超时15秒，读取超时60秒）
     request_session.timeout = (connect_timeout, read_timeout)
+
+    # 设置连接池参数
+    request_session.keep_alive = True
+    request_session.headers.update({
+        'Connection': 'keep-alive',
+        'Accept-Encoding': 'gzip, deflate',
+        'Accept': '*/*',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    })
 
     # 挂载适配器到HTTP和HTTPS协议
     request_session.mount("http://", adapter)

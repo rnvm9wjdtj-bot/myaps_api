@@ -774,7 +774,7 @@ class TplusConnection(BaseConnection):
         # 材料需求
         demand_list = ApsHelpers._get_demand_datalist(demandno=supplyno)
         # PL及工序详情
-        supplymo_detaildata = ApsHelpers._get_supplymo_detaildata(supplyno=supplyno, get_prev_mo=True)
+        supplymo_detaildata = ApsHelpers._get_supplymo_detaildata(supplyno=supplyno, get_next_mo=True)
         supplymo_detaildata['demand_list'] = demand_list
         # dto = pydantic_model(**supplymo_detaildata).model_dump(exclude_unset=True)
         dto = pydantic_model(**supplymo_detaildata).model_dump(exclude_none=True)
