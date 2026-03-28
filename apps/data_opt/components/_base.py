@@ -152,7 +152,7 @@ class ApsHelpers:
 
         if isinstance(supply_data, pd.DataFrame):
             supply_data = supply_data.to_dict('records')
-        supply_data = [AcceptSupply(**item).model_dump() for item in supply_data]
+        supply_data = [AcceptSupply(**item).model_dump(exclude_none=True) for item in supply_data]
         url = f"{THIS_BASE_URL}/api/t_supply/type/{type_}?db_name={dbs}"
         refresh_result_json = ApsHelpers._call_api('PUT', url, json=supply_data)
         if refresh_result_json.get('success'):
@@ -176,7 +176,7 @@ class ApsHelpers:
 
 
     @staticmethod
-    def _pl_release_success(native_plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _id: str=None, _entryid: str=None):
+    def pl_release_success(native_plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _id: str=None, _entryid: str=None):
         """
         通过调用自路由修改PL的Type、Status、SupplyNo、Memo等字段，作为私有方法在 def click_release_button() 中被直接调用
         🅰 native_plno: 原生PL计划单编号
@@ -235,7 +235,7 @@ class ApsHelpers:
 
 
     @staticmethod
-    def _pl_release_failed(native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, push_data: dict=None, msg_from: str=None):
+    def pl_release_failed(native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, push_data: dict=None, msg_from: str=None):
         logger.fail("推送 MO", json.dumps(push_data, ensure_ascii=False), msg)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
@@ -255,7 +255,7 @@ class ApsHelpers:
 
 
     @staticmethod
-    def _rs_push_success(rsno: str, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
+    def rs_push_success(rsno: str, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": rsno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
@@ -275,7 +275,7 @@ class ApsHelpers:
 
 
     @staticmethod
-    def _rs_push_failed(rsno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None):
+    def rs_push_failed(rsno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None):
         logger.fail("推送 RS", json.dumps(push_data, ensure_ascii=False), msg)
 
         try:
@@ -290,6 +290,27 @@ class ApsHelpers:
             error_msg = f"更新RS失败状态时发生网络错误：{str(e)}"
             logger.fail("RS状态更新", rsno, error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
+
+
+    @staticmethod
+    def query_material(materialnos: str | list[str]) -> dict:
+        """
+        查询物料信息
+        Args:
+            materialnos: 物料编号（多个用半角逗号分隔）或物料编号列表
+        Returns:
+            物料信息字典或列表
+        """
+        if isinstance(materialnos, list):
+            materialnos = ','.join(materialnos)
+        url = f"{THIS_BASE_URL}/api/v_material/{materialnos}?db_name={MYAPS_MAIN_DB}"
+        try:
+            response_json = ApsHelpers._call_api('GET', url)
+            return response_json.get('data', [])
+        except Exception as e:
+            error_msg = f"查询物料信息时发生网络错误：{str(e)}"
+            logger.fail("查询物料信息", materialnos, error_msg)
+            return []
 
 
     @staticmethod
@@ -381,7 +402,7 @@ class ApsHelpers:
 
 
     @staticmethod
-    def _get_supplymo_detaildata(supplyno: str, get_prev_mo:bool=False, get_next_mo:bool=False):
+    def get_supplymo_detaildata(supplyno: str, get_prev_mo:bool=False, get_next_mo:bool=False):
         """
         获取工单的工序详情、及MTO销售订单信息
         Args:
@@ -401,7 +422,7 @@ class ApsHelpers:
 
 
     @staticmethod
-    def _get_demand_datalist(demandno: str) -> List[Dict]:
+    def get_demand_datalist(demandno: str) -> List[Dict]:
         """
         获取工单原料需求
         Args:
@@ -415,7 +436,7 @@ class ApsHelpers:
 
 
     @staticmethod
-    def _get_dategrouped_pr(db_name: str=None, period: int|str=30, groupdates: Optional[str]=None, field_map: dict=None):
+    def get_dategrouped_pr(db_name: str=None, period: int|str=30, groupdates: Optional[str]=None, field_map: dict=None):
         """
         从数据库获取按日期分组的计划任务数据
         🅰 db_name: 账套名称，默认MYAPS_MAIN_DB

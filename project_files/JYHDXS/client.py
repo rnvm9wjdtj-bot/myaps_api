@@ -158,7 +158,7 @@ def push_pr(period: int = 30, groupdates: List[str] | str = None):
         if isinstance(groupdates, list):
             groupdates = ','.join(groupdates)
 
-    pr_data = ApsHelpers._get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=period, field_map=srm_field_map, groupdates=groupdates)
+    pr_data = ApsHelpers.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=period, field_map=srm_field_map, groupdates=groupdates)
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     for item in pr_data:
         item["plant"] = "1000"
@@ -223,7 +223,7 @@ def handle_pl_status_a2e(supplyno_or_data: str | dict):
     else:
         supplyno = supplyno_or_data['supplyno']
 
-    supplymo_detaildata = ApsHelpers._get_supplymo_detaildata(supplyno=supplyno)
+    supplymo_detaildata = ApsHelpers.get_supplymo_detaildata(supplyno=supplyno)
     try:
         start_datetime: str = supplymo_detaildata['dt_ordstart'].split(" ")[0]
         end_datetime: str = supplymo_detaildata['dt_ordend'].split(" ")[0]
@@ -246,9 +246,9 @@ def handle_pl_status_a2e(supplyno_or_data: str | dict):
         sap_mo_data = sap_response_json['BODY'][0]
         
         if sap_mo_data['STATUS'] == 'S':
-            ApsHelpers._pl_release_success(native_plno=supplyno, mono=sap_mo_data['AUFNR'], msg=sap_mo_data['MESSAGE'], msg_from='ERP')
+            ApsHelpers.pl_release_success(native_plno=supplyno, mono=sap_mo_data['AUFNR'], msg=sap_mo_data['MESSAGE'], msg_from='ERP')
         else:
-            ApsHelpers._pl_release_failed(native_plno=supplyno, msg=sap_mo_data['MESSAGE'], push_data=data, msg_from='ERP')
+            ApsHelpers.pl_release_failed(native_plno=supplyno, msg=sap_mo_data['MESSAGE'], push_data=data, msg_from='ERP')
     except Exception as e:
-        ApsHelpers._pl_release_failed(native_plno=supplyno, msg=str(e), push_data=data, msg_from='API')
+        ApsHelpers.pl_release_failed(native_plno=supplyno, msg=str(e), push_data=data, msg_from='API')
 

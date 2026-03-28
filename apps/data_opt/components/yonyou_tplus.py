@@ -772,9 +772,9 @@ class TplusConnection(BaseConnection):
         self.auth()
         endpoint = MoCreateInterface.endpoint
         # 材料需求
-        demand_list = ApsHelpers._get_demand_datalist(demandno=supplyno)
+        demand_list = ApsHelpers.get_demand_datalist(demandno=supplyno)
         # PL及工序详情
-        supplymo_detaildata = ApsHelpers._get_supplymo_detaildata(supplyno=supplyno, get_next_mo=True)
+        supplymo_detaildata = ApsHelpers.get_supplymo_detaildata(supplyno=supplyno, get_next_mo=True)
         supplymo_detaildata['demand_list'] = demand_list
         # dto = pydantic_model(**supplymo_detaildata).model_dump(exclude_unset=True)
         dto = pydantic_model(**supplymo_detaildata).model_dump(exclude_none=True)
@@ -801,9 +801,9 @@ class TplusConnection(BaseConnection):
             #     _x_b = self.push_rs(mdlist_or_supplyno=demand_list, tplus_mo_data_or_id=tplus_mo_data)
 
             # 调用存储过程更改工单信息，❗一定放在最后一步，否则工单号变更太早，前面若有用原生供应号查询都会失败
-            _x_c = ApsHelpers._pl_release_success(native_plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
+            _x_c = ApsHelpers.pl_release_success(native_plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
         else:
-            _x_d = ApsHelpers._pl_release_failed(native_plno=supplyno, msg=mo_create_response_json['message'], push_data=payload, msg_from='T+')
+            _x_d = ApsHelpers.pl_release_failed(native_plno=supplyno, msg=mo_create_response_json['message'], push_data=payload, msg_from='T+')
 
 
     def push_rs(self, mdlist_or_supplyno: str | list[dict], tplus_mo_data_or_id: dict | str | int, pydantic_model:PydanticModel=RsPushModel):
@@ -814,7 +814,7 @@ class TplusConnection(BaseConnection):
         """
         endpoint = RsCreateInterface.endpoint
         if isinstance(mdlist_or_supplyno, str):
-            rs_data = ApsHelpers._get_demand_datalist(demandno=mdlist_or_supplyno)     # 查询 指定工单号所需物料
+            rs_data = ApsHelpers.get_demand_datalist(demandno=mdlist_or_supplyno)     # 查询 指定工单号所需物料
             demandno = mdlist_or_supplyno
         else:
             rs_data = mdlist_or_supplyno
@@ -845,9 +845,9 @@ class TplusConnection(BaseConnection):
         response = self._post(endpoint=endpoint, data=payload)
         rs_push_response_json = response.json()
         if str(rs_push_response_json['code']) == '0': # 创建成功
-            ApsHelpers._rs_push_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
+            ApsHelpers.rs_push_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
         else:
-            ApsHelpers._rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], push_data=processed_rsdata, msg_from='T+')
+            ApsHelpers.rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], push_data=processed_rsdata, msg_from='T+')
 
 
     def push_pr(self, data_list: list[dict]=None, pydantic_model:PydanticModel=PrPushModel):

@@ -5,6 +5,9 @@
 - 销售订单SO 
 - 审批好的新 PO 及后续执行情况
 - 报工数据
+
+其他：
+- 物料主数据 free1 字段为 是否倒冲料，Y 表示倒冲料，N 表示普通物料
 """
 from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR, SCHEDULER_MINUTE
 from .._base import (
@@ -65,10 +68,9 @@ class CustomMoPushModel(MoPushModel):
         mo_details = cleaned_values['ManufactureOrderDetails'][0]
         mo_material_details: list[dict] = mo_details['ManufactureOrderMaterialDetails']
 
-        # 优化：批量查询所有物料的 free1 字段
-        materialnos = ','.join([md['Inventory']['Code'] for md in mo_material_details])
-        materials = SESSION.get(f"{THIS_BASE_URL}/api/v_material/{materialnos}")
-        materials = materials.json()['data']
+        # 批量查询所有物料的 free1 字段
+        materialnos = [md['Inventory']['Code'] for md in mo_material_details]
+        materials = ApsHelpers.query_material(materialnos)
         materials = {item['materialno']: item for item in materials}
         
         for md in mo_material_details:
@@ -76,9 +78,7 @@ class CustomMoPushModel(MoPushModel):
             free1 = materials.get(materialno, {}).get('free1')
             if free1 == 'Y':    # 该物料为倒冲料
                 md['Warehouse'] = {'Code': '5'} # 倒冲料仓库
-                # md['IsMaterialRequest'] = False # 无需领料
                 md.pop('IsMaterialRequest')
-                # cleaned_values['IsMaterialRequest'] = False
         
         # 构建后续工单关系
         next_mos: list[dict] = values.get('next_mo')
