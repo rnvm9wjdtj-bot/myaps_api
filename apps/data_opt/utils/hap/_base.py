@@ -255,10 +255,10 @@ _DEFAULT_RETRY_DELAY = _CACHE_HAP.get("default_retry_delay", 1.0)
 
 
 
-_DEFAULT_CONNECT_TIMEOUT = _CACHE_HAP.get("connect_timeout", 5.0)    # 增加连接超时时间
-_DEFAULT_READ_TIMEOUT = _CACHE_HAP.get("read_timeout", 60.0) # 增加读取超时时间
-_DEFAULT_BASE_CONNECT_TIMEOUT = _CACHE_HAP.get("base_connect_timeout", 5.0)
-_DEFAULT_BASE_READ_TIMEOUT = _CACHE_HAP.get("base_read_timeout", 60.0)
+_DEFAULT_CONNECT_TIMEOUT = _CACHE_HAP.get("connect_timeout", 10.0)    # 增加连接超时时间
+_DEFAULT_READ_TIMEOUT = _CACHE_HAP.get("read_timeout", 120.0) # 增加读取超时时间
+_DEFAULT_BASE_CONNECT_TIMEOUT = _CACHE_HAP.get("base_connect_timeout", 10.0)
+_DEFAULT_BASE_READ_TIMEOUT = _CACHE_HAP.get("base_read_timeout", 120.0)
 
 _DEFAULT_RETRY_BASE_DELAY = _CACHE_HAP.get("retry_base_delay", 0.5)
 _DEFAULT_RETRY_MAX_DELAY = _CACHE_HAP.get("retry_max_delay", 30.0)

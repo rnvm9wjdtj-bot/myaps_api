@@ -56,7 +56,12 @@ class AsyncHttpClient:
             )
             connector = aiohttp.TCPConnector(
                 limit=self._max_connections,
-                enable_cleanup_closed=True
+                limit_per_host=max(10, self._max_connections // 5),
+                enable_cleanup_closed=True,
+                force_close=False,
+                ttl_dns_cache=300,
+                use_dns_cache=True,
+                keepalive_timeout=30
             )
             self._session = aiohttp.ClientSession(
                 timeout=timeout,

@@ -9,7 +9,7 @@ os.environ.setdefault('ENV_FILE', env_file)
 load_dotenv(env_file)
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 # from starlette.middleware.base import BaseHTTPMiddleware
@@ -218,6 +218,48 @@ async def read_root():
         "version": "1.0.0",
         "status": "running"
     }
+
+
+
+@app.websocket("/{path:path}")
+async def websocket_endpoint(websocket: WebSocket, path: str = ""):
+    """
+    通用 WebSocket 端点，捕获所有 WebSocket 连接请求。
+    使用 {path:path} 通配符匹配任意路径，避免 "Unsupported upgrade request" 警告。
+    """
+    await websocket.accept()
+    full_path = f"/{path}" if path else "/"
+    client_info = {
+        "client": f"{websocket.client.host}:{websocket.client.port}",
+        "path": full_path,
+        "query_params": dict(websocket.query_params),
+        "headers": {k: v for k, v in websocket.headers.items() if k.lower() not in ['cookie', 'authorization']},
+    }
+    log_config.info(f"WebSocket 连接请求: {client_info}")
+
+    try:
+        # 保持连接并接收消息，5秒超时后自动关闭
+        while True:
+            try:
+                message = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+                log_config.info(f"WebSocket 收到消息 [{full_path}]: {message}")
+                await websocket.send_json({
+                    "status": "received",
+                    "path": full_path,
+                    "message": message
+                })
+            except asyncio.TimeoutError:
+                break
+    except WebSocketDisconnect:
+        log_config.info(f"WebSocket 客户端断开连接: {client_info['client']} - {full_path}")
+    except Exception as e:
+        log_config.warning(f"WebSocket 异常 [{full_path}]: {e}")
+    finally:
+        try:
+            await websocket.close()
+        except:
+            pass
+        log_config.info(f"WebSocket 连接已关闭: {client_info['client']} - {full_path}")
 
 # 注册Tortoise ORM
 

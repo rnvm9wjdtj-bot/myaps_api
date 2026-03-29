@@ -487,7 +487,7 @@ class MySQLBinlogMonitor:
                     elif hasattr(row, 'values'):
                         # 检查values是否是方法
                         if callable(row.values):
-                            data = row.values()
+                            data = dict(row.values())
                         else:
                             data = row.values
                     else:
@@ -527,11 +527,11 @@ class MySQLBinlogMonitor:
                     if hasattr(row, 'before_values') and hasattr(row, 'after_values'):
                         # 检查before_values和after_values是否是方法
                         if callable(row.before_values):
-                            old_data = row.before_values()
+                            old_data = dict(row.before_values())
                         else:
                             old_data = row.before_values
                         if callable(row.after_values):
-                            new_data = row.after_values()
+                            new_data = dict(row.after_values())
                         else:
                             new_data = row.after_values
                     elif isinstance(row, dict) and 'before_values' in row and 'after_values' in row:
@@ -594,17 +594,14 @@ class MySQLBinlogMonitor:
                 for row in event.rows:
                     if isinstance(row, dict) and 'values' in row:
                         data = row['values']
-                    else:
-                        if hasattr(row, 'values'):
-                            # 检查values是否是方法
-                            if callable(row.values):
-                                data = row.values()
-                            else:
-                                data = row.values
-                        elif isinstance(row, dict) and 'values' in row:
-                            data = row['values']
+                    elif hasattr(row, 'values'):
+                        # 检查values是否是方法
+                        if callable(row.values):
+                            data = dict(row.values())
                         else:
-                            data = row
+                            data = row.values
+                    else:
+                        data = row
                         
                     mapped_data = self._map_data_with_column_names(schema, table, data)
                     

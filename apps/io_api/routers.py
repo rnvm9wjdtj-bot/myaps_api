@@ -153,7 +153,12 @@ async def get_meta():
     
 
 
-@rt.get("/v_material/{materialnos}")
+@rt.get(
+    "/v_material/{materialnos}",
+    tags=["主数据 - 物料"],
+    summary="根据料号获取物料信息",
+    description="根据料号获取物料信息"
+)
 async def get_material(
     materialnos: str = Path(..., description="料号，多个用逗号隔开"),
     db_name: str = common_params["db_name"]

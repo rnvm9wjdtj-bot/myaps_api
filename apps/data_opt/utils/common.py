@@ -26,10 +26,13 @@ def get_session(
     # 配置重试策略
     retry_strategy = Retry(
         total=retries,  # 总重试次数
+        connect=retries,  # 连接错误重试次数
+        read=retries,  # 读取错误重试次数
+        redirect=retries,  # 重定向重试次数
+        status=retries,  # 状态码错误重试次数
         backoff_factor=backoff_factor,  # 重试间隔因子，每次重试间隔 = backoff_factor * (2 ** (重试次数 - 1))
         status_forcelist=[429, 500, 502, 503, 504],  # 需要重试的HTTP状态码
         allowed_methods=allowed_methods,  # 允许重试的HTTP方法
-        # 处理连接错误
         respect_retry_after_header=True,  # 尊重服务器返回的Retry-After头
     )
 

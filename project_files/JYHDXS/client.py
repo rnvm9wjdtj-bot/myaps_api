@@ -72,7 +72,7 @@ def sap_post(url: str, session: requests.Session, interface_id: str, data: dict)
     response: requests.Response = session.post(url, headers=headers, json={
         "HEAD": headers,
         "BODY": [data]
-    })
+    }, timeout=(15, 60))
 
     response_json = {}
     if response.status_code == status.HTTP_200_OK:
@@ -98,7 +98,7 @@ def refresh_stock(dbs: str=MYAPS_DB_SET):
         """
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         try:
-            sap_stock_response = sap_session.get(url=f"{sap_url1}", headers={'interface': 'stock', 'werks': werks}).json()
+            sap_stock_response = sap_session.get(url=f"{sap_url1}", headers={'interface': 'stock', 'werks': werks}, timeout=(15, 60)).json()
             sap_st_data = sap_stock_response.get('data', [])
             df_sap_st = pd.DataFrame(sap_st_data)
             df_sap_st = df_sap_st.astype({
