@@ -205,22 +205,8 @@ async def custom_swagger_ui_html():
 register_exception_handlers(app)
 # register_data_manager_exception_handlers(app)
 
-# 包含子路由
-app.include_router(io_rt, prefix="/api", tags=[])
-app.include_router(do_rt, prefix="/do", tags=[])
-
-
-# 根路由
-@app.get("/")
-async def read_root():
-    return {
-        "message": "Welcome to MyAPI",
-        "version": "1.0.0",
-        "status": "running"
-    }
-
-
-
+# WebSocket 路由 - 捕获并记录所有客户端升级请求，避免 "Unsupported upgrade request" 警告
+# 使用路径参数 {path:path} 匹配任意路径（包括嵌套路径）
 @app.websocket("/{path:path}")
 async def websocket_endpoint(websocket: WebSocket, path: str = ""):
     """
@@ -261,6 +247,49 @@ async def websocket_endpoint(websocket: WebSocket, path: str = ""):
             pass
         log_config.info(f"WebSocket 连接已关闭: {client_info['client']} - {full_path}")
 
+# 为根路径添加单独的 WebSocket 路由
+@app.websocket("/")
+async def websocket_root(websocket: WebSocket):
+    """
+    根路径 WebSocket 端点，捕获对根路径的 WebSocket 连接请求。
+    """
+    await websocket.accept()
+    client_info = {
+        "client": f"{websocket.client.host}:{websocket.client.port}",
+        "path": "/",
+        "query_params": dict(websocket.query_params),
+        "headers": {k: v for k, v in websocket.headers.items() if k.lower() not in ['cookie', 'authorization']},
+    }
+    log_config.info(f"WebSocket 根路径连接请求: {client_info}")
+
+    try:
+        # 5秒超时后自动关闭
+        await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+    except (asyncio.TimeoutError, WebSocketDisconnect):
+        pass
+    except Exception as e:
+        log_config.warning(f"WebSocket 根路径异常: {e}")
+    finally:
+        try:
+            await websocket.close()
+        except:
+            pass
+        log_config.info(f"WebSocket 根路径连接已关闭: {client_info['client']}")
+
+# 包含子路由
+app.include_router(io_rt, prefix="/api", tags=[])
+app.include_router(do_rt, prefix="/do", tags=[])
+
+
+# 根路由
+@app.get("/")
+async def read_root():
+    return {
+        "message": "Welcome to MyAPI",
+        "version": "1.0.0",
+        "status": "running"
+    }
+
 # 注册Tortoise ORM
 
 register_tortoise(
@@ -300,8 +329,7 @@ if __name__ == "__main__":
         port=PORT,
         log_level="info",
         access_log=False,
-        log_config=LOGGING_CONFIG,
-        ws="websockets"
+        log_config=LOGGING_CONFIG
     )
 
 

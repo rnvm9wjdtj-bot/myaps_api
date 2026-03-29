@@ -392,7 +392,8 @@ async def patch_supply(
         data['supplyno'] = supplyno
     # 调用存储过程SupplyConvertMOByE2A，将PL转为MO
     params_list = [[supplyno, data['supplyno'], data['status'], data['apiex_id'], data['apiex_entryid'], data['memo']]]
-    return await call_dbprocdure(db_names=db_name, procedure_name="SupplyConvertMOByE2A", params_list=params_list)
+    result = await call_dbprocdure(db_names=db_name, procedure_name="SupplyConvertMOByE2A", params_list=params_list)
+    return result
     
 
 
@@ -426,11 +427,12 @@ async def replace_supply(
         return delete_result
 
 
+
 @rt.delete(
     "/t_supply/{supplyno}",
     tags=["生产数据 - 供应"],
     summary="删除供应记录",
-    description="根据供应号删除供应记录。若为MO PL，还会删除关联的工序记录和报工记录"
+    description="根据供应号删除对应记录。也可用于完结工单。"
 )
 async def delete_supply(
     db_name: str = common_params["db_name"],
@@ -438,22 +440,10 @@ async def delete_supply(
     x_api_key: str = common_params["x_api_key"]
 ):
     db_name = db_name.replace(" ", "")
-    filter_string = f"`SupplyNo`='{supplyno}'"
-    query_result = await db_query(db_name=db_name, model_or_tablename="t_supply", filter_string=filter_string)
-    result = await db_delete(db_names=db_name, model_or_tablename="t_supply", filter_string=filter_string)
-    _type = query_result['data'][0]['type']
-    if result['success']: # 删除关联的工序记录、报工
-        orderwc_delete_result = await db_delete(db_names=db_name, model_or_tablename="t_orderwc", filter_string=filter_string)
-        confirm_delete_result = await db_delete(db_names=db_name, model_or_tablename="t_confirm", filter_string=filter_string)
-        return standard_response(
-            success=1,
-            message=f"Supply {supplyno} deleted successfully.")
-    else:
-        return standard_response(
-            status_code=result["status_code"],
-            success=0,
-            message=result["message"])
 
+    result = await call_dbprocdure(db_names=db_name, procedure_name="SupplyDeleteAll", params_list=[[supplyno]])
+    return result
+    
 
 
 # 需求
@@ -831,7 +821,9 @@ async def create_workreport(
     """
     db_name = db_name.replace(" ", "")
     # await db_query(db_name=db_name, model_or_tablename="t_orderwc", filter_string=f"`SupplyNo`='{supplyno}' AND `ItemNo`='{itemno}'")
-    return await db_bupsert(db_names=db_name, model_or_tablename="t_confirm", data_list=data)
+    result = await db_bupsert(db_names=db_name, model_or_tablename="t_confirm", data_list=data)
+    return result
+
 
 
 @rt.delete(
@@ -869,5 +861,6 @@ async def confirm_workreport(
     db_name: str，数据库名称，多个数据库名称用逗号分隔
     """
     db_name = db_name.replace(" ", "")
-    return await call_dbprocdure(db_names=db_name, procedure_name="UpdateConfirmQtyToOrderWC")
+    result = await call_dbprocdure(db_names=db_name, procedure_name="UpdateConfirmQtyToOrderWC")
+    return result
 
