@@ -18,7 +18,6 @@ from core.middleware import create_security_middleware, IP_WHITELIST, API_KEY
 from core.websocket import websocket_endpoint, websocket_root
 from core.routes_register import register_routes
 from core.database import register_database
-from core.tasks import startup_event
 from apps.io_api.utils.common import register_exception_handlers
 from config.settings import PORT
 
@@ -67,9 +66,6 @@ register_routes(app)
 
 # 注册数据库
 register_database(app)
-
-# 注册启动事件
-app.on_event("startup")(startup_event)
 
 # 启动说明：
 # 使用命令: uvicorn main:app --host 0.0.0.0 --port 8000 

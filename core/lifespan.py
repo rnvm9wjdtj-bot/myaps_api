@@ -2,11 +2,12 @@ from contextlib import asynccontextmanager
 import asyncio
 import time
 from globalobjects import logger as log_config
-from apps.data_opt.utils.scheduler import scheduler_manager, get_scheduler_status
+from apps.data_opt.utils.scheduler import scheduler_manager, get_scheduler_status, initialize_scheduler
 from apps.data_opt.utils.mysqlmonitor import mysql_monitor
 from apps.common.utils.resource_monitor import resource_monitor
 from globalobjects import EVENT_AGGREGATOR
 from config.settings import TURNON_DBMONITOR, TRUNON_SCHEDULER
+from core.database import check_db_connections
 
 @asynccontextmanager
 async def lifespan(app):
@@ -37,6 +38,23 @@ async def lifespan(app):
     log_config.info("开始启动资源监控...")
     resource_monitor.start_monitoring(interval=30)
     log_config.info("系统资源监控已启动")
+    
+    if TRUNON_SCHEDULER:
+        initialize_scheduler()
+    else:
+        log_config.warning("⚠️ 定时任务初始化被跳过，因为 TRUNON_SCHEDULER=false")
+    
+    # 设置定期检查数据库连接的任务（从原startup_event迁移）
+    async def schedule_db_checks():
+        """定期执行数据库连接检查"""
+        while True:
+            await check_db_connections()
+            # 每300秒（5分钟）检查一次
+            await asyncio.sleep(300)
+    
+    # 启动数据库连接检查任务（从原startup_event迁移）
+    asyncio.create_task(schedule_db_checks())
+    log_config.info("数据库连接检查任务已启动")
     
     # 等待一段时间，确保资源监控线程正常启动
     time.sleep(1)
