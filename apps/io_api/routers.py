@@ -440,8 +440,8 @@ async def delete_supply(
     x_api_key: str = common_params["x_api_key"]
 ):
     db_name = db_name.replace(" ", "")
-
     result = await call_dbprocdure(db_names=db_name, procedure_name="SupplyDeleteAll", params_list=[[supplyno]])
+    result['message'] = 'success'
     return result
     
 

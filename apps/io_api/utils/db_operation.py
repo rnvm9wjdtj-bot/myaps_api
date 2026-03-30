@@ -420,18 +420,20 @@ async def call_dbprocdure(db_names: str, procedure_name: str, params_list: List[
     valid_dbs = validate_databases(db_names)
     assert valid_dbs, "未指定账套或账套不存在"
     total_affect_count = 0
-    meta = {}
+    # meta = {}
+    affect_rows = 0
     try:
         for db_name in valid_dbs:
             db_manager = get_db_manager(db_name)
             exe_result = await db_manager.call_stored_procedure(procedure_name=procedure_name, params_list=params_list)
-            affect_rows = exe_result.get('affected_rows', 0)
+            affect_rows += exe_result.get('affected_rows', 0)
             total_affect_count += affect_rows
             logger.success("存储过程调用", f"{procedure_name}@{db_name}", f"影响{affect_rows}条记录")
-            meta[db_name] = affect_rows
+            # meta[db_name] = affect_rows
         return standard_response(
             message=f"调用存储过程`{procedure_name}`@{db_name}成功，影响{total_affect_count}条记录",
-            meta=meta
+            meta={"affect_rows": affect_rows, "affect_dbs": ", ".join(valid_dbs)},
+            
         )
     except Exception as e:
         logger.fail("存储过程调用", f"{procedure_name}@{db_names}", str(e))

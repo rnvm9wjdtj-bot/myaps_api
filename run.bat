@@ -49,17 +49,26 @@ echo %date% %time% - Server starting on port %PORT% >> %LOG_FILE%
 
 REM Port check and cleanup
 echo Checking if port %PORT% is available...
-for /f "tokens=5" %%i in ('netstat -ano ^| findstr "LISTENING" ^| findstr ":%PORT%"') do (
+for /f "tokens=5" %%i in ('netstat -ano ^| findstr ":%PORT%"') do (
     echo [WARNING] Found process %%i using port %PORT%
     echo %date% %time% - Found process %%i using port %PORT% >> %LOG_FILE%
     echo Killing process %%i...
     taskkill /F /PID %%i >nul 2>&1
     echo %date% %time% - Killed process %%i >> %LOG_FILE%
 )
-timeout /t 2 /nobreak >nul
+timeout /t 3 /nobreak >nul
 
-echo [INFO] Port %PORT% is available for use
-echo %date% %time% - Port %PORT% is available >> %LOG_FILE%
+REM Verify port is available
+netstat -ano | findstr ":%PORT%"
+if %errorlevel% equ 0 (
+    echo [ERROR] Port %PORT% is still in use!
+    echo %date% %time% - Port %PORT% is still in use! >> %LOG_FILE%
+    pause
+    exit /b 1
+) else (
+    echo [INFO] Port %PORT% is available for use
+    echo %date% %time% - Port %PORT% is available >> %LOG_FILE%
+)
 
 REM Set environment variables
 set "ENV_FILE=.env"

@@ -366,10 +366,22 @@ class MySQLBinlogMonitor:
 
     def start_monitoring(self):
         """开始监控Binlog"""
-        self.running = True
-        monitoring_thread = threading.Thread(target=self._monitor_binlog_with_retry, daemon=True)
-        monitoring_thread.start()
-        logger.info("✅ Binlog监控线程已启动")
+        if not self.running:
+            self.running = True
+            # 重新创建线程池
+            try:
+                import concurrent.futures
+                if hasattr(self, '_thread_pool') and self._thread_pool._shutdown:
+                    self._thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=10)
+                    logger.success("线程池", "", "已重新创建")
+            except Exception as e:
+                logger.fail("线程池创建", "", str(e))
+            
+            monitoring_thread = threading.Thread(target=self._monitor_binlog_with_retry, daemon=True)
+            monitoring_thread.start()
+            logger.info("✅ Binlog监控线程已启动")
+        else:
+            logger.info("⚠️ Binlog监控已经在运行")
 
     def _monitor_binlog_with_retry(self):
         """带重试机制的Binlog监控"""
@@ -395,6 +407,7 @@ class MySQLBinlogMonitor:
                     time.sleep(0.1)
         
         if retry_count >= max_retries:
+            self.running = False
             logger.fail("Binlog连接", "", "达到最大重试次数，停止监控")
 
     def _start_binlog_stream(self):
@@ -658,14 +671,17 @@ class MySQLBinlogMonitor:
 
     def stop_monitoring(self):
         """停止监控"""
-        self.running = False
-        # 关闭线程池
-        try:
-            self._thread_pool.shutdown(wait=True)
-            logger.success("线程池", f"{self._thread_pool}", "已关闭")
-        except Exception as e:
-            logger.fail("线程池关闭", f"{self._thread_pool}", str(e))
-        logger.success("Binlog监控", f"@{MYAPS_MAIN_DB}", "已停止")
+        if self.running:
+            self.running = False
+            # 关闭线程池
+            try:
+                self._thread_pool.shutdown(wait=True)
+                logger.success("线程池", f"{self._thread_pool}", "已关闭")
+            except Exception as e:
+                logger.fail("线程池关闭", f"{self._thread_pool}", str(e))
+            logger.success("Binlog监控", f"@{MYAPS_MAIN_DB}", "已停止")
+        else:
+            logger.info("⚠️ Binlog监控已经停止")
 
     @staticmethod
     def get_mysql_config(is_single_db=True):
