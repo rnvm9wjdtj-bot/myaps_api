@@ -968,6 +968,77 @@ class DbManager:
         """
         self.connection_name = connection_name
         logger.info(f"已切换数据库连接至：{connection_name}")
+    
+    async def get_connection_pool_status(self) -> Dict[str, Any]:
+        """
+        获取连接池状态
+        
+        Returns:
+            连接池状态信息
+        """
+        try:
+            conn = Tortoise.get_connection(self.connection_name)
+            pool = conn._pool if hasattr(conn, '_pool') else None
+            
+            status = {
+                'connection_name': self.connection_name,
+                'pool_available': pool is not None
+            }
+            
+            if pool:
+                # 不同数据库后端的连接池属性可能不同
+                if hasattr(pool, '_size'):
+                    status['current_size'] = pool._size
+                if hasattr(pool, '_maxsize'):
+                    status['max_size'] = pool._maxsize
+                if hasattr(pool, '_minsize'):
+                    status['min_size'] = pool._minsize
+                if hasattr(pool, '_idle'):
+                    status['idle_connections'] = len(pool._idle)
+                if hasattr(pool, '_used'):
+                    status['used_connections'] = len(pool._used)
+            
+            return status
+        except Exception as e:
+            logger.error(f"获取连接池状态失败: {e}")
+            return {
+                'connection_name': self.connection_name,
+                'pool_available': False,
+                'error': str(e)
+            }
+    
+    async def check_connection_health(self) -> bool:
+        """
+        检查数据库连接健康状态
+        
+        Returns:
+            bool: 连接是否健康
+        """
+        try:
+            conn = Tortoise.get_connection(self.connection_name)
+            # 执行一个简单的查询来检查连接是否有效
+            await conn.execute_query("SELECT 1")
+            return True
+        except Exception as e:
+            logger.warning(f"数据库连接健康检查失败: {e}")
+            return False
+    
+    async def refresh_connection(self):
+        """
+        刷新数据库连接，确保连接有效
+        """
+        try:
+            conn = Tortoise.get_connection(self.connection_name)
+            # 关闭并重新获取连接
+            if hasattr(conn, 'close'):
+                await conn.close()
+            # 重新获取连接
+            new_conn = Tortoise.get_connection(self.connection_name)
+            logger.info(f"数据库连接已刷新: {self.connection_name}")
+            return True
+        except Exception as e:
+            logger.error(f"刷新数据库连接失败: {e}")
+            return False
 
 
     @with_transaction

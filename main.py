@@ -60,8 +60,14 @@ async def lifespan(app: FastAPI):
         log_config.warning("⚠️ MySQL Binlog监控未启动")
     
     # 启动资源监控
+    log_config.info("开始启动资源监控...")
     resource_monitor.start_monitoring(interval=30)  # 每30秒监控一次
     log_config.info("系统资源监控已启动")
+    
+    # 等待一段时间，确保资源监控线程正常启动
+    import time
+    time.sleep(1)
+    log_config.info("应用启动完成，开始运行")
     
     yield  # 应用运行期间
     
@@ -222,6 +228,54 @@ async def custom_swagger_ui_html():
 register_exception_handlers(app)
 # register_data_manager_exception_handlers(app)
 
+# WebSocket 连接管理器，用于跟踪和管理活跃的 WebSocket 连接
+class WebSocketConnectionManager:
+    def __init__(self):
+        self.active_connections = set()
+        self.ip_connection_count = {}
+        self.max_connections_per_ip = 10  # 每IP最大连接数
+        self.max_total_connections = 100  # 总最大连接数
+
+    async def connect(self, websocket: WebSocket):
+        client_ip = websocket.client.host
+        
+        # 检查连接数限制
+        if len(self.active_connections) >= self.max_total_connections:
+            log_config.warning(f"WebSocket 连接数达到上限: {self.max_total_connections}")
+            return False
+        
+        # 检查每IP连接数限制
+        if self.ip_connection_count.get(client_ip, 0) >= self.max_connections_per_ip:
+            log_config.warning(f"IP {client_ip} 连接数达到上限: {self.max_connections_per_ip}")
+            return False
+        
+        # 接受连接
+        await websocket.accept()
+        
+        # 记录连接
+        self.active_connections.add(websocket)
+        self.ip_connection_count[client_ip] = self.ip_connection_count.get(client_ip, 0) + 1
+        
+        return True
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+            client_ip = websocket.client.host
+            if client_ip in self.ip_connection_count:
+                self.ip_connection_count[client_ip] -= 1
+                if self.ip_connection_count[client_ip] <= 0:
+                    del self.ip_connection_count[client_ip]
+
+    def get_active_connections_count(self):
+        return len(self.active_connections)
+
+    def get_ip_connection_count(self, client_ip):
+        return self.ip_connection_count.get(client_ip, 0)
+
+# 初始化 WebSocket 连接管理器
+websocket_manager = WebSocketConnectionManager()
+
 # WebSocket 路由 - 捕获并记录所有客户端升级请求，避免 "Unsupported upgrade request" 警告
 # 使用路径参数 {path:path} 匹配任意路径（包括嵌套路径）
 @app.websocket("/{path:path}")
@@ -230,7 +284,16 @@ async def websocket_endpoint(websocket: WebSocket, path: str = ""):
     通用 WebSocket 端点，捕获所有 WebSocket 连接请求。
     使用 {path:path} 通配符匹配任意路径，避免 "Unsupported upgrade request" 警告。
     """
-    await websocket.accept()
+    # 尝试连接，检查连接数限制
+    connected = await websocket_manager.connect(websocket)
+    if not connected:
+        # 连接被拒绝，直接关闭
+        try:
+            await websocket.close(code=1008, reason="Connection limit reached")
+        except:
+            pass
+        return
+    
     full_path = f"/{path}" if path else "/"
     client_info = {
         "client": f"{websocket.client.host}:{websocket.client.port}",
@@ -241,10 +304,10 @@ async def websocket_endpoint(websocket: WebSocket, path: str = ""):
     log_config.info(f"WebSocket 连接请求: {client_info}")
 
     try:
-        # 保持连接并接收消息，5秒超时后自动关闭
+        # 保持连接并接收消息，3秒超时后自动关闭（缩短超时时间）
         while True:
             try:
-                message = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+                message = await asyncio.wait_for(websocket.receive_text(), timeout=3.0)
                 log_config.info(f"WebSocket 收到消息 [{full_path}]: {message}")
                 await websocket.send_json({
                     "status": "received",
@@ -258,11 +321,16 @@ async def websocket_endpoint(websocket: WebSocket, path: str = ""):
     except Exception as e:
         log_config.warning(f"WebSocket 异常 [{full_path}]: {e}")
     finally:
+        # 确保断开连接并清理资源
         try:
             await websocket.close()
         except:
             pass
+        # 从连接管理器中移除
+        websocket_manager.disconnect(websocket)
         log_config.info(f"WebSocket 连接已关闭: {client_info['client']} - {full_path}")
+        # 记录当前活跃连接数
+        log_config.debug(f"当前活跃 WebSocket 连接数: {websocket_manager.get_active_connections_count()}")
 
 # 为根路径添加单独的 WebSocket 路由
 @app.websocket("/")
@@ -270,7 +338,16 @@ async def websocket_root(websocket: WebSocket):
     """
     根路径 WebSocket 端点，捕获对根路径的 WebSocket 连接请求。
     """
-    await websocket.accept()
+    # 尝试连接，检查连接数限制
+    connected = await websocket_manager.connect(websocket)
+    if not connected:
+        # 连接被拒绝，直接关闭
+        try:
+            await websocket.close(code=1008, reason="Connection limit reached")
+        except:
+            pass
+        return
+    
     client_info = {
         "client": f"{websocket.client.host}:{websocket.client.port}",
         "path": "/",
@@ -280,18 +357,23 @@ async def websocket_root(websocket: WebSocket):
     log_config.info(f"WebSocket 根路径连接请求: {client_info}")
 
     try:
-        # 5秒超时后自动关闭
-        await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+        # 3秒超时后自动关闭（缩短超时时间）
+        await asyncio.wait_for(websocket.receive_text(), timeout=3.0)
     except (asyncio.TimeoutError, WebSocketDisconnect):
         pass
     except Exception as e:
         log_config.warning(f"WebSocket 根路径异常: {e}")
     finally:
+        # 确保断开连接并清理资源
         try:
             await websocket.close()
         except:
             pass
+        # 从连接管理器中移除
+        websocket_manager.disconnect(websocket)
         log_config.info(f"WebSocket 根路径连接已关闭: {client_info['client']}")
+        # 记录当前活跃连接数
+        log_config.debug(f"当前活跃 WebSocket 连接数: {websocket_manager.get_active_connections_count()}")
 
 # 包含子路由
 app.include_router(io_rt, prefix="/api", tags=[])
@@ -320,33 +402,81 @@ register_tortoise(
 # 初始化定时任务管理器
 from apps.data_opt.utils.scheduler import initialize_scheduler, get_scheduler_status, scheduler_manager
 
+# 定期检查数据库连接状态
+async def check_db_connections():
+    """定期检查数据库连接状态"""
+    try:
+        from globalobjects.db_manager import get_db_managers
+        db_managers = get_db_managers()
+        for db_name, manager in db_managers.items():
+            # 检查连接健康状态
+            is_healthy = await manager.check_connection_health()
+            if not is_healthy:
+                log_config.warning(f"数据库连接 {db_name} 不健康，尝试刷新连接")
+                await manager.refresh_connection()
+            # 获取连接池状态
+            pool_status = await manager.get_connection_pool_status()
+            log_config.debug(f"连接池状态 - {db_name}: {pool_status}")
+        log_config.debug("数据库连接检查完成")
+    except Exception as e:
+        log_config.error(f"数据库连接检查异常: {e}")
+
+# 应用启动事件
+@app.on_event("startup")
+async def startup_event():
+    """应用启动事件"""
+    # 初始化定时任务管理器
+    await initialize_scheduler()
+    
+    # 设置定期检查数据库连接的任务
+    import asyncio
+    async def schedule_db_checks():
+        """定期执行数据库连接检查"""
+        while True:
+            await check_db_connections()
+            # 每300秒（5分钟）检查一次
+            await asyncio.sleep(300)
+    
+    # 启动数据库连接检查任务
+    asyncio.create_task(schedule_db_checks())
+    log_config.info("数据库连接检查任务已启动")
+
 
 # 启动说明：
 # 使用命令: uvicorn main:app --host 0.0.0.0 --port 8000 
 # 然后访问 http://127.0.0.1:8000 或 http://127.0.0.1:8000/docs
 if __name__ == "__main__":
+    import traceback
     
-    # 配置uvicorn日志格式，与我们的日志系统格式一致
-    from uvicorn.config import LOGGING_CONFIG
-    LOGGING_CONFIG['formatters']['default']['fmt'] = '%(asctime)s - %(levelname)s - %(message)s'
-    # 精简访问日志格式，只包含必要信息
-    LOGGING_CONFIG['formatters']['access']['fmt'] = '%(asctime)s - %(levelname)s - %(client_addr)s - "%(request_line)s" %(status_code)s'
-    
-    # 禁用访问日志处理器
-    LOGGING_CONFIG['handlers'].pop('access', None)
-    LOGGING_CONFIG['loggers']['uvicorn.access'] = {
-        'handlers': [],
-        'level': 'CRITICAL',
-        'propagate': False,
-    }
-    
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=PORT,
-        log_level="info",
-        access_log=False,
-        log_config=LOGGING_CONFIG
-    )
+    try:
+        # 配置uvicorn日志格式，与我们的日志系统格式一致
+        from uvicorn.config import LOGGING_CONFIG
+        LOGGING_CONFIG['formatters']['default']['fmt'] = '%(asctime)s - %(levelname)s - %(message)s'
+        # 精简访问日志格式，只包含必要信息
+        LOGGING_CONFIG['formatters']['access']['fmt'] = '%(asctime)s - %(levelname)s - %(client_addr)s - "%(request_line)s" %(status_code)s'
+        
+        # 禁用访问日志处理器
+        LOGGING_CONFIG['handlers'].pop('access', None)
+        LOGGING_CONFIG['loggers']['uvicorn.access'] = {
+            'handlers': [],
+            'level': 'CRITICAL',
+            'propagate': False,
+        }
+        
+        print("Starting application...")
+        uvicorn.run(
+            app,
+            host="0.0.0.0",
+            port=PORT,
+            log_level="debug",
+            access_log=False,
+            log_config=LOGGING_CONFIG
+        )
+    except Exception as e:
+        print(f"Application failed to start: {e}")
+        print("Traceback:")
+        print(traceback.format_exc())
+        import time
+        time.sleep(10)  # 等待10秒，以便查看错误信息
 
 

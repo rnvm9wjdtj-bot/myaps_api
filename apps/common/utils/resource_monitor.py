@@ -1,6 +1,7 @@
 import os, time, threading, gc
 from globalobjects import logger as log_config
 from globalobjects import EVENT_AGGREGATOR
+from globalobjects.db_manager import get_db_managers
 
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 logger = log_config.get_logger(__name__, level=LOG_LEVEL)
@@ -152,7 +153,12 @@ class ResourceMonitor:
                 current_time = time.time()
                 if (current_time - self._last_cleanup >= self._cleanup_interval) or \
                    (not 'error' in usage and usage.get('memory', {}).get('rss', 0) >= self._cleanup_thresholds['memory']):
-                    self._cleanup_resources()
+                    # 执行资源清理
+                    try:
+                        # 直接执行同步清理操作
+                        self._cleanup_resources()
+                    except Exception as e:
+                        logger.error(f"执行资源清理异常: {e}")
             except Exception as e:
                 logger.fail("资源监控", "", str(e))
             

@@ -91,7 +91,17 @@ echo Starting uvicorn server with host %HOST% and port %PORT%...
 echo %date% %time% - Starting uvicorn server with host %HOST% and port %PORT% >> %LOG_FILE%
 
 REM Run the application with explicit parameters to override any environment settings
-%PYTHON% -m uvicorn main:app --host 0.0.0.0 --port %PORT%
+REM Use the same log level as in main.py
+REM access-log is disabled by default in main.py
+%PYTHON% -m uvicorn main:app --host 0.0.0.0 --port %PORT% --log-level debug
+
+REM Handle error codes
+if %errorlevel% neq 0 (
+    echo [ERROR] Application failed to start with error code %errorlevel%
+    echo %date% %time% - Application failed to start with error code %errorlevel% >> %LOG_FILE%
+    pause
+    exit /b %errorlevel%
+)
 
 REM Handle cleanup after Ctrl+C
 echo.
