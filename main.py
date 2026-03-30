@@ -27,6 +27,10 @@ from apps.data_opt.routers import rt as do_rt
 # 导入全局MySQL监控实例
 from apps.data_opt.utils.mysqlmonitor import mysql_monitor
 from apps.data_opt.utils.scheduler import scheduler_manager, get_scheduler_status
+# 导入资源监控
+from apps.common.utils.resource_monitor import resource_monitor
+# 导入事件聚合器
+from globalobjects import EVENT_AGGREGATOR
 
 # 定义生命周期事件处理器
 @asynccontextmanager
@@ -55,6 +59,10 @@ async def lifespan(app: FastAPI):
     else:
         log_config.warning("⚠️ MySQL Binlog监控未启动")
     
+    # 启动资源监控
+    resource_monitor.start_monitoring(interval=30)  # 每30秒监控一次
+    log_config.info("系统资源监控已启动")
+    
     yield  # 应用运行期间
     
     # 应用关闭时执行的操作
@@ -72,6 +80,15 @@ async def lifespan(app: FastAPI):
         log_config.info("定时任务管理器已关闭")
     else:
         log_config.debug("⚠️ 定时任务管理器未启动，无需关闭")
+    
+    # 停止资源监控
+    resource_monitor.stop_monitoring()
+    log_config.info("系统资源监控已停止")
+    
+    # 停止事件聚合器
+    EVENT_AGGREGATOR.stop()
+    log_config.info("事件聚合器已停止")
+    
     # 关闭统一日志系统
     log_config.shutdown_logging()
 

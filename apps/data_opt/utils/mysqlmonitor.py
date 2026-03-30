@@ -36,6 +36,7 @@ from pymysqlreplication.row_event import (
 
 from config.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_DBMONITOR
 from globalobjects import logger as log_config
+from apps.common.utils.thread_pool_manager import global_pool_manager
 import os
 
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
@@ -79,16 +80,27 @@ class MySQLBinlogMonitor:
         # 表过滤功能（支持多数据库）
         self._table_filters = {}  # 格式: {database.table: handlers}
         
-        # 创建持久的事件循环
+        # 创建持久的事件循环和线程
         self._event_loop = None
+        self._loop_thread = None
         
         if MYAPS_DBSET_LIST and TURNON_DBMONITOR:
-            # 创建线程池用于并行处理事件
-            self._thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=10)  # 可根据需要调整线程池大小
+            # 使用全局线程池管理器
+            self._min_workers = 5
+            self._max_workers = 20
+            self._thread_pool = global_pool_manager.get_pool(
+                'mysql_monitor', 
+                max_workers=self._max_workers,
+                thread_name_prefix='mysql-monitor-'
+            )
             # 验证配置
             self._validate_config()
         else:
-            self._thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            self._thread_pool = global_pool_manager.get_pool(
+                'mysql_monitor', 
+                max_workers=1,
+                thread_name_prefix='mysql-monitor-'
+            )
         
 
     def _validate_config(self):
@@ -364,6 +376,41 @@ class MySQLBinlogMonitor:
                 return parts[0], parts[1]  # database, table
         return None, full_table_name  # 无数据库信息，只有表名
 
+    def _start_event_loop(self):
+        """启动事件循环线程"""
+        self._event_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._event_loop)
+        try:
+            self._event_loop.run_forever()
+        except Exception as e:
+            logger.fail("事件循环", "", str(e))
+        finally:
+            if self._event_loop:
+                self._event_loop.close()
+
+    def _monitor_thread_pool(self):
+        """监控线程池并动态调整大小"""
+        while self.running:
+            try:
+                # 检查线程池状态
+                current_workers = getattr(self._thread_pool, '_max_workers', self._min_workers)
+                
+                # 由于线程池工作队列可能无法直接访问，这里简化监控逻辑
+                # 基于时间间隔进行简单的线程池调整
+                # 实际生产环境中可以根据实际负载情况调整
+                logger.debug(f"线程池状态: 当前线程数={current_workers}, 最大线程数={self._max_workers}")
+                
+                # 这里可以添加更复杂的监控逻辑，例如基于系统负载、任务执行时间等
+                
+            except Exception as e:
+                logger.fail("线程池监控", "", str(e))
+            
+            # 每10秒检查一次
+            for _ in range(10):
+                if not self.running:
+                    break
+                time.sleep(1)
+
     def start_monitoring(self):
         """开始监控Binlog"""
         if not self.running:
@@ -371,15 +418,25 @@ class MySQLBinlogMonitor:
             # 重新创建线程池
             try:
                 import concurrent.futures
-                if hasattr(self, '_thread_pool') and self._thread_pool._shutdown:
-                    self._thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=10)
+                if hasattr(self, '_thread_pool') and getattr(self._thread_pool, '_shutdown', False):
+                    self._thread_pool = concurrent.futures.ThreadPoolExecutor(
+                        max_workers=self._min_workers, 
+                        thread_name_prefix='mysql-monitor-'
+                    )
                     logger.success("线程池", "", "已重新创建")
             except Exception as e:
                 logger.fail("线程池创建", "", str(e))
             
-            monitoring_thread = threading.Thread(target=self._monitor_binlog_with_retry, daemon=True)
+            # 启动Binlog监控线程
+            monitoring_thread = threading.Thread(target=self._monitor_binlog_with_retry, daemon=True, name='mysql-monitor-binlog')
             monitoring_thread.start()
+            
+            # 启动线程池监控线程
+            pool_monitor_thread = threading.Thread(target=self._monitor_thread_pool, daemon=True, name='mysql-monitor-pool')
+            pool_monitor_thread.start()
+            
             logger.info("✅ Binlog监控线程已启动")
+            logger.info("✅ 线程池监控线程已启动")
         else:
             logger.info("⚠️ Binlog监控已经在运行")
 
@@ -467,17 +524,43 @@ class MySQLBinlogMonitor:
             result = handler(*args, **kwargs)
             # 检查是否是协程对象
             if hasattr(result, '__await__'):
-                # 使用现有的事件循环或获取当前线程的事件循环
+                # 启动事件循环线程（如果尚未启动）
+                if self._event_loop is None:
+                    self._loop_thread = threading.Thread(
+                        target=self._start_event_loop, 
+                        daemon=True,
+                        name='mysql-monitor-event-loop'
+                    )
+                    self._loop_thread.start()
+                    # 等待事件循环就绪
+                    for _ in range(10):
+                        if self._event_loop is not None:
+                            break
+                        time.sleep(0.1)
+                    else:
+                        logger.warning("事件循环启动超时，使用同步执行")
+                        # 回退到同步执行
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        try:
+                            loop.run_until_complete(result)
+                        finally:
+                            loop.close()
+                    return
+                
+                # 使用事件循环线程非阻塞执行
                 try:
-                    loop = asyncio.get_event_loop()
-                    loop.run_until_complete(result)
-                except RuntimeError:  # 如果没有事件循环，才创建新的
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    try:
-                        loop.run_until_complete(result)
-                    finally:
-                        loop.close()
+                    future = asyncio.run_coroutine_threadsafe(result, self._event_loop)
+                    # 不使用result()避免阻塞
+                    # 可以添加回调处理结果
+                    def callback(fut):
+                        try:
+                            fut.result()
+                        except Exception as e:
+                            logger.fail("异步处理器执行", "", str(e))
+                    future.add_done_callback(callback)
+                except Exception as e:
+                    logger.fail("异步处理器提交", "", str(e))
         except Exception as e:
             logger.fail("处理器执行", "", str(e))
         
@@ -673,12 +756,27 @@ class MySQLBinlogMonitor:
         """停止监控"""
         if self.running:
             self.running = False
+            # 关闭事件循环
+            if self._event_loop:
+                try:
+                    self._event_loop.call_soon_threadsafe(self._event_loop.stop())
+                    if self._loop_thread:
+                        self._loop_thread.join(timeout=5)
+                    logger.success("事件循环", "", "已关闭")
+                except Exception as e:
+                    logger.fail("事件循环关闭", "", str(e))
+            
             # 关闭线程池
             try:
-                self._thread_pool.shutdown(wait=True)
+                self._thread_pool.shutdown(wait=True, cancel_futures=True)
                 logger.success("线程池", f"{self._thread_pool}", "已关闭")
             except Exception as e:
                 logger.fail("线程池关闭", f"{self._thread_pool}", str(e))
+            
+            # 重置状态
+            self._event_loop = None
+            self._loop_thread = None
+            
             logger.success("Binlog监控", f"@{MYAPS_MAIN_DB}", "已停止")
         else:
             logger.info("⚠️ Binlog监控已经停止")

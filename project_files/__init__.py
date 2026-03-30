@@ -33,6 +33,9 @@ from globalobjects import EVENT_AGGREGATOR
 
 
 
+# 模块级变量，用于跟踪事件是否已经注册
+_events_registered = False
+
 class ApsEvent:
     def __init__(self, event_type: str, description: str, batch_handler: str=None, single_handler:str=None, batch_size: int=10000, flush_interval: int=5):
         self.event_type = event_type
@@ -69,10 +72,16 @@ class ApsEvent:
 
 
 
-aps_pl_status_a2e_event = ApsEvent(event_type="|pl_status_a2e|", single_handler="handle_pl_status_a2e", batch_handler="batch_handle_pl_status_a2e", description="PL 单据下达")
-aps_pr_created_event = ApsEvent(event_type="|pr_created|", single_handler="handle_pr_created", batch_handler="batch_handle_pr_created", description="PR 单据 创建")
-aps_pl_typeto_mo_event = ApsEvent(event_type="|pl_typeto_mo|", single_handler="handle_pl_typeto_mo", batch_handler="batch_handle_pl_typeto_mo", description="PL 变更为 MO")
-aps_pr_deleted_event = ApsEvent(event_type="|pr_deleted|", single_handler="handle_pr_deleted", batch_handler="batch_handle_pr_deleted", description="PR 单据 删除")
+# 只在第一次导入时注册事件
+if not _events_registered:
+    aps_pl_status_a2e_event = ApsEvent(event_type="|pl_status_a2e|", single_handler="handle_pl_status_a2e", batch_handler="batch_handle_pl_status_a2e", description="PL 单据下达")
+    aps_pr_created_event = ApsEvent(event_type="|pr_created|", single_handler="handle_pr_created", batch_handler="batch_handle_pr_created", description="PR 单据 创建")
+    aps_pl_typeto_mo_event = ApsEvent(event_type="|pl_typeto_mo|", single_handler="handle_pl_typeto_mo", batch_handler="batch_handle_pl_typeto_mo", description="PL 变更为 MO")
+    aps_pr_deleted_event = ApsEvent(event_type="|pr_deleted|", single_handler="handle_pr_deleted", batch_handler="batch_handle_pr_deleted", description="PR 单据 删除")
+    _events_registered = True
+    logger.success("数据库事件注册", "", "所有事件已成功注册")
+else:
+    logger.debug("数据库事件注册", "", "事件已经注册，跳过重复注册")
 
 
 @mysql_monitor.on_update_for_table("t_supply", database=MYAPS_MAIN_DB)

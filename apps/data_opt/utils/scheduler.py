@@ -10,6 +10,7 @@ from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
 
 from globalobjects import logger as log_config
+from apps.common.utils.thread_pool_manager import global_pool_manager
 import os
 
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
@@ -136,8 +137,16 @@ class SchedulerManager:
                     # 优先使用已设置的主事件循环
                     if self.main_loop:
                         logger.debug("使用主应用事件循环执行异步任务")
-                        # 直接传递coroutine对象给run_coroutine_threadsafe
-                        return asyncio.run_coroutine_threadsafe(async_wrapper(), self.main_loop).result()
+                        # 直接传递coroutine对象给run_coroutine_threadsafe，不使用result()避免阻塞
+                        future = asyncio.run_coroutine_threadsafe(async_wrapper(), self.main_loop)
+                        # 添加回调处理异常
+                        def callback(fut):
+                            try:
+                                fut.result()
+                            except Exception as e:
+                                logger.fail("异步任务执行", "", str(e))
+                        future.add_done_callback(callback)
+                        return None
                     else:
                         # 尝试获取当前运行的事件循环
                         try:

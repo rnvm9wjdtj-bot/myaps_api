@@ -31,7 +31,8 @@ class EventAggregator:
                  group_key: Callable[[Any], str] = None,
                  dedup_key: Callable[[Any], str] = None,
                  batch_size: int = 10000,
-                 flush_interval: float = 5.0):
+                 flush_interval: float = 5.0,
+                 name: str = "unnamed"):
         """
         初始化事件聚合器
         
@@ -41,12 +42,14 @@ class EventAggregator:
             dedup_key: 去重函数，返回去重键，相同键的事件会被去重
             batch_size: 批量处理的最大事件数
             flush_interval: 定时刷新间隔（秒）
+            name: 聚合器名称，用于日志和调试
         """
         self.handler = handler
         self.group_key = group_key
         self.dedup_key = dedup_key
         self.batch_size = batch_size
         self.flush_interval = flush_interval
+        self.name = name
         
         # 缓冲区：{group_key: {dedup_key: event}}
         self._buffer: Dict[str, Dict[str, Any]] = defaultdict(dict)
@@ -124,23 +127,30 @@ class EventAggregator:
         if not self._running:
             self._running = True
             # 启动条件变量线程
-            self._condition_thread = threading.Thread(target=self._condition_thread_func)
+            self._condition_thread = threading.Thread(
+                target=self._condition_thread_func,
+                name=f"event-aggregator-{self.name}"
+            )
             self._condition_thread.daemon = True
             self._condition_thread.start()
-            logger.start("事件聚合器")
+            logger.start(f"事件聚合器: {self.name}")
     
     def stop(self):
         """停止聚合器"""
-        self._running = False
-        # 通知条件变量线程结束
-        with self._lock:
-            self._condition.notify()
-        if self._condition_thread:
-            self._condition_thread.join(timeout=1.0)
-            self._condition_thread = None
-        # 停止前刷新剩余事件
-        self._flush()
-        logger.stop("事件聚合器")
+        if self._running:
+            self._running = False
+            # 通知条件变量线程结束
+            with self._lock:
+                self._condition.notify()
+            if self._condition_thread:
+                logger.debug(f"等待事件聚合器线程结束: {self.name}")
+                self._condition_thread.join(timeout=5.0)
+                if self._condition_thread.is_alive():
+                    logger.warning(f"事件聚合器线程未能正常结束: {self.name}")
+                self._condition_thread = None
+            # 停止前刷新剩余事件
+            self._flush()
+            logger.stop(f"事件聚合器: {self.name}")
     
     def flush_now(self):
         """立即刷新缓冲区"""
@@ -176,15 +186,23 @@ class MultiEventAggregator:
             self，支持链式调用
         """
         with self._lock:
+            # 检查事件类型是否已经注册
+            if event_type in self._aggregators:
+                logger.warning(f"事件类型 {event_type} 已经注册，将停止并重新注册")
+                self._aggregators[event_type].stop()
+                del self._aggregators[event_type]
+            
             aggregator = EventAggregator(
                 handler=handler,
                 group_key=group_key,
                 dedup_key=dedup_key,
                 batch_size=batch_size,
-                flush_interval=flush_interval
+                flush_interval=flush_interval,
+                name=event_type
             )
             self._aggregators[event_type] = aggregator
             aggregator.start()
+            logger.success(f"事件聚合器注册", event_type, "")
             return self
     
     def add(self, event_type: str, event: Any):
