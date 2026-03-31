@@ -9,7 +9,7 @@ from fastapi import APIRouter, Path, Query, Body, status#, Request
 # from tortoise import Tortoise
 
 from config.settings import MYAPS_DB_SET, MYAPS_DBSET_LIST, MYAPS_MAIN_DB, THIS_BASE_URL
-from globalobjects import globalconst as gc
+from globalobjects import globalconst as gc, logger as log_config
 # from .models import TMaterial, TWorkcenter, TMatWc, TMatVer, TMatWcBom, TSupply, TDemand, TMold, TMatWcMold, TConfirm#,TortoiseBaseModel
 from .schemas import (
     AcceptMaterial, AcceptWorkcenter, AcceptMatWc, AcceptMatVer, AcceptMatWcBom, AcceptSupply, AcceptDemand, AcceptMold, AcceptMatWcMold, AcceptConfirm,
@@ -23,6 +23,7 @@ from project_files import hap_conn
 from apps.data_opt.utils.data_processor import DataProcessor
 
 
+logger = log_config.get_logger(__name__)
 
 # def _check_db_name(hap_wsid: str = None):
 #     """
@@ -141,6 +142,17 @@ rt = APIRouter()
 
 @rt.get("/meta")
 async def get_meta():
+    from globalobjects.db_manager import DbManager
+    
+    # 检查每个账套的可访问性
+    db_status = []
+    for db in MYAPS_DBSET_LIST:
+        try:
+            db_manager = DbManager(db)
+            is_healthy = await db_manager.check_connection_health()
+            db_status.append(f"{'🟢' if is_healthy else '🔴'}{db}")
+        except Exception as e:
+            db_status.append(f"错误: {str(e)}")
     return standard_response(
         success=1,
         message="获取元数据成功",
@@ -148,6 +160,7 @@ async def get_meta():
             "db_set": MYAPS_DBSET_LIST,
             "dbs_str": MYAPS_DB_SET,
             "main_db": MYAPS_MAIN_DB,
+            "db_status": db_status,
         },
     )
     
@@ -623,8 +636,8 @@ async def get_mo_by_time(
 @rt.get(
     "/v_supply_complete",
     tags=["生产数据 - 报工"],
-    summary="查询报工记录",
-    description="查询报工记录"
+    summary="查询工单完成情况",
+    description="以最后一步工序完成数量为依据，汇总工单完成情况"
 )
 async def query_workreport(
     db_name: str = common_params["db_name"],

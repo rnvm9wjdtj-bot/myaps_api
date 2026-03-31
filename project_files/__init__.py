@@ -5,10 +5,11 @@
 import os, importlib, json, requests
 from typing import NamedTuple
 
-from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL
+from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET
 from globalobjects.globalconst import OrderStatusEnum
 from apps.io_api.utils.common import dict_to_lower_keys
 from globalobjects import logger as log_config
+from apps.data_opt.utils.scheduler import cron_task
 
 
 logger = log_config.get_logger(__name__)
@@ -23,6 +24,22 @@ try:
 except:
     hap_conn = None
 
+
+@cron_task(hour="*", minute="*/10")
+def check_db_health():
+    """
+    定时检查数据库连接健康
+    """
+    try:
+        # 调用get_meta路由函数检查账套状态
+        response = requests.get(f"{THIS_BASE_URL}/api/meta")
+        if response.status_code == 200:
+            data = response.json()
+            logger.success("定时检查数据库健康", f"全部账套: {MYAPS_DB_SET}", f"状态: {data['meta']['db_status']}")
+        else:
+            logger.fail("定时检查数据库健康", f"全部账套: {MYAPS_DB_SET}", f"API调用失败，状态码: {response.status_code}")
+    except Exception as e:
+        logger.fail("定时检查数据库健康", f"全部账套: {MYAPS_DB_SET}", f"检查失败: {str(e)}")
 
 
 #################################################################################

@@ -359,7 +359,7 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
         return standard_response(
             data=data_list,
             message=f"生效{len(success_db)}个账套，总计新增{create_count_total}条，修改{update_count_total}条",
-            meta={"origin_total": origin_total, "success_db": success_db}
+            meta={"origin_total": origin_total, "distinct_total": len(processed_data_list), "success_db": success_db}
         )
         
     except Exception as e:
