@@ -67,8 +67,8 @@ class AcceptMaterial(BaseModel):
     candelay: gc.YesNoEnum = Field(pdv.MAT_CANDELAY, example="N", description='可否延迟')
     lotsize: gc.LotSizeEnum = Field(pdv.MAT_LOTSIZE, example="EX", description='批量')
     lotfix: float = Field(pdv.MAT_LOTFIX, ge=0, description='固定批', example=0.0)
-    lotmin: float = Field(pdv.MAT_LOTMIN, ge=0, description='最小批', example=0.0)
-    lotmax: float = Field(pdv.MAT_LOTMAX, ge=0, description='最大批', example=0.0)
+    lotmin: float = Field(None, ge=0, description='最小批', example=0.0)
+    lotmax: float = Field(None, ge=0, description='最大批', example=0.0)
     lotround: float = Field(pdv.MAT_LOTROUND, ge=0, description='取整', example=0.0)
     lotss: float = Field(pdv.MAT_LOTSS, ge=0, description='安全库存', example=0.0)
     lotpoint: float = Field(pdv.MAT_LOTPOINT, ge=0, description='重订货点', example=0.0)
@@ -122,10 +122,10 @@ class AcceptMaterial(BaseModel):
             values["firmday"] = pdv.MAT_FIRMDAY
         if values.get("lotfix", "") == "":
             values["lotfix"] = pdv.MAT_LOTFIX
-        if values.get("lotmin", "") == "":
-            values["lotmin"] = pdv.MAT_LOTMIN
-        if values.get("lotmax", "") == "":
-            values["lotmax"] = pdv.MAT_LOTMAX
+        # if values.get("lotmin", "") == "":
+        #     values["lotmin"] = pdv.MAT_LOTMIN
+        # if values.get("lotmax", "") == "":
+        #     values["lotmax"] = pdv.MAT_LOTMAX
         if values.get("lotround", "") == "":
             values["lotround"] = pdv.MAT_LOTROUND
         if values.get("lotss", "") == "":

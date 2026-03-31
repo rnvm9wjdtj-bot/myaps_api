@@ -1423,6 +1423,11 @@ def debug(msg: Any, *args: Any, **kwargs: Any) -> None:
     """
     记录 DEBUG 级别的日志
     """
+    # 检查日志级别，只有当日志级别允许时才输出
+    logger = get_logger()
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
+    
     if TERMINAL_SUPPORTS_ANSI:
         try:
             # 获取当前时间

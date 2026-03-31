@@ -76,12 +76,12 @@ for db in MYAPS_DBSET_LIST:
             "password": MYAPS_DB_PASSWORD,
             "database": db,
             "charset": "utf8mb4",
-            "connect_timeout": 30,  # 连接超时设置
-            "minsize": 3,  # 保持最小连接数
-            "maxsize": 10,  # 最大连接连接数
+            "connect_timeout": 60,  # 增加连接超时时间
+            "minsize": 5,  # 增加最小连接数
+            "maxsize": 20,  # 增加最大连接数
             "ssl": None,
             "echo": False,
-            "pool_recycle": 3600,  # 连接回收时间（秒），防止连接超时
+            "pool_recycle": 1800,  # 减少连接回收时间，防止连接超时
         }
     }
 

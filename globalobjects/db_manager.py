@@ -179,14 +179,24 @@ class DbManager:
                 
                 error_str = str(e).upper()
                 is_deadlock = 'DEADLOCK' in error_str or '1213' in str(e)
+                is_operational_error = "OperationalError" in str(type(e))
                 
-                if is_deadlock and retry_count < max_retries:
+                if (is_deadlock or is_operational_error) and retry_count < max_retries:
                     retry_count += 1
-                    logger.warning_msg(
-                        "存储过程调用", 
-                        f"{procedure_name} 检测到死锁，第{retry_count}次重试中...", 
-                        f"等待{retry_delay}秒后重试"
-                    )
+                    if is_operational_error:
+                        logger.warning_msg(
+                            "存储过程调用", 
+                            f"{procedure_name} 检测到连接错误，第{retry_count}次重试中...", 
+                            f"等待{retry_delay}秒后重试"
+                        )
+                        # 尝试刷新连接
+                        await self.refresh_connection()
+                    else:
+                        logger.warning_msg(
+                            "存储过程调用", 
+                            f"{procedure_name} 检测到死锁，第{retry_count}次重试中...", 
+                            f"等待{retry_delay}秒后重试"
+                        )
                     import asyncio
                     await asyncio.sleep(retry_delay)
                     continue
@@ -282,8 +292,15 @@ class DbManager:
                 last_exception = e
                 retry_count += 1
                 
-                if retry_count <= max_retries:
+                # 特殊处理OperationalError
+                if "OperationalError" in str(type(e)):
+                    logger.warning(f"数据库连接错误，将进行第{retry_count}次重试", table_name, str(e))
+                    # 尝试刷新连接
+                    await self.refresh_connection()
+                elif retry_count <= max_retries:
                     logger.warning(f"数据查询失败，将进行第{retry_count}次重试", table_name, str(e))
+                
+                if retry_count <= max_retries:
                     import asyncio
                     await asyncio.sleep(1)  # 等待1秒后重试
                 else:
@@ -312,65 +329,96 @@ class DbManager:
             Exception: 如果删除失败
         """
         start_time = datetime.now()
+        retry_count = 0
+        max_retries = 3
         
-        try:
-            # 使用Tortoise的连接池机制，不需要手动关闭连接
-            # Tortoise会自动管理连接的获取和释放
-            conn = Tortoise.get_connection(self.connection_name)
-            
-            # 构建WHERE子句
-            where = f" WHERE {filter_string}" if filter_string else ''
-            
-            # 构建DELETE SQL语句
-            delete_sql = f'DELETE FROM `{table_name}` {where}'
-            
-            # 移除事务分支，统一执行核心逻辑
-            affected_rows, data = await conn.execute_query(delete_sql)
-            
-            execution_time = (datetime.now() - start_time).total_seconds()
-            
-            # 更新统计信息
-            self.stats['total_processed'] += affected_rows
-            self.stats['batches_executed'] += 1
-            self.stats['last_execution_time'] = execution_time
-            
-            response = {
-                "success": True,
-                "table_name": table_name,
-                "filter": filter_string,
-                "execution_time": execution_time,
-                "affected_rows": affected_rows,
-                "connection_name": self.connection_name
-            }
-            
-            logger.success("数据删除", table_name, f"影响{affected_rows}行")
-            return response
-            
-        except Exception as e:
-            logger.fail("数据删除", table_name, str(e))
-            raise
+        while retry_count <= max_retries:
+            try:
+                # 使用Tortoise的连接池机制，不需要手动关闭连接
+                # Tortoise会自动管理连接的获取和释放
+                conn = Tortoise.get_connection(self.connection_name)
+                
+                # 构建WHERE子句
+                where = f" WHERE {filter_string}" if filter_string else ''
+                
+                # 构建DELETE SQL语句
+                delete_sql = f'DELETE FROM `{table_name}` {where}'
+                
+                # 移除事务分支，统一执行核心逻辑
+                affected_rows, data = await conn.execute_query(delete_sql)
+                
+                execution_time = (datetime.now() - start_time).total_seconds()
+                
+                # 更新统计信息
+                self.stats['total_processed'] += affected_rows
+                self.stats['batches_executed'] += 1
+                self.stats['last_execution_time'] = execution_time
+                
+                response = {
+                    "success": True,
+                    "table_name": table_name,
+                    "filter": filter_string,
+                    "execution_time": execution_time,
+                    "affected_rows": affected_rows,
+                    "connection_name": self.connection_name
+                }
+                
+                if retry_count > 0:
+                    logger.success(f"数据删除成功（第{retry_count + 1}次重试）", table_name, f"影响{affected_rows}行")
+                else:
+                    logger.success("数据删除", table_name, f"影响{affected_rows}行")
+                return response
+                
+            except Exception as e:
+                # 特殊处理OperationalError
+                if "OperationalError" in str(type(e)) and retry_count < max_retries:
+                    retry_count += 1
+                    logger.warning(f"数据库连接错误，将进行第{retry_count}次重试", table_name, str(e))
+                    # 尝试刷新连接
+                    await self.refresh_connection()
+                    import asyncio
+                    await asyncio.sleep(1)  # 等待1秒后重试
+                else:
+                    logger.fail("数据删除", table_name, str(e))
+                    raise
     
 
     async def _execute_native_sql(self, sql: str, params: List[Any], description: str = "") -> int:
         """
         执行原生 SQL 查询
         """
-        try:
-            start_time = datetime.now()
-            # 使用Tortoise的连接池机制，不需要手动关闭连接
-            # Tortoise会自动管理连接的获取和释放
-            conn = Tortoise.get_connection(self.connection_name)
-            result = await conn.execute_query(sql, params)
-            execution_time = (datetime.now() - start_time).total_seconds()
-            
-            if description:
-                logger.info(f"{description} - 执行时间：{execution_time:.3f}秒")
-            
-            return result[0] if result else 0
-        except Exception as e:
-            logger.fail("SQL执行", description, str(e))
-            logger.debug(f"SQL：{sql[:200]}...")
-            raise
+        retry_count = 0
+        max_retries = 3
+        
+        while retry_count <= max_retries:
+            try:
+                start_time = datetime.now()
+                # 使用Tortoise的连接池机制，不需要手动关闭连接
+                # Tortoise会自动管理连接的获取和释放
+                conn = Tortoise.get_connection(self.connection_name)
+                result = await conn.execute_query(sql, params)
+                execution_time = (datetime.now() - start_time).total_seconds()
+                
+                if description:
+                    if retry_count > 0:
+                        logger.info(f"{description}（第{retry_count + 1}次重试） - 执行时间：{execution_time:.3f}秒")
+                    else:
+                        logger.info(f"{description} - 执行时间：{execution_time:.3f}秒")
+                
+                return result[0] if result else 0
+            except Exception as e:
+                # 特殊处理OperationalError
+                if "OperationalError" in str(type(e)) and retry_count < max_retries:
+                    retry_count += 1
+                    logger.warning(f"数据库连接错误，将进行第{retry_count}次重试", description, str(e))
+                    # 尝试刷新连接
+                    await self.refresh_connection()
+                    import asyncio
+                    await asyncio.sleep(1)  # 等待1秒后重试
+                else:
+                    logger.fail("SQL执行", description, str(e))
+                    logger.debug(f"SQL：{sql[:200]}...")
+                    raise
     
 
     async def _bulk_upsert_native_sql(
