@@ -20,13 +20,7 @@ async def lifespan(app):
     scheduler_manager.set_main_loop(main_loop)
     log_config.info(f"已将主应用事件循环传递给调度器: {main_loop}")
     
-    # 初始化并启动定时任务管理器
-    if TRUNON_SCHEDULER:
-        scheduler_manager.init_scheduler()
-        scheduler_manager.start()
-        log_config.info(f"定时任务管理器状态: {get_scheduler_status()}")
-    else:
-        log_config.warning("⚠️ 定时任务管理器未启动")
+    # 定时任务管理器将在后面通过initialize_scheduler()统一初始化和启动
     
     if TURNON_DBMONITOR:
         mysql_monitor.start_monitoring()

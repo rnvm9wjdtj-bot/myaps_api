@@ -106,65 +106,93 @@ class DbManager:
     
 
     @with_transaction
-    async def call_stored_procedure(self, procedure_name: str, params_list: List[List[Any]] = None, use_transaction: Optional[bool] = None) -> Dict[str, Any]:
+    async def call_stored_procedure(
+        self, 
+        procedure_name: str, 
+        params_list: List[List[Any]] = None, 
+        use_transaction: Optional[bool] = None,
+        max_retries: int = 3,
+        retry_delay: float = 0.5
+    ) -> Dict[str, Any]:
         """
-        调用数据库存储过程
+        调用数据库存储过程（支持死锁自动重试）
         
         Args:
             procedure_name: 存储过程名称
             params_list: 存储过程参数列表，每个元素是一个参数列表（可选，默认[[]]）
             use_transaction: 是否使用事务（可选，默认使用实例配置的use_transaction）
+            max_retries: 最大重试次数，默认3次
+            retry_delay: 重试延迟时间（秒），默认0.5秒
             
         Returns:
             包含执行结果的字典，包括成功状态、执行时间、影响记录数等
             
         Raises:
-            Exception: 如果存储过程执行失败
+            Exception: 如果存储过程执行失败且重试耗尽
         """
         if params_list is None:
             params_list = [[]]
             
         start_time = datetime.now()
+        retry_count = 0
+        last_exception = None
         
-        try:
-            # 使用Tortoise的连接池机制，不需要手动关闭连接
-            # Tortoise会自动管理连接的获取和释放
-            conn = Tortoise.get_connection(self.connection_name)
-            affect_count = 0
-            results = []
-            
-            # 移除事务分支，统一执行核心逻辑
-            for params in params_list:
-                result = await conn.execute_query(
-                    f'CALL `{procedure_name}`({", ".join(["%s"] * len(params))})', 
-                    params
-                )
-                count = result[0] if result else 0
-                affect_count += count
-                results.append(result)
-            
-            execution_time = (datetime.now() - start_time).total_seconds()
-            
-            # 更新统计信息
-            self.stats['total_processed'] += len(params_list)
-            self.stats['batches_executed'] += len(params_list)
-            self.stats['last_execution_time'] = execution_time
-            
-            response = {
-                "success": True,
-                "procedure_name": procedure_name,
-                "execution_time": execution_time,
-                "total_calls": len(params_list),
-                "affected_rows": affect_count,
-                "results": results
-            }
-            
-            logger.success("存储过程调用", procedure_name, f"执行时间{execution_time:.3f}秒")
-            return response
-            
-        except Exception as e:
-            logger.fail("存储过程调用", procedure_name, str(e))
-            raise
+        while retry_count <= max_retries:
+            try:
+                conn = Tortoise.get_connection(self.connection_name)
+                affect_count = 0
+                results = []
+                
+                for params in params_list:
+                    result = await conn.execute_query(
+                        f'CALL `{procedure_name}`({", ".join(["%s"] * len(params))})', 
+                        params
+                    )
+                    count = result[0] if result else 0
+                    affect_count += count
+                    results.append(result)
+                
+                execution_time = (datetime.now() - start_time).total_seconds()
+                
+                self.stats['total_processed'] += len(params_list)
+                self.stats['batches_executed'] += len(params_list)
+                self.stats['last_execution_time'] = execution_time
+                
+                response = {
+                    "success": True,
+                    "procedure_name": procedure_name,
+                    "execution_time": execution_time,
+                    "total_calls": len(params_list),
+                    "affected_rows": affect_count,
+                    "results": results,
+                    "retry_count": retry_count
+                }
+                
+                if retry_count > 0:
+                    logger.success("存储过程调用", procedure_name, f"执行时间{execution_time:.3f}秒（第{retry_count}次重试成功）")
+                else:
+                    logger.success("存储过程调用", procedure_name, f"执行时间{execution_time:.3f}秒")
+                return response
+                
+            except Exception as e:
+                last_exception = e
+                
+                error_str = str(e).upper()
+                is_deadlock = 'DEADLOCK' in error_str or '1213' in str(e)
+                
+                if is_deadlock and retry_count < max_retries:
+                    retry_count += 1
+                    logger.warning_msg(
+                        "存储过程调用", 
+                        f"{procedure_name} 检测到死锁，第{retry_count}次重试中...", 
+                        f"等待{retry_delay}秒后重试"
+                    )
+                    import asyncio
+                    await asyncio.sleep(retry_delay)
+                    continue
+                
+                logger.fail("存储过程调用", procedure_name, str(e))
+                raise last_exception
     
 
     async def query_data(self, table_name: str, filter_string: str = '', order_string: str = '', batch_size: int = 1000, max_retries: int = 3) -> Dict[str, Any]:

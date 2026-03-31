@@ -4,6 +4,7 @@ import queue
 import time
 import sys
 import platform
+import threading
 from typing import Optional, Dict, Any
 from logging.handlers import TimedRotatingFileHandler, QueueHandler, QueueListener
 
@@ -587,13 +588,22 @@ class DatePrefixRotatingFileHandler(TimedRotatingFileHandler):
         self.encoding = kwargs.get('encoding', 'utf-8')
         # 计算初始轮替时间
         self.rolloverAt = self.computeRollover(int(time.time()))
+        # 添加线程锁，确保轮转操作的线程安全
+        self._rollover_lock = threading.Lock()
     
     def emit(self, record):
         """重写 emit 方法，确保轮替检查能够正常执行"""
         # 检查是否需要轮替
         current_time = int(time.time())
         if current_time >= self.rolloverAt:
-            self.doRollover()
+            # 使用锁确保只有一个线程执行轮转
+            if self._rollover_lock.acquire(blocking=False):
+                try:
+                    # 再次检查，防止多个线程同时通过第一次检查
+                    if current_time >= self.rolloverAt:
+                        self.doRollover()
+                finally:
+                    self._rollover_lock.release()
         super().emit(record)
     
     def doRollover(self):
