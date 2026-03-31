@@ -22,7 +22,7 @@ def create_security_middleware():
             return await call_next(request)
             
         # 若不在IP白名单则需要认证请求头X-API-Key
-        if request.headers.get("X-API-Key") == API_KEY:
+        if not API_KEY or request.headers.get("X-API-Key") == API_KEY:
             return await call_next(request)
 
         return JSONResponse(status_code=200, content={"status_code": 403, "success": 0, "meta": {}, "message": "Forbidden: Invalid or missing API Key"})
