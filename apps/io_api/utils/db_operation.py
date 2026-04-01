@@ -115,7 +115,7 @@ async def db_query(db_name: str, model_or_tablename: TortoiseBaseModel | str, fi
 
 
 
-async def preprocess_data(data_list: List[PydanticSchema | Dict[str, Any]], model_class: Optional[TortoiseBaseModel] = None, conflict_fields: Optional[Tuple[str, ...]] = None) -> List[ProcessedData]:
+async def preprocess_data(data_list: List[PydanticSchema | Dict[str, Any]], model_class: Optional[TortoiseBaseModel] = None, conflict_fields: Optional[Tuple[str, ...]] = None, exclude_none: bool = True) -> List[ProcessedData]:
     """
     预处理数据，将Pydantic模型转换为字典，并可选地基于冲突字段去重
     
@@ -123,6 +123,7 @@ async def preprocess_data(data_list: List[PydanticSchema | Dict[str, Any]], mode
         data_list: 原始数据列表，可以是PydanticSchema对象或字典
         model_class: Tortoise模型类，用于过滤字段（可选）
         conflict_fields: 冲突字段元组，用于去重（可选）
+        exclude_none: 是否排除None值
         
     Returns:
         预处理后的数据列表
@@ -138,7 +139,7 @@ async def preprocess_data(data_list: List[PydanticSchema | Dict[str, Any]], mode
         # 获取原始输入数据
         raw_input_data = get_raw_input_data(data_item)
         # 转换为字典
-        processed_dict = convert_to_dict(data_item, exclude_none=True)
+        processed_dict = convert_to_dict(data_item, exclude_none=exclude_none)
         
         # 如果提供了模型类，过滤掉不在模型中的字段
         if model_class:
@@ -206,7 +207,7 @@ async def db_supsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
 
     valid_dbs = validate_databases(db_names)
     if not valid_dbs:
-        logger.fail("数据库验证", "", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
+        logger.fail("数据库验证", f"{db_names}", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -245,7 +246,7 @@ async def db_supsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
     )
 
 
-async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str, data_list: List[PydanticSchema | Dict[str, Any]], use_orm_or_sql: Literal["orm", "sql", "auto"] = "sql"):
+async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str, data_list: List[PydanticSchema | Dict[str, Any]], use_orm_or_sql: Literal["orm", "sql", "auto"] = "sql", exclude_none: bool = True):
     """
     通用批量写入操作，支持创建和更新
     融合了多账套处理逻辑与db_manager.py的高效数据库操作
@@ -254,6 +255,7 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
         mdl: Tortoise模型类
         data: 数据列表，可以是PydanticSchema对象或字典
         use_orm_or_sql
+        exclude_none: 是否排除None值
         
     Returns:
         标准响应格式
@@ -295,7 +297,7 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
     model_key = DbManager._get_conflict_fields(mdl)
     
     # 预处理数据，并基于冲突字段去重
-    processed_data_list = await preprocess_data(data_list, model_class=mdl, conflict_fields=model_key)
+    processed_data_list = await preprocess_data(data_list, model_class=mdl, conflict_fields=model_key, exclude_none=exclude_none)
     # 初始化统计信息
     success_db = []
     create_count_total = 0
@@ -428,10 +430,10 @@ async def call_dbprocdure(db_names: str, procedure_name: str, params_list: List[
             exe_result = await db_manager.call_stored_procedure(procedure_name=procedure_name, params_list=params_list)
             affect_rows += exe_result.get('affected_rows', 0)
             total_affect_count += affect_rows
-            logger.success("存储过程调用", f"{procedure_name}@{db_name}", f"影响{affect_rows}条记录")
+            # logger.success("存储过程调用", f"{procedure_name}@{db_name}", f"影响{affect_rows}条记录")
             # meta[db_name] = affect_rows
         return standard_response(
-            message=f"调用存储过程`{procedure_name}`@{db_name}成功，影响{total_affect_count}条记录",
+            # message=f"调用存储过程`{procedure_name}`@{db_name}成功，影响{total_affect_count}条记录",
             meta={"affect_rows": affect_rows, "affect_dbs": ", ".join(valid_dbs)},
             
         )

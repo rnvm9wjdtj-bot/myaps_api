@@ -196,6 +196,7 @@ async def post_material(
     x_api_key: str = common_params["x_api_key"]
     ):
     db_name = db_name.replace(" ", "")
+
     return await db_bupsert(db_names=db_name, model_or_tablename="t_material", data_list=data) 
 
 
@@ -211,10 +212,6 @@ async def post_workcenter(
     db_name: str = common_params["db_name"],
     x_api_key: str = common_params["x_api_key"]
     ):
-    # if len(data) > 1:
-    #     return await db_bupsert(db_names=db_name, model_or_tablename="t_workcenter", data_list=data)
-    # else:
-    #     return await db_supsert(db_names=db_name, model_or_tablename="t_workcenter", data_item=data[0])
     db_name = db_name.replace(" ", "")
     return await db_bupsert(db_names=db_name, model_or_tablename="t_workcenter", data_list=data)
 
@@ -640,8 +637,7 @@ async def get_mo_by_time(
     description="以最后一步工序完成数量为依据，汇总工单完成情况"
 )
 async def query_workreport(
-    db_name: str = common_params["db_name"],
-    x_api_key: str = common_params["x_api_key"]
+    db_name: str = common_params["db_name"]
 ):
     """
     查询报工记录

@@ -169,9 +169,9 @@ class DbManager:
                 }
                 
                 if retry_count > 0:
-                    logger.success("存储过程调用", procedure_name, f"执行时间{execution_time:.3f}秒（第{retry_count}次重试成功）")
+                    logger.success("存储过程调用", f"{procedure_name}@{self.connection_name}", f"执行时间{execution_time:.3f}秒（第{retry_count}次重试成功），影响记录数{affect_count}条")
                 else:
-                    logger.success("存储过程调用", procedure_name, f"执行时间{execution_time:.3f}秒")
+                    logger.success("存储过程调用", f"{procedure_name}@{self.connection_name}", f"执行时间{execution_time:.3f}秒，影响记录数{affect_count}条")
                 return response
                 
             except Exception as e:
@@ -186,7 +186,7 @@ class DbManager:
                     if is_operational_error:
                         logger.warning_msg(
                             "存储过程调用", 
-                            f"{procedure_name} 检测到连接错误，第{retry_count}次重试中...", 
+                            f"{procedure_name}@{self.connection_name} 检测到连接错误，第{retry_count}次重试中...", 
                             f"等待{retry_delay}秒后重试"
                         )
                         # 尝试刷新连接
@@ -194,14 +194,14 @@ class DbManager:
                     else:
                         logger.warning_msg(
                             "存储过程调用", 
-                            f"{procedure_name} 检测到死锁，第{retry_count}次重试中...", 
+                            f"{procedure_name}@{self.connection_name} 检测到死锁，第{retry_count}次重试中...", 
                             f"等待{retry_delay}秒后重试"
                         )
                     import asyncio
                     await asyncio.sleep(retry_delay)
                     continue
                 
-                logger.fail("存储过程调用", procedure_name, str(e))
+                logger.fail("存储过程调用", f"{procedure_name}@{self.connection_name}", str(e))
                 raise last_exception
     
 
@@ -283,7 +283,7 @@ class DbManager:
                 }
                 
                 if retry_count > 0:
-                    logger.success(f"数据查询成功（第{retry_count + 1}次重试）", table_name, f"执行时间{execution_time:.3f}秒")
+                    logger.success(f"数据查询成功（第{retry_count + 1}次重试）", f"{table_name}@{self.connection_name}", f"执行时间{execution_time:.3f}秒")
                 
                 logger.debug(f"数据查询完成：{response}")
                 return response
@@ -294,17 +294,17 @@ class DbManager:
                 
                 # 特殊处理OperationalError
                 if "OperationalError" in str(type(e)):
-                    logger.warning(f"数据库连接错误，将进行第{retry_count}次重试", table_name, str(e))
+                    logger.warning(f"数据库连接错误，将进行第{retry_count}次重试", f"{table_name}@{self.connection_name}", str(e))
                     # 尝试刷新连接
                     await self.refresh_connection()
                 elif retry_count <= max_retries:
-                    logger.warning(f"数据查询失败，将进行第{retry_count}次重试", table_name, str(e))
+                    logger.warning(f"数据查询失败，将进行第{retry_count}次重试", f"{table_name}@{self.connection_name}", str(e))
                 
                 if retry_count <= max_retries:
                     import asyncio
                     await asyncio.sleep(1)  # 等待1秒后重试
                 else:
-                    logger.fail("数据查询", table_name, str(e))
+                    logger.fail("数据查询", f"{table_name}@{self.connection_name}", str(e))
                     raise
         
         # 理论上不会走到这里，但为了代码完整性
@@ -364,22 +364,22 @@ class DbManager:
                 }
                 
                 if retry_count > 0:
-                    logger.success(f"数据删除成功（第{retry_count + 1}次重试）", table_name, f"影响{affected_rows}行")
+                    logger.success(f"数据删除成功（第{retry_count + 1}次重试）", f"{table_name}@{self.connection_name}", f"影响{affected_rows}行")
                 else:
-                    logger.success("数据删除", table_name, f"影响{affected_rows}行")
+                    logger.success("数据删除", f"{table_name}@{self.connection_name}", f"影响{affected_rows}行")
                 return response
                 
             except Exception as e:
                 # 特殊处理OperationalError
                 if "OperationalError" in str(type(e)) and retry_count < max_retries:
                     retry_count += 1
-                    logger.warning(f"数据库连接错误，将进行第{retry_count}次重试", table_name, str(e))
+                    logger.warning(f"数据库连接错误，将进行第{retry_count}次重试", f"{table_name}@{self.connection_name}", str(e))
                     # 尝试刷新连接
                     await self.refresh_connection()
                     import asyncio
                     await asyncio.sleep(1)  # 等待1秒后重试
                 else:
-                    logger.fail("数据删除", table_name, str(e))
+                    logger.fail("数据删除", f"{table_name}@{self.connection_name}", str(e))
                     raise
     
 
@@ -410,13 +410,13 @@ class DbManager:
                 # 特殊处理OperationalError
                 if "OperationalError" in str(type(e)) and retry_count < max_retries:
                     retry_count += 1
-                    logger.warning(f"数据库连接错误，将进行第{retry_count}次重试", description, str(e))
+                    logger.warning(f"数据库连接错误，将进行第{retry_count}次重试", f"{description}@{self.connection_name}", str(e))
                     # 尝试刷新连接
                     await self.refresh_connection()
                     import asyncio
                     await asyncio.sleep(1)  # 等待1秒后重试
                 else:
-                    logger.fail("SQL执行", description, str(e))
+                    logger.fail("SQL执行", f"{description}@{self.connection_name}", str(e))
                     logger.debug(f"SQL：{sql[:200]}...")
                     raise
     
@@ -754,14 +754,14 @@ class DbManager:
                 "update_fields": update_fields
             }
             
-            logger.success("批量upsert", f"{db_table}", f"插入{result['inserted']}条，更新{result['updated']}条")
+            logger.success("批量upsert", f"{db_table}@{self.connection_name}", f"插入{result['inserted']}条，更新{result['updated']}条")
             return response
             
         except IntegrityError as e:
-            logger.fail("数据完整性", f"{db_table}", str(e))
+            logger.fail("数据完整性", f"{db_table}@{self.connection_name}", str(e))
             raise
         except Exception as e:
-            logger.fail("批量upsert", f"{db_table}", str(e))
+            logger.fail("批量upsert", f"{db_table}@{self.connection_name}", str(e))
             # 保留异常处理的特殊逻辑，因为它涉及到不同的异常处理策略
             transaction_mode = self.use_transaction if use_transaction is None else use_transaction
             if transaction_mode:
@@ -1231,11 +1231,11 @@ class DbManager:
                 "execution_time": execution_time
             }
             
-            logger.success("索引更新", f"{table_name}", f"影响{affected_rows}行")
+            logger.success("索引更新", f"{table_name}@{self.connection_name}", f"影响{affected_rows}行")
             return response
             
         except Exception as e:
-            logger.fail("索引更新", "", str(e))
+            logger.fail("索引更新", f"{table_name}@{self.connection_name}", str(e))
             raise
 
 

@@ -77,9 +77,9 @@ def sap_post(url: str, session: requests.Session, interface_id: str, data: dict)
     response_json = {}
     if response.status_code == status.HTTP_200_OK:
         response_json = response.json()
-        file_log.success("POST请求", "", f"状态码{response.status_code}，响应{response_json}")
+        file_log.success("POST请求", f"状态码{response.status_code}", f"响应{response_json}")
     else:
-        file_log.fail("POST请求", "", f"状态码{response.status_code}，响应{response.text}")
+        file_log.fail("POST请求", f"状态码{response.status_code}", f"响应{response.text}")
     return {
         'status_code': response.status_code,
         'response_text': response.text,

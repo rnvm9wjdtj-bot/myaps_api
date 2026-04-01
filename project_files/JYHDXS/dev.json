@@ -33,7 +33,7 @@
         "Authorization": "Basic dHNpcGFkbWluOmFkbWlu"
     },
     "defaults": {
-        "auto_matver": false,
+        "!no_fill_defaults": ["lotmin", "lotmax"],
         "matver_prefix": "V",
         "matver": "V01",
         "itemno_prefix": "A",

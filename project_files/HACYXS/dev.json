@@ -22,9 +22,9 @@
     "org_id": "",
     "app_key": "UG69s1P1",
     "app_secret": "F1A51CB0AD5275BF6FAA46270AF1CF37",
-    "refresh_token": "4368d1ca4f3d46fca865e0d85d731a29",
-    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJpc3YiLCJpc3MiOiJjaGFuamV0IiwidXNlcklkIjoiMzk2MjUxNzMxNzA5OTU0Iiwib3JnSWQiOiIxMjQxNzU3OTMzNjA5NDUzIiwiYWNjZXNzX3Rva2VuIjoiYmMtZjhlMmU1MTEtNGQ4ZS00ZWNjLTg2OGQtNmU5YjNhMDYyMmM0IiwiYXVkIjoiaXN2IiwibmJmIjoxNzc0NjU5MzAwLCJhcHBJZCI6IjU4Iiwic2NvcGUiOiJhdXRoX2FsbCIsImFwcEtleSI6IlVHNjlzMVAxIiwiaWQiOiI4MDVkYTEyYy1lNDc2LTRjOTEtOGJjYy04MTFkMjU1OWQ5MjIiLCJleHAiOjE3NzUxNzc3MDAsImlhdCI6MTc3NDY1OTMwMCwib3JnQWNjb3VudCI6InV3aWF4ZnVlc2E2OCJ9.vwELJwOF970TmJLuLRhIy97cXSOgJ5-er0ZznunCfDU",
-    "_auth_at_": "2026-03-28 08:55:01",
+    "refresh_token": "8563ebe9d1e348f1a124676d339a406b",
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJpc3YiLCJpc3MiOiJjaGFuamV0IiwidXNlcklkIjoiMzk2MjUxNzMxNzA5OTU0Iiwib3JnSWQiOiIxMjQyMTYwNjg0MjM1NjIwIiwiYWNjZXNzX3Rva2VuIjoiYmMtZjhlMmU1MTEtNGQ4ZS00ZWNjLTg2OGQtNmU5YjNhMDYyMmM0IiwiYXVkIjoiaXN2IiwibmJmIjoxNzc1MDA3NDAyLCJhcHBJZCI6IjU4Iiwic2NvcGUiOiJhdXRoX2FsbCIsImFwcEtleSI6IlVHNjlzMVAxIiwiaWQiOiJjNzJkMWRmMC1hYzA4LTQ1N2EtYTViYy1iOGJkYWQ0ZWM1NDYiLCJleHAiOjE3NzU1MjU4MDIsImlhdCI6MTc3NTAwNzQwMiwib3JnQWNjb3VudCI6InV0dTJwb2ZhZDN1MiJ9.CrtByizaMaDbBfrs-yzts41MOEfl2-4SFScxZhhGqzU",
+    "_auth_at_": "2026-04-01 08:55:08",
     "$MoBusiType": "PT01",
     "$MoDepartment": "1",
     "$PrRequisitionPerson": "001"
@@ -43,7 +43,6 @@
     "sign": "MjZlMTc2ZTZmNTc1ZDYxMzg1OWQ4ZjM3ZDg4MTRhNzBmZWRjMTcxNDNkYjg3OTQwMjNlN2JlYjU5YjM4MTBmZg=="
   },
   "defaults": {
-    "auto_matver": true,
     "matver_prefix": "A",
     "matver_width": 2,
     "matver": "A01",
