@@ -1048,7 +1048,14 @@ class SmartLogger(logging.Logger):
                     timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
                     
                     # 格式化日志消息
-                    formatted_msg = msg % args
+                    try:
+                        if args:
+                            formatted_msg = msg % args
+                        else:
+                            formatted_msg = msg
+                    except (TypeError, ValueError):
+                        # 如果格式化失败，将参数拼接到消息后面
+                        formatted_msg = f"{msg} {' '.join(map(str, args))}"
                     
                     # 使用ANSI颜色代码
                     print(f"{ANSI_COLORS['INFO']}{timestamp} - INFO - {formatted_msg}{ANSI_COLORS['RESET']}")
@@ -1061,7 +1068,14 @@ class SmartLogger(logging.Logger):
                     timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
                     
                     # 格式化日志消息
-                    formatted_msg = msg % args
+                    try:
+                        if args:
+                            formatted_msg = msg % args
+                        else:
+                            formatted_msg = msg
+                    except (TypeError, ValueError):
+                        # 如果格式化失败，将参数拼接到消息后面
+                        formatted_msg = f"{msg} {' '.join(map(str, args))}"
                     
                     # 设置控制台颜色
                     ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['INFO'])
@@ -1088,7 +1102,14 @@ class SmartLogger(logging.Logger):
                     timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
                     
                     # 格式化日志消息
-                    formatted_msg = msg % args
+                    try:
+                        if args:
+                            formatted_msg = msg % args
+                        else:
+                            formatted_msg = msg
+                    except (TypeError, ValueError):
+                        # 如果格式化失败，将参数拼接到消息后面
+                        formatted_msg = f"{msg} {' '.join(map(str, args))}"
                     
                     # 使用ANSI颜色代码
                     print(f"{ANSI_COLORS['WARNING']}{timestamp} - WARNING - {formatted_msg}{ANSI_COLORS['RESET']}")
@@ -1101,7 +1122,14 @@ class SmartLogger(logging.Logger):
                     timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
                     
                     # 格式化日志消息
-                    formatted_msg = msg % args
+                    try:
+                        if args:
+                            formatted_msg = msg % args
+                        else:
+                            formatted_msg = msg
+                    except (TypeError, ValueError):
+                        # 如果格式化失败，将参数拼接到消息后面
+                        formatted_msg = f"{msg} {' '.join(map(str, args))}"
                     
                     # 设置控制台颜色
                     ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['WARNING'])
@@ -1128,7 +1156,14 @@ class SmartLogger(logging.Logger):
                     timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
                     
                     # 格式化日志消息
-                    formatted_msg = msg % args
+                    try:
+                        if args:
+                            formatted_msg = msg % args
+                        else:
+                            formatted_msg = msg
+                    except (TypeError, ValueError):
+                        # 如果格式化失败，将参数拼接到消息后面
+                        formatted_msg = f"{msg} {' '.join(map(str, args))}"
                     
                     # 使用ANSI颜色代码
                     print(f"{ANSI_COLORS['ERROR']}{timestamp} - ERROR - {formatted_msg}{ANSI_COLORS['RESET']}")
@@ -1141,7 +1176,14 @@ class SmartLogger(logging.Logger):
                     timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
                     
                     # 格式化日志消息
-                    formatted_msg = msg % args
+                    try:
+                        if args:
+                            formatted_msg = msg % args
+                        else:
+                            formatted_msg = msg
+                    except (TypeError, ValueError):
+                        # 如果格式化失败，将参数拼接到消息后面
+                        formatted_msg = f"{msg} {' '.join(map(str, args))}"
                     
                     # 设置控制台颜色
                     ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['ERROR'])
@@ -1168,7 +1210,14 @@ class SmartLogger(logging.Logger):
                     timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
                     
                     # 格式化日志消息
-                    formatted_msg = msg % args
+                    try:
+                        if args:
+                            formatted_msg = msg % args
+                        else:
+                            formatted_msg = msg
+                    except (TypeError, ValueError):
+                        # 如果格式化失败，将参数拼接到消息后面
+                        formatted_msg = f"{msg} {' '.join(map(str, args))}"
                     
                     # 使用ANSI颜色代码
                     print(f"{ANSI_COLORS['CRITICAL']}{timestamp} - CRITICAL - {formatted_msg}{ANSI_COLORS['RESET']}")
@@ -1181,7 +1230,14 @@ class SmartLogger(logging.Logger):
                     timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
                     
                     # 格式化日志消息
-                    formatted_msg = msg % args
+                    try:
+                        if args:
+                            formatted_msg = msg % args
+                        else:
+                            formatted_msg = msg
+                    except (TypeError, ValueError):
+                        # 如果格式化失败，将参数拼接到消息后面
+                        formatted_msg = f"{msg} {' '.join(map(str, args))}"
                     
                     # 设置控制台颜色
                     ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, LEVEL_COLORS['CRITICAL'])

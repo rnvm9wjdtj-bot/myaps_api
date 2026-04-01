@@ -1,5 +1,5 @@
 from tortoise.contrib.fastapi import register_tortoise
-from config.settings import TORTOISE_ORM_CONFIG
+from config.settings import TORTOISE_ORM_CONFIG, MYAPS_MAIN_DB
 from globalobjects import logger as log_config
 
 def register_database(app):
@@ -13,6 +13,8 @@ def register_database(app):
 
 async def check_db_connections():
     """定期检查数据库连接状态"""
+    if not MYAPS_MAIN_DB:
+        return
     try:
         from globalobjects.db_manager import get_db_managers
         db_managers = get_db_managers()

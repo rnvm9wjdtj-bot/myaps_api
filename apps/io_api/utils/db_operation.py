@@ -310,7 +310,7 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
 
     # 格式化数据用于日志记录，将枚举和Decimal等类型转换为字符串
     formatted_data = format_data_for_logging(upsert_data_list)
-    logger.insert("批量upsert", mdl._meta.db_table, f"接收{origin_total}条，去重后{len(upsert_data_list)}条")
+    logger.insert("批量upsert", mdl._meta.db_table, f"接收{origin_total}条，去重后{len(upsert_data_list)}")
     
     # 检查upsert_data_list是否为空
     if not upsert_data_list:
