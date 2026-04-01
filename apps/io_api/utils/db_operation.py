@@ -395,7 +395,7 @@ async def db_delete(db_names: str, model_or_tablename: TortoiseBaseModel | str, 
 
             count = exe_result.get("affected_rows", 0)
             total_count += count
-            logger.delete("SQL删除", f"{table_name}@{db_name}", f"条件{filter_string}，删除{count}条")
+            logger.delete(f"{table_name}@{db_name}", filter_string, count)
         logger.success("SQL删除", f"{table_name}@{db_names}", f"共删除{total_count}条")
         return standard_response(
             meta={"affect_count": total_count, "affect_dbs": ", ".join(valid_dbs)}

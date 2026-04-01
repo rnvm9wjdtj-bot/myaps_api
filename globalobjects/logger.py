@@ -8,6 +8,194 @@ import threading
 from typing import Optional, Dict, Any
 from logging.handlers import TimedRotatingFileHandler, QueueHandler, QueueListener
 
+
+
+class EmojiManager:
+    """
+emoji 管理类，根据终端支持情况提供相应的图标"""
+    
+    def __init__(self):
+        self._supported = self.is_emoji_supported()
+        self._emojis = {
+            'SUCCESS': '✅' if self._supported else '[OK]',
+            'FAIL': '❌' if self._supported else '[FAIL]',
+            'ERROR': '🚫' if self._supported else '[ERROR]',
+            'WARNING': '⚠️' if self._supported else '[WARN]',
+            'CRITICAL': '💥' if self._supported else '[CRIT]',
+            'START': '⏰' if self._supported else '[START]',
+            'STOP': '🛑' if self._supported else '[STOP]',
+            'INSERT': '📥' if self._supported else '[INSERT]',
+            'UPDATE': '🔄' if self._supported else '[UPDATE]',
+            'DELETE': '🗑️' if self._supported else '[DELETE]',
+            'QUERY': '🔍' if self._supported else '[QUERY]',
+            'CONNECT': '🔗' if self._supported else '[CONNECT]',
+            'DISCONNECT': '🔌' if self._supported else '[DISCONNECT]',
+            'CACHE': '💾' if self._supported else '[CACHE]',
+            'TIMER': '⏱️' if self._supported else '[TIMER]',
+            'SYNC': '🔄' if self._supported else '[SYNC]',
+            'DEBUG': '🔍' if self._supported else '[DEBUG]',
+            'INFO': 'ℹ️' if self._supported else '[INFO]'
+        }
+    
+    @property
+    def supported(self) -> bool:
+        """是否支持 emoji"""
+        return self._supported
+    
+    def get(self, name: str) -> str:
+        """
+        获取指定名称的 emoji 或替代文本
+        
+        Args:
+            name: emoji 名称
+            
+        Returns:
+            str: emoji 或替代文本
+        """
+        return self._emojis.get(name.upper(), '')
+    
+    @property
+    def SUCCESS(self) -> str:
+        return self.get('SUCCESS')
+    
+    @property
+    def FAIL(self) -> str:
+        return self.get('FAIL')
+    
+    @property
+    def ERROR(self) -> str:
+        return self.get('ERROR')
+    
+    @property
+    def WARNING(self) -> str:
+        return self.get('WARNING')
+    
+    @property
+    def CRITICAL(self) -> str:
+        return self.get('CRITICAL')
+    
+    @property
+    def START(self) -> str:
+        return self.get('START')
+    
+    @property
+    def STOP(self) -> str:
+        return self.get('STOP')
+    
+    @property
+    def INSERT(self) -> str:
+        return self.get('INSERT')
+    
+    @property
+    def UPDATE(self) -> str:
+        return self.get('UPDATE')
+    
+    @property
+    def DELETE(self) -> str:
+        return self.get('DELETE')
+    
+    @property
+    def QUERY(self) -> str:
+        return self.get('QUERY')
+    
+    @property
+    def CONNECT(self) -> str:
+        return self.get('CONNECT')
+    
+    @property
+    def DISCONNECT(self) -> str:
+        return self.get('DISCONNECT')
+    
+    @property
+    def CACHE(self) -> str:
+        return self.get('CACHE')
+    
+    @property
+    def TIMER(self) -> str:
+        return self.get('TIMER')
+    
+    @property
+    def SYNC(self) -> str:
+        return self.get('SYNC')
+    
+    @property
+    def DEBUG(self) -> str:
+        return self.get('DEBUG')
+    
+    @property
+    def INFO(self) -> str:
+        return self.get('INFO')
+
+    @staticmethod
+    def is_emoji_supported() -> bool:
+        """
+        检测当前终端是否支持 emoji 显示
+        
+        Returns:
+            bool: 如果终端支持 emoji 返回 True，否则返回 False
+        """
+        # 检查操作系统
+        if platform.system() != 'Windows':
+            # 非 Windows 系统通常支持 emoji
+            return True
+        
+        # Windows 系统检查
+        windows_version = platform.version()
+        try:
+            parts = windows_version.split('.')
+            if len(parts) >= 3:
+                major = int(parts[0])
+                build = int(parts[2])
+                
+                # Windows 10 1809 (build 17763) 及以上版本支持 emoji
+                # Windows 11 虽然内核版本是 10.0，但 build 版本更高
+                if major >= 10 and build >= 17763:
+                    # 检查是否为 Windows Terminal 或支持 emoji 的终端
+                    terminal = os.environ.get('TERM', '')
+                    console_host = os.environ.get('CONSOLE_HOST', '')
+                    
+                    # Windows Terminal
+                    if 'WT_SESSION' in os.environ:
+                        return True
+                    
+                    # VS Code 终端
+                    if 'VSCODE_INTEGRATED_TERMINAL' in os.environ:
+                        return True
+                    
+                    # ConEmu、Cmder 等增强终端
+                    if any(term in terminal for term in ['conemu', 'cmder', 'mintty']):
+                        return True
+                    
+                    # 检查 PowerShell 版本
+                    try:
+                        import subprocess
+                        result = subprocess.run(
+                            ['powershell', '-Command', '$PSVersionTable.PSVersion.Major'],
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        )
+                        if result.returncode == 0:
+                            ps_version = int(result.stdout.strip())
+                            # PowerShell 7+ 更好地支持 emoji
+                            if ps_version >= 7:
+                                return True
+                    except:
+                        pass
+                    
+                    # 对于 Windows 10 1809+ 或 Windows 11，默认支持 emoji
+                    # 即使不是增强终端，现代 Windows 也支持基本 emoji
+                    return True
+        except:
+            pass
+        
+        # 其他情况默认不支持
+        return False
+
+# 创建全局实例
+emoji_manager = EmojiManager()
+
+
 # 检测终端是否支持ANSI颜色
 def is_terminal_supports_ansi():
     """
@@ -147,28 +335,29 @@ class LogHelper:
         >>> console_log.info(LogHelper.start("同步任务", "账套A01"))
     """
     
+
     class Emoji:
-        SUCCESS = "✅"
-        FAIL = "❌"
-        ERROR = "🚫"
-        WARNING = "⚠️"
-        CRITICAL = "💥"
-        START = "⏰"
-        STOP = "🛑"
+        SUCCESS = emoji_manager.SUCCESS
+        FAIL = emoji_manager.FAIL
+        ERROR = emoji_manager.ERROR
+        WARNING = emoji_manager.WARNING
+        CRITICAL = emoji_manager.CRITICAL
+        START = emoji_manager.START
+        STOP = emoji_manager.STOP
         
-        INSERT = "📥"
-        UPDATE = "🔄"
-        DELETE = "🗑️"
-        QUERY = "🔍"
+        INSERT = emoji_manager.INSERT
+        UPDATE = emoji_manager.UPDATE
+        DELETE = emoji_manager.DELETE
+        QUERY = emoji_manager.QUERY
         
-        CONNECT = "🔗"
-        DISCONNECT = "🔌"
-        CACHE = "💾"
-        TIMER = "⏱️"
-        SYNC = "🔄"
+        CONNECT = emoji_manager.CONNECT
+        DISCONNECT = emoji_manager.DISCONNECT
+        CACHE = emoji_manager.CACHE
+        TIMER = emoji_manager.TIMER
+        SYNC = emoji_manager.SYNC
         
-        DEBUG = "🔍"
-        INFO = "ℹ️"
+        DEBUG = emoji_manager.DEBUG
+        INFO = emoji_manager.INFO
     
     class Template:
         SUCCESS = "{emoji} {action}成功：{subject}"
