@@ -17,7 +17,7 @@ from .schemas import (
     #DeleteSupply
 )
 
-from .utils.common import common_params, standard_response
+from .utils.common import common_params, standard_response, before_refreshdata
 from .utils.db_operation import db_managers, db_query, db_supsert, db_bupsert, db_delete, call_dbprocdure, db_update_by_index
 from project_files import hap_conn
 from apps.data_opt.utils.data_processor import DataProcessor
@@ -226,10 +226,20 @@ async def post_workcenter(
 async def post_mat_wc(
     data: List[AcceptMatWc | Dict],
     db_name: str = common_params["db_name"],
+    is_refresh: bool = Query(False, description="是否刷新"),
     x_api_key: str = common_params["x_api_key"]
 ):
+    db_table = "t_mat_wc"
     db_name = db_name.replace(" ", "")
-    return await db_bupsert(db_names=db_name, model_or_tablename="t_mat_wc", data_list=data)
+    if is_refresh:
+        await before_refreshdata(
+            data=data,
+            db_names=db_name,
+            table_name=db_table,
+            group_fields=("materialno", "matver"),
+            db_fields=("MaterialNo", "MatVer")
+        )
+    return await db_bupsert(db_names=db_name, model_or_tablename=db_table, data_list=data)
 
 
 @rt.post(
@@ -256,10 +266,20 @@ async def post_mat_ver(
 async def post_mat_wc_bom(
     data: List[AcceptMatWcBom | Dict],
     db_name: str = common_params["db_name"],
+    is_refresh: bool = Query(False, description="是否刷新"),
     x_api_key: str = common_params["x_api_key"]
 ):
+    db_table = "t_mat_wc_bom"
     db_name = db_name.replace(" ", "")
-    return await db_bupsert(db_names=db_name, model_or_tablename="t_mat_wc_bom", data_list=data)
+    if is_refresh:
+        await before_refreshdata(
+            data=data,
+            db_names=db_name,
+            table_name=db_table,
+            group_fields=("productno", "matver"),
+            db_fields=("ProductNo", "MatVer"),
+        )
+    return await db_bupsert(db_names=db_name, model_or_tablename=db_table, data_list=data)
 
 
 @rt.post(

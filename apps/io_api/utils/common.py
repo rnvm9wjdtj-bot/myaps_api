@@ -1,5 +1,6 @@
 from typing import Dict, Any, List, Tuple
 import enum
+from datetime import datetime
 
 from fastapi import status, Query, HTTPException, status, Request, Header
 from fastapi.responses import JSONResponse
@@ -10,8 +11,6 @@ from config.settings import MYAPS_MAIN_DB
 from globalobjects.globalconst import SupplyTypeEnum
 
 
-
-from datetime import datetime
 
 def dict_to_lower_keys(d: dict) -> dict:
     return {k.lower(): v for k, v in d.items()}
@@ -190,3 +189,56 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 def register_exception_handlers(app):
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(HTTPException, http_exception_handler)
+
+
+
+async def before_refreshdata(
+    data: List[Any],
+    db_names: str,
+    table_name: str,
+    group_fields: Tuple[str, ...],
+    db_fields: Tuple[str, ...]=None,
+):
+    """
+    刷新数据前，先删除已存在的数据
+    Args:
+        data: 新数据列表
+        db_names: 数据库名称
+        table_name: 数据库表名
+        group_fields: 组合字段，用于唯一标识数据项，如 ("materialno", "matver")
+        db_fields: 数据库字段，用于删除数据，如 ("MaterialNo", "MatVer")
+    """
+    from .db_operation import db_delete
+    # 收集唯一组合
+    db_fields = db_fields or group_fields
+    unique_combinations = set()
+    for item in data:
+        field_values = []
+        for field in group_fields:
+            if isinstance(item, dict):
+                field_value = item.get(field)
+            else:
+                field_value = getattr(item, field, None)
+            field_values.append(field_value)
+        
+        # 确保所有字段都有值
+        if all(field_values):
+            unique_combinations.add(tuple(field_values))
+    
+    # 批量删除
+    if unique_combinations:
+        batch_size = 100
+        combinations_list = list(unique_combinations)
+        
+        for i in range(0, len(combinations_list), batch_size):
+            batch = combinations_list[i:i+batch_size]
+            conditions = []
+            for values in batch:
+                # 构建条件，支持任意数量的字段
+                field_conditions = []
+                for db_field, value in zip(db_fields, values):
+                    field_conditions.append(f"`{db_field}`='{value}'")
+                condition = " AND ".join(field_conditions)
+                conditions.append(f"({condition})")
+            filter_string = " OR ".join(conditions)
+            await db_delete(db_names=db_names, model_or_tablename=table_name, filter_string=filter_string)
