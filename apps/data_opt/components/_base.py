@@ -303,7 +303,7 @@ class ApsHelpers:
         """
         if isinstance(materialnos, list):
             materialnos = ','.join(materialnos)
-        url = f"{THIS_BASE_URL}/api/v_material/{materialnos}?db_name={MYAPS_MAIN_DB}"
+        url = f"{THIS_BASE_URL}/api/t_material/{materialnos}?db_name={MYAPS_MAIN_DB}"
         try:
             response_json = ApsHelpers._call_api('GET', url)
             return response_json.get('data', [])

@@ -9,7 +9,7 @@ from globalobjects.json_manager import JSONManager
 from globalobjects import logger as log_config
 
 
-console_log = log_config.get_logger(__name__)
+logger = log_config.get_logger(__name__)
 # 加载.env文件中的环境变量
 BASE_DIR = os.getcwd()
 load_dotenv(os.getenv('ENV_FILE', os.path.join(BASE_DIR, '.env')))
@@ -45,7 +45,7 @@ MYAPS_DB_USER = os.getenv("MYAPS_DB_USER") or json_env_config.get("MYAPS_DB_USER
 MYAPS_DB_PASSWORD = os.getenv("MYAPS_DB_PASSWORD") or json_env_config.get("MYAPS_DB_PASSWORD")
 MYAPS_DB_SET = os.getenv("MYAPS_DB_SET") or json_env_config.get("MYAPS_DB_SET")
 if not MYAPS_DB_SET:
-    console_log.warning_msg("环境变量配置", "MYAPS_DB_SET 未设置")
+    logger.warning_msg("环境变量配置", "MYAPS_DB_SET 未设置")
     MYAPS_DB_SET = ""
 MYAPS_DBSET_LIST = MYAPS_DB_SET.split(",")
 MYAPS_MAIN_DB = os.getenv("MYAPS_MAIN_DB") or json_env_config.get("MYAPS_MAIN_DB")

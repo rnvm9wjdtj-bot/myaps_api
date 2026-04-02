@@ -27,9 +27,7 @@ from apps.data_opt.utils.data_processor import DataProcessor
 from apps.data_opt.components._base import BaseConnection, ApsHelpers
 
 
-# 配置日志
-file_log = log_config.get_file_logger(__name__)
-console_log = log_config.get_logger(__name__)
+logger = log_config.get_logger(__name__)
 
 
 def get_scheduler_minute(offset: int=0):

@@ -11,12 +11,10 @@
 """
 from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR, SCHEDULER_MINUTE
 from .._base import (
-    get_scheduler_minute, cron_task, file_log, console_log, CACHE_JSON,
+    get_scheduler_minute, cron_task, logger, CACHE_JSON,
     ApsHelpers, get_session, db_delete, db_bupsert, db_query
 )
 
-# 导入统一日志配置（用于直接使用）
-# from globalobjects import logger as log_config
 
 from apps.data_opt.components.yonyou_tplus import TplusConnection, RsPushModel, MoPushModel, model_validator
 from typing import Dict, Any
@@ -104,9 +102,11 @@ class CustomRsPushModel(RsPushModel):
         cleaned_values = RsPushModel.model_valid(values)
 
         mr_details:list[dict] = cleaned_values['MaterialRequestDetails']
-        materialnos = ','.join([md['Inventory']['Code'] for md in mr_details])
-        materials = SESSION.get(f"{THIS_BASE_URL}/api/v_material/{materialnos}")
-        materials = materials.json()['data']
+        materialnos = [md['Inventory']['Code'] for md in mr_details]
+        materials = ApsHelpers.query_material(materialnos)
+        # materialnos = ','.join([md['Inventory']['Code'] for md in mr_details])
+        # materials = SESSION.get(f"{THIS_BASE_URL}/api/t_material/{materialnos}")
+        # materials = materials.json()['data']
         materials = {item['materialno']: item for item in materials}
         
         mr_details2 = []
@@ -142,3 +142,7 @@ def handle_pl_typeto_mo(supplyno_or_data: str | dict):
 
 def batch_handle_pr_created(pr_data_list: list[dict]):
     tplus_conn.push_pr(pr_data_list)
+
+
+if __name__ == '__main__':
+    handle_pl_status_a2e('202408240001')

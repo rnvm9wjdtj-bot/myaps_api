@@ -14,7 +14,8 @@ from globalobjects.json_manager import JSONManager
 
 # 初始化日志系统（确保日志监听器已启动）
 log_config.initialize_logging()
-
+# 获取基础日志器
+logger = log_config.get_logger(__name__)
 # 为 HAP 模块创建专用的异步日志队列
 _hap_log_queue = queue.Queue(-1)
 
@@ -77,15 +78,15 @@ class AsyncLogHandler:
         # 实际写入日志
         for level, msg, args, kwargs in buffer_copy:
             if level == 'debug':
-                _base_console_log.debug(msg, *args, **kwargs)
+                logger.debug(msg, *args, **kwargs)
             elif level == 'info':
-                _base_console_log.info(msg, *args, **kwargs)
+                logger.info(msg, *args, **kwargs)
             elif level == 'warning':
-                _base_console_log.warning(msg, *args, **kwargs)
+                logger.warning(msg, *args, **kwargs)
             elif level == 'error':
-                _base_console_log.error(msg, *args, **kwargs)
+                logger.error(msg, *args, **kwargs)
             elif level == 'critical':
-                _base_console_log.critical(msg, *args, **kwargs)
+                logger.critical(msg, *args, **kwargs)
     
     def log(self, level, msg, *args, **kwargs):
         """记录日志"""
@@ -94,15 +95,15 @@ class AsyncLogHandler:
         except queue.Full:
             # 队列满时直接写入
             if level == 'debug':
-                _base_console_log.debug(msg, *args, **kwargs)
+                logger.debug(msg, *args, **kwargs)
             elif level == 'info':
-                _base_console_log.info(msg, *args, **kwargs)
+                logger.info(msg, *args, **kwargs)
             elif level == 'warning':
-                _base_console_log.warning(msg, *args, **kwargs)
+                logger.warning(msg, *args, **kwargs)
             elif level == 'error':
-                _base_console_log.error(msg, *args, **kwargs)
+                logger.error(msg, *args, **kwargs)
             elif level == 'critical':
-                _base_console_log.critical(msg, *args, **kwargs)
+                logger.critical(msg, *args, **kwargs)
     
     def stop(self):
         """停止日志处理器"""
@@ -111,10 +112,7 @@ class AsyncLogHandler:
         self._flush_buffer()
 
 
-# 获取基础日志器
-_base_console_log = log_config.get_logger(__name__)
-file_log = log_config.get_file_logger(__name__)
-filelog_error = log_config.get_file_logger(__name__ + '.error')
+
 
 # 创建异步日志处理器实例
 _async_log_handler = AsyncLogHandler()
@@ -141,7 +139,7 @@ class AsyncLogger:
         _async_log_handler.log('critical', msg, *args, **kwargs)
     
     def exception(self, msg, *args, **kwargs):
-        _base_console_log.exception(msg, *args, **kwargs)
+        logger.exception(msg, *args, **kwargs)
     
     def success(self, action: str, subject: str = "", details: str = "", to_file: bool = False):
         _async_log_handler.log('info', LogHelper.success(action, subject, details))

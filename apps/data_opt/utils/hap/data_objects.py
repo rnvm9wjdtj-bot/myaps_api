@@ -10,7 +10,7 @@ from typing import Dict, Any, Optional, List, Type, Tuple, Union, Literal, Gener
 from datetime import datetime, timedelta
 
 from ..data_processor import DataProcessor
-from ._base import console_log, filelog_error, HapConfig, ModelType, _MAX_CONCURRENCY, _DEFAULT_BUFFER_SIZE, _DEFAULT_MAX_RETRIES, _DEFAULT_RETRY_DELAY, _DEFAULT_PAGE_SIZE
+from ._base import console_log, HapConfig, ModelType, _MAX_CONCURRENCY, _DEFAULT_BUFFER_SIZE, _DEFAULT_MAX_RETRIES, _DEFAULT_RETRY_DELAY, _DEFAULT_PAGE_SIZE
 from .fields import StrField, NumField, RelationField, ChoiceField, SubtableField
 from .utils import(
     HapUtils, AdaptiveTimeout, EnhancedRetryStrategy, TokenBucket, DecimalEncoder, HapApiMonitor,
@@ -788,7 +788,7 @@ class HapRowSet(Generic[ModelType]):
                 result = future.result()
                 results.append(result)
             except Exception as exc:
-                filelog_error.error(f"处理 {data} 时出错: {exc}")
+                logger.fail("并行处理多个数据项的 upsert 操作", str(data), str(exc))
                 # 记录失败的数据，稍后重试
                 failed_data.append(data)
         
@@ -800,7 +800,7 @@ class HapRowSet(Generic[ModelType]):
                     result = self._process_item(data, pk_field, conflict_fields, when_value_equal_then)
                     results.append(result)
                 except Exception as exc:
-                    filelog_error.error(f"处理 {data} 时出错: {exc}")
+                    logger.fail("并行处理多个数据项的 upsert 操作", str(data), str(exc))
                     # 记录失败的数据，稍后重试
                     failed_data.append(data)
         
@@ -821,7 +821,7 @@ class HapRowSet(Generic[ModelType]):
         
         # 如果仍有失败的数据，记录到错误日志
         if failed_data:
-            filelog_error.error(f"最终失败的数据共【{len(failed_data)}】条:{failed_data}")
+            logger.fail("并行处理多个数据项的 upsert 操作", f"失败【{len(failed_data)}】条:{failed_data}")
             # 将失败的数据作为需要创建的数据返回，避免丢失
             for data in failed_data:
                 results.append((None, data))
