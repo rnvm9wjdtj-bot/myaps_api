@@ -1,8 +1,5 @@
 {
   "env": {
-    "PROTOCOL": "http://",
-    "HOST": "localhost",
-    "PORT": 8000,
     "THIS_DB_HOST": null,
     "THIS_DB_PORT": null,
     "THIS_DB_USER": null,

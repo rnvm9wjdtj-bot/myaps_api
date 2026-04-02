@@ -26,6 +26,10 @@ SCHEDULER_HOUR = os.getenv("SCHEDULER_HOUR") or "6,8,10,12,14,16"
 SCHEDULER_MINUTE = os.getenv("SCHEDULER_MINUTE") or "55"
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 
+PROTOCOL = os.getenv("PROTOCOL", "http://")
+HOST = os.getenv("HOST", "localhost")
+PORT = int(os.getenv("PORT", 8000))
+THIS_BASE_URL = f"{PROTOCOL}localhost:{PORT}"
 
 # 项目目录
 PROJECT_DIR = os.getenv("PROJECT_DIR")
@@ -36,10 +40,6 @@ CACHE_FILENAME = os.getenv("CACHE_FILENAME") or "cache.json"
 CACHE_FILE = JSONManager(f"project_files/{PROJECT_DIR}/{CACHE_FILENAME}")
 json_env_config = CACHE_FILE.get("env") or {}
 
-PROTOCOL = os.getenv("PROTOCOL") or json_env_config.get("PROTOCOL") or "http://"
-HOST = os.getenv("HOST") or json_env_config.get("HOST")  or "localhost"
-PORT = int(os.getenv("PORT") or json_env_config.get("PORT") or 8000)
-THIS_BASE_URL = f"{PROTOCOL}localhost:{PORT}"
 
 MYAPS_VERSION = (os.getenv("MYAPS_VERSION") or json_env_config.get("MYAPS_VERSION") or "L").upper()
 MYAPS_BASE_URL = os.getenv("MYAPS_BASE_URL") or json_env_config.get("MYAPS_BASE_URL")
