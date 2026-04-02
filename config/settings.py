@@ -14,19 +14,23 @@ logger = log_config.get_logger(__name__)
 BASE_DIR = os.getcwd()
 load_dotenv(os.getenv('ENV_FILE', os.path.join(BASE_DIR, '.env')))
 
-# 项目目录
-PROJECT_DIR = os.getenv("PROJECT_DIR")
-if PROJECT_DIR is None:
-    raise ValueError("❌ PROJECT_DIR 环境变量未设置，请在 .env 文件中设置 PROJECT_DIR")
-# 数据库监控开关
+
+# 数据库监控开关，默认关闭
 TURNON_DBMONITOR = os.getenv("TURNON_DBMONITOR", "False").lower() == "true"
-# 定时任务开关
+# Binlog 位置管理器开关，默认关闭
+TURNON_BINLOG_POSITION_MANAGER = os.getenv("TURNON_BINLOG_POSITION_MANAGER", "False").lower() == "true"
+# 定时任务开关，默认关闭
 TRUNON_SCHEDULER = os.getenv("TRUNON_SCHEDULER", "False").lower() == "true"
 # 定时任务执行时间
 SCHEDULER_HOUR = os.getenv("SCHEDULER_HOUR") or "6,8,10,12,14,16"
 SCHEDULER_MINUTE = os.getenv("SCHEDULER_MINUTE") or "55"
+LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 
 
+# 项目目录
+PROJECT_DIR = os.getenv("PROJECT_DIR")
+if PROJECT_DIR is None:
+    raise ValueError("❌ PROJECT_DIR 环境变量未设置，请在 .env 文件中设置 PROJECT_DIR")
 # JSON文件中记录的配置项
 CACHE_FILENAME = os.getenv("CACHE_FILENAME") or "cache.json"
 CACHE_FILE = JSONManager(f"project_files/{PROJECT_DIR}/{CACHE_FILENAME}")
@@ -51,7 +55,7 @@ MYAPS_DBSET_LIST = MYAPS_DB_SET.split(",")
 MYAPS_MAIN_DB = os.getenv("MYAPS_MAIN_DB") or json_env_config.get("MYAPS_MAIN_DB")
 if MYAPS_MAIN_DB is None:
     MYAPS_MAIN_DB = MYAPS_DBSET_LIST[0]
-LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
+
 
 # 本API数据库配置<postgreSQL>
 THIS_DB_HOST = os.getenv("THIS_DB_HOST") or json_env_config.get("THIS_DB_HOST")

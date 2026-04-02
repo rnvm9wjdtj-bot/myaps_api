@@ -1,5 +1,14 @@
 """
-bBinlog方案需要的权限
+MySQL Binlog 实时监控模块
+
+功能特性：
+1. 实时监听 MySQL binlog，捕获 INSERT/UPDATE/DELETE 事件
+2. 无限重试机制 - 连接断开后自动重连，永不放弃
+3. 位置持久化 - 自动保存 binlog 位置，重启后从断点续传
+4. 健康检查 - 定期检查 MySQL 连接状态
+5. 告警通知 - 支持自定义告警回调（企业微信、钉钉、邮件等）
+
+需要的 MySQL 权限：
 -- 创建监控用户并授权
 CREATE USER 'monitor_user'@'%' IDENTIFIED BY 'strong_password';
 GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'monitor_user'@'%';
@@ -10,9 +19,6 @@ FLUSH PRIVILEGES;
 SHOW VARIABLES LIKE 'log_bin';  -- 必须为ON
 SHOW VARIABLES LIKE 'binlog_format';  -- 推荐ROW模式
 
-本模块用于实时监听 MySQL binlog，捕获指定表的 INSERT/UPDATE/DELETE 事件，
-并将变更数据通过 webhook 推送给外部系统，实现第三方系统的增量同步。
-依赖 python-mysql-replication 包，要求 MySQL 开启 binlog 且为 ROW 格式。
 验证方法：
 1. 登录 MySQL 执行：SHOW VARIABLES LIKE 'log_bin'; 结果需为 ON
 2. 执行：SHOW VARIABLES LIKE 'binlog_format'; 结果需为 ROW
@@ -22,10 +28,32 @@ SHOW VARIABLES LIKE 'binlog_format';  -- 推荐ROW模式
    binlog_format=ROW
    server_id=1
 4. 重启 MySQL 使配置生效
+
+使用示例：
+    from apps.data_opt.utils.mysqlmonitor import mysql_monitor
+    
+    # 注册告警处理器（可选）
+    def alert_handler(message, level):
+        # 发送到企业微信/钉钉/邮件等
+        print(f"[{level}] {message}")
+    
+    mysql_monitor.register_alert_handler(alert_handler)
+    
+    # 启动监控
+    mysql_monitor.start_monitoring()
+    
+    # 查看状态
+    status = mysql_monitor.get_status()
+    print(status)
+    
+    # 停止监控
+    mysql_monitor.stop_monitoring()
 """
 
 
-import os, asyncio, time, logging, threading, concurrent.futures
+import os, asyncio, time, logging, threading, concurrent.futures, json, pickle
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Any, Callable
 # from functools import wraps
 from pymysqlreplication import BinLogStreamReader
 from pymysqlreplication.row_event import (
@@ -34,13 +62,174 @@ from pymysqlreplication.row_event import (
     DeleteRowsEvent,
 )
 
-from config.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_DBMONITOR
+from config.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_DBMONITOR, TURNON_BINLOG_POSITION_MANAGER
 from globalobjects import logger as log_config
 from apps.common.utils.thread_pool_manager import global_pool_manager
 import os
 
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 logger = log_config.get_logger(__name__, level=LOG_LEVEL)
+
+
+class BinlogPositionManager:
+    """Binlog 位置管理器 - 负责持久化和恢复 binlog 位置"""
+    
+    def __init__(self, position_file: str = None):
+        if position_file is None:
+            # 默认保存到项目根目录下的 .binlog_position 文件
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+            self.position_file = os.path.join(base_dir, '.binlog_position.json')
+        else:
+            self.position_file = position_file
+        
+        self._lock = threading.RLock()
+        self._last_save_time = 0
+        self._save_interval = 5  # 最少5秒保存一次，避免频繁写入
+    
+    def load_position(self) -> Optional[Dict[str, Any]]:
+        """加载保存的 binlog 位置"""
+        try:
+            if os.path.exists(self.position_file):
+                with self._lock:
+                    with open(self.position_file, 'r', encoding='utf-8') as f:
+                        position = json.load(f)
+                        logger.info(f"📂 已加载 binlog 位置: {position.get('log_file')}:{position.get('log_pos')}")
+                        return position
+        except Exception as e:
+            logger.warning(f"⚠️ 加载 binlog 位置失败: {e}")
+        return None
+    
+    def save_position(self, log_file: str, log_pos: int, timestamp: Optional[float] = None):
+        """保存 binlog 位置到文件"""
+        current_time = time.time()
+        
+        # 限制保存频率
+        if current_time - self._last_save_time < self._save_interval:
+            return
+        
+        try:
+            with self._lock:
+                position = {
+                    'log_file': log_file,
+                    'log_pos': log_pos,
+                    'timestamp': timestamp or current_time,
+                    'datetime': datetime.fromtimestamp(timestamp or current_time).strftime('%Y-%m-%d %H:%M:%S')
+                }
+                
+                # 先写入临时文件，再重命名，保证原子性
+                temp_file = self.position_file + '.tmp'
+                with open(temp_file, 'w', encoding='utf-8') as f:
+                    json.dump(position, f, indent=2)
+                
+                if os.path.exists(self.position_file):
+                    os.replace(temp_file, self.position_file)
+                else:
+                    os.rename(temp_file, self.position_file)
+                
+                self._last_save_time = current_time
+                logger.debug(f"💾 Binlog 位置已保存: {log_file}:{log_pos}")
+        except Exception as e:
+            logger.error(f"❌ 保存 binlog 位置失败: {e}")
+    
+    def clear_position(self):
+        """清除保存的位置（通常在手动重置时使用）"""
+        try:
+            if os.path.exists(self.position_file):
+                os.remove(self.position_file)
+                logger.info("🗑️ Binlog 位置已清除")
+        except Exception as e:
+            logger.warning(f"⚠️ 清除 binlog 位置失败: {e}")
+
+
+class ConnectionHealthChecker:
+    """连接健康检查器 - 定期检查 MySQL 连接状态"""
+    
+    def __init__(self, mysql_settings: Dict[str, Any], check_interval: int = 30):
+        self.mysql_settings = mysql_settings
+        self.check_interval = check_interval  # 检查间隔（秒）
+        self._is_healthy = True
+        self._last_check_time = 0
+        self._lock = threading.RLock()
+        self._stop_event = threading.Event()
+        self._check_thread: Optional[threading.Thread] = None
+        self._alert_callbacks: list = []
+    
+    def register_alert_callback(self, callback: Callable):
+        """注册告警回调函数"""
+        self._alert_callbacks.append(callback)
+    
+    def _send_alert(self, message: str, level: str = "warning"):
+        """发送告警通知"""
+        for callback in self._alert_callbacks:
+            try:
+                callback(message, level)
+            except Exception as e:
+                logger.error(f"告警发送失败: {e}")
+    
+    def is_healthy(self) -> bool:
+        """获取当前健康状态"""
+        with self._lock:
+            return self._is_healthy
+    
+    def check_connection(self) -> bool:
+        """执行一次连接检查"""
+        try:
+            import pymysql
+            conn_params = {
+                "host": self.mysql_settings["host"],
+                "port": int(self.mysql_settings["port"]),
+                "user": self.mysql_settings["user"],
+                "password": self.mysql_settings["password"],
+                "connect_timeout": 5
+            }
+            
+            conn = pymysql.connect(**conn_params)
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT 1")
+                cursor.fetchone()
+            conn.close()
+            
+            with self._lock:
+                if not self._is_healthy:
+                    self._is_healthy = True
+                    logger.success("健康检查", "MySQL", "连接已恢复")
+                    self._send_alert("MySQL 连接已恢复", "info")
+            
+            return True
+            
+        except Exception as e:
+            with self._lock:
+                if self._is_healthy:
+                    self._is_healthy = False
+                    logger.warning(f"⚠️ 健康检查失败: {e}")
+                    self._send_alert(f"MySQL 连接健康检查失败: {e}", "warning")
+            return False
+    
+    def start(self):
+        """启动健康检查线程"""
+        if self._check_thread is None or not self._check_thread.is_alive():
+            self._stop_event.clear()
+            self._check_thread = threading.Thread(
+                target=self._check_loop,
+                daemon=True,
+                name='mysql-health-checker'
+            )
+            self._check_thread.start()
+            logger.info("✅ MySQL 健康检查线程已启动")
+    
+    def stop(self):
+        """停止健康检查线程"""
+        self._stop_event.set()
+        if self._check_thread and self._check_thread.is_alive():
+            self._check_thread.join(timeout=5)
+            logger.info("🛑 MySQL 健康检查线程已停止")
+    
+    def _check_loop(self):
+        """健康检查循环"""
+        while not self._stop_event.is_set():
+            self.check_connection()
+            # 使用事件等待，支持快速退出
+            self._stop_event.wait(self.check_interval)
 
 class MySQLBinlogMonitor:
     # 单例模式实现
@@ -83,6 +272,26 @@ class MySQLBinlogMonitor:
         # 创建持久的事件循环和线程
         self._event_loop = None
         self._loop_thread = None
+        
+        # 初始化 binlog 位置管理器
+        if TURNON_BINLOG_POSITION_MANAGER:
+            self._position_manager = BinlogPositionManager()
+            logger.info("✅ Binlog 位置管理器已启用")
+        else:
+            self._position_manager = None
+            logger.info("⚠️ Binlog 位置管理器已禁用")
+        self._current_position = None  # 当前 binlog 位置
+        
+        # 初始化健康检查器
+        self._health_checker = ConnectionHealthChecker(
+            self.mysql_settings if mysql_settings else self.get_mysql_config(),
+            check_interval=30  # 每30秒检查一次
+        )
+        
+        # 重试配置
+        self._max_retry_wait = 300  # 最大重试等待时间（5分钟）
+        self._consecutive_errors = 0  # 连续错误计数
+        self._last_error_time = 0  # 上次错误时间
         
         if MYAPS_DBSET_LIST and TURNON_DBMONITOR:
             # 使用全局线程池管理器
@@ -376,6 +585,49 @@ class MySQLBinlogMonitor:
                 return parts[0], parts[1]  # database, table
         return None, full_table_name  # 无数据库信息，只有表名
 
+    def _send_alert(self, message: str, level: str = "warning"):
+        """发送告警通知
+        
+        可通过注册回调函数来自定义告警方式（企业微信、钉钉、邮件等）
+        """
+        # 记录到日志
+        if level == "error":
+            logger.error(f"🚨 告警: {message}")
+        elif level == "warning":
+            logger.warning(f"⚠️ 告警: {message}")
+        else:
+            logger.info(f"ℹ️ 通知: {message}")
+        
+        # 这里可以扩展为调用外部告警接口
+        # 例如：企业微信、钉钉、邮件等
+
+    def register_alert_handler(self, handler: Callable[[str, str], None]):
+        """注册告警处理器
+        
+        Args:
+            handler: 回调函数，接收 (message, level) 两个参数
+        """
+        self._health_checker.register_alert_callback(handler)
+        logger.info("✅ 告警处理器已注册")
+
+    def get_status(self) -> Dict[str, Any]:
+        """获取监控状态信息"""
+        return {
+            "running": self.running,
+            "healthy": self._health_checker.is_healthy() if hasattr(self, '_health_checker') else None,
+            "current_position": self._current_position,
+            "consecutive_errors": getattr(self, '_consecutive_errors', 0),
+            "thread_pool_size": getattr(self._thread_pool, '_max_workers', 'unknown'),
+        }
+
+    def reset_position(self):
+        """重置 binlog 位置（下次启动时从头开始）"""
+        if TURNON_BINLOG_POSITION_MANAGER and self._position_manager:
+            self._position_manager.clear_position()
+            logger.info("🔄 Binlog 位置已重置，下次启动将从最新位置开始")
+        else:
+            logger.warning("⚠️ Binlog 位置管理器已禁用，无法重置位置")
+
     def _start_event_loop(self):
         """启动事件循环线程"""
         self._event_loop = asyncio.new_event_loop()
@@ -441,34 +693,71 @@ class MySQLBinlogMonitor:
             logger.info("⚠️ Binlog监控已经在运行")
 
     def _monitor_binlog_with_retry(self):
-        """带重试机制的Binlog监控"""
+        """增强版重试机制 - 无限重试 + 持久化位置 + 健康检查"""
         retry_count = 0
-        max_retries = 5
+        last_alert_time = 0
+        alert_interval = 300  # 告警间隔（5分钟）
         
-        while self.running and retry_count < max_retries:
+        # 启动健康检查器
+        self._health_checker.start()
+        
+        while self.running:
             try:
+                # 检查 MySQL 健康状态
+                if not self._health_checker.is_healthy():
+                    wait_time = min(2 ** min(retry_count, 8), self._max_retry_wait)
+                    logger.warning(f"⏳ MySQL 连接不健康，{wait_time}秒后重试...")
+                    
+                    # 发送告警（限制频率）
+                    current_time = time.time()
+                    if current_time - last_alert_time > alert_interval:
+                        self._send_alert(f"Binlog 监控等待 MySQL 连接恢复，已重试 {retry_count} 次", "warning")
+                        last_alert_time = current_time
+                    
+                    time.sleep(wait_time)
+                    retry_count += 1
+                    continue
+                
+                # 尝试启动 binlog 流
                 self._start_binlog_stream()
+                
+                # 成功连接后重置计数
+                if retry_count > 0:
+                    logger.success("Binlog监控", "", f"连接已恢复，共重试 {retry_count} 次")
+                    self._send_alert(f"Binlog 监控已恢复，共重试 {retry_count} 次", "info")
                 retry_count = 0
+                self._consecutive_errors = 0
                 
             except Exception as e:
+                self._consecutive_errors += 1
                 retry_count += 1
+                
                 if not self.running:
                     break
-                    
-                wait_time = min(2 ** retry_count, 60)
-                logger.fail("Binlog连接", "", f"{wait_time}秒后重试 ({retry_count}/{max_retries})：{e}")
                 
-                for _ in range(wait_time * 10):
-                    if not self.running:
-                        break
-                    time.sleep(0.1)
+                # 计算等待时间（指数退避，但不超过最大值）
+                wait_time = min(2 ** min(retry_count, 8), self._max_retry_wait)
+                
+                # 记录错误（但避免日志过多）
+                if retry_count <= 5 or retry_count % 10 == 0:
+                    logger.error(f"❌ Binlog 连接失败 ({retry_count}次): {e}")
+                    logger.info(f"⏳ {wait_time}秒后重试...")
+                
+                # 发送告警（限制频率）
+                current_time = time.time()
+                if current_time - last_alert_time > alert_interval:
+                    self._send_alert(f"Binlog 监控连接失败: {e}，已重试 {retry_count} 次", "error")
+                    last_alert_time = current_time
+                
+                # 等待后重试
+                time.sleep(wait_time)
         
-        if retry_count >= max_retries:
-            self.running = False
-            logger.fail("Binlog连接", "", "达到最大重试次数，停止监控")
+        # 停止健康检查
+        self._health_checker.stop()
+        logger.info("🛑 Binlog 监控重试循环已退出")
 
     def _start_binlog_stream(self):
-        """启动Binlog流 - 支持多数据库"""
+        """启动Binlog流 - 支持多数据库 + 位置持久化"""
         settings = {
             "host": self.mysql_settings["host"],
             "port": int(self.mysql_settings["port"]),
@@ -487,6 +776,14 @@ class MySQLBinlogMonitor:
             "only_events": [WriteRowsEvent, UpdateRowsEvent, DeleteRowsEvent],
         }
         
+        # 尝试恢复上次的位置
+        if TURNON_BINLOG_POSITION_MANAGER and self._position_manager:
+            saved_position = self._position_manager.load_position()
+            if saved_position:
+                stream_config["log_file"] = saved_position.get("log_file")
+                stream_config["log_pos"] = saved_position.get("log_pos")
+                logger.info(f"📍 从上次位置恢复: {stream_config['log_file']}:{stream_config['log_pos']}")
+        
         # 如果指定了数据库，只监控这些数据库
         if self.mysql_settings.get("databases"):
             stream_config["only_schemas"] = self.mysql_settings["databases"]
@@ -494,21 +791,59 @@ class MySQLBinlogMonitor:
         else:
             logger.info("监控所有数据库")
         
+        stream = None
         try:
             stream = BinLogStreamReader(**stream_config)
             logger.success("Binlog监控", f"@{MYAPS_MAIN_DB}", "开始监控")
+            
+            event_count = 0
+            last_position_save = time.time()
             
             for binlogevent in stream:
                 if not self.running:
                     break
                 
+                # 提交事件处理
                 self._run_async_event(binlogevent)
+                
+                # 定期保存 binlog 位置
+                event_count += 1
+                current_time = time.time()
+                if TURNON_BINLOG_POSITION_MANAGER and self._position_manager and current_time - last_position_save >= 5:  # 每5秒保存一次位置
+                    try:
+                        # 获取当前位置
+                        log_file = stream.log_file
+                        log_pos = stream.log_pos
+                        if log_file and log_pos:
+                            self._position_manager.save_position(log_file, log_pos)
+                            self._current_position = {"log_file": log_file, "log_pos": log_pos}
+                            last_position_save = current_time
+                    except Exception as e:
+                        logger.debug(f"保存 binlog 位置失败: {e}")
+                
+                # 每处理1000个事件输出一次进度
+                if event_count % 1000 == 0:
+                    logger.debug(f"📊 已处理 {event_count} 个 binlog 事件")
 
         except Exception as e:
+            # 异常前尝试保存当前位置
+            if stream and TURNON_BINLOG_POSITION_MANAGER and self._position_manager:
+                try:
+                    self._position_manager.save_position(stream.log_file, stream.log_pos)
+                    logger.info(f"💾 异常前保存位置: {stream.log_file}:{stream.log_pos}")
+                except:
+                    pass
             logger.fail("Binlog流处理", "", str(e))
             raise
         finally:
-            if 'stream' in locals():
+            if stream:
+                # 关闭前保存最终位置
+                if TURNON_BINLOG_POSITION_MANAGER and self._position_manager:
+                    try:
+                        self._position_manager.save_position(stream.log_file, stream.log_pos)
+                        logger.info(f"💾 最终位置已保存: {stream.log_file}:{stream.log_pos}")
+                    except:
+                        pass
                 stream.close()
                 logger.success("Binlog流", "", "已关闭")
 

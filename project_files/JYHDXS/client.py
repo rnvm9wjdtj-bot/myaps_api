@@ -12,7 +12,7 @@ from dateutil.relativedelta import relativedelta
 from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
 from .._base import (
     get_scheduler_minute,
-    ApsHelpers, logger, standard_response, get_session,
+    ApsHelpers, CLIENT_LOGGER, standard_response, get_session,
     cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, CACHE_JSON, pdv
 )
 
@@ -77,9 +77,9 @@ def sap_post(url: str, session: requests.Session, interface_id: str, data: dict)
     response_json = {}
     if response.status_code == status.HTTP_200_OK:
         response_json = response.json()
-        logger.success("POST请求", f"状态码{response.status_code}", f"响应{response_json}")
+        CLIENT_LOGGER.success("POST请求", f"状态码{response.status_code}", f"响应{response_json}")
     else:
-        logger.fail("POST请求", f"状态码{response.status_code}", f"响应{response.text}")
+        CLIENT_LOGGER.fail("POST请求", f"状态码{response.status_code}", f"响应{response.text}")
     return {
         'status_code': response.status_code,
         'response_text': response.text,
@@ -136,11 +136,11 @@ def refresh_stock(dbs: str=MYAPS_DB_SET):
             })
             df_sap_st['itemno'] = pdv.ITEMNO
         except Exception as e:
-            logger.fail("SAP库存获取", "", str(e))
+            CLIENT_LOGGER.fail("SAP库存获取", "", str(e))
             df_sap_st = None
         return df_sap_st
 
-    logger.start("刷新库存任务")
+    CLIENT_LOGGER.start("刷新库存任务")
     mto_vir_st = ApsHelpers.mto_workreport_to_virtual_stock()
     df_sap_st = get_sap_stock_data()
 
@@ -164,30 +164,30 @@ def push_pr(period: int = 30, groupdates: List[str] | str = None):
         item["plant"] = "1000"
         item["bu_code"] = werks
         item["version"] = timestamp
-    logger.start(f"推送要货计划到SRM：\n{pr_data}")
+    CLIENT_LOGGER.start(f"推送要货计划到SRM：\n{pr_data}")
     response = requests.post(
         url=f"{srm_url}/jbl/service/execute/SRM_RECEIVE_PUSHED_DEMAND_PLAN_SERVICE",
         headers=srm_headers, json={"demand_plan": pr_data})
     if response.json().get("body", {}).get("status", "").lower() == "success":
-        logger.success(f"推送要货计划到SRM成功")
+        CLIENT_LOGGER.success(f"推送要货计划到SRM成功")
     else:
-        logger.fail(f"推送要货计划到SRM失败：\n{response.json()}")
+        CLIENT_LOGGER.fail(f"推送要货计划到SRM失败：\n{response.json()}")
 
 
 def push_weekpr_to_srm():
-    logger.start("推送周要货计划到SRM任务")
+    CLIENT_LOGGER.start("推送周要货计划到SRM任务")
     push_pr(period=30)
-    logger.success("推送周要货计划到SRM任务", "", "执行完成")
+    CLIENT_LOGGER.success("推送周要货计划到SRM任务", "", "执行完成")
 
 
 def push_monthpr_to_srm():
-    logger.start("推送月度要货计划到SRM任务")
+    CLIENT_LOGGER.start("推送月度要货计划到SRM任务")
     date_list = [
         (datetime.now().replace(day=1) + relativedelta(months=i + 1) - relativedelta(days=1)).strftime('%Y-%m-%d')
         for i in range(3)
     ]
     push_pr(period=90, groupdates=date_list)
-    logger.success("推送月度要货计划到SRM任务", "", "执行完成")
+    CLIENT_LOGGER.success("推送月度要货计划到SRM任务", "", "执行完成")
 #################################################################################
 # ⬇️定时任务设置
 #################################################################################

@@ -5,7 +5,7 @@ from datetime import datetime
 from fastapi import status
 
 from .._base import (
-    logger, standard_response, get_session,
+    CLIENT_LOGGER, standard_response, get_session,
     )
 
 

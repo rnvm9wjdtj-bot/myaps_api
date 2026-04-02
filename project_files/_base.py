@@ -12,23 +12,24 @@ from datetime import datetime, timedelta
 
 # from tortoise import Tortoise
 
-from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET, SCHEDULER_MINUTE
 from globalobjects.globalconst import OrderStatusEnum
-from apps.data_opt.utils.common import get_session
 
 
 # ❗❗❗❗❗❗❗❗❗❗❗❗⬇️不要删掉，便于各项目文件引用 ❗❗❗❗❗❗❗❗❗❗❗❗
+from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET, SCHEDULER_MINUTE
 from globalobjects import logger as log_config, CACHE_JSON, ProjectDefaultValues as pdv
 from apps.io_api.utils.common import standard_response
 from apps.io_api.utils.db_operation import db_delete, db_bupsert, call_dbprocdure, db_query, db_supsert, db_update_by_index
 from apps.data_opt.utils.scheduler import cron_task
-from apps.data_opt.utils.common import add_basic_auth_requests
+from apps.data_opt.utils.common import add_basic_auth_requests, get_session
 from apps.data_opt.utils.data_processor import DataProcessor
-from apps.data_opt.components._base import BaseConnection, ApsHelpers
+from apps.data_opt.components._base import ApsHelpers
+from apps.data_opt.components.simple_hap import HapConnection
 
 
-logger = log_config.get_logger(__name__)
+CLIENT_LOGGER = log_config.get_logger(__name__)
 
+CLIENT_SESSION = get_session()
 
 def get_scheduler_minute(offset: int=0):
 

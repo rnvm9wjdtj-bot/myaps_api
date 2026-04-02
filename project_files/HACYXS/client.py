@@ -11,8 +11,8 @@
 """
 from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR, SCHEDULER_MINUTE
 from .._base import (
-    get_scheduler_minute, cron_task, logger, CACHE_JSON,
-    ApsHelpers, get_session, db_delete, db_bupsert, db_query
+    get_scheduler_minute, cron_task, CLIENT_LOGGER, CLIENT_SESSION, CACHE_JSON,
+    ApsHelpers, get_session
 )
 
 
@@ -23,8 +23,6 @@ from typing import Dict, Any
 # ⬇️ 项目对象及参数
 #################################################################################
 REMAIN_NATIVE_SUPPLYNO = True   # 本项目需要推送 MO 前后关系，所以必须保留原生供应号，否则会导致关系断开
-
-SESSION = get_session()
 
 tplus_conn = TplusConnection()
 
@@ -105,7 +103,7 @@ class CustomRsPushModel(RsPushModel):
         materialnos = [md['Inventory']['Code'] for md in mr_details]
         materials = ApsHelpers.query_material(materialnos)
         # materialnos = ','.join([md['Inventory']['Code'] for md in mr_details])
-        # materials = SESSION.get(f"{THIS_BASE_URL}/api/t_material/{materialnos}")
+        # materials = CLIENT_SESSION.get(f"{THIS_BASE_URL}/api/t_material/{materialnos}")
         # materials = materials.json()['data']
         materials = {item['materialno']: item for item in materials}
         
@@ -145,4 +143,6 @@ def batch_handle_pr_created(pr_data_list: list[dict]):
 
 
 if __name__ == '__main__':
-    handle_pl_status_a2e('202408240001')
+    from .._base import HapConnection
+    
+    hap_conn = HapConnection()
