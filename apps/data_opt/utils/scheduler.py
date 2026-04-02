@@ -63,8 +63,8 @@ class SchedulerManager:
             }
             job_defaults = {
                 'coalesce': True,
-                'max_instances': 3,
-                'misfire_grace_time': 60
+                'max_instances': 5,  # 增加最大实例数以避免任务被跳过
+                'misfire_grace_time': 120  # 增加错过执行的宽限期
             }
             
             self.scheduler = BackgroundScheduler(

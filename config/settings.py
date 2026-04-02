@@ -27,9 +27,9 @@ SCHEDULER_MINUTE = os.getenv("SCHEDULER_MINUTE") or "55"
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 
 PROTOCOL = os.getenv("PROTOCOL", "http://")
-HOST = os.getenv("HOST", "localhost")
+HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", 8000))
-THIS_BASE_URL = f"{PROTOCOL}localhost:{PORT}"
+THIS_BASE_URL = PROTOCOL + "localhost:" + str(PORT)
 
 # 项目目录
 PROJECT_DIR = os.getenv("PROJECT_DIR")

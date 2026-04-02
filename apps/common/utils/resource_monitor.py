@@ -36,8 +36,18 @@ class ResourceMonitor:
             import psutil
             process = psutil.Process()
             memory = process.memory_info()
-            cpu = process.cpu_percent(interval=0.1)
+            # 获取系统CPU使用率
+            system_cpu = psutil.cpu_percent(interval=0.1)
+            # 获取进程CPU使用率（相对于所有核心）
+            process_cpu = process.cpu_percent(interval=0.0)
             threads = process.num_threads()
+            # 获取CPU核心数
+            cpu_count = psutil.cpu_count()
+            # 计算进程CPU使用率（相对于系统总CPU）
+            process_cpu_system_percent = process_cpu / cpu_count
+            
+            # 添加详细日志
+            logger.debug(f"CPU使用率调试: 系统CPU={system_cpu}%, 进程CPU={process_cpu}%, 核心数={cpu_count}, 进程相对系统={process_cpu_system_percent:.2f}%")
             
             return {
                 'timestamp': time.time(),
@@ -45,8 +55,13 @@ class ResourceMonitor:
                     'rss': memory.rss / 1024 / 1024,  # MB
                     'vms': memory.vms / 1024 / 1024,  # MB
                 },
-                'cpu': cpu,
+                'cpu': {
+                    'process': process_cpu,  # 进程CPU使用率（相对于单个核心）
+                    'process_system_percent': process_cpu_system_percent,  # 进程CPU使用率（相对于系统）
+                    'system': system_cpu  # 系统CPU使用率
+                },
                 'threads': threads,
+                'cpu_count': cpu_count,
                 'uptime': time.time() - process.create_time()
             }
         except ImportError:
@@ -62,22 +77,30 @@ class ResourceMonitor:
                 'error': str(e)
             }
     
-    def check_thresholds(self, thresholds=None):
+    def check_thresholds(self, usage=None, thresholds=None):
         """检查资源使用是否超过阈值
         
         Args:
+            usage: 资源使用情况，如果为None则自动获取
             thresholds: 自定义阈值
             
         Returns:
             list: 告警信息列表
         """
-        usage = self.get_resource_usage()
+        if usage is None:
+            usage = self.get_resource_usage()
         alerts = []
         
         check_thresholds = thresholds or self._thresholds
         
-        if 'cpu' in check_thresholds and usage.get('cpu', 0) > check_thresholds['cpu']:
-            alerts.append(f"CPU usage ({usage['cpu']}%) exceeds threshold ({check_thresholds['cpu']}%)")
+        # 检查系统CPU使用率
+        if 'cpu' in check_thresholds:
+            if isinstance(usage.get('cpu'), dict):
+                if usage['cpu'].get('system', 0) > check_thresholds['cpu']:
+                    alerts.append(f"CPU usage ({usage['cpu']['system']}%) exceeds threshold ({check_thresholds['cpu']}%)")
+            else:
+                if usage.get('cpu', 0) > check_thresholds['cpu']:
+                    alerts.append(f"CPU usage ({usage.get('cpu', 0)}%) exceeds threshold ({check_thresholds['cpu']}%)")
         
         if 'memory' in check_thresholds and usage.get('memory', {}).get('rss', 0) > check_thresholds['memory']:
             alerts.append(f"Memory usage ({usage['memory']['rss']:.2f}MB) exceeds threshold ({check_thresholds['memory']}MB)")
@@ -139,11 +162,14 @@ class ResourceMonitor:
         while self._running:
             try:
                 usage = self.get_resource_usage()
-                alerts = self.check_thresholds()
+                alerts = self.check_thresholds(usage=usage)
                 
                 # 记录资源使用情况
                 if 'error' not in usage:
-                    logger.debug(f"资源使用: CPU={usage['cpu']}%, 内存={usage['memory']['rss']:.2f}MB, 线程={usage['threads']}")
+                    if isinstance(usage.get('cpu'), dict):
+                        logger.debug(f"资源使用: 系统CPU={usage['cpu']['system']}%, 进程CPU={usage['cpu']['process_system_percent']:.2f}%, 内存={usage['memory']['rss']:.2f}MB, 线程={usage['threads']}, CPU核心数={usage.get('cpu_count', 'N/A')}")
+                    else:
+                        logger.debug(f"资源使用: CPU={usage.get('cpu', 0)}%, 内存={usage['memory']['rss']:.2f}MB, 线程={usage['threads']}")
                 
                 # 处理告警
                 for alert in alerts:
