@@ -130,10 +130,13 @@ async def preprocess_data(data_list: List[PydanticSchema | Dict[str, Any]], mode
     """
     processed_list = []
     
-    # 获取模型字段列表（如果提供了模型类）
+    # 获取模型字段列表和字段类型（如果提供了模型类）
     model_fields = set()
+    model_field_types = {}
     if model_class:
         model_fields = set(model_class._meta.fields_map.keys())
+        for field_name, field in model_class._meta.fields_map.items():
+            model_field_types[field_name] = type(field)
     
     for data_item in data_list:
         # 获取原始输入数据
@@ -141,11 +144,27 @@ async def preprocess_data(data_list: List[PydanticSchema | Dict[str, Any]], mode
         # 转换为字典
         processed_dict = convert_to_dict(data_item, exclude_none=exclude_none)
         
-        # 如果提供了模型类，过滤掉不在模型中的字段
+        # 如果提供了模型类，过滤掉不在模型中的字段，并处理日期时间字段
         if model_class:
             filtered_dict = {}
             for key, value in processed_dict.items():
                 if key in model_fields:
+                    # 处理日期时间字段
+                    from tortoise.fields import DatetimeField
+                    if key in model_field_types and model_field_types[key] == DatetimeField and isinstance(value, str):
+                        # 尝试将字符串转换为datetime对象
+                        from datetime import datetime
+                        try:
+                            # 尝试不同的日期时间格式
+                            if '.' in value:
+                                # 包含毫秒的格式
+                                value = datetime.strptime(value, '%Y-%m-%d %H:%M:%S.%f')
+                            else:
+                                # 不包含毫秒的格式
+                                value = datetime.strptime(value, '%Y-%m-%d %H:%M:%S')
+                        except ValueError:
+                            # 如果转换失败，保留原始值
+                            pass
                     filtered_dict[key] = value
             processed_dict = filtered_dict
         
@@ -365,7 +384,7 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
         )
         
     except Exception as e:
-        logger.fail("批量upsert", f"{mdl._meta.db_table}@[{db_names}]", str(e))
+        logger.fail("批量upsert", f"{mdl._meta.db_table}@[{db_names}]，{str(e)}", f"{data_list}")
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

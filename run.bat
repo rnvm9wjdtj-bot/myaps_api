@@ -1,5 +1,9 @@
 @echo off
 chcp 65001 >nul
+:: 设置终端窗口大小和缓冲区
+mode con cols=150 lines=50
+:: 禁用快速编辑模式防止卡顿
+reg add "HKCU\Console" /v QuickEdit /t REG_DWORD /d 0 /f >nul 2>&1
 
 :: 配置变量
 set "PS_SCRIPT=%~dp0run.ps1"

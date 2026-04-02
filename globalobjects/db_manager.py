@@ -180,10 +180,12 @@ class DbManager:
                 error_str = str(e).upper()
                 is_deadlock = 'DEADLOCK' in error_str or '1213' in str(e)
                 is_operational_error = "OperationalError" in str(type(e))
+                is_connection_closed = "Cannot acquire connection after closing pool" in str(e)
+                is_none_type_error = "NoneType" in str(e)
                 
-                if (is_deadlock or is_operational_error) and retry_count < max_retries:
+                if (is_deadlock or is_operational_error or is_connection_closed or is_none_type_error) and retry_count < max_retries:
                     retry_count += 1
-                    if is_operational_error:
+                    if is_operational_error or is_connection_closed or is_none_type_error:
                         logger.warning_msg(
                             "存储过程调用", 
                             f"{procedure_name}@{self.connection_name} 检测到连接错误，第{retry_count}次重试中...", 
@@ -292,8 +294,9 @@ class DbManager:
                 last_exception = e
                 retry_count += 1
                 
-                # 特殊处理OperationalError
-                if "OperationalError" in str(type(e)):
+                # 特殊处理连接相关错误
+                error_msg = str(e)
+                if "OperationalError" in str(type(e)) or "Cannot acquire connection after closing pool" in error_msg or "NoneType" in error_msg:
                     logger.warning(f"数据库连接错误，将进行第{retry_count}次重试", f"{table_name}@{self.connection_name}", str(e))
                     # 尝试刷新连接
                     await self.refresh_connection()
@@ -370,8 +373,9 @@ class DbManager:
                 return response
                 
             except Exception as e:
-                # 特殊处理OperationalError
-                if "OperationalError" in str(type(e)) and retry_count < max_retries:
+                # 特殊处理连接相关错误
+                error_msg = str(e)
+                if ("OperationalError" in str(type(e)) or "Cannot acquire connection after closing pool" in error_msg or "NoneType" in error_msg) and retry_count < max_retries:
                     retry_count += 1
                     logger.warning(f"数据库连接错误，将进行第{retry_count}次重试", f"{table_name}@{self.connection_name}", str(e))
                     # 尝试刷新连接
@@ -396,6 +400,19 @@ class DbManager:
                 # 使用Tortoise的连接池机制，不需要手动关闭连接
                 # Tortoise会自动管理连接的获取和释放
                 conn = Tortoise.get_connection(self.connection_name)
+                
+                # 检查连接是否有效
+                if conn is None:
+                    raise Exception("获取数据库连接失败：连接对象为None")
+                
+                # 检查连接是否已关闭
+                if hasattr(conn, 'closed') and conn.closed:
+                    raise Exception("获取数据库连接失败：连接已关闭")
+                
+                # 检查连接是否有execute_query方法
+                if not hasattr(conn, 'execute_query'):
+                    raise Exception("获取数据库连接失败：连接对象不支持execute_query方法")
+                
                 result = await conn.execute_query(sql, params)
                 execution_time = (datetime.now() - start_time).total_seconds()
                 
@@ -407,16 +424,17 @@ class DbManager:
                 
                 return result[0] if result else 0
             except Exception as e:
-                # 特殊处理OperationalError
-                if "OperationalError" in str(type(e)) and retry_count < max_retries:
+                # 特殊处理连接相关错误
+                error_msg = str(e)
+                if ("OperationalError" in str(type(e)) or "NoneType" in error_msg or "execute_command" in error_msg or "closed" in error_msg or "Cannot acquire connection after closing pool" in error_msg) and retry_count < max_retries:
                     retry_count += 1
-                    logger.warning(f"数据库连接错误，将进行第{retry_count}次重试", f"{description}@{self.connection_name}", str(e))
+                    logger.warning(f"数据库连接错误，将进行第{retry_count}次重试", f"{description}@{self.connection_name}", error_msg)
                     # 尝试刷新连接
                     await self.refresh_connection()
                     import asyncio
                     await asyncio.sleep(1)  # 等待1秒后重试
                 else:
-                    logger.fail("SQL执行", f"{description}@{self.connection_name}", str(e))
+                    logger.fail("SQL执行", f"{description}@{self.connection_name}", error_msg)
                     logger.debug(f"SQL：{sql[:200]}...")
                     raise
     
@@ -1104,14 +1122,37 @@ class DbManager:
         刷新数据库连接，确保连接有效
         """
         try:
+            # 尝试获取当前连接
             conn = Tortoise.get_connection(self.connection_name)
-            # 关闭并重新获取连接
-            if hasattr(conn, 'close'):
-                await conn.close()
-            # 重新获取连接
-            new_conn = Tortoise.get_connection(self.connection_name)
-            logger.info(f"数据库连接已刷新: {self.connection_name}")
-            return True
+            
+            # 关闭当前连接（如果存在且可关闭，且不是TransactionWrapper）
+            if conn and hasattr(conn, 'close'):
+                try:
+                    # 检查是否是TransactionWrapper（通过检查是否有_pool属性）
+                    if hasattr(conn, '_pool'):
+                        await conn.close()
+                        logger.info(f"已关闭旧连接: {self.connection_name}")
+                    else:
+                        logger.info(f"跳过关闭TransactionWrapper连接: {self.connection_name}")
+                except Exception as close_error:
+                    logger.warning(f"关闭旧连接时出错: {close_error}")
+            
+            # 尝试重新获取连接
+            try:
+                new_conn = Tortoise.get_connection(self.connection_name)
+                
+                # 检查新连接是否有效
+                if new_conn:
+                    # 执行一个简单的查询来验证连接
+                    await new_conn.execute_query("SELECT 1")
+                    logger.info(f"数据库连接已刷新并验证: {self.connection_name}")
+                    return True
+                else:
+                    logger.error(f"刷新数据库连接失败: 无法获取新连接")
+                    return False
+            except Exception as get_conn_error:
+                logger.error(f"获取新连接时出错: {get_conn_error}")
+                return False
         except Exception as e:
             logger.error(f"刷新数据库连接失败: {e}")
             return False
