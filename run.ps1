@@ -208,16 +208,16 @@ try {
         "--log-level", "debug"
     )
 
-    # Start process
-    $process = Start-Process -FilePath $Python -ArgumentList $uvicornArgs -NoNewWindow -PassThru -Wait
+    # Start process directly for better output
+    & $Python @uvicornArgs
 
     # Check exit code
-    if ($process.ExitCode -ne 0) {
+    if ($LASTEXITCODE -ne 0) {
         Write-Host ""
-        Write-Host "[ERROR] Application failed to start with error code $($process.ExitCode)" -ForegroundColor Red
-        Write-Log "Application failed to start with error code $($process.ExitCode)"
+        Write-Host "[ERROR] Application failed to start with error code $LASTEXITCODE" -ForegroundColor Red
+        Write-Log "Application failed to start with error code $LASTEXITCODE"
         Read-Host "Press Enter to exit"
-        exit $process.ExitCode
+        exit $LASTEXITCODE
     }
 }
 catch {

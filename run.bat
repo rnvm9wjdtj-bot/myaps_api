@@ -1,10 +1,4 @@
 @echo off
-chcp 65001 >nul
-:: 设置终端窗口大小和缓冲区
-mode con cols=150 lines=50
-:: 禁用快速编辑模式防止卡顿
-reg add "HKCU\Console" /v QuickEdit /t REG_DWORD /d 0 /f >nul 2>&1
-
 :: 配置变量
 set "PS_SCRIPT=%~dp0run.ps1"
 set "ENV_FILE=%~dp0.env"
@@ -38,8 +32,8 @@ set "PS_ARGS="
 if defined HOST set "PS_ARGS=%PS_ARGS% -HostAddress %HOST%"
 if defined PORT set "PS_ARGS=%PS_ARGS% -Port %PORT%"
 
-:: 执行 PowerShell 脚本
-powershell -ExecutionPolicy Bypass -File "%PS_SCRIPT%" %PS_ARGS% %*
+:: 执行 PowerShell 脚本 - 在新的cmd窗口中运行以获得更好的滚动功能
+start "FastAPI Server" /wait cmd /c "chcp 65001 >nul && mode con cols=150 lines=50 && mode con lines=3000 cols=150 && powershell -ExecutionPolicy Bypass -File "%PS_SCRIPT%" %PS_ARGS% %*"
 
 :: 检查退出码（0=正常退出，非0=异常退出）
 if %errorlevel% equ 0 (

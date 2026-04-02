@@ -1125,7 +1125,7 @@ class DbManager:
             # 尝试获取当前连接
             conn = Tortoise.get_connection(self.connection_name)
             
-            # 关闭当前连接（如果存在且可关闭，且不是TransactionWrapper）
+            # 关闭当前连接（如果存在且可关闭）
             if conn and hasattr(conn, 'close'):
                 try:
                     # 检查是否是TransactionWrapper（通过检查是否有_pool属性）
@@ -1133,7 +1133,16 @@ class DbManager:
                         await conn.close()
                         logger.info(f"已关闭旧连接: {self.connection_name}")
                     else:
-                        logger.info(f"跳过关闭TransactionWrapper连接: {self.connection_name}")
+                        # 对于TransactionWrapper，尝试获取内部连接并关闭
+                        if hasattr(conn, 'connection'):
+                            inner_conn = conn.connection
+                            if inner_conn and hasattr(inner_conn, 'close'):
+                                try:
+                                    await inner_conn.close()
+                                    logger.info(f"已关闭TransactionWrapper内部连接: {self.connection_name}")
+                                except Exception as inner_close_error:
+                                    logger.warning(f"关闭TransactionWrapper内部连接时出错: {inner_close_error}")
+                        logger.info(f"处理TransactionWrapper连接: {self.connection_name}")
                 except Exception as close_error:
                     logger.warning(f"关闭旧连接时出错: {close_error}")
             
