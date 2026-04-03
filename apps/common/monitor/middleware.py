@@ -161,20 +161,16 @@ http_metrics_collector = HTTPMetricsCollector()
 class HTTPMonitorMiddleware(BaseHTTPMiddleware):
     """HTTP 监控中间件"""
 
-    def __init__(self, app, exclude_paths: Optional[List[str]] = None):
+    def __init__(self, app, include_paths: Optional[List[str]] = None):
         super().__init__(app)
-        self.exclude_paths = exclude_paths or [
-            "/monitor",
-            "/static",
-            "/docs",
-            "/redoc",
-            "/openapi.json",
+        self.include_paths = include_paths or [
+            "/api",  # 只监控 API 路径的请求
         ]
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        # 检查是否需要排除
+        # 检查是否需要监控
         path = request.url.path
-        if any(path.startswith(excluded) for excluded in self.exclude_paths):
+        if not any(path.startswith(included) for included in self.include_paths):
             return await call_next(request)
 
         start_time = time.time()

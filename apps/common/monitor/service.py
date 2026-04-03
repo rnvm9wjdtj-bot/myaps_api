@@ -190,26 +190,71 @@ class MonitorService:
         Returns:
             日志列表
         """
-        # 从全局日志中获取最近的日志
-        # 这里需要根据实际的日志系统实现
-        # 暂时返回模拟数据
-        import logging
+        import os
         from datetime import datetime
         
         logs = []
+        log_dir = "d:\\code\\myaps_fastapi\\logs"
         
-        # 模拟日志数据
-        log_levels = ['warning', 'error'] if level else ['warning', 'error']
+        # 支持的日志文件
+        log_files = {
+            "error": "error.log",
+            "warning": "app.log"
+        }
         
-        for i in range(20):
-            log_level = log_levels[i % len(log_levels)]
-            logs.append({
-                "level": log_level,
-                "message": f"模拟 {log_level} 日志消息 {i+1}",
-                "timestamp": time.time() - (i * 30),
-                "module": f"module.{i % 5}",
-                "traceback": "Traceback (most recent call last):\n  File \"example.py\", line 10, in <module>\n    1 / 0\nZeroDivisionError: division by zero" if log_level == 'error' else None
-            })
+        # 确定要读取的文件
+        if level:
+            if level in log_files:
+                files_to_read = [(level, os.path.join(log_dir, log_files[level]))]
+            else:
+                return []
+        else:
+            files_to_read = [(lvl, os.path.join(log_dir, fname)) for lvl, fname in log_files.items()]
+        
+        # 读取日志文件
+        for log_level, file_path in files_to_read:
+            if os.path.exists(file_path):
+                try:
+                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        lines = f.readlines()
+                        
+                    # 倒序读取，获取最新的日志
+                    for line in reversed(lines):
+                        line = line.strip()
+                        if not line:
+                            continue
+                        
+                        # 解析日志格式: 2026-02-04 21:32:29,631 - project_files._base_error.log - ERROR - ❌ 领料申请推送失败...
+                        parts = line.split(' - ', 3)
+                        if len(parts) < 4:
+                            continue
+                        
+                        timestamp_str, module, log_level_str, message = parts
+                        
+                        # 解析时间戳
+                        try:
+                            timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S,%f').timestamp()
+                        except ValueError:
+                            continue
+                        
+                        # 提取模块名（去掉.log后缀）
+                        module = module.replace('.log', '')
+                        
+                        # 统一日志级别格式
+                        log_level_str = log_level_str.lower()
+                        if log_level_str in ['error', 'warning']:
+                            logs.append({
+                                "level": log_level_str,
+                                "message": message,
+                                "timestamp": timestamp,
+                                "module": module,
+                                "traceback": None  # 简单日志格式不包含堆栈信息
+                            })
+                            
+                        if len(logs) >= limit:
+                            break
+                except Exception as e:
+                    logger.error(f"读取日志文件失败: {e}")
         
         # 按时间倒序排序
         logs.sort(key=lambda x: x["timestamp"], reverse=True)

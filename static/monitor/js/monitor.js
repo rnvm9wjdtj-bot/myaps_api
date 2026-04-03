@@ -426,18 +426,40 @@ function updateAlertsDisplay(alerts) {
 
 // 格式化相对时间
 function formatTimeAgo(timestamp) {
-    const now = Date.now() / 1000;
-    const diff = now - timestamp;
+    const now = new Date();
+    const date = new Date(timestamp * 1000);
+    const diff = now.getTime() / 1000 - timestamp;
 
-    if (diff < 60) {
-        return '刚刚';
-    } else if (diff < 3600) {
-        return `${Math.floor(diff / 60)}分钟前`;
-    } else if (diff < 86400) {
-        return `${Math.floor(diff / 3600)}小时前`;
+    // 今天
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    // 昨天
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    // 前天
+    const dayBeforeYesterday = new Date(today);
+    dayBeforeYesterday.setDate(dayBeforeYesterday.getDate() - 2);
+
+    const logDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+    // 判断是否是今天、昨天、前天
+    let dayLabel = '';
+    if (logDate.getTime() === today.getTime()) {
+        dayLabel = '今天';
+    } else if (logDate.getTime() === yesterday.getTime()) {
+        dayLabel = '昨天';
+    } else if (logDate.getTime() === dayBeforeYesterday.getTime()) {
+        dayLabel = '前天';
     } else {
-        return `${Math.floor(diff / 86400)}天前`;
+        // 显示具体日期
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const day = date.getDate().toString().padStart(2, '0');
+        return `${month}-${day}`;
     }
+
+    // 今天、昨天、前天显示具体时间
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    return `${dayLabel} ${hours}:${minutes}`;
 }
 
 // 清空告警
