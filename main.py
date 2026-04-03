@@ -30,6 +30,10 @@ setup_custom_openapi(app)
 if IP_WHITELIST or API_KEY:
     app.middleware("http")(create_security_middleware())
 
+# 配置HTTP监控中间件
+from apps.common.monitor.middleware import HTTPMonitorMiddleware
+app.add_middleware(HTTPMonitorMiddleware)
+
 # 配置CORS中间件
 app.add_middleware(
     CORSMiddleware,

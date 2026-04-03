@@ -1,0 +1,172 @@
+"""
+监控模块路由
+
+提供监控相关的 API 端点
+"""
+
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
+from typing import Dict, Any
+from .service import monitor_service
+from .schemas import (
+    ResourceMetrics,
+    DBMetrics,
+    SchedulerMetrics,
+    HealthStatus,
+    MonitorOverview,
+)
+
+router = APIRouter(prefix="/monitor/api", tags=["monitor"])
+
+
+@router.get("/health", response_model=HealthStatus)
+async def health_check():
+    """
+    健康检查端点
+
+    返回系统整体健康状态和各组件检查详情
+    """
+    return await monitor_service.get_health_status()
+
+
+@router.get("/resource", response_model=ResourceMetrics)
+async def get_resource_metrics():
+    """
+    获取资源使用指标
+
+    返回 CPU、内存、线程等系统资源使用情况
+    """
+    return monitor_service.get_resource_metrics()
+
+
+@router.get("/database")
+async def get_database_metrics():
+    """
+    获取数据库监控指标
+
+    返回数据库连接状态和连接池信息
+    """
+    return await monitor_service.get_database_metrics()
+
+
+@router.get("/scheduler", response_model=SchedulerMetrics)
+async def get_scheduler_metrics():
+    """
+    获取定时任务监控指标
+
+    返回调度器状态和任务列表
+    """
+    return monitor_service.get_scheduler_metrics()
+
+
+@router.get("/overview")
+async def get_monitor_overview():
+    """
+    获取监控总览
+
+    返回所有监控指标的汇总信息
+    """
+    return await monitor_service.get_overview()
+
+
+@router.get("/alerts")
+async def get_alerts(limit: int = 10):
+    """
+    获取最近告警
+
+    Args:
+        limit: 返回告警数量限制
+
+    Returns:
+        告警列表
+    """
+    return {"alerts": monitor_service.get_recent_alerts(limit)}
+
+
+@router.post("/alerts/clear")
+async def clear_alerts():
+    """
+    清空告警列表
+
+    Returns:
+        操作结果
+    """
+    monitor_service.clear_alerts()
+    return {"message": "告警已清空"}
+
+
+@router.get("/system-info")
+async def get_system_info():
+    """
+    获取系统信息
+
+    返回操作系统、CPU、内存等基本信息
+    """
+    from .collectors import ResourceCollector
+    collector = ResourceCollector()
+    return collector.get_system_info()
+
+
+@router.get("/http")
+async def get_http_metrics():
+    """
+    获取 HTTP 请求监控指标
+
+    返回 HTTP 请求统计、状态码分布、路径统计等信息
+    """
+    return monitor_service.get_http_metrics()
+
+
+@router.get("/http/slow")
+async def get_slow_requests(limit: int = 10):
+    """
+    获取慢请求列表
+
+    Args:
+        limit: 返回数量限制
+
+    Returns:
+        慢请求列表
+    """
+    return {"slow_requests": monitor_service.http_collector.get_slow_requests(limit)}
+
+
+@router.get("/http/errors")
+async def get_error_requests(limit: int = 10):
+    """
+    获取错误请求列表
+
+    Args:
+        limit: 返回数量限制
+
+    Returns:
+        错误请求列表
+    """
+    return {"error_requests": monitor_service.http_collector.get_error_requests(limit)}
+
+
+@router.post("/http/reset")
+async def reset_http_stats():
+    """
+    重置 HTTP 统计
+
+    Returns:
+        操作结果
+    """
+    monitor_service.http_collector.reset_stats()
+    return {"message": "HTTP 统计已重置"}
+
+
+@router.get("/logs")
+async def get_recent_logs(limit: int = 50, level: str = None):
+    """
+    获取最近的日志
+
+    Args:
+        limit: 返回日志数量限制
+        level: 日志级别过滤 (warning, error)
+
+    Returns:
+        日志列表
+    """
+    return {"logs": monitor_service.get_recent_logs(limit, level)}
