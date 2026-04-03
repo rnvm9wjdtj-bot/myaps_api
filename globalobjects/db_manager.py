@@ -1117,18 +1117,25 @@ class DbManager:
                 'error': str(e)
             }
     
-    async def check_connection_health(self) -> bool:
+    async def check_connection_health(self, timeout: int = 5) -> bool:
         """
         检查数据库连接健康状态
         
+        Args:
+            timeout: 查询超时时间（秒）
+            
         Returns:
             bool: 连接是否健康
         """
         try:
+            import asyncio
             conn = Tortoise.get_connection(self.connection_name)
-            # 执行一个简单的查询来检查连接是否有效
-            await conn.execute_query("SELECT 1")
+            # 执行一个简单的查询来检查连接是否有效，添加超时设置
+            await asyncio.wait_for(conn.execute_query("SELECT 1"), timeout=timeout)
             return True
+        except asyncio.TimeoutError:
+            logger.warning(f"数据库连接健康检查超时: {self.connection_name}")
+            return False
         except Exception as e:
             logger.warning(f"数据库连接健康检查失败: {e}")
             return False

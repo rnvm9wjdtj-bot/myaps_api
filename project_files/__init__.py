@@ -89,8 +89,8 @@ if not _events_registered:
             定时检查数据库连接健康
             """
             try:
-                # 调用get_meta路由函数检查账套状态
-                response = requests.get(f"{THIS_BASE_URL}/api/meta")
+                # 调用get_meta路由函数检查账套状态，添加超时设置
+                response = requests.get(f"{THIS_BASE_URL}/api/meta", timeout=30)
                 if response.status_code == 200:
                     data = response.json()
                     logger.success("定时检查数据库健康", f"全部账套: {MYAPS_DB_SET}", f"状态: {data['meta']['db_status']}")

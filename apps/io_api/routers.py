@@ -142,17 +142,21 @@ rt = APIRouter()
 
 @rt.get("/meta")
 async def get_meta():
+    import asyncio
     from globalobjects.db_manager import DbManager
     
-    # 检查每个账套的可访问性
-    db_status = []
-    for db in MYAPS_DBSET_LIST:
+    # 检查每个账套的可访问性（并发执行）
+    async def check_single_db(db):
         try:
             db_manager = DbManager(db)
             is_healthy = await db_manager.check_connection_health()
-            db_status.append(f"{'🟢' if is_healthy else '🔴'}{db}")
+            return f"{'🟢' if is_healthy else '🔴'}{db}"
         except Exception as e:
-            db_status.append(f"错误: {str(e)}")
+            return f"错误: {str(e)}"
+    
+    # 并发执行所有数据库健康检查
+    db_status = await asyncio.gather(*(check_single_db(db) for db in MYAPS_DBSET_LIST))
+    
     return standard_response(
         success=1,
         message="获取元数据成功",
@@ -582,7 +586,8 @@ async def get_mo_by_supplyno(
     async def get_orderwc(mono: str):
         orderwc = await db_query(
             db_name=db_name, model_or_tablename="v_orderwc",
-            filter_string=f"`SupplyNo` = '{mono}'"
+            filter_string=f"`SupplyNo` = '{mono}'",
+            order_string="`SortNo`",
         )
         return orderwc['data']
 

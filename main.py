@@ -57,12 +57,12 @@ async def custom_swagger_ui_html():
 # 注册异常处理器
 register_exception_handlers(app)
 
+# 注册路由
+register_routes(app)
+
 # 注册WebSocket路由
 app.websocket("/{path:path}")(websocket_endpoint)
 app.websocket("/")(websocket_root)
-
-# 注册路由
-register_routes(app)
 
 # 注册数据库
 register_database(app)
@@ -92,7 +92,7 @@ if __name__ == "__main__":
         uvicorn.run(
             app,
             host="0.0.0.0",
-            port=PORT,
+            port=PORT + 1,
             log_level="debug",
             access_log=False,
             log_config=LOGGING_CONFIG

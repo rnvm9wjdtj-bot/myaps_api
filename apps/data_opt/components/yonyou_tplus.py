@@ -237,7 +237,7 @@ class MoPushModel(PydanticModel):
         cleaned_values['StartDate'] = values['dt_ordstart']
         cleaned_values['FinishDate'] = values['dt_ordend']
         cleaned_values['BusiType'] = {'Code': CACHE_ERP.get("$MoBusiType", "")}
-        cleaned_values['Department'] = {'Code': CACHE_ERP.get("$MoDepartment", "")}
+        # cleaned_values['Department'] = {'Code': CACHE_ERP.get("$MoDepartment", "")}
         cleaned_values['VoucherDate'] = values['dt_ordstart']
         cleaned_values['IsMaterialRequest'] = True  # 启用领料申请（MO单据头）
         cleaned_values['Memo'] = values['vendorno']
@@ -281,7 +281,7 @@ class RsPushModel(PydanticModel):
         cleaned_values['VoucherType'] = {"Code": "ST1039"}
         cleaned_values['VoucherDate'] = values[MERGE_ENTRIY_KEY][0]['req_date']
         cleaned_values['BusiType'] = {"Code": "MR01"}
-        cleaned_values['Department'] = {"Code": CACHE_ERP.get("$MoDepartment", "")}
+        cleaned_values['Department'] = {"Code": values.get('tplus_mo_data', {}).get('Department', {}).get('Code', "")}
         aps_demand_qty = {_['materialno']: _ for _ in values[MERGE_ENTRIY_KEY]}
         tplus_material_details = values["mo_material_details"]
         mr_details = []
@@ -795,10 +795,6 @@ class TplusConnection(BaseConnection):
             tplus_mo_data = self.query_mo(index_value=tplus_mo_id)
             # 从 T+ 中提取 MO 详情中的第一个详情记录的 ID 作为 _entryid
             tplus_mo_entryid = tplus_mo_data['ManufactureOrderDetails'][0]['ID']
-            
-            # if auto_push_rs:
-            #     # 推送领料申请
-            #     _x_b = self.push_rs(mdlist_or_supplyno=demand_list, tplus_mo_data_or_id=tplus_mo_data)
 
             # 调用存储过程更改工单信息，❗一定放在最后一步，否则工单号变更太早，前面若有用原生供应号查询都会失败
             _x_c = ApsHelpers.pl_release_success(native_plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
@@ -829,13 +825,15 @@ class TplusConnection(BaseConnection):
 
         mo_id = mo_data['ID']
         mo_code = mo_data['Code']
+        # mo_depart_code = mo_data.get('Department', {}).get('Code', '')
         tplus_mo_entryid = mo_data['ManufactureOrderDetails'][0]['ID']
         mo_material_details = mo_data['ManufactureOrderDetails'][0]['ManufactureOrderMaterialDetails']
         # mo_material_details_id = mo_material_details[0]['ID']
 
-        # 推送领料申请
         processed_rsdata['tplus_mo_id'] = mo_id
         processed_rsdata['tplus_mo_entryid'] = tplus_mo_entryid
+        processed_rsdata['tplus_mo_data'] = mo_data
+
         # processed_rsdata['mo_material_details_id'] = mo_material_details_id
         processed_rsdata['mo_material_details'] = mo_material_details
 

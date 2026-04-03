@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     FastAPI Server Startup Script (PowerShell Version)
@@ -186,7 +186,6 @@ try {
 
     # Clear port usage
     if (-not (Clear-Port -PortNumber $Port)) {
-        Read-Host "Press Enter to exit"
         exit 1
     }
 
@@ -216,7 +215,6 @@ try {
         Write-Host ""
         Write-Host "[ERROR] Application failed to start with error code $LASTEXITCODE" -ForegroundColor Red
         Write-Log "Application failed to start with error code $LASTEXITCODE"
-        Read-Host "Press Enter to exit"
         exit $LASTEXITCODE
     }
 }
@@ -224,7 +222,6 @@ catch {
     Write-Host ""
     Write-Host "[ERROR] An error occurred: $_" -ForegroundColor Red
     Write-Log "Error: $_"
-    Read-Host "Press Enter to exit"
     exit 1
 }
 finally {

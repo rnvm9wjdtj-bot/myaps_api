@@ -67,6 +67,14 @@ class CustomMoPushModel(MoPushModel):
     def model_valid(cls, values: Dict[str, Any]):
         cleaned_values = MoPushModel.model_valid(values)
 
+        workcenter = None
+        try:
+            first_orderwc = values["orderwc"][0]
+            workcenter = first_orderwc.get("workcenter", "")
+        except:
+            workcenter = ""
+        cleaned_values['Department'] = {'Code': workcenter}
+
         mo_details = cleaned_values['ManufactureOrderDetails'][0]
         mo_material_details: list[dict] = mo_details['ManufactureOrderMaterialDetails']
 
@@ -88,8 +96,6 @@ class CustomMoPushModel(MoPushModel):
             # next_mo_sn = {_['supplyno']: _['avail_qty'] for _ in next_mos}
             next_mo_sn = ','.join([_['supplyno'] for _ in next_mos])
             if next_mo_sn:
-                # cleaned_values['ManufactureOrderDetails'][0]['DynamicPropertyKeys'] = ['priuserdefnvc1']
-                # cleaned_values['ManufactureOrderDetails'][0]['DynamicPropertyValues'] = [next_mo_sn]
                 mo_details['DynamicPropertyKeys'] = ['priuserdefnvc1']
                 mo_details['DynamicPropertyValues'] = [next_mo_sn]
         return cleaned_values

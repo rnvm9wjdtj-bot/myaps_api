@@ -19,7 +19,7 @@ echo Monitoring: %PS_SCRIPT%
 echo Environment: %ENV_FILE%
 echo Host: %HOST%
 echo Port: %PORT%
-echo Press Ctrl+C to stop monitoring
+echo Press Ctrl+C twice to stop monitoring
 echo =========================================
 echo.
 
@@ -32,8 +32,8 @@ set "PS_ARGS="
 if defined HOST set "PS_ARGS=%PS_ARGS% -HostAddress %HOST%"
 if defined PORT set "PS_ARGS=%PS_ARGS% -Port %PORT%"
 
-:: 执行 PowerShell 脚本 - 在新的cmd窗口中运行以获得更好的滚动功能
-start "FastAPI Server" /wait cmd /c "chcp 65001 >nul && mode con cols=150 lines=50 && mode con lines=3000 cols=150 && powershell -ExecutionPolicy Bypass -File "%PS_SCRIPT%" %PS_ARGS% %*"
+:: 执行 PowerShell 脚本
+powershell -ExecutionPolicy Bypass -Command "& '%PS_SCRIPT%' %PS_ARGS% %*"
 
 :: 检查退出码（0=正常退出，非0=异常退出）
 if %errorlevel% equ 0 (
@@ -58,4 +58,3 @@ if %errorlevel% equ 0 (
 
 :END
 echo [%date% %time%] Monitoring stopped.
-pause

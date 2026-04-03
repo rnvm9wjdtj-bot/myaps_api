@@ -23,7 +23,6 @@
     "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJpc3YiLCJpc3MiOiJjaGFuamV0IiwidXNlcklkIjoiMzk2MjUxNzMxNzA5OTU0Iiwib3JnSWQiOiIxMjQyMTYwNjg0MjM1NjIwIiwiYWNjZXNzX3Rva2VuIjoiYmMtZjhlMmU1MTEtNGQ4ZS00ZWNjLTg2OGQtNmU5YjNhMDYyMmM0IiwiYXVkIjoiaXN2IiwibmJmIjoxNzc1MDkxMzAyLCJhcHBJZCI6IjU4Iiwic2NvcGUiOiJhdXRoX2FsbCIsImFwcEtleSI6IlVHNjlzMVAxIiwiaWQiOiI2MDE5NWMyNS05NjRkLTQ1MTQtYmVlNS0zNWNiMTc5ZmViYWYiLCJleHAiOjE3NzU2MDk3MDIsImlhdCI6MTc3NTA5MTMwMiwib3JnQWNjb3VudCI6InV0dTJwb2ZhZDN1MiJ9.eGdqSkpbqiFYLZSoq6RdePQdLV9FajBxZNfEQ-qyD74",
     "_auth_at_": "2026-04-02 08:55:02",
     "$MoBusiType": "PT01",
-    "$MoDepartment": "1",
     "$PrRequisitionPerson": "001"
   },
   "hap": {

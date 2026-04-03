@@ -249,6 +249,9 @@ def handle_pl_status_a2e(supplyno_or_data: str | dict):
             ApsHelpers.pl_release_success(native_plno=supplyno, mono=sap_mo_data['AUFNR'], msg=sap_mo_data['MESSAGE'], msg_from='ERP')
         else:
             ApsHelpers.pl_release_failed(native_plno=supplyno, msg=sap_mo_data['MESSAGE'], push_data=data, msg_from='ERP')
+    except requests.exceptions.Timeout as e:
+        # 处理请求超时，按推送失败处理
+        ApsHelpers.pl_release_failed(native_plno=supplyno, msg=f"请求超时: {str(e)}", push_data=data, msg_from='ERP')
     except Exception as e:
         ApsHelpers.pl_release_failed(native_plno=supplyno, msg=str(e), push_data=data, msg_from='API')
 
