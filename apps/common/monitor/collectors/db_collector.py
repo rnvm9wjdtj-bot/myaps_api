@@ -79,6 +79,7 @@ class DatabaseCollector:
             for db_name, manager in self._db_managers.items():
                 try:
                     status = await manager.get_connection_pool_status()
+                    status["stats"] = manager.stats if hasattr(manager, 'stats') else None
                     pool_info["pools"][db_name] = status
                 except Exception as e:
                     pool_info["pools"][db_name] = {

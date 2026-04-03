@@ -515,3 +515,276 @@ function updateLastUpdateTime() {
     const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
     document.getElementById('last-update').textContent = `最后更新: ${timeStr}`;
 }
+
+// 页面切换逻辑
+let currentPage = 'overview';
+
+document.addEventListener('DOMContentLoaded', () => {
+    initNavigation();
+});
+
+function initNavigation() {
+    const navItems = document.querySelectorAll('.nav-item');
+    navItems.forEach(item => {
+        item.addEventListener('click', (e) => {
+            e.preventDefault();
+            const page = item.getAttribute('data-page');
+            switchPage(page);
+        });
+    });
+}
+
+function switchPage(pageName) {
+    if (currentPage === pageName) return;
+    
+    currentPage = pageName;
+    
+    document.querySelectorAll('.nav-item').forEach(item => {
+        item.classList.remove('active');
+        if (item.getAttribute('data-page') === pageName) {
+            item.classList.add('active');
+        }
+    });
+    
+    document.querySelectorAll('.page-content').forEach(page => {
+        page.style.display = 'none';
+    });
+    
+    const targetPage = document.getElementById(`page-${pageName}`);
+    if (targetPage) {
+        targetPage.style.display = 'grid';
+    }
+    
+    if (pageName === 'database') {
+        fetchDatabaseDetail();
+    } else if (pageName === 'api-requests') {
+        fetchAPIRequests();
+    } else if (pageName === 'logs') {
+        fetchLogsPage();
+    }
+}
+
+// 数据库详情页面
+async function fetchDatabaseDetail() {
+    try {
+        const response = await fetch(`${API_BASE}/database`);
+        const data = await response.json();
+        updateDatabaseDetailDisplay(data);
+    } catch (error) {
+        console.error('获取数据库详情失败:', error);
+    }
+}
+
+function updateDatabaseDetailDisplay(data) {
+    const gridEl = document.getElementById('db-detail-grid');
+    const connections = data.connections || {};
+    const dbConnections = connections.connections || {};
+    const pools = data.pool?.pools || {};
+    
+    if (Object.keys(dbConnections).length === 0) {
+        gridEl.innerHTML = '<div class="empty-state">暂无数据库连接</div>';
+        return;
+    }
+    
+    const badge = document.getElementById('db-detail-badge');
+    const summary = connections.summary || {};
+    if (summary.unhealthy === 0) {
+        badge.textContent = '正常';
+        badge.className = 'badge healthy';
+    } else {
+        badge.textContent = '异常';
+        badge.className = 'badge error';
+    }
+    
+    gridEl.innerHTML = Object.entries(dbConnections).map(([name, status]) => {
+        const pool = pools[name] || {};
+        const stats = pool.stats || {};
+        
+        let connectionUsagePercent = 0;
+        if (pool.used_connections && pool.max_size) {
+            connectionUsagePercent = Math.round((pool.used_connections / pool.max_size) * 100);
+        }
+        
+        let lastCheckTime = '';
+        if (status.last_check) {
+            const checkDate = new Date(status.last_check * 1000);
+            lastCheckTime = `${checkDate.getHours().toString().padStart(2, '0')}:${checkDate.getMinutes().toString().padStart(2, '0')}:${checkDate.getSeconds().toString().padStart(2, '0')}`;
+        }
+        
+        return `
+        <div class="db-detail-item ${status.healthy ? '' : 'unhealthy'}">
+            <div class="db-detail-header">
+                <span class="db-detail-name">${name}</span>
+                <div class="db-detail-status">
+                    <span class="status-dot ${status.healthy ? 'healthy' : 'error'}"></span>
+                    <span>${status.healthy ? '正常' : (status.error || '异常')}</span>
+                </div>
+            </div>
+            <div class="db-detail-info">
+                <div class="db-detail-row">
+                    <span class="db-detail-label">连接状态</span>
+                    <span class="db-detail-value">${status.healthy ? '已连接' : '断开'}</span>
+                </div>
+                ${status.last_check ? `
+                <div class="db-detail-row">
+                    <span class="db-detail-label">最后检查</span>
+                    <span class="db-detail-value">${lastCheckTime}</span>
+                </div>
+                ` : ''}
+                ${pool.pool_available ? `
+                <div class="db-detail-section">
+                    <div class="db-detail-section-title">连接池</div>
+                    <div class="db-detail-row">
+                        <span class="db-detail-label">当前连接</span>
+                        <span class="db-detail-value">${pool.current_size || '-'}</span>
+                    </div>
+                    <div class="db-detail-row">
+                        <span class="db-detail-label">最大连接</span>
+                        <span class="db-detail-value">${pool.max_size || '-'}</span>
+                    </div>
+                    <div class="db-detail-row">
+                        <span class="db-detail-label">最小连接</span>
+                        <span class="db-detail-value">${pool.min_size || '-'}</span>
+                    </div>
+                    <div class="db-detail-row">
+                        <span class="db-detail-label">空闲连接</span>
+                        <span class="db-detail-value">${pool.idle_connections || '-'}</span>
+                    </div>
+                    <div class="db-detail-row">
+                        <span class="db-detail-label">使用中连接</span>
+                        <span class="db-detail-value">${pool.used_connections || '-'}</span>
+                    </div>
+                    ${pool.max_size ? `
+                    <div class="db-detail-row">
+                        <span class="db-detail-label">使用率</span>
+                        <span class="db-detail-value">${connectionUsagePercent}%</span>
+                    </div>
+                    <div class="db-detail-progress">
+                        <div class="progress-bar">
+                            <div class="progress-fill ${connectionUsagePercent >= 80 ? 'error' : connectionUsagePercent >= 60 ? 'warning' : ''}" style="width: ${connectionUsagePercent}%"></div>
+                        </div>
+                    </div>
+                    ` : ''}
+                </div>
+                ` : ''}
+                ${stats.total_processed !== undefined ? `
+                <div class="db-detail-section">
+                    <div class="db-detail-section-title">操作统计</div>
+                    <div class="db-detail-row">
+                        <span class="db-detail-label">处理记录</span>
+                        <span class="db-detail-value">${stats.total_processed}</span>
+                    </div>
+                    <div class="db-detail-row">
+                        <span class="db-detail-label">批次数</span>
+                        <span class="db-detail-value">${stats.batches_executed || 0}</span>
+                    </div>
+                </div>
+                ` : ''}
+                ${status.error ? `
+                <div class="db-detail-row">
+                    <span class="db-detail-label">错误信息</span>
+                    <span class="db-detail-value" style="color: var(--error-color)">${status.error}</span>
+                </div>
+                ` : ''}
+            </div>
+        </div>
+        `;
+    }).join('');
+}
+
+// API 请求页面
+async function fetchAPIRequests() {
+    try {
+        const response = await fetch(`${API_BASE}/http`);
+        const data = await response.json();
+        updateAPIRequestsDisplay(data);
+    } catch (error) {
+        console.error('获取 API 请求失败:', error);
+    }
+}
+
+function updateAPIRequestsDisplay(data) {
+    const tbodyEl = document.getElementById('api-requests-tbody');
+    const requests = data.recent_requests || [];
+    
+    if (requests.length === 0) {
+        tbodyEl.innerHTML = '<tr><td colspan="8" class="empty-state">暂无 API 请求记录</td></tr>';
+        return;
+    }
+    
+    tbodyEl.innerHTML = requests.map(req => {
+        const date = new Date(req.timestamp * 1000);
+        const timeStr = `${date.getFullYear()}-${(date.getMonth()+1).toString().padStart(2,'0')}-${date.getDate().toString().padStart(2,'0')} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}:${date.getSeconds().toString().padStart(2,'0')}`;
+        
+        const methodClass = req.method.toLowerCase();
+        const isSuccess = req.status_code < 400;
+        const statusClass = isSuccess ? 'success' : 'error';
+        const errorMsg = req.error_message || '';
+        
+        return `
+            <tr>
+                <td>${timeStr}</td>
+                <td><span class="api-method ${methodClass}">${req.method}</span></td>
+                <td style="font-family: monospace; font-size: 12px;">${req.path}</td>
+                <td><span class="api-status ${statusClass}">${req.status_code}</span></td>
+                <td>${(req.duration * 1000).toFixed(0)}ms</td>
+                <td>${req.client_ip}</td>
+                <td><span class="api-result ${statusClass}">${isSuccess ? '✓ 成功' : '✗ 失败'}</span></td>
+                <td class="error-message-cell" title="${errorMsg}">${errorMsg}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function refreshAPIRequests() {
+    fetchAPIRequests();
+}
+
+async function resetAPIStats() {
+    try {
+        await fetch(`${API_BASE}/http/reset`, { method: 'POST' });
+        fetchAPIRequests();
+    } catch (error) {
+        console.error('重置 API 统计失败:', error);
+    }
+}
+
+// 日志页面
+async function fetchLogsPage() {
+    try {
+        const level = document.getElementById('log-page-level').value;
+        const url = `${API_BASE}/logs?limit=100${level ? `&level=${level}` : ''}`;
+        const response = await fetch(url);
+        const data = await response.json();
+        updateLogsPageDisplay(data.logs);
+    } catch (error) {
+        console.error('获取日志失败:', error);
+    }
+}
+
+function updateLogsPageDisplay(logs) {
+    const tbodyEl = document.getElementById('logs-tbody');
+    
+    if (logs.length === 0) {
+        tbodyEl.innerHTML = '<tr><td colspan="4" class="empty-state">暂无日志记录</td></tr>';
+        return;
+    }
+    
+    tbodyEl.innerHTML = logs.map(log => {
+        const date = new Date(log.timestamp * 1000);
+        const timeStr = `${date.getFullYear()}-${(date.getMonth()+1).toString().padStart(2,'0')}-${date.getDate().toString().padStart(2,'0')} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}:${date.getSeconds().toString().padStart(2,'0')}`;
+        
+        return `
+            <tr>
+                <td>${timeStr}</td>
+                <td><span class="log-level-badge ${log.level}">${log.level.toUpperCase()}</span></td>
+                <td>${log.module}</td>
+                <td class="log-message-cell">${log.message}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function refreshLogsPage() {
+    fetchLogsPage();
+}

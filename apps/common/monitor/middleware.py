@@ -44,6 +44,7 @@ class HTTPMetricsCollector:
         status_code: int,
         duration: float,
         client_ip: str,
+        error_message: str = None,
     ):
         """记录请求信息"""
         async with self._lock:
@@ -56,6 +57,7 @@ class HTTPMetricsCollector:
                 "client_ip": client_ip,
                 "is_error": status_code >= 400,
                 "is_slow": duration >= self._slow_threshold,
+                "error_message": error_message,
             }
 
             self._requests.append(request_info)
@@ -168,24 +170,27 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
         ]
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        # 检查是否需要监控
         path = request.url.path
         if not any(path.startswith(included) for included in self.include_paths):
             return await call_next(request)
 
         start_time = time.time()
+        error_message = None
 
         try:
             response = await call_next(request)
             status_code = response.status_code
+
+            if status_code >= 400:
+                error_message = await self._extract_error_message(response)
         except Exception as e:
             status_code = 500
+            error_message = str(e)
             logger.error(f"请求处理异常: {e}")
             raise
         finally:
             duration = time.time() - start_time
 
-            # 记录请求指标
             client_ip = request.client.host if request.client else "unknown"
             asyncio.create_task(
                 http_metrics_collector.record_request(
@@ -194,7 +199,30 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
                     status_code=status_code,
                     duration=duration,
                     client_ip=client_ip,
+                    error_message=error_message,
                 )
             )
 
         return response
+
+    async def _extract_error_message(self, response: Response) -> str:
+        """从响应体中提取错误消息"""
+        try:
+            body = b""
+            async for chunk in response.body_iterator:
+                body += chunk
+            
+            response.body_iterator = iter([body])
+            
+            if body:
+                try:
+                    import json
+                    data = json.loads(body.decode('utf-8'))
+                    if isinstance(data, dict):
+                        return data.get('message') or data.get('msg') or data.get('error') or data.get('detail')
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    pass
+        except Exception as e:
+            logger.debug(f"提取错误消息失败: {e}")
+        
+        return None

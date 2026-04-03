@@ -84,11 +84,17 @@ if __name__ == "__main__":
         # 精简访问日志格式，只包含必要信息
         LOGGING_CONFIG['formatters']['access']['fmt'] = '%(asctime)s - %(levelname)s - %(client_addr)s - "%(request_line)s" %(status_code)s'
         
-        # 禁用访问日志处理器
-        LOGGING_CONFIG['handlers'].pop('access', None)
+        # 启用访问日志处理器
+        # 恢复默认的访问日志处理器
+        if 'access' not in LOGGING_CONFIG['handlers']:
+            LOGGING_CONFIG['handlers']['access'] = {
+                'class': 'logging.StreamHandler',
+                'formatter': 'access',
+                'stream': 'ext://sys.stdout',
+            }
         LOGGING_CONFIG['loggers']['uvicorn.access'] = {
-            'handlers': [],
-            'level': 'CRITICAL',
+            'handlers': ['access'],
+            'level': 'INFO',
             'propagate': False,
         }
         
@@ -98,7 +104,7 @@ if __name__ == "__main__":
             host="0.0.0.0",
             port=PORT + 1,
             log_level="info",
-            access_log=False,
+            access_log=True,
             log_config=LOGGING_CONFIG
         )
     except Exception as e:

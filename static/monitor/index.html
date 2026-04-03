@@ -10,7 +10,12 @@
 <body>
     <div class="container">
         <header class="header">
-            <h1>MyAPI 系统监控面板</h1>
+            <nav class="nav-menu">
+                <a href="#" class="nav-item active" data-page="overview">Overview</a>
+                <a href="#" class="nav-item" data-page="database">数据库</a>
+                <a href="#" class="nav-item" data-page="api-requests">API请求</a>
+                <a href="#" class="nav-item" data-page="logs">日志</a>
+            </nav>
             <div class="header-info">
                 <span id="status-indicator" class="status healthy">● 系统正常</span>
                 <span id="last-update">最后更新: --</span>
@@ -18,7 +23,8 @@
             </div>
         </header>
 
-        <main class="main-content">
+        <!-- Overview 页面 -->
+        <main class="main-content page-content" id="page-overview">
             <!-- HTTP 请求监控卡片 -->
             <section class="card">
                 <div class="card-header">
@@ -173,8 +179,90 @@
             </section>
         </main>
 
+        <!-- 数据库页面 -->
+        <main class="main-content page-content" id="page-database" style="display: none;">
+            <section class="card full-width">
+                <div class="card-header">
+                    <h2>数据库详细信息</h2>
+                    <span class="badge" id="db-detail-badge">检查中</span>
+                </div>
+                <div class="card-body">
+                    <div class="db-detail-grid" id="db-detail-grid">
+                        <!-- 动态生成数据库详细信息 -->
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- API请求页面 -->
+        <main class="main-content page-content" id="page-api-requests" style="display: none;">
+            <section class="card full-width">
+                <div class="card-header">
+                    <h2>API 请求记录</h2>
+                    <div class="api-controls">
+                        <button class="btn btn-small" onclick="refreshAPIRequests()">刷新</button>
+                        <button class="btn btn-small" onclick="resetAPIStats()">重置统计</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="api-requests-table-container">
+                        <table class="api-requests-table" id="api-requests-table">
+                            <thead>
+                                <tr>
+                                    <th>时间戳</th>
+                                    <th>方法</th>
+                                    <th>路径</th>
+                                    <th>状态码</th>
+                                    <th>响应时间</th>
+                                    <th>客户端IP</th>
+                                    <th>结果</th>
+                                    <th>错误信息</th>
+                                </tr>
+                            </thead>
+                            <tbody id="api-requests-tbody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- 日志页面 -->
+        <main class="main-content page-content" id="page-logs" style="display: none;">
+            <section class="card full-width">
+                <div class="card-header">
+                    <h2>日志记录</h2>
+                    <div class="log-page-controls">
+                        <select id="log-page-level" onchange="fetchLogsPage()">
+                            <option value="">全部日志</option>
+                            <option value="error">错误日志</option>
+                            <option value="warning">警告日志</option>
+                        </select>
+                        <button class="btn btn-small" onclick="refreshLogsPage()">刷新</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="logs-table-container">
+                        <table class="logs-table" id="logs-table">
+                            <thead>
+                                <tr>
+                                    <th>时间</th>
+                                    <th>级别</th>
+                                    <th>模块</th>
+                                    <th>消息</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logs-tbody">
+                                <!-- 动态生成日志记录 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </main>
+
         <footer class="footer">
-            <p>MyAPS 监控系统 &copy; 2024</p>
+            <p>&nbsp;</p>
         </footer>
     </div>
 

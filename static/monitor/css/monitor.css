@@ -595,6 +595,247 @@ body {
     margin-top: 20px;
 }
 
+/* 导航菜单样式 */
+.nav-menu {
+    display: flex;
+    gap: 8px;
+}
+
+.nav-item {
+    padding: 8px 16px;
+    text-decoration: none;
+    color: var(--text-secondary);
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.3s;
+}
+
+.nav-item:hover {
+    color: var(--primary-color);
+    background: #e6f7ff;
+}
+
+.nav-item.active {
+    color: var(--primary-color);
+    background: #e6f7ff;
+    border-bottom: 2px solid var(--primary-color);
+}
+
+/* 全宽卡片 */
+.card.full-width {
+    grid-column: 1 / -1;
+}
+
+/* 数据库详细信息网格 */
+.db-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+}
+
+.db-detail-item {
+    background: var(--bg-color);
+    padding: 16px;
+    border-radius: 8px;
+    border-left: 4px solid var(--primary-color);
+}
+
+.db-detail-item.unhealthy {
+    border-left-color: var(--error-color);
+}
+
+.db-detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.db-detail-name {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.db-detail-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.db-detail-info {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.db-detail-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+}
+
+.db-detail-label {
+    color: var(--text-secondary);
+}
+
+.db-detail-value {
+    font-weight: 500;
+}
+
+.db-detail-section {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+}
+
+.db-detail-section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.db-detail-progress {
+    margin-top: 4px;
+}
+
+/* API 请求表格样式 */
+.api-controls, .log-page-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.api-requests-table-container, .logs-table-container {
+    overflow-x: auto;
+}
+
+.api-requests-table, .logs-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.api-requests-table th, .logs-table th {
+    background: var(--bg-color);
+    padding: 12px 16px;
+    text-align: left;
+    font-weight: 600;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.api-requests-table td, .logs-table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.api-requests-table tbody tr:hover, .logs-table tbody tr:hover {
+    background: #fafafa;
+}
+
+.api-method {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.api-method.get {
+    background: #e6f7ff;
+    color: var(--primary-color);
+}
+
+.api-method.post {
+    background: #f6ffed;
+    color: var(--success-color);
+}
+
+.api-method.put {
+    background: #fffbe6;
+    color: var(--warning-color);
+}
+
+.api-method.patch {
+    background: #fff7e6;
+    color: #fa8c16;
+}
+
+.api-method.delete {
+    background: #fff1f0;
+    color: var(--error-color);
+}
+
+.api-status {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.api-status.success {
+    background: #f6ffed;
+    color: var(--success-color);
+}
+
+.api-status.error {
+    background: #fff1f0;
+    color: var(--error-color);
+}
+
+.api-result {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.api-result.success {
+    color: var(--success-color);
+}
+
+.api-result.error {
+    color: var(--error-color);
+}
+
+/* 日志表格样式 */
+.log-level-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.log-level-badge.error {
+    background: #fff1f0;
+    color: var(--error-color);
+}
+
+.log-level-badge.warning {
+    background: #fffbe6;
+    color: var(--warning-color);
+}
+
+.log-level-badge.info {
+    background: #e6f7ff;
+    color: var(--primary-color);
+}
+
+.log-message-cell {
+    max-width: 400px;
+    word-break: break-all;
+}
+
+.error-message-cell {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--error-color);
+    font-size: 12px;
+}
+
 /* 响应式 */
 @media (max-width: 768px) {
     .main-content {
@@ -613,6 +854,15 @@ body {
     }
 
     .metrics-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .nav-menu {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    .db-detail-grid {
         grid-template-columns: 1fr;
     }
 }
