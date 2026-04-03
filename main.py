@@ -97,7 +97,7 @@ if __name__ == "__main__":
             app,
             host="0.0.0.0",
             port=PORT + 1,
-            log_level="debug",
+            log_level="info",
             access_log=False,
             log_config=LOGGING_CONFIG
         )

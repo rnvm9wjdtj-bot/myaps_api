@@ -1639,6 +1639,8 @@ def initialize_logging() -> None:
     # 配置第三方库的日志级别，减少噪音
     logging.getLogger('httpx').setLevel(logging.WARNING)
     logging.getLogger('httpcore').setLevel(logging.WARNING)
+    logging.getLogger('uvicorn').setLevel(logging.INFO)
+    logging.getLogger('uvicorn.access').setLevel(logging.CRITICAL)
     
     # 启动文件日志监听器
     start_all_listeners()

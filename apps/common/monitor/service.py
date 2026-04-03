@@ -224,12 +224,30 @@ class MonitorService:
                         if not line:
                             continue
                         
-                        # 解析日志格式: 2026-02-04 21:32:29,631 - project_files._base_error.log - ERROR - ❌ 领料申请推送失败...
-                        parts = line.split(' - ', 3)
+                        # 解析日志格式，支持两种格式：
+                        # 1. 旧格式: 2026-02-04 21:32:29,631 - project_files._base_error.log - ERROR - ❌ 领料申请推送失败...
+                        # 2. 新格式: 2026-04-03 16:06:38,458 - smart_apps.io_api.utils.db_operation - _log_to_file:999 - ERROR - 鉂?鏁版嵁搴撻獙璇佸け璐...
+                        parts = line.split(' - ')
                         if len(parts) < 4:
                             continue
                         
-                        timestamp_str, module, log_level_str, message = parts
+                        timestamp_str = parts[0]
+                        if len(parts) == 4:
+                            # 旧格式
+                            module, log_level_str, message = parts[1], parts[2], parts[3]
+                        else:
+                            # 新格式
+                            module = parts[1]
+                            # 找到日志级别字段（通常是倒数第二个）
+                            log_level_str = None
+                            for i in range(len(parts)-1, 1, -1):
+                                if parts[i].upper() in ['ERROR', 'WARNING', 'INFO', 'DEBUG']:
+                                    log_level_str = parts[i]
+                                    # 消息是级别后面的所有内容
+                                    message = ' - '.join(parts[i+1:])
+                                    break
+                            if not log_level_str:
+                                continue
                         
                         # 解析时间戳
                         try:

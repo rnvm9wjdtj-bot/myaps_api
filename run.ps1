@@ -204,7 +204,7 @@ try {
         $App,
         "--host", $HostAddress,
         "--port", "$Port",
-        "--log-level", "debug"
+        "--log-level", "info"
     )
 
     # Start process directly for better output
