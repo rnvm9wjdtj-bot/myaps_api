@@ -7,7 +7,7 @@ from apps.data_opt.utils.mysqlmonitor import mysql_monitor
 from apps.common.utils.resource_monitor import resource_monitor
 from globalobjects import EVENT_AGGREGATOR
 from config.settings import TURNON_DBMONITOR, TRUNON_SCHEDULER
-from core.database import check_db_connections
+from core.database import check_db_connections, warmup_connections
 
 @asynccontextmanager
 async def lifespan(app):
@@ -45,6 +45,10 @@ async def lifespan(app):
             await check_db_connections()
             # 每300秒（5分钟）检查一次
             await asyncio.sleep(300)
+    
+    # 预热数据库连接
+    log_config.info("开始预热数据库连接...")
+    await warmup_connections()
     
     # 启动数据库连接检查任务（从原startup_event迁移）
     asyncio.create_task(schedule_db_checks())
