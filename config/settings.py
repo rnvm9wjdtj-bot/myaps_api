@@ -80,12 +80,12 @@ for db in MYAPS_DBSET_LIST:
             "password": MYAPS_DB_PASSWORD,
             "database": db,
             "charset": "utf8mb4",
-            "connect_timeout": 60,  # 增加连接超时时间
-            "minsize": 5,  # 增加最小连接数
-            "maxsize": 20,  # 增加最大连接数
+            "connect_timeout": 60,  # 连接超时时间
+            "minsize": 10,  # 增加最小连接数，确保有足够的连接可用
+            "maxsize": 30,  # 增加最大连接数，应对高并发
             "ssl": None,
             "echo": False,
-            "pool_recycle": 1800,  # 减少连接回收时间，防止连接超时
+            "pool_recycle": 900,  # 减少连接回收时间到15分钟，防止连接超时
         }
     }
 
@@ -117,4 +117,3 @@ TORTOISE_ORM_CONFIG = {
         },
     },
 }
-

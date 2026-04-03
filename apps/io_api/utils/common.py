@@ -192,29 +192,23 @@ def register_exception_handlers(app):
 
 
 
-async def before_refreshdata(
-    data: List[Any],
-    db_names: str,
-    table_name: str,
-    group_fields: Tuple[str, ...],
-    db_fields: Tuple[str, ...]=None,
-):
+async def drop_matched_data(data: List[Any], db_names: str, table_name: str, match_on: Tuple[str, ...], db_fields: Tuple[str, ...]=None):
     """
-    刷新数据前，先删除已存在的数据
+    根据组合字段删除已存在的数据项
     Args:
         data: 新数据列表
         db_names: 数据库名称
         table_name: 数据库表名
-        group_fields: 组合字段，用于唯一标识数据项，如 ("materialno", "matver")
+        match_on: 组合字段，用于唯一标识数据项，如 ("materialno", "matver")
         db_fields: 数据库字段，用于删除数据，如 ("MaterialNo", "MatVer")
     """
     from .db_operation import db_delete
     # 收集唯一组合
-    db_fields = db_fields or group_fields
+    db_fields = db_fields or match_on
     unique_combinations = set()
     for item in data:
         field_values = []
-        for field in group_fields:
+        for field in match_on:
             if isinstance(item, dict):
                 field_value = item.get(field)
             else:
@@ -225,7 +219,7 @@ async def before_refreshdata(
         if all(field_values):
             unique_combinations.add(tuple(field_values))
     
-    # 批量删除
+    # 分批删除
     if unique_combinations:
         batch_size = 100
         combinations_list = list(unique_combinations)

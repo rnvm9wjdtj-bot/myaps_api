@@ -395,12 +395,12 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
         )
 
 
-async def db_delete(db_names: str, model_or_tablename: TortoiseBaseModel | str, filter_string: str):
+async def db_delete(db_names: str, model_or_tablename: TortoiseBaseModel | str, filter_string: str | None = None):
     """
     执行SQL删除操作
     :param db_names: 账套名称，多个可用半角逗号分隔
     :param model_or_tablename: 模型类或表名
-    :param filter_string: WHERE子句，用于指定删除条件
+    :param filter_string: WHERE子句，用于指定删除条件；若为None则清空整个表
     :return: 操作结果
     """
     _, table_name = process_model_or_tablename(model_or_tablename)
@@ -408,13 +408,14 @@ async def db_delete(db_names: str, model_or_tablename: TortoiseBaseModel | str, 
         valid_dbs = validate_databases(db_names)
         assert valid_dbs, "未指定账套或账套不存在"
         total_count = 0
+        is_truncate = filter_string is None
         for db_name in valid_dbs:
             db_manager = get_db_manager(db_name)
-            exe_result = await db_manager.delete_data(table_name=table_name, filter_string=filter_string)
+            exe_result = await db_manager.delete_data(table_name=table_name, filter_string=filter_string or '')
 
             count = exe_result.get("affected_rows", 0)
             total_count += count
-            logger.delete(f"{table_name}@{db_name}", filter_string, count)
+            logger.delete(f"{table_name}@{db_name}", "ALL DATA" if is_truncate else filter_string, count)
         logger.success("SQL删除", f"{table_name}@{db_names}", f"共删除{total_count}条")
         return standard_response(
             meta={"affect_count": total_count, "affect_dbs": ", ".join(valid_dbs)}

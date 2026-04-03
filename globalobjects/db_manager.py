@@ -111,8 +111,8 @@ class DbManager:
         procedure_name: str, 
         params_list: List[List[Any]] = None, 
         use_transaction: Optional[bool] = None,
-        max_retries: int = 3,
-        retry_delay: float = 0.5
+        max_retries: int = 5,  # 增加最大重试次数到5次
+        retry_delay: float = 2.0  # 增加基础重试延迟时间到2秒
     ) -> Dict[str, Any]:
         """
         调用数据库存储过程（支持死锁自动重试）
@@ -121,8 +121,8 @@ class DbManager:
             procedure_name: 存储过程名称
             params_list: 存储过程参数列表，每个元素是一个参数列表（可选，默认[[]]）
             use_transaction: 是否使用事务（可选，默认使用实例配置的use_transaction）
-            max_retries: 最大重试次数，默认3次
-            retry_delay: 重试延迟时间（秒），默认0.5秒
+            max_retries: 最大重试次数，默认5次
+            retry_delay: 基础重试延迟时间（秒），默认2秒
             
         Returns:
             包含执行结果的字典，包括成功状态、执行时间、影响记录数等
@@ -178,29 +178,45 @@ class DbManager:
                 last_exception = e
                 
                 error_str = str(e).upper()
-                is_deadlock = 'DEADLOCK' in error_str or '1213' in str(e)
+                is_deadlock = 'DEADLOCK' in error_str or '1213' in str(e) or '死锁' in str(e)
                 is_operational_error = "OperationalError" in str(type(e))
                 is_connection_closed = "Cannot acquire connection after closing pool" in str(e)
                 is_none_type_error = "NoneType" in str(e)
+                is_connection_error = "Connection" in str(type(e))
+                is_timeout_error = "Timeout" in str(type(e))
+                is_network_error = "Network" in str(type(e)) or "网络" in str(e)
+                is_pool_error = "Pool" in str(type(e))
                 
-                if (is_deadlock or is_operational_error or is_connection_closed or is_none_type_error) and retry_count < max_retries:
+                if (is_deadlock or is_operational_error or is_connection_closed or is_none_type_error or 
+                    is_connection_error or is_timeout_error or is_network_error or is_pool_error) and retry_count < max_retries:
                     retry_count += 1
-                    if is_operational_error or is_connection_closed or is_none_type_error:
-                        logger.warning_msg(
-                            "存储过程调用", 
-                            f"{procedure_name}@{self.connection_name} 检测到连接错误，第{retry_count}次重试中...", 
-                            f"等待{retry_delay}秒后重试"
-                        )
-                        # 尝试刷新连接
+                    # 使用指数退避策略，增加重试延迟时间
+                    # 对于死锁，使用更长的初始延迟
+                    base_delay = retry_delay * 2 if is_deadlock else retry_delay
+                    current_delay = base_delay * (2 ** (retry_count - 1))
+                    # 限制最大延迟时间为20秒
+                    current_delay = min(current_delay, 20.0)
+                    
+                    error_type = "连接错误"
+                    if is_deadlock:
+                        error_type = "死锁"
+                    elif is_timeout_error:
+                        error_type = "超时错误"
+                    elif is_network_error:
+                        error_type = "网络错误"
+                    
+                    logger.warning_msg(
+                        "存储过程调用", 
+                        f"{procedure_name}@{self.connection_name} 检测到{error_type}，第{retry_count}次重试中...", 
+                        f"等待{current_delay:.1f}秒后重试"
+                    )
+                    
+                    # 尝试刷新连接
+                    if not is_deadlock:
                         await self.refresh_connection()
-                    else:
-                        logger.warning_msg(
-                            "存储过程调用", 
-                            f"{procedure_name}@{self.connection_name} 检测到死锁，第{retry_count}次重试中...", 
-                            f"等待{retry_delay}秒后重试"
-                        )
+                    
                     import asyncio
-                    await asyncio.sleep(retry_delay)
+                    await asyncio.sleep(current_delay)
                     continue
                 
                 logger.fail("存储过程调用", f"{procedure_name}@{self.connection_name}", str(e))
