@@ -7,7 +7,13 @@
 - 报工数据
 
 其他：
-- 物料主数据 free1 字段为 是否倒冲料，Y 表示倒冲料，N 表示普通物料
+- 物料主数据
+    - free1 是否倒冲料，Y 表示倒冲料，N 表示普通物料
+
+# - 销售订单SO
+#     - free1 客户订单号
+#     - free2 客户产品号
+#     - free3 包装要求
 """
 from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR, SCHEDULER_MINUTE
 from .._base import (

@@ -2,13 +2,13 @@ from typing import Dict, Any, List, Tuple
 import enum
 from datetime import datetime
 
-from fastapi import status, Query, HTTPException, status, Request, Header
+from fastapi import status, HTTPException, status, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel as PydanticSchema
 
-from config.settings import MYAPS_MAIN_DB
-from globalobjects.globalconst import SupplyTypeEnum
+# from config.settings import MYAPS_MAIN_DB
+# from globalobjects.globalconst import SupplyTypeEnum
 
 
 
@@ -61,14 +61,14 @@ def standard_response(
         "data": data
     }
 
-# url - 公共参数
-common_params = {
-    "db_name": Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-    "page_size": Query(1000, description="每页数量", gt=0, le=10000),
-    "page_index": Query(0, description="分页页码，从0开始", ge=0),
-    "supply_type": Query(..., description="供应类型", openapi_examples={key: {"value": key, "summary": value.value} for key, value in SupplyTypeEnum.__members__.items()}),
-    "x_api_key": Header(None, description="API密钥")
-}
+# # url - 公共参数
+# common_params = {
+#     "db_name": Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+#     "page_size": Query(1000, description="每页数量", gt=0, le=10000),
+#     "page_index": Query(0, description="分页页码，从0开始", ge=0),
+#     "supply_type": Query(..., description="供应类型", openapi_examples={key: {"value": key, "summary": value.value} for key, value in SupplyTypeEnum.__members__.items()}),
+#     "x_api_key": Header(None, description="API密钥")
+# }
 
 
 def get_raw_input_data(data_item: PydanticSchema | Dict[str, Any]) -> Dict:

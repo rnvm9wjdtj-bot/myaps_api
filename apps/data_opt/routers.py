@@ -6,7 +6,7 @@ from typing import Optional#, Dict, Any
 
 
 import pandas as pd
-from fastapi import APIRouter, Query, Body, File, UploadFile#, HTTPException
+from fastapi import APIRouter, Query, Body, Header, File, UploadFile#, HTTPException
 from fastapi.responses import HTMLResponse#, StreamingResponse
 
 from config.settings import BASE_DIR
@@ -14,7 +14,7 @@ from project_files import  project_client, hap_conn
 # from .schemas import SupplyOperationBody, SupplyAction
 # from apps.io_api.models import TSupply
 from .utils.barcode_qrcode_generator import generate_qrcode, generate_barcode
-from apps.io_api.utils.common import standard_response, common_params
+from apps.io_api.utils.common import standard_response
 from apps.data_opt.utils.bomchecker import BOMChecker
 from apps.data_opt.utils.routechecker import RouteChecker
 
@@ -40,7 +40,7 @@ async def generate_qrcode_api(
     image_format: Optional[str] = Body("SVG", pattern="^(PNG|JPEG|GIF|SVG)$", description="图片格式"),
     show_content: Optional[bool] = Body(True, description="是否在图片底部显示原字符串内容"),
     content_font_size: Optional[int] = Body(12, ge=8, description="内容文字大小"),
-    x_api_key: str = common_params["x_api_key"]
+    x_api_key: str = Header(None, description="API密钥")
 ):
     try:
         result = generate_qrcode(
@@ -89,7 +89,7 @@ async def generate_barcode_api(
     image_format: Optional[str] = Body("SVG", pattern="^(PNG|JPEG|GIF|SVG)$", description="图片格式"),
     show_content: Optional[bool] = Body(True, description="是否在图片底部显示原字符串内容"),
     content_font_size: Optional[int] = Body(20, ge=8, description="内容文字大小"),
-    x_api_key: str = common_params["x_api_key"]
+    x_api_key: str = Header(None, description="API密钥")
 ):
     try:
         result = generate_barcode(
@@ -138,7 +138,7 @@ async def check_bom_excel(
     denominator_col: str = Query(None, example=None, description="分母"),
     parentunit_col: str = Query(None, example=None, description="父单位"),
     childunit_col: str = Query(None, example=None, description="子单位"),
-    x_api_key: str = common_params["x_api_key"]
+    x_api_key: str = Header(None, description="API密钥")
 ):
 
     try:
@@ -201,7 +201,7 @@ async def bom_check_page():
 )
 async def get_bom_check_result_api(
     output_method: str = Query(..., example="EXCEL", enum=["EXCEL", "HAP"], description="输出方式"),
-    x_api_key: str = common_params["x_api_key"]
+    x_api_key: str = Header(None, description="API密钥")
 ):
     try:
         bom_json_data = await project_client.ScheduleTasks.get_bom()
@@ -261,7 +261,7 @@ def check_route_excel(
     sortno_col: str = Query(..., example="SortNo", description="顺序号"),
     itemno_col: str = Query(..., example="ItemNo", description="工序项"),
     workcenter_col: str = Query(None, example="WorkCenter", description="工作中心"),
-    x_api_key: str = common_params["x_api_key"]
+    x_api_key: str = Header(None, description="API密钥")
 ):
     try:
         # 验证文件格式是否为 xlsx

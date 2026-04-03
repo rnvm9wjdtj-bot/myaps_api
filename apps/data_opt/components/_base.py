@@ -402,7 +402,7 @@ class ApsHelpers:
 
 
     @staticmethod
-    def get_supplymo_detaildata(supplyno: str, get_prev_mo:bool=False, get_next_mo:bool=False):
+    def get_supplymo_detaildata(supplyno: str, get_prev_mo:bool=False, get_next_mo:bool=False, get_origin_so:bool=False):
         """
         获取工单的工序详情、及MTO销售订单信息
         Args:
@@ -412,7 +412,7 @@ class ApsHelpers:
         Returns:
             工单计划单详情
         """
-        url = f"{THIS_BASE_URL}/api/v_supply_mo/{supplyno}?db_name={MYAPS_MAIN_DB}&prev_mo={get_prev_mo}&next_mo={get_next_mo}"
+        url = f"{THIS_BASE_URL}/api/v_supply_mo/{supplyno}?db_name={MYAPS_MAIN_DB}&prev_mo={get_prev_mo}&next_mo={get_next_mo}&origin_so={get_origin_so}"
         supply_response_json = ApsHelpers._call_api('GET', url)
         
         if supply_response_json.get('success') != 0 and supply_response_json.get('data'):
