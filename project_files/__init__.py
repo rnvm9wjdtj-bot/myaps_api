@@ -5,7 +5,7 @@
 import os, importlib, json, requests
 from typing import NamedTuple
 
-from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET
+from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET, MYAPS_DBSET_LIST
 from globalobjects.globalconst import OrderStatusEnum
 from apps.io_api.utils.common import dict_to_lower_keys
 from globalobjects import logger as log_config
@@ -139,14 +139,14 @@ def handle_insert_supply(database: str, table: str, data: dict):
    
 
 
-@mysql_monitor.on_delete_for_table("t_supply", database=MYAPS_MAIN_DB)
-def handle_delete_supply(database: str, table: str, data: dict):
-    """处理t_supply表的删除事件"""
-    from apps.data_opt.components._base import ApsHelpers
+# @mysql_monitor.on_delete_for_table("t_supply", database=MYAPS_MAIN_DB)
+# def handle_delete_supply(database: str, table: str, data: dict):
+#     """处理t_supply表的删除事件"""
+#     from apps.data_opt.components._base import ApsHelpers
 
-    deleted_data = dict_to_lower_keys(data)
-    type_ = deleted_data['type']
-    status_now = deleted_data['status']
+#     deleted_data = dict_to_lower_keys(data)
+#     type_ = deleted_data['type']
+#     status_now = deleted_data['status']
 
     # if type_ == 'PR':
     #     # TODO 当 PR 单据被删除时，删除 ERP 中的采购申请单据

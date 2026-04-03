@@ -1,9 +1,110 @@
 import time
+import threading
+import asyncio
+from collections import defaultdict
+from typing import Dict, Any, Optional
 
 from tortoise.contrib.fastapi import register_tortoise
 from config.settings import TORTOISE_ORM_CONFIG, MYAPS_MAIN_DB, MYAPS_DBSET_LIST
 from globalobjects import logger as log_config
 
+
+class SmartConnectionPoolManager:
+    """智能连接池管理器"""
+    
+    def __init__(self):
+        self._lock = threading.RLock()
+        self._pool_stats = defaultdict(dict)
+        self._last_adjust_time = defaultdict(float)
+        self._adjust_interval = 300  # 调整间隔（秒）
+        self._min_pool_size = 5  # 最小连接池大小
+        self._max_pool_size = 50  # 最大连接池大小
+        self._target_utilization = 0.7  # 目标利用率
+        self._scale_up_threshold = 0.8  # 扩容阈值
+        self._scale_down_threshold = 0.3  # 缩容阈值
+        self._scale_step = 2  # 每次调整步长
+        
+    async def monitor_and_adjust(self):
+        """监控并调整连接池大小"""
+        if not MYAPS_MAIN_DB:
+            return
+        
+        try:
+            from globalobjects.db_manager import get_db_managers
+            db_managers = get_db_managers()
+            
+            for db_name, manager in db_managers.items():
+                try:
+                    # 获取连接池状态
+                    pool_status = await manager.get_connection_pool_status()
+                    current_time = time.time()
+                    
+                    # 计算使用率
+                    utilization = self._calculate_utilization(pool_status)
+                    
+                    # 记录统计数据
+                    self._record_stats(db_name, pool_status, utilization)
+                    
+                    # 检查是否需要调整
+                    time_since_last_adjust = current_time - self._last_adjust_time.get(db_name, 0)
+                    if time_since_last_adjust >= self._adjust_interval:
+                        await self._adjust_pool_size(db_name, manager, pool_status, utilization)
+                        self._last_adjust_time[db_name] = current_time
+                        
+                except Exception as e:
+                    log_config.error(f"监控连接池异常: {db_name} - {str(e)}")
+                    
+        except Exception as e:
+            log_config.error(f"智能连接池管理异常: {str(e)}")
+    
+    def _calculate_utilization(self, pool_status: Dict[str, Any]) -> float:
+        """计算连接池使用率"""
+        if not pool_status.get('pool_available', False):
+            return 0.0
+        
+        used = pool_status.get('used_connections', 0)
+        total = pool_status.get('current_size', 1)
+        
+        return used / total if total > 0 else 0.0
+    
+    def _record_stats(self, db_name: str, pool_status: Dict[str, Any], utilization: float):
+        """记录连接池统计数据"""
+        with self._lock:
+            self._pool_stats[db_name] = {
+                'timestamp': time.time(),
+                'utilization': utilization,
+                'pool_status': pool_status
+            }
+    
+    async def _adjust_pool_size(self, db_name: str, manager: Any, pool_status: Dict[str, Any], utilization: float):
+        """调整连接池大小"""
+        if not pool_status.get('pool_available', False):
+            return
+        
+        current_size = pool_status.get('current_size', self._min_pool_size)
+        max_size = pool_status.get('max_size', self._max_pool_size)
+        
+        # 扩容逻辑
+        if utilization > self._scale_up_threshold and current_size < max_size:
+            new_size = min(current_size + self._scale_step, max_size)
+            log_config.info(f"连接池扩容: {db_name} 从 {current_size} 到 {new_size}, 使用率: {utilization:.2f}")
+            # 注意：Tortoise ORM的连接池大小通常在配置时固定，这里记录需要调整的信息
+            # 实际调整可能需要重启服务或使用其他方式
+        
+        # 缩容逻辑
+        elif utilization < self._scale_down_threshold and current_size > self._min_pool_size:
+            new_size = max(current_size - self._scale_step, self._min_pool_size)
+            log_config.info(f"连接池缩容: {db_name} 从 {current_size} 到 {new_size}, 使用率: {utilization:.2f}")
+            # 同样，实际调整可能需要重启服务
+    
+    def get_pool_stats(self) -> Dict[str, Any]:
+        """获取连接池统计数据"""
+        with self._lock:
+            return dict(self._pool_stats)
+
+
+# 全局智能连接池管理器实例
+smart_pool_manager = SmartConnectionPoolManager()
 
 
 def register_database(app):
@@ -64,7 +165,22 @@ async def check_db_connections():
             # 获取连接池状态
             pool_status = await manager.get_connection_pool_status()
             log_config.debug(f"连接池状态 - {db_name}: {pool_status}")
+        
+        # 运行智能连接池管理
+        await smart_pool_manager.monitor_and_adjust()
+        
         log_config.debug("数据库连接检查完成")
     except Exception as e:
         log_config.error(f"数据库连接检查异常: {e}")
+
+
+async def start_pool_monitoring():
+    """启动连接池监控任务"""
+    while True:
+        try:
+            await smart_pool_manager.monitor_and_adjust()
+        except Exception as e:
+            log_config.error(f"连接池监控任务异常: {e}")
+        # 每5分钟执行一次
+        await asyncio.sleep(300)
 
