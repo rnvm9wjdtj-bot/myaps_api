@@ -4,6 +4,7 @@
 提供监控相关的 API 端点
 """
 
+import time
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from typing import Dict, Any
@@ -170,3 +171,34 @@ async def get_recent_logs(limit: int = 50, level: str = None):
         日志列表
     """
     return {"logs": monitor_service.get_recent_logs(limit, level)}
+
+
+@router.get("/database/pool-leak-detection")
+async def get_pool_leak_detection():
+    """
+    获取数据库连接池泄漏检测信息
+
+    返回连接池使用情况和泄漏检测结果
+    """
+    from core.database import smart_pool_manager
+    
+    try:
+        leak_stats = smart_pool_manager._leak_detector.get_all_stats()
+        pool_stats = smart_pool_manager.get_pool_stats()
+        
+        return {
+            "timestamp": time.time(),
+            "leak_detection": leak_stats,
+            "pool_stats": pool_stats,
+            "summary": {
+                "total_databases": len(leak_stats),
+                "leaks_detected": sum(1 for stats in leak_stats.values() if stats.get('leak_detected', False)),
+                "warning_threshold": smart_pool_manager._leak_detector._warning_threshold,
+                "critical_threshold": smart_pool_manager._leak_detector._critical_threshold,
+            }
+        }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "message": "获取连接池泄漏检测信息失败"
+        }

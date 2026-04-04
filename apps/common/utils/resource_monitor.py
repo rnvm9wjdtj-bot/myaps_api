@@ -18,8 +18,8 @@ class ResourceMonitor:
         self._monitor_thread = None
         self._thresholds = {
             'cpu': 80.0,      # CPU使用率阈值（百分比）
-            'memory': 800.0,  # 内存使用阈值（MB）
-            'threads': 100    # 线程数阈值
+            'memory': 2048,  # 内存使用阈值（MB）
+            'threads': 200    # 线程数阈值
         }
         self._cleanup_interval = 300  # 资源清理间隔（秒）
         self._cleanup_thresholds = {

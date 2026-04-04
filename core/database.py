@@ -3,10 +3,101 @@ import threading
 import asyncio
 from collections import defaultdict
 from typing import Dict, Any, Optional
+from datetime import datetime, timedelta
 
 from tortoise.contrib.fastapi import register_tortoise
 from config.settings import TORTOISE_ORM_CONFIG, MYAPS_MAIN_DB, MYAPS_DBSET_LIST
 from globalobjects import logger as log_config
+
+
+class ConnectionLeakDetector:
+    """连接泄漏检测器"""
+    
+    def __init__(self, warning_threshold: int = 80, critical_threshold: int = 95):
+        """
+        初始化连接泄漏检测器
+        
+        Args:
+            warning_threshold: 使用率警告阈值（百分比）
+            critical_threshold: 使用率危险阈值（百分比）
+        """
+        self._warning_threshold = warning_threshold
+        self._critical_threshold = critical_threshold
+        self._connection_history = defaultdict(list)
+        self._lock = threading.RLock()
+        self._max_history_size = 100
+        
+    def record_connection_usage(self, db_name: str, pool_status: Dict[str, Any]):
+        """记录连接使用情况"""
+        with self._lock:
+            current_time = time.time()
+            
+            # 计算使用率
+            used = pool_status.get('used_connections', 0)
+            max_size = pool_status.get('max_size', 1)
+            utilization = (used / max_size * 100) if max_size > 0 else 0
+            
+            self._connection_history[db_name].append({
+                'timestamp': current_time,
+                'utilization': utilization,
+                'used': used,
+                'max_size': max_size
+            })
+            
+            # 限制历史记录大小
+            if len(self._connection_history[db_name]) > self._max_history_size:
+                self._connection_history[db_name] = self._connection_history[db_name][-self._max_history_size:]
+            
+            return utilization
+    
+    def detect_leak(self, db_name: str) -> Dict[str, Any]:
+        """检测连接泄漏"""
+        with self._lock:
+            history = self._connection_history.get(db_name, [])
+            
+            if len(history) < 10:  # 需要足够的历史数据
+                return {'leak_detected': False, 'reason': 'insufficient_data'}
+            
+            # 获取最近1分钟的数据
+            recent_time = time.time() - 60
+            recent_data = [h for h in history if h['timestamp'] >= recent_time]
+            
+            if len(recent_data) < 5:
+                return {'leak_detected': False, 'reason': 'no_recent_data'}
+            
+            # 计算平均使用率
+            avg_utilization = sum(h['utilization'] for h in recent_data) / len(recent_data)
+            max_utilization = max(h['utilization'] for h in recent_data)
+            
+            # 检测条件：
+            # 1. 平均使用率超过警告阈值
+            # 2. 使用率持续高位（超过80%的数据点超过警告阈值）
+            high_usage_count = sum(1 for h in recent_data if h['utilization'] > self._warning_threshold)
+            high_usage_ratio = high_usage_count / len(recent_data)
+            
+            leak_detected = (
+                avg_utilization > self._warning_threshold or 
+                (high_usage_ratio > 0.8 and max_utilization > self._critical_threshold)
+            )
+            
+            return {
+                'leak_detected': leak_detected,
+                'avg_utilization': avg_utilization,
+                'max_utilization': max_utilization,
+                'high_usage_ratio': high_usage_ratio,
+                'current_used': recent_data[-1]['used'] if recent_data else 0,
+                'current_max': recent_data[-1]['max_size'] if recent_data else 0,
+                'warning_threshold': self._warning_threshold,
+                'critical_threshold': self._critical_threshold
+            }
+    
+    def get_all_stats(self) -> Dict[str, Any]:
+        """获取所有数据库的统计信息"""
+        with self._lock:
+            stats = {}
+            for db_name in self._connection_history.keys():
+                stats[db_name] = self.detect_leak(db_name)
+            return stats
 
 
 class SmartConnectionPoolManager:
@@ -23,9 +114,10 @@ class SmartConnectionPoolManager:
         self._scale_up_threshold = 0.8  # 扩容阈值
         self._scale_down_threshold = 0.3  # 缩容阈值
         self._scale_step = 2  # 每次调整步长
+        self._leak_detector = ConnectionLeakDetector()
         
     async def monitor_and_adjust(self):
-        """监控并调整连接池大小"""
+        """监控并调整连接池大小，包含泄漏检测"""
         if not MYAPS_MAIN_DB:
             return
         
@@ -44,6 +136,25 @@ class SmartConnectionPoolManager:
                     
                     # 记录统计数据
                     self._record_stats(db_name, pool_status, utilization)
+                    
+                    # 记录连接使用历史（用于泄漏检测）
+                    current_utilization = self._leak_detector.record_connection_usage(db_name, pool_status)
+                    
+                    # 检测连接泄漏
+                    leak_info = self._leak_detector.detect_leak(db_name)
+                    if leak_info.get('leak_detected'):
+                        log_config.warning(
+                            f"⚠️ 检测到可能的连接泄漏: {db_name} - "
+                            f"平均使用率: {leak_info['avg_utilization']:.1f}%, "
+                            f"最大使用率: {leak_info['max_utilization']:.1f}%, "
+                            f"当前使用: {leak_info['current_used']}/{leak_info['current_max']}"
+                        )
+                        # 尝试刷新连接
+                        try:
+                            await manager.refresh_connection()
+                            log_config.info(f"✅ 已尝试刷新连接: {db_name}")
+                        except Exception as refresh_error:
+                            log_config.error(f"❌ 刷新连接失败: {db_name} - {refresh_error}")
                     
                     # 检查是否需要调整
                     time_since_last_adjust = current_time - self._last_adjust_time.get(db_name, 0)

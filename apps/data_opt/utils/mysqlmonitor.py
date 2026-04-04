@@ -435,6 +435,7 @@ class MySQLBinlogMonitor:
             return self._table_schemas[database][correct_table_name]
         
         # 尝试实时查询表结构
+        conn = None
         try:
             import pymysql
             conn_params = {
@@ -467,10 +468,20 @@ class MySQLBinlogMonitor:
                 except Exception as e:
                     logger.warning_msg("表结构获取", f"{database}.{correct_table_name}", str(e))
             
-            conn.close()
+            if conn:
+                try:
+                    conn.close()
+                except Exception as close_error:
+                    logger.debug(f"关闭数据库连接时出错: {close_error}")
                 
         except Exception as e:
             logger.warning_msg("数据库连接", database, str(e))
+            # 确保连接被关闭
+            if conn:
+                try:
+                    conn.close()
+                except:
+                    pass
         
         logger.warning_msg("表结构获取", f"{database}.{correct_table_name}", "无法获取列结构")
         return None

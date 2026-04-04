@@ -84,19 +84,21 @@ if not _events_registered:
     
     if MYAPS_MAIN_DB:
         @cron_task(hour="*", minute="*/10")
-        def check_db_health():
+        async def check_db_health():
             """
             定时检查数据库连接健康
             """
             try:
+                import httpx
                 # 调用get_meta路由函数检查账套状态，根据账套数量动态设置超时
                 timeout = 10 + len(MYAPS_DBSET_LIST) * 3  # 基础10秒 + 每个账套3秒
-                response = requests.get(f"{THIS_BASE_URL}/api/meta", timeout=timeout)
-                if response.status_code == 200:
-                    data = response.json()
-                    logger.success("定时检查数据库健康", f"全部账套: {MYAPS_DB_SET}", f"状态: {data['meta']['db_status']}")
-                else:
-                    logger.fail("定时检查数据库健康", f"全部账套: {MYAPS_DB_SET}", f"API调用失败，状态码: {response.status_code}")
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.get(f"{THIS_BASE_URL}/api/meta")
+                    if response.status_code == 200:
+                        data = response.json()
+                        logger.success("定时检查数据库健康", f"全部账套: {MYAPS_DB_SET}", f"状态: {data['meta']['db_status']}")
+                    else:
+                        logger.fail("定时检查数据库健康", f"全部账套: {MYAPS_DB_SET}", f"API调用失败，状态码: {response.status_code}")
             except Exception as e:
                 logger.fail("定时检查数据库健康", f"全部账套: {MYAPS_DB_SET}", f"检查失败: {str(e)}")
 else:
