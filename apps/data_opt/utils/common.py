@@ -17,8 +17,8 @@ logger = log_config.get_logger(__name__, level=LOG_LEVEL)
 def get_session(
     retries: int = 3,
     allowed_methods: list = ["HEAD", "GET", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"],
-    pool_connections: int = 10,
-    pool_maxsize: int = 10,
+    pool_connections: int = 50,
+    pool_maxsize: int = 50,
     connect_timeout: float = 15.0,
     read_timeout: float = 60.0,
     backoff_factor: float = 1.0,
@@ -69,8 +69,8 @@ def get_session(
 def get_optimized_session(
     retries: int = 3,
     allowed_methods: list = ["HEAD", "GET", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"],
-    pool_connections: int = 10,
-    pool_maxsize: int = 10,
+    pool_connections: int = 50,
+    pool_maxsize: int = 50,
     connect_timeout: float = 10.0,
     read_timeout: float = 30.0,
     enable_http2: bool = True,

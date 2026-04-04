@@ -12,6 +12,7 @@ import threading
 import time
 from collections import defaultdict
 from typing import Callable, Any, List, Dict, Set
+from concurrent.futures import ThreadPoolExecutor
 
 from globalobjects import logger as log_config
 
@@ -19,6 +20,12 @@ import os
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 
 logger = log_config.get_logger(__name__, level=LOG_LEVEL)
+
+# 全局线程池，用于处理事件批次
+# 根据系统CPU核心数设置线程池大小
+import multiprocessing
+CPU_COUNT = multiprocessing.cpu_count() or 4
+GLOBAL_THREAD_POOL = ThreadPoolExecutor(max_workers=CPU_COUNT * 2)
 
 
 
@@ -95,7 +102,11 @@ class EventAggregator:
             buffer_copy = dict(self._buffer)
             self._buffer.clear()
         
-        # 在锁外处理，避免阻塞
+        # 提交到全局线程池处理，实现批次间并行
+        GLOBAL_THREAD_POOL.submit(self._process_batch, buffer_copy)
+    
+    def _process_batch(self, buffer_copy):
+        """处理单个批次的事件"""
         try:
             for g_key, events_dict in buffer_copy.items():
                 events = list(events_dict.values())

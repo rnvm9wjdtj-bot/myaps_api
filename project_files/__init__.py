@@ -73,8 +73,17 @@ class ApsEvent:
         if self.batch_handle_func is not None:
             self.batch_handle_func(events_data_list)
         elif self.single_handle_func is not None:
-            for event_data in events_data_list:
-                self.single_handle_func(event_data)
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor() as executor:
+                # 定义一个包装函数，用于捕获单个事件处理的异常
+                def safe_handle(event_data):
+                    try:
+                        self.single_handle_func(event_data)
+                    except Exception as e:
+                        logger.fail(f"处理单个事件失败", "", str(e))
+                
+                # 并行处理所有事件
+                executor.map(safe_handle, events_data_list)
         else:
             log_msg = f"⚠️ {self.warning_msg}数据：\n{json.dumps(events_data_list, ensure_ascii=False)}"
             logger.debug(log_msg)

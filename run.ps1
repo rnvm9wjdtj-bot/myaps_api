@@ -98,18 +98,24 @@ function Clear-Port {
 
     $process = Get-PortProcess -PortNumber $PortNumber
     if ($process) {
-        Write-Host "[WARNING] Found process $($process.ProcessName) (PID: $($process.Id)) using port $PortNumber" -ForegroundColor Yellow
-        Write-Log "Found process $($process.Id) using port $PortNumber"
+        # Skip Idle process (PID 0) as it's a system process and cannot be killed
+        if ($process.Id -eq 0) {
+            Write-Host "[INFO] Found Idle process (PID: 0), skipping termination as it's a system process" -ForegroundColor Yellow
+            Write-Log "Found Idle process (PID: 0), skipping termination"
+        } else {
+            Write-Host "[WARNING] Found process $($process.ProcessName) (PID: $($process.Id)) using port $PortNumber" -ForegroundColor Yellow
+            Write-Log "Found process $($process.Id) using port $PortNumber"
 
-        Write-Host "Killing process $($process.Id)..."
-        try {
-            Stop-Process -Id $process.Id -Force -ErrorAction Stop
-            Write-Log "Killed process $($process.Id)"
-            Write-Host "[INFO] Process killed successfully" -ForegroundColor Green
-        }
-        catch {
-            Write-Host "[ERROR] Failed to kill process: $_" -ForegroundColor Red
-            Write-Log "Failed to kill process $($process.Id): $_"
+            Write-Host "Killing process $($process.Id)..."
+            try {
+                Stop-Process -Id $process.Id -Force -ErrorAction Stop
+                Write-Log "Killed process $($process.Id)"
+                Write-Host "[INFO] Process killed successfully" -ForegroundColor Green
+            }
+            catch {
+                Write-Host "[ERROR] Failed to kill process: $_" -ForegroundColor Red
+                Write-Log "Failed to kill process $($process.Id): $_"
+            }
         }
     }
 
@@ -118,9 +124,18 @@ function Clear-Port {
 
     # Verify port is available
     if (Test-PortInUse -PortNumber $PortNumber) {
-        Write-Host "[ERROR] Port $PortNumber is still in use!" -ForegroundColor Red
-        Write-Log "Port $PortNumber is still in use!"
-        return $false
+        # Check if it's still the Idle process
+        $process = Get-PortProcess -PortNumber $PortNumber
+        if ($process -and $process.Id -eq 0) {
+            # Idle process doesn't actually use the port, so consider it available
+            Write-Host "[INFO] Port $PortNumber is available for use (Idle process detected)" -ForegroundColor Green
+            Write-Log "Port $PortNumber is available (Idle process detected)"
+            return $true
+        } else {
+            Write-Host "[ERROR] Port $PortNumber is still in use!" -ForegroundColor Red
+            Write-Log "Port $PortNumber is still in use!"
+            return $false
+        }
     }
     else {
         Write-Host "[INFO] Port $PortNumber is available for use" -ForegroundColor Green
