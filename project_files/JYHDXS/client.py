@@ -164,14 +164,14 @@ def push_pr(period: int = 30, groupdates: List[str] | str = None):
         item["plant"] = "1000"
         item["bu_code"] = werks
         item["version"] = timestamp
-    CLIENT_LOGGER.start(f"推送要货计划到SRM：\n{pr_data}")
+    CLIENT_LOGGER.start(f"推送要货计划到SRM：{pr_data}")
     response = requests.post(
         url=f"{srm_url}/jbl/service/execute/SRM_RECEIVE_PUSHED_DEMAND_PLAN_SERVICE",
         headers=srm_headers, json={"demand_plan": pr_data})
     if response.json().get("body", {}).get("status", "").lower() == "success":
-        CLIENT_LOGGER.success(f"推送要货计划到SRM成功")
+        CLIENT_LOGGER.success(f"推送要货计划到SRM")
     else:
-        CLIENT_LOGGER.fail(f"推送要货计划到SRM失败：\n{response.json()}")
+        CLIENT_LOGGER.fail(f"推送要货计划到SRM", response.text)
 
 
 def push_weekpr_to_srm():

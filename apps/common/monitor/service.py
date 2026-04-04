@@ -194,22 +194,19 @@ class MonitorService:
         from datetime import datetime
         
         logs = []
-        log_dir = "d:\\code\\myaps_fastapi\\logs"
+        # 使用相对路径，从当前文件所在目录向上找到项目根目录
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        # 向上两级目录到项目根目录
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
+        log_dir = os.path.join(project_root, "logs")
         
         # 支持的日志文件
         log_files = {
-            "error": "error.log",
-            "warning": "app.log"
+            "app": "app.log"
         }
         
         # 确定要读取的文件
-        if level:
-            if level in log_files:
-                files_to_read = [(level, os.path.join(log_dir, log_files[level]))]
-            else:
-                return []
-        else:
-            files_to_read = [(lvl, os.path.join(log_dir, fname)) for lvl, fname in log_files.items()]
+        files_to_read = [("app", os.path.join(log_dir, fname)) for lvl, fname in log_files.items()]
         
         # 读取日志文件
         for log_level, file_path in files_to_read:
@@ -260,6 +257,11 @@ class MonitorService:
                         
                         # 统一日志级别格式
                         log_level_str = log_level_str.lower()
+                        
+                        # 根据级别过滤
+                        if level and log_level_str != level:
+                            continue
+                        
                         if log_level_str in ['error', 'warning']:
                             logs.append({
                                 "level": log_level_str,

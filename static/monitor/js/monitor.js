@@ -776,15 +776,59 @@ function updateLogsPageDisplay(logs) {
         const date = new Date(log.timestamp * 1000);
         const timeStr = `${date.getFullYear()}-${(date.getMonth()+1).toString().padStart(2,'0')}-${date.getDate().toString().padStart(2,'0')} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}:${date.getSeconds().toString().padStart(2,'0')}`;
         
+        // 确保 title 属性使用完整的消息内容
+        const fullMessage = log.message || '';
+        
         return `
             <tr>
                 <td>${timeStr}</td>
                 <td><span class="log-level-badge ${log.level}">${log.level.toUpperCase()}</span></td>
                 <td>${log.module}</td>
-                <td class="log-message-cell">${log.message}</td>
+                <td class="log-message-cell" title="${fullMessage}" data-full-message="${fullMessage}">${log.message}</td>
             </tr>
         `;
     }).join('');
+    
+    // 添加自定义悬停效果
+    setTimeout(() => {
+        const logCells = document.querySelectorAll('.log-message-cell');
+        logCells.forEach(cell => {
+            const fullMessage = cell.getAttribute('data-full-message');
+            if (fullMessage) {
+                // 移除默认的 title 行为
+                cell.removeAttribute('title');
+                
+                // 创建自定义悬停元素
+                const tooltip = document.createElement('div');
+                tooltip.className = 'custom-tooltip';
+                tooltip.textContent = fullMessage;
+                tooltip.style.position = 'absolute';
+                tooltip.style.backgroundColor = '#f0f0f0';
+                tooltip.style.color = '#333';
+                tooltip.style.padding = '8px 12px';
+                tooltip.style.borderRadius = '4px';
+                tooltip.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
+                tooltip.style.zIndex = '1000';
+                tooltip.style.maxWidth = '400px';
+                tooltip.style.wordBreak = 'break-word';
+                tooltip.style.display = 'none';
+                document.body.appendChild(tooltip);
+                
+                // 鼠标悬停事件
+                cell.addEventListener('mouseenter', (e) => {
+                    const rect = cell.getBoundingClientRect();
+                    tooltip.style.left = `${rect.left}px`;
+                    tooltip.style.top = `${rect.bottom + 10}px`;
+                    tooltip.style.display = 'block';
+                });
+                
+                // 鼠标离开事件
+                cell.addEventListener('mouseleave', () => {
+                    tooltip.style.display = 'none';
+                });
+            }
+        });
+    }, 100);
 }
 
 function refreshLogsPage() {
