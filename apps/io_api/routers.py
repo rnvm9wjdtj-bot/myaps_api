@@ -147,70 +147,107 @@ rt = APIRouter()
 
 @rt.get("/meta")
 async def get_meta():
-    import asyncio
-    import time
-    from globalobjects.db_manager import DbManager
-    
-    global _db_health_cache, _cache_timestamp
-    current_time = time.time()
-    
-    # 检查缓存是否有效
-    if current_time - _cache_timestamp < CACHE_DURATION and _db_health_cache:
-        logger.debug("使用缓存的健康检查结果")
+    """
+    获取元数据信息，包括数据库状态等
+    """
+    try:
+        import asyncio
+        import time
+        from globalobjects.db_manager import DbManager
+        
+        global _db_health_cache, _cache_timestamp
+        current_time = time.time()
+        
+        # 检查缓存是否有效
+        if current_time - _cache_timestamp < CACHE_DURATION and _db_health_cache:
+            logger.debug("使用缓存的健康检查结果")
+            return standard_response(
+                success=1,
+                message="获取元数据成功（缓存）",
+                meta=_db_health_cache,
+            )
+        
+        # 检查每个账套的可访问性（带超时处理）
+        async def check_single_db(db):
+            """检查单个数据库状态"""
+            try:
+                start_time = time.time()
+                db_manager = DbManager(db)
+                # 调整单个检查超时为3秒
+                is_healthy = await asyncio.wait_for(
+                    db_manager.check_connection_health(timeout=3), 
+                    timeout=3
+                )
+                response_time = time.time() - start_time
+                status = f"{'🟢' if is_healthy else '🔴'}{db}"
+                if response_time > 1.0:
+                    logger.warning(f"数据库检查响应缓慢: {db} - {response_time:.3f}秒")
+                return status
+            except asyncio.TimeoutError:
+                logger.warning(f"数据库检查超时: {db}")
+                return f"🔴{db} (超时)"
+            except Exception as e:
+                logger.error(f"数据库检查失败: {db} - {str(e)}")
+                return f"🔴{db} (错误)"
+        
+        # 分批检查，每批最多2个账套，减少并发压力
+        batch_size = 2
+        db_status = []
+        
+        for i in range(0, len(MYAPS_DBSET_LIST), batch_size):
+            batch_dbs = MYAPS_DBSET_LIST[i:i+batch_size]
+            try:
+                batch_results = await asyncio.gather(
+                    *(check_single_db(db) for db in batch_dbs),
+                    return_exceptions=True
+                )
+                # 处理异常结果
+                for j, result in enumerate(batch_results):
+                    if isinstance(result, Exception):
+                        db = batch_dbs[j]
+                        logger.error(f"批量检查异常: {db} - {str(result)}")
+                        db_status.append(f"🔴{db} (异常)")
+                    else:
+                        db_status.append(result)
+            except Exception as e:
+                logger.error(f"批量检查失败: {str(e)}")
+                # 为当前批次的所有数据库标记为错误
+                for db in batch_dbs:
+                    db_status.append(f"🔴{db} (批量检查失败)")
+        
+        # 更新缓存
+        _db_health_cache = {
+            "db_set": MYAPS_DBSET_LIST,
+            "dbs_str": MYAPS_DB_SET,
+            "main_db": MYAPS_MAIN_DB,
+            "db_status": db_status,
+            "timestamp": current_time,
+            "cache_duration": CACHE_DURATION
+        }
+        _cache_timestamp = current_time
+        
+        logger.debug("更新健康检查缓存")
         return standard_response(
             success=1,
-            message="获取元数据成功（缓存）",
+            message="获取元数据成功",
             meta=_db_health_cache,
         )
-    
-    # 检查每个账套的可访问性（带超时处理）
-    async def check_single_db(db):
-        try:
-            start_time = time.time()
-            db_manager = DbManager(db)
-            # 调整单个检查超时为3秒
-            is_healthy = await asyncio.wait_for(
-                db_manager.check_connection_health(timeout=3), 
-                timeout=3
+        
+    except Exception as e:
+            logger.error(f"获取元数据失败: {str(e)}")
+            # 即使出错也返回基本信息，确保接口不会崩溃
+            return standard_response(
+                success=0,
+                message=f"获取元数据失败: {str(e)}",
+                meta={
+                    "db_set": MYAPS_DBSET_LIST,
+                    "dbs_str": MYAPS_DB_SET,
+                    "main_db": MYAPS_MAIN_DB,
+                    "db_status": [f"🔴{db} (接口错误)" for db in MYAPS_DBSET_LIST],
+                    "timestamp": time.time(),
+                    "error": str(e)
+                }
             )
-            response_time = time.time() - start_time
-            status = f"{'🟢' if is_healthy else '🔴'}{db}"
-            if response_time > 1.0:
-                logger.warning(f"数据库检查响应缓慢: {db} - {response_time:.3f}秒")
-            return status
-        except asyncio.TimeoutError:
-            logger.warning(f"数据库检查超时: {db}")
-            return f"🔴{db} (超时)"
-        except Exception as e:
-            logger.error(f"数据库检查失败: {db} - {str(e)}")
-            return f"🔴{db} (错误)"
-    
-    # 分批检查，每批最多3个账套
-    batch_size = 3
-    db_status = []
-    
-    for i in range(0, len(MYAPS_DBSET_LIST), batch_size):
-        batch_dbs = MYAPS_DBSET_LIST[i:i+batch_size]
-        batch_results = await asyncio.gather(
-            *(check_single_db(db) for db in batch_dbs)
-        )
-        db_status.extend(batch_results)
-    
-    # 更新缓存
-    _db_health_cache = {
-        "db_set": MYAPS_DBSET_LIST,
-        "dbs_str": MYAPS_DB_SET,
-        "main_db": MYAPS_MAIN_DB,
-        "db_status": db_status,
-    }
-    _cache_timestamp = current_time
-    
-    logger.debug("更新健康检查缓存")
-    return standard_response(
-        success=1,
-        message="获取元数据成功",
-        meta=_db_health_cache,
-    )
     
 
 

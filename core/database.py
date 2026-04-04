@@ -226,6 +226,10 @@ def register_database(app):
         # generate_schemas=True,    # 生产环境不要开，若数据库为空则自动生成对应表单
         # add_exception_handlers=True,  # 生产环境不要开，会泄露调试信息
     )
+    
+    # 启动监控服务（使用现有的监控架构）
+    from apps.common.monitor.service import monitor_service
+    log_config.info("✅ 系统监控服务已集成")
 
 
 async def warmup_connections():

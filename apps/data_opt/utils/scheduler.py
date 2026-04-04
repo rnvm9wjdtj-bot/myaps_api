@@ -63,8 +63,8 @@ class SchedulerManager:
             }
             job_defaults = {
                 'coalesce': True,
-                'max_instances': 5,  # 增加最大实例数以避免任务被跳过
-                'misfire_grace_time': 120  # 增加错过执行的宽限期
+            'max_instances': 1,  # 限制为1个实例，避免并发问题
+            'misfire_grace_time': 60  # 减少宽限期
             }
             
             self.scheduler = BackgroundScheduler(
@@ -93,8 +93,17 @@ class SchedulerManager:
         if not self.scheduler:
             return
             
+        # 去重任务，避免重复注册
+        seen_tasks = set()
         for i, task_info in enumerate(task_registry.tasks):
             try:
+                # 创建唯一的任务标识
+                task_key = f"{task_info['module']}_{task_info['func_name']}"
+                if task_key in seen_tasks:
+                    logger.warning_msg("任务注册", task_key, "任务已存在，跳过重复注册")
+                    continue
+                seen_tasks.add(task_key)
+                
                 # 为每个任务创建唯一的ID
                 job_id = f"{task_info['module']}_{task_info['func_name']}_{i}"
                 

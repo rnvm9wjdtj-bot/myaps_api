@@ -147,7 +147,7 @@ class ResourceMonitor:
             
             # 2. 触发垃圾回收
             collected = gc.collect()
-            logger.debug(f"垃圾回收完成，回收对象数: {collected}")
+            logger.info(f"垃圾回收完成，回收对象数: {collected}")
             
             # 3. 检查并清理其他资源
             # 这里可以添加其他资源清理逻辑

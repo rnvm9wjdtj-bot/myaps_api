@@ -71,17 +71,17 @@ THIS_DB_NAME = os.getenv("THIS_DB_NAME") or json_env_config.get("THIS_DB_NAME")
 connections = {}
 # 为每个账套创建MySQL连接配置
 # 计算连接池大小：根据账套数量动态调整，避免连接总数过多
-# 总连接数 = 账套数 × maxsize，应控制在合理范围内（建议不超过100）
+# 总连接数 = 账套数 × maxsize，应控制在合理范围内（建议不超过150）
 import os
 cpu_count = os.cpu_count() or 4
 db_count = len(MYAPS_DBSET_LIST)
 
 # 动态计算连接池大小：
-# - 单账套：maxsize=20
-# - 多账套：根据账套数量递减，最小为10
-# - 确保总连接数不超过 100
-maxsize_per_db = min(20, max(10, 100 // max(db_count, 1)))
-minsize_per_db = min(5, maxsize_per_db // 2)
+# - 单账套：maxsize=30
+# - 多账套：根据账套数量递减，最小为15
+# - 确保总连接数不超过 150
+maxsize_per_db = min(30, max(15, 150 // max(db_count, 1)))
+minsize_per_db = min(10, maxsize_per_db // 2)
 
 logger.info(f"数据库连接池配置：{db_count}个账套，每个账套minsize={minsize_per_db}, maxsize={maxsize_per_db}")
 

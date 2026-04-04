@@ -4,7 +4,14 @@
 
 import os, importlib, json, requests
 from typing import NamedTuple
+from dotenv import load_dotenv
 
+# 加载环境变量
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+env_file = os.path.join(BASE_DIR, '.env')
+load_dotenv(env_file)
+
+# 导入模块
 from config.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET, MYAPS_DBSET_LIST
 from globalobjects.globalconst import OrderStatusEnum
 from apps.io_api.utils.common import dict_to_lower_keys
@@ -15,8 +22,13 @@ from apps.data_opt.utils.scheduler import cron_task
 logger = log_config.get_logger(__name__)
 
 
+# 确保环境变量正确设置
 project_dir = os.getenv("PROJECT_DIR")
+if not project_dir:
+    raise ValueError("PROJECT_DIR环境变量未设置")
+
 project_client = importlib.import_module(f'project_files.{project_dir}.client')
+
 
 
 try:
