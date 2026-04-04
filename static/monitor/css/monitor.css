@@ -865,4 +865,83 @@ body {
     .db-detail-grid {
         grid-template-columns: 1fr;
     }
+
+    .scheduler-detail-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* 定时任务详细信息网格 */
+.scheduler-detail-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+}
+
+.scheduler-detail-item {
+    background: var(--bg-color);
+    padding: 16px;
+    border-radius: 8px;
+    border-left: 4px solid var(--primary-color);
+}
+
+.scheduler-detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.scheduler-detail-name {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.scheduler-detail-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.scheduler-detail-info {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.scheduler-detail-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+}
+
+.scheduler-detail-label {
+    color: var(--text-secondary);
+}
+
+.scheduler-detail-value {
+    font-weight: 500;
+}
+
+.scheduler-detail-section {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+}
+
+.scheduler-detail-section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+/* 系统任务样式 */
+.scheduler-detail-item.system-task {
+    border-left-color: var(--success-color);
+    background: #f6ffed;
+}
+
+.scheduler-detail-item.system-task .scheduler-detail-name {
+    font-weight: 700;
 }

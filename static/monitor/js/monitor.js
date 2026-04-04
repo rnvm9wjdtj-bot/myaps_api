@@ -559,6 +559,8 @@ function switchPage(pageName) {
         fetchDatabaseDetail();
     } else if (pageName === 'api-requests') {
         fetchAPIRequests();
+    } else if (pageName === 'scheduler') {
+        fetchSchedulerPage();
     } else if (pageName === 'logs') {
         fetchLogsPage();
     }
@@ -787,4 +789,99 @@ function updateLogsPageDisplay(logs) {
 
 function refreshLogsPage() {
     fetchLogsPage();
+}
+
+// 定时任务详情页面
+async function fetchSchedulerPage() {
+    try {
+        const response = await fetch(`${API_BASE}/scheduler`);
+        const data = await response.json();
+        updateSchedulerDetailDisplay(data);
+    } catch (error) {
+        console.error('获取定时任务详情失败:', error);
+    }
+}
+
+function updateSchedulerDetailDisplay(data) {
+    const gridEl = document.getElementById('scheduler-detail-grid');
+    const scheduler = data.scheduler || {};
+    let jobs = data.jobs || [];
+    
+    // 更新徽章
+    const badge = document.getElementById('scheduler-detail-badge');
+    if (scheduler.running) {
+        badge.textContent = '运行中';
+        badge.className = 'badge healthy';
+    } else {
+        badge.textContent = '已停止';
+        badge.className = 'badge warning';
+    }
+    
+    if (jobs.length === 0) {
+        gridEl.innerHTML = '<div class="empty-state">暂无定时任务</div>';
+        return;
+    }
+    
+    // 将系统级任务置顶显示
+    // 系统级任务：project_files.check_db_health
+    jobs.sort((a, b) => {
+        const aIsSystem = (a.name || a.id).includes('project_files.check_db_health');
+        const bIsSystem = (b.name || b.id).includes('project_files.check_db_health');
+        if (aIsSystem && !bIsSystem) return -1;
+        if (!aIsSystem && bIsSystem) return 1;
+        return 0;
+    });
+    
+    gridEl.innerHTML = jobs.map(job => {
+        const lastRunTime = job.last_run_time ? formatDateTime(job.last_run_time) : '从未执行';
+        const nextRunTime = job.next_run_time ? formatDateTime(job.next_run_time) : '未计划';
+        const maxExecutionTime = job.max_execution_time ? `${job.max_execution_time.toFixed(2)} 秒` : '默认';
+        const isSystemTask = (job.name || job.id).includes('project_files.check_db_health');
+        
+        return `
+        <div class="scheduler-detail-item ${isSystemTask ? 'system-task' : ''}">
+            <div class="scheduler-detail-header">
+                <span class="scheduler-detail-name">${job.name || job.id}</span>
+                <span class="scheduler-detail-status">
+                    <span class="status-dot healthy"></span>
+                    ${isSystemTask ? '系统任务' : '已注册'}
+                </span>
+            </div>
+            <div class="scheduler-detail-info">
+                <div class="scheduler-detail-row">
+                    <span class="scheduler-detail-label">触发器</span>
+                    <span class="scheduler-detail-value">${job.trigger || '未知'}</span>
+                </div>
+                <div class="scheduler-detail-row">
+                    <span class="scheduler-detail-label">上次执行</span>
+                    <span class="scheduler-detail-value">${lastRunTime}</span>
+                </div>
+                <div class="scheduler-detail-row">
+                    <span class="scheduler-detail-label">下次执行</span>
+                    <span class="scheduler-detail-value">${nextRunTime}</span>
+                </div>
+                <div class="scheduler-detail-row">
+                    <span class="scheduler-detail-label">最大执行时间</span>
+                    <span class="scheduler-detail-value">${maxExecutionTime}</span>
+                </div>
+                ${job.execution_time ? `
+                <div class="scheduler-detail-row">
+                    <span class="scheduler-detail-label">平均执行时间</span>
+                    <span class="scheduler-detail-value">${(job.execution_time * 1000).toFixed(0)} ms</span>
+                </div>
+                ` : ''}
+                ${job.last_error ? `
+                <div class="scheduler-detail-row">
+                    <span class="scheduler-detail-label">最后错误</span>
+                    <span class="scheduler-detail-value" style="color: var(--error-color)">${job.last_error}</span>
+                </div>
+                ` : ''}
+            </div>
+        </div>
+        `;
+    }).join('');
+}
+
+function refreshSchedulerPage() {
+    fetchSchedulerPage();
 }

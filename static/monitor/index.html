@@ -14,6 +14,7 @@
                 <a href="#" class="nav-item active" data-page="overview">Overview</a>
                 <a href="#" class="nav-item" data-page="database">数据库</a>
                 <a href="#" class="nav-item" data-page="api-requests">API请求</a>
+                <a href="#" class="nav-item" data-page="scheduler">定时任务</a>
                 <a href="#" class="nav-item" data-page="logs">日志</a>
             </nav>
             <div class="header-info">
@@ -222,6 +223,22 @@
                             <tbody id="api-requests-tbody">
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- 定时任务页面 -->
+        <main class="main-content page-content" id="page-scheduler" style="display: none;">
+            <section class="card full-width">
+                <div class="card-header">
+                    <h2>定时任务详情</h2>
+                    <span class="badge" id="scheduler-detail-badge">检查中</span>
+                    <button class="btn btn-small" onclick="refreshSchedulerPage()">刷新</button>
+                </div>
+                <div class="card-body">
+                    <div class="scheduler-detail-grid" id="scheduler-detail-grid">
+                        <!-- 动态生成定时任务详细信息 -->
                     </div>
                 </div>
             </section>

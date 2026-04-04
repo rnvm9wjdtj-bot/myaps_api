@@ -124,20 +124,55 @@ class SchedulerManager:
             except Exception as e:
                 logger.fail("定时任务添加", task_info['func_name'], str(e))
     
+    def _get_max_execution_time(self, task_name: str) -> float:
+        """获取任务的最大执行时间（基于下一次执行时间）"""
+        if not self.scheduler:
+            return 300  # 默认5分钟
+        
+        # 查找对应的任务
+        for job in self.scheduler.get_jobs():
+            if job.name == task_name:
+                next_run = job.next_run_time
+                if next_run:
+                    import datetime
+                    current_time = datetime.datetime.now(job.next_run_time.tzinfo)
+                    time_diff = next_run - current_time
+                    # 转换为秒，确保至少有30秒的执行时间，最多不超过1小时
+                    max_time = max(time_diff.total_seconds() - 10, 30)
+                    max_time = min(max_time, 3600)  # 最多1小时
+                    logger.debug(f"任务 {task_name} 的最大执行时间: {max_time:.2f} 秒")
+                    return max_time
+        
+        # 默认最大执行时间：5分钟
+        return 300
+
     def _create_safe_function(self, func: Callable) -> Callable:
-        """创建安全的任务执行函数（包含异常处理）"""
+        """创建安全的任务执行函数（包含异常处理、执行时间监控和超时控制）"""
         # 检查函数是否为异步函数
         is_async = inspect.iscoroutinefunction(func)
         if is_async:
             @wraps(func)
             async def async_wrapper():
+                import time
+                start_time = time.time()
+                task_name = f"{func.__module__}.{func.__name__}"
+                logger.start(f"异步任务 {task_name}")
                 try:
-                    logger.start(f"异步任务 {func.__module__}.{func.__name__}")
-                    result = await func()
-                    logger.success("异步任务执行", f"{func.__module__}.{func.__name__}", "")
+                    # 获取任务的最大执行时间
+                    max_execution_time = self._get_max_execution_time(task_name)
+                    # 设置超时执行
+                    import asyncio
+                    result = await asyncio.wait_for(func(), timeout=max_execution_time)
+                    execution_time = time.time() - start_time
+                    logger.success("异步任务执行", task_name, f"耗时: {execution_time:.2f} 秒")
                     return result
+                except asyncio.TimeoutError:
+                    execution_time = time.time() - start_time
+                    logger.warning_msg("异步任务执行", task_name, f"执行超时，已强制中止，耗时: {execution_time:.2f} 秒")
+                    return None
                 except Exception as e:
-                    logger.fail("异步任务执行", f"{func.__module__}.{func.__name__}", str(e))
+                    execution_time = time.time() - start_time
+                    logger.fail("异步任务执行", task_name, f"耗时: {execution_time:.2f} 秒, 错误: {str(e)}")
                     return None
             # 为异步函数创建同步包装器
             @wraps(func)
@@ -174,13 +209,30 @@ class SchedulerManager:
             # 原有的同步函数处理逻辑
             @wraps(func)
             def wrapper():
+                import time
+                start_time = time.time()
+                task_name = f"{func.__module__}.{func.__name__}"
+                logger.start(f"任务 {task_name}")
                 try:
-                    logger.start(f"任务 {func.__module__}.{func.__name__}")
-                    result = func()
-                    logger.success("任务执行", f"{func.__module__}.{func.__name__}", "")
-                    return result
+                    # 获取任务的最大执行时间
+                    max_execution_time = self._get_max_execution_time(task_name)
+                    # 设置超时执行
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                        future = executor.submit(func)
+                        try:
+                            result = future.result(timeout=max_execution_time)
+                            execution_time = time.time() - start_time
+                            logger.success("任务执行", task_name, f"耗时: {execution_time:.2f} 秒")
+                            return result
+                        except concurrent.futures.TimeoutError:
+                            execution_time = time.time() - start_time
+                            logger.warning_msg("任务执行", task_name, f"执行超时，已强制中止，耗时: {execution_time:.2f} 秒")
+                            future.cancel()
+                            return None
                 except Exception as e:
-                    logger.fail("任务执行", f"{func.__module__}.{func.__name__}", str(e))
+                    execution_time = time.time() - start_time
+                    logger.fail("任务执行", task_name, f"耗时: {execution_time:.2f} 秒, 错误: {str(e)}")
                     return None
             return wrapper
 
