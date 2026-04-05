@@ -1128,6 +1128,25 @@ body {
     word-break: break-all;
 }
 
+.api-detail-body code {
+    font-family: monospace;
+    font-size: 12px;
+}
+
+/* 调整 Prism.js 样式 */
+pre[class*="language-"] {
+    margin: 0;
+    background: transparent;
+    border: none;
+    padding: 0;
+    overflow: visible;
+}
+
+code[class*="language-"] {
+    background: transparent;
+    padding: 0;
+}
+
 .api-detail-body:empty {
     display: none;
 }

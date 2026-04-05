@@ -899,7 +899,8 @@ function showRequestDetail(index) {
         try {
             // 尝试格式化 JSON
             const parsedBody = JSON.parse(req.request_body);
-            requestBodyEl.textContent = JSON.stringify(parsedBody, null, 2);
+            const formattedBody = JSON.stringify(parsedBody, null, 2);
+            requestBodyEl.textContent = formattedBody;
         } catch (e) {
             // 如果不是 JSON，直接显示
             requestBodyEl.textContent = req.request_body;
@@ -913,7 +914,8 @@ function showRequestDetail(index) {
         try {
             // 尝试格式化 JSON
             const parsedBody = JSON.parse(req.response_body);
-            responseBodyEl.textContent = JSON.stringify(parsedBody, null, 2);
+            const formattedBody = JSON.stringify(parsedBody, null, 2);
+            responseBodyEl.textContent = formattedBody;
         } catch (e) {
             // 如果不是 JSON，直接显示
             responseBodyEl.textContent = req.response_body;
@@ -921,6 +923,13 @@ function showRequestDetail(index) {
     } else {
         responseBodyEl.textContent = '无响应体';
     }
+    
+    // 应用代码高亮
+    setTimeout(() => {
+        if (typeof Prism !== 'undefined') {
+            Prism.highlightAll();
+        }
+    }, 0);
     
 
     

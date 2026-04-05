@@ -5,7 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MyAPI 系统监控面板</title>
     <link rel="stylesheet" href="/static/monitor/css/monitor.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="/static/monitor/lib/prism.min.css">
+    <script src="/static/monitor/lib/chart.min.js"></script>
+    <script src="/static/monitor/lib/prism.min.js"></script>
+    <script src="/static/monitor/lib/prism-json.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -241,11 +244,11 @@
                                     <div class="api-detail-bodies">
                                         <div class="api-detail-section">
                                             <h4>请求体</h4>
-                                            <pre class="api-detail-body" id="api-detail-request-body"></pre>
-                                        </div>
-                                        <div class="api-detail-section">
-                                            <h4>响应体</h4>
-                                            <pre class="api-detail-body" id="api-detail-response-body"></pre>
+                                        <pre class="api-detail-body"><code class="language-json" id="api-detail-request-body"></code></pre>
+                                    </div>
+                                    <div class="api-detail-section">
+                                        <h4>响应体</h4>
+                                        <pre class="api-detail-body"><code class="language-json" id="api-detail-response-body"></code></pre>
                                         </div>
                                     </div>
                                 </div>
