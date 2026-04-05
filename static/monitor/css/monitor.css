@@ -1042,8 +1042,9 @@ body {
 
 .api-detail-info {
     display: flex;
+    justify-content: space-between;
     flex-wrap: wrap;
-    gap: 16px;
+    gap: 12px;
     background: white;
     padding: 12px;
     border-radius: 6px;
@@ -1055,7 +1056,9 @@ body {
     display: flex;
     flex-direction: column;
     gap: 2px;
-    min-width: 120px;
+    flex: 1;
+    min-width: 100px;
+    text-align: center;
 }
 
 /* 并排显示请求体和响应体 */
@@ -1063,6 +1066,24 @@ body {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 16px;
+    flex: 1;
+    min-height: 400px;
+}
+
+/* 确保内容区域能够充分利用空间 */
+.api-detail-content {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    flex: 1;
+    min-height: 0;
+}
+
+.api-detail-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    /* flex: 1; */
 }
 
 /* 响应式调整 */
@@ -1100,7 +1121,8 @@ body {
     font-family: monospace;
     font-size: 12px;
     line-height: 1.5;
-    max-height: 300px;
+    min-height: 300px;
+    flex: 1;
     overflow: auto;
     white-space: pre-wrap;
     word-break: break-all;
@@ -1212,6 +1234,8 @@ body {
     padding: 20px;
     overflow-y: auto;
     flex: 1;
+    display: flex;
+    flex-direction: column;
 }
 
 /* 响应式调整 */

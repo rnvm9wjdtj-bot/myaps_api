@@ -809,7 +809,10 @@ class DatePrefixRotatingFileHandler(TimedRotatingFileHandler):
                         self.doRollover()
                 finally:
                     self._rollover_lock.release()
-        super().emit(record)
+        # 直接写入，不调用父类的emit以避免父类的doRollover被调用
+        if self.stream is None:
+            self.stream = self._open()
+        logging.handlers.BaseRotatingHandler.emit(self, record)
     
     def doRollover(self):
         """

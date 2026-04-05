@@ -95,14 +95,38 @@ class SchedulerManager:
             
         # 去重任务，避免重复注册
         seen_tasks = set()
+        seen_task_signatures = set()
         for i, task_info in enumerate(task_registry.tasks):
             try:
                 # 创建唯一的任务标识
                 task_key = f"{task_info['module']}_{task_info['func_name']}"
+                
+                # 创建任务签名，包含函数名和执行时间参数，用于检测功能重复的任务
+                # 对于cron任务，使用trigger_args的关键参数作为签名的一部分
+                if task_info['trigger'] == 'cron':
+                    # 提取cron任务的关键参数
+                    cron_args = []
+                    for key in ['second', 'minute', 'hour', 'day', 'month', 'day_of_week']:
+                        if key in task_info['trigger_args']:
+                            cron_args.append(f"{key}={task_info['trigger_args'][key]}")
+                    cron_args.sort()  # 确保参数顺序一致
+                    task_signature = f"{task_info['func_name']}_cron_{'_'.join(cron_args)}"
+                else:
+                    # 对于其他类型的任务，使用函数名和触发器类型
+                    task_signature = f"{task_info['func_name']}_{task_info['trigger']}"
+                
+                # 检查任务是否已存在
                 if task_key in seen_tasks:
                     logger.warning_msg("任务注册", task_key, "任务已存在，跳过重复注册")
                     continue
+                
+                # 检查是否存在功能重复的任务（相同函数名和执行时间）
+                if task_signature in seen_task_signatures:
+                    logger.warning_msg("任务注册", task_key, "存在功能重复的任务，跳过注册")
+                    continue
+                
                 seen_tasks.add(task_key)
+                seen_task_signatures.add(task_signature)
                 
                 # 为每个任务创建唯一的ID
                 job_id = f"{task_info['module']}_{task_info['func_name']}_{i}"

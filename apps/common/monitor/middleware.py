@@ -210,7 +210,11 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
                 async for chunk in response.body_iterator:
                     body += chunk
                 
-                response.body_iterator = iter([body])
+                # 创建异步迭代器
+                async def async_body_iterator():
+                    yield body
+                
+                response.body_iterator = async_body_iterator()
                 
                 if body:
                     try:
@@ -258,7 +262,11 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
             async for chunk in response.body_iterator:
                 body += chunk
             
-            response.body_iterator = iter([body])
+            # 创建异步迭代器
+            async def async_body_iterator():
+                yield body
+            
+            response.body_iterator = async_body_iterator()
             
             if body:
                 try:

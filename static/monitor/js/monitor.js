@@ -30,7 +30,12 @@ async function refreshAll() {
         fetchScheduler(),
         fetchHTTP(),
         fetchAlerts(),
-        fetchLogs()
+        fetchLogs(),
+        // 刷新各个页面的数据
+        fetchAPIRequests(),
+        fetchDatabaseDetail(),
+        fetchSchedulerPage(),
+        fetchLogsPage()
     ]);
     updateLastUpdateTime();
 }
