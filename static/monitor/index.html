@@ -224,6 +224,34 @@
                             </tbody>
                         </table>
                     </div>
+                    <!-- API请求详情模态对话框 -->
+                    <div class="modal" id="api-request-modal" style="display: none;">
+                        <div class="modal-overlay" onclick="hideRequestDetail()"></div>
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h3>请求详情</h3>
+                                <button class="btn btn-small close-btn" onclick="hideRequestDetail()">×</button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="api-detail-content">
+                                    <div class="api-detail-section">
+                                        <h4>请求信息</h4>
+                                        <div class="api-detail-info" id="api-detail-request-info"></div>
+                                    </div>
+                                    <div class="api-detail-bodies">
+                                        <div class="api-detail-section">
+                                            <h4>请求体</h4>
+                                            <pre class="api-detail-body" id="api-detail-request-body"></pre>
+                                        </div>
+                                        <div class="api-detail-section">
+                                            <h4>响应体</h4>
+                                            <pre class="api-detail-body" id="api-detail-response-body"></pre>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
         </main>

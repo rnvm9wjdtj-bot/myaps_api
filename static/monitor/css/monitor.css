@@ -996,3 +996,232 @@ body {
 .scheduler-detail-item.system-task .scheduler-detail-name {
     font-weight: 700;
 }
+
+/* API请求详情样式 */
+.api-request-detail {
+    margin-top: 20px;
+    padding: 16px;
+    background: var(--bg-color);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.api-detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.api-detail-header h3 {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.api-detail-content {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.api-detail-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.api-detail-section h4 {
+    font-size: 13px;
+    font-weight: 600;
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.api-detail-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    background: white;
+    padding: 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    align-items: center;
+}
+
+.api-detail-info-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 120px;
+}
+
+/* 并排显示请求体和响应体 */
+.api-detail-bodies {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+/* 响应式调整 */
+@media (max-width: 1024px) {
+    .api-detail-bodies {
+        grid-template-columns: 1fr;
+    }
+    
+    .api-detail-info {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .api-detail-info-item {
+        min-width: auto;
+    }
+}
+
+.api-detail-info-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.api-detail-info-value {
+    font-size: 13px;
+    font-weight: 500;
+    word-break: break-all;
+}
+
+.api-detail-body {
+    background: white;
+    padding: 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    max-height: 300px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.api-detail-body:empty {
+    display: none;
+}
+
+.api-detail-body:empty::before {
+    content: '无数据';
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+    .api-detail-info {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* 表格行悬停效果增强 */
+.api-requests-table tbody tr {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.api-requests-table tbody tr:hover {
+    background: #f0f7ff !important;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* 模态对话框样式 */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(2px);
+}
+
+.modal-content {
+    position: relative;
+    background: var(--card-bg);
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    width: 95%;
+    max-width: 1400px;
+    height: 80vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    z-index: 1001;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-color);
+}
+
+.modal-header h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.modal-header .close-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: all 0.3s;
+}
+
+.modal-header .close-btn:hover {
+    background: var(--border-color);
+    color: var(--text-primary);
+}
+
+.modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+    .modal-content {
+        width: 95%;
+        max-height: 90vh;
+    }
+    
+    .modal-body {
+        padding: 16px;
+    }
+}

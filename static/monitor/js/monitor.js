@@ -714,7 +714,7 @@ function updateAPIRequestsDisplay(data) {
         return;
     }
     
-    tbodyEl.innerHTML = requests.map(req => {
+    tbodyEl.innerHTML = requests.map((req, index) => {
         const date = new Date(req.timestamp * 1000);
         const timeStr = `${date.getFullYear()}-${(date.getMonth()+1).toString().padStart(2,'0')}-${date.getDate().toString().padStart(2,'0')} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}:${date.getSeconds().toString().padStart(2,'0')}`;
         
@@ -723,8 +723,12 @@ function updateAPIRequestsDisplay(data) {
         const statusClass = isSuccess ? 'success' : 'error';
         const errorMsg = req.error_message || '';
         
+        // 转义特殊字符，防止HTML属性值被截断
+        const escapedPath = req.path.replace(/"/g, '&quot;');
+        const escapedErrorMsg = errorMsg.replace(/"/g, '&quot;');
+        
         return `
-            <tr>
+            <tr onclick="showRequestDetail(${index})" data-request-index="${index}">
                 <td>${timeStr}</td>
                 <td><span class="api-method ${methodClass}">${req.method}</span></td>
                 <td style="font-family: monospace; font-size: 12px;">${req.path}</td>
@@ -732,10 +736,109 @@ function updateAPIRequestsDisplay(data) {
                 <td>${(req.duration * 1000).toFixed(0)}ms</td>
                 <td>${req.client_ip}</td>
                 <td><span class="api-result ${statusClass}">${isSuccess ? '✓ 成功' : '✗ 失败'}</span></td>
-                <td class="error-message-cell" title="${errorMsg}">${errorMsg}</td>
+                <td class="error-message-cell" title="${escapedErrorMsg}">${errorMsg}</td>
             </tr>
         `;
     }).join('');
+    
+    // 存储请求数据，以便点击时使用
+    window.apiRequestsData = data;
+}
+
+// 显示请求详情
+function showRequestDetail(index) {
+    const data = window.apiRequestsData;
+    if (!data || !data.recent_requests || !data.recent_requests[index]) {
+        console.error('请求数据不存在');
+        return;
+    }
+    
+    const req = data.recent_requests[index];
+    const modalEl = document.getElementById('api-request-modal');
+    const requestInfoEl = document.getElementById('api-detail-request-info');
+    const requestBodyEl = document.getElementById('api-detail-request-body');
+    const responseBodyEl = document.getElementById('api-detail-response-body');
+    
+    // 格式化时间
+    const date = new Date(req.timestamp * 1000);
+    const timeStr = `${date.getFullYear()}-${(date.getMonth()+1).toString().padStart(2,'0')}-${date.getDate().toString().padStart(2,'0')} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}:${date.getSeconds().toString().padStart(2,'0')}`;
+    
+    // 更新请求信息
+    requestInfoEl.innerHTML = `
+        <div class="api-detail-info-item">
+            <span class="api-detail-info-label">时间戳</span>
+            <span class="api-detail-info-value">${timeStr}</span>
+        </div>
+        <div class="api-detail-info-item">
+            <span class="api-detail-info-label">方法</span>
+            <span class="api-detail-info-value">${req.method}</span>
+        </div>
+        <div class="api-detail-info-item">
+            <span class="api-detail-info-label">路径</span>
+            <span class="api-detail-info-value">${req.path}</span>
+        </div>
+        <div class="api-detail-info-item">
+            <span class="api-detail-info-label">状态码</span>
+            <span class="api-detail-info-value">${req.status_code}</span>
+        </div>
+        <div class="api-detail-info-item">
+            <span class="api-detail-info-label">响应时间</span>
+            <span class="api-detail-info-value">${(req.duration * 1000).toFixed(0)}ms</span>
+        </div>
+        <div class="api-detail-info-item">
+            <span class="api-detail-info-label">客户端IP</span>
+            <span class="api-detail-info-value">${req.client_ip}</span>
+        </div>
+        ${req.error_message ? `
+        <div class="api-detail-info-item">
+            <span class="api-detail-info-label">错误信息</span>
+            <span class="api-detail-info-value" style="color: var(--error-color)">${req.error_message}</span>
+        </div>
+        ` : ''}
+    `;
+    
+    // 更新请求体
+    if (req.request_body) {
+        try {
+            // 尝试格式化 JSON
+            const parsedBody = JSON.parse(req.request_body);
+            requestBodyEl.textContent = JSON.stringify(parsedBody, null, 2);
+        } catch (e) {
+            // 如果不是 JSON，直接显示
+            requestBodyEl.textContent = req.request_body;
+        }
+    } else {
+        requestBodyEl.textContent = '无请求体';
+    }
+    
+    // 更新响应体
+    if (req.response_body) {
+        try {
+            // 尝试格式化 JSON
+            const parsedBody = JSON.parse(req.response_body);
+            responseBodyEl.textContent = JSON.stringify(parsedBody, null, 2);
+        } catch (e) {
+            // 如果不是 JSON，直接显示
+            responseBodyEl.textContent = req.response_body;
+        }
+    } else {
+        responseBodyEl.textContent = '无响应体';
+    }
+    
+    // 显示模态对话框
+    modalEl.style.display = 'flex';
+    
+    // 阻止背景滚动
+    document.body.style.overflow = 'hidden';
+}
+
+// 隐藏请求详情
+function hideRequestDetail() {
+    const modalEl = document.getElementById('api-request-modal');
+    modalEl.style.display = 'none';
+    
+    // 恢复背景滚动
+    document.body.style.overflow = '';
 }
 
 function refreshAPIRequests() {

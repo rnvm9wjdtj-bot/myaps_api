@@ -45,6 +45,8 @@ class HTTPMetricsCollector:
         duration: float,
         client_ip: str,
         error_message: str = None,
+        request_body: str = None,
+        response_body: str = None,
     ):
         """记录请求信息"""
         async with self._lock:
@@ -58,6 +60,8 @@ class HTTPMetricsCollector:
                 "is_error": status_code >= 400,
                 "is_slow": duration >= self._slow_threshold,
                 "error_message": error_message,
+                "request_body": request_body,
+                "response_body": response_body,
             }
 
             self._requests.append(request_info)
@@ -176,10 +180,50 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
 
         start_time = time.time()
         error_message = None
+        request_body = None
+        response_body = None
+
+        # 读取请求体
+        try:
+            if request.method in ["POST", "PUT", "PATCH", "DELETE"]:
+                body = await request.body()
+                if body:
+                    try:
+                        import json
+                        # 限制请求体大小，避免内存占用过大
+                        if len(body) < 1024 * 1024:  # 1MB
+                            request_body = body.decode('utf-8')
+                        else:
+                            request_body = f"[请求体过大，已截断，大小: {len(body)} bytes]"
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        request_body = "[请求体不是有效的 JSON]"
+        except Exception as e:
+            logger.debug(f"读取请求体失败: {e}")
 
         try:
             response = await call_next(request)
             status_code = response.status_code
+
+            # 读取响应体
+            try:
+                body = b""
+                async for chunk in response.body_iterator:
+                    body += chunk
+                
+                response.body_iterator = iter([body])
+                
+                if body:
+                    try:
+                        import json
+                        # 限制响应体大小，避免内存占用过大
+                        if len(body) < 1024 * 1024:  # 1MB
+                            response_body = body.decode('utf-8')
+                        else:
+                            response_body = f"[响应体过大，已截断，大小: {len(body)} bytes]"
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        response_body = "[响应体不是有效的 JSON]"
+            except Exception as e:
+                logger.debug(f"读取响应体失败: {e}")
 
             if status_code >= 400:
                 error_message = await self._extract_error_message(response)
@@ -200,6 +244,8 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
                     duration=duration,
                     client_ip=client_ip,
                     error_message=error_message,
+                    request_body=request_body,
+                    response_body=response_body,
                 )
             )
 
