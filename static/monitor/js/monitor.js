@@ -712,7 +712,10 @@ async function fetchAPIRequests() {
 
 function updateAPIRequestsDisplay(data) {
     const tbodyEl = document.getElementById('api-requests-tbody');
-    const requests = data.recent_requests || [];
+    let requests = data.recent_requests || [];
+    
+    // 根据时间戳倒序排序
+    requests.sort((a, b) => b.timestamp - a.timestamp);
     
     if (requests.length === 0) {
         tbodyEl.innerHTML = '<tr><td colspan="8" class="empty-state">暂无 API 请求记录</td></tr>';
@@ -732,15 +735,62 @@ function updateAPIRequestsDisplay(data) {
         const escapedPath = req.path.replace(/"/g, '&quot;');
         const escapedErrorMsg = errorMsg.replace(/"/g, '&quot;');
         
+        // 根据响应时间设置样式
+        const durationMs = req.duration * 1000;
+        let durationClass = '';
+        if (durationMs > 1000) {
+            durationClass = 'duration-slow';
+        } else if (durationMs > 500) {
+            durationClass = 'duration-medium';
+        }
+        
+        // 处理查询参数显示
+        let queryParamsDisplay = '';
+        if (req.query_params) {
+            try {
+                const parsedParams = JSON.parse(req.query_params);
+                if (Object.keys(parsedParams).length > 0) {
+                    queryParamsDisplay = Object.entries(parsedParams)
+                        .map(([key, value]) => `${key}=${value}`)
+                        .join('&');
+                }
+            } catch (e) {
+                queryParamsDisplay = req.query_params;
+            }
+        }
+        
+        // 获取状态码描述
+        const getStatusDescription = (statusCode) => {
+            const statusDescriptions = {
+                200: 'OK',
+                201: 'Created',
+                202: 'Accepted',
+                204: 'No Content',
+                400: 'Bad Request',
+                401: 'Unauthorized',
+                403: 'Forbidden',
+                404: 'Not Found',
+                405: 'Method Not Allowed',
+                500: 'Internal Server Error',
+                501: 'Not Implemented',
+                502: 'Bad Gateway',
+                503: 'Service Unavailable'
+            };
+            return statusDescriptions[statusCode] || '';
+        };
+        
+        const statusDescription = getStatusDescription(req.status_code);
+        const statusText = statusDescription ? `${req.status_code} ${statusDescription}` : `${req.status_code}`;
+        
         return `
             <tr onclick="showRequestDetail(${index})" data-request-index="${index}">
                 <td>${timeStr}</td>
                 <td><span class="api-method ${methodClass}">${req.method}</span></td>
                 <td style="font-family: monospace; font-size: 12px;">${req.path}</td>
-                <td><span class="api-status ${statusClass}">${req.status_code}</span></td>
-                <td>${(req.duration * 1000).toFixed(0)}ms</td>
+                <td style="font-family: monospace; font-size: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${queryParamsDisplay}">${queryParamsDisplay || '-'}</td>
+                <td><span class="api-status ${statusClass}">${statusText}</span></td>
+                <td class="${durationClass}">${durationMs.toFixed(0)}ms</td>
                 <td>${req.client_ip}</td>
-                <td><span class="api-result ${statusClass}">${isSuccess ? '✓ 成功' : '✗ 失败'}</span></td>
                 <td class="error-message-cell" title="${escapedErrorMsg}">${errorMsg}</td>
             </tr>
         `;
@@ -768,6 +818,44 @@ function showRequestDetail(index) {
     const date = new Date(req.timestamp * 1000);
     const timeStr = `${date.getFullYear()}-${(date.getMonth()+1).toString().padStart(2,'0')}-${date.getDate().toString().padStart(2,'0')} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}:${date.getSeconds().toString().padStart(2,'0')}`;
     
+    // 处理查询参数显示
+    let queryParamsDisplay = '';
+    if (req.query_params) {
+        try {
+            const parsedParams = JSON.parse(req.query_params);
+            if (Object.keys(parsedParams).length > 0) {
+                queryParamsDisplay = Object.entries(parsedParams)
+                    .map(([key, value]) => `${key}=${value}`)
+                    .join('&');
+            }
+        } catch (e) {
+            queryParamsDisplay = req.query_params;
+        }
+    }
+    
+    // 获取状态码描述
+    const getStatusDescription = (statusCode) => {
+        const statusDescriptions = {
+            200: 'OK',
+            201: 'Created',
+            202: 'Accepted',
+            204: 'No Content',
+            400: 'Bad Request',
+            401: 'Unauthorized',
+            403: 'Forbidden',
+            404: 'Not Found',
+            405: 'Method Not Allowed',
+            500: 'Internal Server Error',
+            501: 'Not Implemented',
+            502: 'Bad Gateway',
+            503: 'Service Unavailable'
+        };
+        return statusDescriptions[statusCode] || '';
+    };
+    
+    const statusDescription = getStatusDescription(req.status_code);
+    const statusText = statusDescription ? `${req.status_code} ${statusDescription}` : `${req.status_code}`;
+    
     // 更新请求信息
     requestInfoEl.innerHTML = `
         <div class="api-detail-info-item">
@@ -783,8 +871,12 @@ function showRequestDetail(index) {
             <span class="api-detail-info-value">${req.path}</span>
         </div>
         <div class="api-detail-info-item">
+            <span class="api-detail-info-label">查询参数</span>
+            <span class="api-detail-info-value" style="font-family: monospace; font-size: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${queryParamsDisplay}">${queryParamsDisplay || '-'}</span>
+        </div>
+        <div class="api-detail-info-item">
             <span class="api-detail-info-label">状态码</span>
-            <span class="api-detail-info-value">${req.status_code}</span>
+            <span class="api-detail-info-value">${statusText}</span>
         </div>
         <div class="api-detail-info-item">
             <span class="api-detail-info-label">响应时间</span>
@@ -829,6 +921,8 @@ function showRequestDetail(index) {
     } else {
         responseBodyEl.textContent = '无响应体';
     }
+    
+
     
     // 显示模态对话框
     modalEl.style.display = 'flex';

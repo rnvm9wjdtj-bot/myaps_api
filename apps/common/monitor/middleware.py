@@ -47,6 +47,7 @@ class HTTPMetricsCollector:
         error_message: str = None,
         request_body: str = None,
         response_body: str = None,
+        query_params: str = None,
     ):
         """记录请求信息"""
         async with self._lock:
@@ -62,6 +63,7 @@ class HTTPMetricsCollector:
                 "error_message": error_message,
                 "request_body": request_body,
                 "response_body": response_body,
+                "query_params": query_params,
             }
 
             self._requests.append(request_info)
@@ -182,6 +184,16 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
         error_message = None
         request_body = None
         response_body = None
+        query_params = None
+        
+        # 收集查询参数
+        try:
+            query_params = dict(request.query_params)
+            import json
+            query_params = json.dumps(query_params)
+        except Exception as e:
+            logger.debug(f"读取查询参数失败: {e}")
+            query_params = None
 
         # 读取请求体
         try:
@@ -250,6 +262,7 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
                     error_message=error_message,
                     request_body=request_body,
                     response_body=response_body,
+                    query_params=query_params,
                 )
             )
 

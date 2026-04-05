@@ -1157,6 +1157,17 @@ body {
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
+/* 响应时间样式 */
+.duration-medium {
+    color: #faad14;
+    font-weight: 500;
+}
+
+.duration-slow {
+    color: #f5222d;
+    font-weight: 600;
+}
+
 /* 模态对话框样式 */
 .modal {
     position: fixed;
