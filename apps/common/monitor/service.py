@@ -192,6 +192,7 @@ class MonitorService:
         """
         import os
         from datetime import datetime
+        import re
         
         logs = []
         # 使用相对路径，从当前文件所在目录向上找到项目根目录
@@ -213,38 +214,24 @@ class MonitorService:
             if os.path.exists(file_path):
                 try:
                     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                        lines = f.readlines()
-                        
-                    # 倒序读取，获取最新的日志
-                    for line in reversed(lines):
-                        line = line.strip()
-                        if not line:
-                            continue
-                        
-                        # 解析日志格式，支持两种格式：
-                        # 1. 旧格式: 2026-02-04 21:32:29,631 - project_files._base_error.log - ERROR - ❌ 领料申请推送失败...
-                        # 2. 新格式: 2026-04-03 16:06:38,458 - smart_apps.io_api.utils.db_operation - _log_to_file:999 - ERROR - 鉂?鏁版嵁搴撻獙璇佸け璐...
-                        parts = line.split(' - ')
-                        if len(parts) < 4:
-                            continue
-                        
-                        timestamp_str = parts[0]
-                        if len(parts) == 4:
-                            # 旧格式
-                            module, log_level_str, message = parts[1], parts[2], parts[3]
-                        else:
-                            # 新格式
-                            module = parts[1]
-                            # 找到日志级别字段（通常是倒数第二个）
-                            log_level_str = None
-                            for i in range(len(parts)-1, 1, -1):
-                                if parts[i].upper() in ['ERROR', 'WARNING', 'INFO', 'DEBUG']:
-                                    log_level_str = parts[i]
-                                    # 消息是级别后面的所有内容
-                                    message = ' - '.join(parts[i+1:])
-                                    break
-                            if not log_level_str:
-                                continue
+                        content = f.read()
+                    
+                    # 使用正则表达式匹配完整的日志条目（支持多行消息）
+                    # 日志格式: 2026-04-05 07:45:01,442 - module - ... - LEVEL - message
+                    log_pattern = re.compile(
+                        r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) - ([^-]+?) - (?:.*? - )?(ERROR|WARNING|INFO|DEBUG) - (.*?)(?=\n\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} - |\Z)',
+                        re.DOTALL
+                    )
+                    
+                    # 查找所有匹配的日志
+                    matches = list(log_pattern.finditer(content))
+                    
+                    # 倒序处理，获取最新的日志
+                    for match in reversed(matches):
+                        timestamp_str = match.group(1)
+                        module = match.group(2).strip()
+                        log_level_str = match.group(3)
+                        message = match.group(4).strip()
                         
                         # 解析时间戳
                         try:
@@ -252,7 +239,7 @@ class MonitorService:
                         except ValueError:
                             continue
                         
-                        # 提取模块名（去掉.log后缀）
+                        # 提取模块名（去掉.log后缀和可能的文件名信息）
                         module = module.replace('.log', '')
                         
                         # 统一日志级别格式

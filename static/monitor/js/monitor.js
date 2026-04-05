@@ -768,9 +768,12 @@ function updateLogsPageDisplay(logs) {
     const tbodyEl = document.getElementById('logs-tbody');
     
     if (logs.length === 0) {
-        tbodyEl.innerHTML = '<tr><td colspan="4" class="empty-state">暂无日志记录</td></tr>';
+        tbodyEl.innerHTML = '<tr><td colspan="5" class="empty-state">暂无日志记录</td></tr>';
         return;
     }
+    
+    // 从 localStorage 获取已读状态
+    const readStatus = getReadStatusFromStorage();
     
     tbodyEl.innerHTML = logs.map(log => {
         const date = new Date(log.timestamp * 1000);
@@ -779,57 +782,190 @@ function updateLogsPageDisplay(logs) {
         // 确保 title 属性使用完整的消息内容
         const fullMessage = log.message || '';
         
+        // 生成唯一日志 ID
+        const logId = generateLogId(log.timestamp, log.module, log.message);
+        
+        // 检查是否已读
+        const isRead = readStatus.has(logId);
+        const readStatusClass = isRead ? 'read' : 'unread';
+        const readIcon = isRead ? '✓' : '';
+        
+        // 转义消息中的特殊字符，防止HTML属性值被截断
+        const escapedFullMessage = fullMessage
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+        
         return `
-            <tr>
+            <tr data-log-id="${logId}" class="${readStatusClass}">
                 <td>${timeStr}</td>
                 <td><span class="log-level-badge ${log.level}">${log.level.toUpperCase()}</span></td>
                 <td>${log.module}</td>
-                <td class="log-message-cell" title="${fullMessage}" data-full-message="${fullMessage}">${log.message}</td>
+                <td class="log-message-cell" title="${escapedFullMessage}" data-full-message="${escapedFullMessage}">${log.message}</td>
+                <td class="read-status-cell">
+                    <span class="read-checkbox ${readStatusClass}" onclick="toggleLogReadStatus('${logId}')">${readIcon}</span>
+                </td>
             </tr>
         `;
     }).join('');
     
-    // 添加自定义悬停效果
-    setTimeout(() => {
-        const logCells = document.querySelectorAll('.log-message-cell');
-        logCells.forEach(cell => {
+    // 悬停效果由全局事件委托处理
+}
+
+// 生成日志唯一 ID
+function generateLogId(timestamp, module, message) {
+    const str = `${timestamp}:${module}:${message}`;
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
+    }
+    return Math.abs(hash).toString(16);
+}
+
+// 从 localStorage 获取已读状态
+function getReadStatusFromStorage() {
+    try {
+        const stored = localStorage.getItem('monitor_log_read_status');
+        return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch (e) {
+        console.error('读取已读状态失败:', e);
+        return new Set();
+    }
+}
+
+// 保存已读状态到 localStorage
+function saveReadStatusToStorage(readStatus) {
+    try {
+        localStorage.setItem('monitor_log_read_status', JSON.stringify(Array.from(readStatus)));
+    } catch (e) {
+        console.error('保存已读状态失败:', e);
+    }
+}
+
+// 切换日志已读状态
+function toggleLogReadStatus(logId) {
+    const readStatus = getReadStatusFromStorage();
+    
+    if (readStatus.has(logId)) {
+        readStatus.delete(logId);
+    } else {
+        readStatus.add(logId);
+    }
+    
+    saveReadStatusToStorage(readStatus);
+    
+    // 更新显示
+    const row = document.querySelector(`tr[data-log-id="${logId}"]`);
+    if (row) {
+        const checkbox = row.querySelector('.read-checkbox');
+        const isRead = readStatus.has(logId);
+        
+        if (isRead) {
+            row.classList.remove('unread');
+            row.classList.add('read');
+            checkbox.classList.remove('unread');
+            checkbox.classList.add('read');
+            checkbox.textContent = '✓';
+        } else {
+            row.classList.remove('read');
+            row.classList.add('unread');
+            checkbox.classList.remove('read');
+            checkbox.classList.add('unread');
+            checkbox.textContent = '';
+        }
+    }
+}
+
+// 初始化悬停效果
+function initHoverEffect() {
+    // 创建全局悬停元素
+    const tooltip = document.createElement('div');
+    tooltip.className = 'custom-tooltip';
+    tooltip.style.position = 'absolute';
+    tooltip.style.backgroundColor = '#f0f0f0'; // 烟灰底色
+    tooltip.style.color = '#333';
+    tooltip.style.padding = '10px 15px';
+    tooltip.style.borderRadius = '8px'; // 圆角矩形框
+    tooltip.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+    tooltip.style.zIndex = '1000';
+    tooltip.style.maxWidth = '500px';
+    tooltip.style.wordBreak = 'break-word';
+    tooltip.style.whiteSpace = 'pre-wrap'; // 保留空白字符和换行
+    tooltip.style.display = 'none';
+    document.body.appendChild(tooltip);
+    
+    // 使用事件委托处理悬停事件
+    document.addEventListener('mouseenter', (e) => {
+        const cell = e.target.closest('.log-message-cell');
+        if (cell) {
+            // 获取完整的消息内容
             const fullMessage = cell.getAttribute('data-full-message');
-            if (fullMessage) {
+            if (fullMessage !== null && fullMessage !== undefined) {
                 // 移除默认的 title 行为
                 cell.removeAttribute('title');
                 
-                // 创建自定义悬停元素
-                const tooltip = document.createElement('div');
-                tooltip.className = 'custom-tooltip';
-                tooltip.textContent = fullMessage;
-                tooltip.style.position = 'absolute';
-                tooltip.style.backgroundColor = '#f0f0f0';
-                tooltip.style.color = '#333';
-                tooltip.style.padding = '8px 12px';
-                tooltip.style.borderRadius = '4px';
-                tooltip.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
-                tooltip.style.zIndex = '1000';
-                tooltip.style.maxWidth = '400px';
-                tooltip.style.wordBreak = 'break-word';
-                tooltip.style.display = 'none';
-                document.body.appendChild(tooltip);
-                
-                // 鼠标悬停事件
-                cell.addEventListener('mouseenter', (e) => {
-                    const rect = cell.getBoundingClientRect();
-                    tooltip.style.left = `${rect.left}px`;
-                    tooltip.style.top = `${rect.bottom + 10}px`;
-                    tooltip.style.display = 'block';
-                });
-                
-                // 鼠标离开事件
-                cell.addEventListener('mouseleave', () => {
-                    tooltip.style.display = 'none';
-                });
+                // 显示悬停框
+                const rect = cell.getBoundingClientRect();
+                tooltip.style.left = `${rect.left}px`;
+                tooltip.style.top = `${rect.bottom + 10}px`;
+                tooltip.textContent = fullMessage || '';
+                tooltip.style.display = 'block';
             }
-        });
-    }, 100);
+        }
+    });
+    
+    // 鼠标离开事件
+    document.addEventListener('mouseleave', (e) => {
+        const cell = e.target.closest('.log-message-cell');
+        if (cell) {
+            tooltip.style.display = 'none';
+        }
+    });
+    
+    // 确保鼠标离开页面时隐藏悬停框
+    document.addEventListener('mousemove', (e) => {
+        const cell = e.target.closest('.log-message-cell');
+        if (!cell) {
+            tooltip.style.display = 'none';
+        }
+    });
 }
+
+// 批量标记已读
+function markAllLogsAsRead() {
+    const logRows = document.querySelectorAll('#logs-tbody tr[data-log-id]');
+    const logIds = Array.from(logRows).map(row => row.getAttribute('data-log-id'));
+    
+    if (logIds.length === 0) {
+        return;
+    }
+    
+    const readStatus = getReadStatusFromStorage();
+    logIds.forEach(id => readStatus.add(id));
+    saveReadStatusToStorage(readStatus);
+    
+    // 刷新日志列表
+    fetchLogsPage();
+}
+
+// 清空已读状态
+function clearReadStatus() {
+    try {
+        localStorage.removeItem('monitor_log_read_status');
+        
+        // 刷新日志列表
+        fetchLogsPage();
+    } catch (e) {
+        console.error('清空已读状态失败:', e);
+    }
+}
+
+// 页面加载完成后初始化悬停效果
+document.addEventListener('DOMContentLoaded', initHoverEffect);
 
 function refreshLogsPage() {
     fetchLogsPage();

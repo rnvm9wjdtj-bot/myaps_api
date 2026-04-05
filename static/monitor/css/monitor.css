@@ -829,7 +829,53 @@ body {
 
 .log-message-cell {
     max-width: 400px;
-    word-break: break-all;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    word-break: normal;
+    vertical-align: middle;
+}
+
+.read-status-cell {
+    width: 60px;
+    text-align: center;
+    vertical-align: middle;
+}
+
+.read-checkbox {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 2px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: center;
+    line-height: 16px;
+    font-size: 14px;
+    transition: all 0.3s ease;
+}
+
+.read-checkbox:hover {
+    border-color: #409eff;
+}
+
+.read-checkbox.read {
+    background-color: #67c23a;
+    border-color: #67c23a;
+    color: white;
+}
+
+.read-checkbox.unread {
+    background-color: white;
+    border-color: #ccc;
+}
+
+.logs-table tr.read {
+    background-color: #f5f7fa;
+}
+
+.logs-table tr.unread {
+    background-color: white;
 }
 
 .error-message-cell {

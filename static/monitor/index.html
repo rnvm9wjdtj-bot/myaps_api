@@ -255,6 +255,8 @@
                             <option value="error">错误日志</option>
                             <option value="warning">警告日志</option>
                         </select>
+                        <button class="btn btn-small" onclick="markAllLogsAsRead()">标记全部已读</button>
+                        <button class="btn btn-small" onclick="clearReadStatus()">清空已读状态</button>
                         <button class="btn btn-small" onclick="refreshLogsPage()">刷新</button>
                     </div>
                 </div>
@@ -267,6 +269,7 @@
                                     <th>级别</th>
                                     <th>模块</th>
                                     <th>消息</th>
+                                    <th>已读</th>
                                 </tr>
                             </thead>
                             <tbody id="logs-tbody">

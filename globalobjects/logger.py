@@ -768,27 +768,43 @@ listeners = {}
 
 
 class DatePrefixRotatingFileHandler(TimedRotatingFileHandler):
-    """自定义的按时间轮转的文件处理器，支持日期前缀"""
+    """
+    自定义的按时间轮转的文件处理器
+    
+    特点：
+    - app.log 保存最近N天的日志（默认10天）
+    - 轮替时，从 app.log 中提取历史日期的日志到单独文件
+    - 自动清理超过备份数量的旧日志文件
+    """
+    
+    DEFAULT_RETENTION_DAYS = 10
     
     def __init__(self, *args, **kwargs):
-        """初始化方法，确保编码参数被正确处理"""
+        self.retention_days = kwargs.pop('retention_days', self.DEFAULT_RETENTION_DAYS)
         super().__init__(*args, **kwargs)
-        # 确保编码参数被正确存储
         self.encoding = kwargs.get('encoding', 'utf-8')
-        # 计算初始轮替时间
         self.rolloverAt = self.computeRollover(int(time.time()))
-        # 添加线程锁，确保轮转操作的线程安全
         self._rollover_lock = threading.Lock()
+        self._last_rollover_date = self._get_today_str()
+    
+    def _get_today_str(self) -> str:
+        """获取今天的日期字符串"""
+        return time.strftime("%Y-%m-%d", time.localtime())
+    
+    def _get_retention_dates(self) -> set:
+        """获取需要保留的日期集合（最近N天）"""
+        retention_dates = set()
+        current_time = time.time()
+        for i in range(self.retention_days):
+            date_str = time.strftime("%Y-%m-%d", time.localtime(current_time - i * 86400))
+            retention_dates.add(date_str)
+        return retention_dates
     
     def emit(self, record):
-        """重写 emit 方法，确保轮替检查能够正常执行"""
-        # 检查是否需要轮替
         current_time = int(time.time())
         if current_time >= self.rolloverAt:
-            # 使用锁确保只有一个线程执行轮转
             if self._rollover_lock.acquire(blocking=False):
                 try:
-                    # 再次检查，防止多个线程同时通过第一次检查
                     if current_time >= self.rolloverAt:
                         self.doRollover()
                 finally:
@@ -796,53 +812,134 @@ class DatePrefixRotatingFileHandler(TimedRotatingFileHandler):
         super().emit(record)
     
     def doRollover(self):
-        """重写轮转方法，实现日期前缀"""
+        """
+        轮替方法：
+        1. 从 app.log 中提取历史日期的日志到单独文件
+        2. 清理 app.log，仅保留最近N天的日志
+        3. 清理超过备份数量的旧文件
+        """
         if self.stream:
             self.stream.close()
             self.stream = None
-            
-        # 获取当前时间
-        current_time = int(time.time())
         
-        # 计算下一次轮转的时间
+        current_time = int(time.time())
         self.rolloverAt = self.computeRollover(current_time)
         
-        # 处理文件名
         if self.backupCount > 0:
-            # 获取原始文件名的信息
             base_dir, filename = os.path.split(self.baseFilename)
             name_without_ext, ext = os.path.splitext(filename)
             
-            # 计算日志文件的实际日期（轮替前的一天）
-            log_date = current_time - 86400  # 减去一天的秒数
-            # 生成带日期前缀的文件名
-            date_prefix = time.strftime("%Y%m%d", time.localtime(log_date))
+            self._extract_and_clean_logs(base_dir, name_without_ext, ext)
             
-            # 新的文件名格式：[日期前缀]_[原始文件名][扩展名]
+            self._delete_old_logs(base_dir, name_without_ext, ext)
+        
+        self.mode = 'a'
+        self.stream = self._open()
+        self._last_rollover_date = self._get_today_str()
+    
+    def _extract_and_clean_logs(self, base_dir: str, name_without_ext: str, ext: str):
+        """
+        从 app.log 中提取历史日期的日志到单独文件，并清理 app.log
+        
+        Args:
+            base_dir: 日志目录
+            name_without_ext: 日志文件名（不含扩展名）
+            ext: 日志文件扩展名
+        """
+        if not os.path.exists(self.baseFilename):
+            return
+        
+        retention_dates = self._get_retention_dates()
+        
+        logs_by_date = {}
+        retained_logs = []
+        
+        try:
+            with open(self.baseFilename, 'r', encoding=self.encoding, errors='replace') as f:
+                for line in f:
+                    date_str = self._extract_date_from_line(line)
+                    if date_str:
+                        if date_str in retention_dates:
+                            retained_logs.append(line)
+                        else:
+                            if date_str not in logs_by_date:
+                                logs_by_date[date_str] = []
+                            logs_by_date[date_str].append(line)
+                    else:
+                        retained_logs.append(line)
+        except Exception:
+            return
+        
+        for date_str, lines in logs_by_date.items():
+            if not lines:
+                continue
+            
+            date_prefix = date_str.replace('-', '')
             new_filename = f"{date_prefix}_{name_without_ext}{ext}"
             new_filepath = os.path.join(base_dir, new_filename)
             
-            # 如果文件已存在，先删除
-            if os.path.exists(new_filepath):
-                os.remove(new_filepath)
-            
-            # 重命名当前文件（带重试机制，解决Windows文件占用问题）
-            if os.path.exists(self.baseFilename):
-                max_retries = 10
-                retry_delay = 0.1
-                for attempt in range(max_retries):
-                    try:
-                        os.rename(self.baseFilename, new_filepath)
-                        break
-                    except PermissionError:
-                        if attempt < max_retries - 1:
-                            time.sleep(retry_delay)
-                        else:
-                            raise
+            try:
+                mode = 'a' if os.path.exists(new_filepath) else 'w'
+                with open(new_filepath, mode, encoding=self.encoding) as f:
+                    f.writelines(lines)
+            except Exception:
+                pass
         
-        # 重新打开文件
-        self.mode = 'a'
-        self.stream = self._open()
+        try:
+            with open(self.baseFilename, 'w', encoding=self.encoding) as f:
+                f.writelines(retained_logs)
+        except Exception:
+            pass
+    
+    def _extract_date_from_line(self, line: str) -> str:
+        """
+        从日志行中提取日期
+        
+        Args:
+            line: 日志行，格式如 "2026-04-05 09:35:01,177 - ..."
+        
+        Returns:
+            日期字符串 "YYYY-MM-DD" 或 None
+        """
+        if len(line) < 10:
+            return None
+        
+        date_part = line[:10]
+        if (len(date_part) == 10 and 
+            date_part[4] == '-' and date_part[7] == '-' and
+            date_part[:4].isdigit() and date_part[5:7].isdigit() and date_part[8:10].isdigit()):
+            return date_part
+        return None
+    
+    def _delete_old_logs(self, base_dir: str, name_without_ext: str, ext: str):
+        """
+        删除超过备份数量的旧日志文件
+        
+        Args:
+            base_dir: 日志目录
+            name_without_ext: 日志文件名（不含扩展名）
+            ext: 日志文件扩展名
+        """
+        import glob
+        
+        pattern = os.path.join(base_dir, f"????????_{name_without_ext}{ext}")
+        log_files = glob.glob(pattern)
+        
+        if len(log_files) <= self.backupCount:
+            return
+        
+        def extract_date(filepath: str) -> str:
+            filename = os.path.basename(filepath)
+            return filename[:8] if len(filename) >= 8 and filename[:8].isdigit() else "00000000"
+        
+        log_files.sort(key=extract_date, reverse=True)
+        
+        for old_file in log_files[self.backupCount:]:
+            try:
+                if os.path.exists(old_file):
+                    os.remove(old_file)
+            except Exception:
+                pass
 
 
 
