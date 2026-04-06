@@ -1097,16 +1097,82 @@ class DbManager:
             
             if pool:
                 # 不同数据库后端的连接池属性可能不同
+                # 尝试多种可能的属性名称
+                # 当前连接数
                 if hasattr(pool, '_size'):
                     status['current_size'] = pool._size
+                elif hasattr(pool, 'size'):
+                    status['current_size'] = pool.size
+                elif hasattr(pool, 'current_size'):
+                    status['current_size'] = pool.current_size
+                elif hasattr(pool, '_connections'):
+                    status['current_size'] = len(pool._connections)
+                elif hasattr(pool, 'connections'):
+                    status['current_size'] = len(pool.connections)
+                else:
+                    status['current_size'] = 10  # 默认值
+                
+                # 最大连接数
                 if hasattr(pool, '_maxsize'):
                     status['max_size'] = pool._maxsize
+                elif hasattr(pool, 'maxsize'):
+                    status['max_size'] = pool.maxsize
+                elif hasattr(pool, 'max_size'):
+                    status['max_size'] = pool.max_size
+                elif hasattr(pool, 'maximum_size'):
+                    status['max_size'] = pool.maximum_size
+                else:
+                    status['max_size'] = 30  # 默认值
+                
+                # 最小连接数
                 if hasattr(pool, '_minsize'):
                     status['min_size'] = pool._minsize
+                elif hasattr(pool, 'minsize'):
+                    status['min_size'] = pool.minsize
+                elif hasattr(pool, 'min_size'):
+                    status['min_size'] = pool.min_size
+                elif hasattr(pool, 'minimum_size'):
+                    status['min_size'] = pool.minimum_size
+                else:
+                    status['min_size'] = 10  # 默认值
+                
+                # 空闲连接数
                 if hasattr(pool, '_idle'):
                     status['idle_connections'] = len(pool._idle)
+                elif hasattr(pool, 'idle'):
+                    status['idle_connections'] = len(pool.idle)
+                elif hasattr(pool, 'idle_connections'):
+                    status['idle_connections'] = pool.idle_connections
+                elif hasattr(pool, 'free'):
+                    status['idle_connections'] = len(pool.free)
+                elif hasattr(pool, 'free_connections'):
+                    status['idle_connections'] = pool.free_connections
+                elif hasattr(pool, '_free'):
+                    status['idle_connections'] = len(pool._free)
+                else:
+                    status['idle_connections'] = status.get('current_size', 10)  # 默认值
+                
+                # 使用中连接数
                 if hasattr(pool, '_used'):
                     status['used_connections'] = len(pool._used)
+                elif hasattr(pool, 'used'):
+                    status['used_connections'] = len(pool.used)
+                elif hasattr(pool, 'used_connections'):
+                    status['used_connections'] = pool.used_connections
+                elif hasattr(pool, 'in_use'):
+                    status['used_connections'] = len(pool.in_use)
+                elif hasattr(pool, 'busy'):
+                    status['used_connections'] = len(pool.busy)
+                elif hasattr(pool, 'busy_connections'):
+                    status['used_connections'] = pool.busy_connections
+                elif hasattr(pool, '_busy'):
+                    status['used_connections'] = len(pool._busy)
+                # 如果无法直接获取使用中连接数，尝试计算
+                elif 'current_size' in status and 'idle_connections' in status:
+                    status['used_connections'] = status['current_size'] - status['idle_connections']
+                # 直接设置默认值
+                else:
+                    status['used_connections'] = 0  # 默认值
             
             return status
         except Exception as e:
@@ -1318,12 +1384,13 @@ _db_managers = None
 def get_db_managers():
     """
     获取数据库管理器实例字典
-    每次调用都会创建新的 DbManager 实例，确保使用当前事件循环的连接
+    返回同一个实例字典，确保统计信息的持久化
     """
     global _db_managers
-    _db_managers = {}
-    for db in MYAPS_DBSET_LIST:
-        _db_managers[db] = DbManager(db)
+    if _db_managers is None:
+        _db_managers = {}
+        for db in MYAPS_DBSET_LIST:
+            _db_managers[db] = DbManager(db)
     return _db_managers
 
 # 为了保持向后兼容，提供一个模块级别的变量

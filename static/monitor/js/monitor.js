@@ -583,13 +583,13 @@ async function fetchDatabaseDetail() {
 }
 
 function updateDatabaseDetailDisplay(data) {
-    const gridEl = document.getElementById('db-detail-grid');
+    const tbodyEl = document.getElementById('db-detail-tbody');
     const connections = data.connections || {};
     const dbConnections = connections.connections || {};
     const pools = data.pool?.pools || {};
     
     if (Object.keys(dbConnections).length === 0) {
-        gridEl.innerHTML = '<div class="empty-state">暂无数据库连接</div>';
+        tbodyEl.innerHTML = '<tr><td colspan="11" class="empty-state">暂无数据库连接</td></tr>';
         return;
     }
     
@@ -603,7 +603,7 @@ function updateDatabaseDetailDisplay(data) {
         badge.className = 'badge error';
     }
     
-    gridEl.innerHTML = Object.entries(dbConnections).map(([name, status]) => {
+    tbodyEl.innerHTML = Object.entries(dbConnections).map(([name, status]) => {
         const pool = pools[name] || {};
         const stats = pool.stats || {};
         
@@ -612,89 +612,35 @@ function updateDatabaseDetailDisplay(data) {
             connectionUsagePercent = Math.round((pool.used_connections / pool.max_size) * 100);
         }
         
-        let lastCheckTime = '';
+        let lastCheckTime = '-';
         if (status.last_check) {
             const checkDate = new Date(status.last_check * 1000);
             lastCheckTime = `${checkDate.getHours().toString().padStart(2, '0')}:${checkDate.getMinutes().toString().padStart(2, '0')}:${checkDate.getSeconds().toString().padStart(2, '0')}`;
         }
         
         return `
-        <div class="db-detail-item ${status.healthy ? '' : 'unhealthy'}">
-            <div class="db-detail-header">
-                <span class="db-detail-name">${name}</span>
-                <div class="db-detail-status">
-                    <span class="status-dot ${status.healthy ? 'healthy' : 'error'}"></span>
-                    <span>${status.healthy ? '正常' : (status.error || '异常')}</span>
+        <tr>
+            <td>${name}</td>
+            <td class="status-${status.healthy ? 'healthy' : 'error'}">
+                ${status.healthy ? '已连接' : (status.error || '断开')}
+            </td>
+            <td>${lastCheckTime}</td>
+            <td>${pool.current_size || '-'}</td>
+            <td>${pool.max_size || '-'}</td>
+            <td>${pool.min_size || '-'}</td>
+            <td>${pool.idle_connections || '-'}</td>
+            <td>${pool.used_connections || '-'}</td>
+            <td>
+                ${pool.max_size ? `
+                <div class="progress-bar">
+                    <div class="progress-fill ${connectionUsagePercent >= 80 ? 'error' : connectionUsagePercent >= 60 ? 'warning' : ''}" style="width: ${connectionUsagePercent}%"></div>
                 </div>
-            </div>
-            <div class="db-detail-info">
-                <div class="db-detail-row">
-                    <span class="db-detail-label">连接状态</span>
-                    <span class="db-detail-value">${status.healthy ? '已连接' : '断开'}</span>
-                </div>
-                ${status.last_check ? `
-                <div class="db-detail-row">
-                    <span class="db-detail-label">最后检查</span>
-                    <span class="db-detail-value">${lastCheckTime}</span>
-                </div>
-                ` : ''}
-                ${pool.pool_available ? `
-                <div class="db-detail-section">
-                    <div class="db-detail-section-title">连接池</div>
-                    <div class="db-detail-row">
-                        <span class="db-detail-label">当前连接</span>
-                        <span class="db-detail-value">${pool.current_size || '-'}</span>
-                    </div>
-                    <div class="db-detail-row">
-                        <span class="db-detail-label">最大连接</span>
-                        <span class="db-detail-value">${pool.max_size || '-'}</span>
-                    </div>
-                    <div class="db-detail-row">
-                        <span class="db-detail-label">最小连接</span>
-                        <span class="db-detail-value">${pool.min_size || '-'}</span>
-                    </div>
-                    <div class="db-detail-row">
-                        <span class="db-detail-label">空闲连接</span>
-                        <span class="db-detail-value">${pool.idle_connections || '-'}</span>
-                    </div>
-                    <div class="db-detail-row">
-                        <span class="db-detail-label">使用中连接</span>
-                        <span class="db-detail-value">${pool.used_connections || '-'}</span>
-                    </div>
-                    ${pool.max_size ? `
-                    <div class="db-detail-row">
-                        <span class="db-detail-label">使用率</span>
-                        <span class="db-detail-value">${connectionUsagePercent}%</span>
-                    </div>
-                    <div class="db-detail-progress">
-                        <div class="progress-bar">
-                            <div class="progress-fill ${connectionUsagePercent >= 80 ? 'error' : connectionUsagePercent >= 60 ? 'warning' : ''}" style="width: ${connectionUsagePercent}%"></div>
-                        </div>
-                    </div>
-                    ` : ''}
-                </div>
-                ` : ''}
-                ${stats.total_processed !== undefined ? `
-                <div class="db-detail-section">
-                    <div class="db-detail-section-title">操作统计</div>
-                    <div class="db-detail-row">
-                        <span class="db-detail-label">处理记录</span>
-                        <span class="db-detail-value">${stats.total_processed}</span>
-                    </div>
-                    <div class="db-detail-row">
-                        <span class="db-detail-label">批次数</span>
-                        <span class="db-detail-value">${stats.batches_executed || 0}</span>
-                    </div>
-                </div>
-                ` : ''}
-                ${status.error ? `
-                <div class="db-detail-row">
-                    <span class="db-detail-label">错误信息</span>
-                    <span class="db-detail-value" style="color: var(--error-color)">${status.error}</span>
-                </div>
-                ` : ''}
-            </div>
-        </div>
+                <span style="display: block; margin-top: 4px; font-size: 12px;">${connectionUsagePercent}%</span>
+                ` : '-'}
+            </td>
+            <td>${stats.total_processed || 0}</td>
+            <td>${stats.batches_executed || 0}</td>
+        </tr>
         `;
     }).join('');
 }

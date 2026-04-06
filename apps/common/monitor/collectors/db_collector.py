@@ -83,6 +83,9 @@ class DatabaseCollector:
         }
 
         try:
+            # 每次都获取最新的数据库管理器实例
+            self._db_managers = get_db_managers()
+            
             for db_name, manager in self._db_managers.items():
                 try:
                     status = await manager.get_connection_pool_status()

@@ -191,8 +191,27 @@
                     <span class="badge" id="db-detail-badge">检查中</span>
                 </div>
                 <div class="card-body">
-                    <div class="db-detail-grid" id="db-detail-grid">
-                        <!-- 动态生成数据库详细信息 -->
+                    <div class="db-detail-table-container">
+                        <table class="db-detail-table" id="db-detail-table">
+                            <thead>
+                                <tr>
+                                    <th>数据库名称</th>
+                                    <th>连接状态</th>
+                                    <th>最后检查</th>
+                                    <th>当前连接</th>
+                                    <th>最大连接</th>
+                                    <th>最小连接</th>
+                                    <th>空闲连接</th>
+                                    <th>使用中连接</th>
+                                    <th>使用率</th>
+                                    <th>处理记录</th>
+                                    <th>批次数</th>
+                                </tr>
+                            </thead>
+                            <tbody id="db-detail-tbody">
+                                <!-- 动态生成数据库详细信息 -->
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </section>
