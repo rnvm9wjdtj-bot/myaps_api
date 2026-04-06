@@ -9,6 +9,8 @@ import asyncio
 from typing import Dict, Any, List
 from globalobjects import logger as log_config
 from globalobjects.db_manager import get_db_managers
+from ..allert import AlertType, alert_sender
+
 
 logger = log_config.get_logger(__name__)
 
@@ -18,6 +20,7 @@ class DatabaseCollector:
 
     def __init__(self):
         self._db_managers = get_db_managers()
+
 
     async def get_connection_status(self) -> Dict[str, Any]:
         """
@@ -56,12 +59,16 @@ class DatabaseCollector:
                     }
                     status["summary"]["total"] += 1
                     status["summary"]["unhealthy"] += 1
-
+            if status["summary"]["unhealthy"] > 0:
+                # await alert_sender.trigger_alert(AlertType.DB_CONNECTION, status)
+                await alert_sender.trigger_alert(AlertType.DB_CONNECTION, status["summary"]["unhealthy"])
         except Exception as e:
             logger.error(f"获取数据库连接状态失败: {e}")
             status["error"] = str(e)
+            await alert_sender.trigger_alert(AlertType.DB_CONNECTION, status)
 
         return status
+
 
     async def get_pool_status(self) -> Dict[str, Any]:
         """
@@ -86,11 +93,15 @@ class DatabaseCollector:
                         "pool_available": False,
                         "error": str(e),
                     }
+                    await alert_sender.trigger_alert(AlertType.DB_POOL, pool_info)
+        
         except Exception as e:
             logger.error(f"获取连接池状态失败: {e}")
             pool_info["error"] = str(e)
-
+            await alert_sender.trigger_alert(AlertType.DB_POOL, pool_info)
+        
         return pool_info
+
 
     async def get_all_metrics(self) -> Dict[str, Any]:
         """

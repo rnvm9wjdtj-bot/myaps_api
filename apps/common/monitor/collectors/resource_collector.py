@@ -19,6 +19,7 @@ class ResourceCollector:
         self._process = psutil.Process()
         self._cpu_count = psutil.cpu_count()
 
+
     def get_current_metrics(self) -> Dict[str, Any]:
         """
         获取当前资源使用指标
@@ -55,6 +56,7 @@ class ResourceCollector:
                 "error": str(e),
             }
 
+
     def get_system_info(self) -> Dict[str, Any]:
         """
         获取系统信息
@@ -77,6 +79,7 @@ class ResourceCollector:
             logger.error(f"获取系统信息失败: {e}")
             return {"error": str(e)}
 
+
     def check_thresholds(self, metrics: Dict[str, Any], thresholds: Optional[Dict[str, float]] = None) -> list:
         """
         检查指标是否超过阈值
@@ -88,10 +91,14 @@ class ResourceCollector:
         Returns:
             list: 告警信息列表
         """
+        # 从settings.py加载阈值
+        from config.settings import MONITOR_THRESHOLDS
+        resource_thresholds = MONITOR_THRESHOLDS.get('resource', {})
+        
         default_thresholds = {
-            "cpu": 80.0,
-            "memory": 80.0,
-            "threads": 100,
+            "cpu": resource_thresholds.get('cpu', 80.0),
+            "memory": resource_thresholds.get('memory', 80.0),
+            "threads": resource_thresholds.get('threads', 200),
         }
         check_thresholds = thresholds or default_thresholds
         alerts = []

@@ -103,25 +103,25 @@ if not _events_registered:
     _events_registered = True
     logger.success("数据库事件注册", "", "所有事件已成功注册")
     
-    if MYAPS_MAIN_DB:
-        @cron_task(hour="*", minute="*/10")
-        async def check_db_health():
-            """
-            定时检查数据库连接健康
-            """
-            try:
-                import httpx
-                # 调用get_meta路由函数检查账套状态，根据账套数量动态设置超时
-                timeout = 10 + len(MYAPS_DBSET_LIST) * 3  # 基础10秒 + 每个账套3秒
-                async with httpx.AsyncClient(timeout=timeout) as client:
-                    response = await client.get(f"{THIS_BASE_URL}/api/meta")
-                    if response.status_code == 200:
-                        data = response.json()
-                        logger.success("定时检查数据库健康", f"全部账套: {MYAPS_DB_SET}", f"状态: {data['meta']['db_status']}")
-                    else:
-                        logger.fail("定时检查数据库健康", f"全部账套: {MYAPS_DB_SET}", f"API调用失败，状态码: {response.status_code}")
-            except Exception as e:
-                logger.fail("定时检查数据库健康", f"全部账套: {MYAPS_DB_SET}", f"检查失败: {str(e)}")
+    # if MYAPS_MAIN_DB:
+    #     @cron_task(hour="*", minute="*/10")
+    #     async def check_db_health():
+    #         """
+    #         定时检查数据库连接健康
+    #         """
+    #         try:
+    #             import httpx
+    #             # 调用get_meta路由函数检查账套状态，根据账套数量动态设置超时
+    #             timeout = 10 + len(MYAPS_DBSET_LIST) * 3  # 基础10秒 + 每个账套3秒
+    #             async with httpx.AsyncClient(timeout=timeout) as client:
+    #                 response = await client.get(f"{THIS_BASE_URL}/api/meta")
+    #                 if response.status_code == 200:
+    #                     data = response.json()
+    #                     logger.success("定时检查数据库健康", f"全部账套: {MYAPS_DB_SET}", f"状态: {data['meta']['db_status']}")
+    #                 else:
+    #                     logger.fail("定时检查数据库健康", f"全部账套: {MYAPS_DB_SET}", f"API调用失败，状态码: {response.status_code}")
+    #         except Exception as e:
+    #             logger.fail("定时检查数据库健康", f"全部账套: {MYAPS_DB_SET}", f"检查失败: {str(e)}")
 else:
     logger.debug("数据库事件注册", "", "事件已经注册，跳过重复注册")
 

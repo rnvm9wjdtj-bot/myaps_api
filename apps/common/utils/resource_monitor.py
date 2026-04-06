@@ -16,14 +16,20 @@ class ResourceMonitor:
         self._last_cleanup = time.time()
         self._running = False
         self._monitor_thread = None
+        
+        # 从settings.py加载阈值
+        from config.settings import MONITOR_THRESHOLDS, RESOURCE_CLEANUP_CONFIG
+        
+        resource_thresholds = MONITOR_THRESHOLDS.get('resource', {})
         self._thresholds = {
-            'cpu': 80.0,      # CPU使用率阈值（百分比）
-            'memory': 2048,  # 内存使用阈值（MB）
-            'threads': 200    # 线程数阈值
+            'cpu': resource_thresholds.get('cpu', 80.0),
+            'memory': resource_thresholds.get('memory', 80.0),  # 内存使用率阈值（百分比）
+            'threads': resource_thresholds.get('threads', 200)
         }
-        self._cleanup_interval = 300  # 资源清理间隔（秒）
+        
+        self._cleanup_interval = RESOURCE_CLEANUP_CONFIG.get('interval', 300)
         self._cleanup_thresholds = {
-            'memory': 600.0,  # 触发清理的内存阈值（MB）
+            'memory': RESOURCE_CLEANUP_CONFIG.get('memory_threshold', 600.0)
         }
     
     def get_resource_usage(self):
@@ -102,8 +108,11 @@ class ResourceMonitor:
                 if usage.get('cpu', 0) > check_thresholds['cpu']:
                     alerts.append(f"CPU usage ({usage.get('cpu', 0)}%) exceeds threshold ({check_thresholds['cpu']}%)")
         
-        if 'memory' in check_thresholds and usage.get('memory', {}).get('rss', 0) > check_thresholds['memory']:
-            alerts.append(f"Memory usage ({usage['memory']['rss']:.2f}MB) exceeds threshold ({check_thresholds['memory']}MB)")
+        if 'memory' in check_thresholds:
+            import psutil
+            memory_percent = psutil.virtual_memory().percent
+            if memory_percent > check_thresholds['memory']:
+                alerts.append(f"Memory usage ({memory_percent:.2f}%) exceeds threshold ({check_thresholds['memory']}%)")
         
         if 'threads' in check_thresholds and usage.get('threads', 0) > check_thresholds['threads']:
             alerts.append(f"Thread count ({usage['threads']}) exceeds threshold ({check_thresholds['threads']})")

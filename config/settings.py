@@ -26,6 +26,42 @@ SCHEDULER_HOUR = os.getenv("SCHEDULER_HOUR") or "6,8,10,12,14,16"
 SCHEDULER_MINUTE = os.getenv("SCHEDULER_MINUTE") or "55"
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 
+
+# 监控阈值配置
+MONITOR_THRESHOLDS = {
+    # 资源监控阈值
+    "resource": {
+        "cpu": 80.0,      # CPU使用率阈值（百分比）
+        "memory": 80.0,   # 内存使用率阈值（百分比）
+        "threads": 200,    # 线程数阈值
+    },
+    
+    # 数据库监控阈值
+    "database": {
+        "connection_timeout": 30,      # 数据库连接超时时间（秒）
+        "max_connection_attempts": 3,   # 最大连接尝试次数
+        "slow_query_threshold": 1.0,    # 慢查询阈值（秒）
+    },
+    
+    # HTTP监控阈值
+    "http": {
+        "error_rate": 5.0,              # HTTP错误率阈值（百分比）
+        "response_time": 5.0,           # HTTP响应时间阈值（秒）
+    },
+    
+    # 调度器监控阈值
+    "scheduler": {
+        "job_delay_threshold": 60,      # 任务延迟阈值（秒）
+        "max_running_jobs": 10,         # 最大运行中任务数
+    },
+}
+
+# 资源清理配置
+RESOURCE_CLEANUP_CONFIG = {
+    "interval": 300,  # 资源清理间隔（秒）
+    "memory_threshold": 600.0,  # 触发清理的内存阈值（MB）
+}
+
 PROTOCOL = os.getenv("PROTOCOL", "http://")
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", 8000))

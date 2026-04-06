@@ -6,6 +6,7 @@ HTTP 指标采集器
 
 from typing import Dict, Any, List
 from ..middleware import http_metrics_collector
+from ..allert import AlertType, alert_sender
 
 
 class HTTPCollector:
@@ -13,6 +14,7 @@ class HTTPCollector:
 
     def __init__(self):
         self._collector = http_metrics_collector
+
 
     def get_metrics(self) -> Dict[str, Any]:
         """
@@ -23,7 +25,8 @@ class HTTPCollector:
         """
         return self._collector.get_metrics()
 
-    def get_slow_requests(self, limit: int = 10) -> List[Dict[str, Any]]:
+
+    async def get_slow_requests(self, limit: int = 10) -> List[Dict[str, Any]]:
         """
         获取慢请求列表
 
@@ -33,9 +36,12 @@ class HTTPCollector:
         Returns:
             List: 慢请求列表
         """
-        return self._collector.get_slow_requests(limit)
+        slow_requests = self._collector.get_slow_requests(limit)
+        await alert_sender.trigger_alert(AlertType.REQUEST_SLOW, slow_requests)
+        return slow_requests
 
-    def get_error_requests(self, limit: int = 10) -> List[Dict[str, Any]]:
+
+    async def get_error_requests(self, limit: int = 10) -> List[Dict[str, Any]]:
         """
         获取错误请求列表
 
@@ -45,7 +51,10 @@ class HTTPCollector:
         Returns:
             List: 错误请求列表
         """
-        return self._collector.get_error_requests(limit)
+        error_requests = self._collector.get_error_requests(limit)
+        await alert_sender.trigger_alert(AlertType.REQUEST_ERROR, error_requests)
+        return error_requests
+
 
     def reset_stats(self):
         """重置统计"""
