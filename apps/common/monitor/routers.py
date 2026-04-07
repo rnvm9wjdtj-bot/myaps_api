@@ -7,7 +7,7 @@
 import time
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
-from typing import Dict, Any
+from typing import Dict, Any, List
 from .service import monitor_service
 from .schemas import (
     ResourceMetrics,
@@ -218,3 +218,38 @@ async def get_environment():
         "project_dir": PROJECT_DIR,
         "project_json": PROJECT_JSON
     }
+
+
+@router.get("/outbound-http", response_model=Dict[str, Any])
+def get_outbound_http_metrics():
+    """获取对外 HTTP 请求指标"""
+    return monitor_service.get_outbound_http_metrics()
+
+
+@router.get("/outbound-http/all", response_model=List[Dict[str, Any]])
+def get_all_outbound_http_requests(limit: int = 50):
+    """获取所有对外 HTTP 请求"""
+    from .collectors import outbound_http_collector
+    return outbound_http_collector.get_all_requests(limit)
+
+
+@router.get("/outbound-http/slow", response_model=List[Dict[str, Any]])
+def get_outbound_http_slow_requests(limit: int = 10):
+    """获取对外 HTTP 慢请求"""
+    from .collectors import outbound_http_collector
+    return outbound_http_collector.get_slow_requests(limit)
+
+
+@router.get("/outbound-http/error", response_model=List[Dict[str, Any]])
+def get_outbound_http_error_requests(limit: int = 10):
+    """获取对外 HTTP 错误请求"""
+    from .collectors import outbound_http_collector
+    return outbound_http_collector.get_error_requests(limit)
+
+
+@router.post("/outbound-http/reset")
+def reset_outbound_http_stats():
+    """重置对外 HTTP 请求统计"""
+    from .collectors import outbound_http_collector
+    outbound_http_collector.reset_stats()
+    return {"message": "对外 HTTP 请求统计已重置"}

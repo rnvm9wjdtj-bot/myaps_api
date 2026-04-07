@@ -63,7 +63,9 @@ def get_session(
     request_session.mount("http://", adapter)
     request_session.mount("https://", adapter)
 
-    return request_session
+    # 包装为监控客户端
+    from apps.common.monitor.http_client_wrapper import HTTPMonitorWrapper
+    return HTTPMonitorWrapper(request_session)
 
 
 def get_optimized_session(
@@ -147,7 +149,9 @@ def get_optimized_session(
                 def mount(self, *args, **kwargs):
                     pass
             
-            return HttpxSessionWrapper(client)
+            # 包装为监控客户端
+            from apps.common.monitor.http_client_wrapper import HTTPMonitorWrapper
+            return HTTPMonitorWrapper(HttpxSessionWrapper(client))
         except ImportError:
             logger.warning_msg("HTTP/2", "", "httpx未安装，回退到requests")
         except Exception as e:

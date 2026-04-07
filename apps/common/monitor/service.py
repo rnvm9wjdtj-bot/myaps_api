@@ -8,6 +8,7 @@ import time
 import asyncio
 from typing import Dict, Any, List, Optional
 from .collectors import ResourceCollector, DatabaseCollector, SchedulerCollector, HTTPCollector
+from .collectors.outbound_http_collector import outbound_http_collector
 from globalobjects import logger as log_config
 
 logger = log_config.get_logger(__name__)
@@ -32,6 +33,7 @@ class MonitorService:
         self.db_collector = DatabaseCollector()
         self.scheduler_collector = SchedulerCollector()
         self.http_collector = HTTPCollector()
+        self.outbound_http_collector = outbound_http_collector
         self._alerts: List[Dict[str, Any]] = []
         self._max_alerts = 100
         self._initialized = True
@@ -58,6 +60,10 @@ class MonitorService:
         """获取 HTTP 指标"""
         return self.http_collector.get_metrics()
 
+    def get_outbound_http_metrics(self) -> Dict[str, Any]:
+        """获取对外 HTTP 请求指标"""
+        return self.outbound_http_collector.get_metrics()
+
     async def get_overview(self) -> Dict[str, Any]:
         """获取监控总览"""
         return {
@@ -66,6 +72,7 @@ class MonitorService:
             "database": await self.get_database_metrics(),
             "scheduler": self.get_scheduler_metrics(),
             "http": self.get_http_metrics(),
+            "outbound_http": self.get_outbound_http_metrics(),
             "alerts": self.get_recent_alerts(10),
         }
 
@@ -133,6 +140,21 @@ class MonitorService:
             total_count += 1
         except Exception as e:
             checks["http"] = {"status": "error", "message": str(e)}
+            total_count += 1
+
+        # 检查对外 HTTP 请求
+        try:
+            outbound_http_metrics = self.get_outbound_http_metrics()
+            summary = outbound_http_metrics.get("summary", {})
+            error_rate = summary.get("error_rate", 0)
+            if error_rate < 5:
+                checks["outbound_http"] = {"status": "healthy", "message": f"对外 HTTP 请求正常 (错误率: {error_rate}%)"}
+                healthy_count += 1
+            else:
+                checks["outbound_http"] = {"status": "warning", "message": f"对外 HTTP 请求错误率较高: {error_rate}%"}
+            total_count += 1
+        except Exception as e:
+            checks["outbound_http"] = {"status": "error", "message": str(e)}
             total_count += 1
 
         # 确定整体状态

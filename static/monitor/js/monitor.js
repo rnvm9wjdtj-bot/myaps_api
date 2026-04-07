@@ -55,6 +55,7 @@ async function refreshAll() {
         fetchLogs(),
         // 刷新各个页面的数据
         fetchAPIRequests(),
+        fetchOutboundRequests(),
         fetchDatabaseDetail(),
         fetchSchedulerPage(),
         fetchLogsPage()
@@ -1431,4 +1432,210 @@ function updateSchedulerDetailDisplay(data) {
 
 function refreshSchedulerPage() {
     fetchSchedulerPage();
+}
+
+// 开关状态：是否显示内部请求
+let showInternalRequests = false;
+
+// 获取外部请求数据
+async function fetchOutboundRequests() {
+    try {
+        const response = await fetch(`${API_BASE}/outbound-http/all`);
+        const requests = await response.json();
+        
+        // 根据开关状态决定是否过滤本服务的请求
+        const baseUrl = 'http://localhost:8000';
+        const filteredRequests = showInternalRequests ? requests : requests.filter(request => {
+            // 检查URL是否以baseUrl开头
+            return !request.url.startsWith(baseUrl);
+        });
+        
+        updateOutboundRequestsTable(filteredRequests);
+        
+        // 计算过滤后的请求统计信息
+        const summary = calculateOutboundRequestsSummary(filteredRequests);
+        updateOutboundHttpSummary({ summary });
+    } catch (error) {
+        console.error('获取外部请求数据失败:', error);
+    }
+}
+
+// 切换内部请求显示状态
+function toggleInternalRequests() {
+    const checkbox = document.getElementById('show-internal-requests');
+    showInternalRequests = checkbox.checked;
+    fetchOutboundRequests();
+}
+
+// 计算外部请求统计信息
+function calculateOutboundRequestsSummary(requests) {
+    if (requests.length === 0) {
+        return {
+            total_requests: 0,
+            error_rate: 0,
+            avg_response_time: 0,
+            requests_per_minute: 0
+        };
+    }
+    
+    const totalRequests = requests.length;
+    const errorRequests = requests.filter(req => req.status_code >= 400).length;
+    const totalResponseTime = requests.reduce((sum, req) => sum + req.duration, 0);
+    
+    return {
+        total_requests: totalRequests,
+        error_rate: (errorRequests / totalRequests) * 100,
+        avg_response_time: totalResponseTime / totalRequests,
+        requests_per_minute: 0 // 暂时设为0，因为前端无法准确计算每分钟请求数
+    };
+}
+
+// 更新外部请求表格
+function updateOutboundRequestsTable(requests) {
+    const tableBody = document.getElementById('outbound-requests-table');
+    if (!tableBody) return;
+    
+    tableBody.innerHTML = requests.map(request => formatOutboundRequestRow(request)).join('');
+}
+
+// 格式化外部请求行
+function formatOutboundRequestRow(request) {
+    const timestamp = new Date(request.timestamp * 1000).toLocaleString('zh-CN');
+    const duration = (request.duration * 1000).toFixed(0);
+    const statusClass = request.status_code >= 400 ? 'error' : 'success';
+    const durationClass = request.duration > 1 ? 'slow' : '';
+    
+    return `
+    <tr>
+        <td>${timestamp}</td>
+        <td class="method ${request.method.toLowerCase()}">${request.method}</td>
+        <td class="url">${request.url}</td>
+        <td class="status ${statusClass}">${request.status_code}</td>
+        <td class="duration ${durationClass}">${duration}ms</td>
+        <td>${request.module || 'unknown'}</td>
+        <td class="error-message">${request.error_message || '-'}</td>
+        <td>
+            <button class="btn btn-sm" onclick="showOutboundRequestDetail(${JSON.stringify(request).replace(/"/g, '&quot;')})")">查看</button>
+        </td>
+    </tr>
+    `;
+}
+
+// 显示外部请求详情
+function showOutboundRequestDetail(request) {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>外部请求详情</h3>
+                <button class="close-btn" onclick="this.closest('.modal').remove()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="detail-section">
+                    <h4>基本信息</h4>
+                    <table class="detail-table">
+                        <tbody>
+                            <tr>
+                                <td class="detail-label">时间戳:</td>
+                                <td class="detail-value">${new Date(request.timestamp * 1000).toLocaleString('zh-CN')}</td>
+                            </tr>
+                            <tr>
+                                <td class="detail-label">方法:</td>
+                                <td class="detail-value">${request.method}</td>
+                            </tr>
+                            <tr>
+                                <td class="detail-label">URL:</td>
+                                <td class="detail-value">${request.url}</td>
+                            </tr>
+                            <tr>
+                                <td class="detail-label">状态码:</td>
+                                <td class="detail-value ${request.status_code >= 400 ? 'error' : 'success'}">${request.status_code}</td>
+                            </tr>
+                            <tr>
+                                <td class="detail-label">响应时间:</td>
+                                <td class="detail-value ${request.duration > 1 ? 'slow' : ''}">${(request.duration * 1000).toFixed(0)}ms</td>
+                            </tr>
+                            <tr>
+                                <td class="detail-label">模块:</td>
+                                <td class="detail-value">${request.module || 'unknown'}</td>
+                            </tr>
+                            ${request.error_message ? `
+                            <tr>
+                                <td class="detail-label">错误信息:</td>
+                                <td class="detail-value error">${request.error_message}</td>
+                            </tr>
+                            ` : ''}
+                        </tbody>
+                    </table>
+                </div>
+                ${request.request_headers ? `
+                <div class="detail-section">
+                    <h4>请求头</h4>
+                    <pre><code class="language-json">${JSON.stringify(request.request_headers, null, 2)}</code></pre>
+                </div>
+                ` : ''}
+                ${request.request_body ? `
+                <div class="detail-section">
+                    <h4>请求体</h4>
+                    <pre><code class="language-json">${typeof request.request_body === 'string' ? (function() {
+                        try {
+                            return JSON.stringify(JSON.parse(request.request_body), null, 2);
+                        } catch (e) {
+                            return request.request_body;
+                        }
+                    })() : JSON.stringify(request.request_body, null, 2)}</code></pre>
+                </div>
+                ` : ''}
+                ${request.response_headers ? `
+                <div class="detail-section">
+                    <h4>响应头</h4>
+                    <pre><code class="language-json">${JSON.stringify(request.response_headers, null, 2)}</code></pre>
+                </div>
+                ` : ''}
+                ${request.response_body ? `
+                <div class="detail-section">
+                    <h4>响应体</h4>
+                    <pre><code class="language-json">${typeof request.response_body === 'string' ? (function() {
+                        try {
+                            return JSON.stringify(JSON.parse(request.response_body), null, 2);
+                        } catch (e) {
+                            return request.response_body;
+                        }
+                    })() : JSON.stringify(request.response_body, null, 2)}</code></pre>
+                </div>
+                ` : ''}
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    Prism.highlightAll();
+}
+
+// 更新外部请求摘要
+function updateOutboundHttpSummary(metrics) {
+    const summary = metrics.summary || {};
+    document.getElementById('outbound-total-requests').textContent = summary.total_requests || 0;
+    document.getElementById('outbound-error-rate').textContent = (summary.error_rate || 0).toFixed(2) + '%';
+    document.getElementById('outbound-avg-time').textContent = (summary.avg_response_time * 1000).toFixed(0) + 'ms';
+    document.getElementById('outbound-rpm').textContent = summary.requests_per_minute || 0;
+}
+
+// 刷新外部请求数据
+function refreshOutboundRequests() {
+    fetchOutboundRequests();
+}
+
+// 重置外部请求统计
+async function resetOutboundStats() {
+    try {
+        const response = await fetch(`${API_BASE}/outbound-http/reset`, { method: 'POST' });
+        const data = await response.json();
+        alert(data.message);
+        fetchOutboundRequests();
+    } catch (error) {
+        console.error('重置外部请求统计失败:', error);
+        alert('重置失败，请重试');
+    }
 }

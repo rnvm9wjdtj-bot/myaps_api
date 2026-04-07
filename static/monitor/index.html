@@ -17,6 +17,7 @@
                 <a href="#" class="nav-item active" data-page="overview">Overview</a>
                 <a href="#" class="nav-item" data-page="database">数据库</a>
                 <a href="#" class="nav-item" data-page="api-requests">API请求</a>
+                <a href="#" class="nav-item" data-page="outbound-requests">外部请求</a>
                 <a href="#" class="nav-item" data-page="scheduler">定时任务</a>
                 <a href="#" class="nav-item" data-page="logs">日志</a>
             </nav>
@@ -306,7 +307,66 @@
             </section>
         </main>
 
-        <!-- 日志页面 -->
+        <!-- 外部请求页面 -->
+        <main class="main-content page-content" id="page-outbound-requests" style="display: none;">
+            <section class="card full-width">
+                <div class="card-header">
+                    <h2>外部请求记录</h2>
+                    <div class="card-actions">
+                        <div class="toggle-switch">
+                            <label>
+                                <input type="checkbox" id="show-internal-requests" onchange="toggleInternalRequests()">
+                                <span class="toggle-slider"></span>
+                                显示内部请求
+                            </label>
+                        </div>
+                        <button class="btn btn-sm" onclick="refreshOutboundRequests()">刷新</button>
+                        <button class="btn btn-sm btn-secondary" onclick="resetOutboundStats()">重置统计</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="http-summary" id="outbound-http-summary">
+                        <div class="summary-item">
+                            <span class="summary-label">总请求数</span>
+                            <span class="summary-value" id="outbound-total-requests">--</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">错误率</span>
+                            <span class="summary-value" id="outbound-error-rate">--%</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">平均响应时间</span>
+                            <span class="summary-value" id="outbound-avg-time">--ms</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">每分钟请求数</span>
+                            <span class="summary-value" id="outbound-rpm">--</span>
+                        </div>
+                    </div>
+                    <div class="outbound-requests-container">
+                        <table class="outbound-requests-table">
+                            <thead>
+                                <tr>
+                                    <th>时间戳</th>
+                                    <th>方法</th>
+                                    <th>URL</th>
+                                    <th>状态码</th>
+                                    <th>响应时间</th>
+                                    <th>模块</th>
+                                    <th>错误信息</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="outbound-requests-table">
+                                <!-- 动态生成外部请求记录 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- 鏃ュ織椤甸潰 -->
         <main class="main-content page-content" id="page-logs" style="display: none;">
             <section class="card full-width">
                 <div class="card-header">

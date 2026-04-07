@@ -90,14 +90,21 @@ class CustomMoPushModel(MoPushModel):
                 md['Warehouse'] = {'Code': '5'} # 倒冲料仓库
                 md.pop('IsMaterialRequest')
         
+        mo_details['DynamicPropertyKeys'] = []
+        mo_details['DynamicPropertyValues'] = []
         # 构建后续工单关系
         next_mos: list[dict] = values.get('next_mo')
         if next_mos:
-            # next_mo_sn = {_['supplyno']: _['avail_qty'] for _ in next_mos}
             next_mo_sn = ','.join([_['supplyno'] for _ in next_mos])
             if next_mo_sn:
-                mo_details['DynamicPropertyKeys'] = ['priuserdefnvc1']
-                mo_details['DynamicPropertyValues'] = [next_mo_sn]
+                mo_details['DynamicPropertyKeys'].append('priuserdefnvc1')  # 存入自定义字段
+                mo_details['DynamicPropertyValues'].append(next_mo_sn)
+        
+        # 源销售订单号
+        so = values.get('so')
+        if so:
+            mo_details['DynamicPropertyKeys'].append('priuserdefnvc4')  # 存入自定义字段
+            mo_details['DynamicPropertyValues'].append(so.get('demandno', ""))
         return cleaned_values
 
 

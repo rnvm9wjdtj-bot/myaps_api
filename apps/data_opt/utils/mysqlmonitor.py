@@ -280,6 +280,15 @@ class MySQLBinlogMonitor:
         else:
             self._position_manager = None
             logger.info("⚠️ Binlog 位置管理器已禁用")
+            # 检查并删除已存在的标记点文件
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+            position_file = os.path.join(base_dir, '.binlog_position.json')
+            if os.path.exists(position_file):
+                try:
+                    os.remove(position_file)
+                    logger.info("🗑️ 已删除旧的 binlog 标记点文件")
+                except Exception as e:
+                    logger.warning(f"⚠️ 删除 binlog 标记点文件失败: {e}")
         self._current_position = None  # 当前 binlog 位置
         
         # 初始化健康检查器

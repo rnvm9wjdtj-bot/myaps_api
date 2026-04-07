@@ -203,10 +203,11 @@ class MoPushModel(PydanticModel):
     整理推送T+MO数据
     """
     ExternalCode: str = Field()
-    StartDate: str = Field()
-    FinishDate: str = Field()
     BusiType: dict = Field()
     Department: dict = Field()
+    Customer: dict = Field()
+    StartDate: str = Field()
+    FinishDate: str = Field()
     VoucherDate: str = Field()
     Memo: str = Field()
     IsMaterialRequest: bool = Field(True)
@@ -249,11 +250,16 @@ class MoPushModel(PydanticModel):
             'PreFinishDate': values['dt_ordend'],
             'ManufactureOrderMaterialDetails': momd,
         }
-        # so = values.get('so')
-        # if so:
-        #     mod['SaleOrderCode'] = values.get('vendorno', "")
-        #     mod['idsourceVoucherType'] = "43"   # 销售订单
-        #     mod['SourceVoucherDetailId'] = so[0].get('apiex_entryid') or ''
+
+        so = values.get('so')
+        if so:
+            cleaned_values['Customer'] = {'Code': so.get('partnerno')}
+            # mod['SaleOrderCode'] = so.get('demandno', "")
+            mod['idsourceVoucherType'] = "43"   # 销售订单
+            so_entryid = so.get('apiex_entryid')
+            if so_entryid:
+                mod['SourceVoucherDetailId'] = so_entryid
+
         cleaned_values['ManufactureOrderDetails'] = [mod]
 
         return cleaned_values
@@ -488,6 +494,7 @@ class TplusConnection(BaseConnection):
         """
         初始化畅捷通连接
         """
+        super().__init__()
         self.config = config
         self.base_url = self.config.base_url
         self.cache_file = self.config.cache_file
@@ -497,7 +504,6 @@ class TplusConnection(BaseConnection):
         for key in self.credential_keys:
             setattr(self, key, cache_erp.get(key, ""))
         self._BOM_CODES = None  # 缓存已处理的BOM编码，用于取工艺路线（因为 T+ 的工艺路线是抽象的，具体到物料的工艺路线是在 BOM 中定义的，而只有通过具体BOM编号查询BOM时，才会展示工艺路线详情 
-        super().__init__()
 
 
     def auth(self):
@@ -560,7 +566,7 @@ class TplusConnection(BaseConnection):
         Returns:
             响应JSON数据
         """
-        # self.auth()
+        self.auth()
         headers = {
             "appKey": self.app_key,
             "appSecret": self.app_secret,
@@ -774,7 +780,7 @@ class TplusConnection(BaseConnection):
         # 材料需求
         demand_list = ApsHelpers.get_demand_datalist(demandno=supplyno)
         # PL及工序详情
-        supplymo_detaildata = ApsHelpers.get_supplymo_detaildata(supplyno=supplyno, get_next_mo=True)
+        supplymo_detaildata = ApsHelpers.get_supplymo_detaildata(supplyno=supplyno, get_next_mo=True, get_origin_so=True)
         supplymo_detaildata['demand_list'] = demand_list
         # dto = pydantic_model(**supplymo_detaildata).model_dump(exclude_unset=True)
         dto = pydantic_model(**supplymo_detaildata).model_dump(exclude_none=True)

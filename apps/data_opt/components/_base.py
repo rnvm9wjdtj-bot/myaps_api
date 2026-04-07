@@ -35,7 +35,9 @@ SESSION = get_session()
 class BaseConnection(ABC):
     this_base_url = THIS_BASE_URL
     main_db = MYAPS_MAIN_DB
-    _session = get_session()
+    
+    def __init__(self):
+        self._session = get_session()
 
 
     @abstractmethod
