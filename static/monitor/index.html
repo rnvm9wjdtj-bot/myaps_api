@@ -262,11 +262,23 @@
                                     </div>
                                     <div class="api-detail-bodies">
                                         <div class="api-detail-section">
-                                            <h4>请求体</h4>
+                                            <div class="section-header">
+                                                <h4>请求体</h4>
+                                                <div class="section-actions">
+                                                    <button class="btn btn-small" onclick="highlightRequestBody()">高亮</button>
+                                                    <button class="btn btn-small" onclick="copyRequestBody()">复制</button>
+                                                </div>
+                                            </div>
                                         <pre class="api-detail-body"><code class="language-json" id="api-detail-request-body"></code></pre>
                                     </div>
                                     <div class="api-detail-section">
-                                        <h4>响应体</h4>
+                                        <div class="section-header">
+                                            <h4>响应体</h4>
+                                            <div class="section-actions">
+                                                <button class="btn btn-small" onclick="highlightResponseBody()">高亮</button>
+                                                <button class="btn btn-small" onclick="copyResponseBody()">复制</button>
+                                            </div>
+                                        </div>
                                         <pre class="api-detail-body"><code class="language-json" id="api-detail-response-body"></code></pre>
                                         </div>
                                     </div>

@@ -72,8 +72,8 @@ PROJECT_DIR = os.getenv("PROJECT_DIR")
 if PROJECT_DIR is None:
     raise ValueError("❌ PROJECT_DIR 环境变量未设置，请在 .env 文件中设置 PROJECT_DIR")
 # JSON文件中记录的配置项
-PROJECT_JSON = os.getenv("PROJECT_JSON") or "dev"
-CACHE_JSON_FILE = JSONManager(f"project_files/{PROJECT_DIR}/{PROJECT_JSON}.json")
+PROJECT_JSON = (os.getenv("PROJECT_JSON") or "dev") + ".json"
+CACHE_JSON_FILE = JSONManager(f"project_files/{PROJECT_DIR}/{PROJECT_JSON}")
 json_env_config = CACHE_JSON_FILE.get("env") or {}
 
 

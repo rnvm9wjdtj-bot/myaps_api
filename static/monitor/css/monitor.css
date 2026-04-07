@@ -1031,6 +1031,18 @@ body {
     color: var(--text-primary);
 }
 
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.section-actions {
+    display: flex;
+    gap: 8px;
+}
+
 .api-detail-info {
     display: flex;
     justify-content: space-between;

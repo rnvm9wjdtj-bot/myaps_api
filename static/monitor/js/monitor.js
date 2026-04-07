@@ -1005,12 +1005,12 @@ function showRequestDetail(index) {
         responseBodyEl.textContent = '无响应体';
     }
     
-    // 应用代码高亮
-    setTimeout(() => {
-        if (typeof Prism !== 'undefined') {
-            Prism.highlightAll();
+    // 重置高亮按钮状态
+    document.querySelectorAll('.section-actions button').forEach(btn => {
+        if (btn.textContent === '已高亮') {
+            btn.textContent = '高亮';
         }
-    }, 0);
+    });
     
 
     
@@ -1028,6 +1028,76 @@ function hideRequestDetail() {
     
     // 恢复背景滚动
     document.body.style.overflow = '';
+}
+
+// 高亮请求体
+function highlightRequestBody() {
+    const requestBodyEl = document.getElementById('api-detail-request-body');
+    if (typeof Prism !== 'undefined' && requestBodyEl) {
+        Prism.highlightElement(requestBodyEl);
+        // 更新按钮状态
+        const btn = document.querySelector('.section-actions button:nth-child(1)');
+        if (btn) {
+            btn.textContent = '已高亮';
+        }
+    }
+}
+
+// 高亮响应体
+function highlightResponseBody() {
+    const responseBodyEl = document.getElementById('api-detail-response-body');
+    if (typeof Prism !== 'undefined' && responseBodyEl) {
+        Prism.highlightElement(responseBodyEl);
+        // 更新按钮状态
+        const btn = document.querySelectorAll('.section-actions')[1].querySelector('button:nth-child(1)');
+        if (btn) {
+            btn.textContent = '已高亮';
+        }
+    }
+}
+
+// 复制请求体到剪贴板
+function copyRequestBody() {
+    const requestBodyEl = document.getElementById('api-detail-request-body');
+    if (requestBodyEl) {
+        navigator.clipboard.writeText(requestBodyEl.textContent)
+            .then(() => {
+                // 显示复制成功提示
+                const btn = document.querySelector('.section-actions button:nth-child(2)');
+                if (btn) {
+                    const originalText = btn.textContent;
+                    btn.textContent = '已复制';
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                    }, 2000);
+                }
+            })
+            .catch(err => {
+                console.error('复制失败:', err);
+            });
+    }
+}
+
+// 复制响应体到剪贴板
+function copyResponseBody() {
+    const responseBodyEl = document.getElementById('api-detail-response-body');
+    if (responseBodyEl) {
+        navigator.clipboard.writeText(responseBodyEl.textContent)
+            .then(() => {
+                // 显示复制成功提示
+                const btn = document.querySelectorAll('.section-actions')[1].querySelector('button:nth-child(2)');
+                if (btn) {
+                    const originalText = btn.textContent;
+                    btn.textContent = '已复制';
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                    }, 2000);
+                }
+            })
+            .catch(err => {
+                console.error('复制失败:', err);
+            });
+    }
 }
 
 function refreshAPIRequests() {

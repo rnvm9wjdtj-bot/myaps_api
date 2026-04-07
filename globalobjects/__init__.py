@@ -7,10 +7,10 @@ pf_dir = os.getenv("PROJECT_DIR")
 
 
 from .json_manager import JSONManager
-project_json = os.getenv("PROJECT_JSON") or "dev"
+project_json = (os.getenv("PROJECT_JSON") or "dev") + ".json"
 if pf_dir is None:
     raise ValueError("❌ PROJECT_DIR 环境变量未设置")
-PROJECT_JSON_FILE = JSONManager(f"{root_dir}/project_files/{pf_dir}/{project_json}.json")
+PROJECT_JSON_FILE = JSONManager(f"{root_dir}/project_files/{pf_dir}/{project_json}")
 
 
 from .event_aggregator import get_global_handler_aggregator
