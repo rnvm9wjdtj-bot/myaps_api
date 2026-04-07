@@ -625,11 +625,11 @@ function updateDatabaseDetailDisplay(data) {
                 ${status.healthy ? '已连接' : (status.error || '断开')}
             </td>
             <td>${lastCheckTime}</td>
-            <td>${pool.current_size || '-'}</td>
-            <td>${pool.max_size || '-'}</td>
-            <td>${pool.min_size || '-'}</td>
-            <td>${pool.idle_connections || '-'}</td>
-            <td>${pool.used_connections || '-'}</td>
+            <td>${pool.current_size !== undefined ? pool.current_size : '-'}</td>
+            <td>${pool.max_size !== undefined ? pool.max_size : '-'}</td>
+            <td>${pool.min_size !== undefined ? pool.min_size : '-'}</td>
+            <td>${pool.idle_connections !== undefined ? pool.idle_connections : '-'}</td>
+            <td>${pool.used_connections !== undefined ? pool.used_connections : '-'}</td>
             <td>
                 ${pool.max_size ? `
                 <div class="progress-bar">

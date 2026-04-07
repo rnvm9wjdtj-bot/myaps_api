@@ -15,7 +15,7 @@ from config.settings import MYAPS_MAIN_DB
 from ._base import (
     PydanticModel, JSONManager,
     logger,
-    DataProcessor, globalconst, CACHE_JSON, pdv,
+    DataProcessor, globalconst, PROJECT_JSON_FILE, pdv,
     BaseConnection, ApsHelpers, convert_timeunit, clean_value,
     model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
@@ -33,7 +33,7 @@ from ._base import (
 """
 
 MERGE_ENTRIY_KEY = '_entries_'
-CACHE_ERP = CACHE_JSON.get("erp", {})
+CACHE_ERP = PROJECT_JSON_FILE.get("erp", {})
 
 class MaterialPullModel(AcceptMaterial):
 
@@ -470,7 +470,7 @@ class TplusConfig:
         }
     }
     """
-    def __init__(self, cache_file: str | JSONManager = CACHE_JSON):
+    def __init__(self, cache_file: str | JSONManager = PROJECT_JSON_FILE):
         if isinstance(cache_file, str):
             self.cache_file = JSONManager(cache_file)
         else:

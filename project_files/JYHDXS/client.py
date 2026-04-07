@@ -13,14 +13,14 @@ from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULE
 from .._base import (
     get_scheduler_minute,
     ApsHelpers, CLIENT_LOGGER, standard_response, get_session,
-    cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, CACHE_JSON, pdv
+    cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, PROJECT_JSON_FILE, pdv
 )
 
 
 #################################################################################
 # ⬇️对象及项目参数
 #################################################################################
-erp = CACHE_JSON.get("erp", {})
+erp = PROJECT_JSON_FILE.get("erp", {})
 sap_url1 = erp.get("base_url", "") + '/zrestful_test2?sap-client=800'  # 库存
 sap_url2 = erp.get("base_url", "") + '/zrestful_plan?sap-client=' + erp.get("sap-client")  # 计划
 werks = erp.get("werks", "")
@@ -31,11 +31,11 @@ sap_session = get_session(allowed_methods=["GET", "POST"])
 # 添加Basic认证
 add_basic_auth_requests(sap_session, sap_username, sap_password)
 
-mes = CACHE_JSON.get("mes", {})
+mes = PROJECT_JSON_FILE.get("mes", {})
 mes_url = mes.get("base_url", "")
 
 
-srm = CACHE_JSON.get("srm", {})
+srm = PROJECT_JSON_FILE.get("srm", {})
 srm_url = srm.get("base_url", "")
 srm_headers = {
     "Authorization": srm.get("Authorization", ""),

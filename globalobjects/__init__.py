@@ -7,10 +7,10 @@ pf_dir = os.getenv("PROJECT_DIR")
 
 
 from .json_manager import JSONManager
-cache_filename = os.getenv("CACHE_FILENAME") or "cache.json"
+project_json = os.getenv("PROJECT_JSON") or "dev"
 if pf_dir is None:
     raise ValueError("❌ PROJECT_DIR 环境变量未设置")
-CACHE_JSON = JSONManager(f"{root_dir}/project_files/{pf_dir}/{cache_filename}")
+PROJECT_JSON_FILE = JSONManager(f"{root_dir}/project_files/{pf_dir}/{project_json}.json")
 
 
 from .event_aggregator import get_global_handler_aggregator
@@ -19,7 +19,7 @@ EVENT_AGGREGATOR = get_global_handler_aggregator()
 
 
 class ProjectDefaultValues:
-    defaults = CACHE_JSON.get("defaults", {})
+    defaults = PROJECT_JSON_FILE.get("defaults", {})
     no_fill_defaults = defaults.get("!no_fill_defaults", [])
 
     matver_prefix = defaults.get("matver_prefix", "V") # 产线版本前缀字母

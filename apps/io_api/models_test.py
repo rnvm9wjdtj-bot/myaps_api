@@ -10,17 +10,17 @@ from dotenv import load_dotenv
 
 load_dotenv(os.getenv('ENV_FILE', os.path.join(current_dir, '.env')))
 PROJECT_DIR = os.getenv("PROJECT_DIR")
-CACHE_FILENAME = os.getenv("CACHE_FILENAME")
+PROJECT_JSON = os.getenv("PROJECT_JSON")
 
 from globalobjects.json_manager import JSONManager
 
-CACHE_FILE = JSONManager(f"{current_dir}/project_files/{PROJECT_DIR}/{CACHE_FILENAME}")
+CACHE_JSON_FILE = JSONManager(f"{current_dir}/project_files/{PROJECT_DIR}/{PROJECT_JSON}.json")
 
-MYAPS_MAIN_DB = CACHE_FILE.get('env').get("MYAPS_MAIN_DB", "default")
-MYAPS_DB_HOST = CACHE_FILE.get('env').get("MYAPS_DB_HOST", "localhost")
-MYAPS_DB_PORT = CACHE_FILE.get('env').get("MYAPS_DB_PORT", 3333)
-MYAPS_DB_USER = CACHE_FILE.get('env').get("MYAPS_DB_USER", "root")
-MYAPS_DB_PASSWORD = CACHE_FILE.get('env').get("MYAPS_DB_PASSWORD", "123456")
+MYAPS_MAIN_DB = CACHE_JSON_FILE.get('env').get("MYAPS_MAIN_DB", "default")
+MYAPS_DB_HOST = CACHE_JSON_FILE.get('env').get("MYAPS_DB_HOST", "localhost")
+MYAPS_DB_PORT = CACHE_JSON_FILE.get('env').get("MYAPS_DB_PORT", 3333)
+MYAPS_DB_USER = CACHE_JSON_FILE.get('env').get("MYAPS_DB_USER", "root")
+MYAPS_DB_PASSWORD = CACHE_JSON_FILE.get('env').get("MYAPS_DB_PASSWORD", "123456")
 
 connections = {
     MYAPS_MAIN_DB: {

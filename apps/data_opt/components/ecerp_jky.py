@@ -712,7 +712,7 @@ class JkyApiCallLog(Model):
 
 
 from ._base import (
-    logger, CACHE_JSON
+    logger, PROJECT_JSON_FILE
 )
 
 
@@ -733,8 +733,8 @@ class JkyConfig():
     """
     BASE_URL = "https://open.jackyun.com/open/openapi/do"
     API_VERSION = "V1.0"
-    APP_KEY = CACHE_JSON.get("erp", {}).get("app_key", "")
-    APP_SECRET = CACHE_JSON.get("erp", {}).get("app_secret", "")
+    APP_KEY = PROJECT_JSON_FILE.get("erp", {}).get("app_key", "")
+    APP_SECRET = PROJECT_JSON_FILE.get("erp", {}).get("app_secret", "")
 
 
 # 拉取数据配置
@@ -1122,7 +1122,7 @@ class JkyConnection():
         logger.info(f"成功处理 【{source_desc}】【{count}】条，耗时【{time_end - time_start}】")
 
    
-    def create_pull_task(self, exec_minute: int, tasks: List[JkyPullTask], task_name: str=None, cache_json=CACHE_JSON):
+    def create_pull_task(self, exec_minute: int, tasks: List[JkyPullTask], task_name: str=None, cache_json=PROJECT_JSON_FILE):
         """动态创建拉取数据的定时任务
         Args:
             exec_minute: 执行分钟, 0~59

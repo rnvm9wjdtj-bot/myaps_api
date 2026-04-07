@@ -7,7 +7,7 @@ import queue
 import threading
 from typing import TypeVar
 
-from globalobjects import CACHE_JSON, logger as log_config
+from globalobjects import PROJECT_JSON_FILE, logger as log_config
 from globalobjects.logger import LogHelper
 from globalobjects.json_manager import JSONManager
 
@@ -210,12 +210,12 @@ def shutdown_hap_logging():
 # 类型定义
 ModelType = TypeVar('ModelType', bound='Model')
 
-_CACHE_HAP = CACHE_JSON.get("hap", {})
+_CACHE_HAP = PROJECT_JSON_FILE.get("hap", {})
 _SAAS_BASEURL = "https://api.mingdao.com"
 
 class HapConfig:
     """HAP 配置类"""
-    def __init__(self, cache_file: str | JSONManager = CACHE_JSON):
+    def __init__(self, cache_file: str | JSONManager = PROJECT_JSON_FILE):
         if isinstance(cache_file, str):
             self.cache_file = JSONManager(cache_file)
         else:

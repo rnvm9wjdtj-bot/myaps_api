@@ -21,7 +21,7 @@ from apps.io_api.schemas import (
 from apps.io_api.models import TSupply, TDemand
 from apps.io_api.utils.db_operation import db_query
 from apps.io_api.utils.common import standard_response
-from globalobjects import globalconst, logger as log_config, CACHE_JSON, ProjectDefaultValues as pdv
+from globalobjects import globalconst, logger as log_config, PROJECT_JSON_FILE, ProjectDefaultValues as pdv
 from globalobjects.json_manager import JSONManager
 
 

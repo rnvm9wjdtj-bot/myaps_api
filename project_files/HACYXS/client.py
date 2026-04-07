@@ -17,7 +17,7 @@
 """
 from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR, SCHEDULER_MINUTE
 from .._base import (
-    get_scheduler_minute, cron_task, CLIENT_LOGGER, CLIENT_SESSION, CACHE_JSON,
+    get_scheduler_minute, cron_task, CLIENT_LOGGER, CLIENT_SESSION, PROJECT_JSON_FILE,
     ApsHelpers, get_session
 )
 
