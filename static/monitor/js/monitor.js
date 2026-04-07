@@ -5,13 +5,35 @@
 const API_BASE = '/monitor/api';
 let resourceChart = null;
 let refreshInterval = null;
+let originalTitle = document.title;
+let titleAlertInterval = null;
 
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
     initResourceChart();
+    fetchEnvironment();
     refreshAll();
     startAutoRefresh();
 });
+
+// 获取环境变量
+async function fetchEnvironment() {
+    try {
+        const response = await fetch(`${API_BASE}/env`);
+        const data = await response.json();
+        updateTitleWithEnvironment(data);
+    } catch (error) {
+        console.error('获取环境变量失败:', error);
+    }
+}
+
+// 更新title为环境变量
+function updateTitleWithEnvironment(env) {
+    const projectDir = env.project_dir || 'MyAPI';
+    const projectJson = env.project_json || '';
+    originalTitle = `${projectDir} ${projectJson} Monitor Panel`;
+    document.title = originalTitle;
+}
 
 // 自动刷新
 function startAutoRefresh() {
@@ -38,6 +60,110 @@ async function refreshAll() {
         fetchLogsPage()
     ]);
     updateLastUpdateTime();
+    checkAlertConditions();
+}
+
+// 检查告警条件并更新title
+function checkAlertConditions() {
+    const hasDbError = checkDatabaseError();
+    const hasUnreadLogs = checkUnreadLogs();
+    const hasSystemError = checkSystemStatus();
+    
+    if (hasDbError || hasUnreadLogs || hasSystemError) {
+        startTitleAlert(hasSystemError);
+    } else {
+        stopTitleAlert();
+    }
+}
+
+// 检查系统状态
+function checkSystemStatus() {
+    const statusIndicator = document.getElementById('status-indicator');
+    return statusIndicator && statusIndicator.classList.contains('error');
+}
+
+// 检查数据库错误
+function checkDatabaseError() {
+    // 检查概览页面的数据库状态
+    const dbBadge = document.getElementById('db-badge');
+    if (dbBadge && (dbBadge.classList.contains('warning') || dbBadge.classList.contains('error'))) {
+        return true;
+    }
+    
+    // 检查数据库详情页面的状态
+    const dbDetailBadge = document.getElementById('db-detail-badge');
+    if (dbDetailBadge && (dbDetailBadge.classList.contains('warning') || dbDetailBadge.classList.contains('error'))) {
+        return true;
+    }
+    
+    return false;
+}
+
+// 检查未读日志
+function checkUnreadLogs() {
+    // 检查日志页面的未读状态
+    const unreadLogs = document.querySelectorAll('#logs-tbody tr.unread');
+    if (unreadLogs.length > 0) {
+        return true;
+    }
+    
+    return false;
+}
+
+// 开始title闪烁
+function startTitleAlert(hasSystemError) {
+    if (titleAlertInterval) {
+        clearInterval(titleAlertInterval);
+    }
+    
+    let blinkState = 0;
+    let blinkPattern;
+    
+    if (hasSystemError) {
+        // 系统错误时的闪烁模式：红色禁止图标 + 完整文字
+        blinkPattern = [
+            `⛔ ${originalTitle}`,  // 状态1：红色禁止图标 + 完整文字
+            `⛔`,                  // 状态2：红色禁止图标 + 无文字
+            `⛔ ${originalTitle}`,  // 状态3：红色禁止图标 + 完整文字
+            `⛔`                   // 状态4：红色禁止图标 + 无文字
+        ];
+    } else {
+        // 普通告警时的闪烁模式
+        blinkPattern = [
+            `🚨 ${originalTitle}`,  // 状态1：红色图标 + 完整文字
+            `🚨`,                  // 状态2：红色图标 + 无文字
+            `⚠️ ${originalTitle}`,  // 状态3：黄色图标 + 完整文字
+            `⚠️`                   // 状态4：黄色图标 + 无文字
+        ];
+    }
+    
+    titleAlertInterval = setInterval(() => {
+        // 循环切换闪烁状态
+        blinkState = (blinkState + 1) % blinkPattern.length;
+        document.title = blinkPattern[blinkState];
+        
+        // 每完成一轮闪烁（4次）后暂停一下，形成节律
+        if (blinkState === 0) {
+            clearInterval(titleAlertInterval);
+            setTimeout(() => {
+                const hasDbError = checkDatabaseError();
+                const hasUnreadLogs = checkUnreadLogs();
+                const hasSystemError = checkSystemStatus();
+                if (hasDbError || hasUnreadLogs || hasSystemError) {
+                    startTitleAlert(hasSystemError);
+                }
+            }, 800); // 暂停时间，调整节律
+        }
+    }, 300); // 闪烁速度，调整闪烁频率
+}
+
+// 停止title闪烁
+function stopTitleAlert() {
+    if (titleAlertInterval) {
+        clearInterval(titleAlertInterval);
+        titleAlertInterval = null;
+        document.title = originalTitle;
+    }
 }
 
 // 获取健康状态
@@ -247,6 +373,7 @@ function updateDatabaseDisplay(data) {
 
     if (Object.keys(dbConnections).length === 0) {
         listEl.innerHTML = '<div class="empty-state">暂无数据库连接</div>';
+        checkAlertConditions();
         return;
     }
 
@@ -259,6 +386,8 @@ function updateDatabaseDisplay(data) {
             </span>
         </div>
     `).join('');
+    
+    checkAlertConditions();
 }
 
 // 获取定时任务指标
@@ -496,6 +625,7 @@ function updateLogsDisplay(logs) {
 
     if (logs.length === 0) {
         listEl.innerHTML = '<div class="empty-state">暂无日志</div>';
+        checkAlertConditions();
         return;
     }
 
@@ -512,6 +642,8 @@ function updateLogsDisplay(logs) {
             ${log.traceback ? `<div class="log-traceback">${log.traceback}</div>` : ''}
         </div>
     `).join('');
+    
+    checkAlertConditions();
 }
 
 // 更新最后更新时间
@@ -590,6 +722,7 @@ function updateDatabaseDetailDisplay(data) {
     
     if (Object.keys(dbConnections).length === 0) {
         tbodyEl.innerHTML = '<tr><td colspan="11" class="empty-state">暂无数据库连接</td></tr>';
+        checkAlertConditions();
         return;
     }
     
@@ -643,6 +776,8 @@ function updateDatabaseDetailDisplay(data) {
         </tr>
         `;
     }).join('');
+    
+    checkAlertConditions();
 }
 
 // API 请求页面
@@ -926,6 +1061,7 @@ function updateLogsPageDisplay(logs) {
     
     if (logs.length === 0) {
         tbodyEl.innerHTML = '<tr><td colspan="5" class="empty-state">暂无日志记录</td></tr>';
+        checkAlertConditions();
         return;
     }
     
@@ -967,6 +1103,8 @@ function updateLogsPageDisplay(logs) {
             </tr>
         `;
     }).join('');
+    
+    checkAlertConditions();
     
     // 悬停效果由全局事件委托处理
 }
@@ -1035,6 +1173,8 @@ function toggleLogReadStatus(logId) {
             checkbox.textContent = '';
         }
     }
+    
+    checkAlertConditions();
 }
 
 // 初始化悬停效果

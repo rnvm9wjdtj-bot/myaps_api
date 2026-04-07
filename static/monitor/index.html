@@ -29,72 +29,6 @@
 
         <!-- Overview 页面 -->
         <main class="main-content page-content" id="page-overview">
-            <!-- HTTP 请求监控卡片 -->
-            <section class="card">
-                <div class="card-header">
-                    <h2>HTTP 请求监控</h2>
-                    <span class="badge" id="http-badge">监控中</span>
-                </div>
-                <div class="card-body">
-                    <div class="http-summary" id="http-summary">
-                        <div class="summary-item">
-                            <span class="summary-label">总请求数</span>
-                            <span class="summary-value" id="http-total">--</span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="summary-label">错误率</span>
-                            <span class="summary-value" id="http-error-rate">--%</span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="summary-label">平均响应</span>
-                            <span class="summary-value" id="http-avg-time">--ms</span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="summary-label">QPS</span>
-                            <span class="summary-value" id="http-rpm">--</span>
-                        </div>
-                    </div>
-                    <div class="http-status-codes" id="http-status-codes">
-                        <!-- 动态生成状态码分布 -->
-                    </div>
-                    <div class="http-paths" id="http-paths">
-                        <!-- 动态生成路径统计 -->
-                    </div>
-                </div>
-            </section>
-
-            <!-- 告警信息卡片 -->
-            <section class="card">
-                <div class="card-header">
-                    <h2>最近告警</h2>
-                    <button class="btn btn-small" onclick="clearAlerts()">清空</button>
-                </div>
-                <div class="card-body">
-                    <div class="alert-list" id="alert-list">
-                        <!-- 动态生成告警列表 -->
-                    </div>
-                </div>
-            </section>
-
-            <!-- 日志信息卡片 -->
-            <section class="card">
-                <div class="card-header">
-                    <h2>最近日志</h2>
-                    <div class="log-controls">
-                        <select id="log-level" onchange="fetchLogs()">
-                            <option value="">全部</option>
-                            <option value="warning">警告</option>
-                            <option value="error">错误</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div class="log-list" id="log-list">
-                        <!-- 动态生成日志列表 -->
-                    </div>
-                </div>
-            </section>
-
             <!-- 资源监控卡片 -->
             <section class="card">
                 <div class="card-header">
@@ -155,6 +89,72 @@
                     </div>
                     <div class="db-list" id="db-list">
                         <!-- 动态生成数据库连接列表 -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- HTTP 请求监控卡片 -->
+            <section class="card">
+                <div class="card-header">
+                    <h2>HTTP 请求监控</h2>
+                    <span class="badge" id="http-badge">监控中</span>
+                </div>
+                <div class="card-body">
+                    <div class="http-summary" id="http-summary">
+                        <div class="summary-item">
+                            <span class="summary-label">总请求数</span>
+                            <span class="summary-value" id="http-total">--</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">错误率</span>
+                            <span class="summary-value" id="http-error-rate">--%</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">平均响应</span>
+                            <span class="summary-value" id="http-avg-time">--ms</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">QPS</span>
+                            <span class="summary-value" id="http-rpm">--</span>
+                        </div>
+                    </div>
+                    <div class="http-status-codes" id="http-status-codes">
+                        <!-- 动态生成状态码分布 -->
+                    </div>
+                    <div class="http-paths" id="http-paths">
+                        <!-- 动态生成路径统计 -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- 日志信息卡片 -->
+            <section class="card">
+                <div class="card-header">
+                    <h2>最近日志</h2>
+                    <div class="log-controls">
+                        <select id="log-level" onchange="fetchLogs()">
+                            <option value="">全部</option>
+                            <option value="warning">警告</option>
+                            <option value="error">错误</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="log-list" id="log-list">
+                        <!-- 动态生成日志列表 -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- 告警信息卡片 -->
+            <section class="card">
+                <div class="card-header">
+                    <h2>最近告警</h2>
+                    <button class="btn btn-small" onclick="clearAlerts()">清空</button>
+                </div>
+                <div class="card-body">
+                    <div class="alert-list" id="alert-list">
+                        <!-- 动态生成告警列表 -->
                     </div>
                 </div>
             </section>

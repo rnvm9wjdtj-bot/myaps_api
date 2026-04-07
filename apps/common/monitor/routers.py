@@ -202,3 +202,19 @@ async def get_pool_leak_detection():
             "error": str(e),
             "message": "获取连接池泄漏检测信息失败"
         }
+
+
+@router.get("/env")
+async def get_environment():
+    """
+    获取环境变量信息
+
+    返回当前系统的环境变量配置
+    """
+    import os
+    from config.settings import PROJECT_DIR, PROJECT_JSON
+    
+    return {
+        "project_dir": PROJECT_DIR,
+        "project_json": PROJECT_JSON
+    }
