@@ -12,7 +12,7 @@ from .collectors.outbound_http_collector import outbound_http_collector
 
 
 class HTTPMonitorWrapper:
-    """HTTP 请求监控包装器"""
+    """接收请求包装器"""
     
     def __init__(self, client):
         """

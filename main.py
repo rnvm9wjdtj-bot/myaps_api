@@ -10,6 +10,10 @@ env_file = os.path.join(BASE_DIR, '.env')
 os.environ.setdefault('ENV_FILE', env_file)
 load_dotenv(env_file)
 
+# 在导入settings之前设置启动模式环境变量
+if __name__ == "__main__":
+    os.environ['START_MODE'] = 'direct'
+
 # 导入模块
 from core.app import create_app
 from core.lifespan import lifespan
@@ -102,7 +106,7 @@ if __name__ == "__main__":
         uvicorn.run(
             app,
             host="0.0.0.0",
-            port=PORT + 1,
+            port=PORT,
             log_level="info",
             access_log=True,
             log_config=LOGGING_CONFIG

@@ -64,7 +64,14 @@ RESOURCE_CLEANUP_CONFIG = {
 
 PROTOCOL = os.getenv("PROTOCOL", "http://")
 HOST = os.getenv("HOST", "0.0.0.0")
-PORT = int(os.getenv("PORT", 8000))
+BASE_PORT = int(os.getenv("PORT", 8000))
+START_MODE = os.getenv("START_MODE", "")
+
+if START_MODE == "direct":
+    PORT = BASE_PORT + 1
+else:
+    PORT = BASE_PORT
+
 THIS_BASE_URL = PROTOCOL + "localhost:" + str(PORT)
 
 # 项目目录

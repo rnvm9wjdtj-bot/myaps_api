@@ -30,8 +30,8 @@ async function fetchEnvironment() {
 // 更新title为环境变量
 function updateTitleWithEnvironment(env) {
     const projectDir = env.project_dir || 'MyAPI';
-    const projectJson = env.project_json || '';
-    originalTitle = `${projectDir} ${projectJson} Monitor Panel`;
+    const projectJson = env.project_json.split('.')[0] || '';
+    originalTitle = `${projectDir} ${projectJson} 监控面板`;
     document.title = originalTitle;
 }
 
@@ -52,13 +52,13 @@ async function refreshAll() {
         fetchScheduler(),
         fetchHTTP(),
         fetchAlerts(),
-        fetchLogs(),
         // 刷新各个页面的数据
         fetchAPIRequests(),
         fetchOutboundRequests(),
         fetchDatabaseDetail(),
         fetchSchedulerPage(),
-        fetchLogsPage()
+        fetchLogsPage(),
+        fetchOverviewOutboundRequests()
     ]);
     updateLastUpdateTime();
     checkAlertConditions();
@@ -104,11 +104,15 @@ function checkDatabaseError() {
 function checkUnreadLogs() {
     // 检查日志页面的未读状态
     const unreadLogs = document.querySelectorAll('#logs-tbody tr.unread');
-    if (unreadLogs.length > 0) {
-        return true;
+    const hasUnread = unreadLogs.length > 0;
+    
+    // 更新红点角标的显示
+    const logsBadge = document.getElementById('logs-badge');
+    if (logsBadge) {
+        logsBadge.style.display = hasUnread ? 'inline-block' : 'none';
     }
     
-    return false;
+    return hasUnread;
 }
 
 // 开始title闪烁
@@ -182,6 +186,8 @@ async function fetchHealth() {
 // 更新健康状态显示
 function updateHealthStatus(data) {
     const indicator = document.getElementById('status-indicator');
+    if (!indicator) return;
+    
     const statusMap = {
         'healthy': { text: '● 系统正常', class: 'healthy' },
         'degraded': { text: '● 部分警告', class: 'warning' },
@@ -196,6 +202,8 @@ function updateHealthStatus(data) {
 // 设置系统状态
 function setSystemStatus(status, text) {
     const indicator = document.getElementById('status-indicator');
+    if (!indicator) return;
+    
     indicator.textContent = `● ${text}`;
     indicator.className = `status ${status}`;
 }
@@ -367,6 +375,12 @@ function updateDatabaseDisplay(data) {
         badge.textContent = '异常';
         badge.className = 'badge warning';
     }
+    
+    // 更新数据库页签的红点角标
+    const databaseBadge = document.getElementById('database-badge');
+    if (databaseBadge) {
+        databaseBadge.style.display = summary.unhealthy > 0 ? 'inline-block' : 'none';
+    }
 
     // 更新连接列表
     const listEl = document.getElementById('db-list');
@@ -496,13 +510,20 @@ function updateHTTPDisplay(data) {
         badge.textContent = '异常';
         badge.className = 'badge error';
     }
+    
+    // 更新接收请求页签的红点角标
+    const apiRequestsBadge = document.getElementById('api-requests-badge');
+    if (apiRequestsBadge) {
+        const hasErrors = summary.error_rate > 0;
+        apiRequestsBadge.style.display = hasErrors ? 'inline-block' : 'none';
+    }
 
     // 更新状态码分布
     const statusCodesEl = document.getElementById('http-status-codes');
     const statusCodes = data.status_codes || {};
 
     if (Object.keys(statusCodes).length === 0) {
-        statusCodesEl.innerHTML = '<div class="empty-state">暂无数据</div>';
+        statusCodesEl.innerHTML = '<div class="empty-state">暂无接收请求</div>';
     } else {
         statusCodesEl.innerHTML = Object.entries(statusCodes).map(([code, count]) => {
             const codeClass = code.startsWith('2') ? 'success' : (code.startsWith('3') ? 'redirect' : 'error');
@@ -737,6 +758,12 @@ function updateDatabaseDetailDisplay(data) {
         badge.className = 'badge error';
     }
     
+    // 更新数据库页签的红点角标
+    const databaseBadge = document.getElementById('database-badge');
+    if (databaseBadge) {
+        databaseBadge.style.display = summary.unhealthy > 0 ? 'inline-block' : 'none';
+    }
+    
     tbodyEl.innerHTML = Object.entries(dbConnections).map(([name, status]) => {
         const pool = pools[name] || {};
         const stats = pool.stats || {};
@@ -798,6 +825,13 @@ function updateAPIRequestsDisplay(data) {
     
     // 根据时间戳倒序排序
     requests.sort((a, b) => b.timestamp - a.timestamp);
+    
+    // 更新接收请求页签的红点角标
+    const apiRequestsBadge = document.getElementById('api-requests-badge');
+    if (apiRequestsBadge) {
+        const hasErrors = requests.some(req => req.status_code >= 400);
+        apiRequestsBadge.style.display = hasErrors ? 'inline-block' : 'none';
+    }
     
     if (requests.length === 0) {
         tbodyEl.innerHTML = '<tr><td colspan="8" class="empty-state">暂无 API 请求记录</td></tr>';
@@ -1176,6 +1210,7 @@ function updateLogsPageDisplay(logs) {
     }).join('');
     
     checkAlertConditions();
+    checkUnreadLogs();
     
     // 悬停效果由全局事件委托处理
 }
@@ -1246,6 +1281,7 @@ function toggleLogReadStatus(logId) {
     }
     
     checkAlertConditions();
+    checkUnreadLogs();
 }
 
 // 初始化悬停效果
@@ -1437,7 +1473,7 @@ function refreshSchedulerPage() {
 // 开关状态：是否显示内部请求
 let showInternalRequests = false;
 
-// 获取外部请求数据
+// 获取发送请求数据
 async function fetchOutboundRequests() {
     try {
         const response = await fetch(`${API_BASE}/outbound-http/all`);
@@ -1456,7 +1492,7 @@ async function fetchOutboundRequests() {
         const summary = calculateOutboundRequestsSummary(filteredRequests);
         updateOutboundHttpSummary({ summary });
     } catch (error) {
-        console.error('获取外部请求数据失败:', error);
+        console.error('获取发送请求数据失败:', error);
     }
 }
 
@@ -1467,7 +1503,7 @@ function toggleInternalRequests() {
     fetchOutboundRequests();
 }
 
-// 计算外部请求统计信息
+// 计算发送请求统计信息
 function calculateOutboundRequestsSummary(requests) {
     if (requests.length === 0) {
         return {
@@ -1490,7 +1526,7 @@ function calculateOutboundRequestsSummary(requests) {
     };
 }
 
-// 更新外部请求表格
+// 更新发送请求表格
 function updateOutboundRequestsTable(requests) {
     const tableBody = document.getElementById('outbound-requests-table');
     if (!tableBody) return;
@@ -1498,7 +1534,7 @@ function updateOutboundRequestsTable(requests) {
     tableBody.innerHTML = requests.map(request => formatOutboundRequestRow(request)).join('');
 }
 
-// 格式化外部请求行
+// 格式化发送请求行
 function formatOutboundRequestRow(request) {
     const timestamp = new Date(request.timestamp * 1000).toLocaleString('zh-CN');
     const duration = (request.duration * 1000).toFixed(0);
@@ -1521,7 +1557,7 @@ function formatOutboundRequestRow(request) {
     `;
 }
 
-// 显示外部请求详情
+// 显示发送请求详情
 function showOutboundRequestDetail(request) {
     const modal = document.createElement('div');
     modal.className = 'modal';
@@ -1529,7 +1565,7 @@ function showOutboundRequestDetail(request) {
         <div class="modal-overlay"></div>
         <div class="modal-content">
             <div class="modal-header">
-                <h3>外部请求详情</h3>
+                <h3>发送请求详情</h3>
                 <button class="close-btn" onclick="this.closest('.modal').remove()">&times;</button>
             </div>
             <div class="modal-body">
@@ -1613,21 +1649,28 @@ function showOutboundRequestDetail(request) {
     Prism.highlightAll();
 }
 
-// 更新外部请求摘要
+// 更新发送请求摘要
 function updateOutboundHttpSummary(metrics) {
     const summary = metrics.summary || {};
     document.getElementById('outbound-total-requests').textContent = summary.total_requests || 0;
     document.getElementById('outbound-error-rate').textContent = (summary.error_rate || 0).toFixed(2) + '%';
     document.getElementById('outbound-avg-time').textContent = (summary.avg_response_time * 1000).toFixed(0) + 'ms';
     document.getElementById('outbound-rpm').textContent = summary.requests_per_minute || 0;
+    
+    // 更新发送请求页签的红点角标
+    const outboundRequestsBadge = document.getElementById('outbound-requests-badge');
+    if (outboundRequestsBadge) {
+        const hasErrors = summary.error_rate > 0;
+        outboundRequestsBadge.style.display = hasErrors ? 'inline-block' : 'none';
+    }
 }
 
-// 刷新外部请求数据
+// 刷新发送请求数据
 function refreshOutboundRequests() {
     fetchOutboundRequests();
 }
 
-// 重置外部请求统计
+// 重置发送请求统计
 async function resetOutboundStats() {
     try {
         const response = await fetch(`${API_BASE}/outbound-http/reset`, { method: 'POST' });
@@ -1635,7 +1678,105 @@ async function resetOutboundStats() {
         alert(data.message);
         fetchOutboundRequests();
     } catch (error) {
-        console.error('重置外部请求统计失败:', error);
+        console.error('重置发送请求统计失败:', error);
         alert('重置失败，请重试');
     }
+}
+
+// 获取并更新overview页面的发送请求数据
+async function fetchOverviewOutboundRequests() {
+    try {
+        const response = await fetch(`${API_BASE}/outbound-http/all`);
+        const requests = await response.json();
+        
+        // 过滤内部请求
+        const baseUrl = 'http://localhost:8000';
+        const filteredRequests = requests.filter(request => {
+            return !request.url.startsWith(baseUrl);
+        });
+        
+        // 计算统计信息
+        const summary = calculateOutboundRequestsSummary(filteredRequests);
+        
+        // 更新overview页面的统计
+        updateOverviewOutboundSummary(summary);
+        
+        // 更新overview页面的请求列表（显示最近5条）
+        const recentRequests = filteredRequests.slice(0, 5);
+        updateOverviewOutboundList(recentRequests);
+        
+        // 更新状态徽章
+        const badge = document.getElementById('outbound-badge');
+        if (badge) {
+            if (summary.error_rate > 0) {
+                badge.className = 'badge error';
+                badge.textContent = '异常';
+            } else {
+                badge.className = 'badge healthy';
+                badge.textContent = '正常';
+            }
+        }
+        
+        // 更新发送请求页签的红点角标
+        const outboundRequestsBadge = document.getElementById('outbound-requests-badge');
+        if (outboundRequestsBadge) {
+            const hasErrors = summary.error_rate > 0;
+            outboundRequestsBadge.style.display = hasErrors ? 'inline-block' : 'none';
+        }
+    } catch (error) {
+        console.error('获取overview页面发送请求数据失败:', error);
+    }
+}
+
+// 更新overview页面的发送请求统计
+function updateOverviewOutboundSummary(summary) {
+    const totalEl = document.getElementById('outbound-total');
+    const errorRateEl = document.getElementById('outbound-error-rate');
+    const avgEl = document.getElementById('outbound-avg');
+    
+    if (totalEl) {
+        totalEl.textContent = summary.total_requests || 0;
+    }
+    if (errorRateEl) {
+        errorRateEl.textContent = (summary.error_rate || 0).toFixed(2) + '%';
+        if (summary.error_rate > 0) {
+            errorRateEl.classList.add('error');
+        } else {
+            errorRateEl.classList.remove('error');
+        }
+    }
+    if (avgEl) {
+        avgEl.textContent = (summary.avg_response_time * 1000).toFixed(0) + 'ms';
+    }
+}
+
+// 更新overview页面的发送请求列表
+function updateOverviewOutboundList(requests) {
+    const listEl = document.getElementById('outbound-list');
+    if (!listEl) return;
+    
+    if (requests.length === 0) {
+        listEl.innerHTML = '<div class="no-data">暂无发送请求</div>';
+        return;
+    }
+    
+    listEl.innerHTML = requests.map(request => {
+        const timestamp = new Date(request.timestamp * 1000).toLocaleString('zh-CN');
+        const duration = (request.duration * 1000).toFixed(0);
+        const statusClass = request.status_code >= 400 ? 'error' : 'success';
+        
+        return `
+            <div class="outbound-item">
+                <div class="outbound-header">
+                    <span class="method ${request.method.toLowerCase()}">${request.method}</span>
+                    <span class="timestamp">${timestamp}</span>
+                </div>
+                <div class="outbound-url">${request.url}</div>
+                <div class="outbound-footer">
+                    <span class="status ${statusClass}">${request.status_code}</span>
+                    <span class="duration">${duration}ms</span>
+                </div>
+            </div>
+        `;
+    }).join('');
 }

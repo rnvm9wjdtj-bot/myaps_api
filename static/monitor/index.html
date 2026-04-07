@@ -15,14 +15,13 @@
         <header class="header">
             <nav class="nav-menu">
                 <a href="#" class="nav-item active" data-page="overview">Overview</a>
-                <a href="#" class="nav-item" data-page="database">数据库</a>
-                <a href="#" class="nav-item" data-page="api-requests">API请求</a>
-                <a href="#" class="nav-item" data-page="outbound-requests">外部请求</a>
+                <a href="#" class="nav-item" data-page="database">数据库<span id="database-badge" class="nav-badge" style="display: none;"></span></a>
+                <a href="#" class="nav-item" data-page="api-requests">接收请求<span id="api-requests-badge" class="nav-badge" style="display: none;"></span></a>
+                <a href="#" class="nav-item" data-page="outbound-requests">发送请求<span id="outbound-requests-badge" class="nav-badge" style="display: none;"></span></a>
                 <a href="#" class="nav-item" data-page="scheduler">定时任务</a>
-                <a href="#" class="nav-item" data-page="logs">日志</a>
+                <a href="#" class="nav-item" data-page="logs">日志<span id="logs-badge" class="nav-badge" style="display: none;"></span></a>
             </nav>
             <div class="header-info">
-                <span id="status-indicator" class="status healthy">● 系统正常</span>
                 <span id="last-update">最后更新: --</span>
                 <button id="refresh-btn" class="btn btn-primary" onclick="refreshAll()">刷新</button>
             </div>
@@ -94,10 +93,50 @@
                 </div>
             </section>
 
-            <!-- HTTP 请求监控卡片 -->
+            <!-- 告警信息卡片 -->
             <section class="card">
                 <div class="card-header">
-                    <h2>HTTP 请求监控</h2>
+                    <h2>最近告警</h2>
+                    <button class="btn btn-small" onclick="clearAlerts()">清空</button>
+                </div>
+                <div class="card-body">
+                    <div class="alert-list" id="alert-list">
+                        <!-- 动态生成告警列表 -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- 发送请求卡片 -->
+            <section class="card">
+                <div class="card-header">
+                    <h2>发送请求</h2>
+                    <span class="badge" id="outbound-badge">监控中</span>
+                </div>
+                <div class="card-body">
+                    <div class="outbound-summary" id="outbound-summary">
+                        <div class="summary-item">
+                            <span class="summary-label">总请求数</span>
+                            <span class="summary-value" id="outbound-total">--</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">错误率</span>
+                            <span class="summary-value" id="outbound-error-rate">--%</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">平均响应</span>
+                            <span class="summary-value" id="outbound-avg">--ms</span>
+                        </div>
+                    </div>
+                    <div class="outbound-list" id="outbound-list">
+                        <!-- 动态生成发送请求列表 -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- 接收请求卡片 -->
+            <section class="card">
+                <div class="card-header">
+                    <h2>接收请求</h2>
                     <span class="badge" id="http-badge">监控中</span>
                 </div>
                 <div class="card-body">
@@ -124,38 +163,6 @@
                     </div>
                     <div class="http-paths" id="http-paths">
                         <!-- 动态生成路径统计 -->
-                    </div>
-                </div>
-            </section>
-
-            <!-- 日志信息卡片 -->
-            <section class="card">
-                <div class="card-header">
-                    <h2>最近日志</h2>
-                    <div class="log-controls">
-                        <select id="log-level" onchange="fetchLogs()">
-                            <option value="">全部</option>
-                            <option value="warning">警告</option>
-                            <option value="error">错误</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div class="log-list" id="log-list">
-                        <!-- 动态生成日志列表 -->
-                    </div>
-                </div>
-            </section>
-
-            <!-- 告警信息卡片 -->
-            <section class="card">
-                <div class="card-header">
-                    <h2>最近告警</h2>
-                    <button class="btn btn-small" onclick="clearAlerts()">清空</button>
-                </div>
-                <div class="card-body">
-                    <div class="alert-list" id="alert-list">
-                        <!-- 动态生成告警列表 -->
                     </div>
                 </div>
             </section>
@@ -218,7 +225,7 @@
             </section>
         </main>
 
-        <!-- API请求页面 -->
+        <!-- 接收请求页面 -->
         <main class="main-content page-content" id="page-api-requests" style="display: none;">
             <section class="card full-width">
                 <div class="card-header">
@@ -247,7 +254,7 @@
                             </tbody>
                         </table>
                     </div>
-                    <!-- API请求详情模态对话框 -->
+                    <!-- 接收请求详情模态对话框 -->
                     <div class="modal" id="api-request-modal" style="display: none;">
                         <div class="modal-overlay" onclick="hideRequestDetail()"></div>
                         <div class="modal-content">
@@ -307,11 +314,11 @@
             </section>
         </main>
 
-        <!-- 外部请求页面 -->
+        <!-- 发送请求页面 -->
         <main class="main-content page-content" id="page-outbound-requests" style="display: none;">
             <section class="card full-width">
                 <div class="card-header">
-                    <h2>外部请求记录</h2>
+                    <h2>发送请求记录</h2>
                     <div class="card-actions">
                         <div class="toggle-switch">
                             <label>
@@ -358,7 +365,7 @@
                                 </tr>
                             </thead>
                             <tbody id="outbound-requests-table">
-                                <!-- 动态生成外部请求记录 -->
+                                <!-- 动态生成发送请求记录 -->
                             </tbody>
                         </table>
                     </div>

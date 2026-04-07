@@ -665,7 +665,7 @@ class HapWorksheet:
         def delete_batch(batch_start, batch_end):
             batch_row_ids = row_ids[batch_start:batch_end]
             
-            # 发送API请求
+            # 发送接收请求
             response = self.hap_conn._delete(
                 endpoint=endpoint,
                 payload={
@@ -1583,7 +1583,7 @@ class HapWorksheetRowSet:
             batch_row_ids = self.row_ids[batch_start:batch_end]
             batch_rows = self.rows[batch_start:batch_end]
             
-            # 发送API请求
+            # 发送接收请求
             response = self.hap_conn._patch(
                 endpoint=f"/v3/app/worksheets/{self.worksheet.worksheet_id}/rows/batch",
                 payload={
@@ -1660,7 +1660,7 @@ class HapWorksheetRowSet:
         def delete_batch(batch_start, batch_end):
             batch_row_ids = self.row_ids[batch_start:batch_end]
             
-            # 发送API请求
+            # 发送接收请求
             response = self.hap_conn._delete(
                 endpoint=endpoint,
                 payload={

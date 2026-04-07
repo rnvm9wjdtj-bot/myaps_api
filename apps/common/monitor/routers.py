@@ -111,7 +111,7 @@ async def get_system_info():
 @router.get("/http")
 async def get_http_metrics():
     """
-    获取 HTTP 请求监控指标
+    获取 接收请求指标
 
     返回 HTTP 请求统计、状态码分布、路径统计等信息
     """

@@ -632,6 +632,22 @@ body {
     border-bottom: 2px solid var(--primary-color);
 }
 
+.nav-item {
+    position: relative;
+}
+
+.nav-badge {
+    position: absolute;
+    top: 4px;
+    right: -4px;
+    width: 8px;
+    height: 8px;
+    background-color: var(--error-color);
+    border-radius: 50%;
+    border: 2px solid white;
+    box-shadow: 0 0 0 2px rgba(245, 34, 45, 0.2);
+}
+
 /* 全宽卡片 */
 .card.full-width {
     grid-column: 1 / -1;
@@ -993,7 +1009,7 @@ body {
     font-weight: 700;
 }
 
-/* API请求详情样式 */
+/* 接收请求详情样式 */
 .api-request-detail {
     margin-top: 20px;
     padding: 16px;
@@ -1364,7 +1380,7 @@ code[class*="language-"] {
     transform: translateX(20px);
 }
 
-/* 外部请求表格样式 */
+/* 发送请求表格样式 */
 .outbound-requests-container {
     overflow-x: hidden;
 }
@@ -1542,4 +1558,111 @@ td {
     .outbound-requests-table .error-message {
         max-width: 100px;
     }
+}
+
+/* 外部请求卡片样式 */
+.outbound-summary {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #eee;
+}
+
+.outbound-summary .summary-item {
+    text-align: center;
+    flex: 1;
+}
+
+.outbound-summary .summary-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    display: block;
+    margin-bottom: 4px;
+}
+
+.outbound-summary .summary-value {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.outbound-summary .summary-value.error {
+    color: var(--error-color);
+}
+
+.outbound-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.outbound-item {
+    padding: 12px;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    background: #fafafa;
+}
+
+.outbound-item:last-child {
+    margin-bottom: 0;
+}
+
+.outbound-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.outbound-header .method {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.outbound-header .timestamp {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.outbound-url {
+    font-size: 13px;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    word-break: break-all;
+}
+
+.outbound-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.outbound-footer .status {
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.outbound-footer .status.success {
+    color: var(--success-color);
+}
+
+.outbound-footer .status.error {
+    color: var(--error-color);
+}
+
+.outbound-footer .duration {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.outbound-list .no-data {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 40px 0;
 }

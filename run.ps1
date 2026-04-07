@@ -185,6 +185,7 @@ try {
     # Set environment variables
     [Environment]::SetEnvironmentVariable("PORT", $Port, "Process")
     [Environment]::SetEnvironmentVariable("HOST", $HostAddress, "Process")
+    [Environment]::SetEnvironmentVariable("START_MODE", "script", "Process")
     [Environment]::SetEnvironmentVariable("PYTHONPATH", (Get-Location).Path, "Process")
     # Set unbuffered output for better log display
     [Environment]::SetEnvironmentVariable("PYTHONUNBUFFERED", "1", "Process")
