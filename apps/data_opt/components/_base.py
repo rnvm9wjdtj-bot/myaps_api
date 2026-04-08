@@ -240,6 +240,12 @@ class ApsHelpers:
     def pl_release_failed(native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, push_data: dict=None, msg_from: str=None):
         logger.fail("推送 MO", json.dumps(push_data, ensure_ascii=False), msg)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if msg:
+            try:
+                if len(msg) > 128:
+                    msg = msg[:128]
+            except Exception as e:
+                pass
         memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
         
         try:

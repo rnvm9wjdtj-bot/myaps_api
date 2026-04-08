@@ -76,8 +76,12 @@ def sap_post(url: str, session: requests.Session, interface_id: str, data: dict)
 
     response_json = {}
     if response.status_code == status.HTTP_200_OK:
-        response_json = response.json()
-        CLIENT_LOGGER.success("POST请求", f"状态码{response.status_code}", f"响应{response_json}")
+        try:
+            response_json = response.json()
+            CLIENT_LOGGER.success("POST请求", f"状态码{response.status_code}", f"响应{response_json}")
+        except Exception as e:
+            CLIENT_LOGGER.fail("POST请求", f"状态码{response.status_code}", f"解析JSON失败: {str(e)}")
+            CLIENT_LOGGER.fail("POST请求", f"状态码{response.status_code}", f"响应文本: {response.text}")
     else:
         CLIENT_LOGGER.fail("POST请求", f"状态码{response.status_code}", f"响应{response.text}")
     return {
@@ -243,12 +247,21 @@ def handle_pl_status_a2e(supplyno_or_data: str | dict):
 
         sap_response = sap_post(url=sap_url2, session=sap_session, interface_id="ZPP_PLAN_ORD_CREATE", data=data)
         sap_response_json = sap_response['response_json']
-        sap_mo_data = sap_response_json['BODY'][0]
         
-        if sap_mo_data['STATUS'] == 'S':
-            ApsHelpers.pl_release_success(native_plno=supplyno, mono=sap_mo_data['AUFNR'], msg=sap_mo_data['MESSAGE'], msg_from='ERP')
-        else:
-            ApsHelpers.pl_release_failed(native_plno=supplyno, msg=sap_mo_data['MESSAGE'], push_data=data, msg_from='ERP')
+        try:
+            if 'BODY' in sap_response_json and len(sap_response_json['BODY']) > 0:
+                sap_mo_data = sap_response_json['BODY'][0]
+                
+                if sap_mo_data.get('STATUS') == 'S':
+                    ApsHelpers.pl_release_success(native_plno=supplyno, mono=sap_mo_data.get('AUFNR'), msg=sap_mo_data.get('MESSAGE'), msg_from='ERP')
+                else:
+                    ApsHelpers.pl_release_failed(native_plno=supplyno, msg=sap_mo_data.get('MESSAGE', '未知错误'), push_data=data, msg_from='ERP')
+            else:
+                # 处理响应格式不正确的情况
+                ApsHelpers.pl_release_failed(native_plno=supplyno, msg=f"响应格式不正确: {sap_response['response_text']}", push_data=data, msg_from='ERP')
+        except Exception as e:
+            # 处理其他异常
+            ApsHelpers.pl_release_failed(native_plno=supplyno, msg=f"处理响应失败: {str(e)}", push_data=data, msg_from='ERP')
     except requests.exceptions.Timeout as e:
         # 处理请求超时，按推送失败处理
         ApsHelpers.pl_release_failed(native_plno=supplyno, msg=f"请求超时: {str(e)}", push_data=data, msg_from='ERP')

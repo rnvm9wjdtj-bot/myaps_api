@@ -2,7 +2,7 @@
  * MyAPS 监控面板 JavaScript
  */
 
-const API_BASE = 'http://localhost:8001/monitor/api';
+const API_BASE = '/monitor/api';
 let resourceChart = null;
 let refreshInterval = null;
 let originalTitle = document.title;

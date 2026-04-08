@@ -586,6 +586,9 @@ class ModifySupply(BaseModel):
                 values["avail_qty"] = None
         if values.get("status") not in gc.OrderStatusEnum.__members__:
             values["status"] = gc.OrderStatusEnum.CRE
+        memo = values.get("memo", "")
+        if len(memo) > 255:
+            values["memo"] = memo[:255]
         return values
 
     @model_validator(mode="after")

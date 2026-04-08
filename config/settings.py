@@ -11,7 +11,8 @@ from globalobjects import logger as log_config
 
 logger = log_config.get_logger(__name__)
 # 加载.env文件中的环境变量
-BASE_DIR = os.getcwd()
+from pathlib import Path
+BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(os.getenv('ENV_FILE', os.path.join(BASE_DIR, '.env')))
 
 

@@ -65,7 +65,9 @@ class HTTPMonitorWrapper:
                 elif hasattr(response, 'text'):
                     response_body = response.text
             except Exception:
-                pass
+                # JSON解析失败，尝试获取响应文本
+                if hasattr(response, 'text'):
+                    response_body = response.text
                 
         except Exception as e:
             status_code = 500
