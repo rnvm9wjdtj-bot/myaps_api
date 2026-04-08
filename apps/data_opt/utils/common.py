@@ -1,15 +1,18 @@
 import base64, requests, json, ast, re#,os,
 
-from globalobjects import logger as log_config
-
 
 from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
 from typing import Optional, Dict, Union
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+
 from config.settings import LOG_LEVEL
+from apps.common.monitor.http_client_wrapper import HTTPMonitorWrapper
 
 
+
+from globalobjects import logger as log_config
 # 获取日志器
 logger = log_config.get_logger(__name__, level=LOG_LEVEL)
 
@@ -195,7 +198,14 @@ def add_basic_auth_requests(
     encoded_auth = base64.b64encode(auth_string.encode('utf-8')).decode('utf-8')
     auth_header = {'Authorization': f'Basic {encoded_auth}'}
     
-    if isinstance(session, requests.Session):
+    if isinstance(session, HTTPMonitorWrapper):
+        # 获取内部的client对象并添加认证头
+        client = session.client
+        if isinstance(client, requests.Session):
+            client.headers.update(auth_header)
+        elif isinstance(client, dict):
+            client.update(auth_header)
+    elif isinstance(session, requests.Session):
         session.headers.update(auth_header)
     elif isinstance(session, dict):
         session.update(auth_header)

@@ -785,7 +785,13 @@ class MySQLBinlogMonitor:
             "passwd": self.mysql_settings["password"],
         }
         
-        server_id = 100 + os.getpid() % 1000
+        # 生成更可靠的server_id，避免冲突
+        # 结合进程ID、时间戳和随机数
+        import random
+        timestamp = int(time.time() * 1000)  # 毫秒时间戳
+        random_num = random.randint(1000, 9999)
+        # 使用更大的范围，确保唯一性
+        server_id = 1000000000 + (os.getpid() % 10000) * 10000 + (timestamp % 10000) * 100 + random_num % 100
         
         # 基础配置
         stream_config = {
