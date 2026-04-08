@@ -2,7 +2,7 @@
  * MyAPS 监控面板 JavaScript
  */
 
-const API_BASE = '/monitor/api';
+const API_BASE = 'http://localhost:8001/monitor/api';
 let resourceChart = null;
 let refreshInterval = null;
 let originalTitle = document.title;
@@ -458,29 +458,44 @@ function updateSchedulerDisplay(data) {
     // 更新任务数量
     document.getElementById('job-count').textContent = jobs.length;
 
-    // 更新任务列表
+    // 更新任务列表（如果元素存在）
     const listEl = document.getElementById('job-list');
+    if (listEl) {
+        if (jobs.length === 0) {
+            listEl.innerHTML = '<div class="empty-state">暂无定时任务</div>';
+            return;
+        }
 
-    if (jobs.length === 0) {
-        listEl.innerHTML = '<div class="empty-state">暂无定时任务</div>';
-        return;
-    }
-
-    listEl.innerHTML = jobs.map(job => `
-        <div class="job-item">
-            <div class="job-info">
-                <span class="job-name">${job.name || job.id}</span>
-                <span class="job-trigger">${job.trigger}</span>
+        listEl.innerHTML = jobs.map(job => `
+            <div class="job-item">
+                <div class="job-info">
+                    <span class="job-name">${job.name || job.id}</span>
+                    <span class="job-trigger">${job.trigger}</span>
+                </div>
+                <span class="job-next">${job.next_run_time ? formatDateTime(job.next_run_time) : '未计划'}</span>
             </div>
-            <span class="job-next">${job.next_run_time ? formatDateTime(job.next_run_time) : '未计划'}</span>
-        </div>
-    `).join('');
+        `).join('');
+    }
 }
 
 // 格式化日期时间
-function formatDateTime(isoString) {
-    const date = new Date(isoString);
-    return `${date.getMonth() + 1}/${date.getDate()} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+function formatDateTime(dateValue) {
+    if (!dateValue) return '从未执行';
+    
+    let date;
+    if (typeof dateValue === 'number') {
+        // 处理时间戳（秒）
+        date = new Date(dateValue * 1000);
+    } else {
+        // 处理ISO字符串
+        date = new Date(dateValue);
+    }
+    
+    if (isNaN(date.getTime())) {
+        return '从未执行';
+    }
+    
+    return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
 }
 
 // 获取告警
@@ -539,48 +554,52 @@ function updateHTTPDisplay(data) {
         apiRequestsBadge.style.display = errorStateChanged ? 'inline-block' : 'none';
     }
 
-    // 更新状态码分布
+    // 更新状态码分布（如果元素存在）
     const statusCodesEl = document.getElementById('http-status-codes');
-    const statusCodes = data.status_codes || {};
+    if (statusCodesEl) {
+        const statusCodes = data.status_codes || {};
 
-    if (Object.keys(statusCodes).length === 0) {
-        statusCodesEl.innerHTML = '<div class="no-data">暂无接收请求</div>';
-    } else {
-        statusCodesEl.innerHTML = Object.entries(statusCodes).map(([code, count]) => {
-            const codeClass = code.startsWith('2') ? 'success' : (code.startsWith('3') ? 'redirect' : 'error');
-            return `
-                <div class="status-code-item">
-                    <span class="status-code ${codeClass}">${code}</span>
-                    <span>${count}</span>
-                </div>
-            `;
-        }).join('');
+        if (Object.keys(statusCodes).length === 0) {
+            statusCodesEl.innerHTML = '<div class="no-data">暂无接收请求</div>';
+        } else {
+            statusCodesEl.innerHTML = Object.entries(statusCodes).map(([code, count]) => {
+                const codeClass = code.startsWith('2') ? 'success' : (code.startsWith('3') ? 'redirect' : 'error');
+                return `
+                    <div class="status-code-item">
+                        <span class="status-code ${codeClass}">${code}</span>
+                        <span>${count}</span>
+                    </div>
+                `;
+            }).join('');
+        }
     }
 
-    // 更新路径统计
+    // 更新路径统计（如果元素存在）
     const pathsEl = document.getElementById('http-paths');
-    const pathStats = data.path_stats || {};
+    if (pathsEl) {
+        const pathStats = data.path_stats || {};
 
-    if (Object.keys(pathStats).length === 0) {
-        pathsEl.innerHTML = '<div class="no-data">&nbsp;</div>';
-    } else {
-        const sortedPaths = Object.entries(pathStats)
-            .sort((a, b) => b[1].count - a[1].count)
-            .slice(0, 10);
+        if (Object.keys(pathStats).length === 0) {
+            pathsEl.innerHTML = '<div class="no-data">&nbsp;</div>';
+        } else {
+            const sortedPaths = Object.entries(pathStats)
+                .sort((a, b) => b[1].count - a[1].count)
+                .slice(0, 10);
 
-        pathsEl.innerHTML = sortedPaths.map(([path, stats]) => `
-            <div class="http-path-item">
-                <div class="http-path-info">
-                    <span class="http-path-name">${path}</span>
-                    <div class="http-path-stats">
-                        <span>平均: ${(stats.avg_time * 1000).toFixed(0)}ms</span>
-                        ${stats.errors > 0 ? `<span style="color: var(--error-color)">错误: ${stats.errors}</span>` : ''}
-                        ${stats.slow_requests > 0 ? `<span style="color: var(--warning-color)">慢请求: ${stats.slow_requests}</span>` : ''}
+            pathsEl.innerHTML = sortedPaths.map(([path, stats]) => `
+                <div class="http-path-item">
+                    <div class="http-path-info">
+                        <span class="http-path-name">${path}</span>
+                        <div class="http-path-stats">
+                            <span>平均: ${(stats.avg_time * 1000).toFixed(0)}ms</span>
+                            ${stats.errors > 0 ? `<span style="color: var(--error-color)">错误: ${stats.errors}</span>` : ''}
+                            ${stats.slow_requests > 0 ? `<span style="color: var(--warning-color)">慢请求: ${stats.slow_requests}</span>` : ''}
+                        </div>
                     </div>
+                    <span class="http-path-count">${stats.count}</span>
                 </div>
-                <span class="http-path-count">${stats.count}</span>
-            </div>
-        `).join('');
+            `).join('');
+        }
     }
 }
 
@@ -1463,6 +1482,7 @@ async function fetchSchedulerPage() {
 }
 
 function updateSchedulerDetailDisplay(data) {
+    console.log('定时任务数据:', data);
     const gridEl = document.getElementById('scheduler-detail-grid');
     const scheduler = data.scheduler || {};
     let jobs = data.jobs || [];
@@ -1568,9 +1588,15 @@ async function fetchOutboundRequests() {
         
         updateOutboundRequestsTable(filteredRequests);
         
-        // 计算过滤后的请求统计信息
-        const summary = calculateOutboundRequestsSummary(filteredRequests);
-        updateOutboundHttpSummary({ summary });
+        // 更新发送请求页签的红点角标（仅在异常状态发生变化时显示）
+        const outboundRequestsBadge = document.getElementById('outbound-requests-badge');
+        if (outboundRequestsBadge) {
+            const hasErrors = filteredRequests.some(req => req.status_code >= 400);
+            actualErrorState['outbound-requests'] = hasErrors;
+            const confirmedHasError = badgeConfirmedHasError['outbound-requests'];
+            const errorStateChanged = hasErrors !== confirmedHasError;
+            outboundRequestsBadge.style.display = errorStateChanged ? 'inline-block' : 'none';
+        }
     } catch (error) {
         console.error('获取发送请求数据失败:', error);
     }
@@ -1597,28 +1623,7 @@ function toggleReadLogs() {
     fetchLogsPage();
 }
 
-// 计算发送请求统计信息
-function calculateOutboundRequestsSummary(requests) {
-    if (requests.length === 0) {
-        return {
-            total_requests: 0,
-            error_rate: 0,
-            avg_response_time: 0,
-            requests_per_minute: 0
-        };
-    }
-    
-    const totalRequests = requests.length;
-    const errorRequests = requests.filter(req => req.status_code >= 400).length;
-    const totalResponseTime = requests.reduce((sum, req) => sum + req.duration, 0);
-    
-    return {
-        total_requests: totalRequests,
-        error_rate: (errorRequests / totalRequests) * 100,
-        avg_response_time: totalResponseTime / totalRequests,
-        requests_per_minute: 0 // 暂时设为0，因为前端无法准确计算每分钟请求数
-    };
-}
+
 
 // 更新发送请求表格
 function updateOutboundRequestsTable(requests) {
@@ -1743,24 +1748,7 @@ function showOutboundRequestDetail(index) {
     Prism.highlightAll();
 }
 
-// 更新发送请求摘要
-function updateOutboundHttpSummary(metrics) {
-    const summary = metrics.summary || {};
-    document.getElementById('outbound-total-requests').textContent = summary.total_requests || 0;
-    document.getElementById('outbound-error-rate').textContent = (summary.error_rate || 0).toFixed(2) + '%';
-    document.getElementById('outbound-avg-time').textContent = (summary.avg_response_time * 1000).toFixed(0) + 'ms';
-    document.getElementById('outbound-rpm').textContent = summary.requests_per_minute || 0;
-    
-    // 更新发送请求页签的红点角标（仅在异常状态发生变化时显示）
-    const outboundRequestsBadge = document.getElementById('outbound-requests-badge');
-    if (outboundRequestsBadge) {
-        const hasErrors = summary.error_rate > 0;
-        actualErrorState['outbound-requests'] = hasErrors;
-        const confirmedHasError = badgeConfirmedHasError['outbound-requests'];
-        const errorStateChanged = hasErrors !== confirmedHasError;
-        outboundRequestsBadge.style.display = errorStateChanged ? 'inline-block' : 'none';
-    }
-}
+
 
 // 刷新发送请求数据
 function refreshOutboundRequests() {
@@ -1783,17 +1771,44 @@ async function resetOutboundStats() {
 // 获取并更新overview页面的发送请求数据
 async function fetchOverviewOutboundRequests() {
     try {
+        console.log('开始获取发送请求数据，API路径:', `${API_BASE}/outbound-http/all`);
         const response = await fetch(`${API_BASE}/outbound-http/all`);
+        console.log('获取发送请求数据响应状态:', response.status);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         const requests = await response.json();
+        console.log('获取发送请求数据成功，请求数量:', requests.length);
         
         // 过滤内部请求
         const baseUrl = 'http://localhost:8000';
         const filteredRequests = requests.filter(request => {
             return !request.url.startsWith(baseUrl);
         });
+        console.log('过滤后请求数量:', filteredRequests.length);
         
         // 计算统计信息
-        const summary = calculateOutboundRequestsSummary(filteredRequests);
+        let summary = {
+            total_requests: 0,
+            error_rate: 0,
+            avg_response_time: 0,
+            requests_per_minute: 0
+        };
+        
+        if (filteredRequests.length > 0) {
+            const totalRequests = filteredRequests.length;
+            const errorRequests = filteredRequests.filter(req => req.status_code >= 400).length;
+            const totalResponseTime = filteredRequests.reduce((sum, req) => sum + req.duration, 0);
+            
+            summary = {
+                total_requests: totalRequests,
+                error_rate: (errorRequests / totalRequests) * 100,
+                avg_response_time: totalResponseTime / totalRequests,
+                requests_per_minute: 0
+            };
+        }
         
         // 更新overview页面的统计
         updateOverviewOutboundSummary(summary);
@@ -1825,6 +1840,8 @@ async function fetchOverviewOutboundRequests() {
         }
     } catch (error) {
         console.error('获取overview页面发送请求数据失败:', error);
+        console.error('错误详情:', error.message);
+        console.error('错误堆栈:', error.stack);
     }
 }
 

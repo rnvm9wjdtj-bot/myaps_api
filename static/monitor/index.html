@@ -132,9 +132,6 @@
                             <span class="summary-value" id="outbound-avg">--ms</span>
                         </div>
                     </div>
-                    <div class="outbound-list" id="outbound-list">
-                        <!-- 动态生成发送请求列表 -->
-                    </div>
                 </div>
             </section>
 
@@ -163,12 +160,6 @@
                             <span class="summary-value" id="http-rpm">--</span>
                         </div>
                     </div>
-                    <div class="http-status-codes" id="http-status-codes">
-                        <!-- 动态生成状态码分布 -->
-                    </div>
-                    <div class="http-paths" id="http-paths">
-                        <!-- 动态生成路径统计 -->
-                    </div>
                 </div>
             </section>
 
@@ -188,9 +179,6 @@
                             <span class="info-label">任务数量</span>
                             <span class="info-value" id="job-count">--</span>
                         </div>
-                    </div>
-                    <div class="job-list" id="job-list">
-                        <!-- 动态生成任务列表 -->
                     </div>
                 </div>
             </section>
@@ -344,24 +332,7 @@
                     </div>
                 </div>
                 <div class="card-body">
-                    <div class="http-summary" id="outbound-http-summary">
-                        <div class="summary-item">
-                            <span class="summary-label">总请求数</span>
-                            <span class="summary-value" id="outbound-total-requests">--</span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="summary-label">错误率</span>
-                            <span class="summary-value" id="outbound-error-rate">--%</span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="summary-label">平均响应时间</span>
-                            <span class="summary-value" id="outbound-avg-time">--ms</span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="summary-label">每分钟请求数</span>
-                            <span class="summary-value" id="outbound-rpm">--</span>
-                        </div>
-                    </div>
+
                     <div class="outbound-requests-container">
                         <table class="outbound-requests-table">
                             <thead>

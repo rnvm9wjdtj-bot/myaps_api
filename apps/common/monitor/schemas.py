@@ -61,6 +61,7 @@ class JobInfo(BaseModel):
     name: str = Field(description="任务名称")
     trigger: str = Field(description="触发器")
     next_run_time: Optional[str] = Field(None, description="下次执行时间")
+    last_run_time: Optional[str] = Field(None, description="上次执行时间")
     pending: bool = Field(description="是否等待执行")
 
 
