@@ -161,7 +161,7 @@ class MonitorService:
         if healthy_count == total_count:
             status = "healthy"
             message = "所有系统运行正常"
-        elif healthy_count >= total_count / 2:
+        elif healthy_count >= total_count - 1:  # 最多只有一个系统有问题
             status = "degraded"
             message = "部分系统存在警告"
         else:

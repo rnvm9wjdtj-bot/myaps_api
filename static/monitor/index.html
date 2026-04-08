@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MyAPI 系统监控面板</title>
+    <link rel="icon" href="/static/swagger/favicon.png" type="image/png">
     <link rel="stylesheet" href="/static/monitor/css/monitor.css">
     <link rel="stylesheet" href="/static/monitor/lib/prism.min.css">
     <script src="/static/monitor/lib/chart.min.js"></script>
@@ -233,10 +234,17 @@
         <main class="main-content page-content" id="page-api-requests" style="display: none;">
             <section class="card full-width">
                 <div class="card-header">
-                    <h2>API 请求记录</h2>
-                    <div class="api-controls">
-                        <button class="btn btn-small" onclick="refreshAPIRequests()">刷新</button>
-                        <button class="btn btn-small" onclick="resetAPIStats()">重置统计</button>
+                    <h2>接收请求记录</h2>
+                    <div class="card-actions">
+                        <div class="toggle-switch">
+                            <label>
+                                <input type="checkbox" id="show-api-internal-requests" onchange="toggleAPIIntternalRequests()">
+                                <span class="toggle-slider"></span>
+                                显示内部请求
+                            </label>
+                        </div>
+                        <button class="btn btn-sm" onclick="refreshAPIRequests()">刷新</button>
+                        <button class="btn btn-sm btn-secondary" onclick="resetAPIStats()">重置统计</button>
                     </div>
                 </div>
                 <div class="card-body">
@@ -365,7 +373,6 @@
                                     <th>响应时间</th>
                                     <th>模块</th>
                                     <th>错误信息</th>
-                                    <th>操作</th>
                                 </tr>
                             </thead>
                             <tbody id="outbound-requests-table">
@@ -383,6 +390,13 @@
                 <div class="card-header">
                     <h2>日志记录</h2>
                     <div class="log-page-controls">
+                        <div class="toggle-switch">
+                            <label>
+                                <input type="checkbox" id="show-read-logs" onchange="toggleReadLogs()">
+                                <span class="toggle-slider"></span>
+                                显示已读
+                            </label>
+                        </div>
                         <select id="log-page-level" onchange="fetchLogsPage()">
                             <option value="">全部日志</option>
                             <option value="error">错误日志</option>

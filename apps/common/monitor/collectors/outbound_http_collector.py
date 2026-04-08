@@ -327,8 +327,15 @@ class OutboundHTTPCollector:
         total_time = sum(r["duration"] for r in self._requests)
         avg_response_time = round(total_time / len(self._requests), 3) if self._requests else 0
         
+        # 计算最近一分钟的错误率
+        now = time.time()
+        one_minute_ago = now - 60
+        recent_requests = [r for r in self._requests if r["timestamp"] > one_minute_ago]
+        recent_errors = sum(1 for r in recent_requests if r["is_error"])
+        recent_error_rate = round(recent_errors / len(recent_requests) * 100, 2) if recent_requests else 0
+        
         # 最近请求
-        recent_requests = list(self._requests)[-20:]
+        all_recent_requests = list(self._requests)[-20:]
         
         return {
             "timestamp": time.time(),
@@ -336,16 +343,14 @@ class OutboundHTTPCollector:
                 "total_requests": self._stats["total_requests"],
                 "total_errors": self._stats["total_errors"],
                 "total_slow_requests": self._stats["total_slow_requests"],
-                "error_rate": round(
-                    self._stats["total_errors"] / self._stats["total_requests"] * 100, 2
-                ) if self._stats["total_requests"] > 0 else 0,
+                "error_rate": recent_error_rate,  # 使用最近一分钟的错误率
                 "avg_response_time": avg_response_time,
                 "requests_per_minute": self._calculate_rpm(),
             },
             "status_codes": dict(self._stats["status_codes"]),
             "url_stats": url_stats,
             "module_stats": module_stats,
-            "recent_requests": recent_requests,
+            "recent_requests": all_recent_requests,
         }
     
     def _calculate_rpm(self) -> int:

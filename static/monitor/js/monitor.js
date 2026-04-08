@@ -7,6 +7,8 @@ let resourceChart = null;
 let refreshInterval = null;
 let originalTitle = document.title;
 let titleAlertInterval = null;
+// 存储发送请求数据
+let outboundRequestsData = [];
 
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
@@ -67,17 +69,18 @@ async function refreshAll() {
 // 检查告警条件并更新title
 function checkAlertConditions() {
     const hasDbError = checkDatabaseError();
+    const hasDatabaseOffline = checkDatabaseOffline();
     const hasUnreadLogs = checkUnreadLogs();
     const hasSystemError = checkSystemStatus();
     
     if (hasDbError || hasUnreadLogs || hasSystemError) {
-        startTitleAlert(hasSystemError);
+        startTitleAlert(hasSystemError, hasDatabaseOffline);
     } else {
         stopTitleAlert();
     }
 }
 
-// 检查系统状态
+// 检查系统状态（后端失连）
 function checkSystemStatus() {
     const statusIndicator = document.getElementById('status-indicator');
     return statusIndicator && statusIndicator.classList.contains('error');
@@ -100,6 +103,23 @@ function checkDatabaseError() {
     return false;
 }
 
+// 检查数据库离线
+function checkDatabaseOffline() {
+    // 检查概览页面的数据库状态
+    const dbBadge = document.getElementById('db-badge');
+    if (dbBadge && dbBadge.classList.contains('error')) {
+        return true;
+    }
+    
+    // 检查数据库详情页面的状态
+    const dbDetailBadge = document.getElementById('db-detail-badge');
+    if (dbDetailBadge && dbDetailBadge.classList.contains('error')) {
+        return true;
+    }
+    
+    return false;
+}
+
 // 检查未读日志
 function checkUnreadLogs() {
     // 检查日志页面的未读状态
@@ -116,7 +136,7 @@ function checkUnreadLogs() {
 }
 
 // 开始title闪烁
-function startTitleAlert(hasSystemError) {
+function startTitleAlert(hasSystemError, hasDatabaseOffline) {
     if (titleAlertInterval) {
         clearInterval(titleAlertInterval);
     }
@@ -124,8 +144,8 @@ function startTitleAlert(hasSystemError) {
     let blinkState = 0;
     let blinkPattern;
     
-    if (hasSystemError) {
-        // 系统错误时的闪烁模式：红色禁止图标 + 完整文字
+    if (hasSystemError || hasDatabaseOffline) {
+        // 后端失连或数据库离线时的闪烁模式：红色禁止图标 + 完整文字
         blinkPattern = [
             `⛔ ${originalTitle}`,  // 状态1：红色禁止图标 + 完整文字
             `⛔`,                  // 状态2：红色禁止图标 + 无文字
@@ -152,10 +172,11 @@ function startTitleAlert(hasSystemError) {
             clearInterval(titleAlertInterval);
             setTimeout(() => {
                 const hasDbError = checkDatabaseError();
+                const hasDatabaseOffline = checkDatabaseOffline();
                 const hasUnreadLogs = checkUnreadLogs();
                 const hasSystemError = checkSystemStatus();
                 if (hasDbError || hasUnreadLogs || hasSystemError) {
-                    startTitleAlert(hasSystemError);
+                    startTitleAlert(hasSystemError, hasDatabaseOffline);
                 }
             }, 800); // 暂停时间，调整节律
         }
@@ -848,25 +869,31 @@ function updateAPIRequestsDisplay(data) {
     const tbodyEl = document.getElementById('api-requests-tbody');
     let requests = data.recent_requests || [];
     
+    // 根据开关状态决定是否过滤内部请求
+    const filteredRequests = showAPIIntternalRequests ? requests : requests.filter(request => {
+        // 过滤掉客户端IP为127.0.0.1、localhost或::1的请求
+        return request.client_ip !== '127.0.0.1' && request.client_ip !== 'localhost' && request.client_ip !== '::1';
+    });
+    
     // 根据时间戳倒序排序
-    requests.sort((a, b) => b.timestamp - a.timestamp);
+    filteredRequests.sort((a, b) => b.timestamp - a.timestamp);
     
     // 更新接收请求页签的红点角标（仅在异常状态发生变化时显示）
     const apiRequestsBadge = document.getElementById('api-requests-badge');
     if (apiRequestsBadge) {
-        const hasErrors = requests.some(req => req.status_code >= 400);
+        const hasErrors = filteredRequests.some(req => req.status_code >= 400);
         actualErrorState['api-requests'] = hasErrors;
         const confirmedHasError = badgeConfirmedHasError['api-requests'];
         const errorStateChanged = hasErrors !== confirmedHasError;
         apiRequestsBadge.style.display = errorStateChanged ? 'inline-block' : 'none';
     }
     
-    if (requests.length === 0) {
+    if (filteredRequests.length === 0) {
         tbodyEl.innerHTML = '<tr><td colspan="8" class="empty-state">暂无 API 请求记录</td></tr>';
         return;
     }
     
-    tbodyEl.innerHTML = requests.map((req, index) => {
+    tbodyEl.innerHTML = filteredRequests.map((req, index) => {
         const date = new Date(req.timestamp * 1000);
         const timeStr = `${date.getFullYear()}-${(date.getMonth()+1).toString().padStart(2,'0')}-${date.getDate().toString().padStart(2,'0')} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}:${date.getSeconds().toString().padStart(2,'0')}`;
         
@@ -1201,7 +1228,19 @@ function updateLogsPageDisplay(logs) {
     // 从 localStorage 获取已读状态
     const readStatus = getReadStatusFromStorage();
     
-    tbodyEl.innerHTML = logs.map(log => {
+    // 根据开关状态过滤日志
+    const filteredLogs = showReadLogs ? logs : logs.filter(log => {
+        const logId = generateLogId(log.timestamp, log.module, log.message);
+        return !readStatus.has(logId);
+    });
+    
+    if (filteredLogs.length === 0) {
+        tbodyEl.innerHTML = '<tr><td colspan="5" class="empty-state">暂无日志记录</td></tr>';
+        checkAlertConditions();
+        return;
+    }
+    
+    tbodyEl.innerHTML = filteredLogs.map(log => {
         const date = new Date(log.timestamp * 1000);
         const timeStr = `${date.getFullYear()}-${(date.getMonth()+1).toString().padStart(2,'0')}-${date.getDate().toString().padStart(2,'0')} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}:${date.getSeconds().toString().padStart(2,'0')}`;
         
@@ -1509,6 +1548,10 @@ function refreshSchedulerPage() {
 
 // 开关状态：是否显示内部请求
 let showInternalRequests = false;
+// 开关状态：是否显示接收请求中的内部请求
+let showAPIIntternalRequests = false;
+// 开关状态：是否显示已读日志，默认隐藏已读
+let showReadLogs = false;
 
 // 获取发送请求数据
 async function fetchOutboundRequests() {
@@ -1540,6 +1583,20 @@ function toggleInternalRequests() {
     fetchOutboundRequests();
 }
 
+// 切换接收请求中的内部请求显示状态
+function toggleAPIIntternalRequests() {
+    const checkbox = document.getElementById('show-api-internal-requests');
+    showAPIIntternalRequests = checkbox.checked;
+    fetchAPIRequests();
+}
+
+// 切换已读日志显示状态
+function toggleReadLogs() {
+    const checkbox = document.getElementById('show-read-logs');
+    showReadLogs = checkbox.checked;
+    fetchLogsPage();
+}
+
 // 计算发送请求统计信息
 function calculateOutboundRequestsSummary(requests) {
     if (requests.length === 0) {
@@ -1568,34 +1625,34 @@ function updateOutboundRequestsTable(requests) {
     const tableBody = document.getElementById('outbound-requests-table');
     if (!tableBody) return;
     
-    tableBody.innerHTML = requests.map(request => formatOutboundRequestRow(request)).join('');
+    outboundRequestsData = requests;
+    tableBody.innerHTML = requests.map((request, index) => formatOutboundRequestRow(request, index)).join('');
 }
 
 // 格式化发送请求行
-function formatOutboundRequestRow(request) {
-    const timestamp = new Date(request.timestamp * 1000).toLocaleString('zh-CN');
+function formatOutboundRequestRow(request, index) {
+    const date = new Date(request.timestamp * 1000);
+    const timestamp = `${date.getFullYear()}-${(date.getMonth()+1).toString().padStart(2,'0')}-${date.getDate().toString().padStart(2,'0')} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}:${date.getSeconds().toString().padStart(2,'0')}`;
     const duration = (request.duration * 1000).toFixed(0);
     const statusClass = request.status_code >= 400 ? 'error' : 'success';
     const durationClass = request.duration > 1 ? 'slow' : '';
     
     return `
-    <tr>
+    <tr onclick="showOutboundRequestDetail(${index})" data-request-index="${index}">
         <td>${timestamp}</td>
-        <td class="method ${request.method.toLowerCase()}">${request.method}</td>
+        <td><span class="method ${request.method.toLowerCase()}">${request.method}</span></td>
         <td class="url">${request.url}</td>
         <td class="status ${statusClass}">${request.status_code}</td>
         <td class="duration ${durationClass}">${duration}ms</td>
         <td>${request.module || 'unknown'}</td>
         <td class="error-message">${request.error_message || '-'}</td>
-        <td>
-            <button class="btn btn-sm" onclick="showOutboundRequestDetail(${JSON.stringify(request).replace(/"/g, '&quot;')})")">查看</button>
-        </td>
     </tr>
     `;
 }
 
 // 显示发送请求详情
-function showOutboundRequestDetail(request) {
+function showOutboundRequestDetail(index) {
+    const request = outboundRequestsData[index];
     const modal = document.createElement('div');
     modal.className = 'modal';
     modal.innerHTML = `

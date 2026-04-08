@@ -98,6 +98,24 @@ body {
     background: var(--border-color);
 }
 
+.btn-sm {
+    padding: 4px 12px;
+    font-size: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.btn-sm:hover {
+    background: var(--border-color);
+}
+
+.btn-secondary {
+    background: var(--bg-color);
+    color: var(--text-primary);
+}
+
 /* 主内容区 */
 .main-content {
     display: grid;
@@ -126,6 +144,26 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+}
+
+.card-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.card-actions .toggle-switch {
+    margin-right: 12px;
+}
+
+.log-page-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.log-page-controls .toggle-switch {
+    margin-right: 12px;
 }
 
 .card-header h2 {
@@ -738,6 +776,7 @@ body {
     width: 100%;
     border-collapse: collapse;
     font-size: 13px;
+    table-layout: fixed;
 }
 
 .api-requests-table th, .logs-table th {
@@ -746,11 +785,39 @@ body {
     text-align: left;
     font-weight: 600;
     border-bottom: 2px solid var(--border-color);
+    white-space: nowrap;
 }
+
+.api-requests-table th:nth-child(1) { width: 140px; } /* 时间戳 */
+.api-requests-table th:nth-child(2) { width: 80px; text-align: center; }  /* 方法 */
+.api-requests-table th:nth-child(3) { max-width: 30%; width: 30%; }  /* 路径 */
+.api-requests-table th:nth-child(4) { width: 120px; }  /* 查询参数 */
+.api-requests-table th:nth-child(5) { width: 80px; }  /* 状态码 */
+.api-requests-table th:nth-child(6) { width: 100px; } /* 响应时间 */
+.api-requests-table th:nth-child(7) { width: 100px; } /* 客户端IP */
+.api-requests-table th:nth-child(8) { width: 150px; } /* 错误信息 */
 
 .api-requests-table td, .logs-table td {
     padding: 12px 16px;
     border-bottom: 1px solid var(--border-color);
+    vertical-align: middle;
+}
+
+.api-requests-table td:nth-child(2) {
+    text-align: center;
+    vertical-align: middle;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.api-requests-table td:nth-child(3),
+.api-requests-table td:nth-child(4),
+.api-requests-table td:nth-child(8) {
+    word-break: break-all;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .api-requests-table tbody tr:hover, .logs-table tbody tr:hover {
@@ -758,11 +825,17 @@ body {
 }
 
 .api-method {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     padding: 2px 8px;
     border-radius: 3px;
     font-size: 11px;
     font-weight: 600;
+    vertical-align: middle;
+    height: 24px;
+    width: 100%;
+    min-height: 24px;
 }
 
 .api-method.get {
@@ -1410,12 +1483,11 @@ code[class*="language-"] {
 
 .outbound-requests-table th:nth-child(1) { width: 140px; } /* 时间戳 */
 .outbound-requests-table th:nth-child(2) { width: 80px; text-align: center; }  /* 方法 */
-.outbound-requests-table th:nth-child(3) { max-width: 50%; width: 50%; }  /* URL */
+.outbound-requests-table th:nth-child(3) { max-width: 40%; width: 40%; }  /* URL */
 .outbound-requests-table th:nth-child(4) { width: 80px; }  /* 状态码 */
 .outbound-requests-table th:nth-child(5) { width: 100px; } /* 响应时间 */
 .outbound-requests-table th:nth-child(6) { width: 150px; } /* 模块 */
-.outbound-requests-table th:nth-child(7) { width: 120px; } /* 错误信息 */
-.outbound-requests-table th:nth-child(8) { width: 60px; }  /* 操作 */
+.outbound-requests-table th:nth-child(7) { width: 150px; } /* 错误信息 */
 
 .outbound-requests-table td {
     padding: 12px 16px;
@@ -1427,8 +1499,15 @@ code[class*="language-"] {
     text-align: center;
 }
 
+.outbound-requests-table tbody tr {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
 .outbound-requests-table tbody tr:hover {
-    background: #fafafa;
+    background: #f0f7ff !important;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .outbound-requests-table .method {
@@ -1448,10 +1527,7 @@ code[class*="language-"] {
 .outbound-requests-table td:nth-child(2) {
     text-align: center;
     vertical-align: middle;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    padding: 8px 12px;
 }
 
 .outbound-requests-table .method.get {
