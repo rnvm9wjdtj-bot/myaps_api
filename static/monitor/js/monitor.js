@@ -986,11 +986,12 @@ function updateAPIRequestsDisplay(data) {
         `;
     }).join('');
     
-    // 存储请求数据，以便点击时使用，限制最近100条
-    if (data.recent_requests) {
-        data.recent_requests = data.recent_requests.slice(0, 100);
-    }
-    window.apiRequestsData = data;
+    // 存储过滤和排序后的请求数据，以便点击时使用，限制最近100条
+    const filteredAndSortedRequests = filteredRequests.slice(0, 100);
+    window.apiRequestsData = {
+        ...data,
+        recent_requests: filteredAndSortedRequests
+    };
 }
 
 // 显示请求详情
@@ -1140,12 +1141,34 @@ function hideRequestDetail() {
     
     // 恢复背景滚动
     document.body.style.overflow = '';
+    
+    // 清理请求体和响应体内容，避免内存泄漏
+    const requestBodyEl = document.getElementById('api-detail-request-body');
+    const responseBodyEl = document.getElementById('api-detail-response-body');
+    if (requestBodyEl) {
+        requestBodyEl.textContent = '';
+    }
+    if (responseBodyEl) {
+        responseBodyEl.textContent = '';
+    }
+    
+    // 重置高亮按钮状态
+    document.querySelectorAll('.section-actions button').forEach(btn => {
+        if (btn.textContent === '已高亮') {
+            btn.textContent = '高亮';
+        }
+    });
 }
 
 // 高亮请求体
 function highlightRequestBody() {
     const requestBodyEl = document.getElementById('api-detail-request-body');
     if (typeof Prism !== 'undefined' && requestBodyEl) {
+        // 保存原始内容
+        const originalContent = requestBodyEl.textContent;
+        // 清理旧的高亮内容
+        requestBodyEl.innerHTML = originalContent;
+        // 重新高亮
         Prism.highlightElement(requestBodyEl);
         // 更新按钮状态
         const btn = document.querySelector('.section-actions button:nth-child(1)');
@@ -1159,6 +1182,11 @@ function highlightRequestBody() {
 function highlightResponseBody() {
     const responseBodyEl = document.getElementById('api-detail-response-body');
     if (typeof Prism !== 'undefined' && responseBodyEl) {
+        // 保存原始内容
+        const originalContent = responseBodyEl.textContent;
+        // 清理旧的高亮内容
+        responseBodyEl.innerHTML = originalContent;
+        // 重新高亮
         Prism.highlightElement(responseBodyEl);
         // 更新按钮状态
         const btn = document.querySelectorAll('.section-actions')[1].querySelector('button:nth-child(1)');
@@ -1172,7 +1200,13 @@ function highlightResponseBody() {
 function copyRequestBody() {
     const requestBodyEl = document.getElementById('api-detail-request-body');
     if (requestBodyEl) {
-        navigator.clipboard.writeText(requestBodyEl.textContent)
+        // 获取原始内容，无论是否高亮
+        let content = requestBodyEl.textContent;
+        // 如果高亮后textContent为空，尝试获取innerText
+        if (!content || content.trim() === '') {
+            content = requestBodyEl.innerText;
+        }
+        navigator.clipboard.writeText(content)
             .then(() => {
                 // 显示复制成功提示
                 const btn = document.querySelector('.section-actions button:nth-child(2)');
@@ -1194,7 +1228,13 @@ function copyRequestBody() {
 function copyResponseBody() {
     const responseBodyEl = document.getElementById('api-detail-response-body');
     if (responseBodyEl) {
-        navigator.clipboard.writeText(responseBodyEl.textContent)
+        // 获取原始内容，无论是否高亮
+        let content = responseBodyEl.textContent;
+        // 如果高亮后textContent为空，尝试获取innerText
+        if (!content || content.trim() === '') {
+            content = responseBodyEl.innerText;
+        }
+        navigator.clipboard.writeText(content)
             .then(() => {
                 // 显示复制成功提示
                 const btn = document.querySelectorAll('.section-actions')[1].querySelector('button:nth-child(2)');

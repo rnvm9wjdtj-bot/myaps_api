@@ -253,10 +253,24 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
                 if body:
                     try:
                         import json
-                        # 限制响应体大小，避免内存占用过大
-                        if len(body) < 1024 * 1024:  # 1MB
-                            response_body = body.decode('utf-8')
-                        else:
+                        # 尝试解码响应体
+                        response_body = body.decode('utf-8')
+                        # 总是尝试解析响应体，检查业务状态码
+                        try:
+                            response_json = json.loads(response_body)
+                            # 检查是否包含业务状态码
+                            if isinstance(response_json, dict):
+                                # 直接取响应体json根路径下的status_code
+                                biz_status_code = response_json.get('status_code')
+                                # 检查业务状态码是否表示错误
+                                if biz_status_code and str(biz_status_code).startswith('5'):
+                                    # 将业务错误视为HTTP错误
+                                    status_code = 500
+                        except json.JSONDecodeError:
+                            # 解析失败，仍然保存响应体
+                            pass
+                        # 限制显示的响应体大小，避免内存占用过大
+                        if len(response_body) > 1024 * 1024:  # 1MB
                             response_body = f"[响应体过大，已截断，大小: {len(body)} bytes]"
                     except (UnicodeDecodeError, json.JSONDecodeError):
                         response_body = "[响应体不是有效的 JSON]"
