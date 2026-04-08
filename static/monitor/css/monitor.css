@@ -188,6 +188,13 @@ body {
     margin-bottom: 8px;
 }
 
+.memory-percent {
+    font-size: 14px;
+    color: var(--text-secondary);
+    font-weight: 400;
+    margin-left: 8px;
+}
+
 .progress-bar {
     height: 6px;
     background: #e8e8e8;
@@ -1661,8 +1668,17 @@ td {
     color: var(--text-secondary);
 }
 
-.outbound-list .no-data {
+.outbound-list .no-data,
+.http-status-codes .no-data,
+.http-paths .no-data {
     text-align: center;
     color: var(--text-secondary);
     padding: 40px 0;
+    width: 100%;
+}
+
+.http-status-codes .no-data {
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }

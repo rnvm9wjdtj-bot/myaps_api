@@ -14,16 +14,20 @@ from collections import deque, defaultdict
 class OutboundHTTPCollector:
     """对外 HTTP 请求收集器"""
     
-    def __init__(self, max_requests: int = 1000, slow_threshold: float = 1.0):
+    def __init__(self, max_requests: int = 1000, slow_threshold: float = 1.0, max_url_stats: int = 1000, max_module_stats: int = 100):
         """
         初始化对外 HTTP 请求收集器
         
         Args:
             max_requests: 最大存储的请求数
             slow_threshold: 慢请求阈值（秒）
+            max_url_stats: URL统计最大条目数
+            max_module_stats: 模块统计最大条目数
         """
         self._max_requests = max_requests
         self._slow_threshold = slow_threshold
+        self._max_url_stats = max_url_stats
+        self._max_module_stats = max_module_stats
         self._requests: deque = deque(maxlen=max_requests)
         self._stats = {
             "total_requests": 0,
@@ -133,6 +137,39 @@ class OutboundHTTPCollector:
                 self._stats["module_stats"][module]["total_time"] += duration
                 if request_info["is_error"]:
                     self._stats["module_stats"][module]["errors"] += 1
+
+            # 清理 URL 统计，避免无限增长
+            if len(self._stats["url_stats"]) > self._max_url_stats:
+                # 按请求次数排序，保留请求次数多的 URL
+                sorted_urls = sorted(
+                    self._stats["url_stats"].items(),
+                    key=lambda x: x[1]["count"],
+                    reverse=True
+                )
+                # 只保留前 max_url_stats 个
+                for url_key, _ in sorted_urls[self._max_url_stats:]:
+                    del self._stats["url_stats"][url_key]
+
+            # 清理模块统计，避免无限增长
+            if len(self._stats["module_stats"]) > self._max_module_stats:
+                # 按请求次数排序，保留请求次数多的模块
+                sorted_modules = sorted(
+                    self._stats["module_stats"].items(),
+                    key=lambda x: x[1]["count"],
+                    reverse=True
+                )
+                # 只保留前 max_module_stats 个
+                for module_key, _ in sorted_modules[self._max_module_stats:]:
+                    del self._stats["module_stats"][module_key]
+
+            # 清理状态码统计，只保留常见状态码
+            common_status_codes = {200, 201, 204, 400, 401, 403, 404, 500, 502, 503, 504}
+            status_codes_to_remove = []
+            for code in self._stats["status_codes"]:
+                if code not in common_status_codes and self._stats["status_codes"][code] < 10:
+                    status_codes_to_remove.append(code)
+            for code in status_codes_to_remove:
+                del self._stats["status_codes"][code]
     
     def record_request_sync(
         self,
@@ -222,6 +259,39 @@ class OutboundHTTPCollector:
             self._stats["module_stats"][module]["total_time"] += duration
             if request_info["is_error"]:
                 self._stats["module_stats"][module]["errors"] += 1
+
+        # 清理 URL 统计，避免无限增长
+        if len(self._stats["url_stats"]) > self._max_url_stats:
+            # 按请求次数排序，保留请求次数多的 URL
+            sorted_urls = sorted(
+                self._stats["url_stats"].items(),
+                key=lambda x: x[1]["count"],
+                reverse=True
+            )
+            # 只保留前 max_url_stats 个
+            for url_key, _ in sorted_urls[self._max_url_stats:]:
+                del self._stats["url_stats"][url_key]
+
+        # 清理模块统计，避免无限增长
+        if len(self._stats["module_stats"]) > self._max_module_stats:
+            # 按请求次数排序，保留请求次数多的模块
+            sorted_modules = sorted(
+                self._stats["module_stats"].items(),
+                key=lambda x: x[1]["count"],
+                reverse=True
+            )
+            # 只保留前 max_module_stats 个
+            for module_key, _ in sorted_modules[self._max_module_stats:]:
+                del self._stats["module_stats"][module_key]
+
+        # 清理状态码统计，只保留常见状态码
+        common_status_codes = {200, 201, 204, 400, 401, 403, 404, 500, 502, 503, 504}
+        status_codes_to_remove = []
+        for code in self._stats["status_codes"]:
+            if code not in common_status_codes and self._stats["status_codes"][code] < 10:
+                status_codes_to_remove.append(code)
+        for code in status_codes_to_remove:
+            del self._stats["status_codes"][code]
     
     def get_metrics(self) -> Dict[str, Any]:
         """

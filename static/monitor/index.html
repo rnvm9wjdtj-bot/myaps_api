@@ -22,6 +22,7 @@
                 <a href="#" class="nav-item" data-page="logs">日志<span id="logs-badge" class="nav-badge" style="display: none;"></span></a>
             </nav>
             <div class="header-info">
+                <span id="status-indicator" class="status healthy">● 系统正常</span>
                 <span id="last-update">最后更新: --</span>
                 <button id="refresh-btn" class="btn btn-primary" onclick="refreshAll()">刷新</button>
             </div>
@@ -46,7 +47,10 @@
                         </div>
                         <div class="metric-item">
                             <div class="metric-label">内存使用</div>
-                            <div class="metric-value" id="memory-value">-- MB</div>
+                            <div class="metric-value" id="memory-value">
+                                <span id="memory-usage">-- MB</span>
+                                <span id="memory-percent" class="memory-percent">--%</span>
+                            </div>
                             <div class="progress-bar">
                                 <div class="progress-fill" id="memory-bar"></div>
                             </div>

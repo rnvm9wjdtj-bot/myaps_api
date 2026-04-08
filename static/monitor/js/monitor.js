@@ -186,8 +186,6 @@ async function fetchHealth() {
 // 更新健康状态显示
 function updateHealthStatus(data) {
     const indicator = document.getElementById('status-indicator');
-    if (!indicator) return;
-    
     const statusMap = {
         'healthy': { text: '● 系统正常', class: 'healthy' },
         'degraded': { text: '● 部分警告', class: 'warning' },
@@ -202,8 +200,6 @@ function updateHealthStatus(data) {
 // 设置系统状态
 function setSystemStatus(status, text) {
     const indicator = document.getElementById('status-indicator');
-    if (!indicator) return;
-    
     indicator.textContent = `● ${text}`;
     indicator.className = `status ${status}`;
 }
@@ -237,7 +233,8 @@ function updateResourceDisplay(data) {
     // 内存
     const memValue = data.memory?.rss || 0;
     const memPercent = data.memory?.percent || 0;
-    document.getElementById('memory-value').textContent = `${memValue} MB (${memPercent}%)`;
+    document.getElementById('memory-percent').textContent = `${memPercent}%`;
+    document.getElementById('memory-usage').textContent = `${memValue} M`;
     const memBar = document.getElementById('memory-bar');
     memBar.style.width = `${Math.min(memPercent, 100)}%`;
     memBar.className = `progress-fill ${getProgressClass(memPercent)}`;
@@ -511,11 +508,14 @@ function updateHTTPDisplay(data) {
         badge.className = 'badge error';
     }
     
-    // 更新接收请求页签的红点角标
+    // 更新接收请求页签的红点角标（仅在异常状态发生变化时显示）
     const apiRequestsBadge = document.getElementById('api-requests-badge');
     if (apiRequestsBadge) {
         const hasErrors = summary.error_rate > 0;
-        apiRequestsBadge.style.display = hasErrors ? 'inline-block' : 'none';
+        actualErrorState['api-requests'] = hasErrors;
+        const confirmedHasError = badgeConfirmedHasError['api-requests'];
+        const errorStateChanged = hasErrors !== confirmedHasError;
+        apiRequestsBadge.style.display = errorStateChanged ? 'inline-block' : 'none';
     }
 
     // 更新状态码分布
@@ -523,7 +523,7 @@ function updateHTTPDisplay(data) {
     const statusCodes = data.status_codes || {};
 
     if (Object.keys(statusCodes).length === 0) {
-        statusCodesEl.innerHTML = '<div class="empty-state">暂无接收请求</div>';
+        statusCodesEl.innerHTML = '<div class="no-data">暂无接收请求</div>';
     } else {
         statusCodesEl.innerHTML = Object.entries(statusCodes).map(([code, count]) => {
             const codeClass = code.startsWith('2') ? 'success' : (code.startsWith('3') ? 'redirect' : 'error');
@@ -541,7 +541,7 @@ function updateHTTPDisplay(data) {
     const pathStats = data.path_stats || {};
 
     if (Object.keys(pathStats).length === 0) {
-        pathsEl.innerHTML = '<div class="empty-state">暂无路径数据</div>';
+        pathsEl.innerHTML = '<div class="no-data">&nbsp;</div>';
     } else {
         const sortedPaths = Object.entries(pathStats)
             .sort((a, b) => b[1].count - a[1].count)
@@ -677,6 +677,16 @@ function updateLastUpdateTime() {
 
 // 页面切换逻辑
 let currentPage = 'overview';
+// 记录用户点击页签时的异常状态（是否有异常）
+let badgeConfirmedHasError = {
+    'api-requests': false,
+    'outbound-requests': false
+};
+// 记录实际的异常状态
+let actualErrorState = {
+    'api-requests': false,
+    'outbound-requests': false
+};
 
 document.addEventListener('DOMContentLoaded', () => {
     initNavigation();
@@ -714,10 +724,25 @@ function switchPage(pageName) {
         targetPage.style.display = 'grid';
     }
     
-    if (pageName === 'database') {
-        fetchDatabaseDetail();
-    } else if (pageName === 'api-requests') {
+    // 当切换到接收请求或发送请求页签时，关闭对应的红点角标并记录当前异常状态
+    if (pageName === 'api-requests') {
+        const apiRequestsBadge = document.getElementById('api-requests-badge');
+        if (apiRequestsBadge) {
+            // 记录点击时的异常状态（使用实际的异常状态）
+            badgeConfirmedHasError['api-requests'] = actualErrorState['api-requests'];
+            apiRequestsBadge.style.display = 'none';
+        }
         fetchAPIRequests();
+    } else if (pageName === 'outbound-requests') {
+        const outboundRequestsBadge = document.getElementById('outbound-requests-badge');
+        if (outboundRequestsBadge) {
+            // 记录点击时的异常状态（使用实际的异常状态）
+            badgeConfirmedHasError['outbound-requests'] = actualErrorState['outbound-requests'];
+            outboundRequestsBadge.style.display = 'none';
+        }
+        fetchOutboundRequests();
+    } else if (pageName === 'database') {
+        fetchDatabaseDetail();
     } else if (pageName === 'scheduler') {
         fetchSchedulerPage();
     } else if (pageName === 'logs') {
@@ -826,11 +851,14 @@ function updateAPIRequestsDisplay(data) {
     // 根据时间戳倒序排序
     requests.sort((a, b) => b.timestamp - a.timestamp);
     
-    // 更新接收请求页签的红点角标
+    // 更新接收请求页签的红点角标（仅在异常状态发生变化时显示）
     const apiRequestsBadge = document.getElementById('api-requests-badge');
     if (apiRequestsBadge) {
         const hasErrors = requests.some(req => req.status_code >= 400);
-        apiRequestsBadge.style.display = hasErrors ? 'inline-block' : 'none';
+        actualErrorState['api-requests'] = hasErrors;
+        const confirmedHasError = badgeConfirmedHasError['api-requests'];
+        const errorStateChanged = hasErrors !== confirmedHasError;
+        apiRequestsBadge.style.display = errorStateChanged ? 'inline-block' : 'none';
     }
     
     if (requests.length === 0) {
@@ -1304,36 +1332,45 @@ function initHoverEffect() {
     
     // 使用事件委托处理悬停事件
     document.addEventListener('mouseenter', (e) => {
-        const cell = e.target.closest('.log-message-cell');
-        if (cell) {
-            // 获取完整的消息内容
-            const fullMessage = cell.getAttribute('data-full-message');
-            if (fullMessage !== null && fullMessage !== undefined) {
-                // 移除默认的 title 行为
-                cell.removeAttribute('title');
-                
-                // 显示悬停框
-                const rect = cell.getBoundingClientRect();
-                tooltip.style.left = `${rect.left}px`;
-                tooltip.style.top = `${rect.bottom + 10}px`;
-                tooltip.textContent = fullMessage || '';
-                tooltip.style.display = 'block';
+        if (e.target && typeof e.target.closest === 'function') {
+            const cell = e.target.closest('.log-message-cell');
+            if (cell) {
+                // 获取完整的消息内容
+                const fullMessage = cell.getAttribute('data-full-message');
+                if (fullMessage !== null && fullMessage !== undefined) {
+                    // 移除默认的 title 行为
+                    cell.removeAttribute('title');
+                    
+                    // 显示悬停框
+                    const rect = cell.getBoundingClientRect();
+                    tooltip.style.left = `${rect.left}px`;
+                    tooltip.style.top = `${rect.bottom + 10}px`;
+                    tooltip.textContent = fullMessage || '';
+                    tooltip.style.display = 'block';
+                }
             }
         }
     });
     
     // 鼠标离开事件
     document.addEventListener('mouseleave', (e) => {
-        const cell = e.target.closest('.log-message-cell');
-        if (cell) {
-            tooltip.style.display = 'none';
+        if (e.target && typeof e.target.closest === 'function') {
+            const cell = e.target.closest('.log-message-cell');
+            if (cell) {
+                tooltip.style.display = 'none';
+            }
         }
     });
     
     // 确保鼠标离开页面时隐藏悬停框
     document.addEventListener('mousemove', (e) => {
-        const cell = e.target.closest('.log-message-cell');
-        if (!cell) {
+        if (e.target && typeof e.target.closest === 'function') {
+            const cell = e.target.closest('.log-message-cell');
+            if (!cell) {
+                tooltip.style.display = 'none';
+            }
+        } else {
+            // 如果 e.target 不支持 closest 方法，直接隐藏悬停框
             tooltip.style.display = 'none';
         }
     });
@@ -1657,11 +1694,14 @@ function updateOutboundHttpSummary(metrics) {
     document.getElementById('outbound-avg-time').textContent = (summary.avg_response_time * 1000).toFixed(0) + 'ms';
     document.getElementById('outbound-rpm').textContent = summary.requests_per_minute || 0;
     
-    // 更新发送请求页签的红点角标
+    // 更新发送请求页签的红点角标（仅在异常状态发生变化时显示）
     const outboundRequestsBadge = document.getElementById('outbound-requests-badge');
     if (outboundRequestsBadge) {
         const hasErrors = summary.error_rate > 0;
-        outboundRequestsBadge.style.display = hasErrors ? 'inline-block' : 'none';
+        actualErrorState['outbound-requests'] = hasErrors;
+        const confirmedHasError = badgeConfirmedHasError['outbound-requests'];
+        const errorStateChanged = hasErrors !== confirmedHasError;
+        outboundRequestsBadge.style.display = errorStateChanged ? 'inline-block' : 'none';
     }
 }
 
@@ -1717,11 +1757,14 @@ async function fetchOverviewOutboundRequests() {
             }
         }
         
-        // 更新发送请求页签的红点角标
+        // 更新发送请求页签的红点角标（仅在异常状态发生变化时显示）
         const outboundRequestsBadge = document.getElementById('outbound-requests-badge');
         if (outboundRequestsBadge) {
             const hasErrors = summary.error_rate > 0;
-            outboundRequestsBadge.style.display = hasErrors ? 'inline-block' : 'none';
+            actualErrorState['outbound-requests'] = hasErrors;
+            const confirmedHasError = badgeConfirmedHasError['outbound-requests'];
+            const errorStateChanged = hasErrors !== confirmedHasError;
+            outboundRequestsBadge.style.display = errorStateChanged ? 'inline-block' : 'none';
         }
     } catch (error) {
         console.error('获取overview页面发送请求数据失败:', error);

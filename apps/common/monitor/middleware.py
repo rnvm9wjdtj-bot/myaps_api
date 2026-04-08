@@ -19,9 +19,10 @@ logger = log_config.get_logger(__name__)
 class HTTPMetricsCollector:
     """HTTP 指标收集器"""
 
-    def __init__(self, max_requests: int = 1000, slow_threshold: float = 1.0):
+    def __init__(self, max_requests: int = 1000, slow_threshold: float = 1.0, max_path_stats: int = 1000):
         self._max_requests = max_requests
         self._slow_threshold = slow_threshold  # 慢请求阈值（秒）
+        self._max_path_stats = max_path_stats  # 路径统计最大条目数
         self._requests: deque = deque(maxlen=max_requests)
         self._stats = {
             "total_requests": 0,
@@ -86,6 +87,27 @@ class HTTPMetricsCollector:
 
             # 状态码统计
             self._stats["status_codes"][status_code] += 1
+
+            # 清理路径统计，避免无限增长
+            if len(self._stats["path_stats"]) > self._max_path_stats:
+                # 按请求次数排序，保留请求次数多的路径
+                sorted_paths = sorted(
+                    self._stats["path_stats"].items(),
+                    key=lambda x: x[1]["count"],
+                    reverse=True
+                )
+                # 只保留前 max_path_stats 个
+                for path_key, _ in sorted_paths[self._max_path_stats:]:
+                    del self._stats["path_stats"][path_key]
+
+            # 清理状态码统计，只保留常见状态码
+            common_status_codes = {200, 201, 204, 400, 401, 403, 404, 500, 502, 503, 504}
+            status_codes_to_remove = []
+            for code in self._stats["status_codes"]:
+                if code not in common_status_codes and self._stats["status_codes"][code] < 10:
+                    status_codes_to_remove.append(code)
+            for code in status_codes_to_remove:
+                del self._stats["status_codes"][code]
 
     def get_metrics(self) -> Dict[str, Any]:
         """获取 HTTP 指标"""

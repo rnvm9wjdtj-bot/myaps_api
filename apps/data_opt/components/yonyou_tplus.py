@@ -202,14 +202,14 @@ class MoPushModel(PydanticModel):
     """
     整理推送T+MO数据
     """
-    ExternalCode: str = Field()
-    BusiType: dict = Field()
-    Department: dict = Field()
-    Customer: dict = Field()
+    ExternalCode: str = Field(None)
+    BusiType: dict = Field(None)
+    Department: dict = Field(None)
+    Customer: dict = Field(None)
     StartDate: str = Field()
     FinishDate: str = Field()
     VoucherDate: str = Field()
-    Memo: str = Field()
+    Memo: str = Field(None)
     IsMaterialRequest: bool = Field(True)
     ManufactureOrderDetails: list[dict] = Field()
     
@@ -253,11 +253,14 @@ class MoPushModel(PydanticModel):
 
         so = values.get('so')
         if so:
-            cleaned_values['Customer'] = {'Code': so.get('partnerno')}
-            # mod['SaleOrderCode'] = so.get('demandno', "")
-            mod['idsourceVoucherType'] = "43"   # 销售订单
+            partnerno = so.get('partnerno')
+            # if partnerno:
+            #     cleaned_values['Customer'] = {'Code': partnerno}
+            cleaned_values['Customer'] = {'Code': partnerno}
             so_entryid = so.get('apiex_entryid')
             if so_entryid:
+                # mod['SaleOrderCode'] = so.get('demandno', "")
+                mod['idsourceVoucherType'] = "43"   # 销售订单
                 mod['SourceVoucherDetailId'] = so_entryid
 
         cleaned_values['ManufactureOrderDetails'] = [mod]
