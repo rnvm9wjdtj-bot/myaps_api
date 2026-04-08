@@ -986,7 +986,10 @@ function updateAPIRequestsDisplay(data) {
         `;
     }).join('');
     
-    // 存储请求数据，以便点击时使用
+    // 存储请求数据，以便点击时使用，限制最近100条
+    if (data.recent_requests) {
+        data.recent_requests = data.recent_requests.slice(0, 100);
+    }
     window.apiRequestsData = data;
 }
 
@@ -1388,8 +1391,8 @@ function initHoverEffect() {
     tooltip.style.display = 'none';
     document.body.appendChild(tooltip);
     
-    // 使用事件委托处理悬停事件
-    document.addEventListener('mouseenter', (e) => {
+    // 保存事件处理函数的引用
+    const mouseEnterHandler = (e) => {
         if (e.target && typeof e.target.closest === 'function') {
             const cell = e.target.closest('.log-message-cell');
             if (cell) {
@@ -1408,20 +1411,18 @@ function initHoverEffect() {
                 }
             }
         }
-    });
+    };
     
-    // 鼠标离开事件
-    document.addEventListener('mouseleave', (e) => {
+    const mouseLeaveHandler = (e) => {
         if (e.target && typeof e.target.closest === 'function') {
             const cell = e.target.closest('.log-message-cell');
             if (cell) {
                 tooltip.style.display = 'none';
             }
         }
-    });
+    };
     
-    // 确保鼠标离开页面时隐藏悬停框
-    document.addEventListener('mousemove', (e) => {
+    const mouseMoveHandler = (e) => {
         if (e.target && typeof e.target.closest === 'function') {
             const cell = e.target.closest('.log-message-cell');
             if (!cell) {
@@ -1430,6 +1431,22 @@ function initHoverEffect() {
         } else {
             // 如果 e.target 不支持 closest 方法，直接隐藏悬停框
             tooltip.style.display = 'none';
+        }
+    };
+    
+    // 添加事件监听器
+    document.addEventListener('mouseenter', mouseEnterHandler);
+    document.addEventListener('mouseleave', mouseLeaveHandler);
+    document.addEventListener('mousemove', mouseMoveHandler);
+    
+    // 页面卸载时移除事件监听器
+    window.addEventListener('beforeunload', function() {
+        document.removeEventListener('mouseenter', mouseEnterHandler);
+        document.removeEventListener('mouseleave', mouseLeaveHandler);
+        document.removeEventListener('mousemove', mouseMoveHandler);
+        // 移除悬停元素
+        if (tooltip && tooltip.parentNode) {
+            tooltip.parentNode.removeChild(tooltip);
         }
     });
 }
@@ -1580,10 +1597,9 @@ async function fetchOutboundRequests() {
         const requests = await response.json();
         
         // 根据开关状态决定是否过滤本服务的请求
-        const baseUrl = 'http://localhost:8000';
         const filteredRequests = showInternalRequests ? requests : requests.filter(request => {
-            // 检查URL是否以baseUrl开头
-            return !request.url.startsWith(baseUrl);
+            // 检查URL是否包含localhost或127.0.0.1
+            return !request.url.includes('localhost') && !request.url.includes('127.0.0.1');
         });
         
         updateOutboundRequestsTable(filteredRequests);
@@ -1630,8 +1646,22 @@ function updateOutboundRequestsTable(requests) {
     const tableBody = document.getElementById('outbound-requests-table');
     if (!tableBody) return;
     
-    outboundRequestsData = requests;
-    tableBody.innerHTML = requests.map((request, index) => formatOutboundRequestRow(request, index)).join('');
+    // 限制存储最近100条数据
+    outboundRequestsData = requests.slice(0, 100);
+    
+    // 使用文档片段减少DOM操作次数
+    const fragment = document.createDocumentFragment();
+    
+    outboundRequestsData.forEach((request, index) => {
+        const row = document.createElement('tr');
+        row.innerHTML = formatOutboundRequestRow(request, index);
+        row.onclick = () => showOutboundRequestDetail(index);
+        row.setAttribute('data-request-index', index);
+        fragment.appendChild(row);
+    });
+    
+    tableBody.innerHTML = '';
+    tableBody.appendChild(fragment);
 }
 
 // 格式化发送请求行
@@ -1643,7 +1673,7 @@ function formatOutboundRequestRow(request, index) {
     const durationClass = request.duration > 1 ? 'slow' : '';
     
     return `
-    <tr onclick="showOutboundRequestDetail(${index})" data-request-index="${index}">
+    <tr data-request-index="${index}">
         <td>${timestamp}</td>
         <td><span class="method ${request.method.toLowerCase()}">${request.method}</span></td>
         <td class="url">${request.url}</td>
@@ -1663,9 +1693,12 @@ function showOutboundRequestDetail(index) {
     modal.innerHTML = `
         <div class="modal-overlay"></div>
         <div class="modal-content">
-            <div class="modal-header">
-                <h3>发送请求详情</h3>
-                <button class="close-btn" onclick="this.closest('.modal').remove()">&times;</button>
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 15px;">
+                <h3 style="margin: 0; font-size: 18px;">发送请求详情</h3>
+                <div class="modal-actions" style="display: flex; align-items: center;">
+                    <button class="export-btn" onclick="exportOutboundRequestDetail(${index})" style="padding: 8px 16px; border: none; border-radius: 8px; background-color: #4CAF50; color: white; font-weight: bold; cursor: pointer; font-size: 14px; transition: all 0.3s ease;">导出</button>
+                    <button class="close-btn" onclick="this.closest('.modal').remove()" style="padding: 8px 16px; border: none; border-radius: 8px; background-color: #f44336; color: white; cursor: pointer; font-size: 14px; margin-left: 10px;">&times;</button>
+                </div>
             </div>
             <div class="modal-body">
                 <div class="detail-section">
@@ -1747,6 +1780,230 @@ function showOutboundRequestDetail(index) {
     document.body.appendChild(modal);
     Prism.highlightAll();
 }
+
+// 导出发送请求详情
+function exportOutboundRequestDetail(index) {
+    const request = outboundRequestsData[index];
+    
+    // 创建导出HTML
+    const html = `
+    <!DOCTYPE html>
+    <html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>发送请求详情</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                margin: 20px;
+                background-color: #f5f5f5;
+            }
+            .modal-content {
+                background-color: #fff;
+                border-radius: 8px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                padding: 20px;
+                max-width: 800px;
+                margin: 0 auto;
+            }
+            .modal-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 20px;
+                border-bottom: 1px solid #eee;
+                padding-bottom: 10px;
+            }
+            .modal-header h3 {
+                margin: 0;
+                color: #333;
+            }
+            .modal-actions {
+                display: flex;
+                gap: 10px;
+            }
+            .export-btn, .close-btn {
+                padding: 8px 16px;
+                border: none;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 14px;
+                transition: all 0.3s ease;
+            }
+            .export-btn {
+                background-color: #4CAF50;
+                color: white;
+                font-weight: bold;
+            }
+            .export-btn:hover {
+                background-color: #45a049;
+                transform: translateY(-1px);
+                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            }
+            .close-btn {
+                background-color: #f44336;
+                color: white;
+            }
+            .detail-section {
+                margin-bottom: 20px;
+            }
+            .detail-section h4 {
+                margin: 0 0 10px 0;
+                color: #555;
+                border-bottom: 1px solid #eee;
+                padding-bottom: 5px;
+            }
+            .detail-table {
+                width: 100%;
+                border-collapse: collapse;
+            }
+            .detail-table td {
+                padding: 8px;
+                border-bottom: 1px solid #eee;
+            }
+            .detail-label {
+                font-weight: bold;
+                width: 100px;
+                color: #555;
+            }
+            .detail-value {
+                color: #333;
+            }
+            .detail-value.error {
+                color: #f44336;
+            }
+            .detail-value.success {
+                color: #4CAF50;
+            }
+            .detail-value.slow {
+                color: #ff9800;
+            }
+            pre {
+                background-color: #f9f9f9;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                padding: 10px;
+                overflow-x: auto;
+                margin: 0;
+            }
+            code {
+                font-family: 'Courier New', Courier, monospace;
+            }
+            .language-json .token.key {
+                color: #0000ff;
+            }
+            .language-json .token.string {
+                color: #008000;
+            }
+            .language-json .token.number {
+                color: #ff0000;
+            }
+            .language-json .token.boolean {
+                color: #800080;
+            }
+            .language-json .token.null {
+                color: #808080;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>发送请求详情</h3>
+            </div>
+            <div class="modal-body">
+                <div class="detail-section">
+                    <h4>基本信息</h4>
+                    <table class="detail-table">
+                        <tbody>
+                            <tr>
+                                <td class="detail-label">时间戳:</td>
+                                <td class="detail-value">${new Date(request.timestamp * 1000).toLocaleString('zh-CN')}</td>
+                            </tr>
+                            <tr>
+                                <td class="detail-label">方法:</td>
+                                <td class="detail-value">${request.method}</td>
+                            </tr>
+                            <tr>
+                                <td class="detail-label">URL:</td>
+                                <td class="detail-value">${request.url}</td>
+                            </tr>
+                            <tr>
+                                <td class="detail-label">状态码:</td>
+                                <td class="detail-value ${request.status_code >= 400 ? 'error' : 'success'}">${request.status_code}</td>
+                            </tr>
+                            <tr>
+                                <td class="detail-label">响应时间:</td>
+                                <td class="detail-value ${request.duration > 1 ? 'slow' : ''}">${(request.duration * 1000).toFixed(0)}ms</td>
+                            </tr>
+                            ${request.error_message ? `
+                            <tr>
+                                <td class="detail-label">错误信息:</td>
+                                <td class="detail-value error">${request.error_message}</td>
+                            </tr>
+                            ` : ''}
+                        </tbody>
+                    </table>
+                </div>
+                ${request.request_headers ? `
+                <div class="detail-section">
+                    <h4>请求头</h4>
+                    <pre><code class="language-json">${JSON.stringify(request.request_headers, null, 2)}</code></pre>
+                </div>
+                ` : ''}
+                ${request.request_body ? `
+                <div class="detail-section">
+                    <h4>请求体</h4>
+                    <pre><code class="language-json">${typeof request.request_body === 'string' ? (function() {
+                        try {
+                            return JSON.stringify(JSON.parse(request.request_body), null, 2);
+                        } catch (e) {
+                            return request.request_body;
+                        }
+                    })() : JSON.stringify(request.request_body, null, 2)}</code></pre>
+                </div>
+                ` : ''}
+                ${request.response_headers ? `
+                <div class="detail-section">
+                    <h4>响应头</h4>
+                    <pre><code class="language-json">${JSON.stringify(request.response_headers, null, 2)}</code></pre>
+                </div>
+                ` : ''}
+                ${request.response_body ? `
+                <div class="detail-section">
+                    <h4>响应体</h4>
+                    <pre><code class="language-json">${typeof request.response_body === 'string' ? (function() {
+                        try {
+                            return JSON.stringify(JSON.parse(request.response_body), null, 2);
+                        } catch (e) {
+                            return request.response_body;
+                        }
+                    })() : JSON.stringify(request.response_body, null, 2)}</code></pre>
+                </div>
+                ` : ''}
+            </div>
+        </div>
+    </body>
+    </html>
+    `;
+    
+    // 导出为HTML文件
+    const blob = new Blob([html], { type: 'text/html' });
+    const urlBlob = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = urlBlob;
+    
+    // 获取时间戳作为文件名
+    const timestamp = new Date(request.timestamp * 1000).toISOString().replace(/[: ]/g, '-');
+    a.download = `outbound-request-${timestamp}.html`;
+    
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(urlBlob);
+}
+
 
 
 
@@ -1897,3 +2154,35 @@ function updateOverviewOutboundList(requests) {
         `;
     }).join('');
 }
+
+// 页面卸载时清理定时器
+window.addEventListener('beforeunload', function() {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+    }
+    if (titleAlertInterval) {
+        clearInterval(titleAlertInterval);
+    }
+});
+
+// 监控内存使用
+function monitorMemoryUsage() {
+    if (performance && performance.memory) {
+        const memory = performance.memory;
+        console.log('Memory usage:', {
+            used: (memory.usedJSHeapSize / 1024 / 1024).toFixed(2) + ' MB',
+            total: (memory.totalJSHeapSize / 1024 / 1024).toFixed(2) + ' MB',
+            limit: (memory.jsHeapSizeLimit / 1024 / 1024).toFixed(2) + ' MB'
+        });
+    }
+}
+
+// 定期监控内存使用
+const memoryMonitorInterval = setInterval(monitorMemoryUsage, 60000); // 每分钟检查一次
+
+// 页面卸载时清理内存监控定时器
+window.addEventListener('beforeunload', function() {
+    if (memoryMonitorInterval) {
+        clearInterval(memoryMonitorInterval);
+    }
+});
