@@ -969,6 +969,17 @@ body {
     background-color: white;
 }
 
+.logs-table tbody tr {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.logs-table tbody tr:hover {
+    background: #f0f7ff !important;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
 .error-message-cell {
     max-width: 200px;
     overflow: hidden;
@@ -1173,13 +1184,18 @@ body {
     margin-top: 0;
 }
 
+/* 确保 api-detail-bodies 中的 section 能够扩展 */
+.api-detail-bodies .api-detail-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
 /* 确保内容区域能够充分利用空间 */
 .api-detail-content {
     display: flex;
     flex-direction: column;
     gap: 16px;
-    flex: 1;
-    min-height: 0;
 }
 
 .api-detail-section {
@@ -1223,7 +1239,7 @@ body {
     font-family: monospace;
     font-size: 12px;
     line-height: 1.5;
-    height: 250px;
+    height: 500px;
     overflow: auto;
     white-space: pre-wrap;
     word-break: break-all;
@@ -1241,6 +1257,14 @@ pre[class*="language-"] {
     border: none;
     padding: 0;
     overflow: visible;
+    flex: 1;
+    min-height: 0;
+}
+
+/* 确保 api-detail-body 的 pre 元素能够扩展 */
+.api-detail-body pre {
+    height: 100%;
+    margin: 0;
 }
 
 code[class*="language-"] {
@@ -1318,7 +1342,7 @@ code[class*="language-"] {
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
     width: 95%;
     max-width: 1400px;
-    height: 80vh;
+    height: 90vh;
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -1332,6 +1356,12 @@ code[class*="language-"] {
     padding: 16px 20px;
     border-bottom: 1px solid var(--border-color);
     background: var(--bg-color);
+}
+
+.modal-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
 
 .modal-header h3 {
@@ -1408,6 +1438,125 @@ code[class*="language-"] {
     .detail-table .detail-label {
         width: 100px;
     }
+}
+
+/* 日志详细信息样式 */
+.log-detail-section {
+    margin-bottom: 24px;
+}
+
+.log-detail-section h4 {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--text-primary);
+}
+
+.log-detail-item {
+    background: var(--bg-color);
+    border-radius: 6px;
+    padding: 16px;
+    margin-bottom: 12px;
+    border-left: 4px solid var(--border-color);
+    transition: all 0.2s ease;
+}
+
+.log-detail-item:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.log-detail-item.selected {
+    background: #f0f7ff;
+    border-left-color: var(--primary-color);
+    box-shadow: 0 2px 8px rgba(24, 144, 255, 0.15);
+}
+
+.log-detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.log-detail-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.log-detail-index {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: white;
+    padding: 2px 8px;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+}
+
+.log-detail-module {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    background: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+}
+
+.log-detail-time {
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.log-detail-message {
+    margin-bottom: 12px;
+}
+
+.log-detail-message pre {
+    margin: 0;
+    background: white;
+    padding: 12px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    font-size: 13px;
+    line-height: 1.5;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.log-detail-traceback {
+    margin-top: 12px;
+}
+
+.log-detail-traceback h5 {
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--text-secondary);
+}
+
+.log-detail-traceback pre {
+    margin: 0;
+    background: #fff1f0;
+    padding: 12px;
+    border-radius: 4px;
+    border: 1px solid #ffa39e;
+    font-size: 12px;
+    line-height: 1.4;
+    max-height: 300px;
+    overflow-y: auto;
+    color: var(--error-color);
+}
+
+.surrounding-logs {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 /* 开关样式 */

@@ -242,8 +242,7 @@ class ApsHelpers:
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if msg:
             try:
-                if len(msg) > 128:
-                    msg = msg[:128]
+                msg = str(msg)[:64]
             except Exception as e:
                 pass
         memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
@@ -287,8 +286,7 @@ class ApsHelpers:
         logger.fail("推送 RS", json.dumps(push_data, ensure_ascii=False), msg)
         if msg:
             try:
-                if len(msg) > 128:
-                    msg = msg[:128]
+                msg = str(msg)[:64]
             except Exception as e:
                 pass
         try:
@@ -400,8 +398,7 @@ class ApsHelpers:
     def pr_push_failed(prno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None):
         if msg:
             try:
-                if len(msg) > 128:
-                    msg = msg[:128]
+                msg = str(msg)[:64]
             except Exception as e:
                 pass
         logger.fail("推送 PR", json.dumps(push_data, ensure_ascii=False), msg)

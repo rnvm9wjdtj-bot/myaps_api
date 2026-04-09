@@ -1184,12 +1184,13 @@ class DbManager:
                 'error': str(e)
             }
     
-    async def check_connection_health(self, timeout: int = 5) -> bool:
+    async def check_connection_health(self, timeout: int = 5, fast_mode: bool = False) -> bool:
         """
         检查数据库连接健康状态
         
         Args:
             timeout: 查询超时时间（秒）
+            fast_mode: 是否使用快速模式，快速模式下刷新连接时使用较少的重试次数
             
         Returns:
             bool: 连接是否健康
@@ -1203,7 +1204,7 @@ class DbManager:
         except asyncio.TimeoutError:
             logger.warning(f"数据库连接健康检查超时: {self.connection_name}")
             # 尝试刷新连接
-            await self.refresh_connection()
+            await self.refresh_connection(fast_mode=fast_mode)
             # 再次检查连接
             try:
                 conn = Tortoise.get_connection(self.connection_name)
@@ -1215,7 +1216,7 @@ class DbManager:
         except Exception as e:
             logger.warning(f"数据库连接健康检查失败: {e}")
             # 尝试刷新连接
-            await self.refresh_connection()
+            await self.refresh_connection(fast_mode=fast_mode)
             # 再次检查连接
             try:
                 conn = Tortoise.get_connection(self.connection_name)
@@ -1225,67 +1226,119 @@ class DbManager:
                 logger.warning(f"刷新连接后健康检查仍失败: {e}")
                 return False
     
-    async def refresh_connection(self):
+    async def refresh_connection(self, fast_mode: bool = False):
         """
         刷新数据库连接，确保连接有效
         当出现数据包序列号错误等协议层问题时，会强制重新创建连接
+        
+        Args:
+            fast_mode: 是否使用快速模式，快速模式下使用较少的重试次数和较短的等待时间
         """
-        try:
-            # 尝试获取当前连接
-            conn = Tortoise.get_connection(self.connection_name)
-            
-            # 关闭当前连接（如果存在且可关闭）
-            if conn and hasattr(conn, 'close'):
-                try:
-                    # 检查是否是TransactionWrapper（通过检查是否有_pool属性）
-                    if hasattr(conn, '_pool'):
-                        await conn.close()
-                        logger.info(f"已关闭旧连接: {self.connection_name}")
-                    else:
-                        # 对于TransactionWrapper，尝试获取内部连接并关闭
-                        if hasattr(conn, 'connection'):
-                            inner_conn = conn.connection
-                            if inner_conn and hasattr(inner_conn, 'close'):
-                                try:
-                                    await inner_conn.close()
-                                    logger.info(f"已关闭TransactionWrapper内部连接: {self.connection_name}")
-                                except Exception as inner_close_error:
-                                    logger.warning(f"关闭TransactionWrapper内部连接时出错: {inner_close_error}")
-                        logger.info(f"处理TransactionWrapper连接: {self.connection_name}")
-                except Exception as close_error:
-                    logger.warning(f"关闭旧连接时出错: {close_error}")
-            
-            # 从 Tortoise ORM 的连接存储中移除损坏的连接
-            # 这样下次调用 connections.get() 时会自动创建新的连接
+        import asyncio
+        import time
+        # 根据模式设置不同的重试参数
+        if fast_mode:
+            retry_count = 3  # 快速模式下减少重试次数
+            retry_delay = 1.0  # 快速模式下减少初始延迟
+        else:
+            retry_count = 5  # 正常模式下增加重试次数
+            retry_delay = 2.0  # 正常模式下增加初始延迟
+        
+        for attempt in range(retry_count):
             try:
-                connections.discard(self.connection_name)
-                logger.info(f"已从连接存储中移除: {self.connection_name}")
-            except Exception as discard_error:
-                logger.warning(f"移除连接时出错: {discard_error}")
-            
-            # 等待一小段时间，确保连接完全关闭
-            import asyncio
-            await asyncio.sleep(0.5)
-            
-            # 尝试重新获取连接（会自动创建新的连接）
-            try:
-                new_conn = connections.get(self.connection_name)
+                start_time = time.time()
+                logger.info(f"尝试刷新连接 {self.connection_name} (尝试 {attempt + 1}/{retry_count})")
                 
-                # 检查新连接是否有效
-                if new_conn:
-                    # 执行一个简单的查询来验证连接
-                    await new_conn.execute_query("SELECT 1")
-                    logger.info(f"数据库连接已刷新并验证: {self.connection_name}")
-                    return True
+                # 1. 尝试获取并关闭当前连接
+                try:
+                    conn = Tortoise.get_connection(self.connection_name)
+                    
+                    # 关闭当前连接（如果存在且可关闭）
+                    if conn and hasattr(conn, 'close'):
+                        try:
+                            # 检查是否是TransactionWrapper（通过检查是否有_pool属性）
+                            if hasattr(conn, '_pool'):
+                                await conn.close()
+                                logger.info(f"已关闭旧连接: {self.connection_name}")
+                            else:
+                                # 对于TransactionWrapper，尝试获取内部连接并关闭
+                                if hasattr(conn, 'connection'):
+                                    inner_conn = conn.connection
+                                    if inner_conn and hasattr(inner_conn, 'close'):
+                                        try:
+                                            await inner_conn.close()
+                                            logger.info(f"已关闭TransactionWrapper内部连接: {self.connection_name}")
+                                        except Exception as inner_close_error:
+                                            logger.warning(f"关闭TransactionWrapper内部连接时出错: {inner_close_error}")
+                                logger.info(f"处理TransactionWrapper连接: {self.connection_name}")
+                        except Exception as close_error:
+                            logger.warning(f"关闭旧连接时出错: {close_error}")
+                except Exception as get_conn_error:
+                    logger.warning(f"获取当前连接时出错: {get_conn_error}")
+                
+                # 2. 从 Tortoise ORM 的连接存储中移除损坏的连接
+                # 这样下次调用 connections.get() 时会自动创建新的连接
+                try:
+                    connections.discard(self.connection_name)
+                    logger.info(f"已从连接存储中移除: {self.connection_name}")
+                except Exception as discard_error:
+                    logger.warning(f"移除连接时出错: {discard_error}")
+                
+                # 3. 等待一段时间，确保连接完全关闭
+                if fast_mode:
+                    wait_time = 0.5 + attempt * 0.5  # 快速模式下使用较短的等待时间
                 else:
-                    logger.error(f"刷新数据库连接失败: 无法获取新连接")
-                    return False
-            except Exception as get_conn_error:
-                logger.error(f"获取新连接时出错: {get_conn_error}")
-                return False
-        except Exception as e:
-            logger.error(f"刷新数据库连接失败: {e}")
-            return False
+                    wait_time = 1.0 + attempt * 1.0  # 正常模式下使用较长的等待时间
+                logger.info(f"等待 {wait_time:.1f} 秒，确保连接完全关闭...")
+                await asyncio.sleep(wait_time)
+                
+                # 4. 尝试重新获取连接（会自动创建新的连接）
+                try:
+                    logger.info(f"尝试创建新连接: {self.connection_name}")
+                    new_conn = connections.get(self.connection_name)
+                    
+                    # 5. 检查新连接是否有效
+                    if new_conn:
+                        # 执行一个简单的查询来验证连接
+                        logger.info(f"验证新连接: {self.connection_name}")
+                        await new_conn.execute_query("SELECT 1")
+                        elapsed_time = time.time() - start_time
+                        logger.info(f"数据库连接已刷新并验证: {self.connection_name} (耗时: {elapsed_time:.2f}秒)")
+                        return True
+                    else:
+                        logger.error(f"刷新数据库连接失败: 无法获取新连接")
+                        if attempt < retry_count - 1:
+                            logger.info(f"将在 {retry_delay} 秒后重试...")
+                            await asyncio.sleep(retry_delay)
+                            retry_delay *= 1.5  # 指数退避
+                        continue
+                except Exception as get_conn_error:
+                    logger.error(f"获取新连接时出错: {get_conn_error}")
+                    # 针对 Packet sequence number 错误进行特殊处理
+                    if "Packet sequence number wrong" in str(get_conn_error):
+                        logger.error(f"检测到数据包序列号错误，这是 MySQL 协议层问题")
+                        logger.error(f"将进行更彻底的连接重置...")
+                        # 额外等待一段时间
+                        if fast_mode:
+                            await asyncio.sleep(1.0)  # 快速模式下使用较短的等待时间
+                        else:
+                            await asyncio.sleep(2.0)  # 正常模式下使用较长的等待时间
+                    if attempt < retry_count - 1:
+                        logger.info(f"将在 {retry_delay} 秒后重试...")
+                        await asyncio.sleep(retry_delay)
+                        retry_delay *= 1.5  # 指数退避
+                    continue
+            except Exception as e:
+                logger.error(f"刷新数据库连接失败: {e}")
+                if attempt < retry_count - 1:
+                    logger.info(f"将在 {retry_delay} 秒后重试...")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 1.5  # 指数退避
+                continue
+        
+        # 所有尝试都失败
+        logger.error(f"所有尝试都失败: 无法刷新数据库连接 {self.connection_name}")
+        return False
 
 
     @with_transaction

@@ -1209,7 +1209,8 @@ function copyRequestBody() {
         navigator.clipboard.writeText(content)
             .then(() => {
                 // 显示复制成功提示
-                const btn = document.querySelector('.section-actions button:nth-child(2)');
+                const sectionActions = requestBodyEl.closest('.api-detail-section').querySelector('.section-actions');
+                const btn = sectionActions ? sectionActions.querySelector('button:nth-child(2)') : null;
                 if (btn) {
                     const originalText = btn.textContent;
                     btn.textContent = '已复制';
@@ -1237,7 +1238,8 @@ function copyResponseBody() {
         navigator.clipboard.writeText(content)
             .then(() => {
                 // 显示复制成功提示
-                const btn = document.querySelectorAll('.section-actions')[1].querySelector('button:nth-child(2)');
+                const sectionActions = responseBodyEl.closest('.api-detail-section').querySelector('.section-actions');
+                const btn = sectionActions ? sectionActions.querySelector('button:nth-child(2)') : null;
                 if (btn) {
                     const originalText = btn.textContent;
                     btn.textContent = '已复制';
@@ -1302,7 +1304,7 @@ function updateLogsPageDisplay(logs) {
         return;
     }
     
-    tbodyEl.innerHTML = filteredLogs.map(log => {
+    tbodyEl.innerHTML = filteredLogs.map((log, index) => {
         const date = new Date(log.timestamp * 1000);
         const timeStr = `${date.getFullYear()}-${(date.getMonth()+1).toString().padStart(2,'0')}-${date.getDate().toString().padStart(2,'0')} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}:${date.getSeconds().toString().padStart(2,'0')}`;
         
@@ -1326,17 +1328,20 @@ function updateLogsPageDisplay(logs) {
             .replace(/>/g, '&gt;');
         
         return `
-            <tr data-log-id="${logId}" class="${readStatusClass}">
+            <tr data-log-id="${logId}" data-log-index="${index}" class="${readStatusClass}" onclick="showLogDetail(${index})">
                 <td>${timeStr}</td>
                 <td><span class="log-level-badge ${log.level}">${log.level.toUpperCase()}</span></td>
                 <td>${log.module}</td>
                 <td class="log-message-cell" title="${escapedFullMessage}" data-full-message="${escapedFullMessage}">${log.message}</td>
                 <td class="read-status-cell">
-                    <span class="read-checkbox ${readStatusClass}" onclick="toggleLogReadStatus('${logId}')">${readIcon}</span>
+                    <span class="read-checkbox ${readStatusClass}" onclick="toggleLogReadStatus('${logId}'); event.stopPropagation();">${readIcon}</span>
                 </td>
             </tr>
         `;
     }).join('');
+    
+    // 保存日志数据，以便点击时使用
+    window.logsData = filteredLogs;
     
     checkAlertConditions();
     checkUnreadLogs();
@@ -2226,3 +2231,149 @@ window.addEventListener('beforeunload', function() {
         clearInterval(memoryMonitorInterval);
     }
 });
+
+// 显示日志详细信息
+async function showLogDetail(index) {
+    const logs = window.logsData || [];
+    if (!logs[index]) return;
+    
+    // 获取完整的日志数据（包含所有级别，包括DEBUG）
+    let allLogs = [];
+    try {
+        const response = await fetch(`${API_BASE}/logs?limit=200`);
+        const data = await response.json();
+        // 按时间倒序排列
+        allLogs = data.logs.sort((a, b) => b.timestamp - a.timestamp);
+    } catch (error) {
+        console.error('获取完整日志失败:', error);
+        allLogs = logs;
+    }
+    
+    // 找到当前选中日志在完整数据中的索引
+    const selectedLog = logs[index];
+    const selectedLogIndex = allLogs.findIndex(log => 
+        log.timestamp === selectedLog.timestamp && 
+        log.module === selectedLog.module && 
+        log.message === selectedLog.message
+    );
+    
+    // 计算前后各10条日志的范围
+    const startIndex = Math.max(0, selectedLogIndex - 10);
+    const endIndex = Math.min(allLogs.length - 1, selectedLogIndex + 10);
+    const surroundingLogs = allLogs.slice(startIndex, endIndex + 1);
+    
+    // 创建模态框
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>日志详细信息</h3>
+                <div class="modal-header-actions">
+                    <select id="modal-log-level" onchange="filterModalLogs(this.value, ${selectedLogIndex})" style="margin-right: 12px; padding: 4px 8px; border: 1px solid #e8e8e8; border-radius: 4px;">
+                        <option value="">全部级别 (含DEBUG)</option>
+                        <option value="error">错误日志</option>
+                        <option value="warning">警告日志</option>
+                        <option value="info">信息日志</option>
+                        <option value="debug">调试日志</option>
+                    </select>
+                    <button class="close-btn" onclick="this.closest('.modal').remove()">&times;</button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div class="log-detail-section">
+                    <h4>选中日志</h4>
+                    <div class="log-detail-item selected">
+                        ${formatLogDetail(selectedLog, selectedLogIndex)}
+                    </div>
+                </div>
+                <div class="log-detail-section">
+                    <h4>前后关联日志</h4>
+                    <div class="surrounding-logs" id="surrounding-logs-container">
+                        ${surroundingLogs.map((log, i) => {
+                            const actualIndex = startIndex + i;
+                            const isSelected = actualIndex === selectedLogIndex;
+                            return `
+                                <div class="log-detail-item ${isSelected ? 'selected' : ''}" data-log-level="${log.level}">
+                                    ${formatLogDetail(log, actualIndex)}
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    Prism.highlightAll();
+    
+    // 保存完整日志数据到模态框元素上
+    modal.dataset.allLogs = JSON.stringify(allLogs);
+    modal.dataset.selectedLogIndex = selectedLogIndex;
+}
+
+// 筛选模态框中的日志
+function filterModalLogs(level, selectedLogIndex) {
+    const modal = document.querySelector('.modal');
+    if (!modal) return;
+    
+    const allLogs = JSON.parse(modal.dataset.allLogs);
+    
+    // 计算前后各10条日志的范围
+    const startIndex = Math.max(0, selectedLogIndex - 10);
+    const endIndex = Math.min(allLogs.length - 1, selectedLogIndex + 10);
+    let surroundingLogs = allLogs.slice(startIndex, endIndex + 1);
+    
+    // 根据级别筛选
+    if (level) {
+        surroundingLogs = surroundingLogs.filter(log => log.level === level);
+    }
+    
+    // 更新显示
+    const container = document.getElementById('surrounding-logs-container');
+    if (container) {
+        container.innerHTML = surroundingLogs.map((log, i) => {
+            const actualIndex = allLogs.findIndex(l => 
+                l.timestamp === log.timestamp && 
+                l.module === log.module && 
+                l.message === log.message
+            );
+            const isSelected = actualIndex === selectedLogIndex;
+            return `
+                <div class="log-detail-item ${isSelected ? 'selected' : ''}" data-log-level="${log.level}">
+                    ${formatLogDetail(log, actualIndex)}
+                </div>
+            `;
+        }).join('');
+        
+        Prism.highlightAll();
+    }
+}
+
+// 格式化日志详细信息
+function formatLogDetail(log, index) {
+    const date = new Date(log.timestamp * 1000);
+    const timeStr = `${date.getFullYear()}-${(date.getMonth()+1).toString().padStart(2,'0')}-${date.getDate().toString().padStart(2,'0')} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}:${date.getSeconds().toString().padStart(2,'0')}.${date.getMilliseconds().toString().padStart(3,'0')}`;
+    
+    return `
+        <div class="log-detail-header">
+            <div class="log-detail-info">
+                <span class="log-detail-index">#${index + 1}</span>
+                <span class="log-level-badge ${log.level}">${log.level.toUpperCase()}</span>
+                <span class="log-detail-module">${log.module}</span>
+                <span class="log-detail-time">${timeStr}</span>
+            </div>
+        </div>
+        <div class="log-detail-message">
+            <pre><code class="language-text">${log.message}</code></pre>
+        </div>
+        ${log.traceback ? `
+        <div class="log-detail-traceback">
+            <h5>堆栈跟踪</h5>
+            <pre><code class="language-python">${log.traceback}</code></pre>
+        </div>
+        ` : ''}
+    `;
+}
