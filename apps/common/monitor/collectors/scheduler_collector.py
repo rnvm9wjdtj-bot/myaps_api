@@ -77,10 +77,24 @@ class SchedulerCollector:
                                 # 尝试使用 _last_run_time 属性（另一种可能的属性名）
                                 last_run_time = job._last_run_time
                             except Exception:
-                                pass
-                    
-                    # 打印调试信息
-                    logger.debug(f"任务 {job.name} 的上次执行时间: {last_run_time}")
+                                # 尝试从调度器中获取执行历史
+                                try:
+                                    if hasattr(scheduler_manager.scheduler, 'get_job'):
+                                        # 获取任务的执行历史
+                                        job_instance = scheduler_manager.scheduler.get_job(job.id)
+                                        if hasattr(job_instance, 'last_run_time'):
+                                            last_run_time = job_instance.last_run_time
+                                except Exception:
+                                    pass
+                    # 尝试从事件监听器中获取执行时间
+                    if not last_run_time:
+                        try:
+                            # 检查事件监听器是否有执行时间记录
+                            if hasattr(scheduler_manager, '_job_execution_times'):
+                                if job.id in scheduler_manager._job_execution_times:
+                                    last_run_time = scheduler_manager._job_execution_times[job.id]
+                        except Exception:
+                            pass
                     
                     jobs.append({
                         "id": job.id,

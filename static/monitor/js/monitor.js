@@ -486,8 +486,11 @@ function formatDateTime(dateValue) {
     if (typeof dateValue === 'number') {
         // 处理时间戳（秒）
         date = new Date(dateValue * 1000);
-    } else {
+    } else if (typeof dateValue === 'string') {
         // 处理ISO字符串
+        date = new Date(dateValue);
+    } else {
+        // 处理其他格式
         date = new Date(dateValue);
     }
     
@@ -1292,8 +1295,11 @@ function updateLogsPageDisplay(logs) {
     // 从 localStorage 获取已读状态
     const readStatus = getReadStatusFromStorage();
     
+    // 过滤掉非 warning 和 error 级别的日志
+    const warningErrorLogs = logs.filter(log => log.level === 'warning' || log.level === 'error');
+    
     // 根据开关状态过滤日志
-    const filteredLogs = showReadLogs ? logs : logs.filter(log => {
+    const filteredLogs = showReadLogs ? warningErrorLogs : warningErrorLogs.filter(log => {
         const logId = generateLogId(log.timestamp, log.module, log.message);
         return !readStatus.has(logId);
     });
@@ -1332,7 +1338,7 @@ function updateLogsPageDisplay(logs) {
                 <td>${timeStr}</td>
                 <td><span class="log-level-badge ${log.level}">${log.level.toUpperCase()}</span></td>
                 <td>${log.module}</td>
-                <td class="log-message-cell" title="${escapedFullMessage}" data-full-message="${escapedFullMessage}">${log.message}</td>
+                <td class="log-message-cell" title="${escapedFullMessage}" data-full-message="${escapedFullMessage}">${escapeHtml(log.message || '')}</td>
                 <td class="read-status-cell">
                     <span class="read-checkbox ${readStatusClass}" onclick="toggleLogReadStatus('${logId}'); event.stopPropagation();">${readIcon}</span>
                 </td>
@@ -2352,6 +2358,16 @@ function filterModalLogs(level, selectedLogIndex) {
     }
 }
 
+// HTML转义函数，防止XSS攻击
+function escapeHtml(text) {
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 // 格式化日志详细信息
 function formatLogDetail(log, index, selectedIndex) {
     const date = new Date(log.timestamp * 1000);
@@ -2359,6 +2375,10 @@ function formatLogDetail(log, index, selectedIndex) {
     
     // 计算相对编号：选中的为0，早先为负数，晚为正数
     const relativeIndex = selectedIndex !== undefined ? index - selectedIndex : index;
+    
+    // 转义日志内容，防止HTML/JS注入
+    const escapedMessage = escapeHtml(log.message || '');
+    const escapedTraceback = log.traceback ? escapeHtml(log.traceback) : '';
     
     return `
         <div class="log-detail-header">
@@ -2370,12 +2390,12 @@ function formatLogDetail(log, index, selectedIndex) {
             </div>
         </div>
         <div class="log-detail-message">
-            <pre><code class="language-text">${log.message}</code></pre>
+            <pre><code class="language-text">${escapedMessage}</code></pre>
         </div>
-        ${log.traceback ? `
+        ${escapedTraceback ? `
         <div class="log-detail-traceback">
             <h5>堆栈跟踪</h5>
-            <pre><code class="language-python">${log.traceback}</code></pre>
+            <pre><code class="language-python">${escapedTraceback}</code></pre>
         </div>
         ` : ''}
     `;

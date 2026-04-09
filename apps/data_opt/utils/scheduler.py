@@ -7,7 +7,7 @@ from functools import wraps
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.jobstores.memory import MemoryJobStore
-from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
+from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED, EVENT_JOB_EXECUTED
 
 from globalobjects import logger as log_config
 from apps.common.utils.thread_pool_manager import global_pool_manager
@@ -46,6 +46,7 @@ class SchedulerManager:
         self.scheduler: Optional[BackgroundScheduler] = None
         self._initialized = False
         self.main_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._job_execution_times = {}  # 存储任务的最后执行时间
         
     def set_main_loop(self, loop: asyncio.AbstractEventLoop):
         self.main_loop = loop
@@ -75,7 +76,7 @@ class SchedulerManager:
             )
             
             # 添加事件监听
-            self.scheduler.add_listener(self._job_error_listener, EVENT_JOB_ERROR | EVENT_JOB_MISSED)
+            self.scheduler.add_listener(self._job_error_listener, EVENT_JOB_ERROR | EVENT_JOB_MISSED | EVENT_JOB_EXECUTED)
             
             # 添加所有注册的任务
             self._add_registered_jobs()
@@ -263,6 +264,13 @@ class SchedulerManager:
     def _job_error_listener(self, event):
         if event.exception:
             logger.fail("任务执行异常", event.job_id, str(event.exception))
+        elif event.code == EVENT_JOB_EXECUTED:
+            # 任务执行完成，记录执行时间
+            logger.success("任务执行完成", event.job_id, "")
+            # 记录任务的最后执行时间
+            import datetime
+            self._job_execution_times[event.job_id] = datetime.datetime.now(datetime.timezone.utc)
+            logger.debug(f"任务 {event.job_id} 的上次执行时间已记录: {self._job_execution_times[event.job_id]}")
         else:
             logger.warning_msg("任务错过执行", event.job_id, "")
     

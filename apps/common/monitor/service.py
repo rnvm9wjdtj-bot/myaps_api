@@ -271,14 +271,14 @@ class MonitorService:
                         if level and log_level_str != level:
                             continue
                         
-                        if log_level_str in ['error', 'warning']:
-                            logs.append({
-                                "level": log_level_str,
-                                "message": message,
-                                "timestamp": timestamp,
-                                "module": module,
-                                "traceback": None  # 简单日志格式不包含堆栈信息
-                            })
+                        # 包含所有级别的日志
+                        logs.append({
+                            "level": log_level_str,
+                            "message": message,
+                            "timestamp": timestamp,
+                            "module": module,
+                            "traceback": None  # 简单日志格式不包含堆栈信息
+                        })
                             
                         if len(logs) >= limit:
                             break
