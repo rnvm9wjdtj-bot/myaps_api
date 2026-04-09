@@ -2285,7 +2285,7 @@ async function showLogDetail(index) {
                 <div class="log-detail-section">
                     <h4>选中日志</h4>
                     <div class="log-detail-item selected">
-                        ${formatLogDetail(selectedLog, selectedLogIndex)}
+                        ${formatLogDetail(selectedLog, selectedLogIndex, selectedLogIndex)}
                     </div>
                 </div>
                 <div class="log-detail-section">
@@ -2296,7 +2296,7 @@ async function showLogDetail(index) {
                             const isSelected = actualIndex === selectedLogIndex;
                             return `
                                 <div class="log-detail-item ${isSelected ? 'selected' : ''}" data-log-level="${log.level}">
-                                    ${formatLogDetail(log, actualIndex)}
+                                    ${formatLogDetail(log, actualIndex, selectedLogIndex)}
                                 </div>
                             `;
                         }).join('')}
@@ -2343,7 +2343,7 @@ function filterModalLogs(level, selectedLogIndex) {
             const isSelected = actualIndex === selectedLogIndex;
             return `
                 <div class="log-detail-item ${isSelected ? 'selected' : ''}" data-log-level="${log.level}">
-                    ${formatLogDetail(log, actualIndex)}
+                    ${formatLogDetail(log, actualIndex, selectedLogIndex)}
                 </div>
             `;
         }).join('');
@@ -2353,14 +2353,17 @@ function filterModalLogs(level, selectedLogIndex) {
 }
 
 // 格式化日志详细信息
-function formatLogDetail(log, index) {
+function formatLogDetail(log, index, selectedIndex) {
     const date = new Date(log.timestamp * 1000);
     const timeStr = `${date.getFullYear()}-${(date.getMonth()+1).toString().padStart(2,'0')}-${date.getDate().toString().padStart(2,'0')} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}:${date.getSeconds().toString().padStart(2,'0')}.${date.getMilliseconds().toString().padStart(3,'0')}`;
+    
+    // 计算相对编号：选中的为0，早先为负数，晚为正数
+    const relativeIndex = selectedIndex !== undefined ? index - selectedIndex : index;
     
     return `
         <div class="log-detail-header">
             <div class="log-detail-info">
-                <span class="log-detail-index">#${index + 1}</span>
+                <span class="log-detail-index">#${relativeIndex}</span>
                 <span class="log-level-badge ${log.level}">${log.level.toUpperCase()}</span>
                 <span class="log-detail-module">${log.module}</span>
                 <span class="log-detail-time">${timeStr}</span>

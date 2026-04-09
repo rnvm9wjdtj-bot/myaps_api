@@ -777,7 +777,7 @@ body {
     width: 100%;
     border-collapse: collapse;
     font-size: 13px;
-    table-layout: fixed;
+    table-layout: auto;
 }
 
 .api-requests-table th, .logs-table th {
@@ -816,6 +816,39 @@ body {
     word-break: break-all;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* 日志表格列样式 */
+.logs-table td {
+    text-align: left;
+    vertical-align: top;
+}
+
+.logs-table td:nth-child(1) { /* 时间 */
+    white-space: nowrap;
+    min-width: 140px;
+}
+
+.logs-table td:nth-child(2) { /* 级别 */
+    white-space: nowrap;
+    min-width: 80px;
+}
+
+.logs-table td:nth-child(3) { /* 模块 */
+    word-break: break-all;
+    min-width: 200px;
+}
+
+.logs-table td:nth-child(4) { /* 消息 */
+    word-break: break-all;
+    flex: 1;
+    min-width: 300px;
+}
+
+.logs-table td:nth-child(5) { /* 已读 */
+    white-space: nowrap;
+    min-width: 60px;
+    text-align: center;
 }
 
 .api-requests-table tbody tr:hover, .logs-table tbody tr:hover {
