@@ -111,34 +111,10 @@
                 </div>
             </section>
 
-            <!-- 发送请求卡片 -->
-            <section class="card">
-                <div class="card-header">
-                    <h2>发送请求</h2>
-                    <span class="badge" id="outbound-badge">监控中</span>
-                </div>
-                <div class="card-body">
-                    <div class="outbound-summary" id="outbound-summary">
-                        <div class="summary-item">
-                            <span class="summary-label">总请求数</span>
-                            <span class="summary-value" id="outbound-total">--</span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="summary-label">错误率</span>
-                            <span class="summary-value" id="outbound-error-rate">--%</span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="summary-label">平均响应</span>
-                            <span class="summary-value" id="outbound-avg">--ms</span>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
             <!-- 接收请求卡片 -->
             <section class="card">
                 <div class="card-header">
-                    <h2>接收请求</h2>
+                    <h2>接收请求 <span style="font-size: 12px; color: #888; font-weight: normal;">(最近24小时)</span></h2>
                     <span class="badge" id="http-badge">监控中</span>
                 </div>
                 <div class="card-body">
@@ -158,6 +134,30 @@
                         <div class="summary-item">
                             <span class="summary-label">QPS</span>
                             <span class="summary-value" id="http-rpm">--</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 发送请求卡片 -->
+            <section class="card">
+                <div class="card-header">
+                    <h2>发送请求 <span style="font-size: 12px; color: #888; font-weight: normal;">(最近24小时)</span></h2>
+                    <span class="badge" id="outbound-badge">监控中</span>
+                </div>
+                <div class="card-body">
+                    <div class="outbound-summary" id="outbound-summary">
+                        <div class="summary-item">
+                            <span class="summary-label">总请求数</span>
+                            <span class="summary-value" id="outbound-total">--</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">错误率</span>
+                            <span class="summary-value" id="outbound-error-rate">--%</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">平均响应</span>
+                            <span class="summary-value" id="outbound-avg">--ms</span>
                         </div>
                     </div>
                 </div>
@@ -188,31 +188,95 @@
         <main class="main-content page-content" id="page-database" style="display: none;">
             <section class="card full-width">
                 <div class="card-header">
-                    <h2>数据库详细信息</h2>
+                    <div class="db-tab-buttons">
+                        <button class="db-tab-btn active" data-db-tab="detail">数据库详细信息</button>
+                        <button class="db-tab-btn" data-db-tab="events">事件监听统计</button>
+                    </div>
                     <span class="badge" id="db-detail-badge">检查中</span>
                 </div>
                 <div class="card-body">
-                    <div class="db-detail-table-container">
-                        <table class="db-detail-table" id="db-detail-table">
-                            <thead>
-                                <tr>
-                                    <th>数据库名称</th>
-                                    <th>连接状态</th>
-                                    <th>最后检查</th>
-                                    <th>当前连接</th>
-                                    <th>最大连接</th>
-                                    <th>最小连接</th>
-                                    <th>空闲连接</th>
-                                    <th>使用中连接</th>
-                                    <th>使用率</th>
-                                    <th>处理记录</th>
-                                    <th>批次数</th>
-                                </tr>
-                            </thead>
-                            <tbody id="db-detail-tbody">
-                                <!-- 动态生成数据库详细信息 -->
-                            </tbody>
-                        </table>
+                    <!-- 数据库详细信息 -->
+                    <div class="db-tab-content" id="db-tab-detail">
+                        <div class="db-detail-table-container">
+                            <table class="db-detail-table" id="db-detail-table">
+                                <thead>
+                                    <tr>
+                                        <th>数据库名称</th>
+                                        <th>连接状态</th>
+                                        <th>最后检查</th>
+                                        <th>当前连接</th>
+                                        <th>最大连接</th>
+                                        <th>最小连接</th>
+                                        <th>空闲连接</th>
+                                        <th>使用中连接</th>
+                                        <th>使用率</th>
+                                        <th>处理记录</th>
+                                        <th>批次数</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="db-detail-tbody">
+                                    <!-- 动态生成数据库详细信息 -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- 事件监听统计 -->
+                    <div class="db-tab-content" id="db-tab-events" style="display: none;">
+                        <div class="events-summary" id="events-summary">
+                            <div class="summary-item">
+                                <span class="summary-label">总接收事件</span>
+                                <span class="summary-value" id="events-total-received">--</span>
+                            </div>
+                            <div class="summary-item">
+                                <span class="summary-label">已处理事件</span>
+                                <span class="summary-value healthy" id="events-total-processed">--</span>
+                            </div>
+                            <div class="summary-item">
+                                <span class="summary-label">失败事件</span>
+                                <span class="summary-value error" id="events-total-failed">--</span>
+                            </div>
+                            <div class="summary-item">
+                                <span class="summary-label">待处理</span>
+                                <span class="summary-value" id="events-total-pending">--</span>
+                            </div>
+                            <div class="summary-item">
+                                <span class="summary-label">整体成功率</span>
+                                <span class="summary-value" id="events-success-rate">--%</span>
+                            </div>
+                            <div class="summary-item">
+                                <span class="summary-label">活跃事件类型</span>
+                                <span class="summary-value" id="events-active-types">--</span>
+                            </div>
+                        </div>
+                        <div class="events-actions">
+                            <button class="btn btn-small" onclick="refreshEventStats()">刷新</button>
+                            <button class="btn btn-small" onclick="flushAllEvents()">立即刷新所有</button>
+                            <button class="btn btn-small btn-secondary" onclick="resetEventStats()">重置统计</button>
+                        </div>
+                        <div class="events-table-container">
+                            <table class="events-table" id="events-table">
+                                <thead>
+                                    <tr>
+                                        <th>事件类型</th>
+                                        <th>描述</th>
+                                        <th>总接收</th>
+                                        <th>待处理</th>
+                                        <th>已处理</th>
+                                        <th>失败</th>
+                                        <th>成功率</th>
+                                        <th>平均延迟</th>
+                                        <th>缓冲区</th>
+                                        <th>最后活动</th>
+                                        <th>状态</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="events-tbody">
+                                    <!-- 动态生成事件统计列表 -->
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -222,7 +286,7 @@
         <main class="main-content page-content" id="page-api-requests" style="display: none;">
             <section class="card full-width">
                 <div class="card-header">
-                    <h2>接收请求记录</h2>
+                    <h2>接收请求记录 <span style="font-size: 12px; color: #888; font-weight: normal;">(最近24小时)</span></h2>
                     <div class="card-actions">
                         <div class="toggle-switch">
                             <label>
@@ -318,7 +382,7 @@
         <main class="main-content page-content" id="page-outbound-requests" style="display: none;">
             <section class="card full-width">
                 <div class="card-header">
-                    <h2>发送请求记录</h2>
+                    <h2>发送请求记录 <span style="font-size: 12px; color: #888; font-weight: normal;">(最近24小时)</span></h2>
                     <div class="card-actions">
                         <div class="toggle-switch">
                             <label>

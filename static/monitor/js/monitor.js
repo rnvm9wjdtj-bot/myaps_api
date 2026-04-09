@@ -378,6 +378,7 @@ async function fetchDatabase() {
 function updateDatabaseDisplay(data) {
     const connections = data.connections || {};
     const summary = connections.summary || {};
+    const mainDb = data.main_db;
 
     // 更新汇总
     document.getElementById('db-total').textContent = summary.total || 0;
@@ -412,7 +413,7 @@ function updateDatabaseDisplay(data) {
 
     listEl.innerHTML = Object.entries(dbConnections).map(([name, status]) => `
         <div class="db-item">
-            <span class="db-name">${name}</span>
+            <span class="db-name">${name === mainDb ? 'Ⓜ️ ' + name : name}</span>
             <span class="db-status">
                 <span class="status-dot ${status.healthy ? 'healthy' : 'error'}"></span>
                 ${status.healthy ? '正常' : (status.error || '异常')}
@@ -525,21 +526,41 @@ async function fetchHTTP() {
 
 // 更新 HTTP 显示
 function updateHTTPDisplay(data) {
-    const summary = data.summary || {};
+    const recentRequests = data.recent_requests || [];
+    
+    // 计算24小时前的时间戳
+    const twentyFourHoursAgo = Date.now() / 1000 - (24 * 60 * 60);
+    
+    // 过滤最近24小时的请求
+    const filteredRequests = recentRequests.filter(request => request.timestamp >= twentyFourHoursAgo);
+    
+    // 重新计算24小时内的汇总数据
+    const totalRequests = filteredRequests.length;
+    const errorRequests = filteredRequests.filter(req => req.status_code >= 400).length;
+    const totalResponseTime = filteredRequests.reduce((sum, req) => sum + req.duration, 0);
+    const errorRate = totalRequests > 0 ? (errorRequests / totalRequests) * 100 : 0;
+    const avgResponseTime = totalRequests > 0 ? totalResponseTime / totalRequests : 0;
+    
+    const summary = {
+        total_requests: totalRequests,
+        error_rate: errorRate,
+        avg_response_time: avgResponseTime,
+        requests_per_minute: 0
+    };
 
     // 更新汇总数据
     document.getElementById('http-total').textContent = summary.total_requests || 0;
-    document.getElementById('http-error-rate').textContent = (summary.error_rate || 0) + '%';
+    document.getElementById('http-error-rate').textContent = (summary.error_rate || 0).toFixed(2) + '%';
     document.getElementById('http-avg-time').textContent = ((summary.avg_response_time || 0) * 1000).toFixed(0) + 'ms';
     document.getElementById('http-rpm').textContent = summary.requests_per_minute || 0;
 
     // 更新徽章
     const badge = document.getElementById('http-badge');
-    const errorRate = summary.error_rate || 0;
-    if (errorRate < 1) {
+    const errorRateValue = summary.error_rate || 0;
+    if (errorRateValue < 1) {
         badge.textContent = '正常';
         badge.className = 'badge healthy';
-    } else if (errorRate < 5) {
+    } else if (errorRateValue < 5) {
         badge.textContent = '警告';
         badge.className = 'badge warning';
     } else {
@@ -786,10 +807,172 @@ function switchPage(pageName) {
         fetchOutboundRequests();
     } else if (pageName === 'database') {
         fetchDatabaseDetail();
+        initDatabaseTabs();
     } else if (pageName === 'scheduler') {
         fetchSchedulerPage();
     } else if (pageName === 'logs') {
         fetchLogsPage();
+    }
+}
+
+// 初始化数据库子页签
+function initDatabaseTabs() {
+    const tabButtons = document.querySelectorAll('.db-tab-btn');
+    tabButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tabName = btn.getAttribute('data-db-tab');
+            switchDatabaseTab(tabName);
+        });
+    });
+}
+
+// 切换数据库子页签
+function switchDatabaseTab(tabName) {
+    document.querySelectorAll('.db-tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.getAttribute('data-db-tab') === tabName) {
+            btn.classList.add('active');
+        }
+    });
+    
+    document.querySelectorAll('.db-tab-content').forEach(content => {
+        content.style.display = 'none';
+    });
+    
+    const targetContent = document.getElementById(`db-tab-${tabName}`);
+    if (targetContent) {
+        targetContent.style.display = 'block';
+    }
+    
+    if (tabName === 'events') {
+        fetchEventStats();
+    }
+}
+
+// 获取事件统计数据
+async function fetchEventStats() {
+    try {
+        const response = await fetch(`${API_BASE}/events`);
+        const data = await response.json();
+        updateEventStatsDisplay(data);
+    } catch (error) {
+        console.error('获取事件统计失败:', error);
+    }
+}
+
+// 更新事件统计显示
+function updateEventStatsDisplay(data) {
+    const eventStats = data.event_stats || {};
+    const summary = data.summary || {};
+    
+    document.getElementById('events-total-received').textContent = summary.total_received || 0;
+    document.getElementById('events-total-processed').textContent = summary.total_processed || 0;
+    document.getElementById('events-total-failed').textContent = summary.total_failed || 0;
+    document.getElementById('events-total-pending').textContent = summary.total_pending || 0;
+    document.getElementById('events-success-rate').textContent = (summary.overall_success_rate || 0).toFixed(1) + '%';
+    document.getElementById('events-active-types').textContent = `${summary.active_event_types || 0} / ${summary.total_event_types || 0}`;
+    
+    const tbodyEl = document.getElementById('events-tbody');
+    
+    if (Object.keys(eventStats).length === 0) {
+        tbodyEl.innerHTML = '<tr><td colspan="12" class="empty-state">暂无事件统计</td></tr>';
+        return;
+    }
+    
+    tbodyEl.innerHTML = Object.entries(eventStats).map(([eventType, stats]) => {
+        const status = getEventStatus(stats);
+        const statusClass = status === '正常' ? 'healthy' : status === '警告' ? 'warning' : 'error';
+        
+        let lastActivity = '-';
+        if (stats.last_activity_time) {
+            const date = new Date(stats.last_activity_time * 1000);
+            lastActivity = formatRelativeTime(stats.last_activity_time);
+        }
+        
+        const successRate = stats.success_rate || 0;
+        const avgLatency = stats.avg_processing_latency || 0;
+        
+        return `
+        <tr>
+            <td style="font-family: monospace; font-size: 12px;">${eventType}</td>
+            <td>${stats.description || eventType}</td>
+            <td>${stats.total_received || 0}</td>
+            <td>${stats.pending_count || 0}</td>
+            <td>${stats.total_processed || 0}</td>
+            <td>${stats.total_failed || 0}</td>
+            <td>${successRate.toFixed(1)}%</td>
+            <td>${avgLatency.toFixed(1)}ms</td>
+            <td>${stats.current_buffer_size || 0} / ${stats.batch_size || 0}</td>
+            <td>${lastActivity}</td>
+            <td><span class="badge ${statusClass}">${status}</span></td>
+            <td>
+                <button class="btn btn-small" onclick="flushEvent('${eventType}')">刷新</button>
+            </td>
+        </tr>
+        `;
+    }).join('');
+}
+
+// 获取事件状态
+function getEventStatus(stats) {
+    const pending = stats.pending_count || 0;
+    const batchSize = stats.batch_size || 10000;
+    const successRate = stats.success_rate || 100;
+    
+    if (pending >= batchSize * 5 || successRate < 80) {
+        return '异常';
+    } else if (pending >= batchSize * 2 || successRate < 95) {
+        return '警告';
+    }
+    return '正常';
+}
+
+// 格式化相对时间
+function formatRelativeTime(timestamp) {
+    const now = Date.now() / 1000;
+    const diff = now - timestamp;
+    
+    if (diff < 60) return '刚刚';
+    if (diff < 3600) return Math.floor(diff / 60) + '分钟前';
+    if (diff < 86400) return Math.floor(diff / 3600) + '小时前';
+    return Math.floor(diff / 86400) + '天前';
+}
+
+// 刷新事件统计
+function refreshEventStats() {
+    fetchEventStats();
+}
+
+// 刷新所有事件
+async function flushAllEvents() {
+    try {
+        await fetch(`${API_BASE}/events/flush`, { method: 'POST' });
+        fetchEventStats();
+    } catch (error) {
+        console.error('刷新事件失败:', error);
+    }
+}
+
+// 刷新指定事件
+async function flushEvent(eventType) {
+    try {
+        await fetch(`${API_BASE}/events/flush?event_type=${encodeURIComponent(eventType)}`, { method: 'POST' });
+        fetchEventStats();
+    } catch (error) {
+        console.error('刷新事件失败:', error);
+    }
+}
+
+// 重置事件统计
+async function resetEventStats() {
+    if (!confirm('确定要重置所有事件统计吗？')) {
+        return;
+    }
+    try {
+        await fetch(`${API_BASE}/events/reset-stats`, { method: 'POST' });
+        fetchEventStats();
+    } catch (error) {
+        console.error('重置事件统计失败:', error);
     }
 }
 
@@ -809,6 +992,7 @@ function updateDatabaseDetailDisplay(data) {
     const connections = data.connections || {};
     const dbConnections = connections.connections || {};
     const pools = data.pool?.pools || {};
+    const mainDb = data.main_db;
     
     if (Object.keys(dbConnections).length === 0) {
         tbodyEl.innerHTML = '<tr><td colspan="11" class="empty-state">暂无数据库连接</td></tr>';
@@ -849,7 +1033,7 @@ function updateDatabaseDetailDisplay(data) {
         
         return `
         <tr>
-            <td>${name}</td>
+            <td>${name === mainDb ? 'Ⓜ️ ' + name : name}</td>
             <td class="status-${status.healthy ? 'healthy' : 'error'}">
                 ${status.healthy ? '已连接' : (status.error || '断开')}
             </td>
@@ -891,11 +1075,16 @@ function updateAPIRequestsDisplay(data) {
     const tbodyEl = document.getElementById('api-requests-tbody');
     let requests = data.recent_requests || [];
     
-    // 根据开关状态决定是否过滤内部请求
-    const filteredRequests = showAPIIntternalRequests ? requests : requests.filter(request => {
-        // 过滤掉客户端IP为127.0.0.1、localhost或::1的请求
-        return request.client_ip !== '127.0.0.1' && request.client_ip !== 'localhost' && request.client_ip !== '::1';
-    });
+    // 计算24小时前的时间戳
+    const twentyFourHoursAgo = Date.now() / 1000 - (24 * 60 * 60);
+    
+    // 根据开关状态决定是否过滤内部请求，同时过滤最近24小时的请求
+    const filteredRequests = showAPIIntternalRequests ? 
+        requests.filter(request => request.timestamp >= twentyFourHoursAgo) :
+        requests.filter(request => {
+            // 过滤掉客户端IP为127.0.0.1、localhost或::1的请求，同时检查时间
+            return request.client_ip !== '127.0.0.1' && request.client_ip !== 'localhost' && request.client_ip !== '::1' && request.timestamp >= twentyFourHoursAgo;
+        });
     
     // 根据时间戳倒序排序
     filteredRequests.sort((a, b) => b.timestamp - a.timestamp);
@@ -1647,11 +1836,16 @@ async function fetchOutboundRequests() {
         const response = await fetch(`${API_BASE}/outbound-http/all`);
         const requests = await response.json();
         
-        // 根据开关状态决定是否过滤本服务的请求
-        const filteredRequests = showInternalRequests ? requests : requests.filter(request => {
-            // 检查URL是否包含localhost或127.0.0.1
-            return !request.url.includes('localhost') && !request.url.includes('127.0.0.1');
-        });
+        // 计算24小时前的时间戳
+        const twentyFourHoursAgo = Date.now() / 1000 - (24 * 60 * 60);
+        
+        // 根据开关状态决定是否过滤本服务的请求，同时过滤最近24小时的请求
+        const filteredRequests = showInternalRequests ? 
+            requests.filter(request => request.timestamp >= twentyFourHoursAgo) : 
+            requests.filter(request => {
+                // 检查URL是否包含localhost或127.0.0.1，同时检查时间
+                return !request.url.includes('localhost') && !request.url.includes('127.0.0.1') && request.timestamp >= twentyFourHoursAgo;
+            });
         
         updateOutboundRequestsTable(filteredRequests);
         
@@ -2090,10 +2284,13 @@ async function fetchOverviewOutboundRequests() {
         const requests = await response.json();
         console.log('获取发送请求数据成功，请求数量:', requests.length);
         
-        // 过滤内部请求
+        // 计算24小时前的时间戳
+        const twentyFourHoursAgo = Date.now() / 1000 - (24 * 60 * 60);
+        
+        // 过滤内部请求和最近24小时的请求
         const baseUrl = 'http://localhost:8000';
         const filteredRequests = requests.filter(request => {
-            return !request.url.startsWith(baseUrl);
+            return !request.url.startsWith(baseUrl) && request.timestamp >= twentyFourHoursAgo;
         });
         console.log('过滤后请求数量:', filteredRequests.length);
         

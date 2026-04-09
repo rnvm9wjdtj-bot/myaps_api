@@ -1,16 +1,16 @@
 """
 通用网络请求加固模块
 提供高抽象层次的网络请求处理逻辑，支持超时处理、重试机制、事务性操作等
-尽量使用Python标准库实现，减少第三方依赖
+使用被监控的 HTTP session，确保所有请求都能被 HTTPMonitorWrapper 捕获
 """
 
 import time
 import random
 from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union
-import urllib.error
-import urllib.request
 import json
+import requests
 from globalobjects import logger as log_config
+from apps.data_opt.utils.common import get_session
 
 logger = log_config.get_logger(__name__)
 
@@ -46,16 +46,15 @@ class RequestConfig:
         self.retry_delay_base = retry_delay_base
         self.retry_delay_max = retry_delay_max
         
-        # 默认重试的异常类型
         self.retry_on_exceptions = retry_on_exceptions or [
-            urllib.error.URLError,
-            urllib.error.HTTPError,
+            requests.RequestException,
+            requests.ConnectionError,
+            requests.Timeout,
             ConnectionResetError,
             TimeoutError,
         ]
         
-        # 默认重试的状态码（服务器错误）
-        self.retry_on_status_codes = retry_on_status_codes or [500, 502, 503, 504]
+        self.retry_on_status_codes = retry_on_status_codes or [429, 500, 502, 503, 504]
 
 
 class RequestResponse:
@@ -99,16 +98,18 @@ class RequestResponse:
 class NetworkRequestor:
     """
     网络请求器类，提供高抽象层次的网络请求处理
+    使用被 HTTPMonitorWrapper 包装的 session，确保请求被监控
     """
-    def __init__(self, config: Optional[RequestConfig] = None):
+    def __init__(self, config: Optional[RequestConfig] = None, session: Optional[requests.Session] = None):
         """
         初始化网络请求器
         
         Args:
             config: 请求配置，如不提供则使用默认配置
+            session: 自定义 session，如不提供则使用被监控的默认 session
         """
         self.config = config or RequestConfig()
-        self.opener = urllib.request.build_opener()
+        self.session = session or get_session()
         
     def _should_retry(self, exception: Exception, status_code: Optional[int] = None) -> bool:
         """
@@ -167,72 +168,63 @@ class NetworkRequestor:
             请求响应对象
         """
         retry_count = 0
+        json_data = None
         
-        # 处理请求数据
-        if data is not None:
-            if isinstance(data, dict):
-                data = json.dumps(data).encode("utf-8")
-                if headers is None:
-                    headers = {}
-                if "Content-Type" not in headers:
-                    headers["Content-Type"] = "application/json"
-            elif isinstance(data, str):
-                data = data.encode("utf-8")
+        if isinstance(data, dict):
+            json_data = data
+            data = None
         
         while retry_count <= self.config.max_retries:
             try:
-                # 创建请求对象
-                req = urllib.request.Request(url, method=method, headers=headers or {})
+                response = self.session.request(
+                    method=method.upper(),
+                    url=url,
+                    headers=headers,
+                    data=data,
+                    json=json_data,
+                    timeout=self.config.timeout,
+                )
                 
-                # 设置超时
-                response = self.opener.open(req, data=data, timeout=self.config.timeout)
+                content = response.content
+                text = response.text
                 
-                # 读取响应
-                content = response.read()
-                text = content.decode("utf-8", errors="ignore")
-                
-                # 解析JSON
-                json_data = None
+                parsed_json = None
                 if parse_json and text:
                     try:
-                        json_data = json.loads(text)
-                    except json.JSONDecodeError:
-                        json_data = None
-                
-                # 获取响应头
-                response_headers = {k.decode(): v.decode() for k, v in response.getheaders()}
+                        parsed_json = response.json()
+                    except (json.JSONDecodeError, ValueError):
+                        parsed_json = None
                 
                 return RequestResponse(
                     success=True,
-                    status_code=response.status,
+                    status_code=response.status_code,
                     content=content,
                     text=text,
-                    json_data=json_data,
-                    headers=response_headers,
+                    json_data=parsed_json,
+                    headers=dict(response.headers),
                     retry_count=retry_count,
                 )
                 
-            except urllib.error.HTTPError as e:
-                # HTTP错误
-                response = RequestResponse(
+            except requests.HTTPError as e:
+                response_obj = RequestResponse(
                     success=False,
-                    status_code=e.code,
+                    status_code=e.response.status_code if e.response else None,
                     error=e,
                     retry_count=retry_count,
                 )
                 
-                if retry_count < self.config.max_retries and self._should_retry(e, e.code):
+                status_code = e.response.status_code if e.response else None
+                if retry_count < self.config.max_retries and self._should_retry(e, status_code):
                     retry_count += 1
                     delay = self._exponential_backoff(retry_count)
-                    logger.warning_msg("HTTP请求重试", f"状态码{e.code}，{delay:.2f}秒后重试 ({retry_count}/{self.config.max_retries})")
+                    logger.warning_msg("HTTP请求重试", f"状态码{status_code}，{delay:.2f}秒后重试 ({retry_count}/{self.config.max_retries})")
                     time.sleep(delay)
                 else:
-                    logger.fail("HTTP请求", f"状态码{e.code}", str(e.reason))
-                    return response
+                    logger.fail("HTTP请求", f"状态码{status_code}", str(e))
+                    return response_obj
                 
             except Exception as e:
-                # 其他错误
-                response = RequestResponse(
+                response_obj = RequestResponse(
                     success=False,
                     error=e,
                     retry_count=retry_count,
@@ -245,9 +237,8 @@ class NetworkRequestor:
                     time.sleep(delay)
                 else:
                     logger.fail("网络请求", "", str(e))
-                    return response
+                    return response_obj
         
-        # 理论上不会到达这里
         return RequestResponse(success=False, error=Exception("未知错误"), retry_count=retry_count)
 
 
@@ -335,6 +326,7 @@ def create_requestor(
     max_retries: int = 3,
     retry_delay_base: float = 1.0,
     retry_delay_max: float = 30.0,
+    session: Optional[requests.Session] = None,
 ) -> NetworkRequestor:
     """
     创建网络请求器实例
@@ -344,6 +336,7 @@ def create_requestor(
         max_retries: 最大重试次数
         retry_delay_base: 重试基础延迟时间
         retry_delay_max: 最大重试延迟时间
+        session: 自定义 session，如不提供则使用被监控的默认 session
         
     Returns:
         网络请求器实例
@@ -354,7 +347,7 @@ def create_requestor(
         retry_delay_base=retry_delay_base,
         retry_delay_max=retry_delay_max,
     )
-    return NetworkRequestor(config)
+    return NetworkRequestor(config, session)
 
 
 def make_simple_request(

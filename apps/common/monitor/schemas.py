@@ -104,3 +104,36 @@ class MonitorOverview(BaseModel):
     database: DBMetrics = Field(description="数据库指标")
     scheduler: SchedulerMetrics = Field(description="定时任务指标")
     alerts: List[AlertInfo] = Field(default_factory=list, description="当前告警")
+
+
+class EventTypeStats(BaseModel):
+    """单个事件类型的统计数据"""
+    event_type: str = Field(description="事件类型标识")
+    description: str = Field(description="事件描述")
+    
+    total_received: int = Field(0, description="总接收数")
+    total_processed: int = Field(0, description="已处理数")
+    total_failed: int = Field(0, description="失败数")
+    pending_count: int = Field(0, description="待处理数")
+    
+    success_rate: float = Field(0.0, description="成功率 (%)")
+    
+    avg_processing_latency: float = Field(0.0, description="平均处理延迟 (ms)")
+    
+    last_activity_time: Optional[float] = Field(None, description="最后活动时间戳")
+    first_received_time: Optional[float] = Field(None, description="首次接收时间戳")
+    
+    batch_size: int = Field(description="批量大小")
+    flush_interval: float = Field(description="刷新间隔 (秒)")
+    current_buffer_size: int = Field(0, description="当前缓冲区大小")
+    
+    events_last_minute: int = Field(0, description="最近1分钟事件数")
+    events_last_hour: int = Field(0, description="最近1小时事件数")
+    events_today: int = Field(0, description="今日事件数")
+
+
+class EventMetrics(BaseModel):
+    """事件监控指标"""
+    timestamp: float = Field(description="时间戳")
+    event_stats: Dict[str, EventTypeStats] = Field(default_factory=dict, description="各事件类型统计")
+    summary: Dict[str, Any] = Field(default_factory=dict, description="汇总信息")

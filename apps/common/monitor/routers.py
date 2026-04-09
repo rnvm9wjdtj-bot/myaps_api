@@ -15,6 +15,7 @@ from .schemas import (
     SchedulerMetrics,
     HealthStatus,
     MonitorOverview,
+    EventMetrics,
 )
 
 router = APIRouter(prefix="/monitor/api", tags=["monitor"])
@@ -253,3 +254,43 @@ def reset_outbound_http_stats():
     from .collectors import outbound_http_collector
     outbound_http_collector.reset_stats()
     return {"message": "对外 HTTP 请求统计已重置"}
+
+
+@router.get("/events", response_model=EventMetrics)
+def get_event_metrics():
+    """
+    获取事件监控指标
+
+    返回各事件类型的统计信息、汇总信息
+    """
+    return monitor_service.get_event_metrics()
+
+
+@router.post("/events/flush")
+def flush_events_now(event_type: str = None):
+    """
+    立即刷新事件聚合器
+
+    Args:
+        event_type: 指定事件类型，不传则刷新所有
+
+    Returns:
+        操作结果
+    """
+    monitor_service.flush_events_now(event_type)
+    return {"message": "事件聚合器已刷新"}
+
+
+@router.post("/events/reset-stats")
+def reset_event_stats(event_type: str = None):
+    """
+    重置事件统计数据
+
+    Args:
+        event_type: 指定事件类型，不传则重置所有
+
+    Returns:
+        操作结果
+    """
+    monitor_service.reset_event_stats(event_type)
+    return {"message": "事件统计已重置"}

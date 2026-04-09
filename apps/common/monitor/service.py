@@ -9,6 +9,7 @@ import asyncio
 from typing import Dict, Any, List, Optional
 from .collectors import ResourceCollector, DatabaseCollector, SchedulerCollector, HTTPCollector
 from .collectors.outbound_http_collector import outbound_http_collector
+from .collectors.event_collector import EventCollector
 from globalobjects import logger as log_config
 
 logger = log_config.get_logger(__name__)
@@ -34,6 +35,7 @@ class MonitorService:
         self.scheduler_collector = SchedulerCollector()
         self.http_collector = HTTPCollector()
         self.outbound_http_collector = outbound_http_collector
+        self.event_collector = EventCollector()
         self._alerts: List[Dict[str, Any]] = []
         self._max_alerts = 100
         self._initialized = True
@@ -63,6 +65,18 @@ class MonitorService:
     def get_outbound_http_metrics(self) -> Dict[str, Any]:
         """获取对外 HTTP 请求指标"""
         return self.outbound_http_collector.get_metrics()
+
+    def get_event_metrics(self) -> Dict[str, Any]:
+        """获取事件监控指标"""
+        return self.event_collector.get_event_metrics()
+
+    def flush_events_now(self, event_type: str = None):
+        """立即刷新事件聚合器"""
+        self.event_collector.flush_now(event_type)
+
+    def reset_event_stats(self, event_type: str = None):
+        """重置事件统计数据"""
+        self.event_collector.reset_stats(event_type)
 
     async def get_overview(self) -> Dict[str, Any]:
         """获取监控总览"""

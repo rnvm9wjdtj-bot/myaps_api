@@ -41,6 +41,8 @@ srm_headers = {
     "Authorization": srm.get("Authorization", ""),
     "Content-Type": "application/json",
 }
+srm_session = get_session()
+srm_session.headers.update(srm_headers)
 srm_field_map = {
     "materialno": "material_no", "description": "description", "size": "size",
     "type": "type", "abc": "abc", "planner": "planner", "datestr": "datestr",
@@ -169,9 +171,9 @@ def push_pr(period: int = 30, groupdates: List[str] | str = None):
         item["bu_code"] = werks
         item["version"] = timestamp
     CLIENT_LOGGER.start(f"推送要货计划到SRM：{pr_data}")
-    response = requests.post(
+    response = srm_session.post(
         url=f"{srm_url}/jbl/service/execute/SRM_RECEIVE_PUSHED_DEMAND_PLAN_SERVICE",
-        headers=srm_headers, json={"demand_plan": pr_data})
+        json={"demand_plan": pr_data})
     if response.json().get("body", {}).get("status", "").lower() == "success":
         CLIENT_LOGGER.success(f"推送要货计划到SRM")
     else:

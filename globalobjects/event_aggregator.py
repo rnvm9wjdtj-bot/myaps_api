@@ -10,7 +10,7 @@
 import os
 import threading
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from typing import Callable, Any, List, Dict, Set
 from concurrent.futures import ThreadPoolExecutor
 
@@ -69,9 +69,30 @@ class EventAggregator:
         self._running = False
         self._condition_thread = None
         
+        # 统计数据
+        self.stats = {
+            'total_received': 0,
+            'total_processed': 0,
+            'total_failed': 0,
+            'processing_latencies': deque(maxlen=1000),
+            'received_timestamps': deque(maxlen=3600),
+            'processed_timestamps': deque(maxlen=3600),
+            'first_received_time': None,
+            'last_activity_time': None,
+        }
+        
     def add(self, event: Any):
         """添加单个事件到缓冲区"""
         with self._lock:
+            now = time.time()
+            
+            # 更新统计数据
+            self.stats['total_received'] += 1
+            self.stats['received_timestamps'].append(now)
+            if self.stats['first_received_time'] is None:
+                self.stats['first_received_time'] = now
+            self.stats['last_activity_time'] = now
+            
             # 计算分组键
             g_key = self.group_key(event) if self.group_key else "__default__"
             
@@ -111,14 +132,92 @@ class EventAggregator:
     
     def _process_batch(self, buffer_copy):
         """处理单个批次的事件"""
+        start_time = time.time()
+        total_events = sum(len(events_dict.values()) for events_dict in buffer_copy.values())
+        
         try:
             for g_key, events_dict in buffer_copy.items():
                 events = list(events_dict.values())
                 if events:
                     logger.debug(f"处理分组{g_key}的{len(events)}个事件")
                     self.handler(events)
+            
+            # 更新成功统计
+            end_time = time.time()
+            with self._lock:
+                self.stats['total_processed'] += total_events
+                self.stats['processed_timestamps'].append(end_time)
+                self.stats['processing_latencies'].append((end_time - start_time) * 1000)
+                self.stats['last_activity_time'] = end_time
         except Exception as e:
+            # 更新失败统计
+            end_time = time.time()
+            with self._lock:
+                self.stats['total_failed'] += total_events
+                self.stats['last_activity_time'] = end_time
             logger.fail("批量处理事件", "", str(e))
+    
+    def get_stats(self):
+        """获取统计数据
+        
+        Returns:
+            dict: 包含统计信息的字典
+        """
+        with self._lock:
+            stats = self.stats.copy()
+            now = time.time()
+            
+            # 计算待处理数
+            pending_count = sum(len(events) for events in self._buffer.values())
+            
+            # 计算时间窗口统计
+            one_minute_ago = now - 60
+            one_hour_ago = now - 3600
+            today_start = now - (now % 86400)
+            
+            events_last_minute = sum(1 for ts in stats['received_timestamps'] if ts >= one_minute_ago)
+            events_last_hour = sum(1 for ts in stats['received_timestamps'] if ts >= one_hour_ago)
+            events_today = sum(1 for ts in stats['received_timestamps'] if ts >= today_start)
+            
+            # 计算成功率
+            total = stats['total_processed'] + stats['total_failed']
+            success_rate = (stats['total_processed'] / total * 100) if total > 0 else 100.0
+            
+            # 计算平均延迟
+            avg_latency = 0.0
+            if stats['processing_latencies']:
+                avg_latency = sum(stats['processing_latencies']) / len(stats['processing_latencies'])
+            
+            return {
+                'total_received': stats['total_received'],
+                'total_processed': stats['total_processed'],
+                'total_failed': stats['total_failed'],
+                'pending_count': pending_count,
+                'success_rate': success_rate,
+                'avg_processing_latency': avg_latency,
+                'last_activity_time': stats['last_activity_time'],
+                'first_received_time': stats['first_received_time'],
+                'batch_size': self.batch_size,
+                'flush_interval': self.flush_interval,
+                'current_buffer_size': pending_count,
+                'events_last_minute': events_last_minute,
+                'events_last_hour': events_last_hour,
+                'events_today': events_today,
+            }
+    
+    def reset_stats(self):
+        """重置统计数据"""
+        with self._lock:
+            self.stats = {
+                'total_received': 0,
+                'total_processed': 0,
+                'total_failed': 0,
+                'processing_latencies': deque(maxlen=1000),
+                'received_timestamps': deque(maxlen=3600),
+                'processed_timestamps': deque(maxlen=3600),
+                'first_received_time': None,
+                'last_activity_time': None,
+            }
     
     def _condition_thread_func(self):
         """条件变量线程函数"""
@@ -275,6 +374,41 @@ class MultiEventAggregator:
             else:
                 for aggregator in self._aggregators.values():
                     aggregator.flush_now()
+    
+    def get_all_stats(self):
+        """获取所有事件类型的统计数据
+        
+        Returns:
+            dict: 包含各事件类型统计数据的字典
+        """
+        with self._lock:
+            stats = {}
+            for event_type, aggregator in self._aggregators.items():
+                stats[event_type] = aggregator.get_stats()
+            return stats
+    
+    def get_event_types(self):
+        """获取已注册的事件类型列表
+        
+        Returns:
+            list: 事件类型列表
+        """
+        with self._lock:
+            return list(self._aggregators.keys())
+    
+    def reset_stats(self, event_type: str = None):
+        """重置统计数据
+        
+        Args:
+            event_type: 指定事件类型，None表示重置所有
+        """
+        with self._lock:
+            if event_type:
+                if event_type in self._aggregators:
+                    self._aggregators[event_type].reset_stats()
+            else:
+                for aggregator in self._aggregators.values():
+                    aggregator.reset_stats()
 
 
 # 全局多事件聚合管理器实例

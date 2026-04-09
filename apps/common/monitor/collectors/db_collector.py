@@ -9,10 +9,31 @@ import asyncio
 from typing import Dict, Any, List
 from globalobjects import logger as log_config
 from globalobjects.db_manager import get_db_managers
+from config.settings import MYAPS_MAIN_DB
 from ..allert import AlertType, alert_sender
 
 
 logger = log_config.get_logger(__name__)
+
+
+def sort_databases(db_names: List[str]) -> List[str]:
+    """
+    对数据库名称进行排序，MYAPS_MAIN_DB 排在第一位
+
+    Args:
+        db_names: 数据库名称列表
+
+    Returns:
+        List[str]: 排序后的数据库名称列表
+    """
+    if MYAPS_MAIN_DB not in db_names:
+        return db_names
+    
+    sorted_names = [MYAPS_MAIN_DB]
+    for name in db_names:
+        if name != MYAPS_MAIN_DB:
+            sorted_names.append(name)
+    return sorted_names
 
 
 class DatabaseCollector:
@@ -40,7 +61,11 @@ class DatabaseCollector:
         }
 
         try:
-            for db_name, manager in self._db_managers.items():
+            db_names = list(self._db_managers.keys())
+            sorted_db_names = sort_databases(db_names)
+            
+            for db_name in sorted_db_names:
+                manager = self._db_managers[db_name]
                 try:
                     is_healthy = await manager.check_connection_health()
                     status["connections"][db_name] = {
@@ -86,7 +111,11 @@ class DatabaseCollector:
             # 每次都获取最新的数据库管理器实例
             self._db_managers = get_db_managers()
             
-            for db_name, manager in self._db_managers.items():
+            db_names = list(self._db_managers.keys())
+            sorted_db_names = sort_databases(db_names)
+            
+            for db_name in sorted_db_names:
+                manager = self._db_managers[db_name]
                 try:
                     status = await manager.get_connection_pool_status()
                     status["stats"] = manager.stats if hasattr(manager, 'stats') else None
@@ -118,6 +147,7 @@ class DatabaseCollector:
 
         return {
             "timestamp": time.time(),
+            "main_db": MYAPS_MAIN_DB,
             "connections": connections,
             "pool": pool,
         }
