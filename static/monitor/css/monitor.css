@@ -807,10 +807,7 @@ body {
 .api-requests-table td:nth-child(2) {
     text-align: center;
     vertical-align: middle;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    padding: 8px 12px;
 }
 
 .api-requests-table td:nth-child(3),
@@ -835,8 +832,9 @@ body {
     font-weight: 600;
     vertical-align: middle;
     height: 24px;
-    width: 100%;
+    min-width: 60px;
     min-height: 24px;
+    margin: 0 auto;
 }
 
 .api-method.get {

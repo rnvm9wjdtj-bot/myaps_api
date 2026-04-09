@@ -74,15 +74,25 @@ class ApsEvent:
             self.batch_handle_func(events_data_list)
         elif self.single_handle_func is not None:
             from concurrent.futures import ThreadPoolExecutor
-            with ThreadPoolExecutor() as executor:
-                # 定义一个包装函数，用于捕获单个事件处理的异常
-                def safe_handle(event_data):
+            import threading
+            import time
+
+            # 信号量配置：限制最大并发数和事件间延迟
+            MAX_CONCURRENT = 3      # 最大并发处理数
+            POST_DELAY = 0.2        # 每个事件处理完后延迟（秒）
+            MAX_WORKERS = 10        # 线程池大小
+
+            semaphore = threading.Semaphore(MAX_CONCURRENT)
+
+            def safe_handle(event_data):
+                with semaphore:
                     try:
                         self.single_handle_func(event_data)
+                        time.sleep(POST_DELAY)  # 处理完后延迟，减轻下游压力
                     except Exception as e:
                         logger.fail(f"处理单个事件失败", "", str(e))
-                
-                # 并行处理所有事件
+
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                 executor.map(safe_handle, events_data_list)
         else:
             log_msg = f"⚠️ {self.warning_msg}数据：\n{json.dumps(events_data_list, ensure_ascii=False)}"
@@ -102,26 +112,6 @@ if not _events_registered:
     aps_pr_deleted_event = ApsEvent(event_type="|pr_deleted|", single_handler="handle_pr_deleted", batch_handler="batch_handle_pr_deleted", description="PR 单据 删除")
     _events_registered = True
     logger.success("数据库事件注册", "", "所有事件已成功注册")
-    
-    # if MYAPS_MAIN_DB:
-    #     @cron_task(hour="*", minute="*/10")
-    #     async def check_db_health():
-    #         """
-    #         定时检查数据库连接健康
-    #         """
-    #         try:
-    #             import httpx
-    #             # 调用get_meta路由函数检查账套状态，根据账套数量动态设置超时
-    #             timeout = 10 + len(MYAPS_DBSET_LIST) * 3  # 基础10秒 + 每个账套3秒
-    #             async with httpx.AsyncClient(timeout=timeout) as client:
-    #                 response = await client.get(f"{THIS_BASE_URL}/api/meta")
-    #                 if response.status_code == 200:
-    #                     data = response.json()
-    #                     logger.success("定时检查数据库健康", f"全部账套: {MYAPS_DB_SET}", f"状态: {data['meta']['db_status']}")
-    #                 else:
-    #                     logger.fail("定时检查数据库健康", f"全部账套: {MYAPS_DB_SET}", f"API调用失败，状态码: {response.status_code}")
-    #         except Exception as e:
-    #             logger.fail("定时检查数据库健康", f"全部账套: {MYAPS_DB_SET}", f"检查失败: {str(e)}")
 else:
     logger.debug("数据库事件注册", "", "事件已经注册，跳过重复注册")
 

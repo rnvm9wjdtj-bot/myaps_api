@@ -586,9 +586,12 @@ class ModifySupply(BaseModel):
                 values["avail_qty"] = None
         if values.get("status") not in gc.OrderStatusEnum.__members__:
             values["status"] = gc.OrderStatusEnum.CRE
-        memo = values.get("memo", "")
-        if len(memo) > 255:
-            values["memo"] = memo[:255]
+        memo = values.get("memo")
+        if memo:
+            try:
+                values["memo"] = memo[:255]
+            except Exception as e:
+                pass
         return values
 
     @model_validator(mode="after")
@@ -690,6 +693,12 @@ class ModifyDemand(BaseModel):
                     values["req_qty"] = -1 * req_qty
             except ValueError:
                 values["req_qty"] = None
+        memo = values.get("memo")
+        if memo:
+            try:
+                values["memo"] = memo[:255]
+            except Exception as e:
+                pass
         return values
 
     @model_validator(mode="after")

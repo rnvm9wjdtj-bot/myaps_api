@@ -2,7 +2,8 @@ from typing import List, Dict, Any, Tuple, Optional, Union, Literal
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from tortoise import Tortoise#, connections
+from tortoise import Tortoise
+from tortoise.connection import connections
 from tortoise.expressions import Q
 from tortoise.transactions import in_transaction
 from tortoise.exceptions import IntegrityError
@@ -1201,14 +1202,33 @@ class DbManager:
             return True
         except asyncio.TimeoutError:
             logger.warning(f"数据库连接健康检查超时: {self.connection_name}")
-            return False
+            # 尝试刷新连接
+            await self.refresh_connection()
+            # 再次检查连接
+            try:
+                conn = Tortoise.get_connection(self.connection_name)
+                await asyncio.wait_for(conn.execute_query("SELECT 1"), timeout=timeout)
+                return True
+            except Exception as e:
+                logger.warning(f"刷新连接后健康检查仍失败: {e}")
+                return False
         except Exception as e:
             logger.warning(f"数据库连接健康检查失败: {e}")
-            return False
+            # 尝试刷新连接
+            await self.refresh_connection()
+            # 再次检查连接
+            try:
+                conn = Tortoise.get_connection(self.connection_name)
+                await asyncio.wait_for(conn.execute_query("SELECT 1"), timeout=timeout)
+                return True
+            except Exception as e:
+                logger.warning(f"刷新连接后健康检查仍失败: {e}")
+                return False
     
     async def refresh_connection(self):
         """
         刷新数据库连接，确保连接有效
+        当出现数据包序列号错误等协议层问题时，会强制重新创建连接
         """
         try:
             # 尝试获取当前连接
@@ -1235,9 +1255,21 @@ class DbManager:
                 except Exception as close_error:
                     logger.warning(f"关闭旧连接时出错: {close_error}")
             
-            # 尝试重新获取连接
+            # 从 Tortoise ORM 的连接存储中移除损坏的连接
+            # 这样下次调用 connections.get() 时会自动创建新的连接
             try:
-                new_conn = Tortoise.get_connection(self.connection_name)
+                connections.discard(self.connection_name)
+                logger.info(f"已从连接存储中移除: {self.connection_name}")
+            except Exception as discard_error:
+                logger.warning(f"移除连接时出错: {discard_error}")
+            
+            # 等待一小段时间，确保连接完全关闭
+            import asyncio
+            await asyncio.sleep(0.5)
+            
+            # 尝试重新获取连接（会自动创建新的连接）
+            try:
+                new_conn = connections.get(self.connection_name)
                 
                 # 检查新连接是否有效
                 if new_conn:

@@ -31,6 +31,7 @@
     },
     "defaults": {
         "!no_fill_defaults": ["lotmin", "lotmax"],
+        "auto_matver": true,
         "matver_prefix": "V",
         "matver": "V01",
         "itemno_prefix": "A",

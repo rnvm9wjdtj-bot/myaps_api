@@ -121,11 +121,11 @@ cpu_count = os.cpu_count() or 4
 db_count = len(MYAPS_DBSET_LIST)
 
 # 动态计算连接池大小：
-# - 单账套：maxsize=30
-# - 多账套：根据账套数量递减，最小为15
-# - 确保总连接数不超过 150
-maxsize_per_db = min(30, max(15, 150 // max(db_count, 1)))
-minsize_per_db = min(10, maxsize_per_db // 2)
+# - 单账套：maxsize=15
+# - 多账套：根据账套数量递减，最小为3
+# - 确保总连接数不超过 30（考虑到服务器限制非常严格）
+maxsize_per_db = min(15, max(3, 30 // max(db_count, 1)))
+minsize_per_db = min(2, maxsize_per_db // 2)
 
 logger.info(f"数据库连接池配置：{db_count}个账套，每个账套minsize={minsize_per_db}, maxsize={maxsize_per_db}")
 

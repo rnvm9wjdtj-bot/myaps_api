@@ -2,14 +2,14 @@ from datetime import date, datetime, timedelta
 # from re import S
 # from this import d
 from typing import List, Dict, Optional, Literal#, Any
-import inspect, functools, pandas as pd
+import inspect, functools, pandas as pd, asyncio
 # import httpx
 
 from fastapi import APIRouter, Path, Query, Body, Header, status#, Request
 # from tortoise import Tortoise
 
 from config.settings import MYAPS_DB_SET, MYAPS_DBSET_LIST, MYAPS_MAIN_DB, THIS_BASE_URL
-from globalobjects import globalconst as gc, logger as log_config
+from globalobjects import globalconst as gc, logger as log_config, ProjectDefaultValues as pdv
 # from .models import TMaterial, TWorkcenter, TMatWc, TMatVer, TMatWcBom, TSupply, TDemand, TMold, TMatWcMold, TConfirm#,TortoiseBaseModel
 from .schemas import (
     AcceptMaterial, AcceptWorkcenter, AcceptMatWc, AcceptMatVer, AcceptMatWcBom, AcceptSupply, AcceptDemand, AcceptMold, AcceptMatWcMold, AcceptConfirm,
@@ -284,6 +284,23 @@ async def post_material(
     x_api_key: str = Header(None, description="API密钥")
     ):
     db_name = db_name.replace(" ", "")
+
+    if pdv.auto_matver:
+        matver_data = [{
+            "materialno": _.materialno,
+            "matver": pdv.MATVER,
+            "lotfrom": pdv.MATVER_LOTFROM,
+            "lotto": pdv.MATVER_LOTTO,
+            "priority": pdv.MATVER_PRIORITY,
+        } for _ in data if _.type == "E"]
+        
+        async def run_matver_task():
+            try:
+                await post_mat_ver(data=matver_data, db_name=db_name, x_api_key=x_api_key)
+            except Exception as e:
+                logger.error(f"Error in post_mat_ver background task: {e}")
+        
+        asyncio.create_task(run_matver_task())
 
     return await db_bupsert(db_names=db_name, model_or_tablename="t_material", data_list=data) 
 

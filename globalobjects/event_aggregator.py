@@ -57,7 +57,11 @@ class EventAggregator:
         self.batch_size = batch_size
         self.flush_interval = flush_interval
         self.name = name
-        
+
+        # 批次间最小时间间隔（秒），避免下游处理压力过大
+        self.min_batch_interval = 5.0
+        self._last_flush_time = 0
+
         # 缓冲区：{group_key: {dedup_key: event}}
         self._buffer: Dict[str, Dict[str, Any]] = defaultdict(dict)
         self._lock = threading.RLock()
@@ -123,15 +127,24 @@ class EventAggregator:
                 # 等待直到有事件通知或超时
                 # 计算当前缓冲区大小
                 total_count = sum(len(events) for events in self._buffer.values())
-                # 如果缓冲区为空，等待指定时间
+
                 if total_count == 0:
-                    # 等待指定的刷新间隔
+                    # 缓冲区为空，等待指定的刷新间隔
                     self._condition.wait(timeout=self.flush_interval)
-                # 无论是否有通知，检查是否需要刷新
-                # 1. 缓冲区不为空
-                # 2. 或者达到刷新间隔（即使缓冲区为空也刷新）
+                else:
+                    # 缓冲区有数据，检查是否达到批次间最小时间间隔
+                    elapsed = time.time() - self._last_flush_time
+                    if elapsed < self.min_batch_interval:
+                        # 未达到最小间隔，等待剩余时间
+                        wait_time = self.min_batch_interval - elapsed
+                        self._condition.wait(timeout=wait_time)
+
+                # 检查是否需要刷新：缓冲区不为空且达到最小时间间隔
                 if self._buffer:
-                    self._flush()
+                    elapsed = time.time() - self._last_flush_time
+                    if elapsed >= self.min_batch_interval:
+                        self._last_flush_time = time.time()
+                        self._flush()
     
     def start(self):
         """启动聚合器"""

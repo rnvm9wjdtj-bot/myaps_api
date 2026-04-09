@@ -285,7 +285,12 @@ class ApsHelpers:
     @staticmethod
     def rs_push_failed(rsno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None):
         logger.fail("推送 RS", json.dumps(push_data, ensure_ascii=False), msg)
-
+        if msg:
+            try:
+                if len(msg) > 128:
+                    msg = msg[:128]
+            except Exception as e:
+                pass
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
@@ -370,7 +375,7 @@ class ApsHelpers:
 
 
     @staticmethod
-    def _pr_push_success(prno: str, msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
+    def pr_push_success(prno: str, msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": prno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
@@ -392,7 +397,13 @@ class ApsHelpers:
 
 
     @staticmethod
-    def _pr_push_failed(prno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None):
+    def pr_push_failed(prno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None):
+        if msg:
+            try:
+                if len(msg) > 128:
+                    msg = msg[:128]
+            except Exception as e:
+                pass
         logger.fail("推送 PR", json.dumps(push_data, ensure_ascii=False), msg)
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

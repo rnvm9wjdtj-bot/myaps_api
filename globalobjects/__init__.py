@@ -21,6 +21,7 @@ EVENT_AGGREGATOR = get_global_handler_aggregator()
 class ProjectDefaultValues:
     defaults = PROJECT_JSON_FILE.get("defaults", {})
     no_fill_defaults = defaults.get("!no_fill_defaults", [])
+    auto_matver = defaults.get("auto_matver", False)  # 是否自动动生成产线版本
 
     matver_prefix = defaults.get("matver_prefix", "V") # 产线版本前缀字母
     matver_width = defaults.get("matver_width", 1)    # 产线版本号数字宽度

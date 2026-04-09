@@ -1,8 +1,7 @@
 """
-
+用友T+ 接口组件
 """
-import json
-import os
+import json, time
 from typing import Dict, Any, Literal, Optional, NamedTuple
 from datetime import datetime, timedelta, date
 import pandas as pd
@@ -325,7 +324,7 @@ class PrPushModel(PydanticModel):
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values: Dict[str, Any]):
-        now_stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        now_stamp = str(int(time.time() * 10000000))
         vo_date = datetime.now().strftime("%Y-%m-%d")
         cleaned_values = {
             'VoucherDate': None,    # 单据日期需要校验，不能晚于最早的物料需求日期
@@ -891,14 +890,14 @@ class TplusConnection(BaseConnection):
             tplus_pr_id = pr_push_response_json['data'].get('ID')
             tplus_pr_code = pr_push_response_json['data'].get('Code')
             for _ in data_list:
-                ApsHelpers._pr_push_success(prno=_['supplyno'], msg=pr_push_response_json['message'], msg_from='T+', _code=tplus_pr_code, _id=tplus_pr_id)
+                ApsHelpers.pr_push_success(prno=_['supplyno'], msg=pr_push_response_json['message'], msg_from='T+', _code=tplus_pr_code, _id=tplus_pr_id)
             
             # 审批请购单
             approve_pr(tplus_pr_code=tplus_pr_code)
         
         else:
             for _ in data_list:
-                ApsHelpers._pr_push_failed(prno=_['supplyno'], msg=pr_push_response_json['message'], msg_from='T+', push_data=payload)
+                ApsHelpers.pr_push_failed(prno=_['supplyno'], msg=pr_push_response_json['message'], msg_from='T+', push_data=payload)
 
 
     def delete_pr(self, tplus_pr_code: str):
