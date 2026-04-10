@@ -1775,44 +1775,70 @@ function updateSchedulerDetailDisplay(data) {
         const maxExecutionTime = job.max_execution_time ? `${job.max_execution_time.toFixed(2)} 秒` : '默认';
         const isSystemTask = (job.name || job.id).includes('project_files.check_db_health');
         
+        // 解析下次执行时间为日期和时间部分
+        let timeStr = '未计划';
+        let dateStr = '';
+        if (job.next_run_time) {
+            let date;
+            if (typeof job.next_run_time === 'number') {
+                date = new Date(job.next_run_time * 1000);
+            } else if (typeof job.next_run_time === 'string') {
+                date = new Date(job.next_run_time);
+            } else {
+                date = new Date(job.next_run_time);
+            }
+            
+            if (!isNaN(date.getTime())) {
+                timeStr = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+                dateStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+            }
+        }
+        
         return `
         <div class="scheduler-detail-item ${isSystemTask ? 'system-task' : ''}">
-            <div class="scheduler-detail-header">
-                <span class="scheduler-detail-name">${job.name || job.id}</span>
-                <span class="scheduler-detail-status">
-                    <span class="status-dot healthy"></span>
-                    ${isSystemTask ? '系统任务' : '已注册'}
-                </span>
+            <div class="scheduler-time-dot"></div>
+            <div class="scheduler-time-section">
+                <span class="scheduler-date">${dateStr}</span>
+                <span class="scheduler-time">${timeStr}</span>
             </div>
-            <div class="scheduler-detail-info">
-                <div class="scheduler-detail-row">
-                    <span class="scheduler-detail-label">触发器</span>
-                    <span class="scheduler-detail-value">${job.trigger || '未知'}</span>
+            <div class="scheduler-content-section">
+                <div class="scheduler-detail-header">
+                    <a href="#" class="scheduler-detail-name">${job.name || job.id}</a>
+                    <span class="scheduler-detail-status">
+                        <span class="status-dot healthy"></span>
+                        ${isSystemTask ? '系统任务' : '已注册'}
+                    </span>
                 </div>
-                <div class="scheduler-detail-row">
-                    <span class="scheduler-detail-label">上次执行</span>
-                    <span class="scheduler-detail-value">${lastRunTime}</span>
+                <div class="scheduler-detail-info">
+                    <div class="scheduler-detail-row">
+                        <span class="scheduler-detail-label">定时规则</span>
+                        <span class="scheduler-detail-value">${job.trigger || '未知'}</span>
+                    </div>
+                    <div class="scheduler-detail-row">
+                        <span class="scheduler-detail-label">上次执行</span>
+                        <span class="scheduler-detail-value">${lastRunTime}</span>
+                    </div>
+                    <div class="scheduler-detail-row">
+                        <span class="scheduler-detail-label">下次执行</span>
+                        <span class="scheduler-detail-value">${nextRunTime}</span>
+                    </div>
+                    <div class="scheduler-detail-row">
+                        <span class="scheduler-detail-label">最大执行时间</span>
+                        <span class="scheduler-detail-value">${maxExecutionTime}</span>
+                    </div>
+                    ${job.execution_time ? `
+                    <div class="scheduler-detail-row">
+                        <span class="scheduler-detail-label">平均执行时间</span>
+                        <span class="scheduler-detail-value">${(job.execution_time * 1000).toFixed(0)} ms</span>
+                    </div>
+                    ` : ''}
+                    ${job.last_error ? `
+                    <div class="scheduler-detail-row">
+                        <span class="scheduler-detail-label">最后错误</span>
+                        <span class="scheduler-detail-value" style="color: var(--error-color)">${job.last_error}</span>
+                    </div>
+                    ` : ''}
                 </div>
-                <div class="scheduler-detail-row">
-                    <span class="scheduler-detail-label">下次执行</span>
-                    <span class="scheduler-detail-value">${nextRunTime}</span>
-                </div>
-                <div class="scheduler-detail-row">
-                    <span class="scheduler-detail-label">最大执行时间</span>
-                    <span class="scheduler-detail-value">${maxExecutionTime}</span>
-                </div>
-                ${job.execution_time ? `
-                <div class="scheduler-detail-row">
-                    <span class="scheduler-detail-label">平均执行时间</span>
-                    <span class="scheduler-detail-value">${(job.execution_time * 1000).toFixed(0)} ms</span>
-                </div>
-                ` : ''}
-                ${job.last_error ? `
-                <div class="scheduler-detail-row">
-                    <span class="scheduler-detail-label">最后错误</span>
-                    <span class="scheduler-detail-value" style="color: var(--error-color)">${job.last_error}</span>
-                </div>
-                ` : ''}
             </div>
         </div>
         `;

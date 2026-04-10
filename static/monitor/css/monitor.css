@@ -1057,48 +1057,123 @@ body {
     }
 }
 
-/* 定时任务详细信息网格 */
+/* 定时任务时间轴 */
 .scheduler-detail-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    position: relative;
+    padding-left: 120px;
+}
+
+/* 时间轴线 */
+.scheduler-detail-grid::before {
+    content: '';
+    position: absolute;
+    left: 100px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background-color: #e0e0e0;
+    z-index: 0;
 }
 
 .scheduler-detail-item {
-    background: var(--bg-color);
-    padding: 16px;
-    border-radius: 8px;
-    border-left: 4px solid var(--primary-color);
+    position: relative;
+    z-index: 1;
+    background: #f9f9f9;
+    border-radius: 4px;
+    padding: 12px 16px;
+    margin-bottom: 4px;
+    transition: all 0.2s ease;
+}
+
+.scheduler-detail-item:hover {
+    background: #f0f7ff;
+}
+
+/* 时间轴左侧时间区域 */
+.scheduler-time-section {
+    position: absolute;
+    left: -120px;
+    top: 12px;
+    width: 100px;
+    text-align: right;
+    padding-right: 16px;
+    z-index: 2;
+}
+
+.scheduler-time-dot {
+    position: absolute;
+    left: -27px;
+    top: 16px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background-color: #1890ff;
+    border: 2px solid white;
+    box-shadow: 0 0 0 1px #1890ff;
+    z-index: 0;
+    margin-left: 0;
+}
+
+.scheduler-time {
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--text-primary);
+    display: block;
+}
+
+.scheduler-date {
+    font-size: 16px;
+    color: var(--text-secondary);
+    display: block;
+    margin-bottom: 4px;
+    font-weight: 600;
+}
+
+/* 时间轴右侧内容区域 */
+.scheduler-content-section {
+    display: flex;
+    flex-direction: column;
 }
 
 .scheduler-detail-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
+    align-items: flex-start;
+    margin-bottom: 8px;
 }
 
 .scheduler-detail-name {
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 600;
+    color: var(--primary-color);
+    text-decoration: none;
+}
+
+.scheduler-detail-name:hover {
+    text-decoration: underline;
 }
 
 .scheduler-detail-status {
     display: flex;
     align-items: center;
     gap: 6px;
+    font-size: 12px;
 }
 
 .scheduler-detail-info {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 4px;
+    margin-top: 8px;
 }
 
 .scheduler-detail-row {
     display: flex;
     justify-content: space-between;
-    font-size: 13px;
+    font-size: 12px;
 }
 
 .scheduler-detail-label {
@@ -1107,29 +1182,44 @@ body {
 
 .scheduler-detail-value {
     font-weight: 500;
+    color: var(--text-primary);
 }
 
 .scheduler-detail-section {
-    margin-top: 12px;
-    padding-top: 12px;
+    margin-top: 8px;
+    padding-top: 8px;
     border-top: 1px solid var(--border-color);
 }
 
 .scheduler-detail-section-title {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
     color: var(--text-primary);
-    margin-bottom: 8px;
+    margin-bottom: 4px;
 }
 
 /* 系统任务样式 */
 .scheduler-detail-item.system-task {
-    border-left-color: var(--success-color);
     background: #f6ffed;
 }
 
+.scheduler-detail-item.system-task .scheduler-time-dot {
+    background-color: var(--success-color);
+}
+
 .scheduler-detail-item.system-task .scheduler-detail-name {
+    color: var(--success-color);
     font-weight: 700;
+}
+
+/* 子任务样式 */
+.scheduler-detail-item.sub-task {
+    margin-left: 20px;
+    background: #f5f5f5;
+}
+
+.scheduler-detail-item.sub-task .scheduler-time-dot {
+    display: none;
 }
 
 /* 接收请求详情样式 */
