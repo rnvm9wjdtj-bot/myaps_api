@@ -46,7 +46,8 @@ class SchedulerManager:
         self.scheduler: Optional[BackgroundScheduler] = None
         self._initialized = False
         self.main_loop: Optional[asyncio.AbstractEventLoop] = None
-        self._job_execution_times = {}  # 存储任务的最后执行时间
+        self._job_execution_history = {}  # 存储任务的执行历史记录，格式: {job_id: [{time: datetime, error: str or None}, ...]}
+        self._job_errors = {}  # 存储任务的最后错误信息
         
     def set_main_loop(self, loop: asyncio.AbstractEventLoop):
         self.main_loop = loop
@@ -133,7 +134,9 @@ class SchedulerManager:
                 job_id = f"{task_info['module']}_{task_info['func_name']}_{i}"
                 
                 # 包装函数，添加错误处理
+                logger.start(f"添加任务到调度器", f"任务名: {task_info['module']}.{task_info['func_name']}", to_file=True)
                 safe_func = self._create_safe_function(task_info['func'])
+                logger.success(f"安全函数创建", f"任务名: {task_info['module']}.{task_info['func_name']}", to_file=True)
                 
                 self.scheduler.add_job(
                     func=safe_func,
@@ -173,14 +176,21 @@ class SchedulerManager:
 
     def _create_safe_function(self, func: Callable) -> Callable:
         """创建安全的任务执行函数（包含异常处理、执行时间监控和超时控制）"""
+        # 导入必要的模块
+        import inspect
+        import datetime
+        
         # 检查函数是否为异步函数
         is_async = inspect.iscoroutinefunction(func)
+        logger.info(f"创建安全函数，函数名: {func.__name__}, 是异步函数: {is_async}")
+        
         if is_async:
             @wraps(func)
             async def async_wrapper():
                 import time
                 start_time = time.time()
-                task_name = f"{func.__module__}.{func.__name__}"
+                task_module = inspect.getmodule(func).__name__ if inspect.getmodule(func) else func.__module__
+                task_name = f"{task_module}.{func.__name__}"
                 logger.start(f"异步任务 {task_name}")
                 try:
                     # 获取任务的最大执行时间
@@ -193,41 +203,29 @@ class SchedulerManager:
                     return result
                 except asyncio.TimeoutError:
                     execution_time = time.time() - start_time
-                    logger.warning_msg("异步任务执行", task_name, f"执行超时，已强制中止，耗时: {execution_time:.2f} 秒")
-                    return None
+                    error_msg = f"执行超时，已强制中止，耗时: {execution_time:.2f} 秒"
+                    logger.warning_msg("异步任务执行", task_name, error_msg)
+                    # 重新抛出异常，让 APScheduler 触发 EVENT_JOB_ERROR 事件
+                    raise
                 except Exception as e:
                     execution_time = time.time() - start_time
-                    logger.fail("异步任务执行", task_name, f"耗时: {execution_time:.2f} 秒, 错误: {str(e)}")
-                    return None
+                    error_msg = f"耗时: {execution_time:.2f} 秒, 错误: {str(e)}"
+                    logger.fail("异步任务执行", task_name, error_msg)
+                    # 重新抛出异常，让 APScheduler 触发 EVENT_JOB_ERROR 事件
+                    raise
             # 为异步函数创建同步包装器
             @wraps(func)
             def wrapper():
                 try:
-                    # 优先使用已设置的主事件循环
-                    if self.main_loop:
-                        logger.debug("使用主应用事件循环执行异步任务")
-                        # 直接传递coroutine对象给run_coroutine_threadsafe，不使用result()避免阻塞
-                        future = asyncio.run_coroutine_threadsafe(async_wrapper(), self.main_loop)
-                        # 添加回调处理异常
-                        def callback(fut):
-                            try:
-                                fut.result()
-                            except Exception as e:
-                                logger.fail("异步任务执行", "", str(e))
-                        future.add_done_callback(callback)
-                        return None
-                    else:
-                        # 尝试获取当前运行的事件循环
-                        try:
-                            loop = asyncio.get_running_loop()
-                            logger.debug("使用当前运行的事件循环执行异步任务")
-                            return loop.run_until_complete(async_wrapper())
-                        except RuntimeError:
-                            # 如果没有运行中的事件循环，才创建新的
-                            logger.debug("使用新的事件循环执行异步任务")
-                            return asyncio.run(async_wrapper())
+                    # 直接执行异步包装器，确保异常能够传播
+                    import asyncio
+                    result = asyncio.run(async_wrapper())
+                    # 执行成功，事件监听器会处理执行记录的添加
+                    return result
                 except Exception as e:
                     logger.fail("异步任务执行", "", str(e))
+                    # 执行失败，事件监听器会处理执行记录的添加
+                    # 重新抛出异常，让 APScheduler 触发 EVENT_JOB_ERROR 事件
                     raise
             return wrapper
         else:
@@ -236,41 +234,59 @@ class SchedulerManager:
             def wrapper():
                 import time
                 start_time = time.time()
-                task_name = f"{func.__module__}.{func.__name__}"
+                task_module = inspect.getmodule(func).__name__ if inspect.getmodule(func) else func.__module__
+                task_name = f"{task_module}.{func.__name__}"
                 logger.start(f"任务 {task_name}")
                 try:
-                    # 获取任务的最大执行时间
-                    max_execution_time = self._get_max_execution_time(task_name)
-                    # 设置超时执行
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                        future = executor.submit(func)
-                        try:
-                            result = future.result(timeout=max_execution_time)
-                            execution_time = time.time() - start_time
-                            logger.success("任务执行", task_name, f"耗时: {execution_time:.2f} 秒")
-                            return result
-                        except concurrent.futures.TimeoutError:
-                            execution_time = time.time() - start_time
-                            logger.warning_msg("任务执行", task_name, f"执行超时，已强制中止，耗时: {execution_time:.2f} 秒")
-                            future.cancel()
-                            return None
+                    # 直接执行函数，确保异常能够传播
+                    result = func()
+                    execution_time = time.time() - start_time
+                    logger.success("任务执行", task_name, f"耗时: {execution_time:.2f} 秒")
+                    # 执行成功，事件监听器会处理执行记录的添加
+                    return result
                 except Exception as e:
                     execution_time = time.time() - start_time
-                    logger.fail("任务执行", task_name, f"耗时: {execution_time:.2f} 秒, 错误: {str(e)}")
-                    return None
+                    error_msg = f"耗时: {execution_time:.2f} 秒, 错误: {str(e)}"
+                    logger.fail("任务执行", task_name, error_msg)
+                    # 执行失败，事件监听器会处理执行记录的添加
+                    # 重新抛出异常，让 APScheduler 触发 EVENT_JOB_ERROR 事件
+                    raise
             return wrapper
 
     def _job_error_listener(self, event):
-        if event.exception:
-            logger.fail("任务执行异常", event.job_id, str(event.exception))
-        elif event.code == EVENT_JOB_EXECUTED:
-            # 任务执行完成，记录执行时间
-            logger.success("任务执行完成", event.job_id, "")
-            # 记录任务的最后执行时间
+        # 导入事件常量
+        from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED, EVENT_JOB_MISSED
+        
+        logger.info(f"事件监听器被调用，事件类型: {event.code}, 任务ID: {event.job_id}")
+        
+        if event.exception or event.code == EVENT_JOB_EXECUTED:
             import datetime
-            self._job_execution_times[event.job_id] = datetime.datetime.now(datetime.timezone.utc)
-            logger.debug(f"任务 {event.job_id} 的上次执行时间已记录: {self._job_execution_times[event.job_id]}")
+            execution_time = datetime.datetime.now(datetime.timezone.utc)
+            error_msg = str(event.exception) if event.exception else None
+            
+            # 初始化执行历史记录
+            if event.job_id not in self._job_execution_history:
+                self._job_execution_history[event.job_id] = []
+            
+            # 添加新的执行记录
+            self._job_execution_history[event.job_id].insert(0, {
+                'time': execution_time,
+                'error': error_msg
+            })
+            
+            # 保留最近10条记录
+            if len(self._job_execution_history[event.job_id]) > 10:
+                self._job_execution_history[event.job_id] = self._job_execution_history[event.job_id][:10]
+            
+            # 更新最后错误信息
+            self._job_errors[event.job_id] = error_msg
+            
+            if event.exception:
+                logger.fail("任务执行异常", event.job_id, error_msg)
+                logger.info(f"任务 {event.job_id} 的执行记录已添加到历史，错误信息: {error_msg}")
+            else:
+                logger.success("任务执行完成", event.job_id, "")
+                logger.info(f"任务 {event.job_id} 的执行记录已添加到历史，执行成功")
         else:
             logger.warning_msg("任务错过执行", event.job_id, "")
     
@@ -281,6 +297,8 @@ class SchedulerManager:
             
         try:
             if self.scheduler and not self.scheduler.running:
+                # 事件监听器已在init_scheduler中注册
+                
                 self.scheduler.start()
                 logger.success("调度器", f"{self.scheduler}",  "已启动")
                 return True
@@ -320,12 +338,28 @@ class SchedulerManager:
                 except Exception:
                     pass
             
+            # 获取执行历史记录
+            execution_history = self._job_execution_history.get(job.id, [])
+            
+            # 获取最后一次执行时间和错误信息
+            last_run_time = execution_history[0]['time'] if execution_history else None
+            last_error = execution_history[0]['error'] if execution_history else None
+            
+            # 打印调试信息
+            logger.debug(f"任务 {job.id} 的信息: last_run_time={last_run_time}, last_error={last_error}, execution_history_length={len(execution_history)}")
+            
             jobs.append({
                 'id': job.id,
                 'name': job.name,
                 'next_run_time': next_run_time,
+                'last_run_time': last_run_time,
+                'last_error': last_error,  # 包含错误信息
+                'execution_history': execution_history,  # 包含执行历史记录
                 'trigger': str(job.trigger)
             })
+        
+        # 打印返回的任务列表
+        logger.debug(f"返回的任务列表: {jobs}")
         return jobs
 
 # 全局调度器实例

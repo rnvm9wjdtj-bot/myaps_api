@@ -50,60 +50,31 @@ class SchedulerCollector:
         jobs = []
         try:
             if scheduler_manager.scheduler:
-                for job in scheduler_manager.scheduler.get_jobs():
-                    # 尝试获取下一次运行时间，处理不同版本的 API
-                    next_run_time = None
-                    try:
-                        next_run_time = job.next_run_time
-                    except AttributeError:
-                        try:
-                            run_times = job._get_run_times(None)
-                            if run_times:
-                                next_run_time = run_times[0]
-                        except Exception:
-                            pass
+                # 直接使用scheduler_manager的get_jobs_info方法，它已经包含了last_error字段
+                jobs_info = scheduler_manager.get_jobs_info()
+                for job_info in jobs_info:
+                    # 转换执行历史记录中的时间格式为ISO字符串
+                    execution_history = []
+                    if 'execution_history' in job_info:
+                        for record in job_info['execution_history']:
+                            execution_history.append({
+                                'time': record['time'].isoformat() if record['time'] else None,
+                                'error': record['error']
+                            })
                     
-                    # 尝试获取上次运行时间，处理不同版本的 API
-                    last_run_time = None
-                    try:
-                        # 尝试使用 last_run_time 属性
-                        last_run_time = job.last_run_time
-                    except AttributeError:
-                        try:
-                            # 尝试使用 _last_run 属性（某些版本的 APScheduler）
-                            last_run_time = job._last_run
-                        except Exception:
-                            try:
-                                # 尝试使用 _last_run_time 属性（另一种可能的属性名）
-                                last_run_time = job._last_run_time
-                            except Exception:
-                                # 尝试从调度器中获取执行历史
-                                try:
-                                    if hasattr(scheduler_manager.scheduler, 'get_job'):
-                                        # 获取任务的执行历史
-                                        job_instance = scheduler_manager.scheduler.get_job(job.id)
-                                        if hasattr(job_instance, 'last_run_time'):
-                                            last_run_time = job_instance.last_run_time
-                                except Exception:
-                                    pass
-                    # 尝试从事件监听器中获取执行时间
-                    if not last_run_time:
-                        try:
-                            # 检查事件监听器是否有执行时间记录
-                            if hasattr(scheduler_manager, '_job_execution_times'):
-                                if job.id in scheduler_manager._job_execution_times:
-                                    last_run_time = scheduler_manager._job_execution_times[job.id]
-                        except Exception:
-                            pass
-                    
-                    jobs.append({
-                        "id": job.id,
-                        "name": job.name,
-                        "trigger": str(job.trigger),
-                        "next_run_time": next_run_time.isoformat() if next_run_time else None,
-                        "last_run_time": last_run_time.isoformat() if last_run_time else None,
-                        "pending": job.pending,
-                    })
+                    # 转换时间格式为ISO字符串
+                    job_dict = {
+                        "id": job_info['id'],
+                        "name": job_info['name'],
+                        "trigger": job_info['trigger'],
+                        "next_run_time": job_info['next_run_time'].isoformat() if job_info['next_run_time'] else None,
+                        "last_run_time": job_info['last_run_time'].isoformat() if job_info['last_run_time'] else None,
+                        "last_error": job_info['last_error'],
+                        "execution_history": execution_history,  # 包含执行历史记录
+                        "pending": False  # 暂不支持pending状态
+                    }
+                    logger.debug(f"任务信息: {job_dict}")
+                    jobs.append(job_dict)
         except Exception as e:
             logger.error(f"获取任务列表失败: {e}")
 
@@ -117,9 +88,59 @@ class SchedulerCollector:
         Returns:
             Dict: 完整的定时任务监控指标
         """
-        return {
-            "timestamp": time.time(),
-            "scheduler": self.get_scheduler_status(),
-            "jobs": self.get_jobs(),
-            "job_count": len(self.get_jobs()),
-        }
+        try:
+            # 直接使用get_scheduler_status函数，它已经包含了完整的任务信息
+            status = get_scheduler_status()
+            jobs = []
+            logger.debug(f"get_scheduler_status返回的状态: {status}")
+            
+            for job_info in status.get('jobs', []):
+                # 转换执行历史记录中的时间格式为ISO字符串
+                execution_history = []
+                if 'execution_history' in job_info:
+                    for record in job_info['execution_history']:
+                        execution_history.append({
+                            'time': record['time'].isoformat() if record['time'] else None,
+                            'error': record['error']
+                        })
+                
+                # 转换时间格式为ISO字符串
+                job_dict = {
+                    "id": job_info['id'],
+                    "name": job_info['name'],
+                    "trigger": job_info['trigger'],
+                    "next_run_time": job_info['next_run_time'].isoformat() if job_info['next_run_time'] else None,
+                    "last_run_time": job_info['last_run_time'].isoformat() if job_info['last_run_time'] else None,
+                    "last_error": job_info['last_error'],
+                    "execution_history": execution_history,  # 包含执行历史记录
+                    "pending": False  # 暂不支持pending状态
+                }
+                logger.debug(f"转换后的任务信息: {job_dict}")
+                jobs.append(job_dict)
+            
+            result = {
+                "timestamp": time.time(),
+                "scheduler": {
+                    "timestamp": time.time(),
+                    "running": status.get("running", False),
+                    "initialized": status.get("initialized", False),
+                    "error": None
+                },
+                "jobs": jobs,
+                "job_count": status.get("job_count", 0),
+            }
+            logger.debug(f"返回的监控指标: {result}")
+            return result
+        except Exception as e:
+            logger.error(f"获取定时任务指标失败: {e}")
+            return {
+                "timestamp": time.time(),
+                "scheduler": {
+                    "timestamp": time.time(),
+                    "running": False,
+                    "initialized": False,
+                    "error": str(e)
+                },
+                "jobs": [],
+                "job_count": 0,
+            }

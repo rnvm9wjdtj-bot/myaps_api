@@ -1790,7 +1790,26 @@ function updateSchedulerDetailDisplay(data) {
             
             if (!isNaN(date.getTime())) {
                 timeStr = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
-                dateStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+                
+                // 计算日期差值，显示相对时间
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                
+                const jobDate = new Date(date);
+                jobDate.setHours(0, 0, 0, 0);
+                
+                const diffTime = jobDate - today;
+                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                
+                if (diffDays === 0) {
+                    dateStr = '今天';
+                } else if (diffDays === 1) {
+                    dateStr = '明天';
+                } else if (diffDays === 2) {
+                    dateStr = '后天';
+                } else {
+                    dateStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+                }
             }
         }
         
@@ -1815,13 +1834,19 @@ function updateSchedulerDetailDisplay(data) {
                         <span class="scheduler-detail-value">${job.trigger || '未知'}</span>
                     </div>
                     <div class="scheduler-detail-row">
-                        <span class="scheduler-detail-label">上次执行</span>
-                        <span class="scheduler-detail-value">${lastRunTime}</span>
+                        <span class="scheduler-detail-label">最近执行</span>
+                        <span class="scheduler-detail-value execution-history">
+                            ${job.execution_history && job.execution_history.length > 0 ? 
+                                job.execution_history.map(record => `
+                                    <span class="execution-status ${record.error ? 'error' : 'success'}" ${record.error ? `title="${record.error}"` : ''}>
+                                        ${formatRecentExecutionTime(record.time)}
+                                    </span>
+                                `).join('') : 
+                                '<span class="execution-status never-executed">从未执行</span>'
+                            }
+                        </span>
                     </div>
-                    <div class="scheduler-detail-row">
-                        <span class="scheduler-detail-label">下次执行</span>
-                        <span class="scheduler-detail-value">${nextRunTime}</span>
-                    </div>
+
                     <div class="scheduler-detail-row">
                         <span class="scheduler-detail-label">最大执行时间</span>
                         <span class="scheduler-detail-value">${maxExecutionTime}</span>
@@ -1832,12 +1857,7 @@ function updateSchedulerDetailDisplay(data) {
                         <span class="scheduler-detail-value">${(job.execution_time * 1000).toFixed(0)} ms</span>
                     </div>
                     ` : ''}
-                    ${job.last_error ? `
-                    <div class="scheduler-detail-row">
-                        <span class="scheduler-detail-label">最后错误</span>
-                        <span class="scheduler-detail-value" style="color: var(--error-color)">${job.last_error}</span>
-                    </div>
-                    ` : ''}
+
                 </div>
             </div>
         </div>
@@ -1847,6 +1867,55 @@ function updateSchedulerDetailDisplay(data) {
 
 function refreshSchedulerPage() {
     fetchSchedulerPage();
+}
+
+// 格式化最近执行时间（相对时间）
+function formatRecentExecutionTime(timestamp) {
+    if (!timestamp) return '从未执行';
+    
+    let date;
+    if (typeof timestamp === 'number') {
+        date = new Date(timestamp * 1000);
+    } else if (typeof timestamp === 'string') {
+        date = new Date(timestamp);
+    } else {
+        date = new Date(timestamp);
+    }
+    
+    if (isNaN(date.getTime())) {
+        return '从未执行';
+    }
+    
+    // 检查是否在最近24小时内
+    const now = new Date();
+    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    
+    if (date < twentyFourHoursAgo) {
+        return '超过24小时';
+    }
+    
+    // 计算日期差值
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const execDate = new Date(date);
+    execDate.setHours(0, 0, 0, 0);
+    
+    const diffTime = today - execDate;
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    
+    let dayStr = '';
+    if (diffDays === 0) {
+        dayStr = '今天';
+    } else if (diffDays === 1) {
+        dayStr = '昨天';
+    } else {
+        dayStr = `${execDate.getMonth() + 1}月${execDate.getDate()}日`;
+    }
+    
+    const timeStr = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
+    
+    return `${dayStr} ${timeStr}`;
 }
 
 // 开关状态：是否显示内部请求

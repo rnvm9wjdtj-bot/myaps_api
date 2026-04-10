@@ -154,6 +154,8 @@ def refresh_stock(dbs: str=MYAPS_DB_SET):
         stock_data_total = pd.concat([df_sap_st, mto_vir_st], axis=0, ignore_index=True)
     else:
         stock_data_total = df_sap_st
+    
+    # if stock_data_total is not None:
     stock_data_total.fillna('', inplace=True)
     ApsHelpers.refresh_supply(stock_data_total.to_dict(orient='records'), dbs=dbs)
 

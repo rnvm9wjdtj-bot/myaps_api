@@ -55,6 +55,12 @@ class DBMetrics(BaseModel):
     pool: Dict[str, Any] = Field(description="连接池状态信息")
 
 
+class JobExecutionRecord(BaseModel):
+    """任务执行记录"""
+    time: Optional[str] = Field(None, description="执行时间")
+    error: Optional[str] = Field(None, description="错误信息")
+
+
 class JobInfo(BaseModel):
     """定时任务信息"""
     id: str = Field(description="任务 ID")
@@ -62,6 +68,8 @@ class JobInfo(BaseModel):
     trigger: str = Field(description="触发器")
     next_run_time: Optional[str] = Field(None, description="下次执行时间")
     last_run_time: Optional[str] = Field(None, description="上次执行时间")
+    last_error: Optional[str] = Field(None, description="最后一次错误信息")
+    execution_history: List[JobExecutionRecord] = Field(default_factory=list, description="执行历史记录")
     pending: bool = Field(description="是否等待执行")
 
 

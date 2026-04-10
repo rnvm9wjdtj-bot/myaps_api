@@ -2170,3 +2170,43 @@ td {
     font-weight: 600;
     color: var(--text-primary);
 }
+
+/* 执行状态标签样式 */
+.execution-status {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.execution-status.success {
+    background-color: rgba(82, 196, 26, 0.1);
+    color: #52c41a;
+    border: 1px solid rgba(82, 196, 26, 0.3);
+}
+
+.execution-status.error {
+    background-color: rgba(245, 34, 45, 0.1);
+    color: #ff4d4f;
+    border: 1px solid rgba(245, 34, 45, 0.3);
+}
+
+.execution-status.never-executed {
+    background-color: rgba(250, 173, 20, 0.1);
+    color: #faad14;
+    border: 1px solid rgba(250, 173, 20, 0.3);
+}
+
+/* 执行历史记录容器 */
+.execution-history {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.execution-history .execution-status {
+    margin-right: 4px;
+    margin-bottom: 4px;
+}

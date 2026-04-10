@@ -38,3 +38,9 @@ def get_scheduler_minute(offset: int=0):
         minute = int(m) + offset
         minutes.append(str(minute % 60))
     return ','.join(minutes)
+
+
+
+from collections import namedtuple
+# 定义任务执行结果的具名元组
+TaskResult = namedtuple('TaskResult', ['status', 'error'])
