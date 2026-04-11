@@ -808,6 +808,7 @@ function switchPage(pageName) {
     } else if (pageName === 'database') {
         fetchDatabaseDetail();
         initDatabaseTabs();
+        switchDatabaseTab('detail');
     } else if (pageName === 'scheduler') {
         fetchSchedulerPage();
     } else if (pageName === 'logs') {
