@@ -1132,6 +1132,15 @@ body {
     font-weight: 600;
 }
 
+.scheduler-countdown {
+    font-size: 14px;
+    color: var(--primary-color);
+    display: block;
+    margin-top: 4px;
+    font-weight: 500;
+    font-family: monospace;
+}
+
 /* 时间轴右侧内容区域 */
 .scheduler-content-section {
     display: flex;
@@ -1163,26 +1172,30 @@ body {
     font-size: 12px;
 }
 
-.scheduler-detail-info {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+.scheduler-detail-table {
+    width: 100%;
+    border-collapse: collapse;
     margin-top: 8px;
 }
 
 .scheduler-detail-row {
-    display: flex;
-    justify-content: space-between;
-    font-size: 12px;
+    display: table-row;
 }
 
 .scheduler-detail-label {
     color: var(--text-secondary);
+    padding: 4px 0;
+    width: 120px;
 }
 
 .scheduler-detail-value {
     font-weight: 500;
     color: var(--text-primary);
+    text-align: left;
+    padding: 4px 0;
+    word-break: break-all;
+    font-family: 'JetBrains Mono', 'Consolas', 'Monaco', 'Menlo', 'Source Code Pro', monospace /* 定时规则使用等宽字体 */
+    /* font-size: 15px; */
 }
 
 .scheduler-detail-section {

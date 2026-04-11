@@ -13,13 +13,7 @@ from globalobjects.event_aggregator import get_global_handler_aggregator
 logger = log_config.get_logger(__name__)
 
 
-# 事件类型描述映射
-EVENT_TYPE_DESCRIPTIONS = {
-    "|pl_status_a2e|": "PL单据下达",
-    "|pr_created|": "PR单据创建",
-    "|pl_typeto_mo|": "PL变更为MO",
-    "|pr_deleted|": "PR单据删除",
-}
+
 
 
 class EventCollector:
@@ -53,7 +47,7 @@ class EventCollector:
 
             for event_type in event_types:
                 stats = all_stats.get(event_type, {})
-                description = EVENT_TYPE_DESCRIPTIONS.get(event_type, event_type)
+                description = self._aggregator.get_event_description(event_type)
 
                 metrics["event_stats"][event_type] = {
                     "event_type": event_type,

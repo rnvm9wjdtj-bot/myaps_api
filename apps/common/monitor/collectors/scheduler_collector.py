@@ -108,6 +108,7 @@ class SchedulerCollector:
                 job_dict = {
                     "id": job_info['id'],
                     "name": job_info['name'],
+                    "description": job_info.get('description'),
                     "trigger": job_info['trigger'],
                     "next_run_time": job_info['next_run_time'].isoformat() if job_info['next_run_time'] else None,
                     "last_run_time": job_info['last_run_time'].isoformat() if job_info['last_run_time'] else None,

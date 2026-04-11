@@ -65,6 +65,7 @@ class JobInfo(BaseModel):
     """定时任务信息"""
     id: str = Field(description="任务 ID")
     name: str = Field(description="任务名称")
+    description: Optional[str] = Field(None, description="任务描述")
     trigger: str = Field(description="触发器")
     next_run_time: Optional[str] = Field(None, description="下次执行时间")
     last_run_time: Optional[str] = Field(None, description="上次执行时间")

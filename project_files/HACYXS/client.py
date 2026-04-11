@@ -45,12 +45,12 @@ def refresh_stock(dbs: str=MYAPS_DB_SET):
 #################################################################################
 # ⬇️ 定时任务
 #################################################################################
-@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute())
+@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(), description="刷新库存数据")
 def task_refresh_stock():
     refresh_stock()
 
 
-@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1))
+@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1), description="确认报工")
 def task_confirm_workreport():
     ApsHelpers.confirm_workreport()
 

@@ -285,6 +285,7 @@ class MultiEventAggregator:
     
     def __init__(self):
         self._aggregators: Dict[str, EventAggregator] = {}
+        self._event_descriptions: Dict[str, str] = {}
         self._lock = threading.RLock()
     
     def register(self, 
@@ -293,7 +294,8 @@ class MultiEventAggregator:
                  group_key: Callable[[Any], str] = None,
                  dedup_key: Callable[[Any], str] = None,
                  batch_size: int = 10000,
-                 flush_interval: float = 5.0) -> 'MultiEventAggregator':
+                 flush_interval: float = 5.0,
+                 description: str = None) -> 'MultiEventAggregator':
         """
         注册一个事件类型的聚合器
         
@@ -304,6 +306,7 @@ class MultiEventAggregator:
             dedup_key: 去重函数
             batch_size: 批量大小
             flush_interval: 刷新间隔（秒）
+            description: 事件类型描述
         
         Returns:
             self，支持链式调用
@@ -324,6 +327,7 @@ class MultiEventAggregator:
                 name=event_type
             )
             self._aggregators[event_type] = aggregator
+            self._event_descriptions[event_type] = description or event_type
             aggregator.start()
             logger.success(f"事件聚合器注册", event_type, "")
             return self
@@ -355,10 +359,13 @@ class MultiEventAggregator:
                 if event_type in self._aggregators:
                     self._aggregators[event_type].stop()
                     del self._aggregators[event_type]
+                    if event_type in self._event_descriptions:
+                        del self._event_descriptions[event_type]
             else:
                 for aggregator in self._aggregators.values():
                     aggregator.stop()
                 self._aggregators.clear()
+                self._event_descriptions.clear()
     
     def flush_now(self, event_type: str = None):
         """立即刷新
@@ -395,6 +402,27 @@ class MultiEventAggregator:
         """
         with self._lock:
             return list(self._aggregators.keys())
+    
+    def get_event_description(self, event_type: str) -> str:
+        """获取事件类型的描述
+        
+        Args:
+            event_type: 事件类型标识
+        
+        Returns:
+            str: 事件类型描述，如果不存在则返回事件类型本身
+        """
+        with self._lock:
+            return self._event_descriptions.get(event_type, event_type)
+    
+    def get_all_event_descriptions(self) -> Dict[str, str]:
+        """获取所有事件类型的描述
+        
+        Returns:
+            dict: 事件类型到描述的映射
+        """
+        with self._lock:
+            return dict(self._event_descriptions)
     
     def reset_stats(self, event_type: str = None):
         """重置统计数据

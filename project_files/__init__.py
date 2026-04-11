@@ -66,7 +66,7 @@ class ApsEvent:
                 self.warning_msg = f"模块【{project_client.__name__}】未实现【{event_type}】处理逻辑"
         
         if self.single_handle_func or self.batch_handle_func:
-            EVENT_AGGREGATOR.register(event_type=self.event_type, handler=self.handle_func, batch_size=batch_size, flush_interval=flush_interval)
+            EVENT_AGGREGATOR.register(event_type=self.event_type, handler=self.handle_func, batch_size=batch_size, flush_interval=flush_interval, description=self.description)
 
 
     def handle_func(self, events_data_list: list[dict]):

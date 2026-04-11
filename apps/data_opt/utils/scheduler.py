@@ -25,15 +25,21 @@ class TaskRegistry:
     
     def register(self, func: Callable, trigger: str, **trigger_args):
         """注册定时任务"""
+        # 从trigger_args中提取description参数
+        description = trigger_args.pop('description', None)
+        # 移除可能存在的extra参数，避免传递给CronTrigger
+        trigger_args.pop('extra', None)
+        
         task_info = {
             'func': func,
             'trigger': trigger,
             'trigger_args': trigger_args,
             'module': inspect.getmodule(func).__name__,
-            'func_name': func.__name__
+            'func_name': func.__name__,
+            'description': description
         }
         self.tasks.append(task_info)
-        logger.success("定时任务注册", f"{task_info['module']}.{task_info['func_name']}", "")
+        logger.success("定时任务注册", f"{task_info['module']}.{task_info['func_name']}", f"描述: {description}")
         return func
 
 # 全局任务注册表
@@ -48,6 +54,7 @@ class SchedulerManager:
         self.main_loop: Optional[asyncio.AbstractEventLoop] = None
         self._job_execution_history = {}  # 存储任务的执行历史记录，格式: {job_id: [{time: datetime, error: str or None}, ...]}
         self._job_errors = {}  # 存储任务的最后错误信息
+        self._job_descriptions = {}  # 存储任务的描述信息
         
     def set_main_loop(self, loop: asyncio.AbstractEventLoop):
         self.main_loop = loop
@@ -138,14 +145,21 @@ class SchedulerManager:
                 safe_func = self._create_safe_function(task_info['func'])
                 logger.success(f"安全函数创建", f"任务名: {task_info['module']}.{task_info['func_name']}", to_file=True)
                 
-                self.scheduler.add_job(
-                    func=safe_func,
-                    trigger=task_info['trigger'],
-                    id=job_id,
-                    name=f"{task_info['module']}.{task_info['func_name']}",
-                    replace_existing=True,
+                # 准备任务参数
+                job_kwargs = {
+                    'func': safe_func,
+                    'trigger': task_info['trigger'],
+                    'id': job_id,
+                    'name': f"{task_info['module']}.{task_info['func_name']}",
+                    'replace_existing': True,
                     **task_info['trigger_args']
-                )
+                }
+                
+                # 直接存储描述信息到scheduler_manager的字典中，而不是依赖APScheduler的extra参数
+                if 'description' in task_info and task_info['description']:
+                    self._job_descriptions[job_id] = task_info['description']
+                
+                self.scheduler.add_job(**job_kwargs)
                 
                 logger.success("定时任务添加", job_id, "")
                 
@@ -274,9 +288,9 @@ class SchedulerManager:
                 'error': error_msg
             })
             
-            # 保留最近10条记录
-            if len(self._job_execution_history[event.job_id]) > 10:
-                self._job_execution_history[event.job_id] = self._job_execution_history[event.job_id][:10]
+            # 保留最近12条记录
+            if len(self._job_execution_history[event.job_id]) > 12:
+                self._job_execution_history[event.job_id] = self._job_execution_history[event.job_id][:12]
             
             # 更新最后错误信息
             self._job_errors[event.job_id] = error_msg
@@ -345,12 +359,16 @@ class SchedulerManager:
             last_run_time = execution_history[0]['time'] if execution_history else None
             last_error = execution_history[0]['error'] if execution_history else None
             
+            # 获取任务描述信息
+            description = self._job_descriptions.get(job.id)
+            
             # 打印调试信息
-            logger.debug(f"任务 {job.id} 的信息: last_run_time={last_run_time}, last_error={last_error}, execution_history_length={len(execution_history)}")
+            logger.debug(f"任务 {job.id} 的信息: last_run_time={last_run_time}, last_error={last_error}, execution_history_length={len(execution_history)}, description={description}")
             
             jobs.append({
                 'id': job.id,
                 'name': job.name,
+                'description': description,
                 'next_run_time': next_run_time,
                 'last_run_time': last_run_time,
                 'last_error': last_error,  # 包含错误信息

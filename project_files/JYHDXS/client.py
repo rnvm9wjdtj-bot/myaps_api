@@ -200,23 +200,23 @@ def push_monthpr_to_srm():
 # ⬇️定时任务设置
 #################################################################################
 
-@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute())
+@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(), description="刷新库存数据")
 def task_refresh_stock():
     refresh_stock()
 
 
-@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2))
+@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2), description="确认报工")
 def task_confirm_workreport():
     ApsHelpers.confirm_workreport()
 
 
-@cron_task(hour=23, minute=59)  # 每天23:59执行一次，需须在23:55拉取库存和确认报工之后
+@cron_task(hour=23, minute=59, description="推送周要货计划到SRM")  # 每天23:59执行一次，需须在23:55拉取库存和确认报工之后
 # @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23", minute="0,5,10,15,20,25,30,35,40,45,50,55")
 def task_push_weekpr_to_srm():
     push_weekpr_to_srm()
 
 
-@cron_task(day=1, hour=0, minute=5)
+@cron_task(day=1, hour=0, minute=5, description="推送月度要货计划到SRM")
 def task_push_seasonpr_to_srm():
     push_monthpr_to_srm()
 

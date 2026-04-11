@@ -875,7 +875,7 @@ function updateEventStatsDisplay(data) {
     const tbodyEl = document.getElementById('events-tbody');
     
     if (Object.keys(eventStats).length === 0) {
-        tbodyEl.innerHTML = '<tr><td colspan="12" class="empty-state">暂无事件统计</td></tr>';
+        tbodyEl.innerHTML = '<tr><td colspan="11" class="empty-state">暂无事件统计</td></tr>';
         return;
     }
     
@@ -894,7 +894,6 @@ function updateEventStatsDisplay(data) {
         
         return `
         <tr>
-            <td style="font-family: monospace; font-size: 12px;">${eventType}</td>
             <td>${stats.description || eventType}</td>
             <td>${stats.total_received || 0}</td>
             <td>${stats.pending_count || 0}</td>
@@ -1819,46 +1818,47 @@ function updateSchedulerDetailDisplay(data) {
             <div class="scheduler-time-section">
                 <span class="scheduler-date">${dateStr}</span>
                 <span class="scheduler-time">${timeStr}</span>
+                ${job.next_run_time ? `<span class="scheduler-countdown" data-next-run-time="${job.next_run_time}">${formatNextExecutionTime(job.next_run_time)}</span>` : ''}
             </div>
             <div class="scheduler-content-section">
                 <div class="scheduler-detail-header">
-                    <a href="#" class="scheduler-detail-name">${job.name || job.id}</a>
+                    <a href="#" class="scheduler-detail-name">${job.description || job.name || job.id}</a>
                     <span class="scheduler-detail-status">
                         <span class="status-dot healthy"></span>
-                        ${isSystemTask ? '系统任务' : '已注册'}
+                        ${isSystemTask ? '系统' : '项目'}级任务
                     </span>
                 </div>
-                <div class="scheduler-detail-info">
-                    <div class="scheduler-detail-row">
-                        <span class="scheduler-detail-label">定时规则</span>
-                        <span class="scheduler-detail-value">${job.trigger || '未知'}</span>
-                    </div>
-                    <div class="scheduler-detail-row">
-                        <span class="scheduler-detail-label">最近执行</span>
-                        <span class="scheduler-detail-value execution-history">
+                <table class="scheduler-detail-table">
+                    <tr class="scheduler-detail-row">
+                        <td class="scheduler-detail-label">定时规则</td>
+                        <td class="scheduler-detail-value">${job.trigger || '未知'}</td>
+                    </tr>
+                    <tr class="scheduler-detail-row">
+                        <td class="scheduler-detail-label">最近执行</td>
+                        <td class="scheduler-detail-value execution-history">
                             ${job.execution_history && job.execution_history.length > 0 ? 
-                                job.execution_history.map(record => `
+                                job.execution_history.slice().sort((a, b) => new Date(a.time) - new Date(b.time)).map(record => `
                                     <span class="execution-status ${record.error ? 'error' : 'success'}" ${record.error ? `title="${record.error}"` : ''}>
                                         ${formatRecentExecutionTime(record.time)}
                                     </span>
                                 `).join('') : 
                                 '<span class="execution-status never-executed">从未执行</span>'
                             }
-                        </span>
-                    </div>
+                        </td>
+                    </tr>
 
-                    <div class="scheduler-detail-row">
-                        <span class="scheduler-detail-label">最大执行时间</span>
-                        <span class="scheduler-detail-value">${maxExecutionTime}</span>
-                    </div>
+                    <tr class="scheduler-detail-row">
+                        <td class="scheduler-detail-label">最大执行时间</td>
+                        <td class="scheduler-detail-value">${maxExecutionTime}</td>
+                    </tr>
                     ${job.execution_time ? `
-                    <div class="scheduler-detail-row">
-                        <span class="scheduler-detail-label">平均执行时间</span>
-                        <span class="scheduler-detail-value">${(job.execution_time * 1000).toFixed(0)} ms</span>
-                    </div>
+                    <tr class="scheduler-detail-row">
+                        <td class="scheduler-detail-label">平均执行时间</td>
+                        <td class="scheduler-detail-value">${(job.execution_time * 1000).toFixed(0)} ms</td>
+                    </tr>
                     ` : ''}
 
-                </div>
+                </table>
             </div>
         </div>
         `;
@@ -1913,10 +1913,87 @@ function formatRecentExecutionTime(timestamp) {
         dayStr = `${execDate.getMonth() + 1}月${execDate.getDate()}日`;
     }
     
-    const timeStr = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
+    const timeStr = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
     
     return `${dayStr} ${timeStr}`;
 }
+
+// 格式化下次执行时间（对于24小时内的任务显示倒计时）
+function formatNextExecutionTime(timestamp) {
+    if (!timestamp) return '未知';
+    
+    let date;
+    if (typeof timestamp === 'number') {
+        date = new Date(timestamp * 1000);
+    } else if (typeof timestamp === 'string') {
+        date = new Date(timestamp);
+    } else {
+        date = new Date(timestamp);
+    }
+    
+    if (isNaN(date.getTime())) {
+        return '未知';
+    }
+    
+    const now = new Date();
+    const diffMs = date - now;
+    
+    if (diffMs < 0) {
+        return '已过期';
+    }
+    
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    
+    if (diffHours < 24) {
+        // 24小时内，显示实际倒计时
+        const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        const diffSeconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+        
+        return `${diffHours.toString().padStart(2, '0')}:${diffMinutes.toString().padStart(2, '0')}:${diffSeconds.toString().padStart(2, '0')}`;
+    } else {
+        // 超过24小时，显示“X天X小时后”
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        const remainingHours = diffHours % 24;
+        
+        return `${diffDays}天${remainingHours}小时后`;
+    }
+}
+
+// 更新倒计时
+function updateCountdowns() {
+    // 更新时间轴旁边的倒计时
+    document.querySelectorAll('.scheduler-countdown').forEach(element => {
+        const nextRunTimeStr = element.getAttribute('data-next-run-time');
+        if (nextRunTimeStr) {
+            const nextRunTime = new Date(nextRunTimeStr);
+            const now = new Date();
+            const diffMs = nextRunTime - now;
+            
+            if (diffMs < 0) {
+                element.textContent = '执行中';
+            } else {
+                const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                
+                if (diffHours < 24) {
+                    // 24小时内，显示倒计时
+                    const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+                    const diffSeconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+                    
+                    element.textContent = `${diffHours.toString().padStart(2, '0')}:${diffMinutes.toString().padStart(2, '0')}:${diffSeconds.toString().padStart(2, '0')}`;
+                } else {
+                    // 超过24小时，显示“X天X小时后”
+                    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                    const remainingHours = diffHours % 24;
+                    
+                    element.textContent = `${diffDays}天${remainingHours}小时后`;
+                }
+            }
+        }
+    });
+}
+
+// 启动倒计时更新
+setInterval(updateCountdowns, 1000);
 
 // 开关状态：是否显示内部请求
 let showInternalRequests = false;
