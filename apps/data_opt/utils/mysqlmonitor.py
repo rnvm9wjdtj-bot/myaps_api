@@ -1186,3 +1186,75 @@ mysql_monitor = MySQLBinlogMonitor()
 #  
 # 停止监控：
 #    mysql_monitor.stop_monitoring()
+
+
+def set_binlog_params():
+    """
+    设置MySQL binlog参数脚本（简化版）
+
+    功能：
+    1. 直接连接到MySQL数据库
+    2. 设置binlog_row_metadata和binlog_row_image参数为FULL
+    3. 验证设置是否成功
+    """
+
+    import pymysql
+    import os
+
+    # 数据库连接信息
+    db_host = MYAPS_DB_HOST
+    db_port = MYAPS_DB_PORT
+    db_user = "root"
+    db_password = "E9damw0o@#$"
+
+    logger.info("🚀 开始设置binlog参数...")
+    logger.info(f"🔗 连接到数据库: {db_host}:{db_port}")
+
+    try:
+        # 连接数据库
+        conn = pymysql.connect(
+            host=db_host,
+            port=db_port,
+            user=db_user,
+            password=db_password,
+            connect_timeout=5
+        )
+        
+        logger.success("数据库连接成功")
+        
+        with conn.cursor() as cursor:
+            # 执行设置命令
+            sql_commands = [
+                "SET GLOBAL binlog_row_metadata = 'FULL';",
+                "SET GLOBAL binlog_row_image = 'FULL';"
+            ]
+            
+            for sql in sql_commands:
+                logger.info(f"执行SQL: {sql}")
+                cursor.execute(sql)
+                logger.success("执行SQL", sql)
+            
+            # 验证设置
+            verify_commands = [
+                "SHOW VARIABLES LIKE 'binlog_row_metadata';",
+                "SHOW VARIABLES LIKE 'binlog_row_image';"
+            ]
+            
+            for sql in verify_commands:
+                logger.info(f"验证设置: {sql}")
+                cursor.execute(sql)
+                result = cursor.fetchone()
+                if result:
+                    variable_name, value = result
+                    logger.info(f"📊 {variable_name}: {value}")
+                    if value == 'FULL':
+                        logger.success("设置binlog参数", variable_name)
+                    else:
+                        logger.fail("设置binlog参数", variable_name, f"{value}")
+        
+        conn.close()
+        logger.success("设置binlog参数")
+        
+    except Exception as e:
+        logger.error("设置binlog参数", str(e))
+        exit(1)

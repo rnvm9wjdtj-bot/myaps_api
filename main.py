@@ -1,4 +1,5 @@
 import os, uvicorn
+import asyncio
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -9,6 +10,11 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 env_file = os.path.join(BASE_DIR, '.env')
 os.environ.setdefault('ENV_FILE', env_file)
 load_dotenv(env_file)
+
+# 设置Windows事件循环为SelectorEventLoop，提高网络稳定性
+if os.name == 'nt':
+    loop = asyncio.SelectorEventLoop()
+    asyncio.set_event_loop(loop)
 
 # 在导入settings之前设置启动模式环境变量
 if __name__ == "__main__":

@@ -20,7 +20,20 @@ async def lifespan(app):
     scheduler_manager.set_main_loop(main_loop)
     log_config.info(f"已将主应用事件循环传递给调度器: {main_loop}")
     
-    # 定时任务管理器将在后面通过initialize_scheduler()统一初始化和启动
+    # 预热数据库连接（在启动其他服务之前）
+    log_config.info("开始预热数据库连接...")
+    await warmup_connections()
+    log_config.info("数据库连接预热完成")
+    
+    # 启动资源监控
+    log_config.info("开始启动资源监控...")
+    resource_monitor.start_monitoring(interval=30)
+    log_config.info("系统资源监控已启动")
+    
+    # 等待服务器完全就绪，确保客户端可以正常连接
+    log_config.info("等待服务器完全就绪...")
+    await asyncio.sleep(3)
+    log_config.info("服务器已就绪")
     
     if TURNON_DBMONITOR:
         mysql_monitor.start_monitoring()
@@ -28,12 +41,10 @@ async def lifespan(app):
     else:
         log_config.warning("⚠️ MySQL Binlog监控未启动")
     
-    # 启动资源监控
-    log_config.info("开始启动资源监控...")
-    resource_monitor.start_monitoring(interval=30)
-    log_config.info("系统资源监控已启动")
-    
+    # 延迟启动定时任务，确保服务器完全就绪
     if TRUNON_SCHEDULER:
+        log_config.info("准备启动定时任务...")
+        await asyncio.sleep(2)  # 额外等待2秒
         initialize_scheduler()
     else:
         log_config.warning("⚠️ 定时任务初始化被跳过，因为 TRUNON_SCHEDULER=false")
@@ -46,10 +57,6 @@ async def lifespan(app):
             # 每300秒（5分钟）检查一次
             await asyncio.sleep(300)
     
-    # 预热数据库连接
-    log_config.info("开始预热数据库连接...")
-    await warmup_connections()
-    
     # 启动数据库连接检查任务（从原startup_event迁移）
     asyncio.create_task(schedule_db_checks())
     log_config.info("数据库连接检查任务已启动")
@@ -58,8 +65,8 @@ async def lifespan(app):
     asyncio.create_task(start_pool_monitoring())
     log_config.info("连接池监控任务已启动")
     
-    # 等待一段时间，确保资源监控线程正常启动
-    time.sleep(1)
+    # 等待一段时间，确保所有服务正常启动
+    await asyncio.sleep(1)
     log_config.info("应用启动完成，开始运行")
     
     yield  # 应用运行期间

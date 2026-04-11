@@ -2,7 +2,7 @@
 :: 配置变量
 set "PS_SCRIPT=%~dp0run.ps1"
 set "ENV_FILE=%~dp0.env"
-set "RESTART_DELAY=3"
+set "RESTART_DELAY=5"
 set "MAX_RESTARTS=5"
 set "RESTART_COUNT=0"
 

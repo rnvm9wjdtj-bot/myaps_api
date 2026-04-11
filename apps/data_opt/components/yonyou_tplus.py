@@ -559,25 +559,43 @@ class TplusConnection(BaseConnection):
         return response
 
 
-    def _post(self, endpoint: str, data: dict):
+    def _post(self, endpoint: str, data: dict, max_retries: int = 3):
         """
-        发送POST请求到畅捷通API
+        发送POST请求到畅捷通API，支持重试机制
         Args:
             endpoint: API端点路径
             data: 请求体数据
+            max_retries: 最大重试次数，默认3次
         Returns:
             响应JSON数据
         """
-        self.auth()
-        headers = {
-            "appKey": self.app_key,
-            "appSecret": self.app_secret,
-            "openToken": self.access_token,
-            "Content-Type": "application/json",
-        }
-        response = self._session.post(f"{self.base_url}{endpoint}", headers=headers, json=data)
-        response.raise_for_status()
-        return response
+        retry_count = 0
+        last_error = None
+        
+        while retry_count < max_retries:
+            try:
+                self.auth()
+                headers = {
+                    "appKey": self.app_key,
+                    "appSecret": self.app_secret,
+                    "openToken": self.access_token,
+                    "Content-Type": "application/json",
+                }
+                response = self._session.post(f"{self.base_url}{endpoint}", headers=headers, json=data)
+                response.raise_for_status()
+                return response
+            except Exception as e:
+                retry_count += 1
+                last_error = e
+                if retry_count < max_retries:
+                    wait_time = 2 * retry_count  # 递增等待时间
+                    logger.warning_msg(f"API请求失败，{wait_time}秒后重试", endpoint, f"第{retry_count}/{max_retries}次重试: {str(e)}")
+                    time.sleep(wait_time)
+                else:
+                    logger.fail(f"API请求失败，已达最大重试次数", endpoint, str(e))
+        
+        # 所有重试都失败，抛出最后一个错误
+        raise last_error
 
 
     def _pull_simple_data(self, pull_interface: PullInterface, filter: dict=None, pydantic_model: PydanticModel=None):

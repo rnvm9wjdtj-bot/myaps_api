@@ -73,7 +73,8 @@ if START_MODE == "direct":
 else:
     PORT = BASE_PORT
 
-THIS_BASE_URL = PROTOCOL + "localhost:" + str(PORT)
+# 使用127.0.0.1代替localhost，避免DNS解析问题，提高连接稳定性
+THIS_BASE_URL = PROTOCOL + "127.0.0.1:" + str(PORT)
 
 # 项目目录
 PROJECT_DIR = os.getenv("PROJECT_DIR")

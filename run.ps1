@@ -120,7 +120,7 @@ function Clear-Port {
     }
 
     # Wait for port release
-    Start-Sleep -Seconds 3
+    Start-Sleep -Seconds 5
 
     # Verify port is available
     if (Test-PortInUse -PortNumber $PortNumber) {
@@ -224,15 +224,52 @@ try {
         "--access-log"
     )
 
-    # Start process directly for better output
-    & $Python @uvicornArgs
+    # Start process with graceful shutdown support
+    $serverProcess = Start-Process -FilePath $Python -ArgumentList $uvicornArgs -NoNewWindow -PassThru
+
+    # Setup graceful shutdown handler
+    $shutdownRequested = $false
+
+    $null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
+        $script:shutdownRequested = $true
+    }
+
+    try {
+        # Wait for process to exit
+        Wait-Process -Id $serverProcess.Id -ErrorAction Stop
+    }
+    catch {
+        if ($shutdownRequested -or $Error[0].Exception.Message -match "was not found") {
+            Write-Host ""
+            Write-Host "Shutting down server gracefully..." -ForegroundColor Yellow
+            Write-Log "Shutting down server gracefully"
+            
+            # Try graceful shutdown first
+            $serverProcess.CloseMainWindow() | Out-Null
+            Start-Sleep -Seconds 5
+            
+            # Force kill if still running
+            if (!$serverProcess.HasExited) {
+                Write-Host "Force killing server process..." -ForegroundColor Yellow
+                $serverProcess | Stop-Process -Force -ErrorAction SilentlyContinue
+            }
+        }
+        else {
+            Write-Host ""
+            Write-Host "[ERROR] Server process error: $_" -ForegroundColor Red
+            Write-Log "Server process error: $_"
+        }
+    }
+
+    # Get actual exit code
+    $exitCode = $serverProcess.ExitCode
 
     # Check exit code
-    if ($LASTEXITCODE -ne 0) {
+    if ($exitCode -ne 0) {
         Write-Host ""
-        Write-Host "[ERROR] Application failed to start with error code $LASTEXITCODE" -ForegroundColor Red
-        Write-Log "Application failed to start with error code $LASTEXITCODE"
-        exit $LASTEXITCODE
+        Write-Host "[ERROR] Application failed to start with error code $exitCode" -ForegroundColor Red
+        Write-Log "Application failed to start with error code $exitCode"
+        exit $exitCode
     }
 }
 catch {

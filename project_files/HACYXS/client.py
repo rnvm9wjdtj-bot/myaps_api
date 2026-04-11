@@ -30,16 +30,30 @@ from typing import Dict, Any
 #################################################################################
 REMAIN_NATIVE_SUPPLYNO = True   # 本项目需要推送 MO 前后关系，所以必须保留原生供应号，否则会导致关系断开
 
-tplus_conn = TplusConnection()
+# 延迟初始化TplusConnection，避免在模块导入时立即连接
+_tplus_conn = None
+
+def get_tplus_conn():
+    """获取TplusConnection实例（延迟初始化）"""
+    global _tplus_conn
+    if _tplus_conn is None:
+        _tplus_conn = TplusConnection()
+    return _tplus_conn
 
 #################################################################################
 # ⬇️ 项目可复用逻辑
 #################################################################################
 
 def refresh_stock(dbs: str=MYAPS_DB_SET):
-    stock_data = tplus_conn.pull_stock()
-    if stock_data:
-        ApsHelpers.refresh_supply(stock_data, dbs=dbs)
+    """刷新库存数据"""
+    try:
+        tplus_conn = get_tplus_conn()
+        stock_data = tplus_conn.pull_stock()
+        if stock_data:
+            ApsHelpers.refresh_supply(stock_data, dbs=dbs)
+    except Exception as e:
+        CLIENT_LOGGER.fail("刷新库存数据", "", str(e))
+        raise
 
 
 #################################################################################
@@ -47,12 +61,24 @@ def refresh_stock(dbs: str=MYAPS_DB_SET):
 #################################################################################
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(), description="刷新库存数据")
 def task_refresh_stock():
-    refresh_stock()
+    """定时任务：刷新库存数据"""
+    try:
+        refresh_stock()
+        CLIENT_LOGGER.success("定时任务执行", "刷新库存数据", "任务完成")
+    except Exception as e:
+        CLIENT_LOGGER.fail("定时任务执行", "刷新库存数据", f"任务失败: {str(e)}")
+        # 不抛出异常，避免影响其他任务
 
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1), description="确认报工")
 def task_confirm_workreport():
-    ApsHelpers.confirm_workreport()
+    """定时任务：确认报工"""
+    try:
+        ApsHelpers.confirm_workreport()
+        CLIENT_LOGGER.success("定时任务执行", "确认报工", "任务完成")
+    except Exception as e:
+        CLIENT_LOGGER.fail("定时任务执行", "确认报工", f"任务失败: {str(e)}")
+        # 不抛出异常，避免影响其他任务
 
 #################################################################################
 # ⬇️ 数据库事件
@@ -139,26 +165,43 @@ class CustomRsPushModel(RsPushModel):
 
 
 def handle_pl_status_a2e(supplyno_or_data: str | dict):
-    if isinstance(supplyno_or_data, str):
-        supplyno = supplyno_or_data
-    elif isinstance(supplyno_or_data, dict):
-        supplyno = supplyno_or_data['supplyno']
-    tplus_conn.create_mo(supplyno=supplyno, remain_native_supplyno=REMAIN_NATIVE_SUPPLYNO, pydantic_model=CustomMoPushModel)
+    """处理PL状态变更：从A到E"""
+    try:
+        if isinstance(supplyno_or_data, str):
+            supplyno = supplyno_or_data
+        elif isinstance(supplyno_or_data, dict):
+            supplyno = supplyno_or_data['supplyno']
+        tplus_conn = get_tplus_conn()
+        tplus_conn.create_mo(supplyno=supplyno, remain_native_supplyno=REMAIN_NATIVE_SUPPLYNO, pydantic_model=CustomMoPushModel)
+    except Exception as e:
+        CLIENT_LOGGER.fail("处理PL状态变更", str(supplyno_or_data), str(e))
+        raise
 
 
 def handle_pl_typeto_mo(supplyno_or_data: str | dict):
-    if isinstance(supplyno_or_data, str):
-        supplyno = supplyno_or_data
-    elif isinstance(supplyno_or_data, dict):
-        supplyno = supplyno_or_data['supplyno']
-        # tplus_mo_id = supplyno_or_data['apiex_id']
-    mo_data = tplus_conn.query_mo(index_value=supplyno, filter_field='voucherCode')
-    if mo_data:
-        tplus_conn.push_rs(mdlist_or_supplyno=supplyno, tplus_mo_data_or_id=mo_data, pydantic_model=CustomRsPushModel)    
+    """处理PL类型变更：转为MO"""
+    try:
+        if isinstance(supplyno_or_data, str):
+            supplyno = supplyno_or_data
+        elif isinstance(supplyno_or_data, dict):
+            supplyno = supplyno_or_data['supplyno']
+        tplus_conn = get_tplus_conn()
+        mo_data = tplus_conn.query_mo(index_value=supplyno, filter_field='voucherCode')
+        if mo_data:
+            tplus_conn.push_rs(mdlist_or_supplyno=supplyno, tplus_mo_data_or_id=mo_data, pydantic_model=CustomRsPushModel)
+    except Exception as e:
+        CLIENT_LOGGER.fail("处理PL类型变更", str(supplyno_or_data), str(e))
+        raise
 
 
 def batch_handle_pr_created(pr_data_list: list[dict]):
-    tplus_conn.push_pr(pr_data_list)
+    """批量处理PR创建"""
+    try:
+        tplus_conn = get_tplus_conn()
+        tplus_conn.push_pr(pr_data_list)
+    except Exception as e:
+        CLIENT_LOGGER.fail("批量处理PR创建", "", str(e))
+        raise
 
 
 if __name__ == '__main__':
