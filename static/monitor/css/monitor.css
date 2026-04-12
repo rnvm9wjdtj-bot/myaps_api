@@ -796,7 +796,7 @@ body {
 .api-requests-table th:nth-child(5) { width: 80px; }  /* 状态码 */
 .api-requests-table th:nth-child(6) { width: 100px; } /* 响应时间 */
 .api-requests-table th:nth-child(7) { width: 100px; } /* 客户端IP */
-.api-requests-table th:nth-child(8) { width: 150px; } /* 错误信息 */
+.api-requests-table th:nth-child(8) { display: none; } /* 错误信息 - 已隐藏 */
 
 .api-requests-table td, .logs-table td {
     padding: 12px 16px;
@@ -816,6 +816,10 @@ body {
     word-break: break-all;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.api-requests-table td:nth-child(8) {
+    display: none; /* 错误信息列 - 已隐藏 */
 }
 
 /* 日志表格列样式 */
@@ -1771,7 +1775,7 @@ code[class*="language-"] {
 .outbound-requests-table th:nth-child(4) { width: 80px; }  /* 状态码 */
 .outbound-requests-table th:nth-child(5) { width: 100px; } /* 响应时间 */
 .outbound-requests-table th:nth-child(6) { width: 150px; } /* 模块 */
-.outbound-requests-table th:nth-child(7) { width: 150px; } /* 错误信息 */
+.outbound-requests-table th:nth-child(7) { display: none; } /* 错误信息 - 已隐藏 */
 
 .outbound-requests-table td {
     padding: 12px 16px;
@@ -1781,6 +1785,10 @@ code[class*="language-"] {
 
 .outbound-requests-table td:nth-child(2) {
     text-align: center;
+}
+
+.outbound-requests-table td:nth-child(7) {
+    display: none; /* 错误信息列 - 已隐藏 */
 }
 
 .outbound-requests-table tbody tr {

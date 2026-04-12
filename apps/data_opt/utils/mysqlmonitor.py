@@ -62,7 +62,7 @@ from pymysqlreplication.row_event import (
     DeleteRowsEvent,
 )
 
-from config.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_DBMONITOR, TURNON_BINLOG_POSITION_MANAGER
+from config.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_DBMONITOR, TURNON_BINLOG_POSITION_MANAGER, MYAPS_ROOT_PASSWORD
 from globalobjects import logger as log_config
 from apps.common.utils.thread_pool_manager import global_pool_manager
 import os
@@ -148,6 +148,7 @@ class ConnectionHealthChecker:
         self.mysql_settings = mysql_settings
         self.check_interval = check_interval  # 检查间隔（秒）
         self._is_healthy = True
+        self._is_config_valid = True
         self._last_check_time = 0
         self._lock = threading.RLock()
         self._stop_event = threading.Event()
@@ -169,7 +170,7 @@ class ConnectionHealthChecker:
     def is_healthy(self) -> bool:
         """获取当前健康状态"""
         with self._lock:
-            return self._is_healthy
+            return self._is_healthy and self._is_config_valid
     
     def check_connection(self) -> bool:
         """执行一次连接检查"""
@@ -205,6 +206,50 @@ class ConnectionHealthChecker:
                     self._send_alert(f"MySQL 连接健康检查失败: {e}", "warning")
             return False
     
+    def check_config(self) -> bool:
+        """执行一次配置检查"""
+        # 如果未启用数据库监控，跳过配置检查
+        if not TURNON_DBMONITOR:
+            with self._lock:
+                # 未启用监控时，将配置状态设置为有效
+                self._is_config_valid = True
+            return True
+        
+        try:
+            # 调用配置验证函数
+            is_valid = is_mysql_config_valid()
+            
+            # 如果配置无效，尝试自动修正
+            if not is_valid:
+                logger.info("🔧 配置无效，尝试自动修正...")
+                try:
+                    set_binlog_params()
+                    logger.success("配置修正", "MySQL", "已尝试自动修正配置")
+                    # 修正后再次检查
+                    is_valid = is_mysql_config_valid()
+                except Exception as fix_error:
+                    logger.error("配置修正", f"自动修正失败: {fix_error}")
+            
+            with self._lock:
+                if not self._is_config_valid and is_valid:
+                    self._is_config_valid = True
+                    logger.success("健康检查", "MySQL", "配置已恢复")
+                    self._send_alert("MySQL 配置已恢复", "info")
+                elif self._is_config_valid and not is_valid:
+                    self._is_config_valid = False
+                    logger.warning("⚠️ 配置检查失败: MySQL 配置不符合要求")
+                    self._send_alert("MySQL 配置检查失败，请检查 binlog 配置", "warning")
+            
+            return is_valid
+            
+        except Exception as e:
+            with self._lock:
+                if self._is_config_valid:
+                    self._is_config_valid = False
+                    logger.warning(f"⚠️ 配置检查失败: {e}")
+                    self._send_alert(f"MySQL 配置检查失败: {e}", "warning")
+            return False
+    
     def start(self):
         """启动健康检查线程"""
         if self._check_thread is None or not self._check_thread.is_alive():
@@ -228,6 +273,7 @@ class ConnectionHealthChecker:
         """健康检查循环"""
         while not self._stop_event.is_set():
             self.check_connection()
+            self.check_config()
             # 使用事件等待，支持快速退出
             self._stop_event.wait(self.check_interval)
 
@@ -1188,6 +1234,70 @@ mysql_monitor = MySQLBinlogMonitor()
 #    mysql_monitor.stop_monitoring()
 
 
+def is_mysql_config_valid() -> bool:
+    """
+    验证MySQL数据库配置是否符合监控要求
+
+    功能：
+    1. 连接到MySQL数据库
+    2. 检查所有必需的binlog配置项
+    3. 返回验证结果
+    
+    Returns:
+        bool: 当所有配置项都符合要求时返回True，其他情况返回False
+    """
+
+    import pymysql
+
+    # 数据库连接信息
+    db_host = MYAPS_DB_HOST
+    db_port = MYAPS_DB_PORT
+    db_user = "root"
+    db_password = MYAPS_ROOT_PASSWORD
+
+    logger.info("🚀 开始验证MySQL配置...")
+    logger.info(f"🔗 连接到数据库: {db_host}:{db_port}")
+
+    var_result = {
+        "log_bin": "ON",
+        "binlog_format": "ROW",
+        "binlog_row_metadata": "FULL",
+        "binlog_row_image": "FULL",
+    }
+
+    try:
+        # 连接数据库
+        conn = pymysql.connect(
+            host=db_host,
+            port=db_port,
+            user=db_user,
+            password=db_password,
+            connect_timeout=5
+        )
+        
+        logger.success("数据库连接成功")
+        
+        with conn.cursor() as cursor:
+            # 检查所有必需的配置项
+            for config_name, expected_value in config_required.items():
+                cursor.execute(f"SHOW VARIABLES LIKE '{config_name}';")
+                result = cursor.fetchone()
+                if not result or result[1] != expected_value:
+                    logger.fail("验证配置", f"{config_name} 设置错误: {result[1] if result else '无法获取'}")
+                    conn.close()
+                    return False
+                logger.success("验证配置", f"{config_name}: {result[1]}")
+        
+        conn.close()
+        logger.success("MySQL 配置验证通过")
+        return True
+        
+    except Exception as e:
+        error_msg = f"连接数据库失败: {str(e)}"
+        logger.error("验证MySQL配置", error_msg)
+        return False
+
+
 def set_binlog_params():
     """
     设置MySQL binlog参数脚本（简化版）
@@ -1205,7 +1315,7 @@ def set_binlog_params():
     db_host = MYAPS_DB_HOST
     db_port = MYAPS_DB_PORT
     db_user = "root"
-    db_password = "E9damw0o@#$"
+    db_password = MYAPS_ROOT_PASSWORD
 
     logger.info("🚀 开始设置binlog参数...")
     logger.info(f"🔗 连接到数据库: {db_host}:{db_port}")

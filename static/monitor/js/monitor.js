@@ -741,16 +741,9 @@ function updateLastUpdateTime() {
 
 // 页面切换逻辑
 let currentPage = 'overview';
-// 记录用户点击页签时的异常状态（是否有异常）
-let badgeConfirmedHasError = {
-    'api-requests': false,
-    'outbound-requests': false
-};
-// 记录实际的异常状态
-let actualErrorState = {
-    'api-requests': false,
-    'outbound-requests': false
-};
+// 标记是否需要将请求标记为已读
+let shouldMarkAPIRequestsAsRead = false;
+let shouldMarkOutboundRequestsAsRead = false;
 
 document.addEventListener('DOMContentLoaded', () => {
     initNavigation();
@@ -768,6 +761,16 @@ function initNavigation() {
 }
 
 function switchPage(pageName) {
+    // 处理接收请求和发送请求的特殊逻辑，即使是当前页面也需要执行
+    if (pageName === 'api-requests') {
+        shouldMarkAPIRequestsAsRead = true;
+        fetchAPIRequests();
+    } else if (pageName === 'outbound-requests') {
+        shouldMarkOutboundRequestsAsRead = true;
+        fetchOutboundRequests();
+    }
+    
+    // 如果是当前页面，只处理数据刷新和角标逻辑，不切换页面显示
     if (currentPage === pageName) return;
     
     currentPage = pageName;
@@ -788,24 +791,8 @@ function switchPage(pageName) {
         targetPage.style.display = 'grid';
     }
     
-    // 当切换到接收请求或发送请求页签时，关闭对应的红点角标并记录当前异常状态
-    if (pageName === 'api-requests') {
-        const apiRequestsBadge = document.getElementById('api-requests-badge');
-        if (apiRequestsBadge) {
-            // 记录点击时的异常状态（使用实际的异常状态）
-            badgeConfirmedHasError['api-requests'] = actualErrorState['api-requests'];
-            apiRequestsBadge.style.display = 'none';
-        }
-        fetchAPIRequests();
-    } else if (pageName === 'outbound-requests') {
-        const outboundRequestsBadge = document.getElementById('outbound-requests-badge');
-        if (outboundRequestsBadge) {
-            // 记录点击时的异常状态（使用实际的异常状态）
-            badgeConfirmedHasError['outbound-requests'] = actualErrorState['outbound-requests'];
-            outboundRequestsBadge.style.display = 'none';
-        }
-        fetchOutboundRequests();
-    } else if (pageName === 'database') {
+    // 处理其他页面的逻辑
+    if (pageName === 'database') {
         fetchDatabaseDetail();
         initDatabaseTabs();
         switchDatabaseTab('detail');
@@ -1089,18 +1076,39 @@ function updateAPIRequestsDisplay(data) {
     // 根据时间戳倒序排序
     filteredRequests.sort((a, b) => b.timestamp - a.timestamp);
     
-    // 更新接收请求页签的红点角标（仅在异常状态发生变化时显示）
+    // 如果需要标记为已读，则将所有400+请求标记为已读
+    if (shouldMarkAPIRequestsAsRead) {
+        const readStatus = getAPIRequestReadStatus();
+        filteredRequests.forEach(req => {
+            if (req.status_code >= 400) {
+                const requestId = generateAPIRequestId(req.timestamp, req.method, req.path, req.status_code);
+                readStatus.add(requestId);
+            }
+        });
+        saveAPIRequestReadStatus(readStatus);
+        shouldMarkAPIRequestsAsRead = false;
+    }
+    
+    // 获取已读状态
+    const readStatus = getAPIRequestReadStatus();
+    
+    // 检查是否有未读的400+请求
+    const hasUnreadErrors = filteredRequests.some(req => {
+        if (req.status_code >= 400) {
+            const requestId = generateAPIRequestId(req.timestamp, req.method, req.path, req.status_code);
+            return !readStatus.has(requestId);
+        }
+        return false;
+    });
+    
+    // 更新接收请求页签的红点角标
     const apiRequestsBadge = document.getElementById('api-requests-badge');
     if (apiRequestsBadge) {
-        const hasErrors = filteredRequests.some(req => req.status_code >= 400);
-        actualErrorState['api-requests'] = hasErrors;
-        const confirmedHasError = badgeConfirmedHasError['api-requests'];
-        const errorStateChanged = hasErrors !== confirmedHasError;
-        apiRequestsBadge.style.display = errorStateChanged ? 'inline-block' : 'none';
+        apiRequestsBadge.style.display = hasUnreadErrors ? 'inline-block' : 'none';
     }
     
     if (filteredRequests.length === 0) {
-        tbodyEl.innerHTML = '<tr><td colspan="8" class="empty-state">暂无 API 请求记录</td></tr>';
+        tbodyEl.innerHTML = '<tr><td colspan="7" class="empty-state">暂无 API 请求记录</td></tr>';
         return;
     }
     
@@ -1576,6 +1584,70 @@ function saveReadStatusToStorage(readStatus) {
     }
 }
 
+// 生成接收请求唯一 ID
+function generateAPIRequestId(timestamp, method, path, statusCode) {
+    const str = `${timestamp}:${method}:${path}:${statusCode}`;
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
+    }
+    return Math.abs(hash).toString(16);
+}
+
+// 生成发送请求唯一 ID
+function generateOutboundRequestId(timestamp, method, url, statusCode) {
+    const str = `${timestamp}:${method}:${url}:${statusCode}`;
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
+    }
+    return Math.abs(hash).toString(16);
+}
+
+// 从 localStorage 获取接收请求已读状态
+function getAPIRequestReadStatus() {
+    try {
+        const stored = localStorage.getItem('monitor_api_request_read_status');
+        return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch (e) {
+        console.error('读取接收请求已读状态失败:', e);
+        return new Set();
+    }
+}
+
+// 保存接收请求已读状态到 localStorage
+function saveAPIRequestReadStatus(readStatus) {
+    try {
+        localStorage.setItem('monitor_api_request_read_status', JSON.stringify(Array.from(readStatus)));
+    } catch (e) {
+        console.error('保存接收请求已读状态失败:', e);
+    }
+}
+
+// 从 localStorage 获取发送请求已读状态
+function getOutboundRequestReadStatus() {
+    try {
+        const stored = localStorage.getItem('monitor_outbound_request_read_status');
+        return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch (e) {
+        console.error('读取发送请求已读状态失败:', e);
+        return new Set();
+    }
+}
+
+// 保存发送请求已读状态到 localStorage
+function saveOutboundRequestReadStatus(readStatus) {
+    try {
+        localStorage.setItem('monitor_outbound_request_read_status', JSON.stringify(Array.from(readStatus)));
+    } catch (e) {
+        console.error('保存发送请求已读状态失败:', e);
+    }
+}
+
 // 切换日志已读状态
 function toggleLogReadStatus(logId) {
     const readStatus = getReadStatusFromStorage();
@@ -2022,14 +2094,35 @@ async function fetchOutboundRequests() {
         
         updateOutboundRequestsTable(filteredRequests);
         
-        // 更新发送请求页签的红点角标（仅在异常状态发生变化时显示）
+        // 如果需要标记为已读，则将所有400+请求标记为已读
+        if (shouldMarkOutboundRequestsAsRead) {
+            const readStatus = getOutboundRequestReadStatus();
+            filteredRequests.forEach(req => {
+                if (req.status_code >= 400) {
+                    const requestId = generateOutboundRequestId(req.timestamp, req.method, req.url, req.status_code);
+                    readStatus.add(requestId);
+                }
+            });
+            saveOutboundRequestReadStatus(readStatus);
+            shouldMarkOutboundRequestsAsRead = false;
+        }
+        
+        // 获取已读状态
+        const readStatus = getOutboundRequestReadStatus();
+        
+        // 检查是否有未读的400+请求
+        const hasUnreadErrors = filteredRequests.some(req => {
+            if (req.status_code >= 400) {
+                const requestId = generateOutboundRequestId(req.timestamp, req.method, req.url, req.status_code);
+                return !readStatus.has(requestId);
+            }
+            return false;
+        });
+        
+        // 更新发送请求页签的红点角标
         const outboundRequestsBadge = document.getElementById('outbound-requests-badge');
         if (outboundRequestsBadge) {
-            const hasErrors = filteredRequests.some(req => req.status_code >= 400);
-            actualErrorState['outbound-requests'] = hasErrors;
-            const confirmedHasError = badgeConfirmedHasError['outbound-requests'];
-            const errorStateChanged = hasErrors !== confirmedHasError;
-            outboundRequestsBadge.style.display = errorStateChanged ? 'inline-block' : 'none';
+            outboundRequestsBadge.style.display = hasUnreadErrors ? 'inline-block' : 'none';
         }
     } catch (error) {
         console.error('获取发送请求数据失败:', error);
@@ -2066,6 +2159,11 @@ function updateOutboundRequestsTable(requests) {
     
     // 限制存储最近100条数据
     outboundRequestsData = requests.slice(0, 100);
+    
+    if (outboundRequestsData.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="6" class="empty-state">暂无发送请求记录</td></tr>';
+        return;
+    }
     
     // 使用文档片段减少DOM操作次数
     const fragment = document.createDocumentFragment();

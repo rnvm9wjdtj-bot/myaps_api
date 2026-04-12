@@ -92,6 +92,7 @@ MYAPS_DB_HOST = os.getenv("MYAPS_DB_HOST") or json_env_config.get("MYAPS_DB_HOST
 MYAPS_DB_PORT = int(os.getenv("MYAPS_DB_PORT") or json_env_config.get("MYAPS_DB_PORT") or 3333)
 MYAPS_DB_USER = os.getenv("MYAPS_DB_USER") or json_env_config.get("MYAPS_DB_USER")
 MYAPS_DB_PASSWORD = os.getenv("MYAPS_DB_PASSWORD") or json_env_config.get("MYAPS_DB_PASSWORD")
+MYAPS_ROOT_PASSWORD = os.getenv("MYAPS_ROOT_PASSWORD") or json_env_config.get("MYAPS_ROOT_PASSWORD") or "E9damw0o@#"
 MYAPS_DB_SET = os.getenv("MYAPS_DB_SET") or json_env_config.get("MYAPS_DB_SET")
 if not MYAPS_DB_SET:
     logger.warning_msg("环境变量配置", "MYAPS_DB_SET 未设置")
