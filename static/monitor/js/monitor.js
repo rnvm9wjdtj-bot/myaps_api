@@ -9,9 +9,37 @@ let originalTitle = document.title;
 let titleAlertInterval = null;
 // 存储发送请求数据
 let outboundRequestsData = [];
+// 存储实际错误状态
+let actualErrorState = {};
+// 存储已确认的错误状态（用于比较状态变化）
+let badgeConfirmedHasError = {};
+
+// 从localStorage加载已确认的错误状态
+function loadBadgeConfirmedHasError() {
+    try {
+        const stored = localStorage.getItem('badgeConfirmedHasError');
+        if (stored) {
+            badgeConfirmedHasError = JSON.parse(stored);
+        }
+    } catch (error) {
+        console.error('加载已确认错误状态失败:', error);
+        badgeConfirmedHasError = {};
+    }
+}
+
+// 保存已确认的错误状态到localStorage
+function saveBadgeConfirmedHasError() {
+    try {
+        localStorage.setItem('badgeConfirmedHasError', JSON.stringify(badgeConfirmedHasError));
+    } catch (error) {
+        console.error('保存已确认错误状态失败:', error);
+    }
+}
 
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
+    // 加载已确认的错误状态
+    loadBadgeConfirmedHasError();
     initResourceChart();
     fetchEnvironment();
     refreshAll();
@@ -579,6 +607,10 @@ function updateHTTPDisplay(data) {
         const confirmedHasError = badgeConfirmedHasError['api-requests'];
         const errorStateChanged = hasErrors !== confirmedHasError;
         apiRequestsBadge.style.display = errorStateChanged ? 'inline-block' : 'none';
+        // 更新已确认的错误状态，确保下次比较正确
+        badgeConfirmedHasError['api-requests'] = hasErrors;
+        // 保存已确认的错误状态到localStorage
+        saveBadgeConfirmedHasError();
     }
 
     // 更新状态码分布（如果元素存在）
@@ -2683,6 +2715,10 @@ async function fetchOverviewOutboundRequests() {
             const confirmedHasError = badgeConfirmedHasError['outbound-requests'];
             const errorStateChanged = hasErrors !== confirmedHasError;
             outboundRequestsBadge.style.display = errorStateChanged ? 'inline-block' : 'none';
+            // 更新已确认的错误状态，确保下次比较正确
+            badgeConfirmedHasError['outbound-requests'] = hasErrors;
+            // 保存已确认的错误状态到localStorage
+            saveBadgeConfirmedHasError();
         }
     } catch (error) {
         console.error('获取overview页面发送请求数据失败:', error);
