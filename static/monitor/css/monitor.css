@@ -5,11 +5,18 @@
     --success-color: #52c41a;
     --warning-color: #faad14;
     --error-color: #f5222d;
+    --attention-color: #fa7d16;
     --bg-color: #f0f2f5;
     --card-bg: #ffffff;
     --text-primary: #262626;
     --text-secondary: #8c8c8c;
     --border-color: #e8e8e8;
+    --mono-font: 'JetBrains Mono', 'Menlo', 'Source Code Pro', 'Consolas', monospace;
+}
+
+/* 等宽字体样式 */
+.font-mono {
+    font-family: var(--mono-font);
 }
 
 * {
@@ -66,6 +73,7 @@ body {
 #last-update {
     color: var(--text-secondary);
     font-size: 13px;
+    font-family: var(--mono-font);
 }
 
 /* 按钮样式 */
@@ -437,6 +445,28 @@ body {
     font-size: 12px;
 }
 
+/* 告警更新闪烁动画 */
+@keyframes alertFlash {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.alert-flashing {
+    animation: alertFlash 1s ease-in-out infinite;
+    box-shadow: 0 0 10px rgba(250, 140, 22, 0.5);
+}
+
+/* 最后更新时间动画 */
+@keyframes updateFlash {
+    0% { opacity: 0.5; transform: scale(0.95); }
+    50% { opacity: 1; transform: scale(1.05); }
+    100% { opacity: 1; transform: scale(1); }
+}
+
+.update-flashing {
+    animation: updateFlash 1s ease-in-out;
+}
+
 /* HTTP 监控 */
 .http-summary {
     display: flex;
@@ -517,8 +547,8 @@ body {
 
 .http-path-name {
     font-weight: 500;
-    font-family: monospace;
     font-size: 12px;
+    font-family: var(--mono-font);
 }
 
 .http-path-stats {
@@ -634,7 +664,7 @@ body {
     background: rgba(0, 0, 0, 0.05);
     padding: 8px;
     border-radius: 4px;
-    font-family: monospace;
+    font-family: var(--mono-font);
     font-size: 11px;
     max-height: 120px;
     overflow-y: auto;
@@ -790,11 +820,11 @@ body {
 }
 
 .api-requests-table th:nth-child(1) { width: 140px; } /* 时间戳 */
-.api-requests-table th:nth-child(2) { width: 80px; text-align: center; }  /* 方法 */
+.api-requests-table th:nth-child(2) { width: 60px; text-align: center; }  /* 方法 */
 .api-requests-table th:nth-child(3) { max-width: 30%; width: 30%; }  /* 路径 */
 .api-requests-table th:nth-child(4) { width: 120px; }  /* 查询参数 */
-.api-requests-table th:nth-child(5) { width: 80px; }  /* 状态码 */
-.api-requests-table th:nth-child(6) { width: 100px; } /* 响应时间 */
+.api-requests-table th:nth-child(5) { width: 120px; }  /* 状态码 */
+.api-requests-table th:nth-child(6) { width: 80px; text-align: right; } /* 响应时间 */
 .api-requests-table th:nth-child(7) { width: 100px; } /* 客户端IP */
 .api-requests-table th:nth-child(8) { display: none; } /* 错误信息 - 已隐藏 */
 
@@ -820,6 +850,22 @@ body {
 
 .api-requests-table td:nth-child(8) {
     display: none; /* 错误信息列 - 已隐藏 */
+}
+
+.api-requests-table td:nth-child(1),
+.api-requests-table td:nth-child(5),
+.api-requests-table td:nth-child(6),
+.api-requests-table td:nth-child(7) {
+    font-family: var(--mono-font);
+}
+
+.api-requests-table td:nth-child(5) {
+    white-space: nowrap;
+}
+
+.api-requests-table td:nth-child(6) {
+    text-align: right;
+    white-space: nowrap;
 }
 
 /* 日志表格列样式 */
@@ -853,6 +899,11 @@ body {
     white-space: nowrap;
     min-width: 60px;
     text-align: center;
+}
+
+.logs-table td:nth-child(1),
+.logs-table td:nth-child(3) {
+    font-family: var(--mono-font);
 }
 
 .api-requests-table tbody tr:hover, .logs-table tbody tr:hover {
@@ -891,7 +942,7 @@ body {
 
 .api-method.patch {
     background: #fff7e6;
-    color: #fa8c16;
+    color: var(--attention-color);
 }
 
 .api-method.delete {
@@ -1137,12 +1188,12 @@ body {
 }
 
 .scheduler-countdown {
+    font-family: var(--mono-font);
     font-size: 14px;
     color: var(--primary-color);
     display: block;
     margin-top: 4px;
     font-weight: 500;
-    font-family: monospace;
 }
 
 /* 时间轴右侧内容区域 */
@@ -1193,12 +1244,13 @@ body {
 }
 
 .scheduler-detail-value {
+    font-family: var(--mono-font);
     font-weight: 500;
     color: var(--text-primary);
     text-align: left;
     padding: 4px 0;
     word-break: break-all;
-    font-family: 'JetBrains Mono', 'Consolas', 'Monaco', 'Menlo', 'Source Code Pro', monospace /* 定时规则使用等宽字体 */
+    /* 定时规则使用等宽字体 */
     /* font-size: 15px; */
 }
 
@@ -1376,7 +1428,7 @@ body {
     padding: 12px;
     border-radius: 6px;
     border: 1px solid var(--border-color);
-    font-family: monospace;
+    font-family: var(--mono-font);
     font-size: 12px;
     line-height: 1.5;
     height: 500px;
@@ -1386,7 +1438,6 @@ body {
 }
 
 .api-detail-body code {
-    font-family: monospace;
     font-size: 12px;
 }
 
@@ -1770,10 +1821,10 @@ code[class*="language-"] {
 }
 
 .outbound-requests-table th:nth-child(1) { width: 140px; } /* 时间戳 */
-.outbound-requests-table th:nth-child(2) { width: 80px; text-align: center; }  /* 方法 */
+.outbound-requests-table th:nth-child(2) { width: 60px; text-align: center; }  /* 方法 */
 .outbound-requests-table th:nth-child(3) { max-width: 40%; width: 40%; }  /* URL */
-.outbound-requests-table th:nth-child(4) { width: 80px; }  /* 状态码 */
-.outbound-requests-table th:nth-child(5) { width: 100px; } /* 响应时间 */
+.outbound-requests-table th:nth-child(4) { width: 120px; }  /* 状态码 */
+.outbound-requests-table th:nth-child(5) { width: 80px; text-align: right; } /* 响应时间 */
 .outbound-requests-table th:nth-child(6) { width: 150px; } /* 模块 */
 .outbound-requests-table th:nth-child(7) { display: none; } /* 错误信息 - 已隐藏 */
 
@@ -1822,6 +1873,23 @@ code[class*="language-"] {
     padding: 8px 12px;
 }
 
+.outbound-requests-table td:nth-child(1),
+.outbound-requests-table td:nth-child(3),
+.outbound-requests-table td:nth-child(4),
+.outbound-requests-table td:nth-child(5),
+.outbound-requests-table td:nth-child(6) {
+    font-family: var(--mono-font);
+}
+
+.outbound-requests-table td:nth-child(4) {
+    white-space: nowrap;
+}
+
+.outbound-requests-table td:nth-child(5) {
+    text-align: right;
+    white-space: nowrap;
+}
+
 .outbound-requests-table .method.get {
     background: #e6f7ff;
     color: var(--primary-color);
@@ -1839,7 +1907,7 @@ code[class*="language-"] {
 
 .outbound-requests-table .method.patch {
     background: #fff7e6;
-    color: #fa8c16;
+    color: var(--attention-color);
 }
 
 .outbound-requests-table .method.delete {

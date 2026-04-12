@@ -282,6 +282,9 @@ function getProgressClass(value) {
     return '';
 }
 
+// 存储上一次的告警列表
+let previousAlerts = [];
+
 // 格式化运行时间
 function formatUptime(seconds) {
     const days = Math.floor(seconds / 86400);
@@ -289,11 +292,11 @@ function formatUptime(seconds) {
     const minutes = Math.floor((seconds % 3600) / 60);
 
     if (days > 0) {
-        return `${days}天 ${hours}小时`;
+        return `${days}d ${hours}h`;
     } else if (hours > 0) {
-        return `${hours}小时 ${minutes}分钟`;
+        return `${hours}h ${minutes}m`;
     } else {
-        return `${minutes}分钟`;
+        return `${minutes}m`;
     }
 }
 
@@ -633,15 +636,47 @@ function updateAlertsDisplay(alerts) {
 
     if (alerts.length === 0) {
         listEl.innerHTML = '<div class="empty-state">暂无告警</div>';
+        previousAlerts = [];
         return;
     }
 
-    listEl.innerHTML = alerts.map(alert => `
-        <div class="alert-item ${alert.level}">
-            <span class="alert-message">${alert.message}</span>
-            <span class="alert-time">${formatTimeAgo(alert.timestamp)}</span>
-        </div>
-    `).join('');
+    // 生成告警类型标识
+    const getAlertType = (alert) => {
+        return `${alert.source}_${alert.message.split(':')[0]}`;
+    };
+
+    // 生成告警HTML
+    const alertElements = alerts.map(alert => {
+        const alertType = getAlertType(alert);
+        // 检查是否是更新的告警
+        const isUpdated = previousAlerts.some(prevAlert => {
+            return getAlertType(prevAlert) === alertType && prevAlert.timestamp !== alert.timestamp;
+        });
+        const updatedClass = isUpdated ? 'alert-updated' : '';
+        
+        return `
+            <div class="alert-item ${alert.level} ${updatedClass}">
+                <span class="alert-message">${alert.message}</span>
+                <span class="alert-time">${formatTimeAgo(alert.timestamp)}</span>
+            </div>
+        `;
+    }).join('');
+
+    listEl.innerHTML = alertElements;
+
+    // 为更新的告警添加闪烁效果
+    const updatedAlerts = listEl.querySelectorAll('.alert-updated');
+    updatedAlerts.forEach(alertEl => {
+        // 添加闪烁动画类
+        alertEl.classList.add('alert-flashing');
+        // 10秒后移除闪烁效果
+        setTimeout(() => {
+            alertEl.classList.remove('alert-flashing');
+        }, 10000);
+    });
+
+    // 更新上一次的告警列表
+    previousAlerts = [...alerts];
 }
 
 // 格式化相对时间
@@ -734,9 +769,20 @@ function updateLogsDisplay(logs) {
 
 // 更新最后更新时间
 function updateLastUpdateTime() {
+    const lastUpdateEl = document.getElementById('last-update');
     const now = new Date();
     const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
-    document.getElementById('last-update').textContent = `最后更新: ${timeStr}`;
+    
+    // 添加动画效果
+    lastUpdateEl.classList.add('update-flashing');
+    
+    // 更新时间
+    lastUpdateEl.textContent = `最后更新  ${timeStr}`;
+    
+    // 1秒后移除动画效果
+    setTimeout(() => {
+        lastUpdateEl.classList.remove('update-flashing');
+    }, 1000);
 }
 
 // 页面切换逻辑
@@ -1176,8 +1222,8 @@ function updateAPIRequestsDisplay(data) {
             <tr onclick="showRequestDetail(${index})" data-request-index="${index}">
                 <td>${timeStr}</td>
                 <td><span class="api-method ${methodClass}">${req.method}</span></td>
-                <td style="font-family: monospace; font-size: 12px;">${req.path}</td>
-                <td style="font-family: monospace; font-size: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${queryParamsDisplay}">${queryParamsDisplay || '-'}</td>
+                <td class="font-mono" style="font-size: 12px;">${req.path}</td>
+                <td class="font-mono" style="font-size: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${queryParamsDisplay}">${queryParamsDisplay || '-'}</td>
                 <td><span class="api-status ${statusClass}">${statusText}</span></td>
                 <td class="${durationClass}">${durationMs.toFixed(0)}ms</td>
                 <td>${req.client_ip}</td>
@@ -1266,7 +1312,7 @@ function showRequestDetail(index) {
         </div>
         <div class="api-detail-info-item">
             <span class="api-detail-info-label">查询参数</span>
-            <span class="api-detail-info-value" style="font-family: monospace; font-size: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${queryParamsDisplay}">${queryParamsDisplay || '-'}</span>
+            <span class="api-detail-info-value font-mono" style="font-size: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${queryParamsDisplay}">${queryParamsDisplay || '-'}</span>
         </div>
         <div class="api-detail-info-item">
             <span class="api-detail-info-label">状态码</span>
@@ -2180,6 +2226,26 @@ function updateOutboundRequestsTable(requests) {
     tableBody.appendChild(fragment);
 }
 
+// 获取状态码描述
+function getStatusDescription(statusCode) {
+    const statusDescriptions = {
+        200: 'OK',
+        201: 'Created',
+        202: 'Accepted',
+        204: 'No Content',
+        400: 'Bad Request',
+        401: 'Unauthorized',
+        403: 'Forbidden',
+        404: 'Not Found',
+        405: 'Method Not Allowed',
+        500: 'Internal Server Error',
+        501: 'Not Implemented',
+        502: 'Bad Gateway',
+        503: 'Service Unavailable'
+    };
+    return statusDescriptions[statusCode] || '';
+}
+
 // 格式化发送请求行
 function formatOutboundRequestRow(request, index) {
     const date = new Date(request.timestamp * 1000);
@@ -2188,12 +2254,16 @@ function formatOutboundRequestRow(request, index) {
     const statusClass = request.status_code >= 400 ? 'error' : 'success';
     const durationClass = request.duration > 1 ? 'slow' : '';
     
+    // 获取状态码描述
+    const statusDescription = getStatusDescription(request.status_code);
+    const statusText = statusDescription ? `${request.status_code} ${statusDescription}` : `${request.status_code}`;
+    
     return `
     <tr data-request-index="${index}">
         <td>${timestamp}</td>
         <td><span class="method ${request.method.toLowerCase()}">${request.method}</span></td>
         <td class="url">${request.url}</td>
-        <td class="status ${statusClass}">${request.status_code}</td>
+        <td class="status ${statusClass}">${statusText}</td>
         <td class="duration ${durationClass}">${duration}ms</td>
         <td>${request.module || 'unknown'}</td>
         <td class="error-message">${request.error_message || '-'}</td>

@@ -191,6 +191,23 @@ class MonitorService:
 
     def _add_alert(self, level: str, message: str, source: str):
         """添加告警"""
+        # 生成告警类型标识（基于来源和消息内容的前半部分）
+        alert_type = f"{source}_{message.split(':')[0]}"
+        
+        # 检查是否存在相同类型的告警
+        for i, existing_alert in enumerate(self._alerts):
+            existing_type = f"{existing_alert['source']}_{existing_alert['message'].split(':')[0]}"
+            if existing_type == alert_type:
+                # 替换为新的告警
+                self._alerts[i] = {
+                    "level": level,
+                    "message": message,
+                    "timestamp": time.time(),
+                    "source": source,
+                }
+                return
+        
+        # 如果不存在相同类型的告警，添加新告警
         alert = {
             "level": level,
             "message": message,
@@ -205,9 +222,18 @@ class MonitorService:
 
     def get_recent_alerts(self, limit: int = 10) -> List[Dict[str, Any]]:
         """获取最近告警"""
+        # 定义告警级别优先级
+        level_priority = {
+            "critical": 4,
+            "error": 3,
+            "warning": 2,
+            "info": 1
+        }
+        
+        # 先按级别优先级排序，再按时间戳排序
         return sorted(
             self._alerts,
-            key=lambda x: x["timestamp"],
+            key=lambda x: (level_priority.get(x["level"], 0), x["timestamp"]),
             reverse=True
         )[:limit]
 

@@ -33,7 +33,7 @@ if defined HOST set "PS_ARGS=%PS_ARGS% -HostAddress %HOST%"
 if defined PORT set "PS_ARGS=%PS_ARGS% -Port %PORT%"
 
 :: 执行 PowerShell 脚本
-powershell -ExecutionPolicy Bypass -Command "& '%PS_SCRIPT%' %PS_ARGS% %*"
+powershell -ExecutionPolicy Bypass -NoProfile -Command "& '%PS_SCRIPT%' %PS_ARGS% %*"
 
 :: 检查退出码（0=正常退出，非0=异常退出）
 if %errorlevel% equ 0 (

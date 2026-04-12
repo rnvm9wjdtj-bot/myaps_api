@@ -182,7 +182,7 @@ class SchedulerManager:
                     # 转换为秒，确保至少有30秒的执行时间，最多不超过1小时
                     max_time = max(time_diff.total_seconds() - 10, 30)
                     max_time = min(max_time, 3600)  # 最多1小时
-                    logger.debug(f"任务 {task_name} 的最大执行时间: {max_time:.2f} 秒")
+                    # logger.debug(f"任务 {task_name} 的最大执行时间: {max_time:.2f} 秒")
                     return max_time
         
         # 默认最大执行时间：5分钟
@@ -363,7 +363,7 @@ class SchedulerManager:
             description = self._job_descriptions.get(job.id)
             
             # 打印调试信息
-            logger.debug(f"任务 {job.id} 的信息: last_run_time={last_run_time}, last_error={last_error}, execution_history_length={len(execution_history)}, description={description}")
+            # logger.debug(f"任务 {job.id} 的信息: last_run_time={last_run_time}, last_error={last_error}, execution_history_length={len(execution_history)}, description={description}")
             
             jobs.append({
                 'id': job.id,
@@ -377,7 +377,7 @@ class SchedulerManager:
             })
         
         # 打印返回的任务列表
-        logger.debug(f"返回的任务列表: {jobs}")
+        # logger.debug(f"返回的任务列表: {jobs}")
         return jobs
 
 # 全局调度器实例

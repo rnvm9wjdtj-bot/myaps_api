@@ -51,7 +51,7 @@ SHOW VARIABLES LIKE 'binlog_format';  -- 推荐ROW模式
 """
 
 
-import os, asyncio, time, logging, threading, concurrent.futures, json, pickle
+import os, asyncio, time, logging, threading, concurrent.futures, json, pickle, pymysql
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, Callable
 # from functools import wraps
@@ -175,7 +175,6 @@ class ConnectionHealthChecker:
     def check_connection(self) -> bool:
         """执行一次连接检查"""
         try:
-            import pymysql
             conn_params = {
                 "host": self.mysql_settings["host"],
                 "port": int(self.mysql_settings["port"]),
@@ -273,7 +272,7 @@ class ConnectionHealthChecker:
         """健康检查循环"""
         while not self._stop_event.is_set():
             self.check_connection()
-            self.check_config()
+            # self.check_config()
             # 使用事件等待，支持快速退出
             self._stop_event.wait(self.check_interval)
 
@@ -395,7 +394,6 @@ class MySQLBinlogMonitor:
         
         # 测试连接
         try:
-            import pymysql
             conn_params = {
                 "host": self.mysql_settings["host"],
                 "port": int(self.mysql_settings["port"]),
@@ -492,7 +490,6 @@ class MySQLBinlogMonitor:
         # 尝试实时查询表结构
         conn = None
         try:
-            import pymysql
             conn_params = {
                 "host": self.mysql_settings["host"],
                 "port": int(self.mysql_settings["port"]),
@@ -1247,8 +1244,6 @@ def is_mysql_config_valid() -> bool:
         bool: 当所有配置项都符合要求时返回True，其他情况返回False
     """
 
-    import pymysql
-
     # 数据库连接信息
     db_host = MYAPS_DB_HOST
     db_port = MYAPS_DB_PORT
@@ -1269,7 +1264,7 @@ def is_mysql_config_valid() -> bool:
         # 连接数据库
         conn = pymysql.connect(
             host=db_host,
-            port=db_port,
+            port=int(db_port),
             user=db_user,
             password=db_password,
             connect_timeout=5
@@ -1279,7 +1274,7 @@ def is_mysql_config_valid() -> bool:
         
         with conn.cursor() as cursor:
             # 检查所有必需的配置项
-            for config_name, expected_value in config_required.items():
+            for config_name, expected_value in var_result.items():
                 cursor.execute(f"SHOW VARIABLES LIKE '{config_name}';")
                 result = cursor.fetchone()
                 if not result or result[1] != expected_value:
@@ -1308,9 +1303,6 @@ def set_binlog_params():
     3. 验证设置是否成功
     """
 
-    import pymysql
-    import os
-
     # 数据库连接信息
     db_host = MYAPS_DB_HOST
     db_port = MYAPS_DB_PORT
@@ -1324,7 +1316,7 @@ def set_binlog_params():
         # 连接数据库
         conn = pymysql.connect(
             host=db_host,
-            port=db_port,
+            port=int(db_port),
             user=db_user,
             password=db_password,
             connect_timeout=5
