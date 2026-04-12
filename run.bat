@@ -1,4 +1,5 @@
 @echo off
+title MyAPS API SERVER
 :: 配置变量
 set "PS_SCRIPT=%~dp0run.ps1"
 set "ENV_FILE=%~dp0.env"

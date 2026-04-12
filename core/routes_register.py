@@ -3,6 +3,7 @@ from fastapi.responses import HTMLResponse
 from apps.io_api.routers import rt as io_rt
 from apps.data_opt.routers import rt as do_rt
 from apps.common.monitor.routers import router as monitor_rt
+from apps.common.help.routers import router as help_rt
 
 router = APIRouter()
 
@@ -10,6 +11,7 @@ def register_routes(app):
     app.include_router(io_rt, prefix="/api", tags=[])
     app.include_router(do_rt, prefix="/do", tags=[])
     app.include_router(monitor_rt, tags=["monitor"])
+    app.include_router(help_rt, tags=["help"])
 
 
     @app.get("/monitor", response_class=HTMLResponse, include_in_schema=False)
