@@ -25,6 +25,7 @@ def get_session(
     connect_timeout: float = 15.0,
     read_timeout: float = 60.0,
     backoff_factor: float = 1.0,
+    enable_monitor: bool = True,
 ):
     # 配置重试策略
     retry_strategy = Retry(
@@ -65,10 +66,11 @@ def get_session(
     # 挂载适配器到HTTP和HTTPS协议
     request_session.mount("http://", adapter)
     request_session.mount("https://", adapter)
-
-    # 包装为监控客户端
-    from apps.common.monitor.http_client_wrapper import HTTPMonitorWrapper
-    return HTTPMonitorWrapper(request_session)
+    if enable_monitor:
+        # 包装为监控客户端
+        from apps.common.monitor.http_client_wrapper import HTTPMonitorWrapper
+        return HTTPMonitorWrapper(request_session)
+    return request_session
 
 
 def get_optimized_session(

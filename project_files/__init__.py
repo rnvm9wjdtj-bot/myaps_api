@@ -17,9 +17,20 @@ from globalobjects.globalconst import OrderStatusEnum
 from apps.io_api.utils.common import dict_to_lower_keys
 from globalobjects import logger as log_config
 from apps.data_opt.utils.scheduler import cron_task
+from apps.data_opt.components._base import ApsHelpers
+from apps.data_opt.utils.common import get_optimized_session
 
 
 logger = log_config.get_logger(__name__)
+
+# 创建HTTP会话，供本模块使用（使用连接池优化）
+_HTTP_SESSION = get_optimized_session(
+    retries=3,
+    pool_connections=50,
+    pool_maxsize=50,
+    connect_timeout=10.0,
+    read_timeout=30.0
+)
 
 
 # 确保环境变量正确设置
@@ -130,7 +141,15 @@ def handle_update_supply(database: str, table: str, data: dict, data_diff: dict)
     status_now = data_now['status']
 
     if type_now == 'PL' and status_now == "A2E" and status_before in ["NEW", "CRE"]:
+        plno = data_now['supplyno']
         # 工单管理界面中，通过点击按钮下达生产计划单PL
+        # ApsHelpers._modify_supply(supplyno=plno, memo=f"下达MO: {plno}")
+        try:
+            _HTTP_SESSION.patch(f'{THIS_BASE_URL}/api/t_supply/{plno}/...?db_name={MYAPS_MAIN_DB}', json={
+                'memo': f"📤 trying to push PL{plno}",
+            })
+        except Exception as e:
+            logger.error(f"更新memo失败: {e}")
         aps_pl_status_a2e_event.add_event(data_now)
     elif type_before == 'PL' and type_now == 'MO':
         # 当 PL下达成功后，推送领料申请（RS）

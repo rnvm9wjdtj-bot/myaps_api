@@ -228,10 +228,10 @@ def get_outbound_http_metrics():
 
 
 @router.get("/outbound-http/all", response_model=List[Dict[str, Any]])
-def get_all_outbound_http_requests(limit: int = 50):
+def get_all_outbound_http_requests():
     """获取所有对外 HTTP 请求"""
     from .collectors import outbound_http_collector
-    return outbound_http_collector.get_all_requests(limit)
+    return outbound_http_collector.get_all_requests()
 
 
 @router.get("/outbound-http/slow", response_model=List[Dict[str, Any]])

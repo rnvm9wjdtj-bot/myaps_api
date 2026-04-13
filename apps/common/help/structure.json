@@ -9,7 +9,7 @@
                     {
                         "name": "产品概述",
                         "url": "https://www.baidu.com",
-                        "icon": "file-text",
+                        "icon": "🔖",
                         "description": "了解产品的基本功能和特点，包括系统架构、核心功能和应用场景",
                         "updateAt": "2026-01-01"
                     }
@@ -57,10 +57,28 @@
                 "description": "用友系列ERP准备工作",
                 "children": [
                     {
-                        "name": "T+",
+                        "name": "畅捷通T+",
                         "url": "https://docs.qq.com/aio/DWEZvekZLRmdtVUJ5",
                         "icon": "📄",
-                        "description": "用友T+对接前，ERP方的准备事项",
+                        "description": "用友畅捷通T+对接前准备事项",
+                        "updateAt": "2026-03-01"
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "name": "对接实施",
+        "groups": [
+            {
+                "header": "用友",
+                "description": "用友系列ERP对接实施指引",
+                "children": [
+                    {
+                        "name": "畅捷通T+",
+                        "url": "https://d6ed58d2b2f5efe6.share.mingdao.net/public/view/696c5830b51b61852ff811e2",
+                        "icon": "🚩",
+                        "description": "用友畅捷通T+对接实施指引",
                         "updateAt": "2026-03-01"
                     }
                 ]

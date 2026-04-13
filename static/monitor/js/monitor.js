@@ -1252,6 +1252,7 @@ function updateAPIRequestsDisplay(data) {
         
         return `
             <tr onclick="showRequestDetail(${index})" data-request-index="${index}">
+                <td class="font-mono">${index + 1}</td>
                 <td>${timeStr}</td>
                 <td><span class="api-method ${methodClass}">${req.method}</span></td>
                 <td class="font-mono" style="font-size: 12px;">${req.path}</td>
@@ -1610,6 +1611,7 @@ function updateLogsPageDisplay(logs) {
         
         return `
             <tr data-log-id="${logId}" data-log-index="${index}" class="${readStatusClass}" onclick="showLogDetail(${index})">
+                <td class="font-mono">${index + 1}</td>
                 <td>${timeStr}</td>
                 <td><span class="log-level-badge ${log.level}">${log.level.toUpperCase()}</span></td>
                 <td>${log.module}</td>
@@ -2292,6 +2294,7 @@ function formatOutboundRequestRow(request, index) {
     
     return `
     <tr data-request-index="${index}">
+        <td class="font-mono">${index + 1}</td>
         <td>${timestamp}</td>
         <td><span class="method ${request.method.toLowerCase()}">${request.method}</span></td>
         <td class="url">${request.url}</td>

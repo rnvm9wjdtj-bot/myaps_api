@@ -7,12 +7,20 @@
 import time
 import asyncio
 import json
+import threading
 from typing import Dict, Any, List
 from collections import deque, defaultdict
 
 
 class OutboundHTTPCollector:
-    """对外 HTTP 请求收集器"""
+    """对外 HTTP 请求收集器（单例模式）"""
+    _instance = None
+    _initialized = False
+    
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
     
     def __init__(self, max_requests: int = 1000, slow_threshold: float = 1.0, max_url_stats: int = 1000, max_module_stats: int = 100):
         """
@@ -24,29 +32,32 @@ class OutboundHTTPCollector:
             max_url_stats: URL统计最大条目数
             max_module_stats: 模块统计最大条目数
         """
-        self._max_requests = max_requests
-        self._slow_threshold = slow_threshold
-        self._max_url_stats = max_url_stats
-        self._max_module_stats = max_module_stats
-        self._requests: deque = deque(maxlen=max_requests)
-        self._stats = {
-            "total_requests": 0,
-            "total_errors": 0,
-            "total_slow_requests": 0,
-            "url_stats": defaultdict(lambda: {
-                "count": 0,
-                "total_time": 0.0,
-                "errors": 0,
-                "slow_requests": 0,
-            }),
-            "status_codes": defaultdict(int),
-            "module_stats": defaultdict(lambda: {
-                "count": 0,
-                "total_time": 0.0,
-                "errors": 0,
-            }),
-        }
-        self._lock = asyncio.Lock()
+        if not self._initialized:
+            self._max_requests = max_requests
+            self._slow_threshold = slow_threshold
+            self._max_url_stats = max_url_stats
+            self._max_module_stats = max_module_stats
+            self._requests: deque = deque(maxlen=max_requests)
+            self._stats = {
+                "total_requests": 0,
+                "total_errors": 0,
+                "total_slow_requests": 0,
+                "url_stats": defaultdict(lambda: {
+                    "count": 0,
+                    "total_time": 0.0,
+                    "errors": 0,
+                    "slow_requests": 0,
+                }),
+                "status_codes": defaultdict(int),
+                "module_stats": defaultdict(lambda: {
+                    "count": 0,
+                    "total_time": 0.0,
+                    "errors": 0,
+                }),
+            }
+            self._lock = asyncio.Lock()
+            self._thread_lock = threading.Lock()
+            self._initialized = True
     
     async def record_request(
         self,
@@ -236,66 +247,77 @@ class OutboundHTTPCollector:
             "is_slow": duration >= self._slow_threshold,
         }
         
-        self._requests.append(request_info)
-        
-        # 更新统计
-        self._stats["total_requests"] += 1
-        if request_info["is_error"]:
-            self._stats["total_errors"] += 1
-        if request_info["is_slow"]:
-            self._stats["total_slow_requests"] += 1
-        
-        # URL 统计
-        url_key = f"{method} {url}"
-        self._stats["url_stats"][url_key]["count"] += 1
-        self._stats["url_stats"][url_key]["total_time"] += duration
-        if request_info["is_error"]:
-            self._stats["url_stats"][url_key]["errors"] += 1
-        if request_info["is_slow"]:
-            self._stats["url_stats"][url_key]["slow_requests"] += 1
-        
-        # 状态码统计
-        self._stats["status_codes"][status_code] += 1
-        
-        # 模块统计
-        if module:
-            self._stats["module_stats"][module]["count"] += 1
-            self._stats["module_stats"][module]["total_time"] += duration
-            if request_info["is_error"]:
-                self._stats["module_stats"][module]["errors"] += 1
+        # 使用线程锁保护共享资源
+        with self._thread_lock:
+            # 先添加请求记录，确保请求记录不会丢失
+            try:
+                self._requests.append(request_info)
+            except Exception as e:
+                print(f"添加请求记录时发生异常: {e}")
+            
+            # 更新统计信息，即使发生异常也不会影响请求记录的添加
+            try:
+                # 更新统计
+                self._stats["total_requests"] += 1
+                if request_info["is_error"]:
+                    self._stats["total_errors"] += 1
+                if request_info["is_slow"]:
+                    self._stats["total_slow_requests"] += 1
+                
+                # URL 统计
+                url_key = f"{method} {url}"
+                self._stats["url_stats"][url_key]["count"] += 1
+                self._stats["url_stats"][url_key]["total_time"] += duration
+                if request_info["is_error"]:
+                    self._stats["url_stats"][url_key]["errors"] += 1
+                if request_info["is_slow"]:
+                    self._stats["url_stats"][url_key]["slow_requests"] += 1
+                
+                # 状态码统计
+                self._stats["status_codes"][status_code] += 1
+                
+                # 模块统计
+                if module:
+                    self._stats["module_stats"][module]["count"] += 1
+                    self._stats["module_stats"][module]["total_time"] += duration
+                    if request_info["is_error"]:
+                        self._stats["module_stats"][module]["errors"] += 1
 
-        # 清理 URL 统计，避免无限增长
-        if len(self._stats["url_stats"]) > self._max_url_stats:
-            # 按请求次数排序，保留请求次数多的 URL
-            sorted_urls = sorted(
-                self._stats["url_stats"].items(),
-                key=lambda x: x[1]["count"],
-                reverse=True
-            )
-            # 只保留前 max_url_stats 个
-            for url_key, _ in sorted_urls[self._max_url_stats:]:
-                del self._stats["url_stats"][url_key]
+                # 清理 URL 统计，避免无限增长
+                if len(self._stats["url_stats"]) > self._max_url_stats:
+                    # 按请求次数排序，保留请求次数多的 URL
+                    sorted_urls = sorted(
+                        self._stats["url_stats"].items(),
+                        key=lambda x: x[1]["count"],
+                        reverse=True
+                    )
+                    # 只保留前 max_url_stats 个
+                    for url_key, _ in sorted_urls[self._max_url_stats:]:
+                        del self._stats["url_stats"][url_key]
 
-        # 清理模块统计，避免无限增长
-        if len(self._stats["module_stats"]) > self._max_module_stats:
-            # 按请求次数排序，保留请求次数多的模块
-            sorted_modules = sorted(
-                self._stats["module_stats"].items(),
-                key=lambda x: x[1]["count"],
-                reverse=True
-            )
-            # 只保留前 max_module_stats 个
-            for module_key, _ in sorted_modules[self._max_module_stats:]:
-                del self._stats["module_stats"][module_key]
+                # 清理模块统计，避免无限增长
+                if len(self._stats["module_stats"]) > self._max_module_stats:
+                    # 按请求次数排序，保留请求次数多的模块
+                    sorted_modules = sorted(
+                        self._stats["module_stats"].items(),
+                        key=lambda x: x[1]["count"],
+                        reverse=True
+                    )
+                    # 只保留前 max_module_stats 个
+                    for module_key, _ in sorted_modules[self._max_module_stats:]:
+                        del self._stats["module_stats"][module_key]
 
-        # 清理状态码统计，只保留常见状态码
-        common_status_codes = {200, 201, 204, 400, 401, 403, 404, 500, 502, 503, 504}
-        status_codes_to_remove = []
-        for code in self._stats["status_codes"]:
-            if code not in common_status_codes and self._stats["status_codes"][code] < 10:
-                status_codes_to_remove.append(code)
-        for code in status_codes_to_remove:
-            del self._stats["status_codes"][code]
+                # 清理状态码统计，只保留常见状态码
+                common_status_codes = {200, 201, 204, 400, 401, 403, 404, 500, 502, 503, 504}
+                status_codes_to_remove = []
+                for code in self._stats["status_codes"]:
+                    if code not in common_status_codes and self._stats["status_codes"][code] < 10:
+                        status_codes_to_remove.append(code)
+                for code in status_codes_to_remove:
+                    del self._stats["status_codes"][code]
+            except Exception as e:
+                # 记录异常，确保即使发生异常也不会影响主流程
+                print(f"更新统计信息时发生异常: {e}")
     
     def get_metrics(self) -> Dict[str, Any]:
         """
@@ -398,7 +420,7 @@ class OutboundHTTPCollector:
         error_requests = [r for r in self._requests if r["is_error"]]
         return sorted(error_requests, key=lambda x: x["timestamp"], reverse=True)[:limit]
     
-    def get_all_requests(self, limit: int = 50) -> List[Dict[str, Any]]:
+    def get_all_requests(self, limit: int = 1000) -> List[Dict[str, Any]]:
         """
         获取所有请求列表
         

@@ -212,11 +212,12 @@ class ApsHelpers:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             logger.success("推送 MO", f"原供应号{native_plno}", f"MO单号{mono}", to_file=True)
 
-            memo = json.dumps({
-                "msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now,
-                "native_no": native_plno, "_code": mono, "_id": _id, "_entryid": _entryid}, ensure_ascii=False
-            )
-
+            # memo = json.dumps({
+            #     "msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now,
+            #     "native_no": native_plno, "_code": mono, "_id": _id, "_entryid": _entryid}, ensure_ascii=False
+            # )
+            memo = f"{now} ✅ {msg_from}: '{msg}, {mono}, {_id}, {_entryid}' @ {native_plno}"
+            
             logger.update("PL状态", native_plno, f"目标状态{to_status}，MO单号{mono}")
             patch_url = f'{THIS_BASE_URL}/api/t_supply/{native_plno}?db_name={MYAPS_MAIN_DB}'
             patch_data = {
@@ -237,6 +238,19 @@ class ApsHelpers:
 
 
     @staticmethod
+    def _modify_supply(supplyno: str, to_status: Literal['NEW', 'CRE', 'E2A', 'REL']=None, memo: str=None, _sn: str=None, _id: str=None, _entryid: str=None):
+        url = f'{THIS_BASE_URL}/api/t_supply/{supplyno}/...?db_name={MYAPS_MAIN_DB}'
+        response_json = ApsHelpers._call_api('PATCH', url, json={
+            'status': to_status,
+            'memo': memo[:255],
+            'apiex_sn': _sn,
+            'apiex_id': _id,
+            'apiex_entryid': _entryid,
+        })
+        return response_json
+
+
+    @staticmethod
     def pl_release_failed(native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, push_data: dict=None, msg_from: str=None):
         logger.fail("推送 MO", json.dumps(push_data, ensure_ascii=False), msg)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -245,14 +259,10 @@ class ApsHelpers:
                 msg = str(msg)[:64]
             except Exception as e:
                 pass
-        memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
-        
+
+        memo = f"{now} 🚫 {msg_from}: '{msg}'"
         try:
-            url = f'{THIS_BASE_URL}/api/t_supply/{native_plno}/...?db_name={MYAPS_MAIN_DB}'
-            response_json = ApsHelpers._call_api('PATCH', url, json={
-                'status': to_status,
-                'memo': memo,
-            })
+            response_json = ApsHelpers._modify_supply(supplyno=native_plno, to_status=to_status, memo=memo)
             logger.info(f"更新PL状态响应：成功")
             return response_json
         except Exception as e:
@@ -265,7 +275,8 @@ class ApsHelpers:
     def rs_push_success(rsno: str, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            memo = json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": rsno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
+            # memo = json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": rsno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
+            memo = f"{now} ✅ {msg_from}: '{_code}, {_id}, {_entryid}' @ {rsno}"
             
             logger.update("RS状态", rsno, f"目标状态{to_status}")
             url = f'{THIS_BASE_URL}/api/t_demand/{rsno}/.../...?db_name={MYAPS_MAIN_DB}'
@@ -291,7 +302,9 @@ class ApsHelpers:
                 pass
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
+            # memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
+            memo = f"{now} 🚫 {msg_from}: '{msg}'"
+
             url = f'{THIS_BASE_URL}/api/t_demand/{rsno}/.../...?db_name={MYAPS_MAIN_DB}'
             response_json = ApsHelpers._call_api('PATCH', url, json={
                 'memo': memo,
@@ -376,16 +389,18 @@ class ApsHelpers:
     def pr_push_success(prno: str, msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            memo = json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": prno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
+            # memo = json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": prno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
+            memo = f"{now} ✅ {msg_from}: '{_code}, {_id}, {_entryid}' @ {prno}"
             logger.update("PR状态", prno, "")
-            url = f'{THIS_BASE_URL}/api/t_supply/{prno}/...?db_name={MYAPS_MAIN_DB}'
-            response_json = ApsHelpers._call_api('PATCH', url, json={
-                'memo': memo,
-                'status': 'CRE',
-                'apiex_sn': _code,
-                'apiex_id': _id,
-                'apiex_entryid': _entryid,
-            })
+            # url = f'{THIS_BASE_URL}/api/t_supply/{prno}/...?db_name={MYAPS_MAIN_DB}'
+            # response_json = ApsHelpers._call_api('PATCH', url, json={
+            #     'memo': memo,
+            #     'status': 'CRE',
+            #     'apiex_sn': _code,
+            #     'apiex_id': _id,
+            #     'apiex_entryid': _entryid,
+            # })
+            response_json = ApsHelpers._modify_supply(supplyno=prno, to_status='CRE', memo=memo, _sn=_code, _id=_id, _entryid=_entryid)
             logger.info(f"更新PR状态响应：成功")
             return response_json
         except Exception as e:
@@ -404,12 +419,14 @@ class ApsHelpers:
         logger.fail("推送 PR", json.dumps(push_data, ensure_ascii=False), msg)
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
-            url = f'{THIS_BASE_URL}/api/t_supply/{prno}/...?db_name={MYAPS_MAIN_DB}'
-            response_json = ApsHelpers._call_api('PATCH', url, json={
-                'memo': memo,
-                'status': 'NEW',
-            })
+            # memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
+            memo = f"{now} 🚫 {msg_from}: '{msg}'"
+            # url = f'{THIS_BASE_URL}/api/t_supply/{prno}/...?db_name={MYAPS_MAIN_DB}'
+            # response_json = ApsHelpers._call_api('PATCH', url, json={
+            #     'memo': memo,
+            #     'status': 'NEW',
+            # })
+            response_json = ApsHelpers._modify_supply(supplyno=prno, to_status='NEW', memo=memo)
             return response_json
         except Exception as e:
             error_msg = f"更新PR失败状态时发生网络错误：{str(e)}"

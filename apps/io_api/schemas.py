@@ -584,7 +584,8 @@ class ModifySupply(BaseModel):
                 values["avail_qty"] = float(values["avail_qty"])
             except ValueError:
                 values["avail_qty"] = None
-        if values.get("status") not in gc.OrderStatusEnum.__members__:
+        status = values.get("status")
+        if status and status not in gc.OrderStatusEnum.__members__:
             values["status"] = gc.OrderStatusEnum.CRE
         memo = values.get("memo")
         if memo:
