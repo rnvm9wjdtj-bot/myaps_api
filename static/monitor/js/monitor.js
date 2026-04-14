@@ -1003,6 +1003,44 @@ function formatRelativeTime(timestamp) {
     return Math.floor(diff / 86400) + '天前';
 }
 
+// 格式化相对日期时间（今天，昨天，前天，早于前天才使用具体日期时间）
+function formatRelativeDate(timestamp) {
+    const now = new Date();
+    const date = new Date(timestamp * 1000);
+    
+    // 今天
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    // 昨天
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    // 前天
+    const dayBeforeYesterday = new Date(today);
+    dayBeforeYesterday.setDate(dayBeforeYesterday.getDate() - 2);
+    
+    const logDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    
+    // 判断是否是今天、昨天、前天
+    let dayLabel = '';
+    if (logDate.getTime() === today.getTime()) {
+        dayLabel = '今天';
+    } else if (logDate.getTime() === yesterday.getTime()) {
+        dayLabel = '昨天';
+    } else if (logDate.getTime() === dayBeforeYesterday.getTime()) {
+        dayLabel = '前天';
+    } else {
+        // 显示具体日期
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const day = date.getDate().toString().padStart(2, '0');
+        dayLabel = `${month}-${day}`;
+    }
+    
+    // 显示具体时间
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const seconds = date.getSeconds().toString().padStart(2, '0');
+    return `${dayLabel} ${hours}:${minutes}:${seconds}`;
+}
+
 // 刷新事件统计
 function refreshEventStats() {
     fetchEventStats();
@@ -1191,8 +1229,7 @@ function updateAPIRequestsDisplay(data) {
     }
     
     tbodyEl.innerHTML = filteredRequests.map((req, index) => {
-        const date = new Date(req.timestamp * 1000);
-        const timeStr = `${date.getFullYear()}-${(date.getMonth()+1).toString().padStart(2,'0')}-${date.getDate().toString().padStart(2,'0')} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}:${date.getSeconds().toString().padStart(2,'0')}`;
+        const timeStr = formatRelativeDate(req.timestamp);
         
         const methodClass = req.method.toLowerCase();
         const isSuccess = req.status_code < 400;
@@ -1587,8 +1624,7 @@ function updateLogsPageDisplay(logs) {
     }
     
     tbodyEl.innerHTML = filteredLogs.map((log, index) => {
-        const date = new Date(log.timestamp * 1000);
-        const timeStr = `${date.getFullYear()}-${(date.getMonth()+1).toString().padStart(2,'0')}-${date.getDate().toString().padStart(2,'0')} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}:${date.getSeconds().toString().padStart(2,'0')}`;
+        const timeStr = formatRelativeDate(log.timestamp);
         
         // 确保 title 属性使用完整的消息内容
         const fullMessage = log.message || '';
@@ -1609,12 +1645,15 @@ function updateLogsPageDisplay(logs) {
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;');
         
+        // 移除模块名称中的"smart_"前缀
+        const moduleName = log.module.replace(/^smart_/, '');
+        
         return `
             <tr data-log-id="${logId}" data-log-index="${index}" class="${readStatusClass}" onclick="showLogDetail(${index})">
                 <td class="font-mono">${index + 1}</td>
                 <td>${timeStr}</td>
                 <td><span class="log-level-badge ${log.level}">${log.level.toUpperCase()}</span></td>
-                <td>${log.module}</td>
+                <td>${moduleName}</td>
                 <td class="log-message-cell" title="${escapedFullMessage}" data-full-message="${escapedFullMessage}">${escapeHtml(log.message || '')}</td>
                 <td class="read-status-cell">
                     <span class="read-checkbox ${readStatusClass}" onclick="toggleLogReadStatus('${logId}'); event.stopPropagation();">${readIcon}</span>
@@ -2282,8 +2321,7 @@ function getStatusDescription(statusCode) {
 
 // 格式化发送请求行
 function formatOutboundRequestRow(request, index) {
-    const date = new Date(request.timestamp * 1000);
-    const timestamp = `${date.getFullYear()}-${(date.getMonth()+1).toString().padStart(2,'0')}-${date.getDate().toString().padStart(2,'0')} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}:${date.getSeconds().toString().padStart(2,'0')}`;
+    const timestamp = formatRelativeDate(request.timestamp);
     const duration = (request.duration * 1000).toFixed(0);
     const statusClass = request.status_code >= 400 ? 'error' : 'success';
     const durationClass = request.duration > 1 ? 'slow' : '';
