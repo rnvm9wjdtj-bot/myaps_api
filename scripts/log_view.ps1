@@ -12,6 +12,9 @@
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
+# Set input encoding to UTF-8
+[System.Text.Encoding]::Default = [System.Text.Encoding]::UTF8
+
 # Get project root directory
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path -Parent $ScriptDir
@@ -43,10 +46,10 @@ function Get-RecentLogs {
     $recentLogs = @()
     
     try {
-        Get-Content $LogFile | ForEach-Object {
+        Get-Content $LogFile -Encoding UTF8 | ForEach-Object {
             # Try to extract timestamp from log line
             $line = $_
-            if ($line -match '^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})') {
+            if ($line -match '^({4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})') {
                 $logTime = [datetime]::ParseExact($matches[1], 'yyyy-MM-dd HH:mm:ss', $null)
                 if ($logTime -ge $24HoursAgo) {
                     $recentLogs += $line
@@ -60,7 +63,7 @@ function Get-RecentLogs {
         }
     } catch {
         # If parsing fails, return all logs
-        $recentLogs = Get-Content $LogFile
+        $recentLogs = Get-Content $LogFile -Encoding UTF8
     }
     
     return $recentLogs
@@ -94,13 +97,13 @@ try {
     $job = Start-Job -ScriptBlock {
         param($File)
         if (Test-Path $File) {
-            Get-Content $File -Tail 0 -Wait
+            Get-Content $File -Encoding UTF8 -Tail 0 -Wait
         } else {
             # Wait for file to be created
             while (-not (Test-Path $File)) {
                 Start-Sleep -Seconds 1
             }
-            Get-Content $File -Tail 0 -Wait
+            Get-Content $File -Encoding UTF8 -Tail 0 -Wait
         }
     } -ArgumentList $AppLogFile
 

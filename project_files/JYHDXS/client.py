@@ -160,7 +160,6 @@ def refresh_stock(dbs: str=MYAPS_DB_SET):
     ApsHelpers.refresh_supply(stock_data_total.to_dict(orient='records'), dbs=dbs)
 
 
-
 def push_pr(period: int = 30, groupdates: List[str] | str = None):
     if groupdates:
         if isinstance(groupdates, list):
