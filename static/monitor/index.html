@@ -186,96 +186,97 @@
 
         <!-- 数据库页面 -->
         <main class="main-content page-content" id="page-database" style="display: none;">
+            <!-- 数据库详细信息卡片 -->
             <section class="card full-width">
                 <div class="card-header">
-                    <div class="db-tab-buttons">
-                        <button class="db-tab-btn active" data-db-tab="detail">数据库详细信息</button>
-                        <button class="db-tab-btn" data-db-tab="events">事件监听统计</button>
-                    </div>
+                    <h2>数据库详细信息</h2>
                     <span class="badge" id="db-detail-badge">检查中</span>
                 </div>
                 <div class="card-body">
                     <!-- 数据库详细信息 -->
-                    <div class="db-tab-content" id="db-tab-detail">
-                        <div class="db-detail-table-container">
-                            <table class="db-detail-table" id="db-detail-table">
-                                <thead>
-                                    <tr>
-                                        <th>数据库名称</th>
-                                        <th>连接状态</th>
-                                        <th>最后检查</th>
-                                        <th>当前连接</th>
-                                        <th>最大连接</th>
-                                        <th>最小连接</th>
-                                        <th>空闲连接</th>
-                                        <th>使用中连接</th>
-                                        <th>使用率</th>
-                                        <th>处理记录</th>
-                                        <th>批次数</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="db-detail-tbody">
-                                    <!-- 动态生成数据库详细信息 -->
-                                </tbody>
-                            </table>
+                    <div class="db-detail-table-container">
+                        <table class="db-detail-table" id="db-detail-table">
+                            <thead>
+                                <tr>
+                                    <th>数据库名称</th>
+                                    <th>连接状态</th>
+                                    <th>最后检查</th>
+                                    <th>当前连接</th>
+                                    <th>最大连接</th>
+                                    <th>最小连接</th>
+                                    <th>空闲连接</th>
+                                    <th>使用中连接</th>
+                                    <th>使用率</th>
+                                    <th>处理记录</th>
+                                    <th>批次数</th>
+                                </tr>
+                            </thead>
+                            <tbody id="db-detail-tbody">
+                                <!-- 动态生成数据库详细信息 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- 事件监听卡片 -->
+            <section class="card full-width">
+                <div class="card-header">
+                    <h2>事件监听</h2>
+                    <div class="events-actions">
+                        <button class="btn btn-small" onclick="refreshEventStats()">刷新</button>
+                        <button class="btn btn-small" onclick="flushAllEvents()">立即刷新所有</button>
+                        <button class="btn btn-small btn-secondary" onclick="resetEventStats()">重置统计</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="events-summary" id="events-summary">
+                        <div class="summary-item">
+                            <span class="summary-label">总接收事件</span>
+                            <span class="summary-value" id="events-total-received">--</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">已处理事件</span>
+                            <span class="summary-value healthy" id="events-total-processed">--</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">中止处理</span>
+                            <span class="summary-value error" id="events-total-failed">--</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">待处理</span>
+                            <span class="summary-value" id="events-total-pending">--</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">整体成功率</span>
+                            <span class="summary-value" id="events-success-rate">--%</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">活跃事件类型</span>
+                            <span class="summary-value" id="events-active-types">--</span>
                         </div>
                     </div>
-                    
-                    <!-- 事件监听统计 -->
-                    <div class="db-tab-content" id="db-tab-events" style="display: none;">
-                        <div class="events-summary" id="events-summary">
-                            <div class="summary-item">
-                                <span class="summary-label">总接收事件</span>
-                                <span class="summary-value" id="events-total-received">--</span>
-                            </div>
-                            <div class="summary-item">
-                                <span class="summary-label">已处理事件</span>
-                                <span class="summary-value healthy" id="events-total-processed">--</span>
-                            </div>
-                            <div class="summary-item">
-                                <span class="summary-label">中止处理</span>
-                                <span class="summary-value error" id="events-total-failed">--</span>
-                            </div>
-                            <div class="summary-item">
-                                <span class="summary-label">待处理</span>
-                                <span class="summary-value" id="events-total-pending">--</span>
-                            </div>
-                            <div class="summary-item">
-                                <span class="summary-label">整体成功率</span>
-                                <span class="summary-value" id="events-success-rate">--%</span>
-                            </div>
-                            <div class="summary-item">
-                                <span class="summary-label">活跃事件类型</span>
-                                <span class="summary-value" id="events-active-types">--</span>
-                            </div>
-                        </div>
-                        <div class="events-actions">
-                            <button class="btn btn-small" onclick="refreshEventStats()">刷新</button>
-                            <button class="btn btn-small" onclick="flushAllEvents()">立即刷新所有</button>
-                            <button class="btn btn-small btn-secondary" onclick="resetEventStats()">重置统计</button>
-                        </div>
-                        <div class="events-table-container">
-                            <table class="events-table" id="events-table">
-                                <thead>
-                                    <tr>
-                                        <th>描述</th>
-                                        <th>总接收</th>
-                                        <th>待处理</th>
-                                        <th>已处理</th>
-                                        <th>中止</th>
-                                        <th>完成率</th>
-                                        <th>平均延迟</th>
-                                        <th>缓冲区</th>
-                                        <th>最后活动</th>
-                                        <th>状态</th>
-                                        <th>操作</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="events-tbody">
-                                    <!-- 动态生成事件统计列表 -->
-                                </tbody>
-                            </table>
-                        </div>
+                    <div class="events-table-container">
+                        <table class="events-table" id="events-table">
+                            <thead>
+                                <tr>
+                                    <th>描述</th>
+                                    <th>总接收</th>
+                                    <th>待处理</th>
+                                    <th>已处理</th>
+                                    <th>中止</th>
+                                    <th>完成率</th>
+                                    <th>平均延迟</th>
+                                    <th>缓冲区</th>
+                                    <th>最后活动</th>
+                                    <th>状态</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="events-tbody">
+                                <!-- 动态生成事件统计列表 -->
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </section>

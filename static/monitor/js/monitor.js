@@ -86,6 +86,7 @@ async function refreshAll() {
         fetchAPIRequests(),
         fetchOutboundRequests(),
         fetchDatabaseDetail(),
+        fetchEventStats(),
         fetchSchedulerPage(),
         fetchLogsPage(),
         fetchOverviewOutboundRequests()
@@ -872,8 +873,7 @@ function switchPage(pageName) {
     // 处理其他页面的逻辑
     if (pageName === 'database') {
         fetchDatabaseDetail();
-        initDatabaseTabs();
-        switchDatabaseTab('detail');
+        fetchEventStats();
     } else if (pageName === 'scheduler') {
         fetchSchedulerPage();
     } else if (pageName === 'logs') {
@@ -881,39 +881,7 @@ function switchPage(pageName) {
     }
 }
 
-// 初始化数据库子页签
-function initDatabaseTabs() {
-    const tabButtons = document.querySelectorAll('.db-tab-btn');
-    tabButtons.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const tabName = btn.getAttribute('data-db-tab');
-            switchDatabaseTab(tabName);
-        });
-    });
-}
 
-// 切换数据库子页签
-function switchDatabaseTab(tabName) {
-    document.querySelectorAll('.db-tab-btn').forEach(btn => {
-        btn.classList.remove('active');
-        if (btn.getAttribute('data-db-tab') === tabName) {
-            btn.classList.add('active');
-        }
-    });
-    
-    document.querySelectorAll('.db-tab-content').forEach(content => {
-        content.style.display = 'none';
-    });
-    
-    const targetContent = document.getElementById(`db-tab-${tabName}`);
-    if (targetContent) {
-        targetContent.style.display = 'block';
-    }
-    
-    if (tabName === 'events') {
-        fetchEventStats();
-    }
-}
 
 // 获取事件统计数据
 async function fetchEventStats() {
