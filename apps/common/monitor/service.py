@@ -337,18 +337,29 @@ class MonitorService:
             elif current_key and line.strip():
                 log_entries[current_key] += '\n' + line
         
-        for line in reversed(list(log_entries.values())):
+        for full_log_entry in reversed(list(log_entries.values())):
             if len(logs) >= max_logs:
                 break
                 
-            match = log_pattern.match(line)
+            # 只匹配第一行来获取基本信息
+            first_line = full_log_entry.split('\n')[0]
+            match = log_pattern.match(first_line)
             if not match:
                 continue
             
             timestamp_str = match.group(1)
             module = match.group(2).strip()
             log_level_str = match.group(3)
-            message = match.group(4).strip()
+            
+            # 提取完整消息（包括多行）
+            # 找到 " - LEVEL - " 后的所有内容
+            level_marker = f" - {log_level_str} - "
+            level_pos = full_log_entry.find(level_marker)
+            if level_pos != -1:
+                message_start = level_pos + len(level_marker)
+                message = full_log_entry[message_start:].strip()
+            else:
+                message = match.group(4).strip()
             
             try:
                 timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S,%f').timestamp()
