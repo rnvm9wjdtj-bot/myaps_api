@@ -234,10 +234,8 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
 
         # 检查请求频率限制
         client_ip = request.client.host if request.client else "unknown"
-        print(f"[DEBUG] 客户端 IP: {client_ip}, 路径: {path}")
         if http_metrics_collector.check_rate_limit(client_ip):
             from starlette.responses import JSONResponse
-            print(f"[DEBUG] 请求频率超过限制，客户端 IP: {client_ip}")
             return JSONResponse(
                 status_code=429,
                 content={"message": "请求过于频繁，请稍后再试", "status_code": 429}

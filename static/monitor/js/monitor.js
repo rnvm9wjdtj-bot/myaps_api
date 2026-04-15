@@ -149,6 +149,10 @@ function resumeMonitoring() {
     resetInactivityTimer();
 }
 
+// WebSocket 心跳相关变量
+let wsHeartbeatInterval = null;
+const WS_HEARTBEAT_INTERVAL = 30000; // 心跳间隔，30秒
+
 // 初始化 WebSocket 连接
 function initWebSocket() {
     // 如果用户不活动，不建立 WebSocket 连接
@@ -166,6 +170,12 @@ function initWebSocket() {
         ws.close();
     }
     
+    // 清除心跳定时器
+    if (wsHeartbeatInterval) {
+        clearInterval(wsHeartbeatInterval);
+        wsHeartbeatInterval = null;
+    }
+    
     // 创建新连接
     ws = new WebSocket(wsUrl);
     
@@ -177,6 +187,9 @@ function initWebSocket() {
             clearInterval(wsReconnectInterval);
             wsReconnectInterval = null;
         }
+        
+        // 启动心跳
+        startWebSocketHeartbeat();
     };
     
     // 接收消息
@@ -194,6 +207,11 @@ function initWebSocket() {
     // 连接关闭
     ws.onclose = function() {
         console.log('WebSocket 连接已关闭');
+        // 清除心跳定时器
+        if (wsHeartbeatInterval) {
+            clearInterval(wsHeartbeatInterval);
+            wsHeartbeatInterval = null;
+        }
         attemptReconnect();
     };
     
@@ -201,6 +219,26 @@ function initWebSocket() {
     ws.onerror = function(error) {
         console.error('WebSocket 错误:', error);
     };
+}
+
+// 启动 WebSocket 心跳
+function startWebSocketHeartbeat() {
+    // 清除现有心跳定时器
+    if (wsHeartbeatInterval) {
+        clearInterval(wsHeartbeatInterval);
+        wsHeartbeatInterval = null;
+    }
+    
+    // 设置新的心跳定时器
+    wsHeartbeatInterval = setInterval(function() {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            try {
+                ws.send(JSON.stringify({ type: 'heartbeat', timestamp: Date.now() }));
+            } catch (error) {
+                console.error('发送 WebSocket 心跳失败:', error);
+            }
+        }
+    }, WS_HEARTBEAT_INTERVAL);
 }
 
 // 处理 WebSocket 数据
@@ -1889,9 +1927,12 @@ async function fetchLogsPage() {
         const url = `${API_BASE}/logs?limit=100${level ? `&level=${level}` : ''}`;
         const response = await fetch(url);
         const data = await response.json();
-        updateLogsPageDisplay(data.logs);
+        // 确保data.logs存在
+        updateLogsPageDisplay(data.logs || []);
     } catch (error) {
         console.error('获取日志失败:', error);
+        // 发生错误时显示空日志
+        updateLogsPageDisplay([]);
     }
 }
 
@@ -3001,6 +3042,10 @@ async function resetOutboundStats() {
     }
 }
 
+// 添加请求时间戳，用于控制请求频率
+const requestTimestamps = new Map();
+const REQUEST_INTERVAL = 5000; // 请求间隔，单位毫秒
+
 // 获取并更新overview页面的发送请求数据
 async function fetchOverviewOutboundRequests() {
     // 如果用户不活动，不发送请求
@@ -3009,12 +3054,44 @@ async function fetchOverviewOutboundRequests() {
         return;
     }
     
+    // 检查请求频率，避免429错误
+    const now = Date.now();
+    const lastRequestTime = requestTimestamps.get('fetchOverviewOutboundRequests');
+    if (lastRequestTime && now - lastRequestTime < REQUEST_INTERVAL) {
+        console.log('请求频率过高，跳过overview页面发送请求数据获取');
+        return;
+    }
+    
     try {
+        // 记录请求时间
+        requestTimestamps.set('fetchOverviewOutboundRequests', now);
+        
         console.log('开始获取发送请求数据，API路径:', `${API_BASE}/outbound-http/all`);
         const response = await fetch(`${API_BASE}/outbound-http/all`);
         console.log('获取发送请求数据响应状态:', response.status);
         
         if (!response.ok) {
+            // 处理429错误
+            if (response.status === 429) {
+                console.warn('请求频率过高，服务器返回429错误');
+                // 使用默认值
+                const defaultSummary = {
+                    total_requests: 0,
+                    error_rate: 0,
+                    avg_response_time: 0,
+                    requests_per_minute: 0
+                };
+                updateOverviewOutboundSummary(defaultSummary);
+                updateOverviewOutboundList([]);
+                
+                // 更新状态徽章
+                const badge = document.getElementById('outbound-badge');
+                if (badge) {
+                    badge.className = 'badge warning';
+                    badge.textContent = '限流';
+                }
+                return;
+            }
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         
@@ -3088,6 +3165,23 @@ async function fetchOverviewOutboundRequests() {
         console.error('获取overview页面发送请求数据失败:', error);
         console.error('错误详情:', error.message);
         console.error('错误堆栈:', error.stack);
+        
+        // 发生错误时使用默认值
+        const defaultSummary = {
+            total_requests: 0,
+            error_rate: 0,
+            avg_response_time: 0,
+            requests_per_minute: 0
+        };
+        updateOverviewOutboundSummary(defaultSummary);
+        updateOverviewOutboundList([]);
+        
+        // 更新状态徽章
+        const badge = document.getElementById('outbound-badge');
+        if (badge) {
+            badge.className = 'badge error';
+            badge.textContent = '错误';
+        }
     }
 }
 

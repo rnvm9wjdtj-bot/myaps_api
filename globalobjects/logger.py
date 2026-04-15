@@ -1096,7 +1096,68 @@ class SmartLogger(logging.Logger):
             msg: 日志消息
         """
         if self._auto_file_enabled and self._file_logger:
-            self._file_logger.log(level, msg)
+            # 只在error级别及以上使用栈追踪
+            if level >= logging.ERROR:
+                import inspect
+                import threading
+                import os
+                
+                # 获取调用栈
+                stack = inspect.stack()
+                
+                # 跳过内部方法，找到原始调用位置
+                caller_frame = None
+                # 遍历所有栈帧，找到第一个不是SmartLogger类的方法
+                for i, frame_info in enumerate(stack[1:]):  # 从栈的第二个元素开始（跳过当前函数）
+                    frame = frame_info.frame
+                    # 获取类名
+                    class_name = None
+                    if 'self' in frame.f_locals:
+                        try:
+                            class_name = frame.f_locals['self'].__class__.__name__
+                        except Exception:
+                            pass
+                    
+                    # 检查是否是SmartLogger类的方法
+                    if class_name != 'SmartLogger':
+                        caller_frame = frame_info
+                        break
+                
+                # 如果没有找到，使用栈的最后一个元素（最外层调用）
+                if not caller_frame and len(stack) > 1:
+                    caller_frame = stack[-1]
+                
+                # 如果找到原始调用位置，使用其信息
+                if caller_frame:
+                    # 创建一个自定义的日志记录，替换函数名和行号
+                    record = logging.makeLogRecord({
+                        'levelno': level,
+                        'levelname': logging.getLevelName(level),
+                        'msg': msg,
+                        'args': (),
+                        'exc_info': None,
+                        'exc_text': None,
+                        'stack_info': None,
+                        'lineno': caller_frame.lineno,
+                        'funcName': caller_frame.function,
+                        'filename': caller_frame.filename,
+                        'module': os.path.basename(caller_frame.filename).split('.')[0],
+                        'name': self.name,
+                        'created': time.time(),
+                        'msecs': (time.time() % 1) * 1000,
+                        'relativeCreated': 0,
+                        'thread': threading.get_ident(),
+                        'threadName': threading.current_thread().name,
+                        'process': os.getpid(),
+                        'processName': 'MainProcess'
+                    })
+                    self._file_logger.handle(record)
+                else:
+                    # 如果没有找到，使用默认方式
+                    self._file_logger.log(level, msg)
+            else:
+                # 普通级别使用默认方式
+                self._file_logger.log(level, msg)
     
     def debug(self, msg, *args, **kwargs):
         """记录 DEBUG 级别的日志"""
@@ -1656,7 +1717,7 @@ def _create_smart_file_logger(name: str) -> logging.Logger:
         智能文件日志器实例
     """
     # 创建基础日志器
-    logger = logging.getLogger(f"smart_{name}")
+    logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
     logger.propagate = False
     

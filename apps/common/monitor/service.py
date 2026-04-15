@@ -545,17 +545,28 @@ class MonitorService:
                 timestamp_str = full_log_entry[:23]
                 timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S,%f').timestamp()
                 
-                # 提取模块和日志级别
-                # 格式：2026-04-15 10:59:43,123 - module - LEVEL - message
+                # 提取模块、函数、行号和日志级别
+                # 格式：2026-04-15 10:59:43,123 - module - function:line - LEVEL - message
                 parts = full_log_entry[24:].split(' - ')
-                if len(parts) >= 3:
+                if len(parts) >= 4:
+                    module = parts[0].strip()
+                    # 提取函数:行号部分
+                    function_line = parts[1].strip()
+                    log_level_str = parts[2].strip()
+                    message = ' - '.join(parts[3:]).strip()
+                    # 将函数名和行号添加到模块字段
+                    module_with_location = f"{module} - {function_line}"
+                elif len(parts) >= 3:
+                    # 兼容旧格式：2026-04-15 10:59:43,123 - module - LEVEL - message
                     module = parts[0].strip()
                     log_level_str = parts[1].strip()
                     message = ' - '.join(parts[2:]).strip()
+                    module_with_location = module
                 else:
                     continue
                 
                 module = module.replace('.log', '')
+                module_with_location = module_with_location.replace('.log', '')
                 log_level_str = log_level_str.lower()
                 
                 if level_filter and log_level_str != level_filter:
@@ -565,7 +576,7 @@ class MonitorService:
                     "level": log_level_str,
                     "message": message,
                     "timestamp": timestamp,
-                    "module": module,
+                    "module": module_with_location,
                     "traceback": None
                 })
             except Exception:

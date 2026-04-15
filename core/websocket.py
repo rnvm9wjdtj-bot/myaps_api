@@ -77,7 +77,7 @@ async def websocket_endpoint(websocket: WebSocket, path: str = ""):
         # 保持连接并接收消息，3秒超时后自动关闭（缩短超时时间）
         while True:
             try:
-                message = await asyncio.wait_for(websocket.receive_text(), timeout=3.0)
+                message = await asyncio.wait_for(websocket.receive_text(), timeout=60.0)
                 log_config.info(f"WebSocket 收到消息 [{full_path}]: {message}")
                 await websocket.send_json({
                     "status": "received",
@@ -125,8 +125,8 @@ async def websocket_root(websocket: WebSocket):
     log_config.info(f"WebSocket 根路径连接请求: {client_info}")
 
     try:
-        # 3秒超时后自动关闭（缩短超时时间）
-        await asyncio.wait_for(websocket.receive_text(), timeout=3.0)
+        # 60秒超时后自动关闭
+        await asyncio.wait_for(websocket.receive_text(), timeout=60.0)
     except (asyncio.TimeoutError, WebSocketDisconnect):
         pass
     except Exception as e:
