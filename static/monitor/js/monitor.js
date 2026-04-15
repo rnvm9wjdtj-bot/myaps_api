@@ -26,6 +26,30 @@ let inactivityTimeout = null;
 const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 当连续不活动 30分钟时，触发超时
 let isInactive = false;
 
+// 数据缓存机制
+const CACHE_DURATION = {
+    environment: 60 * 60 * 1000, // 环境信息缓存1小时
+    health: 30 * 1000, // 健康状态缓存30秒
+    resource: 5 * 1000, // 资源信息缓存5秒
+    time: 60 * 1000 // 时间格式化缓存1分钟
+};
+
+const dataCache = {};
+
+// DOM元素缓存
+const domCache = {};
+
+// 时间格式化缓存
+const timeCache = {};
+
+// 获取DOM元素，优先从缓存中获取
+function getElement(id) {
+    if (!domCache[id]) {
+        domCache[id] = document.getElementById(id);
+    }
+    return domCache[id];
+}
+
 // 从localStorage加载已确认的错误状态
 function loadBadgeConfirmedHasError() {
     try {
@@ -39,6 +63,56 @@ function loadBadgeConfirmedHasError() {
     }
 }
 
+// 检查缓存是否有效
+function isCacheValid(key) {
+    const cacheItem = dataCache[key];
+    if (!cacheItem) return false;
+    const now = Date.now();
+    return now - cacheItem.timestamp < CACHE_DURATION[key];
+}
+
+// 获取缓存数据
+function getCachedData(key) {
+    if (isCacheValid(key)) {
+        return dataCache[key].data;
+    }
+    return null;
+}
+
+// 更新缓存数据
+function updateCache(key, data) {
+    dataCache[key] = {
+        data: data,
+        timestamp: Date.now()
+    };
+}
+
+// 节流函数
+function throttle(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// 防抖函数
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
 // 保存已确认的错误状态到localStorage
 function saveBadgeConfirmedHasError() {
     try {
@@ -49,12 +123,14 @@ function saveBadgeConfirmedHasError() {
 }
 
 // 初始化
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     // 加载已确认的错误状态
     loadBadgeConfirmedHasError();
     initResourceChart();
     fetchEnvironment();
-    refreshAll();
+    // 无论当前在哪个页面，都获取一次日志数据来检查未读状态
+    await fetchLogsPage();
+    await refreshAll();
     startAutoRefresh();
     initWebSocket();
     startInactivityTimer();
@@ -328,9 +404,17 @@ function closeWebSocket() {
 
 // 获取环境变量
 async function fetchEnvironment() {
+    // 检查缓存
+    const cachedData = getCachedData('environment');
+    if (cachedData) {
+        updateTitleWithEnvironment(cachedData);
+        return;
+    }
+    
     try {
         const response = await fetch(`${API_BASE}/env`);
         const data = await response.json();
+        updateCache('environment', data);
         updateTitleWithEnvironment(data);
     } catch (error) {
         console.error('获取环境变量失败:', error);
@@ -350,7 +434,9 @@ function startAutoRefresh() {
     if (refreshInterval) {
         clearInterval(refreshInterval);
     }
-    refreshInterval = setInterval(refreshAll, 10000);
+    // 使用节流函数限制refreshAll的执行频率
+    const throttledRefreshAll = throttle(refreshAll, 5000); // 最多每5秒执行一次
+    refreshInterval = setInterval(throttledRefreshAll, 10000);
 }
 
 // 刷新所有数据
@@ -361,41 +447,45 @@ async function refreshAll() {
         return;
     }
     
-    // 基础数据，无论哪个页面都需要刷新
-    await Promise.all([
-        fetchHealth(),
-        fetchResource(),
-        fetchDatabase(),
-        fetchScheduler(),
-        fetchHTTP(),
-        fetchAlerts(),
-        fetchOverviewOutboundRequests()
-    ]);
-    
-    // 只刷新当前页面的数据
-    switch (currentPage) {
-        case 'api-requests':
-            await fetchAPIRequests();
-            break;
-        case 'outbound-requests':
-            await fetchOutboundRequests();
-            break;
-        case 'database':
-            await Promise.all([
-                fetchDatabaseDetail(),
-                fetchEventStats()
-            ]);
-            break;
-        case 'scheduler':
-            await fetchSchedulerPage();
-            break;
-        case 'logs':
-            await fetchLogsPage();
-            break;
+    try {
+        // 基础数据，无论哪个页面都需要刷新
+        await Promise.all([
+            fetchHealth(),
+            fetchResource(),
+            fetchDatabase(),
+            fetchScheduler(),
+            fetchHTTP(),
+            fetchAlerts(),
+            fetchOverviewOutboundRequests()
+        ]);
+        
+        // 只刷新当前页面的数据
+        switch (currentPage) {
+            case 'api-requests':
+                await fetchAPIRequests();
+                break;
+            case 'outbound-requests':
+                await fetchOutboundRequests();
+                break;
+            case 'database':
+                await Promise.all([
+                    fetchDatabaseDetail(),
+                    fetchEventStats()
+                ]);
+                break;
+            case 'scheduler':
+                await fetchSchedulerPage();
+                break;
+            case 'logs':
+                await fetchLogsPage();
+                break;
+        }
+        
+        updateLastUpdateTime();
+        checkAlertConditions();
+    } catch (error) {
+        console.error('刷新数据失败:', error);
     }
-    
-    updateLastUpdateTime();
-    checkAlertConditions();
 }
 
 // 检查告警条件并更新title
@@ -538,7 +628,7 @@ async function fetchHealth() {
 
 // 更新健康状态显示
 function updateHealthStatus(data) {
-    const indicator = document.getElementById('status-indicator');
+    const indicator = getElement('status-indicator');
     const statusMap = {
         'healthy': { text: '● 系统正常', class: 'healthy' },
         'degraded': { text: '● 部分警告', class: 'warning' },
@@ -552,7 +642,7 @@ function updateHealthStatus(data) {
 
 // 设置系统状态
 function setSystemStatus(status, text) {
-    const indicator = document.getElementById('status-indicator');
+    const indicator = getElement('status-indicator');
     indicator.textContent = `● ${text}`;
     indicator.className = `status ${status}`;
 }
@@ -571,38 +661,39 @@ async function fetchResource() {
 // 更新资源显示
 function updateResourceDisplay(data) {
     if (data.error) {
-        document.getElementById('resource-badge').textContent = '错误';
-        document.getElementById('resource-badge').className = 'badge error';
+        const resourceBadge = getElement('resource-badge');
+        resourceBadge.textContent = '错误';
+        resourceBadge.className = 'badge error';
         return;
     }
 
     // CPU
     const cpuValue = data.cpu?.system || 0;
-    document.getElementById('cpu-value').textContent = `${cpuValue}%`;
-    const cpuBar = document.getElementById('cpu-bar');
+    getElement('cpu-value').textContent = `${cpuValue}%`;
+    const cpuBar = getElement('cpu-bar');
     cpuBar.style.width = `${Math.min(cpuValue, 100)}%`;
     cpuBar.className = `progress-fill ${getProgressClass(cpuValue)}`;
 
     // 内存
     const memValue = data.memory?.rss || 0;
     const memPercent = data.memory?.percent || 0;
-    document.getElementById('memory-percent').textContent = `${memPercent}%`;
-    document.getElementById('memory-usage').textContent = `${memValue} M`;
-    const memBar = document.getElementById('memory-bar');
+    getElement('memory-percent').textContent = `${memPercent}%`;
+    getElement('memory-usage').textContent = `${memValue} M`;
+    const memBar = getElement('memory-bar');
     memBar.style.width = `${Math.min(memPercent, 100)}%`;
     memBar.className = `progress-fill ${getProgressClass(memPercent)}`;
 
     // 线程数
-    document.getElementById('threads-value').textContent = data.threads || '--';
+    getElement('threads-value').textContent = data.threads || '--';
 
     // 运行时间
-    document.getElementById('uptime-value').textContent = formatUptime(data.uptime || 0);
+    getElement('uptime-value').textContent = formatUptime(data.uptime || 0);
 
     // 更新图表
     updateResourceChart(cpuValue, memPercent);
 
     // 更新徽章
-    const badge = document.getElementById('resource-badge');
+    const badge = getElement('resource-badge');
     badge.textContent = '运行中';
     badge.className = 'badge healthy';
 }
@@ -619,17 +710,32 @@ let previousAlerts = [];
 
 // 格式化运行时间
 function formatUptime(seconds) {
+    // 检查缓存
+    const cacheKey = `uptime_${seconds}`;
+    if (timeCache[cacheKey] && Date.now() - timeCache[cacheKey].timestamp < CACHE_DURATION.time) {
+        return timeCache[cacheKey].value;
+    }
+    
     const days = Math.floor(seconds / 86400);
     const hours = Math.floor((seconds % 86400) / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
 
+    let result;
     if (days > 0) {
-        return `${days}d ${hours}h`;
+        result = `${days}d ${hours}h`;
     } else if (hours > 0) {
-        return `${hours}h ${minutes}m`;
+        result = `${hours}h ${minutes}m`;
     } else {
-        return `${minutes}m`;
+        result = `${minutes}m`;
     }
+    
+    // 更新缓存
+    timeCache[cacheKey] = {
+        value: result,
+        timestamp: Date.now()
+    };
+    
+    return result;
 }
 
 // 初始化资源图表
@@ -716,12 +822,12 @@ function updateDatabaseDisplay(data) {
     const mainDb = data.main_db;
 
     // 更新汇总
-    document.getElementById('db-total').textContent = summary.total || 0;
-    document.getElementById('db-healthy').textContent = summary.healthy || 0;
-    document.getElementById('db-unhealthy').textContent = summary.unhealthy || 0;
+    getElement('db-total').textContent = summary.total || 0;
+    getElement('db-healthy').textContent = summary.healthy || 0;
+    getElement('db-unhealthy').textContent = summary.unhealthy || 0;
 
     // 更新徽章
-    const badge = document.getElementById('db-badge');
+    const badge = getElement('db-badge');
     if (summary.unhealthy === 0) {
         badge.textContent = '正常';
         badge.className = 'badge healthy';
@@ -731,13 +837,13 @@ function updateDatabaseDisplay(data) {
     }
     
     // 更新数据库页签的红点角标
-    const databaseBadge = document.getElementById('database-badge');
+    const databaseBadge = getElement('database-badge');
     if (databaseBadge) {
         databaseBadge.style.display = summary.unhealthy > 0 ? 'inline-block' : 'none';
     }
 
     // 更新连接列表
-    const listEl = document.getElementById('db-list');
+    const listEl = getElement('db-list');
     const dbConnections = connections.connections || {};
 
     if (Object.keys(dbConnections).length === 0) {
@@ -746,15 +852,24 @@ function updateDatabaseDisplay(data) {
         return;
     }
 
-    listEl.innerHTML = Object.entries(dbConnections).map(([name, status]) => `
-        <div class="db-item">
+    // 使用文档片段进行批量DOM操作
+    const fragment = document.createDocumentFragment();
+    Object.entries(dbConnections).forEach(([name, status]) => {
+        const dbItem = document.createElement('div');
+        dbItem.className = 'db-item';
+        dbItem.innerHTML = `
             <span class="db-name">${name === mainDb ? 'Ⓜ️ ' + name : name}</span>
             <span class="db-status">
                 <span class="status-dot ${status.healthy ? 'healthy' : 'error'}"></span>
                 ${status.healthy ? '正常' : (status.error || '异常')}
             </span>
-        </div>
-    `).join('');
+        `;
+        fragment.appendChild(dbItem);
+    });
+    
+    // 清空并添加新内容
+    listEl.innerHTML = '';
+    listEl.appendChild(fragment);
     
     checkAlertConditions();
 }
@@ -776,8 +891,8 @@ function updateSchedulerDisplay(data) {
     const jobs = data.jobs || [];
 
     // 更新调度器状态
-    const statusEl = document.getElementById('scheduler-status');
-    const badge = document.getElementById('scheduler-badge');
+    const statusEl = getElement('scheduler-status');
+    const badge = getElement('scheduler-badge');
 
     if (scheduler.running) {
         statusEl.textContent = '运行中';
@@ -792,31 +907,46 @@ function updateSchedulerDisplay(data) {
     }
 
     // 更新任务数量
-    document.getElementById('job-count').textContent = jobs.length;
+    getElement('job-count').textContent = jobs.length;
 
     // 更新任务列表（如果元素存在）
-    const listEl = document.getElementById('job-list');
+    const listEl = getElement('job-list');
     if (listEl) {
         if (jobs.length === 0) {
             listEl.innerHTML = '<div class="empty-state">暂无定时任务</div>';
             return;
         }
 
-        listEl.innerHTML = jobs.map(job => `
-            <div class="job-item">
+        // 使用文档片段进行批量DOM操作
+        const fragment = document.createDocumentFragment();
+        jobs.forEach(job => {
+            const jobItem = document.createElement('div');
+            jobItem.className = 'job-item';
+            jobItem.innerHTML = `
                 <div class="job-info">
                     <span class="job-name">${job.name || job.id}</span>
                     <span class="job-trigger">${job.trigger}</span>
                 </div>
                 <span class="job-next">${job.next_run_time ? formatDateTime(job.next_run_time) : '未计划'}</span>
-            </div>
-        `).join('');
+            `;
+            fragment.appendChild(jobItem);
+        });
+        
+        // 清空并添加新内容
+        listEl.innerHTML = '';
+        listEl.appendChild(fragment);
     }
 }
 
 // 格式化日期时间
 function formatDateTime(dateValue) {
     if (!dateValue) return '从未执行';
+    
+    // 检查缓存
+    const cacheKey = `datetime_${dateValue}`;
+    if (timeCache[cacheKey] && Date.now() - timeCache[cacheKey].timestamp < CACHE_DURATION.time) {
+        return timeCache[cacheKey].value;
+    }
     
     let date;
     if (typeof dateValue === 'number') {
@@ -834,7 +964,15 @@ function formatDateTime(dateValue) {
         return '从未执行';
     }
     
-    return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+    const result = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+    
+    // 更新缓存
+    timeCache[cacheKey] = {
+        value: result,
+        timestamp: Date.now()
+    };
+    
+    return result;
 }
 
 // 获取告警
@@ -884,13 +1022,13 @@ function updateHTTPDisplay(data) {
     };
 
     // 更新汇总数据
-    document.getElementById('http-total').textContent = summary.total_requests || 0;
-    document.getElementById('http-error-rate').textContent = (summary.error_rate || 0).toFixed(2) + '%';
-    document.getElementById('http-avg-time').textContent = ((summary.avg_response_time || 0) * 1000).toFixed(0) + 'ms';
-    document.getElementById('http-rpm').textContent = summary.requests_per_minute || 0;
+    getElement('http-total').textContent = summary.total_requests || 0;
+    getElement('http-error-rate').textContent = (summary.error_rate || 0).toFixed(2) + '%';
+    getElement('http-avg-time').textContent = ((summary.avg_response_time || 0) * 1000).toFixed(0) + 'ms';
+    getElement('http-rpm').textContent = summary.requests_per_minute || 0;
 
     // 更新徽章
-    const badge = document.getElementById('http-badge');
+    const badge = getElement('http-badge');
     const errorRateValue = summary.error_rate || 0;
     if (errorRateValue < 1) {
         badge.textContent = '正常';
@@ -904,7 +1042,7 @@ function updateHTTPDisplay(data) {
     }
     
     // 更新接收请求页签的红点角标（仅在异常状态发生变化时显示）
-    const apiRequestsBadge = document.getElementById('api-requests-badge');
+    const apiRequestsBadge = getElement('api-requests-badge');
     if (apiRequestsBadge) {
         const hasErrors = summary.error_rate > 0;
         actualErrorState['api-requests'] = hasErrors;
@@ -918,7 +1056,7 @@ function updateHTTPDisplay(data) {
     }
 
     // 更新状态码分布（如果元素存在）
-    const statusCodesEl = document.getElementById('http-status-codes');
+    const statusCodesEl = getElement('http-status-codes');
     if (statusCodesEl) {
         const statusCodes = data.status_codes || {};
 
@@ -938,7 +1076,7 @@ function updateHTTPDisplay(data) {
     }
 
     // 更新路径统计（如果元素存在）
-    const pathsEl = document.getElementById('http-paths');
+    const pathsEl = getElement('http-paths');
     if (pathsEl) {
         const pathStats = data.path_stats || {};
 
@@ -968,7 +1106,7 @@ function updateHTTPDisplay(data) {
 
 // 更新告警显示
 function updateAlertsDisplay(alerts) {
-    const listEl = document.getElementById('alert-list');
+    const listEl = getElement('alert-list');
 
     if (alerts.length === 0) {
         listEl.innerHTML = '<div class="empty-state">暂无告警</div>';
@@ -1017,6 +1155,12 @@ function updateAlertsDisplay(alerts) {
 
 // 格式化相对时间
 function formatTimeAgo(timestamp) {
+    // 检查缓存
+    const cacheKey = `timeago_${timestamp}`;
+    if (timeCache[cacheKey] && Date.now() - timeCache[cacheKey].timestamp < CACHE_DURATION.time) {
+        return timeCache[cacheKey].value;
+    }
+    
     const now = new Date();
     const date = new Date(timestamp * 1000);
     const diff = now.getTime() / 1000 - timestamp;
@@ -1044,13 +1188,29 @@ function formatTimeAgo(timestamp) {
         // 显示具体日期
         const month = (date.getMonth() + 1).toString().padStart(2, '0');
         const day = date.getDate().toString().padStart(2, '0');
-        return `${month}-${day}`;
+        const result = `${month}-${day}`;
+        
+        // 更新缓存
+        timeCache[cacheKey] = {
+            value: result,
+            timestamp: Date.now()
+        };
+        
+        return result;
     }
 
     // 今天、昨天、前天显示具体时间
     const hours = date.getHours().toString().padStart(2, '0');
     const minutes = date.getMinutes().toString().padStart(2, '0');
-    return `${dayLabel} ${hours}:${minutes}`;
+    const result = `${dayLabel} ${hours}:${minutes}`;
+    
+    // 更新缓存
+    timeCache[cacheKey] = {
+        value: result,
+        timestamp: Date.now()
+    };
+    
+    return result;
 }
 
 // 清空告警
@@ -1090,7 +1250,7 @@ async function fetchLogs() {
 
 // 更新日志显示
 function updateLogsDisplay(logs) {
-    const listEl = document.getElementById('log-list');
+    const listEl = getElement('log-list');
 
     if (logs.length === 0) {
         listEl.innerHTML = '<div class="empty-state">暂无日志</div>';
@@ -1117,7 +1277,7 @@ function updateLogsDisplay(logs) {
 
 // 更新最后更新时间
 function updateLastUpdateTime() {
-    const lastUpdateEl = document.getElementById('last-update');
+    const lastUpdateEl = getElement('last-update');
     const now = new Date();
     const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
     
