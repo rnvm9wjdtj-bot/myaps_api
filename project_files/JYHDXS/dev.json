@@ -11,7 +11,7 @@
         "MYAPS_DB_PORT": 3333,
         "MYAPS_DB_USER": "root",
         "MYAPS_DB_PASSWORD": "E9damw0o@#$",
-        "MYAPS_DB_SET": "hdtest",
+        "MYAPS_DB_SET": "hdtest,dev_mes",
         "MYAPS_MAIN_DB": "hdtest"
     },
     "erp": {

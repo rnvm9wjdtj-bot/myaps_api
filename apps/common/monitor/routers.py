@@ -5,7 +5,7 @@
 """
 
 import time
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, WebSocket
 from fastapi.responses import JSONResponse
 from typing import Dict, Any, List
 from .service import monitor_service
@@ -294,3 +294,21 @@ def reset_event_stats(event_type: str = None):
     """
     monitor_service.reset_event_stats(event_type)
     return {"message": "事件统计已重置"}
+
+
+@router.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """
+    WebSocket 端点，用于实时推送监控数据
+
+    客户端可以通过此端点建立 WebSocket 连接，接收实时监控数据
+    """
+    await monitor_service.register_websocket(websocket)
+    try:
+        while True:
+            # 接收客户端消息（如果有）
+            await websocket.receive_text()
+    except Exception as e:
+        print(f"WebSocket 连接异常: {e}")
+    finally:
+        monitor_service.unregister_websocket(websocket)

@@ -82,6 +82,8 @@ app.websocket("/")(websocket_root)
 register_database(app)
 
 # 启动说明：
+# 进入 venv python虚拟环境：
+# venv\Scripts\activate
 # 使用命令: uvicorn main:app --host 0.0.0.0 --port 8000 
 # 然后访问 http://127.0.0.1:8000 或 http://127.0.0.1:8000/docs
 if __name__ == "__main__":

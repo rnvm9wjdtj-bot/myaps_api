@@ -1547,6 +1547,70 @@ code[class*="language-"] {
     z-index: 1001;
 }
 
+/* 监控暂停模态框样式 */
+#inactivity-modal .modal-content {
+    /* 利用绝对定位将其移到视口中心点 */
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    
+    /* 关键步骤：反向平移自身宽高的一半，实现精准居中 */
+    transform: translate(-50%, -50%);
+    
+    /* 设置尺寸与样式 */
+    width: 600px;
+    max-width: 90vw; /* 响应式限制 */
+    height: auto;
+    max-height: 80vh;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+#inactivity-modal .modal-header {
+    background: var(--warning-color);
+    color: white;
+    justify-content: center;
+    border-bottom: none;
+    padding: 16px 20px;
+}
+
+#inactivity-modal .modal-header h3 {
+    font-size: 24px;
+    font-weight: 600;
+    margin: 0;
+}
+
+#inactivity-modal .modal-body {
+    padding: 40px 30px;
+    text-align: center;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+#inactivity-modal .modal-body p {
+    font-size: 18px;
+    margin-bottom: 16px;
+    line-height: 1.6;
+    color: var(--text-primary);
+}
+
+#inactivity-modal .modal-footer {
+    padding: 20px 30px;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: center;
+    background: var(--bg-color);
+}
+
+#inactivity-modal .modal-footer .btn {
+    font-size: 16px;
+    padding: 12px 32px;
+}
+
 .modal-header {
     display: flex;
     justify-content: space-between;

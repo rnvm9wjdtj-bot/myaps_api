@@ -6,7 +6,8 @@
 
 import time
 import asyncio
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Set
+from fastapi import WebSocket
 from .collectors import ResourceCollector, DatabaseCollector, SchedulerCollector, HTTPCollector
 from .collectors.outbound_http_collector import outbound_http_collector
 from .collectors.event_collector import EventCollector
@@ -38,37 +39,189 @@ class MonitorService:
         self.event_collector = EventCollector()
         self._alerts: List[Dict[str, Any]] = []
         self._max_alerts = 100
+        self._cache = {}
+        self._cache_expiry = {
+            "resource": 5,  # 5秒
+            "database": 10,  # 10秒
+            "scheduler": 30,  # 30秒
+            "http": 1,  # 1秒
+            "outbound_http": 1,  # 1秒
+            "event": 5,  # 5秒
+        }
+        self._log_cache = {}
+        self._log_cache_expiry = 120  # 120秒（优化：增加缓存时间）
+        # 日志文件位置跟踪（优化：实现增量读取）
+        self._log_file_position = {}
+        # 日志轮转支持（优化：支持多个日志文件）
+        self._log_files = []
+        # 数据库连接检查缓存（优化：增加连接检查缓存）
+        self._db_connection_cache = {}
+        self._db_connection_cache_expiry = 60  # 60秒
+        # 数据库健康状态（优化：实现智能检查策略）
+        self._db_health_status = {}
+        # WebSocket 连接管理
+        self._websocket_connections: Set[WebSocket] = set()
+        self._broadcast_task: Optional[asyncio.Task] = None
+        self._broadcast_running = False
         self._initialized = True
+
+    def _get_cached_data(self, key):
+        """获取缓存数据"""
+        if key in self._cache:
+            data, timestamp = self._cache[key]
+            if time.time() - timestamp < self._cache_expiry.get(key, 5):
+                return data
+        return None
+
+    def _set_cache_data(self, key, data):
+        """设置缓存数据"""
+        self._cache[key] = (data, time.time())
 
     def get_resource_metrics(self) -> Dict[str, Any]:
         """获取资源指标"""
+        # 尝试从缓存获取
+        cached = self._get_cached_data("resource")
+        if cached:
+            return cached
+        
+        # 缓存过期，重新采集
         metrics = self.resource_collector.get_current_metrics()
         alerts = self.resource_collector.check_thresholds(metrics)
 
         for alert in alerts:
             self._add_alert("warning", alert, "resource")
 
+        # 设置缓存
+        self._set_cache_data("resource", metrics)
         return metrics
 
     async def get_database_metrics(self) -> Dict[str, Any]:
         """获取数据库指标"""
-        return await self.db_collector.get_all_metrics()
+        # 尝试从缓存获取
+        cached = self._get_cached_data("database")
+        if cached:
+            return cached
+        
+        # 缓存过期，重新采集
+        metrics = await self.db_collector.get_all_metrics()
+        
+        # 设置缓存
+        self._set_cache_data("database", metrics)
+        return metrics
+    
+    async def get_cached_db_connection_status(self) -> Dict[str, Any]:
+        """
+        获取数据库连接状态（带缓存和智能检查策略）
+        
+        Returns:
+            Dict: 各数据库连接状态
+        """
+        import time
+        
+        # 生成缓存键
+        cache_key = "db_connection_status"
+        
+        # 检查缓存是否有效
+        if cache_key in self._db_connection_cache:
+            status, timestamp = self._db_connection_cache[cache_key]
+            
+            # 智能检查策略：根据数据库健康状态调整缓存时间
+            unhealthy_count = status.get("summary", {}).get("unhealthy", 0)
+            
+            # 健康状态：使用较长的缓存时间
+            if unhealthy_count == 0:
+                cache_expiry = 60  # 60秒
+            # 警告状态：使用中等缓存时间
+            elif unhealthy_count < len(status.get("connections", {})):
+                cache_expiry = 30  # 30秒
+            # 异常状态：使用较短的缓存时间
+            else:
+                cache_expiry = 10  # 10秒
+            
+            if time.time() - timestamp < cache_expiry:
+                return status
+        
+        # 缓存过期或不存在，重新检查
+        status = await self.db_collector.get_connection_status()
+        
+        # 更新数据库健康状态
+        self._update_db_health_status(status)
+        
+        # 设置缓存
+        self._db_connection_cache[cache_key] = (status, time.time())
+        
+        return status
+    
+    def _update_db_health_status(self, status: Dict[str, Any]) -> None:
+        """
+        更新数据库健康状态
+        
+        Args:
+            status: 数据库连接状态
+        """
+        connections = status.get("connections", {})
+        for db_name, conn_status in connections.items():
+            self._db_health_status[db_name] = {
+                "healthy": conn_status.get("healthy", False),
+                "last_check": conn_status.get("last_check", time.time()),
+                "error": conn_status.get("error", None)
+            }
 
     def get_scheduler_metrics(self) -> Dict[str, Any]:
         """获取定时任务指标"""
-        return self.scheduler_collector.get_all_metrics()
+        # 尝试从缓存获取
+        cached = self._get_cached_data("scheduler")
+        if cached:
+            return cached
+        
+        # 缓存过期，重新采集
+        metrics = self.scheduler_collector.get_all_metrics()
+        
+        # 设置缓存
+        self._set_cache_data("scheduler", metrics)
+        return metrics
 
     def get_http_metrics(self) -> Dict[str, Any]:
         """获取 HTTP 指标"""
-        return self.http_collector.get_metrics()
+        # 尝试从缓存获取
+        cached = self._get_cached_data("http")
+        if cached:
+            return cached
+        
+        # 缓存过期，重新采集
+        metrics = self.http_collector.get_metrics()
+        
+        # 设置缓存
+        self._set_cache_data("http", metrics)
+        return metrics
 
     def get_outbound_http_metrics(self) -> Dict[str, Any]:
         """获取对外 HTTP 请求指标"""
-        return self.outbound_http_collector.get_metrics()
+        # 尝试从缓存获取
+        cached = self._get_cached_data("outbound_http")
+        if cached:
+            return cached
+        
+        # 缓存过期，重新采集
+        metrics = self.outbound_http_collector.get_metrics()
+        
+        # 设置缓存
+        self._set_cache_data("outbound_http", metrics)
+        return metrics
 
     def get_event_metrics(self) -> Dict[str, Any]:
         """获取事件监控指标"""
-        return self.event_collector.get_event_metrics()
+        # 尝试从缓存获取
+        cached = self._get_cached_data("event")
+        if cached:
+            return cached
+        
+        # 缓存过期，重新采集
+        metrics = self.event_collector.get_event_metrics()
+        
+        # 设置缓存
+        self._set_cache_data("event", metrics)
+        return metrics
 
     def flush_events_now(self, event_type: str = None):
         """立即刷新事件聚合器"""
@@ -113,7 +266,7 @@ class MonitorService:
 
         # 检查数据库
         try:
-            db_status = await self.db_collector.get_connection_status()
+            db_status = await self.get_cached_db_connection_status()
             summary = db_status.get("summary", {})
             if summary.get("unhealthy", 0) == 0:
                 checks["database"] = {"status": "healthy", "message": "所有数据库连接正常"}
@@ -260,59 +413,94 @@ class MonitorService:
         logs = []
         CHUNK_SIZE = 64 * 1024
         
-        log_pattern = re.compile(
-            r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) - ([^-]+?) - (?:.*? - )?(ERROR|WARNING|INFO|DEBUG) - (.*)$',
-            re.MULTILINE
-        )
+        # 优化：支持日志轮转，获取所有相关日志文件
+        log_files = self._get_log_files(file_path)
         
-        try:
-            file_size = os.path.getsize(file_path)
-            if file_size == 0:
-                return []
+        for log_file in log_files:
+            if len(logs) >= max_logs:
+                break
             
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                position = file_size
-                buffer = ""
-                lines_buffer = []
+            try:
+                file_size = os.path.getsize(log_file)
+                if file_size == 0:
+                    continue
                 
-                while position > 0 and len(logs) < max_logs:
-                    read_size = min(CHUNK_SIZE, position)
-                    position -= read_size
-                    f.seek(position)
-                    chunk = f.read(read_size)
+                # 优化：增量读取，从上次读取的位置开始
+                last_position = self._log_file_position.get(log_file, file_size)
+                start_position = min(last_position, file_size)
+                
+                with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                    position = start_position
+                    buffer = ""
+                    lines_buffer = []
                     
-                    buffer = chunk + buffer
-                    
-                    lines = buffer.split('\n')
-                    
-                    if position > 0:
-                        buffer = lines[0]
-                        lines_to_process = lines[1:]
-                    else:
-                        lines_to_process = lines
-                    
-                    for line in reversed(lines_to_process):
-                        if not line.strip():
-                            continue
-                        lines_buffer.append(line)
+                    while position > 0 and len(logs) < max_logs:
+                        read_size = min(CHUNK_SIZE, position)
+                        position -= read_size
+                        f.seek(position)
+                        chunk = f.read(read_size)
                         
-                        if len(lines_buffer) >= 100:
-                            self._parse_log_lines(lines_buffer, logs, max_logs, log_pattern, level_filter, datetime)
-                            lines_buffer = []
+                        buffer = chunk + buffer
+                        
+                        lines = buffer.split('\n')
+                        
+                        if position > 0:
+                            buffer = lines[0]
+                            lines_to_process = lines[1:]
+                        else:
+                            lines_to_process = lines
+                        
+                        for line in reversed(lines_to_process):
+                            if not line.strip():
+                                continue
+                            lines_buffer.append(line)
                             
-                            if len(logs) >= max_logs:
-                                break
-                
-                if lines_buffer and len(logs) < max_logs:
-                    self._parse_log_lines(lines_buffer, logs, max_logs, log_pattern, level_filter, datetime)
+                            if len(lines_buffer) >= 100:
+                                self._parse_log_lines(lines_buffer, logs, max_logs, level_filter, datetime)
+                                lines_buffer = []
+                                
+                                if len(logs) >= max_logs:
+                                    break
                     
-        except Exception as e:
-            logger.error(f"反向读取日志文件失败: {e}")
+                    if lines_buffer and len(logs) < max_logs:
+                        self._parse_log_lines(lines_buffer, logs, max_logs, level_filter, datetime)
+                    
+                    # 更新文件读取位置
+                    self._log_file_position[log_file] = file_size
+                    
+            except Exception as e:
+                logger.error(f"反向读取日志文件失败: {e}")
         
         return logs
     
+    def _get_log_files(self, base_file: str) -> List[str]:
+        """
+        获取所有相关的日志文件（支持日志轮转）
+        
+        Args:
+            base_file: 基础日志文件路径
+            
+        Returns:
+            日志文件列表，按时间从新到旧排序
+        """
+        import os
+        import glob
+        
+        log_files = []
+        base_dir = os.path.dirname(base_file)
+        base_name = os.path.basename(base_file)
+        
+        # 查找所有相关的日志文件
+        pattern = os.path.join(base_dir, f"{base_name}*")
+        all_files = glob.glob(pattern)
+        
+        # 按修改时间从新到旧排序
+        all_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+        
+        return all_files
+    
     def _parse_log_lines(self, lines: List[str], logs: List[Dict], max_logs: int, 
-                         log_pattern, level_filter: Optional[str], datetime) -> None:
+                         level_filter: Optional[str], datetime) -> None:
         """
         解析日志行并添加到日志列表
         
@@ -320,7 +508,6 @@ class MonitorService:
             lines: 日志行列表
             logs: 日志结果列表
             max_logs: 最大日志数量
-            log_pattern: 正则表达式模式
             level_filter: 日志级别过滤
             datetime: datetime 模块
         """
@@ -330,82 +517,179 @@ class MonitorService:
         current_key = None
         
         for line in lines:
-            match = log_pattern.match(line)
-            if match:
-                current_key = line
-                log_entries[current_key] = line
+            # 优化：使用字符串方法替代正则表达式判断是否为日志开头
+            if line and line[0].isdigit() and len(line) > 20:
+                # 尝试提取时间戳部分
+                timestamp_part = line[:23]
+                try:
+                    # 验证时间戳格式
+                    datetime.strptime(timestamp_part, '%Y-%m-%d %H:%M:%S,%f')
+                    # 是日志开头
+                    current_key = line
+                    log_entries[current_key] = line
+                except ValueError:
+                    # 不是日志开头，作为多行日志的一部分
+                    if current_key and line.strip():
+                        log_entries[current_key] += '\n' + line
             elif current_key and line.strip():
+                # 不是日志开头，作为多行日志的一部分
                 log_entries[current_key] += '\n' + line
         
         for full_log_entry in reversed(list(log_entries.values())):
             if len(logs) >= max_logs:
                 break
                 
-            # 只匹配第一行来获取基本信息
-            first_line = full_log_entry.split('\n')[0]
-            match = log_pattern.match(first_line)
-            if not match:
-                continue
-            
-            timestamp_str = match.group(1)
-            module = match.group(2).strip()
-            log_level_str = match.group(3)
-            
-            # 提取完整消息（包括多行）
-            # 找到 " - LEVEL - " 后的所有内容
-            level_marker = f" - {log_level_str} - "
-            level_pos = full_log_entry.find(level_marker)
-            if level_pos != -1:
-                message_start = level_pos + len(level_marker)
-                message = full_log_entry[message_start:].strip()
-            else:
-                message = match.group(4).strip()
-            
+            # 优化：使用字符串方法解析日志
             try:
+                # 提取时间戳
+                timestamp_str = full_log_entry[:23]
                 timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S,%f').timestamp()
-            except ValueError:
+                
+                # 提取模块和日志级别
+                # 格式：2026-04-15 10:59:43,123 - module - LEVEL - message
+                parts = full_log_entry[24:].split(' - ')
+                if len(parts) >= 3:
+                    module = parts[0].strip()
+                    log_level_str = parts[1].strip()
+                    message = ' - '.join(parts[2:]).strip()
+                else:
+                    continue
+                
+                module = module.replace('.log', '')
+                log_level_str = log_level_str.lower()
+                
+                if level_filter and log_level_str != level_filter:
+                    continue
+                
+                logs.append({
+                    "level": log_level_str,
+                    "message": message,
+                    "timestamp": timestamp,
+                    "module": module,
+                    "traceback": None
+                })
+            except Exception:
                 continue
-            
-            module = module.replace('.log', '')
-            log_level_str = log_level_str.lower()
-            
-            if level_filter and log_level_str != level_filter:
-                continue
-            
-            logs.append({
-                "level": log_level_str,
-                "message": message,
-                "timestamp": timestamp,
-                "module": module,
-                "traceback": None
-            })
 
     def get_recent_logs(self, limit: int = 50, level: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         获取最近的日志（使用反向读取优化）
-        
+
         Args:
             limit: 返回日志数量限制
             level: 日志级别过滤 (warning, error)
-            
+
         Returns:
             日志列表
         """
         import os
         
+        # 生成缓存键
+        cache_key = f"logs_{limit}_{level}"
+        
+        # 尝试从缓存获取
+        if cache_key in self._log_cache:
+            logs, timestamp = self._log_cache[cache_key]
+            if time.time() - timestamp < self._log_cache_expiry:
+                return logs
+
+        # 缓存过期，重新读取
         logs = []
         current_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
         log_dir = os.path.join(project_root, "logs")
-        
+
         log_file = os.path.join(log_dir, "app.log")
-        
+
         if os.path.exists(log_file):
             logs = self._read_logs_reverse(log_file, limit, level)
-        
+
         logs.sort(key=lambda x: x["timestamp"], reverse=True)
+        result = logs[:limit]
         
-        return logs[:limit]
+        # 设置缓存
+        self._log_cache[cache_key] = (result, time.time())
+
+        return result
+
+    async def register_websocket(self, websocket: WebSocket):
+        """注册 WebSocket 连接"""
+        await websocket.accept()
+        self._websocket_connections.add(websocket)
+        logger.info(f"新的 WebSocket 连接已注册，当前连接数: {len(self._websocket_connections)}")
+        
+        # 如果广播任务未启动，启动它
+        if not self._broadcast_running:
+            await self.start_broadcast()
+
+    def unregister_websocket(self, websocket: WebSocket):
+        """注销 WebSocket 连接"""
+        if websocket in self._websocket_connections:
+            self._websocket_connections.remove(websocket)
+            logger.info(f"WebSocket 连接已注销，当前连接数: {len(self._websocket_connections)}")
+            
+            # 如果没有连接了，停止广播任务
+            if len(self._websocket_connections) == 0 and self._broadcast_running:
+                self.stop_broadcast()
+
+    async def broadcast_data(self, data: Dict[str, Any]):
+        """广播数据到所有 WebSocket 连接"""
+        disconnected = []
+        for connection in self._websocket_connections:
+            try:
+                await connection.send_json(data)
+            except Exception as e:
+                logger.error(f"发送数据到 WebSocket 失败: {e}")
+                disconnected.append(connection)
+        
+        # 移除断开的连接
+        for connection in disconnected:
+            self.unregister_websocket(connection)
+
+    async def start_broadcast(self):
+        """启动广播任务"""
+        if self._broadcast_running:
+            return
+        
+        self._broadcast_running = True
+        self._broadcast_task = asyncio.create_task(self._broadcast_loop())
+        logger.info("WebSocket 广播任务已启动")
+
+    def stop_broadcast(self):
+        """停止广播任务"""
+        if not self._broadcast_running:
+            return
+        
+        self._broadcast_running = False
+        if self._broadcast_task:
+            self._broadcast_task.cancel()
+            self._broadcast_task = None
+        logger.info("WebSocket 广播任务已停止")
+
+    async def _broadcast_loop(self):
+        """广播循环，定期发送监控数据"""
+        try:
+            while self._broadcast_running:
+                # 收集监控数据
+                try:
+                    overview = await self.get_overview()
+                    data = {
+                        "type": "monitor_data",
+                        "data": overview
+                    }
+                    # 广播数据
+                    await self.broadcast_data(data)
+                except Exception as e:
+                    logger.error(f"广播数据收集失败: {e}")
+                
+                # 等待一段时间后再次广播
+                await asyncio.sleep(1)  # 每秒广播一次
+        except asyncio.CancelledError:
+            logger.info("广播循环已取消")
+        except Exception as e:
+            logger.error(f"广播循环异常: {e}")
+        finally:
+            self._broadcast_running = False
 
 
 # 全局监控服务实例

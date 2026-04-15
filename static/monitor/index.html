@@ -469,8 +469,26 @@
         <footer class="footer">
             <p>&nbsp;</p>
         </footer>
+ </main>
     </div>
-
+    
+    <!-- 超时提示模态框 -->
+    <div class="modal" id="inactivity-modal" style="display: none;">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>⚠️ 监控已暂停</h3>
+            </div>
+            <div class="modal-body">
+                <p>由于长时间未活动，监控已自动暂停以节省资源。</p>
+                <p>如需继续监控，请点击下方按钮恢复连接。</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="resumeMonitoring()">恢复连接</button>
+            </div>
+        </div>
+    </div>
+    
     <script src="/static/monitor/js/monitor.js"></script>
 </body>
 </html>

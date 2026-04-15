@@ -29,7 +29,45 @@ class ResourceCollector:
         """
         try:
             memory = self._process.memory_info()
-            system_cpu = psutil.cpu_percent(interval=0.1)
+            # 减少阻塞时间，提高响应速度
+            system_cpu = psutil.cpu_percent(interval=0.01)
+            process_cpu = self._process.cpu_percent(interval=0.0)
+            threads = self._process.num_threads()
+
+            return {
+                "timestamp": time.time(),
+                "memory": {
+                    "rss": round(memory.rss / 1024 / 1024, 2),
+                    "vms": round(memory.vms / 1024 / 1024, 2),
+                    "percent": round(self._process.memory_percent(), 2),
+                },
+                "cpu": {
+                    "system": round(system_cpu, 2),
+                    "process": round(process_cpu, 2),
+                    "process_system_percent": round(process_cpu / self._cpu_count, 2) if self._cpu_count else 0,
+                    "count": self._cpu_count,
+                },
+                "threads": threads,
+                "uptime": round(time.time() - self._process.create_time(), 2),
+            }
+        except Exception as e:
+            logger.error(f"采集资源指标失败: {e}")
+            return {
+                "timestamp": time.time(),
+                "error": str(e),
+            }
+
+    async def get_current_metrics_async(self) -> Dict[str, Any]:
+        """
+        异步获取当前资源使用指标
+
+        Returns:
+            Dict: 包含 CPU、内存、线程等指标的字典
+        """
+        try:
+            memory = self._process.memory_info()
+            # 减少阻塞时间，提高响应速度
+            system_cpu = psutil.cpu_percent(interval=0.01)
             process_cpu = self._process.cpu_percent(interval=0.0)
             threads = self._process.num_threads()
 

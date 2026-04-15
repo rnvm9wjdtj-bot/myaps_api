@@ -36,6 +36,8 @@ class HTTPMetricsCollector:
             }),
             "status_codes": defaultdict(int),
         }
+        # 请求频率限制
+        self._rate_limits = defaultdict(lambda: deque(maxlen=100))  # 每个IP最多100个请求/分钟
         self._lock = asyncio.Lock()
 
     async def record_request(
@@ -183,6 +185,33 @@ class HTTPMetricsCollector:
             "status_codes": defaultdict(int),
         }
 
+    def check_rate_limit(self, client_ip: str) -> bool:
+        """
+        检查请求频率是否超过限制
+
+        Args:
+            client_ip: 客户端 IP 地址
+
+        Returns:
+            bool: True 表示请求频率超过限制，False 表示正常
+        """
+        now = time.time()
+        one_minute_ago = now - 60
+        
+        # 清理过期的请求记录
+        self._rate_limits[client_ip] = deque(
+            [t for t in self._rate_limits[client_ip] if t > one_minute_ago],
+            maxlen=100
+        )
+        
+        # 检查是否超过限制
+        if len(self._rate_limits[client_ip]) >= 100:
+            return True
+        
+        # 记录当前请求
+        self._rate_limits[client_ip].append(now)
+        return False
+
 
 # 全局 HTTP 指标收集器实例
 http_metrics_collector = HTTPMetricsCollector()
@@ -195,12 +224,24 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.include_paths = include_paths or [
             "/api",  # 只监控 API 路径的请求
+            "/monitor/api",  # 监控监控 API 路径的请求
         ]
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         path = request.url.path
         if not any(path.startswith(included) for included in self.include_paths):
             return await call_next(request)
+
+        # 检查请求频率限制
+        client_ip = request.client.host if request.client else "unknown"
+        print(f"[DEBUG] 客户端 IP: {client_ip}, 路径: {path}")
+        if http_metrics_collector.check_rate_limit(client_ip):
+            from starlette.responses import JSONResponse
+            print(f"[DEBUG] 请求频率超过限制，客户端 IP: {client_ip}")
+            return JSONResponse(
+                status_code=429,
+                content={"message": "请求过于频繁，请稍后再试", "status_code": 429}
+            )
 
         start_time = time.time()
         error_message = None
@@ -287,7 +328,6 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
         finally:
             duration = time.time() - start_time
 
-            client_ip = request.client.host if request.client else "unknown"
             asyncio.create_task(
                 http_metrics_collector.record_request(
                     method=request.method,

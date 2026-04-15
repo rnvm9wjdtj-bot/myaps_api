@@ -13,6 +13,18 @@ let outboundRequestsData = [];
 let actualErrorState = {};
 // 存储已确认的错误状态（用于比较状态变化）
 let badgeConfirmedHasError = {};
+// WebSocket 连接
+let ws = null;
+let wsReconnectInterval = null;
+let wsReconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
+const RECONNECT_DELAY = 3000;
+
+// 超时机制
+let lastActivityTime = Date.now();
+let inactivityTimeout = null;
+const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 当连续不活动 30分钟时，触发超时
+let isInactive = false;
 
 // 从localStorage加载已确认的错误状态
 function loadBadgeConfirmedHasError() {
@@ -44,7 +56,237 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchEnvironment();
     refreshAll();
     startAutoRefresh();
+    initWebSocket();
+    startInactivityTimer();
+    
+    // 监听用户活动
+    window.addEventListener('mousemove', resetInactivityTimer);
+    window.addEventListener('keydown', resetInactivityTimer);
+    window.addEventListener('scroll', resetInactivityTimer);
+    window.addEventListener('click', resetInactivityTimer);
 });
+
+// 启动不活动计时器
+function startInactivityTimer() {
+    if (inactivityTimeout) {
+        clearTimeout(inactivityTimeout);
+    }
+    inactivityTimeout = setTimeout(handleInactivityTimeout, INACTIVITY_TIMEOUT_MS);
+}
+
+// 重置不活动计时器
+function resetInactivityTimer() {
+    lastActivityTime = Date.now();
+    if (isInactive) {
+        // 如果之前处于不活动状态，更新状态但不自动重连
+        isInactive = false;
+        console.log('用户活动，更新监控状态但不自动重连');
+    }
+    startInactivityTimer();
+}
+
+// 处理不活动超时
+function handleInactivityTimeout() {
+    isInactive = true;
+    console.log('用户长时间不活动，断开 WebSocket 连接并停止数据刷新');
+    
+    // 断开 WebSocket 连接
+    closeWebSocket();
+    
+    // 停止自动刷新
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+    }
+    
+    // 显示提示信息
+    const statusIndicator = document.getElementById('status-indicator');
+    if (statusIndicator) {
+        statusIndicator.textContent = '● 监控已暂停（长时间未活动）';
+        statusIndicator.className = 'status warning';
+    }
+    
+    // 显示超时提示模态框
+    showInactivityModal();
+}
+
+// 显示超时提示模态框
+function showInactivityModal() {
+    const modal = document.getElementById('inactivity-modal');
+    if (modal) {
+        modal.style.display = 'block';
+    }
+}
+
+// 隐藏超时提示模态框
+function hideInactivityModal() {
+    const modal = document.getElementById('inactivity-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+// 恢复监控
+function resumeMonitoring() {
+    console.log('用户手动恢复监控');
+    
+    // 隐藏模态框
+    hideInactivityModal();
+    
+    // 重置不活动状态
+    isInactive = false;
+    
+    // 重新建立 WebSocket 连接
+    initWebSocket();
+    
+    // 重新启动自动刷新
+    startAutoRefresh();
+    
+    // 立即刷新一次数据
+    refreshAll();
+    
+    // 重置不活动计时器
+    resetInactivityTimer();
+}
+
+// 初始化 WebSocket 连接
+function initWebSocket() {
+    // 如果用户不活动，不建立 WebSocket 连接
+    if (isInactive) {
+        console.log('用户不活动，跳过 WebSocket 连接初始化');
+        return;
+    }
+    
+    // 构建 WebSocket URL
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/monitor/ws`;
+    
+    // 关闭现有连接
+    if (ws) {
+        ws.close();
+    }
+    
+    // 创建新连接
+    ws = new WebSocket(wsUrl);
+    
+    // 连接建立
+    ws.onopen = function() {
+        console.log('WebSocket 连接已建立');
+        wsReconnectAttempts = 0;
+        if (wsReconnectInterval) {
+            clearInterval(wsReconnectInterval);
+            wsReconnectInterval = null;
+        }
+    };
+    
+    // 接收消息
+    ws.onmessage = function(event) {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'monitor_data') {
+                handleWebSocketData(data.data);
+            }
+        } catch (error) {
+            console.error('解析 WebSocket 消息失败:', error);
+        }
+    };
+    
+    // 连接关闭
+    ws.onclose = function() {
+        console.log('WebSocket 连接已关闭');
+        attemptReconnect();
+    };
+    
+    // 连接错误
+    ws.onerror = function(error) {
+        console.error('WebSocket 错误:', error);
+    };
+}
+
+// 处理 WebSocket 数据
+function handleWebSocketData(data) {
+    // 如果用户不活动，不处理 WebSocket 数据
+    if (isInactive) {
+        console.log('用户不活动，跳过 WebSocket 数据处理');
+        return;
+    }
+    
+    // 更新资源指标
+    if (data.resource) {
+        updateResourceDisplay(data.resource);
+    }
+    
+    // 更新数据库指标
+    if (data.database) {
+        updateDatabaseDisplay(data.database);
+    }
+    
+    // 更新调度器指标
+    if (data.scheduler) {
+        updateSchedulerDisplay(data.scheduler);
+    }
+    
+    // 更新 HTTP 指标
+    if (data.http) {
+        updateHTTPDisplay(data.http);
+    }
+    
+    // 更新对外 HTTP 指标
+    if (data.outbound_http) {
+        // 这里可以添加对外 HTTP 指标的更新逻辑
+    }
+    
+    // 更新告警
+    if (data.alerts) {
+        updateAlertsDisplay(data.alerts);
+    }
+    
+    // 更新最后更新时间
+    updateLastUpdateTime();
+    
+    // 检查告警条件
+    checkAlertConditions();
+}
+
+// 尝试重新连接
+function attemptReconnect() {
+    // 如果用户不活动，不尝试重新连接
+    if (isInactive) {
+        console.log('用户不活动，跳过 WebSocket 重新连接');
+        return;
+    }
+    
+    if (wsReconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        wsReconnectAttempts++;
+        console.log(`尝试重新连接 WebSocket (${wsReconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+        
+        if (wsReconnectInterval) {
+            clearInterval(wsReconnectInterval);
+        }
+        
+        wsReconnectInterval = setInterval(() => {
+            initWebSocket();
+        }, RECONNECT_DELAY);
+    } else {
+        console.error('WebSocket 重新连接失败，已达到最大尝试次数');
+        if (wsReconnectInterval) {
+            clearInterval(wsReconnectInterval);
+            wsReconnectInterval = null;
+        }
+    }
+}
+
+// 关闭 WebSocket 连接
+function closeWebSocket() {
+    if (ws) {
+        ws.close();
+        ws = null;
+    }
+    if (wsReconnectInterval) {
+        clearInterval(wsReconnectInterval);
+        wsReconnectInterval = null;
+    }
+}
 
 // 获取环境变量
 async function fetchEnvironment() {
@@ -75,6 +317,13 @@ function startAutoRefresh() {
 
 // 刷新所有数据
 async function refreshAll() {
+    // 如果用户不活动，不发送请求
+    if (isInactive) {
+        console.log('用户不活动，跳过数据刷新');
+        return;
+    }
+    
+    // 基础数据，无论哪个页面都需要刷新
     await Promise.all([
         fetchHealth(),
         fetchResource(),
@@ -82,15 +331,31 @@ async function refreshAll() {
         fetchScheduler(),
         fetchHTTP(),
         fetchAlerts(),
-        // 刷新各个页面的数据
-        fetchAPIRequests(),
-        fetchOutboundRequests(),
-        fetchDatabaseDetail(),
-        fetchEventStats(),
-        fetchSchedulerPage(),
-        fetchLogsPage(),
         fetchOverviewOutboundRequests()
     ]);
+    
+    // 只刷新当前页面的数据
+    switch (currentPage) {
+        case 'api-requests':
+            await fetchAPIRequests();
+            break;
+        case 'outbound-requests':
+            await fetchOutboundRequests();
+            break;
+        case 'database':
+            await Promise.all([
+                fetchDatabaseDetail(),
+                fetchEventStats()
+            ]);
+            break;
+        case 'scheduler':
+            await fetchSchedulerPage();
+            break;
+        case 'logs':
+            await fetchLogsPage();
+            break;
+    }
+    
     updateLastUpdateTime();
     checkAlertConditions();
 }
@@ -752,6 +1017,12 @@ function formatTimeAgo(timestamp) {
 
 // 清空告警
 async function clearAlerts() {
+    // 如果用户不活动，不发送请求
+    if (isInactive) {
+        console.log('用户不活动，跳过告警清空');
+        return;
+    }
+    
     try {
         await fetch(`${API_BASE}/alerts/clear`, { method: 'POST' });
         fetchAlerts();
@@ -762,6 +1033,12 @@ async function clearAlerts() {
 
 // 获取日志
 async function fetchLogs() {
+    // 如果用户不活动，不发送请求
+    if (isInactive) {
+        console.log('用户不活动，跳过日志数据获取');
+        return;
+    }
+    
     try {
         const level = document.getElementById('log-level').value;
         const url = `${API_BASE}/logs?limit=20${level ? `&level=${level}` : ''}`;
@@ -840,6 +1117,12 @@ function initNavigation() {
 }
 
 function switchPage(pageName) {
+    // 如果用户不活动，不发送请求
+    if (isInactive) {
+        console.log('用户不活动，跳过页面切换时的数据刷新');
+        return;
+    }
+    
     // 处理接收请求和发送请求的特殊逻辑，即使是当前页面也需要执行
     if (pageName === 'api-requests') {
         shouldMarkAPIRequestsAsRead = true;
@@ -885,6 +1168,12 @@ function switchPage(pageName) {
 
 // 获取事件统计数据
 async function fetchEventStats() {
+    // 如果用户不活动，不发送请求
+    if (isInactive) {
+        console.log('用户不活动，跳过事件统计数据获取');
+        return;
+    }
+    
     try {
         const response = await fetch(`${API_BASE}/events`);
         const data = await response.json();
@@ -1016,6 +1305,12 @@ function refreshEventStats() {
 
 // 刷新所有事件
 async function flushAllEvents() {
+    // 如果用户不活动，不发送请求
+    if (isInactive) {
+        console.log('用户不活动，跳过事件刷新');
+        return;
+    }
+    
     try {
         await fetch(`${API_BASE}/events/flush`, { method: 'POST' });
         fetchEventStats();
@@ -1026,6 +1321,12 @@ async function flushAllEvents() {
 
 // 刷新指定事件
 async function flushEvent(eventType) {
+    // 如果用户不活动，不发送请求
+    if (isInactive) {
+        console.log('用户不活动，跳过指定事件刷新');
+        return;
+    }
+    
     try {
         await fetch(`${API_BASE}/events/flush?event_type=${encodeURIComponent(eventType)}`, { method: 'POST' });
         fetchEventStats();
@@ -1036,6 +1337,12 @@ async function flushEvent(eventType) {
 
 // 重置事件统计
 async function resetEventStats() {
+    // 如果用户不活动，不发送请求
+    if (isInactive) {
+        console.log('用户不活动，跳过事件统计重置');
+        return;
+    }
+    
     if (!confirm('确定要重置所有事件统计吗？')) {
         return;
     }
@@ -1049,6 +1356,12 @@ async function resetEventStats() {
 
 // 数据库详情页面
 async function fetchDatabaseDetail() {
+    // 如果用户不活动，不发送请求
+    if (isInactive) {
+        console.log('用户不活动，跳过数据库详情数据获取');
+        return;
+    }
+    
     try {
         const response = await fetch(`${API_BASE}/database`);
         const data = await response.json();
@@ -1133,6 +1446,12 @@ function updateDatabaseDetailDisplay(data) {
 
 // API 请求页面
 async function fetchAPIRequests() {
+    // 如果用户不活动，不发送请求
+    if (isInactive) {
+        console.log('用户不活动，跳过 API 请求数据获取');
+        return;
+    }
+    
     try {
         const response = await fetch(`${API_BASE}/http`);
         const data = await response.json();
@@ -1543,6 +1862,12 @@ function refreshAPIRequests() {
 }
 
 async function resetAPIStats() {
+    // 如果用户不活动，不发送请求
+    if (isInactive) {
+        console.log('用户不活动，跳过 API 统计重置');
+        return;
+    }
+    
     try {
         await fetch(`${API_BASE}/http/reset`, { method: 'POST' });
         fetchAPIRequests();
@@ -1553,6 +1878,12 @@ async function resetAPIStats() {
 
 // 日志页面
 async function fetchLogsPage() {
+    // 如果用户不活动，不发送请求
+    if (isInactive) {
+        console.log('用户不活动，跳过日志数据获取');
+        return;
+    }
+    
     try {
         const level = document.getElementById('log-page-level').value;
         const url = `${API_BASE}/logs?limit=100${level ? `&level=${level}` : ''}`;
@@ -1888,6 +2219,12 @@ function refreshLogsPage() {
 
 // 定时任务详情页面
 async function fetchSchedulerPage() {
+    // 如果用户不活动，不发送请求
+    if (isInactive) {
+        console.log('用户不活动，跳过定时任务详情数据获取');
+        return;
+    }
+    
     try {
         const response = await fetch(`${API_BASE}/scheduler`);
         const data = await response.json();
@@ -2164,6 +2501,12 @@ let showReadLogs = false;
 
 // 获取发送请求数据
 async function fetchOutboundRequests() {
+    // 如果用户不活动，不发送请求
+    if (isInactive) {
+        console.log('用户不活动，跳过发送请求数据获取');
+        return;
+    }
+    
     try {
         const response = await fetch(`${API_BASE}/outbound-http/all`);
         const requests = await response.json();
@@ -2641,6 +2984,12 @@ function refreshOutboundRequests() {
 
 // 重置发送请求统计
 async function resetOutboundStats() {
+    // 如果用户不活动，不发送请求
+    if (isInactive) {
+        console.log('用户不活动，跳过发送请求统计重置');
+        return;
+    }
+    
     try {
         const response = await fetch(`${API_BASE}/outbound-http/reset`, { method: 'POST' });
         const data = await response.json();
@@ -2654,6 +3003,12 @@ async function resetOutboundStats() {
 
 // 获取并更新overview页面的发送请求数据
 async function fetchOverviewOutboundRequests() {
+    // 如果用户不活动，不发送请求
+    if (isInactive) {
+        console.log('用户不活动，跳过overview页面发送请求数据获取');
+        return;
+    }
+    
     try {
         console.log('开始获取发送请求数据，API路径:', `${API_BASE}/outbound-http/all`);
         const response = await fetch(`${API_BASE}/outbound-http/all`);
@@ -2823,6 +3178,12 @@ window.addEventListener('beforeunload', function() {
 
 // 显示日志详细信息
 async function showLogDetail(index) {
+    // 如果用户不活动，不发送请求
+    if (isInactive) {
+        console.log('用户不活动，跳过日志详情获取');
+        return;
+    }
+    
     const logs = window.logsData || [];
     if (!logs[index]) return;
     
