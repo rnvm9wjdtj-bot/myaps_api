@@ -224,7 +224,6 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.include_paths = include_paths or [
             "/api",  # 只监控 API 路径的请求
-            "/monitor/api",  # 监控监控 API 路径的请求
         ]
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:

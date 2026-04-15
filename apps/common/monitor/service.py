@@ -684,9 +684,24 @@ class MonitorService:
                 # 收集监控数据
                 try:
                     overview = await self.get_overview()
+                    
+                    # 收集日志数据
+                    logs = self.get_recent_logs(limit=100)
+                    
+                    # 收集 API 请求数据
+                    api_requests = self.http_collector.get_metrics()
+                    
+                    # 收集发送请求数据
+                    outbound_requests = self.get_outbound_http_metrics()
+                    
                     data = {
                         "type": "monitor_data",
-                        "data": overview
+                        "data": {
+                            **overview,
+                            "logs": logs,
+                            "api_requests": api_requests,
+                            "outbound_requests": outbound_requests
+                        }
                     }
                     # 广播数据
                     await self.broadcast_data(data)

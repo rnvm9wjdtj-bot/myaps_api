@@ -461,11 +461,75 @@ function handleWebSocketData(data) {
         updateAlertsDisplay(data.alerts);
     }
     
+    // 更新日志数据
+    if (data.logs) {
+        updateLogsPageDisplay(data.logs);
+    }
+    
+    // 更新 API 请求数据
+    if (data.api_requests) {
+        updateAPIRequestsDisplay(data.api_requests);
+    }
+    
+    // 更新发送请求数据
+    if (data.outbound_requests) {
+        updateOutboundRequestsDisplay(data.outbound_requests);
+    }
+    
     // 更新最后更新时间
     updateLastUpdateTime();
     
     // 检查告警条件
     checkAlertConditions();
+}
+
+// 更新发送请求显示
+function updateOutboundRequestsDisplay(data) {
+    let requests = data.recent_requests || [];
+    
+    // 计算24小时前的时间戳
+    const twentyFourHoursAgo = Date.now() / 1000 - (24 * 60 * 60);
+    
+    // 根据开关状态决定是否过滤本服务的请求，同时过滤最近24小时的请求
+    const filteredRequests = showInternalRequests ? 
+        requests.filter(request => request.timestamp >= twentyFourHoursAgo) : 
+        requests.filter(request => {
+            // 检查URL是否包含localhost或127.0.0.1，同时检查时间
+            return !request.url.includes('localhost') && !request.url.includes('127.0.0.1') && request.timestamp >= twentyFourHoursAgo;
+        });
+    
+    updateOutboundRequestsTable(filteredRequests);
+    
+    // 如果需要标记为已读，则将所有400+请求标记为已读
+    if (shouldMarkOutboundRequestsAsRead) {
+        const readStatus = getOutboundRequestReadStatus();
+        filteredRequests.forEach(req => {
+            if (req.status_code >= 400) {
+                const requestId = generateOutboundRequestId(req.timestamp, req.method, req.url, req.status_code);
+                readStatus.add(requestId);
+            }
+        });
+        saveOutboundRequestReadStatus(readStatus);
+        shouldMarkOutboundRequestsAsRead = false;
+    }
+    
+    // 获取已读状态
+    const readStatus = getOutboundRequestReadStatus();
+    
+    // 检查是否有未读的400+请求
+    const hasUnreadErrors = filteredRequests.some(req => {
+        if (req.status_code >= 400) {
+            const requestId = generateOutboundRequestId(req.timestamp, req.method, req.url, req.status_code);
+            return !readStatus.has(requestId);
+        }
+        return false;
+    });
+    
+    // 更新发送请求页签的红点角标
+    const outboundRequestsBadge = document.getElementById('outbound-requests-badge');
+    if (outboundRequestsBadge) {
+        outboundRequestsBadge.style.display = hasUnreadErrors ? 'inline-block' : 'none';
+    }
 }
 
 // 尝试重新连接
@@ -562,17 +626,15 @@ async function refreshAll() {
             fetchScheduler(),
             fetchHTTP(),
             fetchAlerts(),
-            fetchOverviewOutboundRequests()
+            fetchOverviewOutboundRequests(),
+            // 无论在哪个页面都刷新日志列表、API 请求记录和发送请求记录
+            fetchLogsPage(),
+            fetchAPIRequests(),
+            fetchOutboundRequests()
         ]);
         
-        // 只刷新当前页面的数据
+        // 只刷新当前页面的特定数据
         switch (currentPage) {
-            case 'api-requests':
-                await fetchAPIRequests();
-                break;
-            case 'outbound-requests':
-                await fetchOutboundRequests();
-                break;
             case 'database':
                 await Promise.all([
                     fetchDatabaseDetail(),
@@ -581,9 +643,6 @@ async function refreshAll() {
                 break;
             case 'scheduler':
                 await fetchSchedulerPage();
-                break;
-            case 'logs':
-                await fetchLogsPage();
                 break;
         }
         
