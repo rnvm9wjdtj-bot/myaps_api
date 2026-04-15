@@ -241,13 +241,14 @@ class MonitorService:
         """清空告警"""
         self._alerts = []
 
-    def get_recent_logs(self, limit: int = 50, level: Optional[str] = None) -> List[Dict[str, Any]]:
+    def _read_logs_reverse(self, file_path: str, max_logs: int, level_filter: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        获取最近的日志
+        反向读取日志文件，从文件末尾开始读取
         
         Args:
-            limit: 返回日志数量限制
-            level: 日志级别过滤 (warning, error)
+            file_path: 日志文件路径
+            max_logs: 最大日志数量
+            level_filter: 日志级别过滤
             
         Returns:
             日志列表
@@ -257,75 +258,140 @@ class MonitorService:
         import re
         
         logs = []
-        # 使用相对路径，从当前文件所在目录向上找到项目根目录
+        CHUNK_SIZE = 64 * 1024
+        
+        log_pattern = re.compile(
+            r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) - ([^-]+?) - (?:.*? - )?(ERROR|WARNING|INFO|DEBUG) - (.*)$',
+            re.MULTILINE
+        )
+        
+        try:
+            file_size = os.path.getsize(file_path)
+            if file_size == 0:
+                return []
+            
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                position = file_size
+                buffer = ""
+                lines_buffer = []
+                
+                while position > 0 and len(logs) < max_logs:
+                    read_size = min(CHUNK_SIZE, position)
+                    position -= read_size
+                    f.seek(position)
+                    chunk = f.read(read_size)
+                    
+                    buffer = chunk + buffer
+                    
+                    lines = buffer.split('\n')
+                    
+                    if position > 0:
+                        buffer = lines[0]
+                        lines_to_process = lines[1:]
+                    else:
+                        lines_to_process = lines
+                    
+                    for line in reversed(lines_to_process):
+                        if not line.strip():
+                            continue
+                        lines_buffer.append(line)
+                        
+                        if len(lines_buffer) >= 100:
+                            self._parse_log_lines(lines_buffer, logs, max_logs, log_pattern, level_filter, datetime)
+                            lines_buffer = []
+                            
+                            if len(logs) >= max_logs:
+                                break
+                
+                if lines_buffer and len(logs) < max_logs:
+                    self._parse_log_lines(lines_buffer, logs, max_logs, log_pattern, level_filter, datetime)
+                    
+        except Exception as e:
+            logger.error(f"反向读取日志文件失败: {e}")
+        
+        return logs
+    
+    def _parse_log_lines(self, lines: List[str], logs: List[Dict], max_logs: int, 
+                         log_pattern, level_filter: Optional[str], datetime) -> None:
+        """
+        解析日志行并添加到日志列表
+        
+        Args:
+            lines: 日志行列表
+            logs: 日志结果列表
+            max_logs: 最大日志数量
+            log_pattern: 正则表达式模式
+            level_filter: 日志级别过滤
+            datetime: datetime 模块
+        """
+        from collections import OrderedDict
+        
+        log_entries = OrderedDict()
+        current_key = None
+        
+        for line in lines:
+            match = log_pattern.match(line)
+            if match:
+                current_key = line
+                log_entries[current_key] = line
+            elif current_key and line.strip():
+                log_entries[current_key] += '\n' + line
+        
+        for line in reversed(list(log_entries.values())):
+            if len(logs) >= max_logs:
+                break
+                
+            match = log_pattern.match(line)
+            if not match:
+                continue
+            
+            timestamp_str = match.group(1)
+            module = match.group(2).strip()
+            log_level_str = match.group(3)
+            message = match.group(4).strip()
+            
+            try:
+                timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S,%f').timestamp()
+            except ValueError:
+                continue
+            
+            module = module.replace('.log', '')
+            log_level_str = log_level_str.lower()
+            
+            if level_filter and log_level_str != level_filter:
+                continue
+            
+            logs.append({
+                "level": log_level_str,
+                "message": message,
+                "timestamp": timestamp,
+                "module": module,
+                "traceback": None
+            })
+
+    def get_recent_logs(self, limit: int = 50, level: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        获取最近的日志（使用反向读取优化）
+        
+        Args:
+            limit: 返回日志数量限制
+            level: 日志级别过滤 (warning, error)
+            
+        Returns:
+            日志列表
+        """
+        import os
+        
+        logs = []
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        # 向上两级目录到项目根目录
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
         log_dir = os.path.join(project_root, "logs")
         
-        # 支持的日志文件
-        log_files = {
-            "app": "app.log"
-        }
+        log_file = os.path.join(log_dir, "app.log")
         
-        # 确定要读取的文件
-        files_to_read = [("app", os.path.join(log_dir, fname)) for lvl, fname in log_files.items()]
+        if os.path.exists(log_file):
+            logs = self._read_logs_reverse(log_file, limit, level)
         
-        # 读取日志文件
-        for log_level, file_path in files_to_read:
-            if os.path.exists(file_path):
-                try:
-                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                        content = f.read()
-                    
-                    # 使用正则表达式匹配完整的日志条目（支持多行消息）
-                    # 日志格式: 2026-04-05 07:45:01,442 - module - ... - LEVEL - message
-                    log_pattern = re.compile(
-                        r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) - ([^-]+?) - (?:.*? - )?(ERROR|WARNING|INFO|DEBUG) - (.*?)(?=\n\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} - |\Z)',
-                        re.DOTALL
-                    )
-                    
-                    # 查找所有匹配的日志
-                    matches = list(log_pattern.finditer(content))
-                    
-                    # 倒序处理，获取最新的日志
-                    for match in reversed(matches):
-                        timestamp_str = match.group(1)
-                        module = match.group(2).strip()
-                        log_level_str = match.group(3)
-                        message = match.group(4).strip()
-                        
-                        # 解析时间戳
-                        try:
-                            timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S,%f').timestamp()
-                        except ValueError:
-                            continue
-                        
-                        # 提取模块名（去掉.log后缀和可能的文件名信息）
-                        module = module.replace('.log', '')
-                        
-                        # 统一日志级别格式
-                        log_level_str = log_level_str.lower()
-                        
-                        # 根据级别过滤
-                        if level and log_level_str != level:
-                            continue
-                        
-                        # 包含所有级别的日志
-                        logs.append({
-                            "level": log_level_str,
-                            "message": message,
-                            "timestamp": timestamp,
-                            "module": module,
-                            "traceback": None  # 简单日志格式不包含堆栈信息
-                        })
-                            
-                        if len(logs) >= limit:
-                            break
-                except Exception as e:
-                    logger.error(f"读取日志文件失败: {e}")
-        
-        # 按时间倒序排序
         logs.sort(key=lambda x: x["timestamp"], reverse=True)
         
         return logs[:limit]

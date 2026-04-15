@@ -8,7 +8,7 @@ set "RESTART_DELAY=5"
 set "MAX_RESTARTS=5"
 set "RESTART_COUNT=0"
 set "HOST=0.0.0.0"
-set "PORT=8001"
+set "PORT=8000"
 
 :: 从 .env 文件读取 HOST 和 PORT 配置
 if exist "%ENV_FILE%" (
