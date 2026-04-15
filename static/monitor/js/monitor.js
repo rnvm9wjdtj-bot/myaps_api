@@ -7,8 +7,7 @@ let resourceChart = null;
 let refreshInterval = null;
 let originalTitle = document.title;
 let titleAlertInterval = null;
-// 存储发送请求数据
-let outboundRequestsData = [];
+
 // 存储实际错误状态
 let actualErrorState = {};
 // 存储已确认的错误状态（用于比较状态变化）
@@ -34,6 +33,12 @@ const CACHE_DURATION = {
     time: 60 * 1000 // 时间格式化缓存1分钟
 };
 
+const CACHE_LIMIT = {
+    data: 100, // 数据缓存最大条目数
+    time: 500, // 时间格式化缓存最大条目数
+    dom: 200 // DOM元素缓存最大条目数
+};
+
 const dataCache = {};
 
 // DOM元素缓存
@@ -45,6 +50,12 @@ const timeCache = {};
 // 获取DOM元素，优先从缓存中获取
 function getElement(id) {
     if (!domCache[id]) {
+        // 检查DOM缓存大小
+        if (Object.keys(domCache).length >= CACHE_LIMIT.dom) {
+            // 移除最早的缓存项
+            const oldestKey = Object.keys(domCache)[0];
+            delete domCache[oldestKey];
+        }
         domCache[id] = document.getElementById(id);
     }
     return domCache[id];
@@ -81,11 +92,53 @@ function getCachedData(key) {
 
 // 更新缓存数据
 function updateCache(key, data) {
+    // 检查数据缓存大小
+    if (Object.keys(dataCache).length >= CACHE_LIMIT.data) {
+        // 移除最早的缓存项
+        let oldestKey = null;
+        let oldestTimestamp = Infinity;
+        Object.entries(dataCache).forEach(([k, v]) => {
+            if (v.timestamp < oldestTimestamp) {
+                oldestTimestamp = v.timestamp;
+                oldestKey = k;
+            }
+        });
+        if (oldestKey) {
+            delete dataCache[oldestKey];
+        }
+    }
     dataCache[key] = {
         data: data,
         timestamp: Date.now()
     };
 }
+
+// 清理过期缓存
+function cleanupCache() {
+    const now = Date.now();
+    
+    // 清理数据缓存
+    Object.entries(dataCache).forEach(([key, item]) => {
+        if (now - item.timestamp >= CACHE_DURATION[key] || !CACHE_DURATION[key]) {
+            delete dataCache[key];
+        }
+    });
+    
+    // 清理时间缓存
+    if (Object.keys(timeCache).length >= CACHE_LIMIT.time) {
+        // 保留最近使用的缓存项
+        const sortedKeys = Object.keys(timeCache).sort((a, b) => {
+            return timeCache[b].timestamp - timeCache[a].timestamp;
+        });
+        const keysToRemove = sortedKeys.slice(CACHE_LIMIT.time);
+        keysToRemove.forEach(key => {
+            delete timeCache[key];
+        });
+    }
+}
+
+// 定期清理缓存
+setInterval(cleanupCache, 5 * 60 * 1000); // 每5分钟清理一次
 
 // 节流函数
 function throttle(func, wait) {
@@ -228,6 +281,8 @@ function resumeMonitoring() {
 // WebSocket 心跳相关变量
 let wsHeartbeatInterval = null;
 const WS_HEARTBEAT_INTERVAL = 30000; // 心跳间隔，30秒
+const WS_RECONNECT_BASE_DELAY = 1000; // 基础重连延迟
+const WS_MAX_RECONNECT_DELAY = 30000; // 最大重连延迟
 
 // 初始化 WebSocket 连接
 function initWebSocket() {
@@ -243,7 +298,12 @@ function initWebSocket() {
     
     // 关闭现有连接
     if (ws) {
-        ws.close();
+        try {
+            ws.close(1000, '重新连接');
+        } catch (error) {
+            console.error('关闭 WebSocket 连接失败:', error);
+        }
+        ws = null;
     }
     
     // 清除心跳定时器
@@ -253,48 +313,58 @@ function initWebSocket() {
     }
     
     // 创建新连接
-    ws = new WebSocket(wsUrl);
-    
-    // 连接建立
-    ws.onopen = function() {
-        console.log('WebSocket 连接已建立');
-        wsReconnectAttempts = 0;
-        if (wsReconnectInterval) {
-            clearInterval(wsReconnectInterval);
-            wsReconnectInterval = null;
-        }
+    try {
+        ws = new WebSocket(wsUrl);
         
-        // 启动心跳
-        startWebSocketHeartbeat();
-    };
-    
-    // 接收消息
-    ws.onmessage = function(event) {
-        try {
-            const data = JSON.parse(event.data);
-            if (data.type === 'monitor_data') {
-                handleWebSocketData(data.data);
+        // 连接建立
+        ws.onopen = function() {
+            console.log('WebSocket 连接已建立');
+            wsReconnectAttempts = 0;
+            if (wsReconnectInterval) {
+                clearInterval(wsReconnectInterval);
+                wsReconnectInterval = null;
             }
-        } catch (error) {
-            console.error('解析 WebSocket 消息失败:', error);
-        }
-    };
-    
-    // 连接关闭
-    ws.onclose = function() {
-        console.log('WebSocket 连接已关闭');
-        // 清除心跳定时器
-        if (wsHeartbeatInterval) {
-            clearInterval(wsHeartbeatInterval);
-            wsHeartbeatInterval = null;
-        }
+            
+            // 启动心跳
+            startWebSocketHeartbeat();
+        };
+        
+        // 接收消息
+        ws.onmessage = function(event) {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.type === 'monitor_data') {
+                    handleWebSocketData(data.data);
+                } else if (data.type === 'heartbeat_response') {
+                    // 心跳响应处理
+                }
+            } catch (error) {
+                console.error('解析 WebSocket 消息失败:', error);
+            }
+        };
+        
+        // 连接关闭
+        ws.onclose = function(event) {
+            console.log(`WebSocket 连接已关闭: ${event.code} - ${event.reason}`);
+            // 清除心跳定时器
+            if (wsHeartbeatInterval) {
+                clearInterval(wsHeartbeatInterval);
+                wsHeartbeatInterval = null;
+            }
+            // 只有在非手动关闭的情况下才尝试重连
+            if (event.code !== 1000) {
+                attemptReconnect();
+            }
+        };
+        
+        // 连接错误
+        ws.onerror = function(error) {
+            console.error('WebSocket 错误:', error);
+        };
+    } catch (error) {
+        console.error('创建 WebSocket 连接失败:', error);
         attemptReconnect();
-    };
-    
-    // 连接错误
-    ws.onerror = function(error) {
-        console.error('WebSocket 错误:', error);
-    };
+    }
 }
 
 // 启动 WebSocket 心跳
@@ -312,9 +382,45 @@ function startWebSocketHeartbeat() {
                 ws.send(JSON.stringify({ type: 'heartbeat', timestamp: Date.now() }));
             } catch (error) {
                 console.error('发送 WebSocket 心跳失败:', error);
+                // 发送失败时尝试重连
+                attemptReconnect();
             }
+        } else if (ws && ws.readyState === WebSocket.CLOSED) {
+            // 连接已关闭，尝试重连
+            attemptReconnect();
         }
     }, WS_HEARTBEAT_INTERVAL);
+}
+
+// 尝试重连
+function attemptReconnect() {
+    if (isInactive) {
+        console.log('用户不活动，跳过 WebSocket 重连');
+        return;
+    }
+    
+    if (wsReconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+        console.error('WebSocket 重连失败，已达到最大尝试次数');
+        return;
+    }
+    
+    // 指数退避重连策略
+    const delay = Math.min(
+        WS_RECONNECT_BASE_DELAY * Math.pow(2, wsReconnectAttempts),
+        WS_MAX_RECONNECT_DELAY
+    );
+    
+    console.log(`WebSocket 将在 ${delay}ms 后尝试重连...`);
+    
+    if (wsReconnectInterval) {
+        clearInterval(wsReconnectInterval);
+    }
+    
+    wsReconnectInterval = setTimeout(function() {
+        wsReconnectAttempts++;
+        console.log(`WebSocket 尝试重连 (${wsReconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+        initWebSocket();
+    }, delay);
 }
 
 // 处理 WebSocket 数据
@@ -1131,7 +1237,7 @@ function updateAlertsDisplay(alerts) {
         return `
             <div class="alert-item ${alert.level} ${updatedClass}">
                 <span class="alert-message">${alert.message}</span>
-                <span class="alert-time">${formatTimeAgo(alert.timestamp)}</span>
+                <span class="alert-time">${formatDateTime(alert.timestamp, 'date')}</span>
             </div>
         `;
     }).join('');
@@ -1153,10 +1259,10 @@ function updateAlertsDisplay(alerts) {
     previousAlerts = [...alerts];
 }
 
-// 格式化相对时间
-function formatTimeAgo(timestamp) {
+// 统一的日期时间格式化函数
+function formatDateTime(timestamp, format = 'relative') {
     // 检查缓存
-    const cacheKey = `timeago_${timestamp}`;
+    const cacheKey = `datetime_${timestamp}_${format}`;
     if (timeCache[cacheKey] && Date.now() - timeCache[cacheKey].timestamp < CACHE_DURATION.time) {
         return timeCache[cacheKey].value;
     }
@@ -1164,45 +1270,87 @@ function formatTimeAgo(timestamp) {
     const now = new Date();
     const date = new Date(timestamp * 1000);
     const diff = now.getTime() / 1000 - timestamp;
-
-    // 今天
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    // 昨天
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    // 前天
-    const dayBeforeYesterday = new Date(today);
-    dayBeforeYesterday.setDate(dayBeforeYesterday.getDate() - 2);
-
-    const logDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-
-    // 判断是否是今天、昨天、前天
-    let dayLabel = '';
-    if (logDate.getTime() === today.getTime()) {
-        dayLabel = '今天';
-    } else if (logDate.getTime() === yesterday.getTime()) {
-        dayLabel = '昨天';
-    } else if (logDate.getTime() === dayBeforeYesterday.getTime()) {
-        dayLabel = '前天';
-    } else {
-        // 显示具体日期
-        const month = (date.getMonth() + 1).toString().padStart(2, '0');
-        const day = date.getDate().toString().padStart(2, '0');
-        const result = `${month}-${day}`;
-        
-        // 更新缓存
-        timeCache[cacheKey] = {
-            value: result,
-            timestamp: Date.now()
-        };
-        
-        return result;
+    
+    let result;
+    
+    switch (format) {
+        case 'relative':
+            // 相对时间格式：刚刚、X分钟前、X小时前、X天前
+            if (diff < 60) {
+                result = '刚刚';
+            } else if (diff < 3600) {
+                result = Math.floor(diff / 60) + '分钟前';
+            } else if (diff < 86400) {
+                result = Math.floor(diff / 3600) + '小时前';
+            } else {
+                result = Math.floor(diff / 86400) + '天前';
+            }
+            break;
+            
+        case 'date':
+            // 日期格式：今天 HH:MM、昨天 HH:MM、前天 HH:MM、MM-DD
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            const dayBeforeYesterday = new Date(today);
+            dayBeforeYesterday.setDate(dayBeforeYesterday.getDate() - 2);
+            const logDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+            
+            let dayLabel = '';
+            if (logDate.getTime() === today.getTime()) {
+                dayLabel = '今天';
+            } else if (logDate.getTime() === yesterday.getTime()) {
+                dayLabel = '昨天';
+            } else if (logDate.getTime() === dayBeforeYesterday.getTime()) {
+                dayLabel = '前天';
+            } else {
+                const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                const day = date.getDate().toString().padStart(2, '0');
+                dayLabel = `${month}-${day}`;
+            }
+            
+            const hours = date.getHours().toString().padStart(2, '0');
+            const minutes = date.getMinutes().toString().padStart(2, '0');
+            result = `${dayLabel} ${hours}:${minutes}`;
+            break;
+            
+        case 'datetime':
+            // 完整日期时间格式：今天 HH:MM:SS、昨天 HH:MM:SS、前天 HH:MM:SS、MM-DD HH:MM:SS
+            const todayFull = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const yesterdayFull = new Date(todayFull);
+            yesterdayFull.setDate(yesterdayFull.getDate() - 1);
+            const dayBeforeYesterdayFull = new Date(todayFull);
+            dayBeforeYesterdayFull.setDate(dayBeforeYesterdayFull.getDate() - 2);
+            const logDateFull = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+            
+            let dayLabelFull = '';
+            if (logDateFull.getTime() === todayFull.getTime()) {
+                dayLabelFull = '今天';
+            } else if (logDateFull.getTime() === yesterdayFull.getTime()) {
+                dayLabelFull = '昨天';
+            } else if (logDateFull.getTime() === dayBeforeYesterdayFull.getTime()) {
+                dayLabelFull = '前天';
+            } else {
+                const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                const day = date.getDate().toString().padStart(2, '0');
+                dayLabelFull = `${month}-${day}`;
+            }
+            
+            const hoursFull = date.getHours().toString().padStart(2, '0');
+            const minutesFull = date.getMinutes().toString().padStart(2, '0');
+            const secondsFull = date.getSeconds().toString().padStart(2, '0');
+            result = `${dayLabelFull} ${hoursFull}:${minutesFull}:${secondsFull}`;
+            break;
+            
+        default:
+            // 默认格式：YYYY-MM-DD HH:MM
+            const year = date.getFullYear();
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const day = date.getDate().toString().padStart(2, '0');
+            const hoursDefault = date.getHours().toString().padStart(2, '0');
+            const minutesDefault = date.getMinutes().toString().padStart(2, '0');
+            result = `${year}-${month}-${day} ${hoursDefault}:${minutesDefault}`;
     }
-
-    // 今天、昨天、前天显示具体时间
-    const hours = date.getHours().toString().padStart(2, '0');
-    const minutes = date.getMinutes().toString().padStart(2, '0');
-    const result = `${dayLabel} ${hours}:${minutes}`;
     
     // 更新缓存
     timeCache[cacheKey] = {
@@ -1211,6 +1359,26 @@ function formatTimeAgo(timestamp) {
     };
     
     return result;
+}
+
+// 获取状态码描述
+function getStatusDescription(statusCode) {
+    const statusDescriptions = {
+        200: 'OK',
+        201: 'Created',
+        202: 'Accepted',
+        204: 'No Content',
+        400: 'Bad Request',
+        401: 'Unauthorized',
+        403: 'Forbidden',
+        404: 'Not Found',
+        405: 'Method Not Allowed',
+        500: 'Internal Server Error',
+        501: 'Not Implemented',
+        502: 'Bad Gateway',
+        503: 'Service Unavailable'
+    };
+    return statusDescriptions[statusCode] || '';
 }
 
 // 清空告警
@@ -1264,7 +1432,7 @@ function updateLogsDisplay(logs) {
                 <div class="log-level ${log.level}">${log.level === 'warning' ? '警告' : '错误'}</div>
                 <div class="log-info">
                     <span class="log-module">${log.module}</span>
-                    <span class="log-time">${formatTimeAgo(log.timestamp)}</span>
+                    <span class="log-time">${formatDateTime(log.timestamp, 'date')}</span>
                 </div>
             </div>
             <div class="log-message">${log.message}</div>
@@ -1406,8 +1574,7 @@ function updateEventStatsDisplay(data) {
         
         let lastActivity = '-';
         if (stats.last_activity_time) {
-            const date = new Date(stats.last_activity_time * 1000);
-            lastActivity = formatRelativeTime(stats.last_activity_time);
+            lastActivity = formatDateTime(stats.last_activity_time, 'relative');
         }
         
         const successRate = stats.success_rate || 0;
@@ -1445,55 +1612,6 @@ function getEventStatus(stats) {
         return '警告';
     }
     return '正常';
-}
-
-// 格式化相对时间
-function formatRelativeTime(timestamp) {
-    const now = Date.now() / 1000;
-    const diff = now - timestamp;
-    
-    if (diff < 60) return '刚刚';
-    if (diff < 3600) return Math.floor(diff / 60) + '分钟前';
-    if (diff < 86400) return Math.floor(diff / 3600) + '小时前';
-    return Math.floor(diff / 86400) + '天前';
-}
-
-// 格式化相对日期时间（今天，昨天，前天，早于前天才使用具体日期时间）
-function formatRelativeDate(timestamp) {
-    const now = new Date();
-    const date = new Date(timestamp * 1000);
-    
-    // 今天
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    // 昨天
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    // 前天
-    const dayBeforeYesterday = new Date(today);
-    dayBeforeYesterday.setDate(dayBeforeYesterday.getDate() - 2);
-    
-    const logDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    
-    // 判断是否是今天、昨天、前天
-    let dayLabel = '';
-    if (logDate.getTime() === today.getTime()) {
-        dayLabel = '今天';
-    } else if (logDate.getTime() === yesterday.getTime()) {
-        dayLabel = '昨天';
-    } else if (logDate.getTime() === dayBeforeYesterday.getTime()) {
-        dayLabel = '前天';
-    } else {
-        // 显示具体日期
-        const month = (date.getMonth() + 1).toString().padStart(2, '0');
-        const day = date.getDate().toString().padStart(2, '0');
-        dayLabel = `${month}-${day}`;
-    }
-    
-    // 显示具体时间
-    const hours = date.getHours().toString().padStart(2, '0');
-    const minutes = date.getMinutes().toString().padStart(2, '0');
-    const seconds = date.getSeconds().toString().padStart(2, '0');
-    return `${dayLabel} ${hours}:${minutes}:${seconds}`;
 }
 
 // 刷新事件统计
@@ -1709,12 +1827,15 @@ function updateAPIRequestsDisplay(data) {
     }
     
     if (filteredRequests.length === 0) {
-        tbodyEl.innerHTML = '<tr><td colspan="7" class="empty-state">暂无 API 请求记录</td></tr>';
+        tbodyEl.innerHTML = '<tr><td colspan="9" class="empty-state">暂无 API 请求记录</td></tr>';
         return;
     }
     
-    tbodyEl.innerHTML = filteredRequests.map((req, index) => {
-        const timeStr = formatRelativeDate(req.timestamp);
+    // 使用文档片段进行批量DOM操作
+    const fragment = document.createDocumentFragment();
+    
+    filteredRequests.forEach((req, index) => {
+        const timeStr = formatDateTime(req.timestamp, 'datetime');
         
         const methodClass = req.method.toLowerCase();
         const isSuccess = req.status_code < 400;
@@ -1749,43 +1870,29 @@ function updateAPIRequestsDisplay(data) {
             }
         }
         
-        // 获取状态码描述
-        const getStatusDescription = (statusCode) => {
-            const statusDescriptions = {
-                200: 'OK',
-                201: 'Created',
-                202: 'Accepted',
-                204: 'No Content',
-                400: 'Bad Request',
-                401: 'Unauthorized',
-                403: 'Forbidden',
-                404: 'Not Found',
-                405: 'Method Not Allowed',
-                500: 'Internal Server Error',
-                501: 'Not Implemented',
-                502: 'Bad Gateway',
-                503: 'Service Unavailable'
-            };
-            return statusDescriptions[statusCode] || '';
-        };
-        
         const statusDescription = getStatusDescription(req.status_code);
         const statusText = statusDescription ? `${req.status_code} ${statusDescription}` : `${req.status_code}`;
         
-        return `
-            <tr onclick="showRequestDetail(${index})" data-request-index="${index}">
-                <td class="font-mono">${index + 1}</td>
-                <td>${timeStr}</td>
-                <td><span class="api-method ${methodClass}">${req.method}</span></td>
-                <td class="font-mono" style="font-size: 12px;">${req.path}</td>
-                <td class="font-mono" style="font-size: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${queryParamsDisplay}">${queryParamsDisplay || '-'}</td>
-                <td><span class="api-status ${statusClass}">${statusText}</span></td>
-                <td class="${durationClass}">${durationMs.toFixed(0)}ms</td>
-                <td>${req.client_ip}</td>
-                <td class="error-message-cell" title="${escapedErrorMsg}">${errorMsg}</td>
-            </tr>
+        const tr = document.createElement('tr');
+        tr.onclick = () => showRequestDetail(index);
+        tr.dataset.requestIndex = index;
+        tr.innerHTML = `
+            <td class="font-mono">${index + 1}</td>
+            <td>${timeStr}</td>
+            <td><span class="api-method ${methodClass}">${req.method}</span></td>
+            <td class="font-mono" style="font-size: 12px;">${req.path}</td>
+            <td class="font-mono" style="font-size: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${queryParamsDisplay}">${queryParamsDisplay || '-'}</td>
+            <td><span class="api-status ${statusClass}">${statusText}</span></td>
+            <td class="${durationClass}">${durationMs.toFixed(0)}ms</td>
+            <td>${req.client_ip}</td>
+            <td class="error-message-cell" title="${escapedErrorMsg}">${errorMsg}</td>
         `;
-    }).join('');
+        fragment.appendChild(tr);
+    });
+    
+    // 清空并添加新内容
+    tbodyEl.innerHTML = '';
+    tbodyEl.appendChild(fragment);
     
     // 存储过滤和排序后的请求数据，以便点击时使用，限制最近100条
     const filteredAndSortedRequests = filteredRequests.slice(0, 100);
@@ -1828,25 +1935,7 @@ function showRequestDetail(index) {
         }
     }
     
-    // 获取状态码描述
-    const getStatusDescription = (statusCode) => {
-        const statusDescriptions = {
-            200: 'OK',
-            201: 'Created',
-            202: 'Accepted',
-            204: 'No Content',
-            400: 'Bad Request',
-            401: 'Unauthorized',
-            403: 'Forbidden',
-            404: 'Not Found',
-            405: 'Method Not Allowed',
-            500: 'Internal Server Error',
-            501: 'Not Implemented',
-            502: 'Bad Gateway',
-            503: 'Service Unavailable'
-        };
-        return statusDescriptions[statusCode] || '';
-    };
+
     
     const statusDescription = getStatusDescription(req.status_code);
     const statusText = statusDescription ? `${req.status_code} ${statusDescription}` : `${req.status_code}`;
@@ -2124,7 +2213,7 @@ function updateLogsPageDisplay(logs) {
     }
     
     tbodyEl.innerHTML = filteredLogs.map((log, index) => {
-        const timeStr = formatRelativeDate(log.timestamp);
+        const timeStr = formatDateTime(log.timestamp, 'datetime');
         
         // 确保 title 属性使用完整的消息内容
         const fullMessage = log.message || '';
@@ -2833,7 +2922,7 @@ function getStatusDescription(statusCode) {
 
 // 格式化发送请求行
 function formatOutboundRequestRow(request, index) {
-    const timestamp = formatRelativeDate(request.timestamp);
+    const timestamp = formatDateTime(request.timestamp, 'datetime');
     const duration = (request.duration * 1000).toFixed(0);
     const statusClass = request.status_code >= 400 ? 'error' : 'success';
     const durationClass = request.duration > 1 ? 'slow' : '';
