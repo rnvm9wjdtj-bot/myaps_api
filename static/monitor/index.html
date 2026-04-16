@@ -286,8 +286,13 @@
         <main class="main-content page-content" id="page-api-requests" style="display: none;">
             <section class="card full-width">
                 <div class="card-header">
-                    <h2>接收请求记录 <span style="font-size: 12px; color: #888; font-weight: normal;">(最近24小时)</span></h2>
+                    <h2>接收请求记录</h2>
                     <div class="card-actions">
+                        <div class="date-selector" style="display: none;">
+                            <label for="api-date-picker">选择日期：</label>
+                            <input type="date" id="api-date-picker" value="">
+                            <button class="btn btn-sm" onclick="fetchRequestsByDate()">查询</button>
+                        </div>
                         <div class="toggle-switch">
                             <label>
                                 <input type="checkbox" id="show-api-internal-requests" onchange="toggleAPIIntternalRequests()">
@@ -383,8 +388,13 @@
         <main class="main-content page-content" id="page-outbound-requests" style="display: none;">
             <section class="card full-width">
                 <div class="card-header">
-                    <h2>发送请求记录 <span style="font-size: 12px; color: #888; font-weight: normal;">(最近24小时)</span></h2>
+                    <h2>发送请求记录</h2>
                     <div class="card-actions">
+                        <div class="date-selector" style="display: none;">
+                            <label for="outbound-date-picker">选择日期：</label>
+                            <input type="date" id="outbound-date-picker" value="">
+                            <button class="btn btn-sm" onclick="fetchOutboundRequestsByDate()">查询</button>
+                        </div>
                         <div class="toggle-switch">
                             <label>
                                 <input type="checkbox" id="show-internal-requests" onchange="toggleInternalRequests()">

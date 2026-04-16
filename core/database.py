@@ -6,8 +6,106 @@ from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 
 from tortoise.contrib.fastapi import register_tortoise
-from core.settings import TORTOISE_ORM_CONFIG, MYAPS_MAIN_DB, MYAPS_DBSET_LIST
+from core.settings import (
+    BASE_DIR,
+    MYAPS_MAIN_DB, MYAPS_DBSET_LIST, MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD,
+    THIS_DB_NAME, THIS_DB_HOST, THIS_DB_PORT, THIS_DB_USER, THIS_DB_PASSWORD
+)
 from globalobjects import logger as log_config
+
+
+
+######################################################################################
+
+# 计算连接池大小：根据账套数量动态调整，避免连接总数过多
+# 总连接数 = 账套数 × maxsize，应控制在合理范围内（建议不超过150）
+import os
+cpu_count = os.cpu_count() or 4
+db_count = len(MYAPS_DBSET_LIST)
+
+# 动态计算连接池大小：
+# - 单账套：maxsize=15
+# - 多账套：根据账套数量递减，最小为3
+# - 确保总连接数不超过 30（考虑到服务器限制非常严格）
+maxsize_per_db = min(15, max(3, 30 // max(db_count, 1)))
+minsize_per_db = min(2, maxsize_per_db // 2)
+
+# logger.info(f"数据库连接池配置：{db_count}个账套，每个账套minsize={minsize_per_db}, maxsize={maxsize_per_db}")
+
+
+# 数据库配置
+connections = {
+    "local_data": {
+        "engine": "tortoise.backends.sqlite",
+        "credentials": {
+            "file_path": BASE_DIR / "local_data.sqlite3",  # 统一管理数据文件
+            "journal_mode": "WAL",  # 写前日志，提升并发性能
+            "synchronous": "NORMAL",  # 性能与安全的平衡
+            "cache_size": -100000,  # 100MB 内存缓存
+            "foreign_keys": True,  # 启用外键约束
+            "timeout": 30,  # 连接超时时间
+            "check_same_thread": False,
+        },
+        "maxsize": 5,  # 最大连接数
+        "minsize": 1,  # 最小连接数
+    }
+}
+
+# 为每个账套创建MySQL连接配置
+for db in MYAPS_DBSET_LIST:
+    connections[db] = {
+        "engine": "tortoise.backends.mysql",
+        "credentials": {
+            "host": MYAPS_DB_HOST,
+            "port": MYAPS_DB_PORT,
+            "user": MYAPS_DB_USER,
+            "password": MYAPS_DB_PASSWORD,
+            "database": db,
+            "charset": "utf8mb4",
+            "connect_timeout": 30,  # 减少连接超时时间到30秒
+            "minsize": minsize_per_db,  # 根据账套数量动态调整最小连接数
+            "maxsize": maxsize_per_db,  # 根据账套数量动态调整最大连接数
+            "ssl": None,
+            "echo": False,
+            "pool_recycle": 300,  # 减少连接回收时间到5分钟，防止连接超时和泄漏
+        }
+    }
+
+
+TORTOISE_ORM_CONFIG = {
+    "connections": connections,
+    "apps": {
+        "io_api_models": {
+            "models": ["apps.io_api.models",],
+            "default_connection": MYAPS_MAIN_DB  # 使用MyAPS账套
+        },
+        "monitor_models": {
+            "models": ["apps.common.monitor.models", "aerich.models"],
+            "default_connection": "local_data"  # 使用local_data数据库
+        },
+    },
+}
+
+
+if THIS_DB_NAME:
+    # 创建PostgreSQL连接配置
+    connections[THIS_DB_NAME] = {
+        "engine": "tortoise.backends.asyncpg",
+        "credentials": {
+            "host": THIS_DB_HOST,
+            "port": THIS_DB_PORT,
+            "user": THIS_DB_USER,
+            "password": THIS_DB_PASSWORD,
+            "database": THIS_DB_NAME,
+            "min_size": 3,  # 保持最小连接数
+            "max_size": 10,  # 最大连接数
+        }
+    }
+    TORTOISE_ORM_CONFIG["apps"]["data_opt_models"] = {
+        "models": ["apps.data_opt.models", "aerich.models"],
+        "default_connection": THIS_DB_NAME,
+    }
+
 
 
 class ConnectionLeakDetector:

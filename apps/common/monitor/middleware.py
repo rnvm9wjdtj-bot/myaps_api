@@ -223,7 +223,7 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, include_paths: Optional[List[str]] = None):
         super().__init__(app)
         self.include_paths = include_paths or [
-            "/api",  # 只监控 API 路径的请求
+            "/api",  # 监控 API 路径的请求
         ]
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:

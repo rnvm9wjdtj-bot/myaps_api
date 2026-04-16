@@ -116,7 +116,7 @@ async def get_http_metrics():
 
     返回 HTTP 请求统计、状态码分布、路径统计等信息
     """
-    return monitor_service.get_http_metrics()
+    return await monitor_service.get_http_metrics()
 
 
 @router.get("/http/slow")
@@ -130,7 +130,7 @@ async def get_slow_requests(limit: int = 10):
     Returns:
         慢请求列表
     """
-    return {"slow_requests": monitor_service.http_collector.get_slow_requests(limit)}
+    return {"slow_requests": await monitor_service.http_collector.get_slow_requests(limit)}
 
 
 @router.get("/http/errors")
@@ -144,7 +144,7 @@ async def get_error_requests(limit: int = 10):
     Returns:
         错误请求列表
     """
-    return {"error_requests": monitor_service.http_collector.get_error_requests(limit)}
+    return {"error_requests": await monitor_service.http_collector.get_error_requests(limit)}
 
 
 @router.post("/http/reset")
@@ -157,6 +157,113 @@ async def reset_http_stats():
     """
     monitor_service.http_collector.reset_stats()
     return {"message": "HTTP 统计已重置"}
+
+
+@router.get("/http/requests")
+async def get_requests_by_date(date: str, limit: int = 1000):
+    """
+    按日期获取请求记录
+
+    Args:
+        date: 查询日期，格式：YYYY-MM-DD
+        limit: 返回数量限制
+
+    Returns:
+        请求记录列表
+    """
+    requests = await monitor_service.http_collector.get_requests_by_date(date, limit)
+    return {"requests": requests, "count": len(requests), "date": date}
+
+
+@router.get("/http/slow/date")
+async def get_slow_requests_by_date(date: str, limit: int = 100):
+    """
+    按日期获取慢请求记录
+
+    Args:
+        date: 查询日期，格式：YYYY-MM-DD
+        limit: 返回数量限制
+
+    Returns:
+        慢请求记录列表
+    """
+    slow_requests = await monitor_service.http_collector.get_slow_requests_by_date(date, limit)
+    return {"slow_requests": slow_requests, "count": len(slow_requests), "date": date}
+
+
+@router.get("/http/errors/date")
+async def get_error_requests_by_date(date: str, limit: int = 100):
+    """
+    按日期获取错误请求记录
+
+    Args:
+        date: 查询日期，格式：YYYY-MM-DD
+        limit: 返回数量限制
+
+    Returns:
+        错误请求记录列表
+    """
+    error_requests = await monitor_service.http_collector.get_error_requests_by_date(date, limit)
+    return {"error_requests": error_requests, "count": len(error_requests), "date": date}
+
+
+# 对外 HTTP 请求端点
+@router.get("/outbound-http")
+async def get_outbound_http_metrics():
+    """
+    获取对外请求指标
+
+    返回对外 HTTP 请求统计、状态码分布、URL 统计等信息
+    """
+    return monitor_service.get_outbound_http_metrics()
+
+
+@router.get("/outbound-http/requests")
+async def get_outbound_requests_by_date(date: str, limit: int = 1000):
+    """
+    按日期获取对外请求记录
+
+    Args:
+        date: 查询日期，格式：YYYY-MM-DD
+        limit: 返回数量限制
+
+    Returns:
+        对外请求记录列表
+    """
+    requests = await monitor_service.outbound_http_collector.get_requests_by_date(date, limit)
+    return {"requests": requests, "count": len(requests), "date": date}
+
+
+@router.get("/outbound-http/slow/date")
+async def get_outbound_slow_requests_by_date(date: str, limit: int = 100):
+    """
+    按日期获取对外慢请求记录
+
+    Args:
+        date: 查询日期，格式：YYYY-MM-DD
+        limit: 返回数量限制
+
+    Returns:
+        对外慢请求记录列表
+    """
+    slow_requests = await monitor_service.outbound_http_collector.get_slow_requests_by_date(date, limit)
+    return {"slow_requests": slow_requests, "count": len(slow_requests), "date": date}
+
+
+@router.get("/outbound-http/errors/date")
+async def get_outbound_error_requests_by_date(date: str, limit: int = 100):
+    """
+    按日期获取对外错误请求记录
+
+    Args:
+        date: 查询日期，格式：YYYY-MM-DD
+        limit: 返回数量限制
+
+    Returns:
+        对外错误请求记录列表
+    """
+    error_requests = await monitor_service.outbound_http_collector.get_error_requests_by_date(date, limit)
+    return {"error_requests": error_requests, "count": len(error_requests), "date": date}
 
 
 @router.get("/logs")

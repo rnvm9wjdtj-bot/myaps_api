@@ -181,7 +181,7 @@ class MonitorService:
         self._set_cache_data("scheduler", metrics)
         return metrics
 
-    def get_http_metrics(self) -> Dict[str, Any]:
+    async def get_http_metrics(self) -> Dict[str, Any]:
         """获取 HTTP 指标"""
         # 尝试从缓存获取
         cached = self._get_cached_data("http")
@@ -189,7 +189,7 @@ class MonitorService:
             return cached
         
         # 缓存过期，重新采集
-        metrics = self.http_collector.get_metrics()
+        metrics = await self.http_collector.get_metrics()
         
         # 设置缓存
         self._set_cache_data("http", metrics)
@@ -238,7 +238,7 @@ class MonitorService:
             "resource": self.get_resource_metrics(),
             "database": await self.get_database_metrics(),
             "scheduler": self.get_scheduler_metrics(),
-            "http": self.get_http_metrics(),
+            "http": await self.get_http_metrics(),
             "outbound_http": self.get_outbound_http_metrics(),
             "alerts": self.get_recent_alerts(10),
         }
@@ -296,7 +296,7 @@ class MonitorService:
 
         # 检查 HTTP
         try:
-            http_metrics = self.http_collector.get_metrics()
+            http_metrics = await self.get_http_metrics()
             summary = http_metrics.get("summary", {})
             error_rate = summary.get("error_rate", 0)
             if error_rate < 5:
@@ -679,6 +679,7 @@ class MonitorService:
 
     async def _broadcast_loop(self):
         """广播循环，定期发送监控数据"""
+        from datetime import datetime
         try:
             while self._broadcast_running:
                 # 收集监控数据
@@ -689,10 +690,10 @@ class MonitorService:
                     logs = self.get_recent_logs(limit=100)
                     
                     # 收集 API 请求数据
-                    api_requests = self.http_collector.get_metrics()
+                    api_requests = await self.http_collector.get_requests_by_date(datetime.now().strftime('%Y-%m-%d'))
                     
                     # 收集发送请求数据
-                    outbound_requests = self.get_outbound_http_metrics()
+                    outbound_requests = await self.outbound_http_collector.get_requests_by_date(datetime.now().strftime('%Y-%m-%d'))
                     
                     data = {
                         "type": "monitor_data",

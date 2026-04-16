@@ -47,6 +47,23 @@ const domCache = {};
 // 时间格式化缓存
 const timeCache = {};
 
+// 页面加载时设置默认日期
+window.addEventListener('DOMContentLoaded', function() {
+    const today = new Date().toISOString().split('T')[0];
+    
+    // 设置接收请求日期选择器的默认值
+    const datePicker = document.getElementById('api-date-picker');
+    if (datePicker) {
+        datePicker.value = today;
+    }
+    
+    // 设置发送请求日期选择器的默认值
+    const outboundDatePicker = document.getElementById('outbound-date-picker');
+    if (outboundDatePicker) {
+        outboundDatePicker.value = today;
+    }
+});
+
 // 获取DOM元素，优先从缓存中获取
 function getElement(id) {
     if (!domCache[id]) {
@@ -187,6 +204,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     startAutoRefresh();
     initWebSocket();
     startInactivityTimer();
+    
+    // 设置默认日期为今天
+    const today = new Date().toISOString().split('T')[0];
+    const datePicker = document.getElementById('api-date-picker');
+    if (datePicker) {
+        datePicker.value = today;
+    }
     
     // 监听用户活动
     window.addEventListener('mousemove', resetInactivityTimer);
@@ -431,53 +455,60 @@ function handleWebSocketData(data) {
         return;
     }
     
-    // 更新资源指标
-    if (data.resource) {
-        updateResourceDisplay(data.resource);
-    }
+    // 检查系统状态是否为错误
+    const statusIndicator = getElement('status-indicator');
+    const isSystemError = statusIndicator && statusIndicator.classList.contains('error');
     
-    // 更新数据库指标
-    if (data.database) {
-        updateDatabaseDisplay(data.database);
+    // 如果系统状态正常，才处理数据并更新最后更新时间
+    if (!isSystemError) {
+        // 更新资源指标
+        if (data.resource) {
+            updateResourceDisplay(data.resource);
+        }
+        
+        // 更新数据库指标
+        if (data.database) {
+            updateDatabaseDisplay(data.database);
+        }
+        
+        // 更新调度器指标
+        if (data.scheduler) {
+            updateSchedulerDisplay(data.scheduler);
+        }
+        
+        // 更新 HTTP 指标
+        if (data.http) {
+            updateHTTPDisplay(data.http);
+        }
+        
+        // 更新对外 HTTP 指标
+        if (data.outbound_http) {
+            // 这里可以添加对外 HTTP 指标的更新逻辑
+        }
+        
+        // 更新告警
+        if (data.alerts) {
+            updateAlertsDisplay(data.alerts);
+        }
+        
+        // 更新日志数据
+        if (data.logs) {
+            updateLogsPageDisplay(data.logs);
+        }
+        
+        // 更新 API 请求数据
+        if (data.api_requests) {
+            updateAPIRequestsDisplay(data.api_requests);
+        }
+        
+        // 更新发送请求数据
+        if (data.outbound_requests) {
+            updateOutboundRequestsDisplay(data.outbound_requests);
+        }
+        
+        // 更新最后更新时间
+        updateLastUpdateTime();
     }
-    
-    // 更新调度器指标
-    if (data.scheduler) {
-        updateSchedulerDisplay(data.scheduler);
-    }
-    
-    // 更新 HTTP 指标
-    if (data.http) {
-        updateHTTPDisplay(data.http);
-    }
-    
-    // 更新对外 HTTP 指标
-    if (data.outbound_http) {
-        // 这里可以添加对外 HTTP 指标的更新逻辑
-    }
-    
-    // 更新告警
-    if (data.alerts) {
-        updateAlertsDisplay(data.alerts);
-    }
-    
-    // 更新日志数据
-    if (data.logs) {
-        updateLogsPageDisplay(data.logs);
-    }
-    
-    // 更新 API 请求数据
-    if (data.api_requests) {
-        updateAPIRequestsDisplay(data.api_requests);
-    }
-    
-    // 更新发送请求数据
-    if (data.outbound_requests) {
-        updateOutboundRequestsDisplay(data.outbound_requests);
-    }
-    
-    // 更新最后更新时间
-    updateLastUpdateTime();
     
     // 检查告警条件
     checkAlertConditions();
@@ -618,35 +649,45 @@ async function refreshAll() {
     }
     
     try {
-        // 基础数据，无论哪个页面都需要刷新
-        await Promise.all([
-            fetchHealth(),
-            fetchResource(),
-            fetchDatabase(),
-            fetchScheduler(),
-            fetchHTTP(),
-            fetchAlerts(),
-            fetchOverviewOutboundRequests(),
-            // 无论在哪个页面都刷新日志列表、API 请求记录和发送请求记录
-            fetchLogsPage(),
-            fetchAPIRequests(),
-            fetchOutboundRequests()
-        ]);
+        // 先检查健康状态
+        await fetchHealth();
         
-        // 只刷新当前页面的特定数据
-        switch (currentPage) {
-            case 'database':
-                await Promise.all([
-                    fetchDatabaseDetail(),
-                    fetchEventStats()
-                ]);
-                break;
-            case 'scheduler':
-                await fetchSchedulerPage();
-                break;
+        // 检查系统状态是否为错误
+        const statusIndicator = getElement('status-indicator');
+        const isSystemError = statusIndicator && statusIndicator.classList.contains('error');
+        
+        // 如果系统状态正常，才继续获取其他数据
+        if (!isSystemError) {
+            // 基础数据，无论哪个页面都需要刷新
+            await Promise.all([
+                fetchResource(),
+                fetchDatabase(),
+                fetchScheduler(),
+                fetchHTTP(),
+                fetchAlerts(),
+                fetchOverviewOutboundRequests(),
+                // 无论在哪个页面都刷新日志列表、API 请求记录和发送请求记录
+                fetchLogsPage(),
+                fetchAPIRequests(),
+                fetchOutboundRequests()
+            ]);
+            
+            // 只刷新当前页面的特定数据
+            switch (currentPage) {
+                case 'database':
+                    await Promise.all([
+                        fetchDatabaseDetail(),
+                        fetchEventStats()
+                    ]);
+                    break;
+                case 'scheduler':
+                    await fetchSchedulerPage();
+                    break;
+            }
+            
+            updateLastUpdateTime();
         }
         
-        updateLastUpdateTime();
         checkAlertConditions();
     } catch (error) {
         console.error('刷新数据失败:', error);
@@ -1327,8 +1368,20 @@ function formatDateTime(timestamp, format = 'relative') {
     }
     
     const now = new Date();
-    const date = new Date(timestamp * 1000);
-    const diff = now.getTime() / 1000 - timestamp;
+    let date;
+    let timestampSec;
+    
+    if (typeof timestamp === 'string') {
+        // 处理ISO字符串格式
+        date = new Date(timestamp);
+        timestampSec = date.getTime() / 1000;
+    } else {
+        // 处理数字时间戳（秒）
+        date = new Date(timestamp * 1000);
+        timestampSec = timestamp;
+    }
+    
+    const diff = now.getTime() / 1000 - timestampSec;
     
     let result;
     
@@ -2219,6 +2272,151 @@ async function resetAPIStats() {
         fetchAPIRequests();
     } catch (error) {
         console.error('重置 API 统计失败:', error);
+    }
+}
+
+// 按日期获取请求记录
+async function fetchRequestsByDate() {
+    // 如果用户不活动，不发送请求
+    if (isInactive) {
+        console.log('用户不活动，跳过按日期获取请求记录');
+        return;
+    }
+    
+    const datePicker = document.getElementById('api-date-picker');
+    const date = datePicker.value;
+    
+    if (!date) {
+        alert('请选择日期');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE}/http/requests?date=${date}`);
+        const data = await response.json();
+        updateAPIRequestsTable(data.requests);
+        
+        // 更新页面标题，显示当前查询的日期
+        const pageTitle = document.querySelector('#page-api-requests h2');
+        if (pageTitle) {
+            pageTitle.textContent = `接收请求记录 (${date})`;
+        }
+    } catch (error) {
+        console.error('按日期获取请求记录失败:', error);
+        alert('获取请求记录失败，请稍后重试');
+    }
+}
+
+function updateAPIRequestsTable(requests) {
+    const tableBody = document.getElementById('api-requests-tbody');
+    if (!tableBody) return;
+    
+    // 限制存储最近100条数据
+    const limitedRequests = requests.slice(0, 100);
+    
+    if (limitedRequests.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="9" class="empty-state">暂无 API 请求记录</td></tr>';
+        return;
+    }
+    
+    // 使用文档片段减少DOM操作次数
+    const fragment = document.createDocumentFragment();
+    
+    limitedRequests.forEach((req, index) => {
+        const timeStr = formatDateTime(req.timestamp, 'datetime');
+        
+        const methodClass = req.method.toLowerCase();
+        const isSuccess = req.status_code < 400;
+        const statusClass = isSuccess ? 'success' : 'error';
+        const errorMsg = req.error_message || '';
+        
+        // 转义特殊字符，防止HTML属性值被截断
+        const escapedPath = req.path.replace(/"/g, '&quot;');
+        const escapedErrorMsg = errorMsg.replace(/"/g, '&quot;');
+        
+        // 根据响应时间设置样式
+        const durationMs = req.response_time;
+        let durationClass = '';
+        if (durationMs > 1000) {
+            durationClass = 'duration-slow';
+        } else if (durationMs > 500) {
+            durationClass = 'duration-medium';
+        }
+        
+        // 处理查询参数显示
+        let queryParamsDisplay = '';
+        if (req.query_params) {
+            try {
+                const parsedParams = JSON.parse(req.query_params);
+                if (Object.keys(parsedParams).length > 0) {
+                    queryParamsDisplay = Object.entries(parsedParams)
+                        .map(([key, value]) => `${key}=${value}`)
+                        .join('&');
+                }
+            } catch (e) {
+                queryParamsDisplay = req.query_params;
+            }
+        }
+        
+        const statusDescription = getStatusDescription(req.status_code);
+        const statusText = statusDescription ? `${req.status_code} ${statusDescription}` : `${req.status_code}`;
+        
+        const tr = document.createElement('tr');
+        tr.onclick = () => {
+            // 存储当前请求数据，以便点击时使用
+            window.apiRequestsData = {
+                recent_requests: limitedRequests
+            };
+            showRequestDetail(index);
+        };
+        tr.dataset.requestIndex = index;
+        tr.innerHTML = `
+            <td class="font-mono">${index + 1}</td>
+            <td>${timeStr}</td>
+            <td><span class="api-method ${methodClass}">${req.method}</span></td>
+            <td class="font-mono" style="font-size: 12px;">${req.path}</td>
+            <td class="font-mono" style="font-size: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${queryParamsDisplay}">${queryParamsDisplay || '-'}</td>
+            <td><span class="api-status ${statusClass}">${statusText}</span></td>
+            <td class="${durationClass}">${durationMs.toFixed(0)}ms</td>
+            <td>${req.client_ip}</td>
+            <td class="error-message-cell" title="${escapedErrorMsg}">${errorMsg}</td>
+        `;
+        fragment.appendChild(tr);
+    });
+    
+    tableBody.innerHTML = '';
+    tableBody.appendChild(fragment);
+}
+
+// 按日期获取对外请求记录
+async function fetchOutboundRequestsByDate() {
+    // 如果用户不活动，不发送请求
+    if (isInactive) {
+        console.log('用户不活动，跳过按日期获取对外请求记录');
+        return;
+    }
+    
+    const datePicker = document.getElementById('outbound-date-picker');
+    const date = datePicker.value;
+    
+    if (!date) {
+        alert('请选择日期');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE}/outbound-http/requests?date=${date}`);
+        const data = await response.json();
+        updateOutboundRequestsTable(data.requests);
+        
+        // 更新页面标题，显示当前查询的日期
+        const pageTitle = document.querySelector('#page-outbound-requests h2');
+        if (pageTitle) {
+            pageTitle.textContent = `发送请求记录 (${date})`;
+        }
+    } catch (error) {
+        console.error('按日期获取对外请求记录失败:', error);
+        alert('获取对外请求记录失败，请稍后重试');
     }
 }
 

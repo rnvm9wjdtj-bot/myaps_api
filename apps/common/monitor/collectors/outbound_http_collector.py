@@ -10,6 +10,8 @@ import json
 import threading
 from typing import Dict, Any, List
 from collections import deque, defaultdict
+from datetime import datetime
+from ..storage import outbound_request_storage
 
 
 class OutboundHTTPCollector:
@@ -119,7 +121,7 @@ class OutboundHTTPCollector:
                 "response_body": response_body,
                 "error_message": error_message,
                 "module": module,
-                "is_error": status_code >= 400 or error_message,
+                "is_error": bool(status_code >= 400 or error_message),
                 "is_slow": duration >= self._slow_threshold,
             }
             
@@ -183,6 +185,28 @@ class OutboundHTTPCollector:
                     status_codes_to_remove.append(code)
             for code in status_codes_to_remove:
                 del self._stats["status_codes"][code]
+            
+            # 持久化到数据库
+            try:
+                request_data = {
+                    "timestamp": datetime.fromtimestamp(request_info["timestamp"]),
+                    "method": method,
+                    "url": url,
+                    "status_code": status_code,
+                    "duration": duration,
+                    "request_headers": json.dumps(request_headers) if request_headers else None,
+                    "request_body": request_body,
+                    "response_headers": json.dumps(response_headers) if response_headers else None,
+                    "response_body": response_body,
+                    "error_message": error_message,
+                    "module": module,
+                    "is_error": request_info["is_error"],
+                    "is_slow": request_info["is_slow"],
+                }
+                await outbound_request_storage.save_request(request_data)
+            except Exception as e:
+                # 记录异常，确保即使发生异常也不会影响主流程
+                print(f"保存对外请求到数据库失败: {e}")
     
     def record_request_sync(
         self,
@@ -243,7 +267,7 @@ class OutboundHTTPCollector:
             "response_body": response_body,
             "error_message": error_message,
             "module": module,
-            "is_error": status_code >= 400 or error_message,
+            "is_error": bool(status_code >= 400 or error_message),
             "is_slow": duration >= self._slow_threshold,
         }
         
@@ -318,6 +342,58 @@ class OutboundHTTPCollector:
             except Exception as e:
                 # 记录异常，确保即使发生异常也不会影响主流程
                 print(f"更新统计信息时发生异常: {e}")
+            
+            # 异步保存到数据库，避免阻塞同步线程
+            try:
+                import asyncio
+                from datetime import datetime
+                
+                # 准备保存到数据库的数据
+                request_data = {
+                    "timestamp": datetime.fromtimestamp(request_info["timestamp"]),
+                    "method": method,
+                    "url": url,
+                    "status_code": status_code,
+                    "duration": duration,
+                    "request_headers": json.dumps(request_headers) if request_headers else None,
+                    "request_body": request_body,
+                    "response_headers": json.dumps(response_headers) if response_headers else None,
+                    "response_body": response_body,
+                    "error_message": error_message,
+                    "module": module,
+                    "is_error": request_info["is_error"],
+                    "is_slow": request_info["is_slow"],
+                }
+                
+                # 直接使用同步方式保存到数据库，避免事件循环问题
+                try:
+                    from tortoise import Tortoise
+                    from core.database import TORTOISE_ORM_CONFIG
+                    
+                    # 初始化Tortoise ORM
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    
+                    async def save_to_db():
+                        try:
+                            # 检查Tortoise是否已经初始化
+                            if not Tortoise._inited:
+                                await Tortoise.init(config=TORTOISE_ORM_CONFIG)
+                            await outbound_request_storage.save_request(request_data)
+                        except Exception as e:
+                            print(f"保存对外请求到数据库失败: {e}")
+                        finally:
+                            # 不要关闭数据库连接，避免影响其他线程
+                            pass
+                    
+                    # 运行事件循环直到任务完成
+                    loop.run_until_complete(save_to_db())
+                except Exception as e:
+                    # 记录异常，确保即使发生异常也不会影响主流程
+                    print(f"同步保存对外请求到数据库失败: {e}")
+            except Exception as e:
+                # 记录异常，确保即使发生异常也不会影响主流程
+                print(f"创建数据库保存任务失败: {e}")
     
     def get_metrics(self) -> Dict[str, Any]:
         """
@@ -454,6 +530,105 @@ class OutboundHTTPCollector:
                 "errors": 0,
             }),
         }
+    
+    async def get_requests_by_date(self, date: str, limit: int = 1000) -> List[Dict[str, Any]]:
+        """
+        按日期获取对外请求记录
+        
+        Args:
+            date: 日期字符串 (YYYY-MM-DD)
+            limit: 返回数量限制
+            
+        Returns:
+            对外请求记录列表
+        """
+        requests = await outbound_request_storage.get_requests_by_date(date, limit)
+        # 转换为字典格式
+        result = []
+        for req in requests:
+            result.append({
+                "id": req.id,
+                "timestamp": req.timestamp.isoformat(),
+                "method": req.method,
+                "url": req.url,
+                "status_code": req.status_code,
+                "duration": req.duration,
+                "request_headers": req.request_headers,
+                "request_body": req.request_body,
+                "response_headers": req.response_headers,
+                "response_body": req.response_body,
+                "error_message": req.error_message,
+                "module": req.module,
+                "is_error": req.is_error,
+                "is_slow": req.is_slow,
+            })
+        return result
+    
+    async def get_slow_requests_by_date(self, date: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        按日期获取对外慢请求记录
+        
+        Args:
+            date: 日期字符串 (YYYY-MM-DD)
+            limit: 返回数量限制
+            
+        Returns:
+            对外慢请求记录列表
+        """
+        slow_requests = await outbound_request_storage.get_slow_requests_by_date(date, limit)
+        # 转换为字典格式
+        result = []
+        for req in slow_requests:
+            result.append({
+                "id": req.id,
+                "timestamp": req.timestamp.isoformat(),
+                "method": req.method,
+                "url": req.url,
+                "status_code": req.status_code,
+                "duration": req.duration,
+                "request_headers": req.request_headers,
+                "request_body": req.request_body,
+                "response_headers": req.response_headers,
+                "response_body": req.response_body,
+                "error_message": req.error_message,
+                "module": req.module,
+                "is_error": req.is_error,
+                "is_slow": req.is_slow,
+            })
+        return result
+    
+    async def get_error_requests_by_date(self, date: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        按日期获取对外错误请求记录
+        
+        Args:
+            date: 日期字符串 (YYYY-MM-DD)
+            limit: 返回数量限制
+            
+        Returns:
+            对外错误请求记录列表
+        """
+        error_requests = await outbound_request_storage.get_error_requests_by_date(date, limit)
+        # 转换为字典格式
+        result = []
+        for req in error_requests:
+            result.append({
+                "id": req.id,
+                "timestamp": req.timestamp.isoformat(),
+                "method": req.method,
+                "url": req.url,
+                "status_code": req.status_code,
+                "duration": req.duration,
+                "request_headers": req.request_headers,
+                "request_body": req.request_body,
+                "response_headers": req.response_headers,
+                "response_body": req.response_body,
+                "error_message": req.error_message,
+                "module": req.module,
+                "is_error": req.is_error,
+                "is_slow": req.is_slow,
+            })
+        return result
 
 
 # 全局对外 HTTP 请求收集器实例
