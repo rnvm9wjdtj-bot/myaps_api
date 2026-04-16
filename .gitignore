@@ -86,3 +86,7 @@ project_files/**/prod.json
 
 # Binlog 位置管理器文件
 .binlog_position.json
+
+*.sqlite*
+storage/
+storage/**/

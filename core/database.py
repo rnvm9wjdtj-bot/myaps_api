@@ -38,7 +38,7 @@ connections = {
     "local_data": {
         "engine": "tortoise.backends.sqlite",
         "credentials": {
-            "file_path": BASE_DIR / "local_data.sqlite3",  # 统一管理数据文件
+            "file_path": BASE_DIR / "storage" /  "local_data.sqlite3",  # 统一管理数据文件
             "journal_mode": "WAL",  # 写前日志，提升并发性能
             "synchronous": "NORMAL",  # 性能与安全的平衡
             "cache_size": -100000,  # 100MB 内存缓存

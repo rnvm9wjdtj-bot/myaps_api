@@ -71,16 +71,20 @@ LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 logger = log_config.get_logger(__name__, level=LOG_LEVEL)
 
 
+
+BINLOG_POSITION_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+    "storage",
+    ".binlog_position.json"
+)
+
+
+
 class BinlogPositionManager:
     """Binlog 位置管理器 - 负责持久化和恢复 binlog 位置"""
     
-    def __init__(self, position_file: str = None):
-        if position_file is None:
-            # 默认保存到项目根目录下的 .binlog_position 文件
-            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-            self.position_file = os.path.join(base_dir, '.binlog_position.json')
-        else:
-            self.position_file = position_file
+    def __init__(self):
+        self.position_file = BINLOG_POSITION_FILE
         
         self._lock = threading.RLock()
         self._last_save_time = 0
@@ -276,6 +280,8 @@ class ConnectionHealthChecker:
             # 使用事件等待，支持快速退出
             self._stop_event.wait(self.check_interval)
 
+
+
 class MySQLBinlogMonitor:
     # 单例模式实现
     _instance = None
@@ -325,12 +331,9 @@ class MySQLBinlogMonitor:
         else:
             self._position_manager = None
             logger.info("⚠️ Binlog 位置管理器已禁用")
-            # 检查并删除已存在的标记点文件
-            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-            position_file = os.path.join(base_dir, '.binlog_position.json')
-            if os.path.exists(position_file):
+            if os.path.exists(BINLOG_POSITION_FILE):
                 try:
-                    os.remove(position_file)
+                    os.remove(BINLOG_POSITION_FILE)
                     logger.info("🗑️ 已删除旧的 binlog 标记点文件")
                 except Exception as e:
                     logger.warning(f"⚠️ 删除 binlog 标记点文件失败: {e}")
