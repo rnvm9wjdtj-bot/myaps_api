@@ -6,7 +6,7 @@ from apps.data_opt.utils.scheduler import scheduler_manager, get_scheduler_statu
 from apps.data_opt.utils.mysqlmonitor import mysql_monitor
 from apps.common.utils.resource_monitor import resource_monitor
 from globalobjects import EVENT_AGGREGATOR
-from config.settings import TURNON_DBMONITOR, TRUNON_SCHEDULER
+from core.settings import TURNON_DBMONITOR, TRUNON_SCHEDULER
 from core.database import check_db_connections, warmup_connections, start_pool_monitoring
 
 @asynccontextmanager

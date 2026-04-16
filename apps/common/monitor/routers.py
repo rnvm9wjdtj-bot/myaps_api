@@ -213,7 +213,7 @@ async def get_environment():
     返回当前系统的环境变量配置
     """
     import os
-    from config.settings import PROJECT_DIR, PROJECT_JSON
+    from core.settings import PROJECT_DIR, PROJECT_JSON
     
     return {
         "project_dir": PROJECT_DIR,

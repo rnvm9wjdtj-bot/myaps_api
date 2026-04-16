@@ -9,7 +9,7 @@ import asyncio
 from typing import Dict, Any, List
 from globalobjects import logger as log_config
 from globalobjects.db_manager import get_db_managers
-from config.settings import MYAPS_MAIN_DB
+from core.settings import MYAPS_MAIN_DB
 from ..allert import AlertType, alert_sender
 
 

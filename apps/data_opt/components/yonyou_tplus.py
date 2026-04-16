@@ -8,7 +8,7 @@ import pandas as pd
 
 # from pydantic import InstanceOf
 
-from config.settings import MYAPS_MAIN_DB
+from core.settings import MYAPS_MAIN_DB
 
 
 from ._base import (

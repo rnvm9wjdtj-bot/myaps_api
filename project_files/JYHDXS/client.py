@@ -9,7 +9,7 @@ from fastapi import status
 from dateutil.relativedelta import relativedelta
 
 
-from config.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
+from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
 from .._base import (
     get_scheduler_minute,
     ApsHelpers, CLIENT_LOGGER, standard_response, get_session,

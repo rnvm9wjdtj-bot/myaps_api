@@ -7,7 +7,7 @@ from typing import Optional, Dict, Union
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
-from config.settings import LOG_LEVEL
+from core.settings import LOG_LEVEL
 from apps.common.monitor.http_client_wrapper import HTTPMonitorWrapper
 
 

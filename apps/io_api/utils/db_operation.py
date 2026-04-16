@@ -6,7 +6,7 @@ from fastapi import status
 from tortoise.models import Model as TortoiseBaseModel
 from pydantic import BaseModel as PydanticSchema
 
-from config.settings import MYAPS_DB_SET, LOG_LEVEL
+from core.settings import MYAPS_DB_SET, LOG_LEVEL
 from globalobjects.db_manager import get_db_managers, DbManager
 from globalobjects import logger as log_config
 

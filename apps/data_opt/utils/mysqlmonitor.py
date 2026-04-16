@@ -62,7 +62,7 @@ from pymysqlreplication.row_event import (
     DeleteRowsEvent,
 )
 
-from config.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_DBMONITOR, TURNON_BINLOG_POSITION_MANAGER, MYAPS_ROOT_PASSWORD
+from core.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_DBMONITOR, TURNON_BINLOG_POSITION_MANAGER, MYAPS_ROOT_PASSWORD
 from globalobjects import logger as log_config
 from apps.common.utils.thread_pool_manager import global_pool_manager
 import os

@@ -18,7 +18,7 @@ class ResourceMonitor:
         self._monitor_thread = None
         
         # 从settings.py加载阈值
-        from config.settings import MONITOR_THRESHOLDS, RESOURCE_CLEANUP_CONFIG
+        from core.settings import MONITOR_THRESHOLDS, RESOURCE_CLEANUP_CONFIG
         
         resource_thresholds = MONITOR_THRESHOLDS.get('resource', {})
         self._thresholds = {

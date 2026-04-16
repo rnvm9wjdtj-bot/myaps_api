@@ -10,7 +10,7 @@ import requests
 import time
 
 
-from config.settings import THIS_BASE_URL, MYAPS_MAIN_DB, MYAPS_DB_SET
+from core.settings import THIS_BASE_URL, MYAPS_MAIN_DB, MYAPS_DB_SET
 from apps.data_opt.utils.common import get_session, convert_timeunit, clean_value
 from apps.data_opt.utils.data_processor import DataProcessor
 from apps.io_api.schemas import (

@@ -29,7 +29,7 @@ from core.websocket import websocket_endpoint, websocket_root
 from core.routes_register import register_routes
 from core.database import register_database
 from apps.io_api.utils.common import register_exception_handlers
-from config.settings import PORT
+from core.settings import PORT
 
 # 创建应用实例
 app = create_app(lifespan=lifespan)

@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional, Type, Union, List, TYPE_CHECKING
 from ..data_processor import DataProcessor
 from .utils import HapUtils
 from globalobjects import logger as log_config
-from config.settings import LOG_LEVEL
+from core.settings import LOG_LEVEL
 
 
 logger = log_config.get_logger(__name__, level=LOG_LEVEL)

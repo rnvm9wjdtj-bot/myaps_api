@@ -150,6 +150,20 @@ for db in MYAPS_DBSET_LIST:
         }
     }
 
+
+
+TORTOISE_ORM_CONFIG = {
+    "connections": connections,
+    "apps": {
+        "io_api_models": {
+            "models": ["apps.io_api.models",],
+            "default_connection": MYAPS_MAIN_DB  # 使用MyAPS账套
+        },
+    },
+}
+
+
+
 if THIS_DB_NAME:
     # 创建PostgreSQL连接配置
     connections[THIS_DB_NAME] = {
@@ -164,17 +178,8 @@ if THIS_DB_NAME:
             "max_size": 10,  # 最大连接数
         }
     }
+    TORTOISE_ORM_CONFIG["apps"]["data_opt_models"] = {
+        "models": ["apps.data_opt.models", "aerich.models"],
+        "default_connection": THIS_DB_NAME,
+    }
 
-TORTOISE_ORM_CONFIG = {
-    "connections": connections,
-    "apps": {
-        "io_api_models": {
-            "models": ["apps.io_api.models",],
-            "default_connection": MYAPS_MAIN_DB  # 使用MyAPS账套
-        },
-        "data_opt_models": {
-            "models": ["apps.data_opt.models", "aerich.models"],
-            "default_connection": THIS_DB_NAME or MYAPS_MAIN_DB  # 当THIS_DB_NAME为None时，使用MYAPS_MAIN_DB作为默认连接
-        },
-    },
-}

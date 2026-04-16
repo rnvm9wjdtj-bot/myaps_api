@@ -130,7 +130,7 @@ class ResourceCollector:
             list: 告警信息列表
         """
         # 从settings.py加载阈值
-        from config.settings import MONITOR_THRESHOLDS
+        from core.settings import MONITOR_THRESHOLDS
         resource_thresholds = MONITOR_THRESHOLDS.get('resource', {})
         
         default_thresholds = {

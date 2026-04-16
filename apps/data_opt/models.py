@@ -2,7 +2,7 @@ from enum import unique
 from tortoise.models import Model as TortoiseBaseModel
 from tortoise import fields
 
-from config.settings import THIS_DB_NAME
+from core.settings import THIS_DB_NAME
 from apps.io_api import protomodels as pm
 
 

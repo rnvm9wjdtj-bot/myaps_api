@@ -8,7 +8,7 @@ import inspect, functools, pandas as pd, asyncio
 from fastapi import APIRouter, Path, Query, Body, Header, status#, Request
 # from tortoise import Tortoise
 
-from config.settings import MYAPS_DB_SET, MYAPS_DBSET_LIST, MYAPS_MAIN_DB, THIS_BASE_URL
+from core.settings import MYAPS_DB_SET, MYAPS_DBSET_LIST, MYAPS_MAIN_DB, THIS_BASE_URL
 from globalobjects import globalconst as gc, logger as log_config, ProjectDefaultValues as pdv
 # from .models import TMaterial, TWorkcenter, TMatWc, TMatVer, TMatWcBom, TSupply, TDemand, TMold, TMatWcMold, TConfirm#,TortoiseBaseModel
 from .schemas import (

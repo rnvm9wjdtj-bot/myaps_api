@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from config.settings import PORT
+from core.settings import PORT
 
 def create_app(lifespan=None):
     app = FastAPI(

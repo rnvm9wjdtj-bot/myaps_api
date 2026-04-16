@@ -9,7 +9,7 @@ import pandas as pd
 from fastapi import APIRouter, Query, Body, Header, File, UploadFile#, HTTPException
 from fastapi.responses import HTMLResponse#, StreamingResponse
 
-from config.settings import BASE_DIR
+from core.settings import BASE_DIR
 from project_files import  project_client, hap_conn
 # from .schemas import SupplyOperationBody, SupplyAction
 # from apps.io_api.models import TSupply

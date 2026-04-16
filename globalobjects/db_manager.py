@@ -8,7 +8,7 @@ from tortoise.expressions import Q
 from tortoise.transactions import in_transaction
 from tortoise.exceptions import IntegrityError
 
-from config.settings import MYAPS_DBSET_LIST
+from core.settings import MYAPS_DBSET_LIST
 from apps.io_api.utils.common import dict_to_lower_keys
 from globalobjects import logger as log_config
 import os
