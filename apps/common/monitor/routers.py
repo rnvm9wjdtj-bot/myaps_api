@@ -9,6 +9,9 @@ from fastapi import APIRouter, HTTPException, WebSocket
 from fastapi.responses import JSONResponse
 from typing import Dict, Any, List
 from .service import monitor_service
+
+# 导入定时任务模块，确保它们被注册
+from . import tasks
 from .schemas import (
     ResourceMetrics,
     DBMetrics,

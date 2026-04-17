@@ -8,6 +8,7 @@ from typing import Dict, Any, List
 from ..middleware import http_metrics_collector
 from ..allert import AlertType, alert_sender
 from ..storage import request_storage
+from ..models import is_internal_ip
 
 
 class HTTPCollector:
@@ -35,10 +36,10 @@ class HTTPCollector:
         """
         from globalobjects import logger as log_config
         logger = log_config.get_logger(__name__)
-        
+
         requests = list(self._collector._requests)
         logger.info(f"开始保存请求数据，共 {len(requests)} 个请求")
-        
+
         saved_count = 0
         for req in requests:
             try:
@@ -48,6 +49,7 @@ class HTTPCollector:
                     req.get("path")
                 )
                 if not existing:
+                    client_ip = req.get("client_ip")
                     # 保存请求数据
                     from datetime import datetime
                     request_data = {
@@ -57,7 +59,7 @@ class HTTPCollector:
                         "query_params": req.get("query_params"),
                         "status_code": req.get("status_code"),
                         "response_time": req.get("duration") * 1000,  # 转换为毫秒
-                        "client_ip": req.get("client_ip"),
+                        "client_ip": client_ip,
                         "user_agent": req.get("user_agent"),
                         "payload_size": len(req.get("request_body", "")) if req.get("request_body") else None,
                         "response_size": len(req.get("response_body", "")) if req.get("response_body") else None,
@@ -66,13 +68,14 @@ class HTTPCollector:
                         "is_slow": req.get("is_slow", False),
                         "slow_threshold": 1000.0 if req.get("is_slow") else None,
                         "is_error": req.get("is_error", False),
-                        "error_message": req.get("error_message")
+                        "error_message": req.get("error_message"),
+                        "is_internal": is_internal_ip(client_ip) if client_ip else False
                     }
                     await request_storage.save_request(request_data)
                     saved_count += 1
             except Exception as e:
                 logger.error(f"保存请求数据失败: {e}")
-        
+
         logger.info(f"请求数据保存完成，共保存 {saved_count} 个请求")
 
     async def get_slow_requests(self, limit: int = 10) -> List[Dict[str, Any]]:
@@ -86,10 +89,11 @@ class HTTPCollector:
             List: 慢请求列表
         """
         slow_requests = self._collector.get_slow_requests(limit)
-        
+
         # 持久化慢请求数据
         from datetime import datetime
         for req in slow_requests:
+            client_ip = req.get("client_ip")
             # 保存基础请求数据和慢请求字段
             request_data = {
                 "timestamp": datetime.fromtimestamp(req.get("timestamp")),
@@ -98,7 +102,7 @@ class HTTPCollector:
                 "query_params": req.get("query_params"),
                 "status_code": req.get("status_code"),
                 "response_time": req.get("duration") * 1000,  # 转换为毫秒
-                "client_ip": req.get("client_ip"),
+                "client_ip": client_ip,
                 "user_agent": req.get("user_agent"),
                 "payload_size": len(req.get("request_body", "")) if req.get("request_body") else None,
                 "response_size": len(req.get("response_body", "")) if req.get("response_body") else None,
@@ -106,10 +110,11 @@ class HTTPCollector:
                 "response_body": req.get("response_body"),
                 "is_slow": True,
                 "slow_threshold": 1000.0,
-                "is_error": False
+                "is_error": False,
+                "is_internal": is_internal_ip(client_ip) if client_ip else False
             }
             await request_storage.save_request(request_data)
-        
+
         await alert_sender.trigger_alert(AlertType.REQUEST_SLOW, slow_requests)
         return slow_requests
 
@@ -125,10 +130,11 @@ class HTTPCollector:
             List: 错误请求列表
         """
         error_requests = self._collector.get_error_requests(limit)
-        
+
         # 持久化错误请求数据
         from datetime import datetime
         for req in error_requests:
+            client_ip = req.get("client_ip")
             # 保存基础请求数据和错误请求字段
             request_data = {
                 "timestamp": datetime.fromtimestamp(req.get("timestamp")),
@@ -137,7 +143,7 @@ class HTTPCollector:
                 "query_params": req.get("query_params"),
                 "status_code": req.get("status_code"),
                 "response_time": req.get("duration") * 1000,  # 转换为毫秒
-                "client_ip": req.get("client_ip"),
+                "client_ip": client_ip,
                 "user_agent": req.get("user_agent"),
                 "payload_size": len(req.get("request_body", "")) if req.get("request_body") else None,
                 "response_size": len(req.get("response_body", "")) if req.get("response_body") else None,
@@ -145,10 +151,11 @@ class HTTPCollector:
                 "response_body": req.get("response_body"),
                 "is_error": True,
                 "error_message": req.get("error_message"),
-                "is_slow": False
+                "is_slow": False,
+                "is_internal": is_internal_ip(client_ip) if client_ip else False
             }
             await request_storage.save_request(request_data)
-        
+
         await alert_sender.trigger_alert(AlertType.REQUEST_ERROR, error_requests)
         return error_requests
 
@@ -187,7 +194,8 @@ class HTTPCollector:
             "is_slow": req.is_slow,
             "slow_threshold": req.slow_threshold,
             "is_error": req.is_error,
-            "error_message": req.error_message
+            "error_message": req.error_message,
+            "is_internal": req.is_internal
         } for req in requests]
 
 
@@ -220,7 +228,8 @@ class HTTPCollector:
             "is_slow": req.is_slow,
             "slow_threshold": req.slow_threshold,
             "is_error": req.is_error,
-            "error_message": req.error_message
+            "error_message": req.error_message,
+            "is_internal": req.is_internal
         } for req in slow_requests]
 
 
@@ -253,5 +262,6 @@ class HTTPCollector:
             "is_slow": req.is_slow,
             "slow_threshold": req.slow_threshold,
             "is_error": req.is_error,
-            "error_message": req.error_message
+            "error_message": req.error_message,
+            "is_internal": req.is_internal
         } for req in error_requests]

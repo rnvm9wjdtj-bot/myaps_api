@@ -12,6 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 from globalobjects import logger as log_config
+from .models import is_internal_ip
 
 logger = log_config.get_logger(__name__)
 
@@ -63,6 +64,7 @@ class HTTPMetricsCollector:
                 "client_ip": client_ip,
                 "is_error": status_code >= 400,
                 "is_slow": duration >= self._slow_threshold,
+                "is_internal": is_internal_ip(client_ip),
                 "error_message": error_message,
                 "request_body": request_body,
                 "response_body": response_body,
@@ -197,17 +199,17 @@ class HTTPMetricsCollector:
         """
         now = time.time()
         one_minute_ago = now - 60
-        
+
         # 清理过期的请求记录
         self._rate_limits[client_ip] = deque(
             [t for t in self._rate_limits[client_ip] if t > one_minute_ago],
             maxlen=100
         )
-        
+
         # 检查是否超过限制
         if len(self._rate_limits[client_ip]) >= 100:
             return True
-        
+
         # 记录当前请求
         self._rate_limits[client_ip].append(now)
         return False
@@ -245,12 +247,12 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
         request_body = None
         response_body = None
         query_params = None
-        
+
         # 收集查询参数
         try:
             query_params = dict(request.query_params)
             import json
-            query_params = json.dumps(query_params)
+            query_params = json.dumps(query_params, ensure_ascii=False)
         except Exception as e:
             logger.debug(f"读取查询参数失败: {e}")
             query_params = None
@@ -281,13 +283,13 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
                 body = b""
                 async for chunk in response.body_iterator:
                     body += chunk
-                
+
                 # 创建异步迭代器
                 async def async_body_iterator():
                     yield body
-                
+
                 response.body_iterator = async_body_iterator()
-                
+
                 if body:
                     try:
                         import json
@@ -347,13 +349,13 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
             body = b""
             async for chunk in response.body_iterator:
                 body += chunk
-            
+
             # 创建异步迭代器
             async def async_body_iterator():
                 yield body
-            
+
             response.body_iterator = async_body_iterator()
-            
+
             if body:
                 try:
                     import json
@@ -364,5 +366,5 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
                     pass
         except Exception as e:
             logger.debug(f"提取错误消息失败: {e}")
-        
+
         return None

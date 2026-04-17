@@ -73,12 +73,12 @@ class SchedulerCollector:
                         "execution_history": execution_history,  # 包含执行历史记录
                         "pending": False  # 暂不支持pending状态
                     }
-                    logger.debug(f"任务信息: {job_dict}")
+                    # logger.debug(f"任务信息: {job_dict}")
                     jobs.append(job_dict)
         except Exception as e:
             logger.error(f"获取任务列表失败: {e}")
 
-        logger.debug(f"返回的任务列表: {jobs}")
+        # logger.debug(f"返回的任务列表: {jobs}")
         return jobs
 
     def get_all_metrics(self) -> Dict[str, Any]:
@@ -92,7 +92,7 @@ class SchedulerCollector:
             # 直接使用get_scheduler_status函数，它已经包含了完整的任务信息
             status = get_scheduler_status()
             jobs = []
-            logger.debug(f"get_scheduler_status返回的状态: {status}")
+            # logger.debug(f"get_scheduler_status返回的状态: {status}")
             
             for job_info in status.get('jobs', []):
                 # 转换执行历史记录中的时间格式为ISO字符串
@@ -116,7 +116,7 @@ class SchedulerCollector:
                     "execution_history": execution_history,  # 包含执行历史记录
                     "pending": False  # 暂不支持pending状态
                 }
-                logger.debug(f"转换后的任务信息: {job_dict}")
+                # logger.debug(f"转换后的任务信息: {job_dict}")
                 jobs.append(job_dict)
             
             result = {
@@ -130,7 +130,7 @@ class SchedulerCollector:
                 "jobs": jobs,
                 "job_count": status.get("job_count", 0),
             }
-            logger.debug(f"返回的监控指标: {result}")
+            # logger.debug(f"返回的监控指标: {result}")
             return result
         except Exception as e:
             logger.error(f"获取定时任务指标失败: {e}")

@@ -180,3 +180,33 @@ class OutboundRequestStorage:
 # 全局存储实例
 request_storage = RequestStorage()
 outbound_request_storage = OutboundRequestStorage()
+
+
+async def clean_all_old_data(days: int = 30):
+    """统一清理所有旧的请求数据
+    
+    Args:
+        days: 保留多少天的数据，默认30天
+    """
+    from globalobjects import logger as log_config
+    logger = log_config.get_logger(__name__)
+    
+    logger.start("清理旧请求记录")
+    
+    # 清理接收请求记录
+    try:
+        logger.info("开始清理接收请求记录...")
+        await request_storage.clean_old_data(days=days)
+        logger.success("接收请求记录清理完成")
+    except Exception as e:
+        logger.fail("接收请求记录清理", "", str(e))
+    
+    # 清理发送请求记录
+    try:
+        logger.info("开始清理发送请求记录...")
+        await outbound_request_storage.clean_old_data(days=days)
+        logger.success("发送请求记录清理完成")
+    except Exception as e:
+        logger.fail("发送请求记录清理", "", str(e))
+    
+    logger.success("清理旧请求记录", "任务完成")
