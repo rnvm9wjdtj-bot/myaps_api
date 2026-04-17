@@ -325,6 +325,11 @@ def register_database(app):
         # add_exception_handlers=True,  # 生产环境不要开，会泄露调试信息
     )
     
+    # 标记数据库已初始化，允许日志写入数据库
+    from globalobjects.logger import get_logger
+    logger = get_logger("database")
+    logger.set_db_initialized_all(True)
+    
     # 启动监控服务（使用现有的监控架构）
     from apps.common.monitor.service import monitor_service
     log_config.info("✅ 系统监控服务已集成")

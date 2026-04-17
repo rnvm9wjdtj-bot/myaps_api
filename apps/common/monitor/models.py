@@ -1,6 +1,6 @@
 from tortoise import fields
 from tortoise.models import Model
-from datetime import datetime
+from datetime import datetime, timezone
 import ipaddress
 from typing import Optional
 
@@ -103,7 +103,7 @@ def get_host_from_url(url: str) -> Optional[str]:
 class APIRequest(Model):
     """API 请求记录模型"""
     id = fields.IntField(pk=True, auto_generate=True)
-    timestamp = fields.DatetimeField(default=datetime.utcnow, description="请求时间")
+    timestamp = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="请求时间")
     method = fields.CharField(max_length=10, description="HTTP 方法")
     path = fields.CharField(max_length=512, description="请求路径")
     query_params = fields.TextField(null=True, description="查询参数")
@@ -123,6 +123,7 @@ class APIRequest(Model):
 
     class Meta:
         table = "api_requests"
+        default_connection = "local_data"
         indexes = [
             ("timestamp",),
             ("path",),
@@ -137,7 +138,7 @@ class APIRequest(Model):
 class OutboundAPIRequest(Model):
     """对外 HTTP 请求记录模型"""
     id = fields.IntField(pk=True, auto_generate=True)
-    timestamp = fields.DatetimeField(default=datetime.utcnow, description="请求时间")
+    timestamp = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="请求时间")
     method = fields.CharField(max_length=10, description="HTTP 方法")
     url = fields.TextField(description="请求 URL")
     status_code = fields.IntField(description="响应状态码")
@@ -154,6 +155,7 @@ class OutboundAPIRequest(Model):
 
     class Meta:
         table = "outbound_api_requests"
+        default_connection = "local_data"
         indexes = [
             ("timestamp",),
             ("module",),
@@ -161,4 +163,99 @@ class OutboundAPIRequest(Model):
             ("is_error",),
             ("is_slow",),
             ("is_internal",),
+        ]
+
+
+class SystemLog(Model):
+    """系统日志模型"""
+    id = fields.IntField(pk=True, auto_generate=True)
+    timestamp = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="日志时间")
+    level = fields.CharField(max_length=10, description="日志级别：DEBUG, INFO, WARNING, ERROR, CRITICAL")
+    module = fields.CharField(max_length=255, description="模块名称")
+    function = fields.CharField(max_length=255, description="函数名称")
+    line_number = fields.IntField(description="行号")
+    message = fields.TextField(description="日志消息")
+    details = fields.TextField(null=True, description="详细信息")
+    stack_trace = fields.TextField(null=True, description="堆栈跟踪")
+    process_id = fields.IntField(null=True, description="进程ID")
+    thread_id = fields.IntField(null=True, description="线程ID")
+    thread_name = fields.CharField(max_length=255, null=True, description="线程名称")
+
+    class Meta:
+        table = "system_logs"
+        default_connection = "local_data"
+        indexes = [
+            ("timestamp",),
+            ("level",),
+            ("module",),
+            ("function",),
+        ]
+
+
+class APILog(Model):
+    """API 相关日志模型"""
+    id = fields.IntField(pk=True, auto_generate=True)
+    timestamp = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="日志时间")
+    level = fields.CharField(max_length=10, description="日志级别：DEBUG, INFO, WARNING, ERROR, CRITICAL")
+    api_request = fields.ForeignKeyField("monitor_models.APIRequest", null=True, description="关联的内部API请求")
+    outbound_api_request = fields.ForeignKeyField("monitor_models.OutboundAPIRequest", null=True, description="关联的对外API请求")
+    message = fields.TextField(description="日志消息")
+    details = fields.TextField(null=True, description="详细信息")
+    stack_trace = fields.TextField(null=True, description="堆栈跟踪")
+
+    class Meta:
+        table = "api_logs"
+        default_connection = "local_data"
+        indexes = [
+            ("timestamp",),
+            ("level",),
+            ("api_request",),
+            ("outbound_api_request",),
+        ]
+
+
+class PerformanceLog(Model):
+    """性能日志模型"""
+    id = fields.IntField(pk=True, auto_generate=True)
+    timestamp = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="日志时间")
+    operation = fields.CharField(max_length=255, description="操作名称")
+    duration = fields.FloatField(description="执行时间（毫秒）")
+    module = fields.CharField(max_length=255, description="模块名称")
+    function = fields.CharField(max_length=255, description="函数名称")
+    details = fields.TextField(null=True, description="详细信息")
+    is_slow = fields.BooleanField(default=False, description="是否慢操作")
+    slow_threshold = fields.FloatField(null=True, description="慢操作阈值（毫秒）")
+
+    class Meta:
+        table = "performance_logs"
+        default_connection = "local_data"
+        indexes = [
+            ("timestamp",),
+            ("operation",),
+            ("duration",),
+            ("module",),
+            ("is_slow",),
+        ]
+
+
+class SecurityLog(Model):
+    """安全日志模型"""
+    id = fields.IntField(pk=True, auto_generate=True)
+    timestamp = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="日志时间")
+    event_type = fields.CharField(max_length=50, description="事件类型：登录、登出、权限变更等")
+    user = fields.CharField(max_length=255, null=True, description="用户标识")
+    ip_address = fields.CharField(max_length=64, null=True, description="IP地址")
+    action = fields.TextField(description="操作描述")
+    status = fields.CharField(max_length=20, description="状态：成功、失败")
+    details = fields.TextField(null=True, description="详细信息")
+
+    class Meta:
+        table = "security_logs"
+        default_connection = "local_data"
+        indexes = [
+            ("timestamp",),
+            ("event_type",),
+            ("user",),
+            ("ip_address",),
+            ("status",),
         ]

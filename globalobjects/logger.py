@@ -765,6 +765,7 @@ class LogHelper:
 # 存储多个logger实例和对应的listener
 logger_instances = {}
 listeners = {}
+db_initialized = False  # 全局数据库初始化状态
 
 
 class DatePrefixRotatingFileHandler(TimedRotatingFileHandler):
@@ -1069,6 +1070,9 @@ class SmartLogger(logging.Logger):
     
     _file_logger = None
     _auto_file_enabled = True
+    _db_enabled = True
+    _db_min_level = logging.DEBUG  # 记录所有级别的日志到数据库，便于调试
+    _db_initialized = False  # 数据库是否已初始化
     
     def set_file_logger(self, file_logger) -> None:
         """
@@ -1086,6 +1090,136 @@ class SmartLogger(logging.Logger):
     def disable_auto_file(self) -> None:
         """禁用自动文件日志"""
         self._auto_file_enabled = False
+    
+    def enable_db_logging(self) -> None:
+        """启用数据库日志（默认启用）"""
+        self._db_enabled = True
+    
+    def disable_db_logging(self) -> None:
+        """禁用数据库日志"""
+        self._db_enabled = False
+    
+    def set_db_min_level(self, level: int) -> None:
+        """设置数据库日志的最低级别"""
+        self._db_min_level = level
+    
+    def set_db_initialized(self, initialized: bool = True) -> None:
+        """标记数据库是否已初始化"""
+        self._db_initialized = initialized
+    
+    def set_db_initialized_all(self, initialized: bool = True) -> None:
+        """标记所有日志器数据库是否已初始化"""
+        global db_initialized
+        db_initialized = initialized
+        for logger in logger_instances.values():
+            if isinstance(logger, SmartLogger):
+                logger.set_db_initialized(initialized)
+    
+    async def _log_to_database(self, level: int, msg: str, **kwargs) -> None:
+        """
+        异步写入数据库
+        
+        Args:
+            level: 日志级别
+            msg: 日志消息
+            **kwargs: 额外的日志参数
+        """
+        # 检查数据库是否已初始化
+        global db_initialized
+        if not db_initialized:
+            return
+        
+        # 检查数据库日志是否启用
+        if not self._db_enabled or level < self._db_min_level:
+            return
+        
+        try:
+            import inspect
+            import os
+            import threading
+            
+            # 尝试导入 SystemLog 模型
+            try:
+                from apps.common.monitor.models import SystemLog
+            except Exception:
+                # 导入失败，不记录到文件，避免递归
+                return
+            
+            # 获取调用栈
+            try:
+                stack = inspect.stack()
+            except Exception:
+                # 获取调用栈失败，不记录到文件，避免递归
+                stack = []
+            
+            # 跳过内部方法，找到原始调用位置
+            caller_frame = None
+            try:
+                for i, frame_info in enumerate(stack[1:]):
+                    frame = frame_info.frame
+                    class_name = None
+                    if 'self' in frame.f_locals:
+                        try:
+                            class_name = frame.f_locals['self'].__class__.__name__
+                        except Exception:
+                            pass
+                    
+                    if class_name != 'SmartLogger':
+                        caller_frame = frame_info
+                        break
+                
+                if not caller_frame and len(stack) > 1:
+                    caller_frame = stack[-1]
+            except Exception:
+                # 解析调用栈失败，不记录到文件，避免递归
+                pass
+            
+            # 获取堆栈跟踪（仅ERROR及以上级别）
+            stack_trace = None
+            if level >= logging.ERROR:
+                try:
+                    import traceback
+                    stack_trace = ''.join(traceback.format_stack())
+                except Exception:
+                    # 获取堆栈跟踪失败，不记录到文件，避免递归
+                    pass
+            
+            # 创建日志记录
+            module_name = ''
+            function_name = ''
+            line_no = 0
+            if caller_frame:
+                try:
+                    module_name = caller_frame.frame.f_globals.get('__name__', '')
+                    function_name = caller_frame.function
+                    line_no = caller_frame.lineno
+                except Exception:
+                    # 获取调用信息失败，使用默认值
+                    pass
+            
+            # 尝试创建日志记录
+            try:
+                # 确保模型有正确的默认连接
+                SystemLog._meta.default_connection = "local_data"
+                
+                await SystemLog.create(
+                    level=logging.getLevelName(level),
+                    module=module_name,
+                    function=function_name,
+                    line_number=line_no,
+                    message=msg,
+                    details=str(kwargs) if kwargs else None,
+                    stack_trace=stack_trace,
+                    process_id=os.getpid(),
+                    thread_id=threading.get_ident(),
+                    thread_name=threading.current_thread().name
+                )
+            except Exception:
+                # 数据库写入失败，不记录到文件，避免递归
+                pass
+        except Exception:
+            # 其他错误，不记录到文件，避免递归
+            pass
     
     def _log_to_file(self, level: int, msg: str) -> None:
         """
@@ -1163,6 +1297,24 @@ class SmartLogger(logging.Logger):
         """记录 DEBUG 级别的日志"""
         # 检查当前日志器的级别
         if self.isEnabledFor(logging.DEBUG):
+            # 异步写入数据库
+            try:
+                import asyncio
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # 格式化消息，处理格式化失败的情况
+                    try:
+                        if args:
+                            formatted_msg = msg % args
+                        else:
+                            formatted_msg = msg
+                    except (TypeError, ValueError):
+                        # 如果格式化失败，将参数拼接到消息后面
+                        formatted_msg = f"{msg} {' '.join(map(str, args))}"
+                    asyncio.create_task(self._log_to_database(logging.DEBUG, formatted_msg, **kwargs))
+            except Exception:
+                pass
+            
             if TERMINAL_SUPPORTS_ANSI:
                 try:
                     # 获取当前时间
@@ -1203,6 +1355,24 @@ class SmartLogger(logging.Logger):
         """记录 INFO 级别的日志"""
         # 检查当前日志器的级别
         if self.isEnabledFor(logging.INFO):
+            # 异步写入数据库
+            try:
+                import asyncio
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # 格式化消息，处理格式化失败的情况
+                    try:
+                        if args:
+                            formatted_msg = msg % args
+                        else:
+                            formatted_msg = msg
+                    except (TypeError, ValueError):
+                        # 如果格式化失败，将参数拼接到消息后面
+                        formatted_msg = f"{msg} {' '.join(map(str, args))}"
+                    asyncio.create_task(self._log_to_database(logging.INFO, formatted_msg, **kwargs))
+            except Exception:
+                pass
+            
             if TERMINAL_SUPPORTS_ANSI:
                 try:
                     # 获取当前时间
@@ -1257,6 +1427,24 @@ class SmartLogger(logging.Logger):
         """记录 WARNING 级别的日志"""
         # 检查当前日志器的级别
         if self.isEnabledFor(logging.WARNING):
+            # 异步写入数据库
+            try:
+                import asyncio
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # 格式化消息，处理格式化失败的情况
+                    try:
+                        if args:
+                            formatted_msg = msg % args
+                        else:
+                            formatted_msg = msg
+                    except (TypeError, ValueError):
+                        # 如果格式化失败，将参数拼接到消息后面
+                        formatted_msg = f"{msg} {' '.join(map(str, args))}"
+                    asyncio.create_task(self._log_to_database(logging.WARNING, formatted_msg, **kwargs))
+            except Exception:
+                pass
+            
             if TERMINAL_SUPPORTS_ANSI:
                 try:
                     # 获取当前时间
@@ -1311,6 +1499,29 @@ class SmartLogger(logging.Logger):
         """记录 ERROR 级别的日志"""
         # 检查当前日志器的级别
         if self.isEnabledFor(logging.ERROR):
+            # 格式化消息，处理格式化失败的情况
+            try:
+                if args:
+                    formatted_msg = msg % args
+                else:
+                    formatted_msg = msg
+            except (TypeError, ValueError):
+                # 如果格式化失败，将参数拼接到消息后面
+                formatted_msg = f"{msg} {' '.join(map(str, args))}"
+            
+            # 写入数据库
+            try:
+                import asyncio
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # 事件循环已运行，创建异步任务
+                    asyncio.create_task(self._log_to_database(logging.ERROR, formatted_msg, **kwargs))
+                else:
+                    # 事件循环未运行，同步执行
+                    asyncio.run(self._log_to_database(logging.ERROR, formatted_msg, **kwargs))
+            except Exception:
+                pass
+            
             if TERMINAL_SUPPORTS_ANSI:
                 try:
                     # 获取当前时间
@@ -1365,6 +1576,24 @@ class SmartLogger(logging.Logger):
         """记录 CRITICAL 级别的日志"""
         # 检查当前日志器的级别
         if self.isEnabledFor(logging.CRITICAL):
+            # 异步写入数据库
+            try:
+                import asyncio
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # 格式化消息，处理格式化失败的情况
+                    try:
+                        if args:
+                            formatted_msg = msg % args
+                        else:
+                            formatted_msg = msg
+                    except (TypeError, ValueError):
+                        # 如果格式化失败，将参数拼接到消息后面
+                        formatted_msg = f"{msg} {' '.join(map(str, args))}"
+                    asyncio.create_task(self._log_to_database(logging.CRITICAL, formatted_msg, **kwargs))
+            except Exception:
+                pass
+            
             if TERMINAL_SUPPORTS_ANSI:
                 try:
                     # 获取当前时间
@@ -1662,8 +1891,8 @@ def setup_logger(name: str, level: str = 'INFO', auto_file: bool = True) -> logg
     if logger_key in logger_instances:
         return logger_instances[logger_key]
     
-    # 创建日志器
-    logger = logging.getLogger(name)
+    # 创建 SmartLogger 实例
+    logger = SmartLogger(name)
     logger.setLevel(get_log_level(level))
     logger.propagate = False  # 防止日志传播
     
