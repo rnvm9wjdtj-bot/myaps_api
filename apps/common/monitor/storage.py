@@ -1,6 +1,6 @@
 from typing import List, Dict, Any
 from datetime import datetime
-from .models import APIRequest, OutboundAPIRequest
+from .models import APIRequest, OutboundAPIRequest, SystemLog
 
 
 class RequestStorage:
@@ -177,9 +177,20 @@ class OutboundRequestStorage:
         await OutboundAPIRequest.filter(timestamp__lt=cutoff_date).delete()
 
 
+class SystemLogStorage:
+    """系统日志存储服务"""
+    
+    async def clean_old_data(self, days: int = 7):
+        """清理指定天数前的系统日志数据"""
+        from datetime import timedelta
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        await SystemLog.filter(timestamp__lt=cutoff_date).delete()
+
+
 # 全局存储实例
 request_storage = RequestStorage()
 outbound_request_storage = OutboundRequestStorage()
+system_log_storage = SystemLogStorage()
 
 
 async def clean_all_old_data(days: int = 30):
@@ -208,5 +219,13 @@ async def clean_all_old_data(days: int = 30):
         logger.success("发送请求记录清理完成")
     except Exception as e:
         logger.fail("发送请求记录清理", "", str(e))
+    
+    # 清理系统日志记录
+    try:
+        logger.info("开始清理系统日志记录...")
+        await system_log_storage.clean_old_data(days=days)
+        logger.success("系统日志记录清理完成")
+    except Exception as e:
+        logger.fail("系统日志记录清理", "", str(e))
     
     logger.success("清理旧请求记录", "任务完成")

@@ -208,7 +208,7 @@ class MoPushModel(PydanticModel):
     StartDate: str = Field()
     FinishDate: str = Field()
     VoucherDate: str = Field()
-    Memo: str = Field(None)
+    Memo: Optional[str] = None
     IsMaterialRequest: bool = Field(True)
     ManufactureOrderDetails: list[dict] = Field()
     

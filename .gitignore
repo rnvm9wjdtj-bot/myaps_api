@@ -76,6 +76,7 @@ jspm_packages/
 .env
 
 test/
+tests/
 
 
 # 临时文件

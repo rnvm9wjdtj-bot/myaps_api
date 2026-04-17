@@ -6,9 +6,9 @@ LOG_LEVEL = "INFO"
 logger = log_config.get_logger(__name__, level=LOG_LEVEL)
 
 
-@cron_task(hour=2, minute=0, description="清理30天前的收发请求记录")
+@cron_task(hour=2, minute=0, description="清理30天前的收发请求及系统日志数据库记录")
 def task_clean_old_requests():
-    """定时任务：清理30天前的收发请求记录"""
+    """定时任务：清理30天前的收发请求及系统日志数据库记录"""
     try:
         import asyncio
         # 调用统一的清理方法

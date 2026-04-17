@@ -1518,7 +1518,14 @@ class SmartLogger(logging.Logger):
                     asyncio.create_task(self._log_to_database(logging.ERROR, formatted_msg, **kwargs))
                 else:
                     # 事件循环未运行，同步执行
-                    asyncio.run(self._log_to_database(logging.ERROR, formatted_msg, **kwargs))
+                    # 避免在应用关闭时使用 asyncio.run()，防止事件循环错误
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if not loop.is_closed():
+                            asyncio.create_task(self._log_to_database(logging.ERROR, formatted_msg, **kwargs))
+                    except:
+                        # 事件循环已关闭，跳过日志记录
+                        pass
             except Exception:
                 pass
             

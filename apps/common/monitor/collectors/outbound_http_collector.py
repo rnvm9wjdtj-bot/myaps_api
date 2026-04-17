@@ -10,7 +10,7 @@ import json
 import threading
 from typing import Dict, Any, List
 from collections import deque, defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from ..storage import outbound_request_storage
 from ..models import is_internal_url
 
@@ -191,7 +191,7 @@ class OutboundHTTPCollector:
             # 持久化到数据库
             try:
                 request_data = {
-                    "timestamp": datetime.fromtimestamp(request_info["timestamp"]),
+                    "timestamp": datetime.fromtimestamp(request_info["timestamp"], timezone.utc),
                     "method": method,
                     "url": url,
                     "status_code": status_code,
@@ -350,11 +350,11 @@ class OutboundHTTPCollector:
             # 异步保存到数据库，避免阻塞同步线程
             try:
                 import asyncio
-                from datetime import datetime
+                from datetime import datetime, timezone
 
                 # 准备保存到数据库的数据
                 request_data = {
-                    "timestamp": datetime.fromtimestamp(request_info["timestamp"]),
+                    "timestamp": datetime.fromtimestamp(request_info["timestamp"], timezone.utc),
                     "method": method,
                     "url": url,
                     "status_code": status_code,

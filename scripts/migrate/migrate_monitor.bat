@@ -10,6 +10,7 @@ if "%PROJECT_DIR%"=="" (
     exit /b 1
 )
 
+setx PROJECT_DIR "%PROJECT_DIR%" >nul 2>&1
 set PROJECT_DIR=%PROJECT_DIR%
 
 echo Project Directory: %PROJECT_DIR%

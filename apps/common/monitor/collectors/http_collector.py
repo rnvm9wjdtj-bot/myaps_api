@@ -51,9 +51,9 @@ class HTTPCollector:
                 if not existing:
                     client_ip = req.get("client_ip")
                     # 保存请求数据
-                    from datetime import datetime
+                    from datetime import datetime, timezone
                     request_data = {
-                        "timestamp": datetime.fromtimestamp(req.get("timestamp")),
+                        "timestamp": datetime.fromtimestamp(req.get("timestamp"), timezone.utc),
                         "method": req.get("method"),
                         "path": req.get("path"),
                         "query_params": req.get("query_params"),
@@ -91,12 +91,12 @@ class HTTPCollector:
         slow_requests = self._collector.get_slow_requests(limit)
 
         # 持久化慢请求数据
-        from datetime import datetime
+        from datetime import datetime, timezone
         for req in slow_requests:
             client_ip = req.get("client_ip")
             # 保存基础请求数据和慢请求字段
             request_data = {
-                "timestamp": datetime.fromtimestamp(req.get("timestamp")),
+                "timestamp": datetime.fromtimestamp(req.get("timestamp"), timezone.utc),
                 "method": req.get("method"),
                 "path": req.get("path"),
                 "query_params": req.get("query_params"),
@@ -132,12 +132,12 @@ class HTTPCollector:
         error_requests = self._collector.get_error_requests(limit)
 
         # 持久化错误请求数据
-        from datetime import datetime
+        from datetime import datetime, timezone
         for req in error_requests:
             client_ip = req.get("client_ip")
             # 保存基础请求数据和错误请求字段
             request_data = {
-                "timestamp": datetime.fromtimestamp(req.get("timestamp")),
+                "timestamp": datetime.fromtimestamp(req.get("timestamp"), timezone.utc),
                 "method": req.get("method"),
                 "path": req.get("path"),
                 "query_params": req.get("query_params"),

@@ -2803,10 +2803,14 @@ function updateSchedulerDetailDisplay(data) {
     }
     
     // 将系统级任务置顶显示
-    // 系统级任务：project_files.check_db_health
+    // 项目级任务：PROJECT_DIR 目录下的任务
+    const envData = getCachedData('environment');
+    const projectDir = envData ? envData.project_dir : '';
     jobs.sort((a, b) => {
-        const aIsSystem = (a.name || a.id).includes('project_files.check_db_health');
-        const bIsSystem = (b.name || b.id).includes('project_files.check_db_health');
+        const aIsProjectTask = projectDir && (a.name || a.id).includes(`project_files.${projectDir}`);
+        const bIsProjectTask = projectDir && (b.name || b.id).includes(`project_files.${projectDir}`);
+        const aIsSystem = !aIsProjectTask;
+        const bIsSystem = !bIsProjectTask;
         if (aIsSystem && !bIsSystem) return -1;
         if (!aIsSystem && bIsSystem) return 1;
         return 0;
@@ -2816,7 +2820,10 @@ function updateSchedulerDetailDisplay(data) {
         const lastRunTime = job.last_run_time ? formatDateTime(job.last_run_time) : '从未执行';
         const nextRunTime = job.next_run_time ? formatDateTime(job.next_run_time) : '未计划';
         const maxExecutionTime = job.max_execution_time ? `${job.max_execution_time.toFixed(2)} 秒` : '默认';
-        const isSystemTask = (job.name || job.id).includes('project_files.check_db_health');
+        const envData = getCachedData('environment');
+        const projectDir = envData ? envData.project_dir : '';
+        const isProjectTask = projectDir && (job.name || job.id).includes(`project_files.${projectDir}`);
+        const isSystemTask = !isProjectTask;
         
         // 解析下次执行时间为日期和时间部分
         let timeStr = '未计划';
