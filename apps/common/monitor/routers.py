@@ -9,6 +9,9 @@ from fastapi import APIRouter, HTTPException, WebSocket
 from fastapi.responses import JSONResponse
 from typing import Dict, Any, List
 from .service import monitor_service
+from globalobjects import logger as log_config
+
+logger = log_config.get_logger(__name__)
 
 # 导入定时任务模块，确保它们被注册
 from . import tasks
@@ -331,10 +334,7 @@ async def get_environment():
     }
 
 
-@router.get("/outbound-http", response_model=Dict[str, Any])
-def get_outbound_http_metrics():
-    """获取对外 HTTP 请求指标"""
-    return monitor_service.get_outbound_http_metrics()
+
 
 
 @router.get("/outbound-http/all", response_model=List[Dict[str, Any]])
@@ -419,6 +419,6 @@ async def websocket_endpoint(websocket: WebSocket):
             # 接收客户端消息（如果有）
             await websocket.receive_text()
     except Exception as e:
-        print(f"WebSocket 连接异常: {e}")
+        logger.error(f"WebSocket 连接异常: {e}")
     finally:
         monitor_service.unregister_websocket(websocket)

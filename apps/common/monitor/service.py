@@ -261,7 +261,9 @@ class MonitorService:
                 healthy_count += 1
             total_count += 1
         except Exception as e:
-            checks["resource"] = {"status": "error", "message": str(e)}
+            error_msg = f"资源检查失败: {str(e)}"
+            checks["resource"] = {"status": "error", "message": error_msg}
+            self._add_alert("error", error_msg, "resource")
             total_count += 1
 
         # 检查数据库
@@ -276,9 +278,12 @@ class MonitorService:
                     "status": "warning",
                     "message": f"{summary.get('unhealthy', 0)} 个数据库连接异常",
                 }
+                self._add_alert("warning", f"{summary.get('unhealthy', 0)} 个数据库连接异常", "database")
             total_count += 1
         except Exception as e:
-            checks["database"] = {"status": "error", "message": str(e)}
+            error_msg = f"数据库检查失败: {str(e)}"
+            checks["database"] = {"status": "error", "message": error_msg}
+            self._add_alert("error", error_msg, "database")
             total_count += 1
 
         # 检查调度器
@@ -289,9 +294,12 @@ class MonitorService:
                 healthy_count += 1
             else:
                 checks["scheduler"] = {"status": "warning", "message": "调度器未运行"}
+                self._add_alert("warning", "调度器未运行", "scheduler")
             total_count += 1
         except Exception as e:
-            checks["scheduler"] = {"status": "error", "message": str(e)}
+            error_msg = f"调度器检查失败: {str(e)}"
+            checks["scheduler"] = {"status": "error", "message": error_msg}
+            self._add_alert("error", error_msg, "scheduler")
             total_count += 1
 
         # 检查 HTTP
@@ -304,9 +312,12 @@ class MonitorService:
                 healthy_count += 1
             else:
                 checks["http"] = {"status": "warning", "message": f"HTTP 错误率较高: {error_rate}%"}
+                self._add_alert("warning", f"HTTP 错误率较高: {error_rate}%", "http")
             total_count += 1
         except Exception as e:
-            checks["http"] = {"status": "error", "message": str(e)}
+            error_msg = f"HTTP 检查失败: {str(e)}"
+            checks["http"] = {"status": "error", "message": error_msg}
+            self._add_alert("error", error_msg, "http")
             total_count += 1
 
         # 检查对外 HTTP 请求
@@ -319,9 +330,12 @@ class MonitorService:
                 healthy_count += 1
             else:
                 checks["outbound_http"] = {"status": "warning", "message": f"对外 HTTP 请求错误率较高: {error_rate}%"}
+                self._add_alert("warning", f"对外 HTTP 请求错误率较高: {error_rate}%", "outbound_http")
             total_count += 1
         except Exception as e:
-            checks["outbound_http"] = {"status": "error", "message": str(e)}
+            error_msg = f"对外 HTTP 请求检查失败: {str(e)}"
+            checks["outbound_http"] = {"status": "error", "message": error_msg}
+            self._add_alert("error", error_msg, "outbound_http")
             total_count += 1
 
         # 确定整体状态
