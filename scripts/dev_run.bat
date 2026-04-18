@@ -9,11 +9,13 @@ set "MAX_RESTARTS=5"
 set "RESTART_COUNT=0"
 set "HOST=0.0.0.0"
 set "PORT=8000"
+set "PROJECT_DIR="
 
 :: 从 .env 文件读取 HOST 和 PORT 配置
 if exist "%ENV_FILE%" (
     for /f "tokens=1,2 delims==" %%a in ('findstr /i "^HOST=" "%ENV_FILE%"') do set "HOST=%%b"
     for /f "tokens=1,2 delims==" %%a in ('findstr /i "^PORT=" "%ENV_FILE%"') do set "PORT=%%b"
+    for /f "tokens=1,2 delims==" %%a in ('findstr /i "^PROJECT_DIR=" "%ENV_FILE%"') do set "PROJECT_DIR=%%b"
 )
 
 :: 显示启动信息
@@ -24,6 +26,7 @@ echo Python: %VENV_PYTHON%
 echo Environment: %ENV_FILE%
 echo Host: %HOST%
 echo Port: %PORT%
+echo Project: %PROJECT_DIR%
 echo Press Ctrl+C to stop
 echo =========================================
 echo.

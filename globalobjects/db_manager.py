@@ -430,7 +430,9 @@ class DbManager:
                 if not hasattr(conn, 'execute_query'):
                     raise Exception("获取数据库连接失败：连接对象不支持execute_query方法")
                 
-                result = await conn.execute_query(sql, params)
+                count, data_list = await conn.execute_query(sql, params)
+                if data_list:
+                    data_list = [dict_to_lower_keys(row) for row in data_list]
                 execution_time = (datetime.now() - start_time).total_seconds()
                 
                 if description:
@@ -439,7 +441,7 @@ class DbManager:
                     else:
                         logger.info(f"{description} - 执行时间：{execution_time:.3f}秒")
                 
-                return result[0] if result else 0
+                return (count if count else 0, data_list)
             except Exception as e:
                 # 特殊处理连接相关错误
                 error_msg = str(e)
@@ -552,7 +554,7 @@ class DbManager:
                 sql = f"INSERT IGNORE INTO `{table_name}` ({fields_str}) VALUES {', '.join(placeholders)}"
             
             # 执行 SQL
-            affected = await self._execute_native_sql(
+            affected, data_list = await self._execute_native_sql(
                 sql, 
                 values,
                 description=f"批量 upsert 批次 {i//self.batch_size + 1}"
@@ -1003,7 +1005,7 @@ class DbManager:
                 {where_clause}
                 """
                 
-                affected = await self._execute_native_sql(
+                affected, data_list = await self._execute_native_sql(
                     sql, values, f"条件批量 upsert 批次 {i//self.batch_size + 1}"
                 )
                 
@@ -1258,8 +1260,16 @@ class DbManager:
                         try:
                             # 检查是否是TransactionWrapper（通过检查是否有_pool属性）
                             if hasattr(conn, '_pool'):
-                                await conn.close()
-                                logger.info(f"已关闭旧连接: {self.connection_name}")
+                                # 尝试关闭连接，但如果出现事件循环冲突，就跳过
+                                try:
+                                    await conn.close()
+                                    logger.info(f"已关闭旧连接: {self.connection_name}")
+                                except Exception as close_error:
+                                    # 如果是事件循环冲突，就跳过关闭操作
+                                    if "bound to a different event loop" in str(close_error):
+                                        logger.warning(f"关闭旧连接时出现事件循环冲突，跳过关闭操作: {self.connection_name}")
+                                    else:
+                                        logger.warning(f"关闭旧连接时出错: {close_error}")
                             else:
                                 # 对于TransactionWrapper，尝试获取内部连接并关闭
                                 if hasattr(conn, 'connection'):
@@ -1269,10 +1279,18 @@ class DbManager:
                                             await inner_conn.close()
                                             logger.info(f"已关闭TransactionWrapper内部连接: {self.connection_name}")
                                         except Exception as inner_close_error:
-                                            logger.warning(f"关闭TransactionWrapper内部连接时出错: {inner_close_error}")
+                                            # 如果是事件循环冲突，就跳过关闭操作
+                                            if "bound to a different event loop" in str(inner_close_error):
+                                                logger.warning(f"关闭TransactionWrapper内部连接时出现事件循环冲突，跳过关闭操作: {self.connection_name}")
+                                            else:
+                                                logger.warning(f"关闭TransactionWrapper内部连接时出错: {inner_close_error}")
                                 logger.info(f"处理TransactionWrapper连接: {self.connection_name}")
                         except Exception as close_error:
-                            logger.warning(f"关闭旧连接时出错: {close_error}")
+                            # 如果是事件循环冲突，就跳过关闭操作
+                            if "bound to a different event loop" in str(close_error):
+                                logger.warning(f"关闭旧连接时出现事件循环冲突，跳过关闭操作: {self.connection_name}")
+                            else:
+                                logger.warning(f"关闭旧连接时出错: {close_error}")
                 except Exception as get_conn_error:
                     logger.warning(f"获取当前连接时出错: {get_conn_error}")
                 
@@ -1283,6 +1301,36 @@ class DbManager:
                     logger.info(f"已从连接存储中移除: {self.connection_name}")
                 except Exception as discard_error:
                     logger.warning(f"移除连接时出错: {discard_error}")
+                
+                # 3. 尝试重新初始化 Tortoise，解决连接池关闭的问题
+                try:
+                    from core.database import TORTOISE_ORM_CONFIG
+                    if hasattr(Tortoise, '_inited') and Tortoise._inited:
+                        # 尝试关闭所有连接
+                        try:
+                            from tortoise.connection import connections
+                            for conn_name in connections._connections.keys():
+                                try:
+                                    conn = connections.get(conn_name)
+                                    if conn and hasattr(conn, 'close'):
+                                        try:
+                                            await conn.close()
+                                        except Exception as close_error:
+                                            logger.warning(f"关闭连接 {conn_name} 时出错: {close_error}")
+                                except Exception as get_conn_error:
+                                    logger.warning(f"获取连接 {conn_name} 时出错: {get_conn_error}")
+                        except Exception as close_all_error:
+                            logger.warning(f"关闭所有连接时出错: {close_all_error}")
+                        
+                        # 尝试重新初始化 Tortoise
+                        try:
+                            logger.info(f"尝试重新初始化 Tortoise")
+                            await Tortoise.init(config=TORTOISE_ORM_CONFIG)
+                            logger.info(f"Tortoise 重新初始化成功")
+                        except Exception as init_error:
+                            logger.warning(f"重新初始化 Tortoise 时出错: {init_error}")
+                except Exception as init_error:
+                    logger.warning(f"重新初始化 Tortoise 时出错: {init_error}")
                 
                 # 3. 等待一段时间，确保连接完全关闭
                 if fast_mode:
@@ -1367,100 +1415,121 @@ class DbManager:
             ValueError: 当 not_found_behavior 为 "error" 且找不到记录时
         """
         start_time = datetime.now()
+        max_retries = 3
+        retry_count = 0
         
-        try:
-            table_name = model_class._meta.db_table
-            conn = Tortoise.get_connection(self.connection_name)
-            
-            # 构建 WHERE 子句（使用旧值）
-            where_parts = []
-            where_values = []
-            for field, value in index_dict.items():
-                where_parts.append(f"`{field}` = %s")
-                where_values.append(value)
-            
-            where_clause = " WHERE " + " AND ".join(where_parts) if where_parts else ""
-            
-            # 检查记录是否存在
-            check_sql = f"SELECT COUNT(*) as count FROM `{table_name}`{where_clause}"
-            result = await conn.execute_query(check_sql, where_values)
-            count = result[1][0]['count']
-            
-            if count == 0:
-                if not_found_behavior == "error":
-                    raise ValueError(f"未找到匹配记录: {index_dict}")
-                elif not_found_behavior == "insert":
-                    # 执行插入操作
-                    all_fields = list(index_dict.keys()) + list(new_values_dict.keys())
-                    all_fields = list(set(all_fields))  # 去重
-                    
-                    fields_str = ', '.join([f"`{field}`" for field in all_fields])
-                    placeholders = ', '.join(['%s'] * len(all_fields))
-                    
-                    values = []
-                    for field in all_fields:
-                        if field in new_values_dict:
-                            values.append(new_values_dict[field])
-                        elif field in index_dict:
-                            values.append(index_dict[field])
-                    
-                    insert_sql = f"INSERT INTO `{table_name}` ({fields_str}) VALUES ({placeholders})"
-                    affected_rows = await self._execute_native_sql(
-                        insert_sql, 
-                        values,
-                        description="基于索引更新 - 新增记录"
-                    )
-                    
-                    operation_type = 'inserted'
-                else:  # skip
-                    affected_rows = 0
-                    operation_type = 'skipped'
-            else:
-                # 执行更新操作
-                # 构建 SET 子句（使用新值）
-                set_parts = []
-                set_values = []
-                for field, value in new_values_dict.items():
-                    set_parts.append(f"`{field}` = %s")
-                    set_values.append(value)
+        while retry_count <= max_retries:
+            try:
+                # 先检查连接是否健康，如果不健康就刷新连接
+                is_healthy = await self.check_connection_health(fast_mode=True)
+                if not is_healthy:
+                    logger.warning(f"数据库连接不健康，将刷新连接: {self.connection_name}")
+                    await self.refresh_connection(fast_mode=True)
                 
-                if not set_parts:
-                    affected_rows = 0
-                    operation_type = 'no_change'
+                table_name = model_class._meta.db_table
+                conn = Tortoise.get_connection(self.connection_name)
+                
+                # 构建 WHERE 子句（使用旧值）
+                where_parts = []
+                where_values = []
+                for field, value in index_dict.items():
+                    where_parts.append(f"`{field}` = %s")
+                    where_values.append(value)
+                
+                where_clause = " WHERE " + " AND ".join(where_parts) if where_parts else ""
+                
+                # 检查记录是否存在
+                check_sql = f"SELECT COUNT(*) as count FROM `{table_name}`{where_clause}"
+                result = await conn.execute_query(check_sql, where_values)
+                count = result[1][0]['count']
+                
+                if count == 0:
+                    if not_found_behavior == "error":
+                        raise ValueError(f"未找到匹配记录: {index_dict}")
+                    elif not_found_behavior == "insert":
+                        # 执行插入操作
+                        all_fields = list(index_dict.keys()) + list(new_values_dict.keys())
+                        all_fields = list(set(all_fields))  # 去重
+                        
+                        fields_str = ', '.join([f"`{field}`" for field in all_fields])
+                        placeholders = ', '.join(['%s'] * len(all_fields))
+                        
+                        values = []
+                        for field in all_fields:
+                            if field in new_values_dict:
+                                values.append(new_values_dict[field])
+                            elif field in index_dict:
+                                values.append(index_dict[field])
+                        
+                        insert_sql = f"INSERT INTO `{table_name}` ({fields_str}) VALUES ({placeholders})"
+                        affected_rows, data_list = await self._execute_native_sql(
+                            insert_sql, 
+                            values,
+                            description="基于索引更新 - 新增记录"
+                        )
+                        
+                        operation_type = 'inserted'
+                    else:  # skip
+                        affected_rows = 0
+                        operation_type = 'skipped'
                 else:
-                    set_clause = " SET " + ", ".join(set_parts)
-                    update_sql = f"UPDATE `{table_name}`{set_clause}{where_clause}"
+                    # 执行更新操作
+                    # 构建 SET 子句（使用新值）
+                    set_parts = []
+                    set_values = []
+                    for field, value in new_values_dict.items():
+                        set_parts.append(f"`{field}` = %s")
+                        set_values.append(value)
                     
-                    affected_rows = await self._execute_native_sql(
-                        update_sql, 
-                        set_values + where_values,
-                        description="基于索引更新 - 更新记录"
-                    )
-                    
-                    operation_type = 'updated'
-            
-            execution_time = (datetime.now() - start_time).total_seconds()
-            
-            # 更新统计信息
-            self.stats['total_processed'] += 1
-            self.stats['batches_executed'] += 1
-            self.stats['last_execution_time'] = execution_time
-            
-            response = {
-                "success": True,
-                "operation_type": operation_type,
-                "affected_rows": affected_rows,
-                "index_dict": index_dict,
-                "updated_fields": list(new_values_dict.keys()),
-                "execution_time": execution_time
-            }
-            
-            logger.success("索引更新", f"{table_name}@{self.connection_name}", f"影响{affected_rows}行")
-            return response
-            
-        except Exception as e:
-            logger.fail("索引更新", f"{table_name}@{self.connection_name}", str(e))
-            raise
+                    if not set_parts:
+                        affected_rows = 0
+                        operation_type = 'no_change'
+                    else:
+                        set_clause = " SET " + ", ".join(set_parts)
+                        update_sql = f"UPDATE `{table_name}`{set_clause}{where_clause}"
+                        
+                        affected_rows, data_list = await self._execute_native_sql(
+                            update_sql, 
+                            set_values + where_values,
+                            description="基于索引更新 - 更新记录"
+                        )
+                        
+                        operation_type = 'updated'
+                
+                execution_time = (datetime.now() - start_time).total_seconds()
+                
+                # 更新统计信息
+                self.stats['total_processed'] += 1
+                self.stats['batches_executed'] += 1
+                self.stats['last_execution_time'] = execution_time
+                
+                response = {
+                    "success": True,
+                    "operation_type": operation_type,
+                    "affected_rows": affected_rows,
+                    "index_dict": index_dict,
+                    "updated_fields": list(new_values_dict.keys()),
+                    "execution_time": execution_time
+                }
+                
+                logger.success("索引更新", f"{table_name}@{self.connection_name}", f"影响{affected_rows}行")
+                return response
+                
+            except Exception as e:
+                error_msg = str(e)
+                is_connection_error = "Cannot acquire connection after closing pool" in error_msg or "OperationalError" in str(type(e)) or "NoneType" in error_msg
+                
+                if is_connection_error and retry_count < max_retries:
+                    retry_count += 1
+                    logger.warning(f"数据库连接错误，将进行第{retry_count}次重试", f"{table_name}@{self.connection_name}", error_msg)
+                    # 尝试刷新连接
+                    await self.refresh_connection()
+                    import asyncio
+                    await asyncio.sleep(1)  # 等待1秒后重试
+                    continue
+                
+                logger.fail("索引更新", f"{table_name}@{self.connection_name}", error_msg)
+                raise
 
 
 # 延迟初始化 db_managers

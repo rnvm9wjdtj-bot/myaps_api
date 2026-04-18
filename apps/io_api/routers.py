@@ -18,7 +18,7 @@ from .schemas import (
 )
 
 from .utils.common import standard_response, drop_matched_data
-from .utils.db_operation import db_managers, db_query, db_supsert, db_bupsert, db_delete, call_dbprocdure, db_update_by_index
+from .utils.db_operation import db_exec_sql, db_managers, db_query, db_supsert, db_bupsert, db_delete, call_dbprocdure, db_update_by_index
 from project_files import hap_conn
 from apps.data_opt.utils.data_processor import DataProcessor
 
@@ -136,7 +136,111 @@ CACHE_DURATION = 60  # 缓存60秒
 #             return await func(*args, **kwargs)
 #         return wrapper
 #     return decorator
+V_SUPPLY_MO_SQL = """
+        SELECT 
+        -- 基础字段
+        s.MaterialNo,
+        (SELECT Description FROM t_material 
+        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) AS Description,
+        (SELECT Unit FROM t_material 
+        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) AS Unit,
+        (SELECT Planner FROM t_material 
+        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) AS Planner,
+        (SELECT GroupNo FROM t_material 
+        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) AS GroupNo,
+        (SELECT PlanItem FROM t_material 
+        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) AS PlanItem,
+        (SELECT FIFO FROM t_material 
+        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) AS FIFO,
+        (SELECT ABC FROM t_material 
+        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) AS ABC,
+        (SELECT ExpDay FROM t_material 
+        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) AS ExpDay,
+        (SELECT GRDay FROM t_material 
+        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) AS GRDay,
+        (SELECT Phantom FROM t_material 
+        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) AS Phantom,
+        (SELECT PhantomMin FROM t_material 
+        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) AS PhantomMin,
+        
+        -- Group Color
+        (SELECT g.Color FROM t_groupcolor g 
+        WHERE g.GroupNo = (SELECT GroupNo FROM t_material 
+                        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) 
+        LIMIT 1) AS Color,
+        
+        -- Supply 表自身字段
+        s.SupplyNo,
+        s.ItemNo,
+        s.MatVer,
+        s.Type,
+        s.Category,
+        s.Status,
+        s.Priority,
+        s.Avail_Qty,
+        
+        -- Delay Hour
+        (SELECT o.Delay_Hour FROM v_orderwc_delay_hour o 
+        WHERE o.OrderNo = s.SupplyNo LIMIT 1) AS Delay_Hour,
+        
+        s.Create_Date,
+        
+        -- Order Times (关键优化点)
+        (SELECT MIN(DT_Start) FROM t_orderwc 
+        WHERE SupplyNo = s.SupplyNo) AS DT_OrdStart,
+        (SELECT MAX(DT_End) FROM t_orderwc 
+        WHERE SupplyNo = s.SupplyNo) AS DT_OrdEnd,
+        
+        -- 计算字段
+        TIMEDIFF(
+            (SELECT MAX(DT_End) FROM t_orderwc WHERE SupplyNo = s.SupplyNo),
+            (SELECT MIN(DT_Start) FROM t_orderwc WHERE SupplyNo = s.SupplyNo)
+        ) AS OrdTime,
+        
+        -- Avail Date
+        IFNULL(
+            (SELECT MAX(DT_End) FROM t_orderwc WHERE SupplyNo = s.SupplyNo) 
+            + INTERVAL (SELECT GRDay FROM t_material 
+                    WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) DAY,
+            s.Avail_Date
+        ) AS Avail_Date,
+        
+        s.Avail_End_Date,
+        s.DT_Req,
+        
+        -- Req Date
+        IFNULL(
+            (SELECT p.Req_Date FROM v_peg_req_date_1st p 
+            WHERE p.SupplyNo = s.SupplyNo LIMIT 1),
+            s.DT_Req
+        ) AS Req_Date,
+        
+        -- RemainTime (核心计算)
+        TIMESTAMPDIFF(
+            HOUR,
+            (SELECT MAX(DT_End) FROM t_orderwc WHERE SupplyNo = s.SupplyNo) 
+            + INTERVAL (SELECT GRDay FROM t_material 
+                    WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) DAY,
+            IFNULL(
+                (SELECT p.Req_Date FROM v_peg_req_date_1st p 
+                WHERE p.SupplyNo = s.SupplyNo LIMIT 1),
+                s.DT_Req
+            )
+        ) AS RemainTime,
+        
+        -- 其他字段
+        s.VendorNo,
+        s.Memo,
+        s.Sys_Stamp,
+        s.ApiEx_SN,
+        s.ApiEx_ID,
+        s.ApiEx_EntryID
 
+    FROM t_supply s
+    WHERE s.Type IN ('PL', 'MO')
+    AND s.SupplyNo = '{supplyno}'
+    ORDER BY s.SupplyNo;
+"""
 
 ########################################################################
 rt = APIRouter()
@@ -604,7 +708,8 @@ async def get_demand(
     query_result_demand = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=filter_string)
     if query_result_demand["success"] == 0:
         return query_result_demand
-    query_result_supply = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=f"`SupplyNo`='{demandno}'")
+    # query_result_supply = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=f"`SupplyNo`='{demandno}'")
+    query_result_supply = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplyno=demandno))
     if query_result_supply["success"] == 0:
         return query_result_demand
     if query_result_supply["data"]:
@@ -682,11 +787,117 @@ async def get_mo_by_supplyno(
 ):
 
     async def get_orderwc(mono: str):
-        orderwc = await db_query(
-            db_name=db_name, model_or_tablename="v_orderwc",
-            filter_string=f"`SupplyNo` = '{mono}'",
-            order_string="`SortNo`",
+        sql = f"""
+            WITH filtered_orders AS (
+            -- 步骤1：先过滤核心数据
+            SELECT 
+                o.OrderNo,
+                o.SupplyNo,
+                o.ItemNo,
+                s.MatVer,
+                o.MaterialNo,
+                o.WorkCenter,
+                o.MoldNo,
+                o.SortNo,
+                o.Fix,
+                o.Priority,
+                o.Status,
+                o.OrderQty,
+                o.Rate,
+                o.BaseQty,
+                o.BaseSec,
+                o.FixQty,
+                o.FixSec,
+                o.SF,
+                o.OffSetSec,
+                o.SetupCost,
+                o.SetupSec,
+                o.DT_Start,
+                o.DT_End,
+                o.MEMO,
+                o.Sys_Stamp,
+                -- 来自 t_supply 的字段
+                s.Type,
+                s.Category,
+                s.Priority AS S_Priority,
+                s.Avail_Qty,
+                s.DT_Req,
+                s.Avail_Date,
+                s.VendorNo
+            FROM t_orderwc o
+            JOIN t_supply s ON o.SupplyNo = s.SupplyNo AND s.Type IN ('PL', 'MO')
+            WHERE o.SupplyNo = '{mono}'
         )
+        SELECT DISTINCT
+            fo.OrderNo,
+            fo.SupplyNo,
+            fo.ItemNo,
+            fo.MatVer,
+            fo.MaterialNo,
+            m.Description,
+            fo.WorkCenter,
+            fo.MoldNo,
+            k.MoldNum,
+            fo.SortNo,
+            w.Bottleneck,
+            CASE 
+                WHEN (fo.MoldNo IS NOT NULL AND fo.MoldNo <> '') 
+                THEN fo.MoldNo 
+                ELSE m.GroupNo 
+            END AS GroupNo,
+            g.Color,
+            fo.Fix,
+            fo.Type,
+            fo.Category,
+            fo.Priority,
+            fo.S_Priority,
+            fo.Status,
+            (fo.OrderQty * IFNULL(fo.Rate, 1)) AS OrderQty,
+            ((fo.Avail_Qty * IFNULL(fo.Rate, 1)) - (fo.OrderQty * IFNULL(fo.Rate, 1))) AS ConfirmQty,
+            (fo.Avail_Qty * IFNULL(fo.Rate, 1)) AS OriginalQty,
+            fo.BaseQty,
+            fo.BaseSec,
+            CASE 
+                WHEN (fo.FixQty IS NULL OR fo.FixQty = 0) 
+                THEN IFNULL(fo.FixSec, 0) 
+                ELSE IFNULL(CEILING(fo.OrderQty / fo.FixQty) * fo.FixSec, 0) 
+            END AS FixSec,
+            fo.SF,
+            fo.OffSetSec,
+            fo.SetupCost,
+            fo.SetupSec,
+            d.ABC,
+            d.Delay_Hour,
+            CASE 
+                WHEN (fo.SetupSec IS NULL OR fo.SetupSec = 0) 
+                THEN '0' 
+                ELSE SEC_TO_TIME(fo.SetupSec) 
+            END AS SetupTime,
+            fo.DT_Start,
+            fo.DT_End,
+            TIMEDIFF(fo.DT_End, fo.DT_Start) AS ProcessTime,
+            fo.DT_Req,
+            IFNULL(p.Req_Date, fo.DT_Req) AS Req_Date,
+            TIMESTAMPDIFF(HOUR, fo.Avail_Date, IFNULL(p.Req_Date, fo.DT_Req)) AS RemainTime,
+            fo.VendorNo,
+            fo.MEMO,
+            fo.Sys_Stamp
+        FROM filtered_orders fo
+        -- 关联其他表
+        JOIN t_material m ON fo.MaterialNo = m.MaterialNo AND m.Type = 'E'
+        JOIN t_workcenter w ON fo.WorkCenter = w.WorkCenter
+        LEFT JOIN t_groupcolor g ON m.GroupNo = g.GroupNo
+        LEFT JOIN t_mold k ON fo.MoldNo = k.MoldNo
+        LEFT JOIN v_orderwc_delay_hour d ON fo.SupplyNo = d.OrderNo AND d.OrderNo = '{mono}'
+        LEFT JOIN v_peg_req_date_1st p ON fo.SupplyNo = p.SupplyNo AND p.SupplyNo = '{mono}'
+        ORDER BY fo.SortNo;
+        """
+        # orderwc = await db_query(
+        #     db_name=db_name, model_or_tablename="v_orderwc",
+        #     filter_string=f"`SupplyNo` = '{mono}'",
+        #     order_string="`SortNo`",
+        # )
+        orderwc = await db_exec_sql(db_name=db_name, sql=sql)
         return orderwc['data']
 
     async def get_prev_mo(mono: str):
@@ -730,11 +941,13 @@ async def get_mo_by_supplyno(
 
 
     db_name = db_name.replace(" ", "")
-    filter_string = f"`SupplyNo` = '{supplyno}'"
 
-    result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=filter_string)
+    # result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=filter_string)
+
+    result = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplyno=supplyno))
+    
     if result['success'] and result['meta']['total'] == 1:  # 筛选到唯一的工单，则补充工序信息（v_orderwc）
-        result['data'][0]['orderwc'] = await get_orderwc(supplyno)
+        result['data'][0]['orderwc'] = await get_orderwc(mono=supplyno)
 
         vendorno = result['data'][0].get('vendorno')
         if origin_so and result['data'][0].get('category') == 'MTO' and vendorno:

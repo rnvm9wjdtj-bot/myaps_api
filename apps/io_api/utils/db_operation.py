@@ -85,6 +85,43 @@ def validate_databases(db_name: str) -> List[str]:
     return valid_dbs
 
 
+
+async def db_exec_sql(db_name: str, sql: str, params: Optional[List[Any]] = None):
+    """
+    执行原始SQL语句
+
+    Args:
+        db_name: 数据库连接名称
+        sql: 要执行的SQL语句
+        params: SQL参数列表（可选）
+
+    Returns:
+        执行结果（根据SQL语句类型而定）
+    """
+    try:
+        valid_db = validate_databases(db_name)[0]
+        assert valid_db, "未指定账套或账套不存在"
+
+        db_manager = get_db_manager(valid_db)
+
+        count, data_list = await db_manager._execute_native_sql(
+            sql=sql,
+            params=params if params is not None else [],
+            description=f"执行SQL: {sql[:50]}..."
+        )
+
+        return standard_response(
+            data=data_list,
+            meta={"total": count}
+        )
+    except Exception as e:
+        return standard_response(
+            success=0,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message=f"操作失败：{str(e)}"
+        )
+
+
     
 async def db_query(db_name: str, model_or_tablename: TortoiseBaseModel | str, filter_string: str = '', order_string: str = ''):
     _, table_name = process_model_or_tablename(model_or_tablename)
