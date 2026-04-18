@@ -58,9 +58,17 @@ class OutboundHTTPCollector:
                     "errors": 0,
                 }),
             }
-            self._lock = asyncio.Lock()
+            self._lock = None  # 延迟初始化锁，确保绑定到正确的事件循环
             self._thread_lock = threading.Lock()
             self._initialized = True
+            
+    def _get_lock(self):
+        """
+        获取锁，确保锁绑定到当前事件循环
+        """
+        if self._lock is None or self._lock._loop is not asyncio.get_event_loop():
+            self._lock = asyncio.Lock()
+        return self._lock
 
     async def record_request(
         self,
@@ -90,7 +98,7 @@ class OutboundHTTPCollector:
             error_message: 错误信息
             module: 发起请求的模块
         """
-        async with self._lock:
+        async with self._get_lock():
             # 限制请求体和响应体大小
             # 增加大小限制到 5MB，避免频繁截断
             max_size = 1024 * 1024 * 5  # 5MB

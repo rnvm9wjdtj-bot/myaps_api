@@ -25,9 +25,9 @@ TRUNON_SCHEDULER = os.getenv("TRUNON_SCHEDULER", "False").lower().strip() == "tr
 # 定时任务执行时间
 SCHEDULER_HOUR = os.getenv("SCHEDULER_HOUR") or "6,8,10,12,14,16"
 SCHEDULER_MINUTE = os.getenv("SCHEDULER_MINUTE") or "55"
-LOG_LEVEL = os.getenv("LOG_LEVEL").strip() or "INFO"
+LOG_LEVEL = os.getenv("LOG_LEVEL", "").strip() or "INFO"
 # 本地 SQLite 数据库名称
-SQLITE_FILE = os.getenv("SQLITE_FILE").replace(".sqlite3", "").strip() or "local_data"
+SQLITE_FILE = os.getenv("SQLITE_FILE", "").replace(".sqlite3", "").strip() or "local_data"
 
 
 # 监控阈值配置

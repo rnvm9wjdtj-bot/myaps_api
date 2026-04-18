@@ -113,7 +113,7 @@ class CustomMoPushModel(MoPushModel):
             materialno = md['Inventory']['Code']
             free1 = materials.get(materialno, {}).get('free1')
             if free1 == 'Y':    # 该物料为倒冲料
-                md['Warehouse'] = {'Code': '5'} # 倒冲料仓库
+                md['Warehouse'] = {'Code': 'ck06'} # 倒冲料仓库
                 md.pop('IsMaterialRequest')
         
         mo_details['DynamicPropertyKeys'] = []

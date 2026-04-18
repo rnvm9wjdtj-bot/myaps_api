@@ -208,7 +208,7 @@ class MoPushModel(PydanticModel):
     StartDate: str = Field()
     FinishDate: str = Field()
     VoucherDate: str = Field()
-    Memo: Optional[str] = None
+    Memo: Optional[str] = Field(None)
     IsMaterialRequest: bool = Field(True)
     ManufactureOrderDetails: list[dict] = Field()
     
@@ -864,15 +864,17 @@ class TplusConnection(BaseConnection):
         processed_rsdata['mo_material_details'] = mo_material_details
 
         dto = pydantic_model(**processed_rsdata).model_dump()
-        payload = {"dto": dto}
-        logger.debug(f"向 T+ 推送领料申请，发送数据：{json.dumps(payload, ensure_ascii=False)}")
-        response = self._post(endpoint=endpoint, data=payload)
-        rs_push_response_json = response.json()
-        if str(rs_push_response_json['code']) == '0': # 创建成功
-            ApsHelpers.rs_push_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
+        if dto["MaterialRequestDetails"]:   # 有领料申请详情
+            payload = {"dto": dto}
+            logger.debug(f"向 T+ 推送领料申请，发送数据：{json.dumps(payload, ensure_ascii=False)}")
+            response = self._post(endpoint=endpoint, data=payload)
+            rs_push_response_json = response.json()
+            if str(rs_push_response_json['code']) == '0': # 创建成功
+                ApsHelpers.rs_push_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
+            else:
+                ApsHelpers.rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], push_data=processed_rsdata, msg_from='T+')
         else:
-            ApsHelpers.rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], push_data=processed_rsdata, msg_from='T+')
-
+            ApsHelpers.rs_push_success(rsno=demandno, msg="无领料申请详情", msg_from='APS')
 
     def push_pr(self, data_list: list[dict]=None, pydantic_model:PydanticModel=PrPushModel):
         """

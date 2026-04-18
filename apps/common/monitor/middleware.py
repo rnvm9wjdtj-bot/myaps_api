@@ -39,7 +39,15 @@ class HTTPMetricsCollector:
         }
         # 请求频率限制
         self._rate_limits = defaultdict(lambda: deque(maxlen=100))  # 每个IP最多100个请求/分钟
-        self._lock = asyncio.Lock()
+        self._lock = None  # 延迟初始化锁，确保绑定到正确的事件循环
+        
+    def _get_lock(self):
+        """
+        获取锁，确保锁绑定到当前事件循环
+        """
+        if self._lock is None or self._lock._loop is not asyncio.get_event_loop():
+            self._lock = asyncio.Lock()
+        return self._lock
 
     async def record_request(
         self,
@@ -54,7 +62,7 @@ class HTTPMetricsCollector:
         query_params: str = None,
     ):
         """记录请求信息"""
-        async with self._lock:
+        async with self._get_lock():
             request_info = {
                 "timestamp": time.time(),
                 "method": method,
@@ -235,7 +243,8 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
 
         # 检查请求频率限制
         client_ip = request.client.host if request.client else "unknown"
-        if http_metrics_collector.check_rate_limit(client_ip):
+        # 对来自本机的请求不设置限制
+        if not is_internal_ip(client_ip) and http_metrics_collector.check_rate_limit(client_ip):
             from starlette.responses import JSONResponse
             return JSONResponse(
                 status_code=429,
