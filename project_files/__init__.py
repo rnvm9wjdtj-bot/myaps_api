@@ -119,7 +119,7 @@ class ApsEvent:
 if not _events_registered:
     aps_pl_status_a2e_event = ApsEvent(event_type="|pl_status_a2e|", single_handler="handle_pl_status_a2e", batch_handler="batch_handle_pl_status_a2e", description="PL 单据下达")
     aps_pr_created_event = ApsEvent(event_type="|pr_created|", single_handler="handle_pr_created", batch_handler="batch_handle_pr_created", description="PR 单据 创建")
-    aps_pl_typeto_mo_event = ApsEvent(event_type="|pl_typeto_mo|", single_handler="handle_pl_typeto_mo", batch_handler="batch_handle_pl_typeto_mo", description="PL 变更为 MO")
+    aps_pl_typeto_mo_event = ApsEvent(event_type="|pl_typeto_mo|", single_handler="handle_pl_typeto_mo", batch_handler="batch_handle_pl_typeto_mo", flush_interval=10, description="PL 变更为 MO")
     aps_pr_deleted_event = ApsEvent(event_type="|pr_deleted|", single_handler="handle_pr_deleted", batch_handler="batch_handle_pr_deleted", description="PR 单据 删除")
     _events_registered = True
     logger.success("数据库事件注册", "", "所有事件已成功注册")

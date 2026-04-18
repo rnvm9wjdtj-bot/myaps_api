@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 from tortoise.contrib.fastapi import register_tortoise
 from core.settings import (
-    BASE_DIR,
+    BASE_DIR, SQLITE_FILE,
     MYAPS_MAIN_DB, MYAPS_DBSET_LIST, MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD,
     THIS_DB_NAME, THIS_DB_HOST, THIS_DB_PORT, THIS_DB_USER, THIS_DB_PASSWORD
 )
@@ -35,10 +35,10 @@ minsize_per_db = min(2, maxsize_per_db // 2)
 
 # 数据库配置
 connections = {
-    "local_data": {
+    SQLITE_FILE: {
         "engine": "tortoise.backends.sqlite",
         "credentials": {
-            "file_path": BASE_DIR / "storage" /  "local_data.sqlite3",  # 统一管理数据文件
+            "file_path": BASE_DIR / "storage" / f"{SQLITE_FILE}.sqlite3",  # 统一管理数据文件
             "journal_mode": "WAL",  # 写前日志，提升并发性能
             "synchronous": "NORMAL",  # 性能与安全的平衡
             "cache_size": -100000,  # 100MB 内存缓存
@@ -81,7 +81,7 @@ TORTOISE_ORM_CONFIG = {
         },
         "monitor_models": {
             "models": ["apps.common.monitor.models", "aerich.models"],
-            "default_connection": "local_data"  # 使用local_data数据库
+            "default_connection": SQLITE_FILE  # 使用SQLite数据库
         },
     },
 }

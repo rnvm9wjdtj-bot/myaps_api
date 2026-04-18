@@ -17,15 +17,17 @@ load_dotenv(os.getenv('ENV_FILE', os.path.join(BASE_DIR, '.env')))
 
 
 # 数据库监控开关，默认关闭
-TURNON_DBMONITOR = os.getenv("TURNON_DBMONITOR", "False").lower() == "true"
+TURNON_DBMONITOR = os.getenv("TURNON_DBMONITOR", "False").lower().strip() == "true"
 # Binlog 位置管理器开关，默认关闭
-TURNON_BINLOG_POSITION_MANAGER = os.getenv("TURNON_BINLOG_POSITION_MANAGER", "False").lower() == "true"
+TURNON_BINLOG_POSITION_MANAGER = os.getenv("TURNON_BINLOG_POSITION_MANAGER", "False").lower().strip() == "true"
 # 定时任务开关，默认关闭
-TRUNON_SCHEDULER = os.getenv("TRUNON_SCHEDULER", "False").lower() == "true"
+TRUNON_SCHEDULER = os.getenv("TRUNON_SCHEDULER", "False").lower().strip() == "true"
 # 定时任务执行时间
 SCHEDULER_HOUR = os.getenv("SCHEDULER_HOUR") or "6,8,10,12,14,16"
 SCHEDULER_MINUTE = os.getenv("SCHEDULER_MINUTE") or "55"
-LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
+LOG_LEVEL = os.getenv("LOG_LEVEL").strip() or "INFO"
+# 本地 SQLite 数据库名称
+SQLITE_FILE = os.getenv("SQLITE_FILE").replace(".sqlite3", "").strip() or "local_data"
 
 
 # 监控阈值配置
