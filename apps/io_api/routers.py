@@ -136,112 +136,213 @@ CACHE_DURATION = 60  # 缓存60秒
 #             return await func(*args, **kwargs)
 #         return wrapper
 #     return decorator
+# V_SUPPLY_MO_SQL = """
+#     SELECT 
+#         -- 基础字段
+#         `s`.`MaterialNo`,
+#         (SELECT `Description` FROM t_material 
+#         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) AS Description,
+#         (SELECT `Unit` FROM t_material 
+#         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) AS Unit,
+#         (SELECT `Planner` FROM t_material 
+#         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) AS Planner,
+#         (SELECT `GroupNo` FROM t_material 
+#         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) AS GroupNo,
+#         (SELECT `PlanItem` FROM t_material 
+#         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) AS PlanItem,
+#         (SELECT `FIFO` FROM t_material 
+#         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) AS FIFO,
+#         (SELECT `ABC` FROM t_material 
+#         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) AS ABC,
+#         (SELECT `ExpDay` FROM t_material 
+#         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) AS ExpDay,
+#         (SELECT `GRDay` FROM t_material 
+#         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) AS GRDay,   
+#         (SELECT `Phantom` FROM t_material 
+#         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) AS Phantom,
+#         (SELECT `PhantomMin` FROM t_material 
+#         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) AS PhantomMin,
+        
+#         -- Group Color
+#         (SELECT `g`.`Color` FROM t_groupcolor g 
+#         WHERE `g`.`GroupNo` = (SELECT `GroupNo` FROM t_material 
+#                         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) 
+#         LIMIT 1) AS Color,
+        
+#         -- Supply 表自身字段
+#         `s`.`SupplyNo`,
+#         `s`.`ItemNo`,
+#         `s`.`MatVer`,
+#         `s`.`Type`,
+#         `s`.`Category`,
+#         `s`.`Status`,
+#         `s`.`Priority`,
+#         `s`.`Avail_Qty`,
+        
+#         -- Delay Hour
+#         (SELECT `o`.`Delay_Hour` FROM v_orderwc_delay_hour o 
+#         WHERE `o`.`OrderNo` = `s`.`SupplyNo` LIMIT 1) AS Delay_Hour,
+        
+#         `s`.`Create_Date`,
+        
+#         -- Order Times (关键优化点)
+#         (SELECT MIN(DT_Start) FROM t_orderwc 
+#         WHERE `SupplyNo` = `s`.`SupplyNo`) AS DT_OrdStart,
+#         (SELECT MAX(DT_End) FROM t_orderwc 
+#         WHERE `SupplyNo` = `s`.`SupplyNo`) AS DT_OrdEnd,
+        
+#         -- 计算字段
+#         TIMEDIFF(
+#             (SELECT MAX(DT_End) FROM t_orderwc WHERE `SupplyNo` = `s`.`SupplyNo`),
+#             (SELECT MIN(DT_Start) FROM t_orderwc WHERE `SupplyNo` = `s`.`SupplyNo`)
+            
+#         ) AS OrdTime,
+        
+#         -- Avail Date
+#         IFNULL(
+#             (SELECT MAX(DT_End) FROM t_orderwc WHERE `SupplyNo` = `s`.`SupplyNo`) 
+#             + INTERVAL (SELECT `GRDay` FROM t_material 
+#                     WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) DAY,
+#             `s`.`Avail_Date`
+#         ) AS Avail_Date,
+        
+#         `s`.`Avail_End_Date`,
+#         `s`.`DT_Req`,
+        
+#         -- Req Date
+#         IFNULL(
+#             (SELECT `Req_Date` FROM v_peg_req_date_1st p 
+#             WHERE `p`.`SupplyNo` = `s`.`SupplyNo` LIMIT 1),
+#             `s`.`DT_Req`
+#         ) AS Req_Date,
+        
+#         -- RemainTime (核心计算)
+#         TIMESTAMPDIFF(
+#             HOUR,
+#             (SELECT MAX(DT_End) FROM t_orderwc WHERE `SupplyNo` = `s`.`SupplyNo`) 
+#             + INTERVAL (SELECT `GRDay` FROM t_material 
+#                     WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) DAY,
+#             IFNULL(
+#                 (SELECT `Req_Date` FROM v_peg_req_date_1st p 
+#                 WHERE `p`.`SupplyNo` = `s`.`SupplyNo` LIMIT 1),
+#                 `s`.`DT_Req`
+#             )
+#         ) AS RemainTime,
+        
+#         -- 其他字段
+#         `s`.`VendorNo`,
+#         `s`.`Memo`,
+#         `s`.`Sys_Stamp`,
+#         `s`.`ApiEx_SN`,
+#         `s`.`ApiEx_ID`,
+#         `s`.`ApiEx_EntryID`
+
+#     FROM t_supply s
+#     WHERE `s`.`Type` IN ('PL', 'MO')
+#     AND `s`.`SupplyNo` IN ({supplynos})
+#     ORDER BY `s`.`SupplyNo`
+# """
 V_SUPPLY_MO_SQL = """
-        SELECT 
-        -- 基础字段
+    SELECT 
         s.MaterialNo,
-        (SELECT Description FROM t_material 
-        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) AS Description,
-        (SELECT Unit FROM t_material 
-        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) AS Unit,
-        (SELECT Planner FROM t_material 
-        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) AS Planner,
-        (SELECT GroupNo FROM t_material 
-        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) AS GroupNo,
-        (SELECT PlanItem FROM t_material 
-        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) AS PlanItem,
-        (SELECT FIFO FROM t_material 
-        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) AS FIFO,
-        (SELECT ABC FROM t_material 
-        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) AS ABC,
-        (SELECT ExpDay FROM t_material 
-        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) AS ExpDay,
-        (SELECT GRDay FROM t_material 
-        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) AS GRDay,
-        (SELECT Phantom FROM t_material 
-        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) AS Phantom,
-        (SELECT PhantomMin FROM t_material 
-        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) AS PhantomMin,
-        
-        -- Group Color
-        (SELECT g.Color FROM t_groupcolor g 
-        WHERE g.GroupNo = (SELECT GroupNo FROM t_material 
-                        WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) 
-        LIMIT 1) AS Color,
-        
-        -- Supply 表自身字段
+        m.Description,
+        m.Unit,
+        -- m.Planner,
+        -- m.GroupNo,
+        -- m.PlanItem,
+        -- m.FIFO,
+        -- m.ABC,
+        -- m.ExpDay,
+        -- m.GRDay,
+        -- m.Phantom,
+        -- m.PhantomMin,
+        -- g.Color,
         s.SupplyNo,
         s.ItemNo,
         s.MatVer,
         s.Type,
         s.Category,
         s.Status,
-        s.Priority,
+        -- s.Priority,
         s.Avail_Qty,
-        
-        -- Delay Hour
-        (SELECT o.Delay_Hour FROM v_orderwc_delay_hour o 
-        WHERE o.OrderNo = s.SupplyNo LIMIT 1) AS Delay_Hour,
-        
+        d.Delay_Hour,
         s.Create_Date,
-        
-        -- Order Times (关键优化点)
-        (SELECT MIN(DT_Start) FROM t_orderwc 
-        WHERE SupplyNo = s.SupplyNo) AS DT_OrdStart,
-        (SELECT MAX(DT_End) FROM t_orderwc 
-        WHERE SupplyNo = s.SupplyNo) AS DT_OrdEnd,
-        
-        -- 计算字段
-        TIMEDIFF(
-            (SELECT MAX(DT_End) FROM t_orderwc WHERE SupplyNo = s.SupplyNo),
-            (SELECT MIN(DT_Start) FROM t_orderwc WHERE SupplyNo = s.SupplyNo)
-        ) AS OrdTime,
-        
-        -- Avail Date
-        IFNULL(
-            (SELECT MAX(DT_End) FROM t_orderwc WHERE SupplyNo = s.SupplyNo) 
-            + INTERVAL (SELECT GRDay FROM t_material 
-                    WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) DAY,
-            s.Avail_Date
-        ) AS Avail_Date,
-        
+        o.DT_OrdStart,
+        o.DT_OrdEnd,
+        o.OrdTime,
+        IFNULL(o.DT_OrdEnd + INTERVAL m.GRDay DAY, s.Avail_Date) AS Avail_Date,
         s.Avail_End_Date,
         s.DT_Req,
-        
-        -- Req Date
-        IFNULL(
-            (SELECT p.Req_Date FROM v_peg_req_date_1st p 
-            WHERE p.SupplyNo = s.SupplyNo LIMIT 1),
-            s.DT_Req
-        ) AS Req_Date,
-        
-        -- RemainTime (核心计算)
+        IFNULL(p.Req_Date, s.DT_Req) AS Req_Date,
         TIMESTAMPDIFF(
             HOUR,
-            (SELECT MAX(DT_End) FROM t_orderwc WHERE SupplyNo = s.SupplyNo) 
-            + INTERVAL (SELECT GRDay FROM t_material 
-                    WHERE MaterialNo = s.MaterialNo AND Type = 'E' LIMIT 1) DAY,
-            IFNULL(
-                (SELECT p.Req_Date FROM v_peg_req_date_1st p 
-                WHERE p.SupplyNo = s.SupplyNo LIMIT 1),
-                s.DT_Req
-            )
+            o.DT_OrdEnd + INTERVAL m.GRDay DAY,
+            IFNULL(p.Req_Date, s.DT_Req)
         ) AS RemainTime,
-        
-        -- 其他字段
         s.VendorNo,
-        s.Memo,
-        s.Sys_Stamp,
+        -- s.Memo,
+        -- s.Sys_Stamp,
         s.ApiEx_SN,
         s.ApiEx_ID,
         s.ApiEx_EntryID
-
     FROM t_supply s
+    -- 利用主键：MaterialNo
+    JOIN t_material m ON s.MaterialNo = m.MaterialNo AND m.Type = 'E'
+    -- 预计算工单时间
+    JOIN (
+        SELECT 
+            SupplyNo,
+            MIN(DT_Start) AS DT_OrdStart,
+            MAX(DT_End) AS DT_OrdEnd,
+            TIMEDIFF(MAX(DT_End), MIN(DT_Start)) AS OrdTime
+        FROM t_orderwc
+        WHERE SupplyNo IN ({supplynos})
+        GROUP BY SupplyNo
+    ) o ON s.SupplyNo = o.SupplyNo
+    LEFT JOIN t_groupcolor g ON m.GroupNo = g.GroupNo
+    LEFT JOIN v_orderwc_delay_hour d ON s.SupplyNo = d.OrderNo
+    LEFT JOIN v_peg_req_date_1st p ON s.SupplyNo = p.SupplyNo
     WHERE s.Type IN ('PL', 'MO')
-    AND s.SupplyNo = '{supplyno}'
+    AND s.SupplyNo IN ({supplynos})
     ORDER BY s.SupplyNo;
 """
 
+V_PEG_SQL = """
+    SELECT DISTINCT
+        p.DemandNO AS DemandNo,
+        -- p.ItemNo,
+        -- p.Type,
+        -- m.FIFO,
+        -- m.Description,
+        -- d.Category,
+        -- d.Priority,
+        -- d.Req_Date,
+        -- d.Req_Qty,
+        -- p.Pegging,
+        -- p.Balance,
+        -- TIMESTAMPDIFF(HOUR, s.Avail_Date, d.Req_Date) AS Delay_Hour,
+        s.SupplyNo AS S_SupplyNo    -- ,
+        -- s.ItemNo AS S_ItemNo,
+        -- s.Type AS S_Type,
+        -- s.Avail_Qty AS S_Avail_Qty,
+        -- s.Avail_Date AS S_Avail_Date,
+        -- s.Avail_End_Date,
+        -- d.RefNo,
+        -- s.VendorNo,
+        -- p.create_time AS create_date,
+        -- p.user_name
+    FROM t_peg p
+    LEFT JOIN t_demand d ON p.MaterialNo = d.MaterialNo 
+        AND p.DemandNO = d.DemandNo 
+        AND p.ItemNo = d.ItemNo
+    LEFT JOIN t_supply s ON s.MaterialNo = p.MaterialNo 
+        AND s.SupplyNo = p.S_SupplyNo 
+        AND s.ItemNo = p.S_ItemNo
+    INNER JOIN t_material m ON m.MaterialNo = p.MaterialNo
+    -- 所有条件集中在这里
+    WHERE {where_string}
+    ORDER BY p.id, d.MaterialNo, d.Priority, s.Avail_Date, s.Avail_Qty;
+"""
 ########################################################################
 rt = APIRouter()
 ########################################################################
@@ -249,7 +350,7 @@ rt = APIRouter()
 # 主数据接口
 ########################################################################
 
-@rt.get("/meta")
+@rt.get("/meta", include_in_schema=False)
 async def get_meta():
     """
     获取元数据信息，包括数据库状态等
@@ -354,12 +455,28 @@ async def get_meta():
             )
     
 
+@rt.get(
+    '/t_material/page',
+    tags=["主数据 - 物料"],
+    summary="获取物料分页数据",
+    description="根据分页参数获取物料分页数据",
+    include_in_schema=False
+)
+async def get_material_page(
+    page_index: int = Query(0, description="页码"),
+    page_size: int = Query(1000, description="每页数量"),
+    db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套")
+):
+    db_name = db_name.replace(" ", "")
+    return await db_query(db_name=db_name, model_or_tablename="t_material", page_index=page_index, page_size=page_size)
+
 
 @rt.get(
     "/t_material/{materialnos}",
     tags=["主数据 - 物料"],
     summary="根据料号获取物料信息",
-    description="根据料号获取物料信息"
+    description="根据料号获取物料信息",
+    include_in_schema=False
 )
 async def get_material(
     materialnos: str = Path(..., description="料号，多个用逗号隔开"),
@@ -577,7 +694,8 @@ async def post_supply(
     "/t_supply/{supplyno}/{materialno}",
     tags=["生产数据 - 供应"],
     summary="修改供应记录",
-    description="根据供应号、料号修改供应记录"
+    description="根据供应号、料号修改供应记录",
+    include_in_schema=False
 )
 async def patch_supply_by_materialno(
     supplyno: str = Path(..., description="要修改的供应记录的供应号"),
@@ -610,7 +728,8 @@ async def patch_supply_by_materialno(
     "/t_supply/{supplyno}",
     tags=["生产数据 - 供应"],
     summary="将 PL 转为 MO",
-    description="根据供应号更新 PL 记录 ，转化时允许修改供应号"
+    description="根据供应号更新 PL 记录 ，转化时允许修改供应号",
+    include_in_schema=False
 )
 async def patch_supply(
     supplyno: str = Path(..., description="要修改的供应记录的供应号"),
@@ -691,7 +810,31 @@ async def delete_supply(
     
 
 
-# 需求
+# 需求接口
+@rt.get(
+    "/v_demand/page",
+    tags=["生产数据 - 需求"],
+    summary="获取需求报表",
+    description="根据需求类型查询需求记录",
+    include_in_schema=False
+)
+async def get_demand_page(
+    db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+    starttime: str = Query(None, description="需求开始时间"),
+    endtime: str = Query(None, description="需求截止时间"),
+    pagesize: int = Query(1000, description="每页数量"),
+    pageindex: int = Query(0, description="页码"),
+):
+    db_name = db_name.replace(" ", "")
+    filter = []
+    if starttime:
+        filter.append(f"`Req_Date` >= '{starttime}'")
+    if endtime:
+        filter.append(f"`Req_Date` <= '{endtime}'")
+    filter_string = " AND ".join(filter)
+    return await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=filter_string, page_size=pagesize, page_index=pageindex)
+
+
 @rt.get(
     "/v_demand/{demandno}",
     tags=["生产数据 - 需求"],
@@ -703,13 +846,10 @@ async def get_demand(
     demandno: str = Path(..., description="需求号"),
     # type_: str = Path(..., enum=["DM", "RS"], description="需求类型"),
 ):
-    filter_string = f"`DemandNo`='{demandno}'"
-
-    query_result_demand = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=filter_string)
+    query_result_demand = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{demandno}'")
     if query_result_demand["success"] == 0:
         return query_result_demand
-    # query_result_supply = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=f"`SupplyNo`='{demandno}'")
-    query_result_supply = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplyno=demandno))
+    query_result_supply = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplynos=f"'{demandno}'"), description="查询工单信息")
     if query_result_supply["success"] == 0:
         return query_result_demand
     if query_result_supply["data"]:
@@ -771,6 +911,34 @@ async def patch_demand(
 ########################################################################
 # 报表接口
 ########################################################################
+
+@rt.get(
+    "/v_supply_mo/page",
+    tags=["报表 - 工单报表"],
+    summary="获取工单报表",
+    description="按工单开完工时间获取工单报表",
+    include_in_schema=False
+)
+async def get_mo_page(
+    db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+    starttime: datetime = Query(None, description="工单开工时间"),
+    endtime: datetime = Query(None, description="工单完工时间"),
+    pagesize: int = Query(1000, description="每页数量"),
+    pageindex: int = Query(0, description="页码"),
+    # x_api_key: str = Header(None, description="API密钥")
+):
+    db_name = db_name.replace(" ", "")
+
+    filter = []
+    if starttime:
+        filter.append(f"`DT_OrdStart` >= '{starttime}'")
+    if endtime:
+        filter.append(f"`DT_OrdEnd` <= '{endtime}'")
+    filter_string = " AND ".join(filter)
+    result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=filter_string, page_size=pagesize, page_index=pageindex)
+    return result
+
+
 @rt.get(
     "/v_supply_mo/{supplyno}",
     tags=["报表 - 工单报表"],
@@ -789,115 +957,110 @@ async def get_mo_by_supplyno(
     async def get_orderwc(mono: str):
         sql = f"""
             WITH filtered_orders AS (
-            -- 步骤1：先过滤核心数据
-            SELECT 
-                o.OrderNo,
-                o.SupplyNo,
-                o.ItemNo,
-                s.MatVer,
-                o.MaterialNo,
-                o.WorkCenter,
-                o.MoldNo,
-                o.SortNo,
-                o.Fix,
-                o.Priority,
-                o.Status,
-                o.OrderQty,
-                o.Rate,
-                o.BaseQty,
-                o.BaseSec,
-                o.FixQty,
-                o.FixSec,
-                o.SF,
-                o.OffSetSec,
-                o.SetupCost,
-                o.SetupSec,
-                o.DT_Start,
-                o.DT_End,
-                o.MEMO,
-                o.Sys_Stamp,
-                -- 来自 t_supply 的字段
-                s.Type,
-                s.Category,
-                s.Priority AS S_Priority,
-                s.Avail_Qty,
-                s.DT_Req,
-                s.Avail_Date,
-                s.VendorNo
-            FROM t_orderwc o
-            JOIN t_supply s ON o.SupplyNo = s.SupplyNo AND s.Type IN ('PL', 'MO')
-            WHERE o.SupplyNo = '{mono}'
-        )
-        SELECT DISTINCT
-            fo.OrderNo,
-            fo.SupplyNo,
-            fo.ItemNo,
-            fo.MatVer,
-            fo.MaterialNo,
-            m.Description,
-            fo.WorkCenter,
-            fo.MoldNo,
-            k.MoldNum,
-            fo.SortNo,
-            w.Bottleneck,
-            CASE 
-                WHEN (fo.MoldNo IS NOT NULL AND fo.MoldNo <> '') 
-                THEN fo.MoldNo 
-                ELSE m.GroupNo 
-            END AS GroupNo,
-            g.Color,
-            fo.Fix,
-            fo.Type,
-            fo.Category,
-            fo.Priority,
-            fo.S_Priority,
-            fo.Status,
-            (fo.OrderQty * IFNULL(fo.Rate, 1)) AS OrderQty,
-            ((fo.Avail_Qty * IFNULL(fo.Rate, 1)) - (fo.OrderQty * IFNULL(fo.Rate, 1))) AS ConfirmQty,
-            (fo.Avail_Qty * IFNULL(fo.Rate, 1)) AS OriginalQty,
-            fo.BaseQty,
-            fo.BaseSec,
-            CASE 
-                WHEN (fo.FixQty IS NULL OR fo.FixQty = 0) 
-                THEN IFNULL(fo.FixSec, 0) 
-                ELSE IFNULL(CEILING(fo.OrderQty / fo.FixQty) * fo.FixSec, 0) 
-            END AS FixSec,
-            fo.SF,
-            fo.OffSetSec,
-            fo.SetupCost,
-            fo.SetupSec,
-            d.ABC,
-            d.Delay_Hour,
-            CASE 
-                WHEN (fo.SetupSec IS NULL OR fo.SetupSec = 0) 
-                THEN '0' 
-                ELSE SEC_TO_TIME(fo.SetupSec) 
-            END AS SetupTime,
-            fo.DT_Start,
-            fo.DT_End,
-            TIMEDIFF(fo.DT_End, fo.DT_Start) AS ProcessTime,
-            fo.DT_Req,
-            IFNULL(p.Req_Date, fo.DT_Req) AS Req_Date,
-            TIMESTAMPDIFF(HOUR, fo.Avail_Date, IFNULL(p.Req_Date, fo.DT_Req)) AS RemainTime,
-            fo.VendorNo,
-            fo.MEMO,
-            fo.Sys_Stamp
-        FROM filtered_orders fo
-        -- 关联其他表
-        JOIN t_material m ON fo.MaterialNo = m.MaterialNo AND m.Type = 'E'
-        JOIN t_workcenter w ON fo.WorkCenter = w.WorkCenter
-        LEFT JOIN t_groupcolor g ON m.GroupNo = g.GroupNo
-        LEFT JOIN t_mold k ON fo.MoldNo = k.MoldNo
-        LEFT JOIN v_orderwc_delay_hour d ON fo.SupplyNo = d.OrderNo AND d.OrderNo = '{mono}'
-        LEFT JOIN v_peg_req_date_1st p ON fo.SupplyNo = p.SupplyNo AND p.SupplyNo = '{mono}'
-        ORDER BY fo.SortNo;
+                -- 步骤1：先过滤核心数据
+                SELECT 
+                    o.OrderNo,
+                    o.SupplyNo,
+                    o.ItemNo,
+                    s.MatVer,
+                    o.MaterialNo,
+                    o.WorkCenter,
+                    o.MoldNo,
+                    o.SortNo,
+                    o.Fix,
+                    o.Priority,
+                    o.Status,
+                    o.OrderQty,
+                    o.Rate,
+                    o.BaseQty,
+                    o.BaseSec,
+                    o.FixQty,
+                    o.FixSec,
+                    o.SF,
+                    o.OffSetSec,
+                    o.SetupCost,
+                    o.SetupSec,
+                    o.DT_Start,
+                    o.DT_End,
+                    o.MEMO,
+                    o.Sys_Stamp,
+                    -- 来自 t_supply 的字段
+                    s.Type,
+                    s.Category,
+                    s.Priority AS S_Priority,
+                    s.Avail_Qty,
+                    s.DT_Req,
+                    s.Avail_Date,
+                    s.VendorNo
+                FROM t_orderwc o
+                JOIN t_supply s ON o.SupplyNo = s.SupplyNo AND s.Type IN ('PL', 'MO')
+                WHERE o.SupplyNo = '{mono}'
+            )
+            SELECT DISTINCT
+                fo.OrderNo,
+                fo.SupplyNo,
+                fo.ItemNo,
+                fo.MatVer,
+                fo.MaterialNo,
+                m.Description,
+                fo.WorkCenter,
+                fo.MoldNo,
+                k.MoldNum,
+                fo.SortNo,
+                w.Bottleneck,
+                CASE 
+                    WHEN (fo.MoldNo IS NOT NULL AND fo.MoldNo <> '') 
+                    THEN fo.MoldNo 
+                    ELSE m.GroupNo 
+                END AS GroupNo,
+                g.Color,
+                fo.Fix,
+                fo.Type,
+                fo.Category,
+                fo.Priority,
+                fo.S_Priority,
+                fo.Status,
+                (fo.OrderQty * IFNULL(fo.Rate, 1)) AS OrderQty,
+                ((fo.Avail_Qty * IFNULL(fo.Rate, 1)) - (fo.OrderQty * IFNULL(fo.Rate, 1))) AS ConfirmQty,
+                (fo.Avail_Qty * IFNULL(fo.Rate, 1)) AS OriginalQty,
+                fo.BaseQty,
+                fo.BaseSec,
+                CASE 
+                    WHEN (fo.FixQty IS NULL OR fo.FixQty = 0) 
+                    THEN IFNULL(fo.FixSec, 0) 
+                    ELSE IFNULL(CEILING(fo.OrderQty / fo.FixQty) * fo.FixSec, 0) 
+                END AS FixSec,
+                fo.SF,
+                fo.OffSetSec,
+                fo.SetupCost,
+                fo.SetupSec,
+                d.ABC,
+                d.Delay_Hour,
+                CASE 
+                    WHEN (fo.SetupSec IS NULL OR fo.SetupSec = 0) 
+                    THEN '0' 
+                    ELSE SEC_TO_TIME(fo.SetupSec) 
+                END AS SetupTime,
+                fo.DT_Start,
+                fo.DT_End,
+                TIMEDIFF(fo.DT_End, fo.DT_Start) AS ProcessTime,
+                fo.DT_Req,
+                IFNULL(p.Req_Date, fo.DT_Req) AS Req_Date,
+                TIMESTAMPDIFF(HOUR, fo.Avail_Date, IFNULL(p.Req_Date, fo.DT_Req)) AS RemainTime,
+                fo.VendorNo,
+                fo.MEMO,
+                fo.Sys_Stamp
+            FROM filtered_orders fo
+            -- 关联其他表
+            JOIN t_material m ON fo.MaterialNo = m.MaterialNo AND m.Type = 'E'
+            JOIN t_workcenter w ON fo.WorkCenter = w.WorkCenter
+            LEFT JOIN t_groupcolor g ON m.GroupNo = g.GroupNo
+            LEFT JOIN t_mold k ON fo.MoldNo = k.MoldNo
+            LEFT JOIN v_orderwc_delay_hour d ON fo.SupplyNo = d.OrderNo AND d.OrderNo = '{mono}'
+            LEFT JOIN v_peg_req_date_1st p ON fo.SupplyNo = p.SupplyNo AND p.SupplyNo = '{mono}'
+            ORDER BY fo.SortNo;
         """
-        # orderwc = await db_query(
-        #     db_name=db_name, model_or_tablename="v_orderwc",
-        #     filter_string=f"`SupplyNo` = '{mono}'",
-        #     order_string="`SortNo`",
-        # )
-        orderwc = await db_exec_sql(db_name=db_name, sql=sql)
+        orderwc = await db_exec_sql(db_name=db_name, sql=sql, description="查询工序信息")
         return orderwc['data']
 
     async def get_prev_mo(mono: str):
@@ -909,10 +1072,10 @@ async def get_mo_by_supplyno(
         prev_mo = []
         if demands_data:
             demands_no = ','.join([f"'{i['demandno']}'" for i in demands_data])
-            peg_query_result = await db_query(db_name=db_name, model_or_tablename="v_peg", filter_string=f"`DemandNo` IN ({demands_no}) AND `S_Type` IN ('PL', 'MO')")
+            peg_query_result = await db_exec_sql(db_name=db_name, sql=V_PEG_SQL.format(where_string=f"p.DemandNO IN ({demands_no}) AND p.S_Type IN ('PL', 'MO')"), description=f"查询{demands_no}匹配的PL和MO")
             if peg_query_result['data']:
                 supplies_no = ','.join([f"'{i['s_supplyno']}'" for i in peg_query_result['data']])
-                prev_mo_query_result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=f"`SupplyNo` IN ({supplies_no})")
+                prev_mo_query_result = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplynos=supplies_no), description=f"查询{supplies_no}的前置工单信息")
                 prev_mo = prev_mo_query_result['data']
         return prev_mo
 
@@ -920,13 +1083,12 @@ async def get_mo_by_supplyno(
         """
         通过工单 supplyno 号查询后 后置 工单
         """
-        in_pegs = await db_query(db_name=db_name, model_or_tablename="v_peg", filter_string=f"`S_SupplyNo`='{mono}' AND `Type` IN ('DM', 'RS')")
+        in_pegs = await db_exec_sql(db_name=db_name, sql=V_PEG_SQL.format(where_string=f"p.S_SupplyNo='{mono}' AND p.Type IN ('DM', 'RS')"), description=f"查询{mono}匹配的DM和RS")
         pegs_data = in_pegs['data']
         next_mo = []
         if pegs_data:
             demands_no = ','.join([f"'{i['demandno']}'" for i in pegs_data])
-            next_mo_query_result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=f"`SupplyNo` IN ({demands_no}) AND `Type` IN ('MO', 'PL')")
-            # next_mo.append(next_mo_query_result['data'])
+            next_mo_query_result = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplynos=demands_no), description=f"查询{mono}的后续置工单信息")
             next_mo = next_mo_query_result['data']
         return next_mo
 
@@ -939,12 +1101,9 @@ async def get_mo_by_supplyno(
         if so_data:
             return so_data[0]
 
-
     db_name = db_name.replace(" ", "")
 
-    # result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=filter_string)
-
-    result = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplyno=supplyno))
+    result = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplynos=f"'{supplyno}'"), description=f"查询{supplyno}的工单信息")
     
     if result['success'] and result['meta']['total'] == 1:  # 筛选到唯一的工单，则补充工序信息（v_orderwc）
         result['data'][0]['orderwc'] = await get_orderwc(mono=supplyno)
@@ -959,28 +1118,6 @@ async def get_mo_by_supplyno(
             result['data'][0]['next_mo'] = await get_next_mo(supplyno)
 
     return result
-
-
-@rt.get(
-    "/v_supply_mo",
-    tags=["报表 - 工单报表"],
-    summary="获取工单报表",
-    description="按工单开完工时间获取工单报表，默认开工时间为今日，默认完工时间为一周后。"
-)
-async def get_mo_by_time(
-    db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-    starttime: datetime = Query(None, description="工单开工时间"),
-    endtime: datetime = Query(None, description="工单完工时间"),
-    # x_api_key: str = Header(None, description="API密钥")
-):
-    db_name = db_name.replace(" ", "")
-
-    starttime = starttime or date.today()
-    endtime = endtime or starttime + timedelta(days=7)
-    filter_string = f"`DT_OrdStart` >= '{starttime}' AND `DT_OrdEnd` <= '{endtime}'"
-    result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=filter_string)
-    return result
-
 
 
 @rt.get(
@@ -1002,22 +1139,27 @@ async def query_workreport(
 
 
 @rt.get(
-    "/v_orderwc",
+    "/v_orderwc/page",
     tags=["报表 - 工序报表"],
     summary="获取工序报表",
     description="按工序开完工时间获取工序报表，默认开工时间为今日，默认完工时间为一周后。"
 )
-async def get_orderwc(
+async def get_orderwc_page(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     starttime: datetime = Query(None, description="工序开工时间"),
     endtime: datetime = Query(None, description="工序完工时间"),
+    pagesize: int = Query(1000, description="每页数量"),
+    pageindex: int = Query(0, description="页码"),
     # x_api_key: str = Header(None, description="API密钥")
 ):
     db_name = db_name.replace(" ", "")
-    starttime = starttime or date.today()
-    endtime = endtime or starttime + timedelta(days=7)
-    filter_string = f"`DT_Start` >= '{starttime}' AND `DT_End` <= '{endtime}'"
-    return await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=filter_string)
+    filter = []
+    if starttime:
+        filter.append(f"`DT_Start` >= '{starttime}'")
+    if endtime:
+        filter.append(f"`DT_End` <= '{endtime}'")
+    filter_string = " AND ".join(filter)
+    return await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=filter_string, page_size=pagesize, page_index=pageindex)
 
 
 @rt.get(
@@ -1034,6 +1176,33 @@ async def get_orderwc(
     db_name = db_name.replace(" ", "")
     filter_string = f"`SupplyNo` = '{supplyno}'"
     return await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=filter_string)
+
+
+@rt.get(
+    "/v_peg/page",
+    include_in_schema=False  # 添加这个参数即可在Swagger上隐藏
+)
+async def get_peg_page(
+    db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+    pagesize: int = Query(1000, description="每页数量"),
+    pageindex: int = Query(0, description="页码"),
+):
+    db_name = db_name.replace(" ", "")
+    return await db_query(db_name=db_name, model_or_tablename="v_peg", page_size=pagesize, page_index=pageindex)
+
+
+@rt.get(
+    "/v_peg/mini",
+    tags=["报表 - 匹配关系"],
+    summary="获取匹配关系",
+    description="获取需求与供应的匹配关系，极简版本，仅体现对应关系",
+    include_in_schema=False
+)
+async def get_peg_relation(
+    db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+):
+    db_name = db_name.replace(" ", "")
+    return await db_exec_sql(db_name=db_name, sql=V_PEG_SQL.format(where_string="1=1"), description="查询需求与供应的匹配关系")
 
 
 
@@ -1212,7 +1381,8 @@ async def delete_workreport(
     "/t_confirm",
     tags=["生产数据 - 报工"],
     summary="确认报工记录",
-    description="确认报工记录"
+    description="确认报工记录",
+    include_in_schema=False
 )
 async def confirm_workreport(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),

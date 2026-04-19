@@ -86,7 +86,7 @@ def validate_databases(db_name: str) -> List[str]:
 
 
 
-async def db_exec_sql(db_name: str, sql: str, params: Optional[List[Any]] = None):
+async def db_exec_sql(db_name: str, sql: str, params: Optional[List[Any]] = None, description: str = ''):
     """
     执行原始SQL语句
 
@@ -107,7 +107,7 @@ async def db_exec_sql(db_name: str, sql: str, params: Optional[List[Any]] = None
         count, data_list = await db_manager._execute_native_sql(
             sql=sql,
             params=params if params is not None else [],
-            description=f"执行SQL: {sql[:50]}..."
+            description=f"执行SQL {description}..."
         )
 
         return standard_response(
@@ -123,7 +123,7 @@ async def db_exec_sql(db_name: str, sql: str, params: Optional[List[Any]] = None
 
 
     
-async def db_query(db_name: str, model_or_tablename: TortoiseBaseModel | str, filter_string: str = '', order_string: str = ''):
+async def db_query(db_name: str, model_or_tablename: TortoiseBaseModel | str, filter_string: str = '', order_string: str = '', page_size: int = 1000, page_index: int = 1):
     _, table_name = process_model_or_tablename(model_or_tablename)
     try:
         valid_db = validate_databases(db_name)[0]
@@ -135,6 +135,8 @@ async def db_query(db_name: str, model_or_tablename: TortoiseBaseModel | str, fi
             table_name=table_name,
             filter_string=filter_string,
             order_string=order_string,
+            page_size=page_size,
+            page_index=page_index,
         )
         formatted_data = [format_query_result(row) for row in query_result['data']]
         total = query_result['total']

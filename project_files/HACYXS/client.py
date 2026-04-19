@@ -18,7 +18,7 @@
 from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR, SCHEDULER_MINUTE
 from .._base import (
     get_scheduler_minute, cron_task, CLIENT_LOGGER, CLIENT_SESSION, PROJECT_JSON_FILE,
-    ApsHelpers, get_session
+    ApsHelpers, get_session, get_production_cache
 )
 
 
@@ -165,7 +165,7 @@ class CustomRsPushModel(RsPushModel):
 
 
 def handle_pl_status_a2e(supplyno_or_data: str | dict):
-    """处理PL状态变更：从A到E"""
+    """处理PL状态变更为A2E"""
     try:
         if isinstance(supplyno_or_data, str):
             supplyno = supplyno_or_data
@@ -176,6 +176,15 @@ def handle_pl_status_a2e(supplyno_or_data: str | dict):
     except Exception as e:
         CLIENT_LOGGER.fail("处理PL状态变更", str(supplyno_or_data), str(e))
         raise
+
+
+def batch_handle_pl_status_a2e(supplyno_or_data_list: list[str | dict]):
+    if len(supplyno_or_data_list) >= 1:
+        cache = get_production_cache()
+        cache.establish_production_cache(MYAPS_MAIN_DB)
+    for supplyno_or_data in supplyno_or_data_list:
+        handle_pl_status_a2e(supplyno_or_data)
+    return
 
 
 def handle_pl_typeto_mo(supplyno_or_data: str | dict):

@@ -1,13 +1,16 @@
 import json
-from pathlib import Path
-from typing import List, Dict, Optional, Literal, Callable, Union, Any, Type
-from abc import ABC, abstractmethod
-from Crypto.Util.Padding import unpad
 import pandas as pd
-from datetime import date, datetime
-from pydantic import BaseModel as PydanticModel
 import requests
 import time
+import threading
+import asyncio
+from pathlib import Path
+from typing import List, Dict, Optional, Literal, Callable, Union, Any, Type
+from collections import defaultdict
+from abc import ABC, abstractmethod
+from Crypto.Util.Padding import unpad
+from datetime import date, datetime
+from pydantic import BaseModel as PydanticModel
 
 
 from core.settings import THIS_BASE_URL, MYAPS_MAIN_DB, MYAPS_DB_SET
@@ -64,6 +67,486 @@ class BaseConnection(ABC):
         pass
 
 
+
+
+# 缓存配置
+CACHE_REFRESH_INTERVAL = 300.0  # 5分钟（秒）
+# CACHE_MAX_PAGESIZE = 10000  # 单页最大数据量
+
+
+class _ProductionDataCache:
+    """生产数据缓存管理器"""
+    
+    def __init__(self):
+        # 状态标志
+        self._initialized = False
+        self._is_loading = False
+        self._load_lock = threading.Lock()
+        self._refresh_lock = threading.Lock()
+        
+        # 缓存数据
+        self._cache: Dict[str, Dict[Any, Any]] = {
+            'supply_mo': {},
+            'orderwc': {},
+            'demand': {},
+            'peg': {},
+            'material': {}
+        }
+        
+        # 计时器（秒）
+        self._last_refresh_time = 0.0
+        
+        # 统计信息
+        self._stats = {
+            'total_hits': 0,
+            'total_misses': 0,
+            'total_refreshes': 0,
+            'last_refresh_time': None,
+            'cache_size': 0
+        }
+
+    
+    async def _full_refresh(self, db_name: str):
+        """全量刷新缓存"""
+        logger.info("生产数据缓存", "", "开始全量刷新...")
+        
+        try:
+            # 使用 API 方式构建缓存
+            self._build_supply_mo_cache(db_name)
+            self._build_orderwc_cache(db_name)
+            self._build_demand_cache(db_name)
+            self._build_peg_cache(db_name)
+            self._build_material_cache(db_name)
+            
+            self._last_refresh_time = time.time()
+            self._stats['total_refreshes'] += 1
+            self._stats['last_refresh_time'] = self._last_refresh_time
+            self._stats['cache_size'] = sum(
+                len(v) for v in self._cache.values() if isinstance(v, dict)
+            )
+            
+            logger.success("生产数据缓存", "", f"全量刷新完成，共 {self._stats['cache_size']} 条数据")
+            
+        except Exception as e:
+            logger.fail("生产数据缓存", "", f"全量刷新失败: {e}")
+            raise
+    
+
+    def ensure_initialized(self, db_name: str):
+        """同步方式确保缓存已初始化（使用线程事件阻塞）"""
+        if self._initialized:
+            return
+        
+        with self._load_lock:
+            if self._initialized:
+                return
+            
+            logger.info("生产数据缓存", "", "首次加载中，事件队列将等待...")
+            self._is_loading = True
+            
+            try:
+                # 直接运行同步版本的初始化，避免事件循环问题
+                # 这样可以确保在任何线程中都能正常工作
+                self._initialize(db_name)
+                
+                self._initialized = True
+                logger.success("生产数据缓存", "", "首次加载完成")
+                
+            except Exception as e:
+                logger.fail("生产数据缓存", "", f"首次加载失败: {e}")
+                raise
+            finally:
+                self._is_loading = False
+    
+    def _initialize(self, db_name: str):
+        """同步版本的初始化方法，使用 API 方式获取数据"""
+        try:
+            logger.info("生产数据缓存", "", "开始构建 supply_mo 缓存...")
+            self._build_supply_mo_cache(db_name)
+            logger.success("生产数据缓存", "", f"supply_mo 缓存加载: {len(self._cache['supply_mo'])} 条")
+            
+            logger.info("生产数据缓存", "", "开始构建 orderwc 缓存...")
+            self._build_orderwc_cache(db_name)
+            logger.success("生产数据缓存", "", f"orderwc 缓存加载: {len(self._cache['orderwc'])} 条")
+            
+            logger.info("生产数据缓存", "", "开始构建 demand 缓存...")
+            self._build_demand_cache(db_name)
+            logger.success("生产数据缓存", "", f"demand 缓存加载: {len(self._cache['demand'])} 条")
+            
+            logger.info("生产数据缓存", "", "开始构建 peg 缓存...")
+            self._build_peg_cache(db_name)
+            logger.success("生产数据缓存", "", f"peg 缓存加载: {len(self._cache['peg']['demand_to_supply'])} 条 DemandNo")
+            
+            logger.info("生产数据缓存", "", "开始构建 material 缓存...")
+            self._build_material_cache(db_name)
+            logger.success("生产数据缓存", "", f"material 缓存加载: {len(self._cache['material'])} 条")
+            
+            # 更新最后刷新时间
+            self._last_refresh_time = time.time()
+            self._stats['total_refreshes'] += 1
+            self._stats['last_refresh_time'] = self._last_refresh_time
+            self._stats['cache_size'] = sum(
+                len(v) for v in self._cache.values() if isinstance(v, dict)
+            )
+            logger.success("生产数据缓存", "", f"全量加载完成，共 {self._stats['cache_size']} 条数据")
+                
+        except Exception as e:
+            logger.fail("生产数据缓存", "", f"同步初始化失败: {e}")
+            raise
+    
+    def _build_supply_mo_cache(self, db_name: str):
+        """使用 API 方式构建 supply_mo 缓存"""
+        cache = {}
+        max_retries = 3
+        retry_delay = 2  # 秒
+        
+        url = f"{THIS_BASE_URL}/api/v_supply_mo/page?db_name={db_name}"
+        
+        for attempt in range(max_retries):
+            try:
+                response = SESSION.get(url, timeout=(30, 60))
+                response.raise_for_status()
+                result = response.json()
+                
+                data_list = result['data']
+                for item in data_list:
+                    supply_no = item.get('supplyno', '')
+                    if supply_no:
+                        cache[supply_no] = item
+                
+                # 成功获取数据，跳出重试循环
+                break
+            except Exception as e:
+                logger.warning("生产数据缓存", "", f"获取 supply_mo 失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+        
+        self._cache['supply_mo'] = cache
+    
+    def _build_orderwc_cache(self, db_name: str):
+        """使用 API 方式构建 orderwc 缓存（以 supplyno 为索引）"""
+        cache = defaultdict(list)
+        max_retries = 3
+        retry_delay = 2  # 秒
+
+        url = f"{THIS_BASE_URL}/api/v_orderwc/page?db_name={db_name}"
+        
+        for attempt in range(max_retries):
+            try:
+                response = SESSION.get(url, timeout=(30, 60))
+                response.raise_for_status()
+                result = response.json()
+
+                data_list = result['data']
+                for item in data_list:
+                    supply_no = item.get('supplyno', '')
+                    if supply_no:
+                        cache[supply_no].append(item)
+                
+                # 成功获取数据，跳出重试循环
+                break
+            except Exception as e:
+                logger.warning("生产数据缓存", "", f"获取 orderwc 失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+
+        
+        self._cache['orderwc'] = cache
+    
+    def _build_demand_cache(self, db_name: str):
+        """使用 API 方式构建 demand 缓存"""
+        cache = defaultdict(list)
+        max_retries = 3
+        retry_delay = 2  # 秒
+        
+        url = f"{THIS_BASE_URL}/api/v_demand/page?db_name={db_name}"
+        
+        for attempt in range(max_retries):
+            try:
+                response = SESSION.get(url, timeout=(30, 60))
+                response.raise_for_status()
+                result = response.json()
+                
+                data_list = result['data']
+                for item in data_list:
+                    demand_no = item.get('demandno', '')
+                    if demand_no:
+                        cache[demand_no].append(item)
+                
+                # 成功获取数据，跳出重试循环
+                break
+            except Exception as e:
+                logger.warning("生产数据缓存", "", f"获取 demand 失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+        
+        self._cache['demand'] = cache
+    
+
+    def _build_peg_cache(self, db_name: str):
+        """使用 API 方式构建 peg 缓存（双向索引）"""
+        cache = {
+            'demand_to_supply': defaultdict(list),
+            'supply_to_demand': defaultdict(list)
+        }
+        max_retries = 3
+        retry_delay = 2  # 秒
+        
+        url = f"{THIS_BASE_URL}/api/v_peg/mini?db_name={db_name}"
+        
+        for attempt in range(max_retries):
+            try:
+                response = SESSION.get(url, timeout=(30, 60))
+                response.raise_for_status()
+                result = response.json()
+                
+                data_list = result['data']
+                for item in data_list:
+                    demand_no = item.get('demandno', '')
+                    s_supply_no = item.get('s_supplyno', '')
+                    
+                    if demand_no and s_supply_no:
+                        if s_supply_no not in cache['demand_to_supply'][demand_no]:
+                            cache['demand_to_supply'][demand_no].append(s_supply_no)
+                        if demand_no not in cache['supply_to_demand'][s_supply_no]:
+                            cache['supply_to_demand'][s_supply_no].append(demand_no)
+
+                # 成功获取数据，跳出重试循环
+                break
+            except Exception as e:
+                logger.warning("生产数据缓存", "", f"获取 peg 失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+        
+        self._cache['peg'] = cache
+    
+    def _build_material_cache(self, db_name: str):
+        """使用 API 方式构建 material 缓存"""
+        cache = {}
+        max_retries = 3
+        retry_delay = 2  # 秒
+        
+        url = f"{THIS_BASE_URL}/api/t_material/page?db_name={db_name}"
+        
+        for attempt in range(max_retries):
+            try:
+                response = SESSION.get(url, timeout=(30, 60))
+                response.raise_for_status()
+                result = response.json()
+                
+                data_list = result['data']
+                for item in data_list:
+                    material_no = item.get('materialno', '')
+                    if material_no:
+                        cache[material_no] = item
+                
+                # 成功获取数据，跳出重试循环
+                break
+            except Exception as e:
+                logger.warning("生产数据缓存", "", f"获取 material 失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+        
+        self._cache['material'] = cache
+    
+
+    def establish_production_cache(self, db_name: str):
+        """PL 状态变更事件处理"""
+        # 检查是否正在加载缓存，如果是则直接返回
+        if self._is_loading:
+            logger.debug("生产数据缓存", "", "缓存正在加载中，跳过 PL 状态变更事件")
+            return
+        
+        # 确保缓存已初始化
+        self.ensure_initialized(db_name)
+        
+        # 检查是否需要刷新
+        with self._refresh_lock:
+            # 再次检查是否正在加载，避免并发问题
+            if self._is_loading:
+                logger.debug("生产数据缓存", "", "缓存正在加载中，跳过 PL 状态变更事件")
+                return
+                
+            now = time.time()
+            elapsed = now - self._last_refresh_time
+            
+            # 只有当 _last_refresh_time 大于 0（即已经初始化过）时才检查是否需要刷新
+            if self._last_refresh_time > 0 and elapsed >= CACHE_REFRESH_INTERVAL:
+                logger.info("生产数据缓存", "", f"计时器超时({elapsed:.1f}秒)，开始刷新...")
+                # 使用同步方式刷新，避免事件循环问题
+                self._initialize(db_name)
+            else:
+                logger.debug("生产数据缓存", "", f"计时器重置({elapsed:.1f}秒 < 5分钟)")
+                # 计时器重置，但不实际重置变量，下次事件会重新计算
+
+
+    def get_supply_mo(self, supply_no: str) -> Dict:
+        """获取工单数据（按供应号查找）"""
+        data = self._cache['supply_mo'].get(supply_no)
+        if data:
+            self._stats['total_hits'] += 1
+            return data
+        
+        self._stats['total_misses'] += 1
+        return {}
+    
+
+    def batch_get_supply_mo(self, supplynos: List[str]) -> List[Dict]:
+        """批量获取工单数据"""
+        results = []
+        for supply_no in supplynos:
+            data = self._cache['supply_mo'].get(supply_no)
+            if data:
+                results.append(data)
+                self._stats['total_hits'] += 1
+            else:
+                self._stats['total_misses'] += 1
+        return results
+    
+
+    def get_orderwc(self, supply_no: str) -> List[Dict]:
+        """获取工序数据（按供应号查找）"""
+        data = self._cache['orderwc'].get(supply_no, [])
+        if data:
+            self._stats['total_hits'] += 1
+        else:
+            self._stats['total_misses'] += 1
+        return data
+    
+
+    def batch_get_orderwc(self, supplynos: List[str]) -> List[Dict]:
+        """批量获取工序数据（按供应号查找）"""
+        results = []
+        for supply_no in supplynos:
+            data_list = self._cache['orderwc'].get(supply_no, [])
+            results.extend(data_list)
+            if data_list:
+                self._stats['total_hits'] += 1
+            else:
+                self._stats['total_misses'] += 1
+        return results
+    
+
+    def get_demand(self, demand_no: str) -> List[Dict]:
+        """获取需求数据"""
+        data = self._cache['demand'].get(demand_no, [])
+        if data:
+            self._stats['total_hits'] += 1
+        else:
+            self._stats['total_misses'] += 1
+        return data
+    
+
+    def batch_get_demand(self, demandnos: List[str]) -> List[Dict]:
+        """批量获取需求数据"""
+        results = []
+        for demand_no in demandnos:
+            data_list = self._cache['demand'].get(demand_no, [])
+            results.extend(data_list)
+            if data_list:
+                self._stats['total_hits'] += 1
+            else:
+                self._stats['total_misses'] += 1
+        return results
+    
+
+    def get_peg_by_demand(self, demand_no: str) -> List[str]:
+        """根据 DemandNo 获取对应的 S_SupplyNo 列表"""
+        cache = self._cache['peg']['demand_to_supply']
+        data = cache.get(demand_no, [])
+        if data:
+            self._stats['total_hits'] += 1
+        else:
+            self._stats['total_misses'] += 1
+        return data
+    
+
+    def get_peg_by_supply(self, supply_no: str) -> List[str]:
+        """根据 S_SupplyNo 获取对应的 DemandNo 列表"""
+        cache = self._cache['peg']['supply_to_demand']
+        data = cache.get(supply_no, [])
+        if data:
+            self._stats['total_hits'] += 1
+        else:
+            self._stats['total_misses'] += 1
+        return data
+    
+
+    def batch_get_peg_by_demand(self, demandnos: List[str]) -> Dict[str, List[str]]:
+        """批量根据 DemandNo 获取 S_SupplyNo 列表"""
+        cache = self._cache['peg']['demand_to_supply']
+        results = {}
+        for demand_no in demandnos:
+            data = cache.get(demand_no, [])
+            results[demand_no] = data
+            if data:
+                self._stats['total_hits'] += 1
+            else:
+                self._stats['total_misses'] += 1
+        return results
+    
+
+    def batch_get_peg_by_supply(self, supplynos: List[str]) -> Dict[str, List[str]]:
+        """批量根据 S_SupplyNo 获取 DemandNo 列表"""
+        cache = self._cache['peg']['supply_to_demand']
+        results = {}
+        for supply_no in supplynos:
+            data = cache.get(supply_no, [])
+            results[supply_no] = data
+            if data:
+                self._stats['total_hits'] += 1
+            else:
+                self._stats['total_misses'] += 1
+        return results
+    
+
+    def get_material(self, material_no: str) -> List[Dict]:
+        """获取物料数据"""
+        data = self._cache['material'].get(material_no)
+        if data:
+            self._stats['total_hits'] += 1
+            return [data]
+        
+        self._stats['total_misses'] += 1
+        return []
+    
+
+    def batch_get_material(self, materialnos: List[str]) -> List[Dict]:
+        """批量获取物料数据"""
+        results = []
+        for material_no in materialnos:
+            data = self._cache['material'].get(material_no)
+            if data:
+                results.append(data)
+                self._stats['total_hits'] += 1
+            else:
+                self._stats['total_misses'] += 1
+        return results
+    
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """获取缓存统计信息"""
+        return {
+            **self._stats,
+            'cache_sizes': {
+                'supply_mo': len(self._cache['supply_mo']),
+                'orderwc': len(self._cache['orderwc']),
+                'demand': len(self._cache['demand']),
+                'peg': len(self._cache['peg']),
+                'material': len(self._cache['material'])
+            }
+        }
+
+
+# 全局缓存实例
+_production_cache = _ProductionDataCache()
+
+
+def get_production_cache() -> _ProductionDataCache:
+    """获取生产数据缓存管理器实例"""
+    return _production_cache
+
+
 class ApsHelpers:
 
     @staticmethod
@@ -114,6 +597,7 @@ class ApsHelpers:
         
         # 理论上不会走到这里
         raise Exception("API 调用失败：达到最大重试次数")
+
 
     @staticmethod
     def mto_workreport_to_virtual_stock(db:str=MYAPS_MAIN_DB):
@@ -177,6 +661,20 @@ class ApsHelpers:
         return response_json
 
 
+
+    @staticmethod
+    def _modify_supply(supplyno: str, to_status: Literal['NEW', 'CRE', 'E2A', 'REL']=None, memo: str=None, _sn: str=None, _id: str=None, _entryid: str=None):
+        url = f'{THIS_BASE_URL}/api/t_supply/{supplyno}/...?db_name={MYAPS_MAIN_DB}'
+        response_json = ApsHelpers._call_api('PATCH', url, json={
+            'status': to_status,
+            'memo': memo[:255],
+            'apiex_sn': _sn,
+            'apiex_id': _id,
+            'apiex_entryid': _entryid,
+        })
+        return response_json
+
+
     @staticmethod
     def pl_release_success(native_plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _id: str=None, _entryid: str=None):
         """
@@ -191,31 +689,16 @@ class ApsHelpers:
         """
         mono = mono or native_plno
         try:
-            logger.query("PL信息", native_plno, "")
-            query_url = f"{THIS_BASE_URL}/api/v_supply_mo/{native_plno}?db_name={MYAPS_MAIN_DB}"
-            query_result_json = ApsHelpers._call_api('GET', query_url)
-            logger.info(f"查询PL信息响应：成功")
+            # logger.query("PL信息", native_plno, "")
+            # mo_data = ApsHelpers.get_supplymo_detaildata(supplyno=native_plno)
+            # logger.info(f"查询PL信息响应：成功")
 
-            if query_result_json.get('success') == 0:
-                logger.fail("PL查询", native_plno, query_result_json.get('message'))
-                return standard_response(status_code=query_result_json.get('status_code', 500), success=0, message=query_result_json.get('message'))
-
-            query_data = query_result_json.get('data', [])
-            if not query_data or len(query_data) > 1:
-                logger.fail("PL查询", native_plno, "未找到或多条匹配", to_file=True)
-                return standard_response(success=0, message=f"PL {native_plno} not found or multiple records matched.")
-
-            if query_data[0].get("type") != "PL":
-                logger.fail("PL查询", native_plno, "非PL类型", to_file=True)
-                return standard_response(status_code=400, success=0, message=f"Supply {native_plno} is not a PL.")
-
+            # if mo_data.get("type") != "PL":
+            #     logger.fail("PL查询", native_plno, "非PL类型", to_file=True)
+            #     return standard_response(status_code=400, success=0, message=f"Supply {native_plno} is not a PL.")
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             logger.success("推送 MO", f"原供应号{native_plno}", f"MO单号{mono}", to_file=True)
 
-            # memo = json.dumps({
-            #     "msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now,
-            #     "native_no": native_plno, "_code": mono, "_id": _id, "_entryid": _entryid}, ensure_ascii=False
-            # )
             memo = f"{now} ✅ {msg_from}: '{msg}, {mono}, {_id}, {_entryid}' @ {native_plno}"
             
             logger.update("PL状态", native_plno, f"目标状态{to_status}，MO单号{mono}")
@@ -235,19 +718,6 @@ class ApsHelpers:
             error_msg = f"更新PL状态为MO时发生网络错误：{str(e)}"
             logger.fail("PL状态更新", native_plno, error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
-
-
-    @staticmethod
-    def _modify_supply(supplyno: str, to_status: Literal['NEW', 'CRE', 'E2A', 'REL']=None, memo: str=None, _sn: str=None, _id: str=None, _entryid: str=None):
-        url = f'{THIS_BASE_URL}/api/t_supply/{supplyno}/...?db_name={MYAPS_MAIN_DB}'
-        response_json = ApsHelpers._call_api('PATCH', url, json={
-            'status': to_status,
-            'memo': memo[:255],
-            'apiex_sn': _sn,
-            'apiex_id': _id,
-            'apiex_entryid': _entryid,
-        })
-        return response_json
 
 
     @staticmethod
@@ -275,7 +745,6 @@ class ApsHelpers:
     def rs_push_success(rsno: str, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            # memo = json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": rsno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
             memo = f"{now} ✅ {msg_from}: '{_code}, {_id}, {_entryid}' @ {rsno}"
             
             logger.update("RS状态", rsno, f"目标状态{to_status}")
@@ -302,7 +771,6 @@ class ApsHelpers:
                 pass
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            # memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
             memo = f"{now} 🚫 {msg_from}: '{msg}'"
 
             url = f'{THIS_BASE_URL}/api/t_demand/{rsno}/.../...?db_name={MYAPS_MAIN_DB}'
@@ -317,32 +785,13 @@ class ApsHelpers:
 
 
     @staticmethod
-    def query_material(materialnos: str | list[str]) -> dict:
-        """
-        查询物料信息
-        Args:
-            materialnos: 物料编号（多个用半角逗号分隔）或物料编号列表
-        Returns:
-            物料信息字典或列表
-        """
-        if isinstance(materialnos, list):
-            materialnos = ','.join(materialnos)
-        url = f"{THIS_BASE_URL}/api/t_material/{materialnos}?db_name={MYAPS_MAIN_DB}"
-        try:
-            response_json = ApsHelpers._call_api('GET', url)
-            return response_json.get('data', [])
-        except Exception as e:
-            error_msg = f"查询物料信息时发生网络错误：{str(e)}"
-            logger.fail("查询物料信息", materialnos, error_msg)
-            return []
-
-
-    @staticmethod
     def get_new_pr_data():
+        import asyncio
         from apps.io_api.utils.db_operation import db_query
 
-        pr_data_list = db_query(MYAPS_MAIN_DB, "v_supply", "`Type`='PR' AND `Status`='NEW'").get('data')
-        return pr_data_list
+        # 使用 asyncio.run 来运行异步代码
+        result = asyncio.run(db_query(MYAPS_MAIN_DB, "v_supply", "`Type`='PR' AND `Status`='NEW'"))
+        return result.get('data', [])
 
 
     @staticmethod
@@ -389,17 +838,8 @@ class ApsHelpers:
     def pr_push_success(prno: str, msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            # memo = json.dumps({"msg": f"✅ {msg}", "from": msg_from, "success": True, "datetime": now, "native_no": prno, "_code": _code, "_id": _id, "_entryid": _entryid}, ensure_ascii=False)
             memo = f"{now} ✅ {msg_from}: '{_code}, {_id}, {_entryid}' @ {prno}"
             logger.update("PR状态", prno, "")
-            # url = f'{THIS_BASE_URL}/api/t_supply/{prno}/...?db_name={MYAPS_MAIN_DB}'
-            # response_json = ApsHelpers._call_api('PATCH', url, json={
-            #     'memo': memo,
-            #     'status': 'CRE',
-            #     'apiex_sn': _code,
-            #     'apiex_id': _id,
-            #     'apiex_entryid': _entryid,
-            # })
             response_json = ApsHelpers._modify_supply(supplyno=prno, to_status='CRE', memo=memo, _sn=_code, _id=_id, _entryid=_entryid)
             logger.info(f"更新PR状态响应：成功")
             return response_json
@@ -419,19 +859,62 @@ class ApsHelpers:
         logger.fail("推送 PR", json.dumps(push_data, ensure_ascii=False), msg)
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            # memo = json.dumps({"msg": f"🚫 {msg}", "from": msg_from, "success": False, "datetime": now}, ensure_ascii=False)
             memo = f"{now} 🚫 {msg_from}: '{msg}'"
-            # url = f'{THIS_BASE_URL}/api/t_supply/{prno}/...?db_name={MYAPS_MAIN_DB}'
-            # response_json = ApsHelpers._call_api('PATCH', url, json={
-            #     'memo': memo,
-            #     'status': 'NEW',
-            # })
             response_json = ApsHelpers._modify_supply(supplyno=prno, to_status='NEW', memo=memo)
             return response_json
         except Exception as e:
             error_msg = f"更新PR失败状态时发生网络错误：{str(e)}"
             logger.fail("PR状态更新", prno, error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
+
+
+
+    @staticmethod
+    def query_material(materialnos: str | list[str]) -> list:
+        """
+        查询物料信息（优先从缓存获取，缓存未命中则访问API并加入缓存）
+        Args:
+            materialnos: 物料编号（多个用半角逗号分隔）或物料编号列表
+        Returns:
+            物料信息列表
+        """
+        if isinstance(materialnos, list):
+            material_list = [m.strip() for m in materialnos if m.strip()]
+        else:
+            material_list = [m.strip() for m in materialnos.split(',') if m.strip()]
+        
+        if not material_list:
+            return []
+        
+        cache = get_production_cache()
+        
+        # 批量从缓存获取
+        cached_data = cache.batch_get_material(material_list)
+        
+        # 检查缓存命中情况
+        cached_keys = {item['materialno'] for item in cached_data}
+        missing_materials = [m for m in material_list if m not in cached_keys]
+        
+        if missing_materials:
+            materialnos_str = ','.join(missing_materials)
+            url = f"{THIS_BASE_URL}/api/t_material/{materialnos_str}?db_name={MYAPS_MAIN_DB}"
+            try:
+                response_json = ApsHelpers._call_api('GET', url)
+                api_data = response_json.get('data', [])
+                
+                # 补充缓存
+                for item in api_data:
+                    material_no = item.get('materialno', '')
+                    if material_no:
+                        cache._cache['material'][material_no] = item
+                
+                # 合并结果
+                cached_data.extend(api_data)
+            except Exception as e:
+                error_msg = f"查询物料信息时发生网络错误：{str(e)}"
+                logger.fail("查询物料信息", materialnos_str, error_msg)
+        
+        return cached_data
 
 
     @staticmethod
@@ -445,27 +928,68 @@ class ApsHelpers:
         Returns:
             工单计划单详情
         """
-        url = f"{THIS_BASE_URL}/api/v_supply_mo/{supplyno}?db_name={MYAPS_MAIN_DB}&prev_mo={get_prev_mo}&next_mo={get_next_mo}&origin_so={get_origin_so}"
-        supply_response_json = ApsHelpers._call_api('GET', url)
-        
-        if supply_response_json.get('success') != 0 and supply_response_json.get('data'):
-            return supply_response_json['data'][0]
+        cache = get_production_cache()
+        mo_data = cache.get_supply_mo(supplyno)
+
+        if mo_data:
+            all_orderwc = list(cache._cache['orderwc'].values())
+            mo_data['orderwc'] = [_ for _ in all_orderwc if _['orderno'].startswith(supplyno)]
+            
+            if get_origin_so:
+                vendorno = mo_data.get('vendorno', '')
+                if vendorno:
+                    mo_data['so'] = ApsHelpers.get_demand_datalist(vendorno)
+
+            if get_prev_mo:
+                related_demand = cache.get_demand(demand_no=supplyno)
+                demands_data = [_ for _ in related_demand if _.get('type') != 'SO']
+                if demands_data:
+                    demands_no = ','.join([f"'{i['demandno']}'" for i in demands_data])
+                    peg_query_result = cache.batch_get_peg_by_demand(demands_no)
+                    mo_data['prev_mo'] = cache.batch_get_supply_mo(peg_query_result)
+                
+            if get_next_mo:
+                demands_no = cache.get_peg_by_supply(supplyno)
+                mo_data['next_mo'] = cache.batch_get_supply_mo(demands_no)
+            return mo_data
         else:
-            raise Exception(f"API返回错误: {supply_response_json.get('message', '未知错误')}")
+            url = f"{THIS_BASE_URL}/api/v_supply_mo/{supplyno}?db_name={MYAPS_MAIN_DB}&prev_mo={get_prev_mo}&next_mo={get_next_mo}&origin_so={get_origin_so}"
+            supply_response_json = ApsHelpers._call_api('GET', url)
+            try:
+                if supply_response_json.get('success') != 0 and supply_response_json.get('data'):
+                    mo_data = supply_response_json['data'][0]
+                    cache._cache['supply_mo'][supplyno] = mo_data
+                    return mo_data
+                else:
+                    # raise Exception(f"API返回错误: {supply_response_json.get('message', '未知错误')}")
+                    logger.fail("获取工单计划单详情", supplyno, f"API返回错误: {supply_response_json.get('message', '未知错误')}")
+            except Exception as e:
+                logger.fail("获取工单计划单详情", supplyno, f"{str(e)}")
 
 
     @staticmethod
     def get_demand_datalist(demandno: str) -> List[Dict]:
         """
-        获取工单原料需求
+        获取需求信息（优先从缓存获取，缓存未命中则访问API并加入缓存）
         Args:
             demandno: 需求编号，根据 APS pegging 算法，也即供应号
         Returns:
             工单原料需求详情
         """
+        cache = get_production_cache()
+        result_data = cache.get_demand(demandno)
+        
+        if result_data:
+            return result_data
+        
         url = f"{THIS_BASE_URL}/api/v_demand/{demandno}?db_name={MYAPS_MAIN_DB}"
         demand_response_json = ApsHelpers._call_api('GET', url)
-        return demand_response_json.get('data', [])
+        api_data = demand_response_json.get('data', [])
+        
+        if api_data:
+            cache._cache['demand'][demandno] = api_data
+        
+        return api_data
 
 
     @staticmethod

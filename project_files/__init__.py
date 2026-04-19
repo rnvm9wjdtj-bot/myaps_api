@@ -12,7 +12,7 @@ env_file = os.path.join(BASE_DIR, '.env')
 load_dotenv(env_file)
 
 # 导入模块
-from core.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET, MYAPS_DBSET_LIST
+from core.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET, MYAPS_DBSET_LIST, PROJECT_DIR
 from globalobjects.globalconst import OrderStatusEnum
 from apps.io_api.utils.common import dict_to_lower_keys
 from globalobjects import logger as log_config
@@ -34,11 +34,10 @@ _HTTP_SESSION = get_optimized_session(
 
 
 # 确保环境变量正确设置
-project_dir = os.getenv("PROJECT_DIR")
-if not project_dir:
+if not PROJECT_DIR:
     raise ValueError("PROJECT_DIR环境变量未设置")
 
-project_client = importlib.import_module(f'project_files.{project_dir}.client')
+project_client = importlib.import_module(f'project_files.{PROJECT_DIR}.client')
 
 
 
@@ -89,9 +88,9 @@ class ApsEvent:
             import time
 
             # 信号量配置：限制最大并发数和事件间延迟
-            MAX_CONCURRENT = 3      # 最大并发处理数
+            MAX_CONCURRENT = 4      # 最大并发处理数
             POST_DELAY = 0.2        # 每个事件处理完后延迟（秒）
-            MAX_WORKERS = 10        # 线程池大小
+            MAX_WORKERS = 20        # 线程池大小
 
             semaphore = threading.Semaphore(MAX_CONCURRENT)
 
@@ -127,29 +126,54 @@ else:
     logger.debug("数据库事件注册", "", "事件已经注册，跳过重复注册")
 
 
+
+
+#################################################################################
+# ⬇️生产数据缓存管理器
+#################################################################################
+"""
+生产数据缓存管理器
+
+缓存内容：
+- supply_mo: {(MaterialNo, SupplyNo): data}
+- orderwc: {OrderNo: data}
+- demand: {(MaterialNo, DemandNo, ItemNo): data}
+- peg: {id: data}
+
+刷新机制：
+- 触发 aps_pl_status_a2e_event 事件时，检查计时器
+- 计时器 > 5分钟 → 全量刷新
+- 计时器 < 5分钟 → 重置计时器
+"""
+import time
+import asyncio
+import threading
+from typing import Dict, Any, List, Tuple, Optional
+from collections import defaultdict
+
+
+
+
+#################################################################################
+# ⬇️生产数据缓存事件钩子集成
+#################################################################################
+# 重写 handle_update_supply 函数，在事件处理前先初始化缓存
 @mysql_monitor.on_update_for_table("t_supply", database=MYAPS_MAIN_DB)
 def handle_update_supply(database: str, table: str, data: dict, data_diff: dict):
     """处理t_supply表的更新事件"""
-    from apps.data_opt.components._base import ApsHelpers
+    from apps.data_opt.components._base import ApsHelpers, get_production_cache
 
     data_before = dict_to_lower_keys(data['old'])
     type_before = data_before['type']
     status_before = data_before['status']
-
+    
     data_now = dict_to_lower_keys(data['new'])
     type_now = data_now['type']
     status_now = data_now['status']
-
+    
     if type_now == 'PL' and status_now == "A2E" and status_before in ["NEW", "CRE"]:
-        plno = data_now['supplyno']
-        # 工单管理界面中，通过点击按钮下达生产计划单PL
-        # ApsHelpers._modify_supply(supplyno=plno, memo=f"下达MO: {plno}")
-        try:
-            _HTTP_SESSION.patch(f'{THIS_BASE_URL}/api/t_supply/{plno}/...?db_name={MYAPS_MAIN_DB}', json={
-                'memo': f"📤 trying to push PL{plno}",
-            })
-        except Exception as e:
-            logger.error(f"更新memo失败: {e}")
+        plno = data_now['supplyno']        
+        
         aps_pl_status_a2e_event.add_event(data_now)
     elif type_before == 'PL' and type_now == 'MO':
         # 当 PL下达成功后，推送领料申请（RS）

@@ -24,11 +24,11 @@ cpu_count = os.cpu_count() or 4
 db_count = len(MYAPS_DBSET_LIST)
 
 # 动态计算连接池大小：
-# - 单账套：maxsize=15
-# - 多账套：根据账套数量递减，最小为3
-# - 确保总连接数不超过 30（考虑到服务器限制非常严格）
-maxsize_per_db = min(15, max(3, 30 // max(db_count, 1)))
-minsize_per_db = min(2, maxsize_per_db // 2)
+# - 单账套：maxsize=20
+# - 多账套：根据账套数量递减，最小为5
+# - 确保总连接数不超过 50（优化后的限制）
+maxsize_per_db = min(20, max(5, 50 // max(db_count, 1)))
+minsize_per_db = min(5, maxsize_per_db // 2)
 
 # logger.info(f"数据库连接池配置：{db_count}个账套，每个账套minsize={minsize_per_db}, maxsize={maxsize_per_db}")
 
@@ -62,12 +62,12 @@ for db in MYAPS_DBSET_LIST:
             "password": MYAPS_DB_PASSWORD,
             "database": db,
             "charset": "utf8mb4",
-            "connect_timeout": 30,  # 减少连接超时时间到30秒
-            "minsize": minsize_per_db,  # 根据账套数量动态调整最小连接数
-            "maxsize": maxsize_per_db,  # 根据账套数量动态调整最大连接数
+            "connect_timeout": 30,
+            "minsize": minsize_per_db,
+            "maxsize": maxsize_per_db,
             "ssl": None,
             "echo": False,
-            "pool_recycle": 300,  # 减少连接回收时间到5分钟，防止连接超时和泄漏
+            "pool_recycle": 3600,  # 优化：增加连接回收时间到1小时，减少频繁重建连接
         }
     }
 

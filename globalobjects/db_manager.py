@@ -1,6 +1,8 @@
 from typing import List, Dict, Any, Tuple, Optional, Union, Literal
 from contextlib import asynccontextmanager
 from datetime import datetime
+import time
+import asyncio
 
 from tortoise import Tortoise
 from tortoise.connection import connections
@@ -112,8 +114,8 @@ class DbManager:
         procedure_name: str, 
         params_list: List[List[Any]] = None, 
         use_transaction: Optional[bool] = None,
-        max_retries: int = 5,  # 增加最大重试次数到5次
-        retry_delay: float = 2.0  # 增加基础重试延迟时间到2秒
+        max_retries: int = 5, 
+        retry_delay: float = 2.0 
     ) -> Dict[str, Any]:
         """
         调用数据库存储过程（支持死锁自动重试）
@@ -140,6 +142,11 @@ class DbManager:
         
         while retry_count <= max_retries:
             try:
+                # 优化：在获取连接前先检查连接池状态
+                if retry_count > 0:
+                    # 等待并确保连接刷新完成
+                    await asyncio.sleep(0.5)
+                
                 conn = Tortoise.get_connection(self.connection_name)
                 affect_count = 0
                 results = []
@@ -192,14 +199,22 @@ class DbManager:
                     is_connection_error or is_timeout_error or is_network_error or is_pool_error) and retry_count < max_retries:
                     retry_count += 1
                     # 使用指数退避策略，增加重试延迟时间
-                    # 对于死锁，使用更长的初始延迟
-                    base_delay = retry_delay * 2 if is_deadlock else retry_delay
+                    # 对于连接池关闭的错误，使用更长的延迟确保完全恢复
+                    if is_connection_closed:
+                        base_delay = 3.0  # 连接池关闭需要更长的恢复时间
+                    elif is_deadlock:
+                        base_delay = retry_delay * 2
+                    else:
+                        base_delay = retry_delay
+                    
                     current_delay = base_delay * (2 ** (retry_count - 1))
                     # 限制最大延迟时间为20秒
                     current_delay = min(current_delay, 20.0)
                     
                     error_type = "连接错误"
-                    if is_deadlock:
+                    if is_connection_closed:
+                        error_type = "连接池关闭"
+                    elif is_deadlock:
                         error_type = "死锁"
                     elif is_timeout_error:
                         error_type = "超时错误"
@@ -214,9 +229,9 @@ class DbManager:
                     
                     # 尝试刷新连接
                     if not is_deadlock:
-                        await self.refresh_connection()
+                        # 对于连接池关闭的错误，使用快速模式刷新
+                        await self.refresh_connection(fast_mode=is_connection_closed)
                     
-                    import asyncio
                     await asyncio.sleep(current_delay)
                     continue
                 
@@ -224,15 +239,16 @@ class DbManager:
                 raise last_exception
     
 
-    async def query_data(self, table_name: str, filter_string: str = '', order_string: str = '', batch_size: int = 1000, max_retries: int = 3) -> Dict[str, Any]:
+    async def query_data(self, table_name: str, filter_string: str = '', order_string: str = '', page_size: int = 1000, page_index: int = 0, max_retries: int = 3) -> Dict[str, Any]:
         """
-        查询数据库表数据，支持重试机制
+        查询数据库表数据，获取符合筛选条件的数据，支持重试机制
         
         Args:
             table_name: 表名
             filter_string: WHERE条件字符串（可选）
             order_string: ORDER BY排序字符串（可选）
-            batch_size: 分批次查询的批次大小（默认1000）
+            page_size: 分页查询的页大小（最大/默认1000）
+            page_index: 分页查询的页码（默认0，获取全部数据；若大于0则取对应页数据）
             max_retries: 最大重试次数（默认3次）
             
         Returns:
@@ -243,6 +259,7 @@ class DbManager:
         """
         retry_count = 0
         last_exception = None
+        page_size = min(page_size, 1000)  # 限制最大页大小为1000
         
         while retry_count <= max_retries:
             start_time = datetime.now()
@@ -264,30 +281,24 @@ class DbManager:
                 # 查询数据
                 all_data = []
                 
-                if total <= batch_size:
-                    # 数据量不大，直接查询全部
-                    sql = f'SELECT * FROM `{table_name}` {where} {order}'
-                    _, data = await conn.execute_query(sql)
-                    all_data.extend(data)
-                else:
-                    # 数据量过大，分批次查询
-                    offset = 0
-                    while offset < total:
-                        # 构建带LIMIT和OFFSET的分页查询SQL
-                        sql = f'SELECT * FROM `{table_name}` {where} {order} LIMIT {batch_size} OFFSET {offset}'
-                        _, batch_data = await conn.execute_query(sql)
-                        all_data.extend(batch_data)
-                        offset += batch_size
-                        
-                        # 如果当前批次数据不足batch_size，说明已经获取完所有数据
-                        if len(batch_data) < batch_size:
-                            break
-                
+                offset = max((page_index - 1) * page_size, 0)
+                while offset < total:
+                    # 构建带LIMIT和OFFSET的分页查询SQL
+                    sql = f'SELECT * FROM `{table_name}` {where} {order} LIMIT {page_size} OFFSET {offset}'
+                    _, batch_data = await conn.execute_query(sql)
+                    all_data.extend(batch_data)
+                    if page_index > 0:  # 若page_index大于0，说明需要查询指定页数据，查询当前页后直接退出
+                        break
+                    offset += page_size
+                    # 如果当前批次数据不足page_size，说明已经获取完所有数据
+                    if len(batch_data) < page_size:
+                        break
+            
                 execution_time = (datetime.now() - start_time).total_seconds()
                 
                 # 更新统计信息
                 self.stats['total_processed'] += total
-                self.stats['batches_executed'] += (total + batch_size - 1) // batch_size
+                self.stats['batches_executed'] += (total + page_size - 1) // page_size
                 self.stats['last_execution_time'] = execution_time
                 
                 response = {
@@ -297,7 +308,8 @@ class DbManager:
                     "order": order_string,
                     "execution_time": execution_time,
                     "total": total,
-                    "batch_size": batch_size,
+                    "page_size": page_size,
+                    "page_index": page_index,
                     "data": [dict_to_lower_keys(item) for item in all_data]
                 }
                 
@@ -1084,7 +1096,7 @@ class DbManager:
     
     async def get_connection_pool_status(self) -> Dict[str, Any]:
         """
-        获取连接池状态
+        获取连接池状态（增强版）
         
         Returns:
             连接池状态信息
@@ -1095,7 +1107,10 @@ class DbManager:
             
             status = {
                 'connection_name': self.connection_name,
-                'pool_available': pool is not None
+                'pool_available': pool is not None,
+                'timestamp': time.time(),
+                'warnings': [],
+                'alerts': []
             }
             
             if pool:
@@ -1176,6 +1191,20 @@ class DbManager:
                 # 直接设置默认值
                 else:
                     status['used_connections'] = 0  # 默认值
+                
+                # 计算使用率和预警
+                if status.get('max_size', 0) > 0:
+                    status['usage_rate'] = status['used_connections'] / status['max_size'] * 100
+                    
+                    # 使用率预警
+                    if status['usage_rate'] >= 90:
+                        status['alerts'].append(f"连接池使用率过高: {status['usage_rate']:.1f}%")
+                    elif status['usage_rate'] >= 80:
+                        status['warnings'].append(f"连接池使用率较高: {status['usage_rate']:.1f}%")
+                    
+                    # 空闲连接预警
+                    if status['idle_connections'] == 0:
+                        status['warnings'].append("连接池没有空闲连接")
             
             return status
         except Exception as e:
@@ -1183,7 +1212,8 @@ class DbManager:
             return {
                 'connection_name': self.connection_name,
                 'pool_available': False,
-                'error': str(e)
+                'error': str(e),
+                'timestamp': time.time()
             }
     
     async def check_connection_health(self, timeout: int = 5, fast_mode: bool = False) -> bool:

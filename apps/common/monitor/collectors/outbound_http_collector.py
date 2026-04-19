@@ -217,7 +217,8 @@ class OutboundHTTPCollector:
                 await outbound_request_storage.save_request(request_data)
             except Exception as e:
                 # 记录异常，确保即使发生异常也不会影响主流程
-                print(f"保存对外请求到数据库失败: {e}")
+                # print(f"保存对外请求到数据库失败: {e}")
+                pass
 
     def record_request_sync(
         self,
@@ -403,10 +404,12 @@ class OutboundHTTPCollector:
                     loop.run_until_complete(save_to_db())
                 except Exception as e:
                     # 记录异常，确保即使发生异常也不会影响主流程
-                    print(f"同步保存对外请求到数据库失败: {e}")
+                    # print(f"同步保存对外请求到数据库失败: {e}")
+                    pass
             except Exception as e:
                 # 记录异常，确保即使发生异常也不会影响主流程
-                print(f"创建数据库保存任务失败: {e}")
+                # print(f"创建数据库保存任务失败: {e}")
+                pass
 
     def get_metrics(self) -> Dict[str, Any]:
         """

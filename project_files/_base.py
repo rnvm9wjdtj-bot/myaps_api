@@ -3,8 +3,7 @@
 """
 
 # import threading
-import os, asyncio
-import logging, json, requests, pandas as pd
+import os, asyncio, logging, json, requests, pandas as pd, threading
 from socket import MsgFlag
 from typing import Literal, List, Dict, Any, Optional
 from abc import ABC, abstractmethod
@@ -23,7 +22,7 @@ from apps.io_api.utils.db_operation import db_delete, db_bupsert, call_dbprocdur
 from apps.data_opt.utils.scheduler import cron_task
 from apps.data_opt.utils.common import add_basic_auth_requests, get_session
 from apps.data_opt.utils.data_processor import DataProcessor
-from apps.data_opt.components._base import ApsHelpers
+from apps.data_opt.components._base import ApsHelpers, get_production_cache
 from apps.data_opt.components.simple_hap import HapConnection
 
 
@@ -44,3 +43,4 @@ def get_scheduler_minute(offset: int=0):
 from collections import namedtuple
 # 定义任务执行结果的具名元组
 TaskResult = namedtuple('TaskResult', ['status', 'error'])
+

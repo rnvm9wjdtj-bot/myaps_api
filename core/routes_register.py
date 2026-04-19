@@ -9,9 +9,9 @@ router = APIRouter()
 
 def register_routes(app):
     app.include_router(io_rt, prefix="/api", tags=[])
-    app.include_router(do_rt, prefix="/do", tags=[])
-    app.include_router(monitor_rt, tags=["monitor"])
-    app.include_router(help_rt, tags=["help"])
+    app.include_router(do_rt, prefix="/do", tags=[], include_in_schema=False)
+    app.include_router(monitor_rt, tags=["monitor"], include_in_schema=False)
+    app.include_router(help_rt, tags=["help"], include_in_schema=False)
 
 
     @app.get("/monitor", response_class=HTMLResponse, include_in_schema=False)
@@ -19,7 +19,7 @@ def register_routes(app):
         with open("static/monitor/index.html", "r", encoding="utf-8") as f:
             return f.read()
 
-    @app.get("/")
+    @app.get("/", include_in_schema=False)
     async def read_root():
         return {
             "message": "Welcome to MyAPI",
