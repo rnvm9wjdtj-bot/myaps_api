@@ -463,9 +463,9 @@ async def get_meta():
     include_in_schema=False
 )
 async def get_material_page(
+    db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     page_index: int = Query(0, description="页码"),
     page_size: int = Query(1000, description="每页数量"),
-    db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套")
 ):
     db_name = db_name.replace(" ", "")
     return await db_query(db_name=db_name, model_or_tablename="t_material", page_index=page_index, page_size=page_size)
@@ -820,19 +820,19 @@ async def delete_supply(
 )
 async def get_demand_page(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-    starttime: str = Query(None, description="需求开始时间"),
-    endtime: str = Query(None, description="需求截止时间"),
-    pagesize: int = Query(1000, description="每页数量"),
-    pageindex: int = Query(0, description="页码"),
+    start_time: str = Query(None, description="需求开始时间"),
+    end_time: str = Query(None, description="需求截止时间"),
+    page_size: int = Query(1000, description="每页数量"),
+    page_index: int = Query(0, description="页码"),
 ):
     db_name = db_name.replace(" ", "")
     filter = []
-    if starttime:
-        filter.append(f"`Req_Date` >= '{starttime}'")
-    if endtime:
-        filter.append(f"`Req_Date` <= '{endtime}'")
+    if start_time:
+        filter.append(f"`Req_Date` >= '{start_time}'")
+    if end_time:
+        filter.append(f"`Req_Date` <= '{end_time}'")
     filter_string = " AND ".join(filter)
-    return await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=filter_string, page_size=pagesize, page_index=pageindex)
+    return await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=filter_string, page_size=page_size, page_index=page_index)
 
 
 @rt.get(
@@ -921,21 +921,21 @@ async def patch_demand(
 )
 async def get_mo_page(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-    starttime: datetime = Query(None, description="工单开工时间"),
-    endtime: datetime = Query(None, description="工单完工时间"),
-    pagesize: int = Query(1000, description="每页数量"),
-    pageindex: int = Query(0, description="页码"),
+    start_time: datetime = Query(None, description="工单开工时间"),
+    end_time: datetime = Query(None, description="工单完工时间"),
+    page_size: int = Query(1000, description="每页数量"),
+    page_index: int = Query(0, description="页码"),
     # x_api_key: str = Header(None, description="API密钥")
 ):
     db_name = db_name.replace(" ", "")
 
     filter = []
-    if starttime:
-        filter.append(f"`DT_OrdStart` >= '{starttime}'")
-    if endtime:
-        filter.append(f"`DT_OrdEnd` <= '{endtime}'")
+    if start_time:
+        filter.append(f"`DT_OrdStart` >= '{start_time}'")
+    if end_time:
+        filter.append(f"`DT_OrdEnd` <= '{end_time}'")
     filter_string = " AND ".join(filter)
-    result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=filter_string, page_size=pagesize, page_index=pageindex)
+    result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=filter_string, page_size=page_size, page_index=page_index)
     return result
 
 
@@ -1146,20 +1146,20 @@ async def query_workreport(
 )
 async def get_orderwc_page(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-    starttime: datetime = Query(None, description="工序开工时间"),
-    endtime: datetime = Query(None, description="工序完工时间"),
-    pagesize: int = Query(1000, description="每页数量"),
-    pageindex: int = Query(0, description="页码"),
+    start_time: datetime = Query(None, description="工序开工时间"),
+    end_time: datetime = Query(None, description="工序完工时间"),
+    page_size: int = Query(1000, description="每页数量"),
+    page_index: int = Query(0, description="页码"),
     # x_api_key: str = Header(None, description="API密钥")
 ):
     db_name = db_name.replace(" ", "")
     filter = []
-    if starttime:
-        filter.append(f"`DT_Start` >= '{starttime}'")
-    if endtime:
-        filter.append(f"`DT_End` <= '{endtime}'")
+    if start_time:
+        filter.append(f"`DT_Start` >= '{start_time}'")
+    if end_time:
+        filter.append(f"`DT_End` <= '{end_time}'")
     filter_string = " AND ".join(filter)
-    return await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=filter_string, page_size=pagesize, page_index=pageindex)
+    return await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=filter_string, page_size=page_size, page_index=page_index) 
 
 
 @rt.get(
@@ -1184,11 +1184,11 @@ async def get_orderwc(
 )
 async def get_peg_page(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-    pagesize: int = Query(1000, description="每页数量"),
-    pageindex: int = Query(0, description="页码"),
+    page_size: int = Query(1000, description="每页数量"),
+    page_index: int = Query(0, description="页码"),
 ):
     db_name = db_name.replace(" ", "")
-    return await db_query(db_name=db_name, model_or_tablename="v_peg", page_size=pagesize, page_index=pageindex)
+    return await db_query(db_name=db_name, model_or_tablename="v_peg", page_size=page_size, page_index=page_index)  
 
 
 @rt.get(
@@ -1200,9 +1200,12 @@ async def get_peg_page(
 )
 async def get_peg_relation(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+    page_size: int = Query(10000, description="每页数量"),
+    page_index: int = Query(0, description="页码"),
 ):
     db_name = db_name.replace(" ", "")
-    return await db_exec_sql(db_name=db_name, sql=V_PEG_SQL.format(where_string="1=1"), description="查询需求与供应的匹配关系")
+    return await db_query(db_name=db_name, model_or_tablename="v_peg", page_size=page_size, page_index=page_index)
+    # return await db_exec_sql(db_name=db_name, sql=V_PEG_SQL.format(where_string="1=1"), description="查询需求与供应的匹配关系")
 
 
 

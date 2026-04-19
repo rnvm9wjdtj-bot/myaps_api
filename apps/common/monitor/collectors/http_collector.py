@@ -38,7 +38,7 @@ class HTTPCollector:
         logger = log_config.get_logger(__name__)
 
         requests = list(self._collector._requests)
-        logger.info(f"开始保存请求数据，共 {len(requests)} 个请求")
+        logger.debug(f"开始保存请求数据，共 {len(requests)} 个请求")
 
         saved_count = 0
         for req in requests:
@@ -76,7 +76,8 @@ class HTTPCollector:
             except Exception as e:
                 logger.error(f"保存请求数据失败: {e}")
 
-        logger.info(f"请求数据保存完成，共保存 {saved_count} 个请求")
+        logger.debug(f"请求数据保存完成，共保存 {saved_count} 个请求")
+
 
     async def get_slow_requests(self, limit: int = 10) -> List[Dict[str, Any]]:
         """

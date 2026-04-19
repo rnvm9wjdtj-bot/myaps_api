@@ -71,14 +71,14 @@ async def websocket_endpoint(websocket: WebSocket, path: str = ""):
         "query_params": dict(websocket.query_params),
         "headers": {k: v for k, v in websocket.headers.items() if k.lower() not in ['cookie', 'authorization']},
     }
-    log_config.info(f"WebSocket 连接请求: {client_info}")
+    log_config.debug(f"WebSocket 连接请求: {client_info}")
 
     try:
         # 保持连接并接收消息，3秒超时后自动关闭（缩短超时时间）
         while True:
             try:
                 message = await asyncio.wait_for(websocket.receive_text(), timeout=60.0)
-                log_config.info(f"WebSocket 收到消息 [{full_path}]: {message}")
+                log_config.debug(f"WebSocket 收到消息 [{full_path}]: {message}")
                 await websocket.send_json({
                     "status": "received",
                     "path": full_path,
@@ -87,7 +87,7 @@ async def websocket_endpoint(websocket: WebSocket, path: str = ""):
             except asyncio.TimeoutError:
                 break
     except WebSocketDisconnect:
-        log_config.info(f"WebSocket 客户端断开连接: {client_info['client']} - {full_path}")
+        log_config.debug(f"WebSocket 客户端断开连接: {client_info['client']} - {full_path}")
     except Exception as e:
         log_config.warning(f"WebSocket 异常 [{full_path}]: {e}")
     finally:

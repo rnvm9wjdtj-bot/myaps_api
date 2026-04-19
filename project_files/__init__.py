@@ -161,37 +161,42 @@ from collections import defaultdict
 @mysql_monitor.on_update_for_table("t_supply", database=MYAPS_MAIN_DB)
 def handle_update_supply(database: str, table: str, data: dict, data_diff: dict):
     """处理t_supply表的更新事件"""
-    from apps.data_opt.components._base import ApsHelpers, get_production_cache
+    try:
+        from apps.data_opt.components._base import ApsHelpers, get_production_cache
 
-    data_before = dict_to_lower_keys(data['old'])
-    type_before = data_before['type']
-    status_before = data_before['status']
-    
-    data_now = dict_to_lower_keys(data['new'])
-    type_now = data_now['type']
-    status_now = data_now['status']
-    
-    if type_now == 'PL' and status_now == "A2E" and status_before in ["NEW", "CRE"]:
-        plno = data_now['supplyno']        
+        data_before = dict_to_lower_keys(data['old'])
+        type_before = data_before['type']
+        status_before = data_before['status']
         
-        aps_pl_status_a2e_event.add_event(data_now)
-    elif type_before == 'PL' and type_now == 'MO':
-        # 当 PL下达成功后，推送领料申请（RS）
-        aps_pl_typeto_mo_event.add_event(data_now)
-    
-    
+        data_now = dict_to_lower_keys(data['new'])
+        type_now = data_now['type']
+        status_now = data_now['status']
+        
+        if type_now == 'PL' and status_now == "A2E" and status_before in ["NEW", "CRE"]:
+            plno = data_now['supplyno']        
+            
+            aps_pl_status_a2e_event.add_event(data_now)
+        elif type_before == 'PL' and type_now == 'MO':
+            # 当 PL下达成功后，推送领料申请（RS）
+            aps_pl_typeto_mo_event.add_event(data_now)
+    except Exception as e:
+        logger.fail("处理t_supply更新事件", "", str(e))
+
 
 @mysql_monitor.on_insert_for_table("t_supply", database=MYAPS_MAIN_DB)
 def handle_insert_supply(database: str, table: str, data: dict):
     """处理t_supply表的插入事件"""
-    from apps.data_opt.components._base import ApsHelpers
+    try:
+        from apps.data_opt.components._base import ApsHelpers
 
-    new_data = dict_to_lower_keys(data['new'])
-    type_ = new_data['type']
-    # status_now = new_data['status']
+        new_data = dict_to_lower_keys(data['new'])
+        type_ = new_data['type']
+        # status_now = new_data['status']
 
-    if type_ == 'PR':
-        aps_pr_created_event.add_event(new_data)
+        if type_ == 'PR':
+            aps_pr_created_event.add_event(new_data)
+    except Exception as e:
+        logger.fail("处理t_supply插入事件", "", str(e))
    
 
 

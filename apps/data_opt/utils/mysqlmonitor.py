@@ -927,6 +927,9 @@ class MySQLBinlogMonitor:
     
     def _run_handler(self, handler, *args, **kwargs):
         """运行处理器函数，支持同步和异步函数"""
+        handler_name = getattr(handler, '__name__', str(handler))
+        start_time = time.time()
+        
         try:
             result = handler(*args, **kwargs)
             # 检查是否是协程对象
@@ -963,13 +966,28 @@ class MySQLBinlogMonitor:
                     def callback(fut):
                         try:
                             fut.result()
+                            exec_time = time.time() - start_time
+                            if exec_time > 5.0:
+                                logger.warning(f"异步处理器 {handler_name} 执行时间过长: {exec_time:.2f}秒")
+                            elif exec_time > 1.0:
+                                logger.debug(f"异步处理器 {handler_name} 执行时间: {exec_time:.2f}秒")
                         except Exception as e:
-                            logger.fail("异步处理器执行", "", str(e))
+                            logger.fail(f"异步处理器 {handler_name} 执行", "", str(e))
                     future.add_done_callback(callback)
                 except Exception as e:
-                    logger.fail("异步处理器提交", "", str(e))
+                    logger.fail(f"异步处理器 {handler_name} 提交", "", str(e))
+            else:
+                # 同步函数执行完成
+                exec_time = time.time() - start_time
+                if exec_time > 5.0:
+                    logger.warning(f"同步处理器 {handler_name} 执行时间过长: {exec_time:.2f}秒")
+                elif exec_time > 1.0:
+                    logger.debug(f"同步处理器 {handler_name} 执行时间: {exec_time:.2f}秒")
         except Exception as e:
-            logger.fail("处理器执行", "", str(e))
+            logger.fail(f"处理器 {handler_name} 执行", "", str(e))
+        finally:
+            # 确保即使出错也能继续处理其他事件
+            pass
         
 
     def process_binlog_event(self, event):

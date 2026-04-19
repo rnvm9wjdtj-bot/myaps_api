@@ -1339,16 +1339,20 @@ class DbManager:
                         # 尝试关闭所有连接
                         try:
                             from tortoise.connection import connections
-                            for conn_name in connections._connections.keys():
-                                try:
-                                    conn = connections.get(conn_name)
-                                    if conn and hasattr(conn, 'close'):
-                                        try:
-                                            await conn.close()
-                                        except Exception as close_error:
-                                            logger.warning(f"关闭连接 {conn_name} 时出错: {close_error}")
-                                except Exception as get_conn_error:
-                                    logger.warning(f"获取连接 {conn_name} 时出错: {get_conn_error}")
+                            # 安全检查：确保connections对象和_connections属性存在
+                            if hasattr(connections, '_connections'):
+                                for conn_name in connections._connections.keys():
+                                    try:
+                                        conn = connections.get(conn_name)
+                                        if conn and hasattr(conn, 'close'):
+                                            try:
+                                                await conn.close()
+                                            except Exception as close_error:
+                                                logger.warning(f"关闭连接 {conn_name} 时出错: {close_error}")
+                                    except Exception as get_conn_error:
+                                        logger.warning(f"获取连接 {conn_name} 时出错: {get_conn_error}")
+                            else:
+                                logger.info("连接池未初始化，跳过关闭操作")
                         except Exception as close_all_error:
                             logger.warning(f"关闭所有连接时出错: {close_all_error}")
                         

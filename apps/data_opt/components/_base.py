@@ -158,6 +158,7 @@ class _ProductionDataCache:
             finally:
                 self._is_loading = False
     
+
     def _initialize(self, db_name: str):
         """同步版本的初始化方法，使用 API 方式获取数据"""
         try:
@@ -194,160 +195,144 @@ class _ProductionDataCache:
             logger.fail("生产数据缓存", "", f"同步初始化失败: {e}")
             raise
     
+
+    def _fetch_paginated_data(self, url: str, page_size: int = 1000):
+        """通用的分页获取数据方法"""
+        all_data = []
+        page_index = 1
+        max_retries = 3
+        retry_delay = 2  # 秒
+        
+        while True:
+            paginated_url = f"{url}&page_index={page_index}&page_size={page_size}"
+            
+            for attempt in range(max_retries):
+                try:
+                    response = SESSION.get(paginated_url, timeout=(30, 60))
+                    response.raise_for_status()
+                    result = response.json()
+                    
+                    data_list = result.get('data', [])
+                    all_data.extend(data_list)
+                    
+                    # 检查是否还有下一页
+                    total = result.get('meta', {}).get('total', 0)
+                    if len(all_data) >= total:
+                        return all_data
+                    
+                    page_index += 1
+                    break
+                except Exception as e:
+                    logger.warning("生产数据缓存", "", f"分页获取数据失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay)
+                    else:
+                        # 达到最大重试次数，返回已获取的数据
+                        return all_data
+    
+
+    def _build_cache(self, db_name: str, api_endpoint: str, cache_name: str, cache_factory, process_item):
+        """通用的缓存构建方法"""
+        cache = cache_factory()
+        url = f"{THIS_BASE_URL}{api_endpoint}?db_name={db_name}"
+        
+        # 使用分页机制获取数据
+        data_list = self._fetch_paginated_data(url)
+        for item in data_list:
+            process_item(item, cache)
+        
+        self._cache[cache_name] = cache
+    
+
     def _build_supply_mo_cache(self, db_name: str):
         """使用 API 方式构建 supply_mo 缓存"""
-        cache = {}
-        max_retries = 3
-        retry_delay = 2  # 秒
+        def process_item(item, cache):
+            supply_no = item.get('supplyno', '')
+            if supply_no:
+                cache[supply_no] = item
         
-        url = f"{THIS_BASE_URL}/api/v_supply_mo/page?db_name={db_name}"
-        
-        for attempt in range(max_retries):
-            try:
-                response = SESSION.get(url, timeout=(30, 60))
-                response.raise_for_status()
-                result = response.json()
-                
-                data_list = result['data']
-                for item in data_list:
-                    supply_no = item.get('supplyno', '')
-                    if supply_no:
-                        cache[supply_no] = item
-                
-                # 成功获取数据，跳出重试循环
-                break
-            except Exception as e:
-                logger.warning("生产数据缓存", "", f"获取 supply_mo 失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(retry_delay)
-        
-        self._cache['supply_mo'] = cache
+        self._build_cache(
+            db_name=db_name,
+            api_endpoint="/api/v_supply_mo/page",
+            cache_name="supply_mo",
+            cache_factory=dict,
+            process_item=process_item
+        )
     
+
     def _build_orderwc_cache(self, db_name: str):
         """使用 API 方式构建 orderwc 缓存（以 supplyno 为索引）"""
-        cache = defaultdict(list)
-        max_retries = 3
-        retry_delay = 2  # 秒
-
-        url = f"{THIS_BASE_URL}/api/v_orderwc/page?db_name={db_name}"
+        def process_item(item, cache):
+            supply_no = item.get('supplyno', '')
+            if supply_no:
+                cache[supply_no].append(item)
         
-        for attempt in range(max_retries):
-            try:
-                response = SESSION.get(url, timeout=(30, 60))
-                response.raise_for_status()
-                result = response.json()
-
-                data_list = result['data']
-                for item in data_list:
-                    supply_no = item.get('supplyno', '')
-                    if supply_no:
-                        cache[supply_no].append(item)
-                
-                # 成功获取数据，跳出重试循环
-                break
-            except Exception as e:
-                logger.warning("生产数据缓存", "", f"获取 orderwc 失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(retry_delay)
-
-        
-        self._cache['orderwc'] = cache
+        self._build_cache(
+            db_name=db_name,
+            api_endpoint="/api/v_orderwc/page",
+            cache_name="orderwc",
+            cache_factory=lambda: defaultdict(list),
+            process_item=process_item
+        )
     
+
     def _build_demand_cache(self, db_name: str):
         """使用 API 方式构建 demand 缓存"""
-        cache = defaultdict(list)
-        max_retries = 3
-        retry_delay = 2  # 秒
+        def process_item(item, cache):
+            demand_no = item.get('demandno', '')
+            if demand_no:
+                cache[demand_no].append(item)
         
-        url = f"{THIS_BASE_URL}/api/v_demand/page?db_name={db_name}"
-        
-        for attempt in range(max_retries):
-            try:
-                response = SESSION.get(url, timeout=(30, 60))
-                response.raise_for_status()
-                result = response.json()
-                
-                data_list = result['data']
-                for item in data_list:
-                    demand_no = item.get('demandno', '')
-                    if demand_no:
-                        cache[demand_no].append(item)
-                
-                # 成功获取数据，跳出重试循环
-                break
-            except Exception as e:
-                logger.warning("生产数据缓存", "", f"获取 demand 失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(retry_delay)
-        
-        self._cache['demand'] = cache
-    
+        self._build_cache(
+            db_name=db_name,
+            api_endpoint="/api/v_demand/page",
+            cache_name="demand",
+            cache_factory=lambda: defaultdict(list),
+            process_item=process_item
+        )
+
 
     def _build_peg_cache(self, db_name: str):
         """使用 API 方式构建 peg 缓存（双向索引）"""
-        cache = {
-            'demand_to_supply': defaultdict(list),
-            'supply_to_demand': defaultdict(list)
-        }
-        max_retries = 3
-        retry_delay = 2  # 秒
+        def process_item(item, cache):
+            demand_no = item.get('demandno', '')
+            s_supply_no = item.get('s_supplyno', '')
+            
+            if demand_no and s_supply_no:
+                if s_supply_no not in cache['demand_to_supply'][demand_no]:
+                    cache['demand_to_supply'][demand_no].append(s_supply_no)
+                if demand_no not in cache['supply_to_demand'][s_supply_no]:
+                    cache['supply_to_demand'][s_supply_no].append(demand_no)
         
-        url = f"{THIS_BASE_URL}/api/v_peg/mini?db_name={db_name}"
+        def peg_cache_factory():
+            return {
+                'demand_to_supply': defaultdict(list),
+                'supply_to_demand': defaultdict(list)
+            }
         
-        for attempt in range(max_retries):
-            try:
-                response = SESSION.get(url, timeout=(30, 60))
-                response.raise_for_status()
-                result = response.json()
-                
-                data_list = result['data']
-                for item in data_list:
-                    demand_no = item.get('demandno', '')
-                    s_supply_no = item.get('s_supplyno', '')
-                    
-                    if demand_no and s_supply_no:
-                        if s_supply_no not in cache['demand_to_supply'][demand_no]:
-                            cache['demand_to_supply'][demand_no].append(s_supply_no)
-                        if demand_no not in cache['supply_to_demand'][s_supply_no]:
-                            cache['supply_to_demand'][s_supply_no].append(demand_no)
-
-                # 成功获取数据，跳出重试循环
-                break
-            except Exception as e:
-                logger.warning("生产数据缓存", "", f"获取 peg 失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(retry_delay)
-        
-        self._cache['peg'] = cache
+        self._build_cache(
+            db_name=db_name,
+            api_endpoint="/api/v_peg/mini",
+            cache_name="peg",
+            cache_factory=peg_cache_factory,
+            process_item=process_item
+        )
     
+
     def _build_material_cache(self, db_name: str):
         """使用 API 方式构建 material 缓存"""
-        cache = {}
-        max_retries = 3
-        retry_delay = 2  # 秒
+        def process_item(item, cache):
+            material_no = item.get('materialno', '')
+            if material_no:
+                cache[material_no] = item
         
-        url = f"{THIS_BASE_URL}/api/t_material/page?db_name={db_name}"
-        
-        for attempt in range(max_retries):
-            try:
-                response = SESSION.get(url, timeout=(30, 60))
-                response.raise_for_status()
-                result = response.json()
-                
-                data_list = result['data']
-                for item in data_list:
-                    material_no = item.get('materialno', '')
-                    if material_no:
-                        cache[material_no] = item
-                
-                # 成功获取数据，跳出重试循环
-                break
-            except Exception as e:
-                logger.warning("生产数据缓存", "", f"获取 material 失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(retry_delay)
-        
-        self._cache['material'] = cache
+        self._build_cache(
+            db_name=db_name,
+            api_endpoint="/api/t_material/page",
+            cache_name="material",
+            cache_factory=dict,
+            process_item=process_item
+        )
     
 
     def establish_production_cache(self, db_name: str):
@@ -932,8 +917,8 @@ class ApsHelpers:
         mo_data = cache.get_supply_mo(supplyno)
 
         if mo_data:
-            all_orderwc = list(cache._cache['orderwc'].values())
-            mo_data['orderwc'] = [_ for _ in all_orderwc if _['orderno'].startswith(supplyno)]
+
+            mo_data['orderwc'] = cache.get_orderwc(supplyno)
             
             if get_origin_so:
                 vendorno = mo_data.get('vendorno', '')
@@ -944,7 +929,7 @@ class ApsHelpers:
                 related_demand = cache.get_demand(demand_no=supplyno)
                 demands_data = [_ for _ in related_demand if _.get('type') != 'SO']
                 if demands_data:
-                    demands_no = ','.join([f"'{i['demandno']}'" for i in demands_data])
+                    demands_no = [_['demandno'] for _ in demands_data]
                     peg_query_result = cache.batch_get_peg_by_demand(demands_no)
                     mo_data['prev_mo'] = cache.batch_get_supply_mo(peg_query_result)
                 

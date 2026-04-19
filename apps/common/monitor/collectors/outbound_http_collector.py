@@ -395,7 +395,8 @@ class OutboundHTTPCollector:
                                 await Tortoise.init(config=TORTOISE_ORM_CONFIG)
                             await outbound_request_storage.save_request(request_data)
                         except Exception as e:
-                            print(f"保存对外请求到数据库失败: {e}")
+                            pass
+                            # print(f"保存对外请求到数据库失败: {e}")
                         finally:
                             # 不要关闭数据库连接，避免影响其他线程
                             pass
