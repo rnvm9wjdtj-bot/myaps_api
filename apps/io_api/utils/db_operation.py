@@ -1,6 +1,11 @@
-from typing import Dict, Any, List, Literal, Tuple, Optional
+from typing import Dict, Any, List, Literal, Tuple, Optional, Callable
 from copy import deepcopy
 from dataclasses import dataclass
+from functools import wraps
+import asyncio
+import json
+import uuid
+from datetime import datetime, timedelta
 
 from fastapi import status
 from tortoise.models import Model as TortoiseBaseModel
@@ -9,6 +14,8 @@ from pydantic import BaseModel as PydanticSchema
 from core.settings import MYAPS_DB_SET, LOG_LEVEL
 from globalobjects.db_manager import get_db_managers, DbManager
 from globalobjects import logger as log_config
+from apps.common.monitor.models import FailedOperation
+from apps.common.monitor.allert import alert_sender, AlertType
 
 # 为了保持向后兼容，重新导出 db_managers
 def db_managers():
@@ -38,6 +45,150 @@ from ..models import TABLE_MODEL_MAPPING
 
 # 获取控制台日志器
 logger = log_config.get_logger(__name__, level=LOG_LEVEL)
+
+
+def retry_on_connection_error(max_retries: int = 3, retry_delay: float = 1.0):
+    """
+    连接错误重试装饰器
+    当检测到 "Cannot acquire connection after closing pool" 等连接错误时，
+    自动刷新连接并重试，所有重试都失败后持久化到SQLite并告警
+    
+    Args:
+        max_retries: 最大重试次数
+        retry_delay: 重试延迟（秒）
+    """
+    def decorator(func: Callable):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            # 从参数中提取 db_names（第一个参数通常是 db_names）
+            db_names = None
+            if args and isinstance(args[0], str):
+                db_names = args[0]
+            elif 'db_names' in kwargs:
+                db_names = kwargs['db_names']
+            elif 'db_name' in kwargs:
+                db_names = kwargs['db_name']
+            
+            last_exception = None
+            
+            for attempt in range(max_retries + 1):
+                try:
+                    return await func(*args, **kwargs)
+                except Exception as e:
+                    last_exception = e
+                    error_str = str(e)
+                    
+                    # 检查是否是连接相关错误
+                    is_connection_error = (
+                        "Cannot acquire connection after closing pool" in error_str or
+                        "OperationalError" in str(type(e)) or
+                        "NoneType" in error_str or
+                        "closed" in error_str.lower()
+                    )
+                    
+                    if not is_connection_error or attempt >= max_retries:
+                        # 如果不是连接错误或已达到最大重试次数
+                        logger.fail(
+                            f"执行 {func.__name__}",
+                            f"（尝试 {attempt + 1}/{max_retries + 1}）",
+                            error_str
+                        )
+                        
+                        # 如果是连接错误，持久化到SQLite并告警
+                        if is_connection_error and db_names:
+                            valid_dbs = validate_databases(db_names)
+                            for db_name in valid_dbs:
+                                try:
+                                    operation_id = str(uuid.uuid4())
+                                    
+                                    # 序列化参数
+                                    try:
+                                        args_json = json.dumps([json.dumps(arg) if not isinstance(arg, (str, int, float, bool, type(None))) else arg for arg in args])
+                                    except (TypeError, OverflowError):
+                                        args_json = json.dumps([str(arg) for arg in args])
+                                    
+                                    try:
+                                        kwargs_json = json.dumps({k: json.dumps(v) if not isinstance(v, (str, int, float, bool, type(None))) else v for k, v in kwargs.items()})
+                                    except (TypeError, OverflowError):
+                                        kwargs_json = json.dumps({k: str(v) for k, v in kwargs.items()})
+                                    
+                                    # 持久化到SQLite
+                                    await FailedOperation.create(
+                                        operation_id=operation_id,
+                                        timestamp=datetime.now(),
+                                        db_name=db_name,
+                                        function_name=func.__name__,
+                                        args_json=args_json,
+                                        kwargs_json=kwargs_json,
+                                        error_message=error_str,
+                                        error_type=e.__class__.__name__,
+                                        status="pending",
+                                        retry_count=0,
+                                        max_retries=10,
+                                        next_retry_time=datetime.now() + timedelta(minutes=5),
+                                    )
+                                    
+                                    # 触发告警
+                                    await alert_sender.trigger_alert(
+                                        AlertType.DB_CONNECTION,
+                                        {
+                                            "operation_id": operation_id,
+                                            "db_name": db_name,
+                                            "function": func.__name__,
+                                            "error": error_str,
+                                            "retry_count": attempt + 1,
+                                            "next_retry": "5分钟后"
+                                        }
+                                    )
+                                    
+                                    logger.info(
+                                        f"已持久化失败操作",
+                                        f"{db_name}/{func.__name__}",
+                                        f"operation_id={operation_id}"
+                                    )
+                                except Exception as persist_error:
+                                    logger.error(
+                                        f"持久化失败操作失败",
+                                        f"{db_name}/{func.__name__}",
+                                        str(persist_error)
+                                    )
+                        
+                        raise
+                    
+                    # 记录警告日志
+                    logger.warning(
+                        f"检测到连接错误，准备重试（尝试 {attempt + 1}/{max_retries + 1}）",
+                        f"{func.__name__}",
+                        error_str
+                    )
+                    
+                    # 尝试刷新连接
+                    if db_names:
+                        valid_dbs = validate_databases(db_names)
+                        for db_name in valid_dbs:
+                            try:
+                                db_manager = get_db_manager(db_name)
+                                await db_manager.refresh_connection(fast_mode=True)
+                                logger.info(
+                                    f"已尝试刷新连接",
+                                    f"{db_name}",
+                                    f"为下一次重试做准备"
+                                )
+                            except Exception as refresh_error:
+                                logger.error(
+                                    f"刷新连接失败",
+                                    f"{db_name}",
+                                    str(refresh_error)
+                                )
+                    
+                    # 等待一段时间后重试
+                    await asyncio.sleep(retry_delay * (attempt + 1))
+            
+            # 如果到达这里，说明所有重试都失败了
+            raise last_exception
+        
+        return wrapper
+    return decorator
 
 
 
@@ -86,6 +237,7 @@ def validate_databases(db_name: str) -> List[str]:
 
 
 
+@retry_on_connection_error(max_retries=3, retry_delay=1.0)
 async def db_exec_sql(db_name: str, sql: str, params: Optional[List[Any]] = None, description: str = ''):
     """
     执行原始SQL语句
@@ -123,6 +275,7 @@ async def db_exec_sql(db_name: str, sql: str, params: Optional[List[Any]] = None
 
 
     
+@retry_on_connection_error(max_retries=3, retry_delay=1.0)
 async def db_query(db_name: str, model_or_tablename: TortoiseBaseModel | str, filter_string: str = '', order_string: str = '', page_size: int = 1000, page_index: int = 1):
     _, table_name = process_model_or_tablename(model_or_tablename)
     try:
@@ -231,6 +384,7 @@ async def preprocess_data(data_list: List[PydanticSchema | Dict[str, Any]], mode
     return processed_list
 
 
+@retry_on_connection_error(max_retries=3, retry_delay=1.0)
 async def db_supsert(db_names: str, model_or_tablename: TortoiseBaseModel | str, data_item: PydanticSchema | Dict[str, Any], use_rawdata: bool = True):
     """
     通用单条数据写入操作，支持创建和更新，整体逻辑类似于旧版的逐条创建或更新。比 db_bupsert 颗粒度更细，但会损失一定性能
@@ -304,6 +458,7 @@ async def db_supsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
     )
 
 
+@retry_on_connection_error(max_retries=3, retry_delay=1.0)
 async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str, data_list: List[PydanticSchema | Dict[str, Any]], use_orm_or_sql: Literal["orm", "sql", "auto"] = "sql", exclude_none: bool = True, batch_size: int = 1000, on_batch_error: Literal["continue", "skip"] = "continue"):
     """
     通用批量写入操作，支持创建和更新
@@ -519,6 +674,7 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
         )
 
 
+@retry_on_connection_error(max_retries=3, retry_delay=1.0)
 async def db_delete(db_names: str, model_or_tablename: TortoiseBaseModel | str, filter_string: str | None = None):
     """
     执行SQL删除操作
@@ -555,6 +711,7 @@ async def db_delete(db_names: str, model_or_tablename: TortoiseBaseModel | str, 
 
 
 
+@retry_on_connection_error(max_retries=3, retry_delay=1.0)
 async def call_dbprocdure(db_names: str, procedure_name: str, params_list: List[List[Any]] = [[]]):
     """
     调用数据库存储过程
@@ -590,6 +747,7 @@ async def call_dbprocdure(db_names: str, procedure_name: str, params_list: List[
         )
 
 
+@retry_on_connection_error(max_retries=3, retry_delay=1.0)
 async def db_update_by_index(
     db_names: str,
     model_or_tablename: TortoiseBaseModel | str,

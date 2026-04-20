@@ -192,6 +192,48 @@ class SystemLog(Model):
         ]
 
 
+class FailedOperation(Model):
+    """失败的数据库操作持久化模型"""
+    
+    # 基础信息
+    id = fields.IntField(pk=True, auto_generate=True)
+    operation_id = fields.CharField(max_length=64, unique=True, description="操作唯一ID (UUID)")
+    timestamp = fields.DatetimeField(index=True, description="失败时间")
+    
+    # 操作信息
+    db_name = fields.CharField(max_length=100, index=True, description="数据库名称")
+    function_name = fields.CharField(max_length=255, index=True, description="调用的函数名")
+    args_json = fields.TextField(description="位置参数 JSON")
+    kwargs_json = fields.TextField(description="关键字参数 JSON")
+    
+    # 错误信息
+    error_message = fields.TextField(description="错误信息")
+    error_type = fields.CharField(max_length=255, description="错误类型")
+    
+    # 状态管理
+    status = fields.CharField(max_length=50, default="pending", index=True,
+                           choices=["pending", "processing", "completed", "failed"])
+    retry_count = fields.IntField(default=0, description="已重试次数")
+    max_retries = fields.IntField(default=10, description="最大重试次数")
+    last_retry_time = fields.DatetimeField(null=True, description="最后重试时间")
+    next_retry_time = fields.DatetimeField(null=True, index=True, description="下次重试时间")
+    
+    # 扩展信息
+    event_type = fields.CharField(max_length=100, null=True, description="关联的事件类型 (如 PL_STATUS_A2E)")
+    event_data = fields.TextField(null=True, description="事件数据 (如适用)")
+    metadata = fields.TextField(null=True, description="元数据 JSON")
+
+    class Meta:
+        table = "failed_operations"
+        default_connection = "local_data"
+        indexes = [
+            ("timestamp",),
+            ("db_name", "status"),
+            ("next_retry_time", "status"),
+            ("event_type",),
+        ]
+
+
 # class APILog(Model):
 #     """API 相关日志模型"""
 #     id = fields.IntField(pk=True, auto_generate=True)
@@ -202,7 +244,7 @@ class SystemLog(Model):
 #     message = fields.TextField(description="日志消息")
 #     details = fields.TextField(null=True, description="详细信息")
 #     stack_trace = fields.TextField(null=True, description="堆栈跟踪")
-
+#
 #     class Meta:
 #         table = "api_logs"
 #         default_connection = "local_data"
@@ -225,7 +267,7 @@ class SystemLog(Model):
 #     details = fields.TextField(null=True, description="详细信息")
 #     is_slow = fields.BooleanField(default=False, description="是否慢操作")
 #     slow_threshold = fields.FloatField(null=True, description="慢操作阈值（毫秒）")
-
+#
 #     class Meta:
 #         table = "performance_logs"
 #         default_connection = "local_data"
@@ -248,7 +290,7 @@ class SystemLog(Model):
 #     action = fields.TextField(description="操作描述")
 #     status = fields.CharField(max_length=20, description="状态：成功、失败")
 #     details = fields.TextField(null=True, description="详细信息")
-
+#
 #     class Meta:
 #         table = "security_logs"
 #         default_connection = "local_data"

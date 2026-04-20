@@ -121,4 +121,4 @@ REDIS_PASSWORD = os.getenv("REDIS_PASSWORD") or json_env_config.get("REDIS_PASSW
 
 # 事件流量控制
 MAX_EVENTS_BATCH_SIZE = int(os.getenv("MAX_EVENTS_BATCH_SIZE") or 1)
-MAX_EVENTS_PER_SECOND = int(os.getenv("MAX_EVENTS_PER_SECOND") or 2)
+MAX_EVENTS_PER_SECOND = int(os.getenv("MAX_EVENTS_PER_SECOND") or 1)

@@ -11,7 +11,7 @@ from dateutil.relativedelta import relativedelta
 
 from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
 from .._base import (
-    get_scheduler_minute,
+    get_scheduler_minute, async_rate_limit,
     ApsHelpers, CLIENT_LOGGER, standard_response, get_session,
     cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, PROJECT_JSON_FILE, pdv
 )
@@ -225,6 +225,7 @@ def task_push_seasonpr_to_srm():
 # ⬇️APS事件
 #################################################################################
 async def batch_handle_pl_status_a2e(event_data: List[Dict]):
+    @async_rate_limit()
     async def handle_pl_status_a2e(supplyno_or_data: str | dict):
         if isinstance(supplyno_or_data, str):
             supplyno = supplyno_or_data

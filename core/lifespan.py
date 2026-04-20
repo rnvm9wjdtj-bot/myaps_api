@@ -9,7 +9,10 @@ from globalobjects import logger as log_config
 from apps.data_opt.utils.scheduler import scheduler_manager, get_scheduler_status, initialize_scheduler
 from apps.data_opt.utils.mysqlmonitor import mysql_monitor
 from apps.common.utils.resource_monitor import resource_monitor
-from apps.common.monitor import start_db_health_checker, stop_db_health_checker
+from apps.common.monitor import (
+    start_db_health_checker, stop_db_health_checker,
+    start_failed_operation_recovery, stop_failed_operation_recovery
+)
 from globalobjects import EVENT_AGGREGATOR
 from core.settings import TURNON_DBMONITOR, TRUNON_SCHEDULER, REDIS_HOST, REDIS_PORT, REDIS_DB, REDIS_PASSWORD, MAX_EVENTS_BATCH_SIZE
 from core.database import check_db_connections, warmup_connections, start_pool_monitoring
@@ -73,6 +76,9 @@ async def lifespan(app):
 
     # 启动数据库健康检查器（独立后台任务，不依赖前端访问）
     await start_db_health_checker()
+
+    # 启动失败操作恢复管理器（后台自动重试失败的数据库操作）
+    await start_failed_operation_recovery()
 
     # 启动 Redis 消息消费者（处理来自数据库监听器的事件）
     async def start_redis_consumer():
@@ -281,7 +287,12 @@ async def lifespan(app):
     await stop_db_health_checker()
     log_config.info("数据库健康检查器已停止")
 
-    # 8. 取消后台任务
+    # 8. 停止失败操作恢复管理器
+    log_config.info("正在停止OperationRecovery管理器...")
+    await stop_failed_operation_recovery()
+    log_config.info("OperationRecovery管理器已停止")
+
+    # 10. 取消后台任务
     if 'db_check_task' in locals():
         log_config.info("正在取消数据库连接检查任务...")
         db_check_task.cancel()
@@ -300,11 +311,11 @@ async def lifespan(app):
             pass
         log_config.info("连接池监控任务已取消")
 
-    # 9. 等待一段时间，确保所有任务真正完成
+    # 11. 等待一段时间，确保所有任务真正完成
     log_config.info("⏳ 等待所有任务彻底完成...")
     await asyncio.sleep(3)  # 再等待3秒
 
     log_config.info("应用关闭完成")
 
-    # 10. 关闭统一日志系统
+    # 12. 关闭统一日志系统
     log_config.shutdown_logging()

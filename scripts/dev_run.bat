@@ -16,6 +16,7 @@ if exist "%ENV_FILE%" (
     for /f "tokens=1,2 delims==" %%a in ('findstr /i "^HOST=" "%ENV_FILE%"') do set "HOST=%%b"
     for /f "tokens=1,2 delims==" %%a in ('findstr /i "^PORT=" "%ENV_FILE%"') do set "PORT=%%b"
     for /f "tokens=1,2 delims==" %%a in ('findstr /i "^PROJECT_DIR=" "%ENV_FILE%"') do set "PROJECT_DIR=%%b"
+    for /f "tokens=1,2 delims==" %%a in ('findstr /i "^PROJECT_JSON=" "%ENV_FILE%"') do set "PROJECT_JSON=%%b"
 )
 
 :: 显示启动信息
@@ -26,8 +27,13 @@ echo Python: %VENV_PYTHON%
 echo Environment: %ENV_FILE%
 echo Host: %HOST%
 echo Port: %PORT%
-echo Project: %PROJECT_DIR%
-echo JSON: 
+:: 使用颜色和特殊字符增强显示
+echo.
+echo [92m=========================================[0m
+echo [93mProject File: [0m[91m[%PROJECT_DIR%][0m
+echo [93mProject JSON: [0m[91m[%PROJECT_JSON%][0m
+echo [92m=========================================[0m
+echo.
 echo Press Ctrl+C to stop
 echo =========================================
 echo.

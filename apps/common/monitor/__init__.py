@@ -5,11 +5,19 @@
 """
 
 from .service import MonitorService
-from .background_checker import db_health_checker, start_db_health_checker, stop_db_health_checker
+from .background_checker import (
+    db_health_checker, 
+    start_db_health_checker, 
+    stop_db_health_checker,
+    start_failed_operation_recovery,
+    stop_failed_operation_recovery
+)
 
 __all__ = [
     "MonitorService",
     "db_health_checker",
     "start_db_health_checker",
     "stop_db_health_checker",
+    "start_failed_operation_recovery",
+    "stop_failed_operation_recovery",
 ]
