@@ -175,7 +175,7 @@ def handle_pl_status_a2e(supplyno_or_data: str | dict):
         tplus_conn.create_mo(supplyno=supplyno, remain_native_supplyno=REMAIN_NATIVE_SUPPLYNO, pydantic_model=CustomMoPushModel)
     except Exception as e:
         CLIENT_LOGGER.fail("处理PL状态变更", str(supplyno_or_data), str(e))
-        raise
+        ApsHelpers.pl_release_failed(supplyno, msg=str(e))
 
 
 def batch_handle_pl_status_a2e(supplyno_or_data_list: list[str | dict]):
