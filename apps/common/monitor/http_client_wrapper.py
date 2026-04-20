@@ -254,3 +254,245 @@ class HTTPMonitorWrapper:
         """支持上下文管理器"""
         if hasattr(self.client, '__exit__'):
             return self.client.__exit__(exc_type, exc_val, exc_tb)
+
+
+class HTTPAsyncMonitorWrapper:
+    """异步 HTTP 请求包装器"""
+    
+    def __init__(self, client):
+        """
+        初始化异步 HTTP 监控包装器
+        
+        Args:
+            client: 原始异步 HTTP 客户端（httpx.AsyncClient 等）
+        """
+        self.client = client
+        self.collector = outbound_http_collector
+    
+    async def request(self, method: str, url: str, **kwargs) -> Any:
+        """
+        执行异步 HTTP 请求并记录监控信息
+        
+        Args:
+            method: HTTP 方法
+            url: 请求 URL
+            **kwargs: 其他请求参数
+            
+        Returns:
+            响应对象
+        """
+        # 记录请求开始时间
+        start_time = time.time()
+        error_message = None
+        request_body = None
+        response_body = None
+        response_headers = {}
+        
+        try:
+            # 提取请求体
+            if 'json' in kwargs:
+                request_body = kwargs['json']
+            elif 'data' in kwargs:
+                request_body = kwargs['data']
+            
+            # 执行请求
+            response = await self.client.request(method, url, **kwargs)
+            status_code = response.status_code
+            
+            # 提取响应头
+            if hasattr(response, 'headers'):
+                response_headers = dict(response.headers)
+            
+            # 尝试提取响应体
+            try:
+                if hasattr(response, 'json'):
+                    response_body = await response.json()
+                elif hasattr(response, 'text'):
+                    response_body = await response.text()
+            except Exception:
+                # JSON解析失败，尝试获取响应文本
+                if hasattr(response, 'text'):
+                    response_body = await response.text()
+                
+        except Exception as e:
+            status_code = 500
+            error_message = str(e)
+            raise
+        finally:
+            # 计算响应时间
+            duration = time.time() - start_time
+            
+            # 获取调用模块
+            module = self._get_calling_module()
+            
+            # 记录请求信息
+            await self.collector.record_request(
+                method=method,
+                url=url,
+                status_code=status_code,
+                duration=duration,
+                request_headers=kwargs.get('headers', {}),
+                request_body=request_body,
+                response_headers=response_headers,
+                response_body=response_body,
+                error_message=error_message,
+                module=module
+            )
+        
+        return response
+    
+    async def get(self, url: str, **kwargs) -> Any:
+        """执行异步 GET 请求"""
+        return await self.request('GET', url, **kwargs)
+    
+    async def post(self, url: str, **kwargs) -> Any:
+        """执行异步 POST 请求"""
+        return await self.request('POST', url, **kwargs)
+    
+    async def put(self, url: str, **kwargs) -> Any:
+        """执行异步 PUT 请求"""
+        return await self.request('PUT', url, **kwargs)
+    
+    async def patch(self, url: str, **kwargs) -> Any:
+        """执行异步 PATCH 请求"""
+        return await self.request('PATCH', url, **kwargs)
+    
+    async def delete(self, url: str, **kwargs) -> Any:
+        """执行异步 DELETE 请求"""
+        return await self.request('DELETE', url, **kwargs)
+    
+    async def head(self, url: str, **kwargs) -> Any:
+        """执行异步 HEAD 请求"""
+        return await self.request('HEAD', url, **kwargs)
+    
+    async def options(self, url: str, **kwargs) -> Any:
+        """执行异步 OPTIONS 请求"""
+        return await self.request('OPTIONS', url, **kwargs)
+    
+    async def send(self, request, **kwargs) -> Any:
+        """
+        执行异步 HTTP 请求并记录监控信息（覆盖 httpx.AsyncClient.send 方法）
+        
+        Args:
+            request: Request 对象
+            **kwargs: 其他请求参数
+            
+        Returns:
+            响应对象
+        """
+        # 记录请求开始时间
+        start_time = time.time()
+        error_message = None
+        request_body = None
+        response_body = None
+        response_headers = {}
+        method = None
+        url = None
+        status_code = 500
+        request_headers = {}
+        
+        try:
+            # 提取请求信息
+            method = request.method
+            url = str(request.url)
+            
+            # 提取请求体
+            if hasattr(request, 'content') and request.content:
+                request_body = request.content
+            
+            # 提取请求头
+            request_headers = dict(request.headers) if hasattr(request, 'headers') else {}
+            
+            # 执行请求
+            response = await self.client.send(request, **kwargs)
+            status_code = response.status_code
+            
+            # 提取响应头
+            if hasattr(response, 'headers'):
+                response_headers = dict(response.headers)
+            
+            # 尝试提取响应体
+            try:
+                if hasattr(response, 'json'):
+                    response_body = await response.json()
+                elif hasattr(response, 'text'):
+                    response_body = await response.text()
+            except Exception:
+                # JSON解析失败，尝试获取响应文本
+                if hasattr(response, 'text'):
+                    response_body = await response.text()
+                
+        except Exception as e:
+            status_code = 500
+            error_message = str(e)
+            raise
+        finally:
+            # 计算响应时间
+            duration = time.time() - start_time
+            
+            # 获取调用模块
+            module = self._get_calling_module()
+            
+            # 确保 method 和 url 有值
+            if not method:
+                method = 'UNKNOWN'
+            if not url:
+                url = 'UNKNOWN'
+            
+            # 记录请求信息
+            await self.collector.record_request(
+                method=method,
+                url=url,
+                status_code=status_code,
+                duration=duration,
+                request_headers=request_headers,
+                request_body=request_body,
+                response_headers=response_headers,
+                response_body=response_body,
+                error_message=error_message,
+                module=module
+            )
+        
+        return response
+    
+    def _get_calling_module(self) -> str:
+        """
+        获取调用模块的名称
+        
+        Returns:
+            模块名称
+        """
+        # 遍历调用栈，找到第一个不是本文件的调用者
+        for frame in inspect.stack():
+            module = inspect.getmodule(frame[0])
+            if module and module.__name__ != __name__:
+                return module.__name__
+        return 'unknown'
+    
+    # 代理其他属性和方法
+    def __getattr__(self, name):
+        """代理属性和方法到原始客户端"""
+        # 对于 HTTP 请求方法，确保调用的是本类中覆盖的方法
+        if name in ['get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'send']:
+            return getattr(self, name)
+        
+        # 对于其他属性和方法，代理到原始客户端
+        return getattr(self.client, name)
+    
+    async def __aenter__(self):
+        """支持异步上下文管理器"""
+        if hasattr(self.client, '__aenter__'):
+            await self.client.__aenter__()
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """支持异步上下文管理器"""
+        if hasattr(self.client, '__aexit__'):
+            await self.client.__aexit__(exc_type, exc_val, exc_tb)
+    
+    async def aclose(self):
+        """异步关闭客户端"""
+        if hasattr(self.client, 'aclose'):
+            await self.client.aclose()
+        elif hasattr(self.client, 'close'):
+            self.client.close()

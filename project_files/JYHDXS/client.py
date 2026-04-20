@@ -223,14 +223,15 @@ def task_push_seasonpr_to_srm():
 #################################################################################
 # ⬇️APS事件
 #################################################################################
-def batch_handle_pl_status_a2e(event_data: List[Dict]):
-    def handle_pl_status_a2e(supplyno_or_data: str | dict):
+async def batch_handle_pl_status_a2e(event_data: List[Dict]):
+    async def handle_pl_status_a2e(supplyno_or_data: str | dict):
         if isinstance(supplyno_or_data, str):
             supplyno = supplyno_or_data
         else:
             supplyno = supplyno_or_data['supplyno']
 
-        supplymo_detaildata = ApsHelpers.get_supplymo_detaildata(supplyno=supplyno)
+        # 使用异步版本的函数，避免阻塞事件循环
+        supplymo_detaildata = await ApsHelpers.get_supplymo_detaildata_async(supplyno=supplyno)
         try:
             start_datetime: str = supplymo_detaildata['dt_ordstart'].split(" ")[0]
             end_datetime: str = supplymo_detaildata['dt_ordend'].split(" ")[0]
@@ -248,7 +249,16 @@ def batch_handle_pl_status_a2e(event_data: List[Dict]):
                 "BACKUP1": ','.join([i['workcenter'] for i in orderwc])
             }
 
-            sap_response = sap_post(url=sap_url2, session=sap_session, interface_id="ZPP_PLAN_ORD_CREATE", data=data)
+            # 将同步的 sap_post 调用放在线程池中执行，避免阻塞事件循环
+            loop = asyncio.get_event_loop()
+            sap_response = await loop.run_in_executor(
+                None, 
+                sap_post, 
+                sap_url2, 
+                sap_session, 
+                "ZPP_PLAN_ORD_CREATE", 
+                data
+            )
             sap_response_json = sap_response['response_json']
             
             try:
@@ -256,22 +266,27 @@ def batch_handle_pl_status_a2e(event_data: List[Dict]):
                     sap_mo_data = sap_response_json['BODY'][0]
                     
                     if sap_mo_data.get('STATUS') == 'S':
-                        ApsHelpers.pl_release_success(native_plno=supplyno, mono=sap_mo_data.get('AUFNR'), msg=sap_mo_data.get('MESSAGE'), msg_from='ERP')
+                        await ApsHelpers.pl_release_success_async(native_plno=supplyno, mono=sap_mo_data.get('AUFNR'), msg=sap_mo_data.get('MESSAGE'), msg_from='ERP')
                     else:
-                        ApsHelpers.pl_release_failed(native_plno=supplyno, msg=sap_mo_data.get('MESSAGE', '未知错误'), push_data=data, msg_from='ERP')
+                        await ApsHelpers.pl_release_failed_async(native_plno=supplyno, msg=sap_mo_data.get('MESSAGE', '未知错误'), push_data=data, msg_from='ERP')
                 else:
                     # 处理响应格式不正确的情况
-                    ApsHelpers.pl_release_failed(native_plno=supplyno, msg=f"响应格式不正确: {sap_response['response_text']}", push_data=data, msg_from='ERP')
+                    await ApsHelpers.pl_release_failed_async(native_plno=supplyno, msg=f"响应格式不正确: {sap_response['response_text']}", push_data=data, msg_from='ERP')
             except Exception as e:
                 # 处理其他异常
-                ApsHelpers.pl_release_failed(native_plno=supplyno, msg=f"处理响应失败: {str(e)}", push_data=data, msg_from='ERP')
+                await ApsHelpers.pl_release_failed_async(native_plno=supplyno, msg=f"处理响应失败: {str(e)}", push_data=data, msg_from='ERP')
         except requests.exceptions.Timeout as e:
             # 处理请求超时，按推送失败处理
-            ApsHelpers.pl_release_failed(native_plno=supplyno, msg=f"请求超时: {str(e)}", push_data=data, msg_from='ERP')
+            await ApsHelpers.pl_release_failed_async(native_plno=supplyno, msg=f"请求超时: {str(e)}", push_data=data, msg_from='ERP')
         except Exception as e:
-            ApsHelpers.pl_release_failed(native_plno=supplyno, msg=str(e), push_data=data, msg_from='API')
+            await ApsHelpers.pl_release_failed_async(native_plno=supplyno, msg=str(e), push_data=data, msg_from='API')
     
-    for item in event_data:
-        handle_pl_status_a2e(item)
+    from apps.io_api.models import TSupply
+    
+    supply_nos = [_['supplyno'] for _ in event_data]
+    supply_list = await TSupply.filter(supplyno__in=supply_nos).update(memo="正在推送。。。")
+    
+    tasks = [handle_pl_status_a2e(item) for item in event_data]
+    await asyncio.gather(*tasks)
 
 

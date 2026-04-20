@@ -8,6 +8,7 @@ from typing import List, Dict, Optional, Callable
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor
 from threading import Semaphore, Lock
+import redis
 
 # 加载环境变量
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -15,7 +16,7 @@ env_file = os.path.join(BASE_DIR, '.env')
 load_dotenv(env_file)
 
 # 导入模块
-from core.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET, MYAPS_DBSET_LIST, PROJECT_DIR
+from core.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET, MYAPS_DBSET_LIST, PROJECT_DIR, REDIS_HOST, REDIS_PORT, REDIS_DB, REDIS_PASSWORD
 from globalobjects.globalconst import OrderStatusEnum
 from apps.io_api.utils.common import dict_to_lower_keys
 from globalobjects import logger as log_config
@@ -90,26 +91,34 @@ class ApsEvent:
 
 
     def _send_request_with_control(self, event_type: DbEventType, event_data: List[Dict]):
-        with self._semaphore:
-            try:
-                current_time = time.time()
-                elapsed = current_time - self._last_request_time
-                if elapsed < self._POST_DELAY:
-                    time.sleep(self._POST_DELAY - elapsed)
-                
-                with self._event_lock:
-                    self._last_request_time = time.time()
-                
-                self._session.post(url=f"{THIS_BASE_URL}/project/db_event/{event_type.value}", json=event_data, timeout=(10.0, 120.0))
-                logger.debug(f"✅ 事件发送成功: {event_type.value}")
-            except Exception as e:
-                logger.fail(f"发送事件失败", event_type.value, str(e))
+        try:
+            log_config.info(f"准备发送事件到消息队列: {event_type.value}")
+            redis_client = redis.Redis(
+                host=REDIS_HOST, 
+                port=REDIS_PORT, 
+                db=REDIS_DB, 
+                password=REDIS_PASSWORD if REDIS_PASSWORD else None,
+                decode_responses=False,
+                socket_connect_timeout=5,
+                socket_timeout=5
+            )
+            event_message = {
+                'event_type': event_type.value,
+                'data': event_data,
+                'timestamp': time.time()
+            }
+            redis_client.lpush('db_events', json.dumps(event_message))
+            log_config.info(f"事件已发送到消息队列: {event_type.value}")
+        except Exception as e:
+            log_config.error(f"发送事件到消息队列失败: {e}")
 
 
     def db_event_distributor(self, event_data: List[Dict]):
-        """事件数据转发器（异步发送，支持并发控制）"""
-        global _shared_executor
-        _shared_executor.submit(self._send_request_with_control, self.event_type, event_data)
+        """事件数据转发器（直接发送到 Redis，避免线程池）"""
+        try:
+            self._send_request_with_control(self.event_type, event_data)
+        except Exception as e:
+            log_config.error(f"事件分发失败: {e}")
 
 
     def add_event(self, event_data: dict):
@@ -233,10 +242,7 @@ async def handle_event(
             event_handler_name = f"batch_handle_{event_type}"
             event_handler = getattr(project_client, event_handler_name)
             if event_handler:
-                # 在后台线程中执行，避免阻塞事件循环
-                import asyncio
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, event_handler, event_data)
+                await event_handler(event_data)
         except Exception as e:
             logger.warning(f"{project_client.__name__} 未能处理 {event_type} 事件: {str(e)}")
 

@@ -334,6 +334,7 @@ class MultiEventAggregator:
     
     def add(self, event_type: str, event: Any):
         """添加事件到指定类型的聚合器"""
+        description = self._event_descriptions.get(event_type, event_type)
         with self._lock:
             if event_type in self._aggregators:
                 logger.start(f"添加事件到聚合器，刷新间隔{self._aggregators[event_type].flush_interval}秒", event_type)

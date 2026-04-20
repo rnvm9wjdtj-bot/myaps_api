@@ -117,8 +117,16 @@ class DatabaseHealthChecker:
         self._stats["check_count"] += 1
 
         try:
-            status = await self._db_collector.get_connection_status()
+            # 添加超时控制，避免健康检查阻塞
+            status = await asyncio.wait_for(
+                self._db_collector.get_connection_status(),
+                timeout=30
+            )
             self._stats["check_success"] += 1
+        except asyncio.TimeoutError:
+            logger.warning("数据库健康检查超时")
+            self._stats["check_failure"] += 1
+            return
         except Exception as e:
             self._stats["check_failure"] += 1
             logger.error(f"获取数据库连接状态失败: {e}")

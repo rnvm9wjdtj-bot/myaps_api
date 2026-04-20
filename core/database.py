@@ -1,5 +1,4 @@
 import time
-import threading
 import asyncio
 from collections import defaultdict
 from typing import Dict, Any, Optional
@@ -13,10 +12,6 @@ from core.settings import (
 )
 from globalobjects import logger as log_config
 
-
-
-######################################################################################
-
 # 计算连接池大小：根据账套数量动态调整，避免连接总数过多
 # 总连接数 = 账套数 × maxsize，应控制在合理范围内（建议不超过150）
 import os
@@ -29,9 +24,6 @@ db_count = len(MYAPS_DBSET_LIST)
 # - 确保总连接数不超过 50（优化后的限制）
 maxsize_per_db = min(20, max(5, 50 // max(db_count, 1)))
 minsize_per_db = min(5, maxsize_per_db // 2)
-
-# logger.info(f"数据库连接池配置：{db_count}个账套，每个账套minsize={minsize_per_db}, maxsize={maxsize_per_db}")
-
 
 # 数据库配置
 connections = {
@@ -63,14 +55,13 @@ for db in MYAPS_DBSET_LIST:
             "database": db,
             "charset": "utf8mb4",
             "connect_timeout": 30,
-            "minsize": minsize_per_db,
-            "maxsize": maxsize_per_db,
             "ssl": None,
             "echo": False,
-            "pool_recycle": 3600,  # 优化：增加连接回收时间到1小时，减少频繁重建连接
-        }
+        },
+        "maxsize": maxsize_per_db,  # 最大连接数
+        "minsize": minsize_per_db,  # 最小连接数
+        "pool_recycle": 3600,  # 连接回收时间（秒）
     }
-
 
 TORTOISE_ORM_CONFIG = {
     "connections": connections,
@@ -86,7 +77,6 @@ TORTOISE_ORM_CONFIG = {
     },
 }
 
-
 if THIS_DB_NAME:
     # 创建PostgreSQL连接配置
     connections[THIS_DB_NAME] = {
@@ -97,15 +87,14 @@ if THIS_DB_NAME:
             "user": THIS_DB_USER,
             "password": THIS_DB_PASSWORD,
             "database": THIS_DB_NAME,
-            "min_size": 3,  # 保持最小连接数
-            "max_size": 10,  # 最大连接数
-        }
+        },
+        "min_size": 3,  # 保持最小连接数
+        "max_size": 10,  # 最大连接数
     }
     TORTOISE_ORM_CONFIG["apps"]["data_opt_models"] = {
         "models": ["apps.data_opt.models", "aerich.models"],
         "default_connection": THIS_DB_NAME,
     }
-
 
 
 class ConnectionLeakDetector:
@@ -122,87 +111,82 @@ class ConnectionLeakDetector:
         self._warning_threshold = warning_threshold
         self._critical_threshold = critical_threshold
         self._connection_history = defaultdict(list)
-        self._lock = threading.RLock()
         self._max_history_size = 100
         
     def record_connection_usage(self, db_name: str, pool_status: Dict[str, Any]):
         """记录连接使用情况"""
-        with self._lock:
-            current_time = time.time()
-            
-            # 计算使用率
-            used = pool_status.get('used_connections', 0)
-            max_size = pool_status.get('max_size', 1)
-            utilization = (used / max_size * 100) if max_size > 0 else 0
-            
-            self._connection_history[db_name].append({
-                'timestamp': current_time,
-                'utilization': utilization,
-                'used': used,
-                'max_size': max_size
-            })
-            
-            # 限制历史记录大小
-            if len(self._connection_history[db_name]) > self._max_history_size:
-                self._connection_history[db_name] = self._connection_history[db_name][-self._max_history_size:]
-            
-            return utilization
+        current_time = time.time()
+        
+        # 计算使用率
+        used = pool_status.get('used_connections', 0)
+        max_size = pool_status.get('max_size', 1)
+        utilization = (used / max_size * 100) if max_size > 0 else 0
+        
+        self._connection_history[db_name].append({
+            'timestamp': current_time,
+            'utilization': utilization,
+            'used': used,
+            'max_size': max_size
+        })
+        
+        # 限制历史记录大小
+        if len(self._connection_history[db_name]) > self._max_history_size:
+            self._connection_history[db_name] = self._connection_history[db_name][-self._max_history_size:]
+        
+        return utilization
     
     def detect_leak(self, db_name: str) -> Dict[str, Any]:
         """检测连接泄漏"""
-        with self._lock:
-            history = self._connection_history.get(db_name, [])
-            
-            if len(history) < 10:  # 需要足够的历史数据
-                return {'leak_detected': False, 'reason': 'insufficient_data'}
-            
-            # 获取最近1分钟的数据
-            recent_time = time.time() - 60
-            recent_data = [h for h in history if h['timestamp'] >= recent_time]
-            
-            if len(recent_data) < 5:
-                return {'leak_detected': False, 'reason': 'no_recent_data'}
-            
-            # 计算平均使用率
-            avg_utilization = sum(h['utilization'] for h in recent_data) / len(recent_data)
-            max_utilization = max(h['utilization'] for h in recent_data)
-            
-            # 检测条件：
-            # 1. 平均使用率超过警告阈值
-            # 2. 使用率持续高位（超过80%的数据点超过警告阈值）
-            high_usage_count = sum(1 for h in recent_data if h['utilization'] > self._warning_threshold)
-            high_usage_ratio = high_usage_count / len(recent_data)
-            
-            leak_detected = (
-                avg_utilization > self._warning_threshold or 
-                (high_usage_ratio > 0.8 and max_utilization > self._critical_threshold)
-            )
-            
-            return {
-                'leak_detected': leak_detected,
-                'avg_utilization': avg_utilization,
-                'max_utilization': max_utilization,
-                'high_usage_ratio': high_usage_ratio,
-                'current_used': recent_data[-1]['used'] if recent_data else 0,
-                'current_max': recent_data[-1]['max_size'] if recent_data else 0,
-                'warning_threshold': self._warning_threshold,
-                'critical_threshold': self._critical_threshold
-            }
+        history = self._connection_history.get(db_name, [])
+        
+        if len(history) < 10:  # 需要足够的历史数据
+            return {'leak_detected': False, 'reason': 'insufficient_data'}
+        
+        # 获取最近1分钟的数据
+        recent_time = time.time() - 60
+        recent_data = [h for h in history if h['timestamp'] >= recent_time]
+        
+        if len(recent_data) < 5:
+            return {'leak_detected': False, 'reason': 'no_recent_data'}
+        
+        # 计算平均使用率
+        avg_utilization = sum(h['utilization'] for h in recent_data) / len(recent_data)
+        max_utilization = max(h['utilization'] for h in recent_data)
+        
+        # 检测条件：
+        # 1. 平均使用率超过警告阈值
+        # 2. 使用率持续高位（超过80%的数据点超过警告阈值）
+        high_usage_count = sum(1 for h in recent_data if h['utilization'] > self._warning_threshold)
+        high_usage_ratio = high_usage_count / len(recent_data)
+        
+        leak_detected = (
+            avg_utilization > self._warning_threshold or 
+            (high_usage_ratio > 0.8 and max_utilization > self._critical_threshold)
+        )
+        
+        return {
+            'leak_detected': leak_detected,
+            'avg_utilization': avg_utilization,
+            'max_utilization': max_utilization,
+            'high_usage_ratio': high_usage_ratio,
+            'current_used': recent_data[-1]['used'] if recent_data else 0,
+            'current_max': recent_data[-1]['max_size'] if recent_data else 0,
+            'warning_threshold': self._warning_threshold,
+            'critical_threshold': self._critical_threshold
+        }
     
     def get_all_stats(self) -> Dict[str, Any]:
         """获取所有数据库的统计信息"""
-        with self._lock:
-            stats = {}
-            for db_name in self._connection_history.keys():
-                stats[db_name] = self.detect_leak(db_name)
-            return stats
+        stats = {}
+        for db_name in self._connection_history.keys():
+            stats[db_name] = self.detect_leak(db_name)
+        return stats
 
 
 class SmartConnectionPoolManager:
     """智能连接池管理器"""
     
     def __init__(self):
-        self._lock = threading.RLock()
         self._pool_stats = defaultdict(dict)
         self._last_adjust_time = defaultdict(float)
         self._adjust_interval = 300  # 调整间隔（秒）
@@ -236,7 +220,7 @@ class SmartConnectionPoolManager:
                     self._record_stats(db_name, pool_status, utilization)
                     
                     # 记录连接使用历史（用于泄漏检测）
-                    current_utilization = self._leak_detector.record_connection_usage(db_name, pool_status)
+                    self._leak_detector.record_connection_usage(db_name, pool_status)
                     
                     # 检测连接泄漏
                     leak_info = self._leak_detector.detect_leak(db_name)
@@ -249,7 +233,7 @@ class SmartConnectionPoolManager:
                         )
                         # 尝试刷新连接
                         try:
-                            await manager.refresh_connection()
+                            await manager.refresh_connection(fast_mode=True)
                             log_config.info(f"✅ 已尝试刷新连接: {db_name}")
                         except Exception as refresh_error:
                             log_config.error(f"❌ 刷新连接失败: {db_name} - {refresh_error}")
@@ -278,12 +262,11 @@ class SmartConnectionPoolManager:
     
     def _record_stats(self, db_name: str, pool_status: Dict[str, Any], utilization: float):
         """记录连接池统计数据"""
-        with self._lock:
-            self._pool_stats[db_name] = {
-                'timestamp': time.time(),
-                'utilization': utilization,
-                'pool_status': pool_status
-            }
+        self._pool_stats[db_name] = {
+            'timestamp': time.time(),
+            'utilization': utilization,
+            'pool_status': pool_status
+        }
     
     async def _adjust_pool_size(self, db_name: str, manager: Any, pool_status: Dict[str, Any], utilization: float):
         """调整连接池大小"""
@@ -298,7 +281,6 @@ class SmartConnectionPoolManager:
             new_size = min(current_size + self._scale_step, max_size)
             log_config.info(f"连接池扩容: {db_name} 从 {current_size} 到 {new_size}, 使用率: {utilization:.2f}")
             # 注意：Tortoise ORM的连接池大小通常在配置时固定，这里记录需要调整的信息
-            # 实际调整可能需要重启服务或使用其他方式
         
         # 缩容逻辑
         elif utilization < self._scale_down_threshold and current_size > self._min_pool_size:
@@ -308,8 +290,7 @@ class SmartConnectionPoolManager:
     
     def get_pool_stats(self) -> Dict[str, Any]:
         """获取连接池统计数据"""
-        with self._lock:
-            return dict(self._pool_stats)
+        return dict(self._pool_stats)
 
 
 # 全局智能连接池管理器实例
@@ -320,9 +301,6 @@ def register_database(app):
     register_tortoise(
         app=app,
         config=TORTOISE_ORM_CONFIG,
-        # modules={"models": ["project_code.models"]},
-        # generate_schemas=True,    # 生产环境不要开，若数据库为空则自动生成对应表单
-        # add_exception_handlers=True,  # 生产环境不要开，会泄露调试信息
     )
     
     # 标记数据库已初始化，允许日志写入数据库
@@ -345,14 +323,23 @@ async def warmup_connections():
         for db_name, manager in db_managers.items():
             try:
                 start_time = time.time()
-                is_healthy = await manager.check_connection_health()
+                # 使用较短的超时时间，避免启动时被阻塞
+                is_healthy = await asyncio.wait_for(
+                    manager.check_connection_health(timeout=5, fast_mode=True),
+                    timeout=10
+                )
                 response_time = time.time() - start_time
                 if is_healthy:
                     log_config.info(f"连接预热成功: {db_name} - 响应时间: {response_time:.3f}秒")
                 else:
                     log_config.warning(f"连接预热失败: {db_name}")
-                    # 尝试刷新连接
-                    await manager.refresh_connection()
+                    # 尝试刷新连接（使用快速模式）
+                    await asyncio.wait_for(
+                        manager.refresh_connection(fast_mode=True),
+                        timeout=15
+                    )
+            except asyncio.TimeoutError:
+                log_config.warning(f"连接预热超时: {db_name}，跳过预热")
             except Exception as e:
                 log_config.error(f"连接预热异常: {db_name} - {str(e)}")
         log_config.info("数据库连接预热完成")
@@ -368,26 +355,39 @@ async def check_db_connections():
         from globalobjects.db_manager import get_db_managers
         db_managers = get_db_managers()
         for db_name, manager in db_managers.items():
-            # 检查连接健康状态
-            start_time = time.time()
-            is_healthy = await manager.check_connection_health()
-            response_time = time.time() - start_time
-            
-            # 记录响应时间，超过1秒时预警
-            if response_time > 1.0:
-                log_config.warning(f"数据库连接响应缓慢: {db_name} - {response_time:.3f}秒")
-            
-            if not is_healthy:
-                log_config.warning(f"数据库连接 {db_name} 不健康，尝试刷新连接")
-                await manager.refresh_connection()
-            # 获取连接池状态
-            pool_status = await manager.get_connection_pool_status()
-            log_config.debug(f"连接池状态 - {db_name}: {pool_status}")
+            try:
+                # 检查连接健康状态（添加超时控制）
+                start_time = time.time()
+                is_healthy = await asyncio.wait_for(
+                    manager.check_connection_health(timeout=3, fast_mode=True),
+                    timeout=8
+                )
+                response_time = time.time() - start_time
+                
+                # 记录响应时间，超过1秒时预警
+                if response_time > 1.0:
+                    log_config.warning(f"数据库连接响应缓慢: {db_name} - {response_time:.3f}秒")
+                
+                if not is_healthy:
+                    log_config.warning(f"数据库连接 {db_name} 不健康，尝试刷新连接")
+                    await asyncio.wait_for(
+                        manager.refresh_connection(fast_mode=True),
+                        timeout=10
+                    )
+                # 获取连接池状态
+                pool_status = await manager.get_connection_pool_status()
+                log_config.debug(f"连接池状态 - {db_name}: {pool_status}")
+            except asyncio.TimeoutError:
+                log_config.warning(f"数据库连接检查超时: {db_name}")
+            except Exception as e:
+                log_config.error(f"检查数据库连接异常: {db_name} - {str(e)}")
         
-        # 运行智能连接池管理
-        await smart_pool_manager.monitor_and_adjust()
+        # 运行智能连接池管理（添加超时控制）
+        await asyncio.wait_for(smart_pool_manager.monitor_and_adjust(), timeout=30)
         
         log_config.debug("数据库连接检查完成")
+    except asyncio.TimeoutError:
+        log_config.warning("数据库连接检查超时")
     except Exception as e:
         log_config.error(f"数据库连接检查异常: {e}")
 
@@ -396,7 +396,10 @@ async def start_pool_monitoring():
     """启动连接池监控任务"""
     while True:
         try:
-            await smart_pool_manager.monitor_and_adjust()
+            # 添加超时控制，避免任务阻塞
+            await asyncio.wait_for(smart_pool_manager.monitor_and_adjust(), timeout=60)
+        except asyncio.TimeoutError:
+            log_config.warning("连接池监控任务执行超时")
         except Exception as e:
             log_config.error(f"连接池监控任务异常: {e}")
         # 每5分钟执行一次

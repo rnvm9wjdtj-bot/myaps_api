@@ -73,6 +73,58 @@ def get_session(
     return request_session
 
 
+async def get_async_session(
+    retries: int = 3,
+    pool_connections: int = 50,
+    pool_maxsize: int = 50,
+    connect_timeout: float = 10.0,
+    read_timeout: float = 30.0,
+):
+    """获取优化的异步 Session 实例
+    
+    使用 httpx 库创建异步会话，支持连接池和重试功能。
+    
+    Args:
+        retries: 重试次数
+        pool_connections: 连接池中的最大连接数
+        pool_maxsize: 连接池中每个主机的最大连接数
+        connect_timeout: 连接超时时间
+        read_timeout: 读取超时时间
+        
+    Returns:
+        httpx.AsyncClient: 异步会话实例
+    """
+    try:
+        import httpx
+        from apps.common.monitor.http_client_wrapper import HTTPAsyncMonitorWrapper
+        logger.success("HTTP/2 异步", "", "启用支持")
+        client = httpx.AsyncClient(
+            http2=True,
+            timeout=httpx.Timeout(
+                connect=connect_timeout,
+                read=read_timeout,
+                write=read_timeout,
+                pool=connect_timeout
+            ),
+            limits=httpx.Limits(
+                max_keepalive_connections=pool_connections,
+                max_connections=pool_maxsize
+            ),
+            verify=False
+        )
+        # 使用 HTTPAsyncMonitorWrapper 包装客户端，实现请求监控
+        monitored_client = HTTPAsyncMonitorWrapper(client)
+        return monitored_client
+    except ImportError:
+        logger.warning_msg("HTTP/2 异步", "", "httpx未安装，无法创建异步会话")
+        raise
+    except Exception as e:
+        logger.warning_msg("HTTP/2 异步初始化", "", f"失败：{e}")
+        import traceback
+        logger.debug(f"httpx异步客户端初始化失败详细错误：{traceback.format_exc()}")
+        raise
+
+
 def get_optimized_session(
     retries: int = 3,
     allowed_methods: list = ["HEAD", "GET", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"],

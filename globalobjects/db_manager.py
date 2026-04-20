@@ -1276,6 +1276,7 @@ class DbManager:
         """
         import asyncio
         import time
+        from tortoise.connection import connections
         # 根据模式设置不同的重试参数
         if fast_mode:
             retry_count = 3  # 快速模式下减少重试次数
@@ -1346,7 +1347,6 @@ class DbManager:
                     if hasattr(Tortoise, '_inited') and Tortoise._inited:
                         # 尝试关闭所有连接
                         try:
-                            from tortoise.connection import connections
                             # 安全检查：确保connections对象和_connections属性存在
                             if hasattr(connections, '_connections'):
                                 for conn_name in connections._connections.keys():

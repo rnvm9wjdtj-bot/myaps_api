@@ -454,9 +454,9 @@ class MySQLBinlogMonitor:
                                 cursor.execute(f"DESCRIBE `{table}`")
                                 columns = [row[0] for row in cursor.fetchall()]
                                 self._table_schemas[database][table] = columns
-                                logger.debug(f"预加载表结构: {table}@{database} -> {len(columns)}列")
+                                logger.debug(f"预加载表结构: @{database} - {table} -> {len(columns)}列")
                             except Exception as e:
-                                logger.warning_msg("表结构获取", f"{table}@{database}", str(e))
+                                logger.warning_msg("表结构获取", f"@{database} - {table}", str(e))
                                 
                 except Exception as e:
                     logger.warning_msg("数据库预加载", f"@{database}",  str(e))

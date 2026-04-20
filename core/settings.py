@@ -111,3 +111,10 @@ THIS_DB_PORT = int(os.getenv("THIS_DB_PORT") or json_env_config.get("THIS_DB_POR
 THIS_DB_USER = os.getenv("THIS_DB_USER") or json_env_config.get("THIS_DB_USER")
 THIS_DB_PASSWORD = os.getenv("THIS_DB_PASSWORD") or json_env_config.get("THIS_DB_PASSWORD")
 THIS_DB_NAME = os.getenv("THIS_DB_NAME") or json_env_config.get("THIS_DB_NAME")
+
+
+# Redis 配置
+REDIS_HOST = os.getenv("REDIS_HOST") or json_env_config.get("REDIS_HOST") or "localhost"
+REDIS_PORT = int(os.getenv("REDIS_PORT") or json_env_config.get("REDIS_PORT") or 6379)
+REDIS_DB = int(os.getenv("REDIS_DB") or json_env_config.get("REDIS_DB") or 0)
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD") or json_env_config.get("REDIS_PASSWORD") or ""
