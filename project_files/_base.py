@@ -26,6 +26,8 @@ from apps.data_opt.components._base import ApsHelpers, get_production_cache
 from apps.data_opt.components.simple_hap import HapConnection
 
 
+
+
 CLIENT_LOGGER = log_config.get_logger(__name__)
 
 CLIENT_SESSION = get_session()
@@ -43,4 +45,5 @@ def get_scheduler_minute(offset: int=0):
 from collections import namedtuple
 # 定义任务执行结果的具名元组
 TaskResult = namedtuple('TaskResult', ['status', 'error'])
+
 

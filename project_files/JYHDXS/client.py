@@ -3,7 +3,7 @@
 import requests, uuid, asyncio#, logging#, os, atexit
 import pandas as pd
 from datetime import datetime
-from typing import List
+from typing import List, Dict
 
 from fastapi import status
 from dateutil.relativedelta import relativedelta
@@ -223,51 +223,55 @@ def task_push_seasonpr_to_srm():
 #################################################################################
 # ⬇️APS事件
 #################################################################################
+def batch_handle_pl_status_a2e(event_data: List[Dict]):
+    def handle_pl_status_a2e(supplyno_or_data: str | dict):
+        if isinstance(supplyno_or_data, str):
+            supplyno = supplyno_or_data
+        else:
+            supplyno = supplyno_or_data['supplyno']
 
-def handle_pl_status_a2e(supplyno_or_data: str | dict):
-    if isinstance(supplyno_or_data, str):
-        supplyno = supplyno_or_data
-    else:
-        supplyno = supplyno_or_data['supplyno']
-
-    supplymo_detaildata = ApsHelpers.get_supplymo_detaildata(supplyno=supplyno)
-    try:
-        start_datetime: str = supplymo_detaildata['dt_ordstart'].split(" ")[0]
-        end_datetime: str = supplymo_detaildata['dt_ordend'].split(" ")[0]
-        orderwc: list = supplymo_detaildata['orderwc']
-
-        data = {
-            "WERKS": werks,  # 工厂
-            "MATNR": supplymo_detaildata['materialno'],
-            "AUART": "ZP01",  # 订单类型
-            "VERID": "SAP",    # 生产版本
-            "GSTRP": start_datetime,  # 基本开始日期
-            "GLTRP": end_datetime,  # 基本完成日期
-            "GAMNG": supplymo_detaildata['avail_qty'],  # 总订单数量
-            "WEMPF": "SAP",  # 产线代码
-            "BACKUP1": ','.join([i['workcenter'] for i in orderwc])
-        }
-
-        sap_response = sap_post(url=sap_url2, session=sap_session, interface_id="ZPP_PLAN_ORD_CREATE", data=data)
-        sap_response_json = sap_response['response_json']
-        
+        supplymo_detaildata = ApsHelpers.get_supplymo_detaildata(supplyno=supplyno)
         try:
-            if 'BODY' in sap_response_json and len(sap_response_json['BODY']) > 0:
-                sap_mo_data = sap_response_json['BODY'][0]
-                
-                if sap_mo_data.get('STATUS') == 'S':
-                    ApsHelpers.pl_release_success(native_plno=supplyno, mono=sap_mo_data.get('AUFNR'), msg=sap_mo_data.get('MESSAGE'), msg_from='ERP')
+            start_datetime: str = supplymo_detaildata['dt_ordstart'].split(" ")[0]
+            end_datetime: str = supplymo_detaildata['dt_ordend'].split(" ")[0]
+            orderwc: list = supplymo_detaildata['orderwc']
+
+            data = {
+                "WERKS": werks,  # 工厂
+                "MATNR": supplymo_detaildata['materialno'],
+                "AUART": "ZP01",  # 订单类型
+                "VERID": "SAP",    # 生产版本
+                "GSTRP": start_datetime,  # 基本开始日期
+                "GLTRP": end_datetime,  # 基本完成日期
+                "GAMNG": supplymo_detaildata['avail_qty'],  # 总订单数量
+                "WEMPF": "SAP",  # 产线代码
+                "BACKUP1": ','.join([i['workcenter'] for i in orderwc])
+            }
+
+            sap_response = sap_post(url=sap_url2, session=sap_session, interface_id="ZPP_PLAN_ORD_CREATE", data=data)
+            sap_response_json = sap_response['response_json']
+            
+            try:
+                if 'BODY' in sap_response_json and len(sap_response_json['BODY']) > 0:
+                    sap_mo_data = sap_response_json['BODY'][0]
+                    
+                    if sap_mo_data.get('STATUS') == 'S':
+                        ApsHelpers.pl_release_success(native_plno=supplyno, mono=sap_mo_data.get('AUFNR'), msg=sap_mo_data.get('MESSAGE'), msg_from='ERP')
+                    else:
+                        ApsHelpers.pl_release_failed(native_plno=supplyno, msg=sap_mo_data.get('MESSAGE', '未知错误'), push_data=data, msg_from='ERP')
                 else:
-                    ApsHelpers.pl_release_failed(native_plno=supplyno, msg=sap_mo_data.get('MESSAGE', '未知错误'), push_data=data, msg_from='ERP')
-            else:
-                # 处理响应格式不正确的情况
-                ApsHelpers.pl_release_failed(native_plno=supplyno, msg=f"响应格式不正确: {sap_response['response_text']}", push_data=data, msg_from='ERP')
+                    # 处理响应格式不正确的情况
+                    ApsHelpers.pl_release_failed(native_plno=supplyno, msg=f"响应格式不正确: {sap_response['response_text']}", push_data=data, msg_from='ERP')
+            except Exception as e:
+                # 处理其他异常
+                ApsHelpers.pl_release_failed(native_plno=supplyno, msg=f"处理响应失败: {str(e)}", push_data=data, msg_from='ERP')
+        except requests.exceptions.Timeout as e:
+            # 处理请求超时，按推送失败处理
+            ApsHelpers.pl_release_failed(native_plno=supplyno, msg=f"请求超时: {str(e)}", push_data=data, msg_from='ERP')
         except Exception as e:
-            # 处理其他异常
-            ApsHelpers.pl_release_failed(native_plno=supplyno, msg=f"处理响应失败: {str(e)}", push_data=data, msg_from='ERP')
-    except requests.exceptions.Timeout as e:
-        # 处理请求超时，按推送失败处理
-        ApsHelpers.pl_release_failed(native_plno=supplyno, msg=f"请求超时: {str(e)}", push_data=data, msg_from='ERP')
-    except Exception as e:
-        ApsHelpers.pl_release_failed(native_plno=supplyno, msg=str(e), push_data=data, msg_from='API')
+            ApsHelpers.pl_release_failed(native_plno=supplyno, msg=str(e), push_data=data, msg_from='API')
+    
+    for item in event_data:
+        handle_pl_status_a2e(item)
+
 

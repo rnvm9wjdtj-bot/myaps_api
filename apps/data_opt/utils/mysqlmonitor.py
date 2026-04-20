@@ -353,7 +353,7 @@ class MySQLBinlogMonitor:
         if MYAPS_DBSET_LIST and TURNON_DBMONITOR:
             # 使用全局线程池管理器
             self._min_workers = 5
-            self._max_workers = 20
+            self._max_workers = 5
             self._thread_pool = global_pool_manager.get_pool(
                 'mysql_monitor', 
                 max_workers=self._max_workers,

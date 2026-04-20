@@ -19,7 +19,7 @@ from .schemas import (
 
 from .utils.common import standard_response, drop_matched_data
 from .utils.db_operation import db_exec_sql, db_managers, db_query, db_supsert, db_bupsert, db_delete, call_dbprocdure, db_update_by_index
-from project_files import hap_conn
+# from project_files import hap_conn
 from apps.data_opt.utils.data_processor import DataProcessor
 
 

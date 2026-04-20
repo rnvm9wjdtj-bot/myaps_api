@@ -121,17 +121,49 @@ def get_optimized_session(
             )
             # 包装为 requests.Session 兼容接口
             class HttpxSessionWrapper:
-                def __init__(self, client):
+                def __init__(self, client, retries=0, allowed_methods=None):
                     self._client = client
                     self.headers = {}
+                    self.retries = retries
+                    self.allowed_methods = allowed_methods or ["HEAD", "GET", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"]
                 
                 def request(self, method, url, **kwargs):
                     headers = {**self.headers, **kwargs.pop('headers', {})}
                     # 转换 requests 参数到 httpx 参数
                     if 'allow_redirects' in kwargs:
                         kwargs['follow_redirects'] = kwargs.pop('allow_redirects')
-                    response = self._client.request(method, url, headers=headers, **kwargs)
-                    return response
+                    
+                    # 处理 timeout 参数
+                    timeout = kwargs.pop('timeout', None)
+                    if timeout:
+                        # requests timeout 格式: (connect, read)
+                        if isinstance(timeout, tuple) and len(timeout) == 2:
+                            kwargs['timeout'] = httpx.Timeout(
+                                connect=timeout[0],
+                                read=timeout[1],
+                                write=timeout[1],
+                                pool=timeout[0]
+                            )
+                        else:
+                            kwargs['timeout'] = timeout
+                    
+                    # 实现重试逻辑
+                    retry_count = 0
+                    while retry_count <= self.retries:
+                        try:
+                            response = self._client.request(method, url, headers=headers, **kwargs)
+                            # 检查是否需要重试的状态码
+                            if method in self.allowed_methods and response.status_code in [429, 500, 502, 503, 504]:
+                                retry_count += 1
+                                if retry_count > self.retries:
+                                    return response
+                                continue
+                            return response
+                        except (httpx.ConnectError, httpx.ReadError, httpx.TimeoutException):
+                            retry_count += 1
+                            if retry_count > self.retries:
+                                raise
+                            continue
                 
                 def get(self, url, **kwargs):
                     return self.request('GET', url, **kwargs)
@@ -156,7 +188,7 @@ def get_optimized_session(
             
             # 包装为监控客户端
             from apps.common.monitor.http_client_wrapper import HTTPMonitorWrapper
-            return HTTPMonitorWrapper(HttpxSessionWrapper(client))
+            return HTTPMonitorWrapper(HttpxSessionWrapper(client, retries=retries, allowed_methods=allowed_methods))
         except ImportError:
             logger.warning_msg("HTTP/2", "", "httpx未安装，回退到requests")
         except Exception as e:
