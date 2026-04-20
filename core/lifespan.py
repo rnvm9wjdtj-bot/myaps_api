@@ -5,18 +5,14 @@ import time
 import redis
 import json
 import inspect
-from collections import deque
 from globalobjects import logger as log_config
 from apps.data_opt.utils.scheduler import scheduler_manager, get_scheduler_status, initialize_scheduler
 from apps.data_opt.utils.mysqlmonitor import mysql_monitor
 from apps.common.utils.resource_monitor import resource_monitor
 from apps.common.monitor import start_db_health_checker, stop_db_health_checker
 from globalobjects import EVENT_AGGREGATOR
-from core.settings import TURNON_DBMONITOR, TRUNON_SCHEDULER, REDIS_HOST, REDIS_PORT, REDIS_DB, REDIS_PASSWORD, MAX_EVENTS_PER_SECOND, MAX_EVENTS_BATCH_SIZE
+from core.settings import TURNON_DBMONITOR, TRUNON_SCHEDULER, REDIS_HOST, REDIS_PORT, REDIS_DB, REDIS_PASSWORD, MAX_EVENTS_BATCH_SIZE
 from core.database import check_db_connections, warmup_connections, start_pool_monitoring
-
-# 事件处理时间记录
-event_times = deque(maxlen=MAX_EVENTS_PER_SECOND)  # 记录事件处理时间
 
 
 @asynccontextmanager
@@ -132,19 +128,6 @@ async def lifespan(app):
 
     async def handle_redis_event(event_type: str, event_data):
         """处理从 Redis 消息队列接收的事件"""
-        # 速率限制
-        current_time = time.time()
-        event_times.append(current_time)
-        
-        # 确保不超过速率限制
-        if len(event_times) >= MAX_EVENTS_PER_SECOND:
-            oldest_time = event_times[0]
-            if current_time - oldest_time < 1:
-                # 等待直到速率降低
-                wait_time = 1 - (current_time - oldest_time)
-                log_config.info(f"事件处理速率过快，等待 {wait_time:.2f} 秒")
-                await asyncio.sleep(wait_time)
-        
         log_config.info(f"开始处理事件: {event_type}")
         try:
             import importlib

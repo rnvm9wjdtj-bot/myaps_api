@@ -4,8 +4,7 @@ from datetime import date, datetime, timedelta
 from typing import List, Dict, Optional, Literal#, Any
 import inspect, functools, pandas as pd, asyncio
 # import httpx
-
-from fastapi import APIRouter, Path, Query, Body, Header, status#, Request
+from fastapi import APIRouter, Path, Query, Body, Header, status, Request, HTTPException, Depends
 # from tortoise import Tortoise
 
 from core.settings import MYAPS_DB_SET, MYAPS_DBSET_LIST, MYAPS_MAIN_DB, THIS_BASE_URL
@@ -344,13 +343,28 @@ V_PEG_SQL = """
     ORDER BY p.id, d.MaterialNo, d.Priority, s.Avail_Date, s.Avail_Qty;
 """
 ########################################################################
+def get_client_ip(request: Request):
+    """获取客户端IP地址"""
+    client_ip = request.client.host
+    return client_ip
+
+
+def only_localhost():
+    """仅允许本地主机访问的依赖项"""
+    async def dependency(request: Request):
+        client_ip = get_client_ip(request)
+        if client_ip not in ["127.0.0.1", "localhost", "::1"]:
+            raise HTTPException(status_code=403, detail="Access denied: Only localhost access allowed")
+    return dependency
+
+
 rt = APIRouter()
 ########################################################################
 ########################################################################
 # 主数据接口
 ########################################################################
 
-@rt.get("/meta", include_in_schema=False)
+@rt.get("/meta", include_in_schema=False, dependencies=[Depends(only_localhost())])
 async def get_meta():
     """
     获取元数据信息，包括数据库状态等
@@ -460,7 +474,8 @@ async def get_meta():
     tags=["主数据 - 物料"],
     summary="获取物料分页数据",
     description="根据分页参数获取物料分页数据",
-    include_in_schema=False
+    include_in_schema=False,
+    dependencies=[Depends(only_localhost())]
 )
 async def get_material_page(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
@@ -476,7 +491,8 @@ async def get_material_page(
     tags=["主数据 - 物料"],
     summary="根据料号获取物料信息",
     description="根据料号获取物料信息",
-    include_in_schema=False
+    include_in_schema=False,
+    dependencies=[Depends(only_localhost())]
 )
 async def get_material(
     materialnos: str = Path(..., description="料号，多个用逗号隔开"),
@@ -695,7 +711,8 @@ async def post_supply(
     tags=["生产数据 - 供应"],
     summary="修改供应记录",
     description="根据供应号、料号修改供应记录",
-    include_in_schema=False
+    include_in_schema=False,
+    dependencies=[Depends(only_localhost())]
 )
 async def patch_supply_by_materialno(
     supplyno: str = Path(..., description="要修改的供应记录的供应号"),
@@ -729,7 +746,8 @@ async def patch_supply_by_materialno(
     tags=["生产数据 - 供应"],
     summary="将 PL 转为 MO",
     description="根据供应号更新 PL 记录 ，转化时允许修改供应号",
-    include_in_schema=False
+    include_in_schema=False,
+    dependencies=[Depends(only_localhost())]
 )
 async def patch_supply(
     supplyno: str = Path(..., description="要修改的供应记录的供应号"),
@@ -816,7 +834,8 @@ async def delete_supply(
     tags=["生产数据 - 需求"],
     summary="获取需求报表",
     description="根据需求类型查询需求记录",
-    include_in_schema=False
+    include_in_schema=False,
+    dependencies=[Depends(only_localhost())]
 )
 async def get_demand_page(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
@@ -917,7 +936,8 @@ async def patch_demand(
     tags=["报表 - 工单报表"],
     summary="获取工单报表",
     description="按工单开完工时间获取工单报表",
-    include_in_schema=False
+    include_in_schema=False,
+    dependencies=[Depends(only_localhost())]
 )
 async def get_mo_page(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
@@ -1180,7 +1200,7 @@ async def get_orderwc(
 
 @rt.get(
     "/v_peg/page",
-    include_in_schema=False  # 添加这个参数即可在Swagger上隐藏
+    include_in_schema=False, dependencies=[Depends(only_localhost())]
 )
 async def get_peg_page(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
@@ -1196,7 +1216,8 @@ async def get_peg_page(
     tags=["报表 - 匹配关系"],
     summary="获取匹配关系",
     description="获取需求与供应的匹配关系，极简版本，仅体现对应关系",
-    include_in_schema=False
+    include_in_schema=False,
+    dependencies=[Depends(only_localhost())]
 )
 async def get_peg_relation(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
@@ -1385,7 +1406,8 @@ async def delete_workreport(
     tags=["生产数据 - 报工"],
     summary="确认报工记录",
     description="确认报工记录",
-    include_in_schema=False
+    include_in_schema=False,
+    dependencies=[Depends(only_localhost())]
 )
 async def confirm_workreport(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),

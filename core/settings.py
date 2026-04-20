@@ -119,6 +119,6 @@ REDIS_PORT = int(os.getenv("REDIS_PORT") or json_env_config.get("REDIS_PORT") or
 REDIS_DB = int(os.getenv("REDIS_DB") or json_env_config.get("REDIS_DB") or 0)
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD") or json_env_config.get("REDIS_PASSWORD") or ""
 
-# 事件处理限流配置
-MAX_EVENTS_PER_SECOND = int(os.getenv("MAX_EVENTS_PER_SECOND")) or 10
-MAX_EVENTS_BATCH_SIZE = int(os.getenv("MAX_EVENTS_BATCH_SIZE")) or 10
+# 事件流量控制
+MAX_EVENTS_BATCH_SIZE = int(os.getenv("MAX_EVENTS_BATCH_SIZE") or 1)
+MAX_EVENTS_PER_SECOND = int(os.getenv("MAX_EVENTS_PER_SECOND") or 2)

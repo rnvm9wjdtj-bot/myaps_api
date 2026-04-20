@@ -27,6 +27,7 @@ echo Environment: %ENV_FILE%
 echo Host: %HOST%
 echo Port: %PORT%
 echo Project: %PROJECT_DIR%
+echo JSON: 
 echo Press Ctrl+C to stop
 echo =========================================
 echo.

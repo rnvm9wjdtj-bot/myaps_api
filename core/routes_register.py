@@ -4,7 +4,7 @@ from apps.io_api.routers import rt as io_rt
 from apps.data_opt.routers import rt as do_rt
 from apps.common.monitor.routers import router as monitor_rt
 from apps.common.help.routers import router as help_rt
-from project_files import rt as project_rt
+
 
 router = APIRouter()
 
@@ -13,7 +13,6 @@ def register_routes(app):
     app.include_router(do_rt, prefix="/do", tags=[], include_in_schema=False)
     app.include_router(monitor_rt, tags=["monitor"], include_in_schema=False)
     app.include_router(help_rt, tags=["help"], include_in_schema=False)
-    app.include_router(project_rt, prefix="/project", tags=["project"], include_in_schema=False)
 
 
     @app.get("/monitor", response_class=HTMLResponse, include_in_schema=False)

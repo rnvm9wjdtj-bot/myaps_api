@@ -124,33 +124,14 @@ class ApsEvent:
             # 执行错误处理函数
             if self.error_handler:
                 try:
-                    # 从 event_data 中提取 native_plno（如果有）
-                    native_plno = None
-                    if event_data:
-                        # 尝试从第一个事件数据中提取 supplyno 作为 native_plno
-                        first_event = event_data[0]
-                        if isinstance(first_event, dict):
-                            native_plno = first_event.get('supplyno')
-                    
-                    # 调用错误处理函数，确保参数匹配
-                    if native_plno:
-                        # 如果是 ApsHelpers.pl_release_failed 类型的错误处理函数
-                        self.error_handler(
-                            native_plno=native_plno, 
-                            msg=str(e), 
-                            push_data=event_data, 
-                            **self.error_handler_kwargs
-                        )
-                    else:
-                        # 通用错误处理函数调用
-                        self.error_handler(
-                            event_type=self.event_type, 
-                            event_data=event_data, 
-                            msg=str(e), 
-                            **self.error_handler_kwargs
-                        )
+                    self.error_handler(
+                        event_type=self.event_type, 
+                        event_data=event_data, 
+                        msg=f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {str(e)}", 
+                        **self.error_handler_kwargs
+                    )
                 except Exception as handler_error:
-                    log_config.error(f"错误处理函数执行失败: {handler_error}")
+                    log_config.error(f"错误处理函数执行: {handler_error}")
 
 
     def add_event(self, event_data: dict):
@@ -253,34 +234,10 @@ def handle_insert_supply(database: str, table: str, data: dict):
 
 
 #################################################################################
-# 项目路由
+# 项目事件处理发送
 #################################################################################
-from fastapi import APIRouter, Query, Body, Header, Request, HTTPException, Depends
 
-# 创建路由器实例
-rt = APIRouter()
-
-
-def get_client_ip(request: Request):
-    """获取客户端IP地址"""
-    client_ip = request.client.host
-    return client_ip
-
-
-def only_localhost():
-    """仅允许本地主机访问的依赖项"""
-    async def dependency(request: Request):
-        client_ip = get_client_ip(request)
-        if client_ip not in ["127.0.0.1", "localhost", "::1"]:
-            raise HTTPException(status_code=403, detail="Access denied: Only localhost access allowed")
-    return dependency
-
-
-@rt.post("/db_event/{event_type}", dependencies=[Depends(only_localhost())])
-async def handle_event(
-    event_type: str,
-    event_data: Optional[List[Dict]] = Body(None, description="事件数据")
-):
+async def handle_event(event_type: str, event_data: Optional[List[Dict]]):
     if not event_data:
         return
 
