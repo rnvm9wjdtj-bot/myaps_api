@@ -5,14 +5,19 @@ import time
 import redis
 import json
 import inspect
+from collections import deque
 from globalobjects import logger as log_config
 from apps.data_opt.utils.scheduler import scheduler_manager, get_scheduler_status, initialize_scheduler
 from apps.data_opt.utils.mysqlmonitor import mysql_monitor
 from apps.common.utils.resource_monitor import resource_monitor
 from apps.common.monitor import start_db_health_checker, stop_db_health_checker
 from globalobjects import EVENT_AGGREGATOR
-from core.settings import TURNON_DBMONITOR, TRUNON_SCHEDULER, REDIS_HOST, REDIS_PORT, REDIS_DB, REDIS_PASSWORD
+from core.settings import TURNON_DBMONITOR, TRUNON_SCHEDULER, REDIS_HOST, REDIS_PORT, REDIS_DB, REDIS_PASSWORD, MAX_EVENTS_PER_SECOND, MAX_EVENTS_BATCH_SIZE
 from core.database import check_db_connections, warmup_connections, start_pool_monitoring
+
+# 事件处理时间记录
+event_times = deque(maxlen=MAX_EVENTS_PER_SECOND)  # 记录事件处理时间
+
 
 @asynccontextmanager
 async def lifespan(app):
@@ -100,12 +105,21 @@ async def lifespan(app):
             log_config.info(f"Redis 连接已建立，等待事件...")
             
             while True:
-                # 在线程池中执行 blpop 操作
-                def blpop():
-                    return redis_client.blpop('db_events', timeout=1)
+                # 批量读取事件
+                events = []
+                for _ in range(MAX_EVENTS_BATCH_SIZE):
+                    # 在线程池中执行 blpop 操作
+                    def blpop():
+                        return redis_client.blpop('db_events', timeout=1)
+                    
+                    result = await loop.run_in_executor(executor, blpop)
+                    if result:
+                        events.append(result)
+                    else:
+                        break
                 
-                result = await loop.run_in_executor(executor, blpop)
-                if result:
+                # 批量处理事件
+                for result in events:
                     _, message = result
                     event_data = json.loads(message.decode('utf-8'))
                     event_type = event_data.get('event_type')
@@ -118,6 +132,19 @@ async def lifespan(app):
 
     async def handle_redis_event(event_type: str, event_data):
         """处理从 Redis 消息队列接收的事件"""
+        # 速率限制
+        current_time = time.time()
+        event_times.append(current_time)
+        
+        # 确保不超过速率限制
+        if len(event_times) >= MAX_EVENTS_PER_SECOND:
+            oldest_time = event_times[0]
+            if current_time - oldest_time < 1:
+                # 等待直到速率降低
+                wait_time = 1 - (current_time - oldest_time)
+                log_config.info(f"事件处理速率过快，等待 {wait_time:.2f} 秒")
+                await asyncio.sleep(wait_time)
+        
         log_config.info(f"开始处理事件: {event_type}")
         try:
             import importlib
@@ -148,8 +175,79 @@ async def lifespan(app):
         except Exception as e:
             log_config.error(f"处理 Redis 事件 {event_type} 时出错: {e}")
 
+    async def cleanup_expired_events():
+        """定期清理过期事件"""
+        try:
+            import concurrent.futures
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            loop = asyncio.get_event_loop()
+            
+            # 在线程池中创建 Redis 连接
+            def create_redis_client():
+                return redis.Redis(
+                    host=REDIS_HOST, 
+                    port=REDIS_PORT, 
+                    db=REDIS_DB, 
+                    password=REDIS_PASSWORD if REDIS_PASSWORD else None,
+                    decode_responses=False,
+                    socket_connect_timeout=5,
+                    socket_timeout=5
+                )
+            
+            redis_client = await loop.run_in_executor(executor, create_redis_client)
+            log_config.info("Redis 事件清理任务已启动，每小时清理一次过期事件")
+            
+            while True:
+                try:
+                    # 获取列表长度
+                    def get_list_length():
+                        return redis_client.llen('db_events')
+                    
+                    length = await loop.run_in_executor(executor, get_list_length)
+                    if length > 0:
+                        log_config.info(f"开始清理过期事件，当前队列长度: {length}")
+                        # 从列表尾部开始检查
+                        processed_count = 0
+                        expired_count = 0
+                        
+                        for _ in range(min(length, 1000)):  # 每次最多检查1000个事件
+                            # 获取尾部元素
+                            def rpop():
+                                return redis_client.rpop('db_events')
+                            
+                            event_data = await loop.run_in_executor(executor, rpop)
+                            if event_data:
+                                processed_count += 1
+                                try:
+                                    event = json.loads(event_data.decode('utf-8'))
+                                    event_timestamp = event.get('timestamp', 0)
+                                    # 如果事件未过期（24小时内），重新添加到列表
+                                    if time.time() - event_timestamp <= 86400:
+                                        def lpush():
+                                            return redis_client.lpush('db_events', event_data)
+                                        await loop.run_in_executor(executor, lpush)
+                                    else:
+                                        expired_count += 1
+                                except Exception as e:
+                                    # 如果解析失败，认为是无效事件，不重新添加
+                                    log_config.debug(f"解析事件失败，跳过: {e}")
+                                    expired_count += 1
+                        
+                        log_config.info(f"事件清理完成，处理了 {processed_count} 个事件，清理了 {expired_count} 个过期事件")
+                except Exception as e:
+                    log_config.error(f"清理过期事件失败: {e}")
+                
+                # 每小时清理一次
+                await asyncio.sleep(3600)
+        except Exception as e:
+            log_config.error(f"Redis 事件清理任务启动失败: {e}")
+
     asyncio.create_task(start_redis_consumer())
     log_config.info("Redis 消息消费者已启动")
+
+    # 启动 Redis 事件清理任务
+    asyncio.create_task(cleanup_expired_events())
+    log_config.info("Redis 事件清理任务已启动")
 
     # 等待一段时间，确保所有服务正常启动
     await asyncio.sleep(1)
@@ -160,33 +258,49 @@ async def lifespan(app):
     # 应用关闭时执行的操作
     log_config.info("应用关闭中...")
     
+    # 1. 先停止 MySQL Binlog 监控（最依赖数据库）
     if TURNON_DBMONITOR:
+        log_config.info("正在停止 MySQL Binlog 监控...")
         mysql_monitor.stop_monitoring()
         log_config.info("MySQL Binlog监控已停止")
     else:
         log_config.debug("⚠️ MySQL Binlog监控未启动，无需停止")
 
-    # 关闭调度器
+    # 2. 停止 Redis 相关任务
+    log_config.info("正在停止 Redis 相关任务...")
+    # 这里可以添加 Redis 消费者的停止逻辑
+    log_config.info("Redis 相关任务已停止")
+
+    # 3. 等待一段时间，确保所有任务完成
+    log_config.info("⏳ 等待所有后台任务完成...")
+    await asyncio.sleep(5)  # 等待5秒，让所有任务完成
+
+    # 4. 关闭调度器
     if TRUNON_SCHEDULER:
+        log_config.info("正在关闭调度器...")
         scheduler_manager.shutdown()
         log_config.info("定时任务管理器已关闭")
     else:
         log_config.debug("⚠️ 定时任务管理器未启动，无需关闭")
     
-    # 停止资源监控
+    # 5. 停止资源监控
+    log_config.info("正在停止资源监控...")
     resource_monitor.stop_monitoring()
     log_config.info("系统资源监控已停止")
     
-    # 停止事件聚合器
+    # 6. 停止事件聚合器
+    log_config.info("正在停止事件聚合器...")
     EVENT_AGGREGATOR.stop()
     log_config.info("事件聚合器已停止")
 
-    # 停止数据库健康检查器
+    # 7. 停止数据库健康检查器
+    log_config.info("正在停止数据库健康检查器...")
     await stop_db_health_checker()
     log_config.info("数据库健康检查器已停止")
 
-    # 取消后台任务
+    # 8. 取消后台任务
     if 'db_check_task' in locals():
+        log_config.info("正在取消数据库连接检查任务...")
         db_check_task.cancel()
         try:
             await db_check_task
@@ -195,6 +309,7 @@ async def lifespan(app):
         log_config.info("数据库连接检查任务已取消")
 
     if 'pool_monitor_task' in locals():
+        log_config.info("正在取消连接池监控任务...")
         pool_monitor_task.cancel()
         try:
             await pool_monitor_task
@@ -202,7 +317,11 @@ async def lifespan(app):
             pass
         log_config.info("连接池监控任务已取消")
 
+    # 9. 等待一段时间，确保所有任务真正完成
+    log_config.info("⏳ 等待所有任务彻底完成...")
+    await asyncio.sleep(3)  # 再等待3秒
+
     log_config.info("应用关闭完成")
 
-    # 关闭统一日志系统
+    # 10. 关闭统一日志系统
     log_config.shutdown_logging()

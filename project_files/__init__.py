@@ -4,7 +4,7 @@
 
 import os, importlib, json, requests, time
 from datetime import datetime
-from typing import List, Dict, Optional, Callable
+from typing import List, Dict, Optional, Callable, Any
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor
 from threading import Semaphore, Lock
@@ -79,9 +79,11 @@ class ApsEvent:
     _MAX_CONCURRENT = 4
     _POST_DELAY = 0.2
 
-    def __init__(self, event_type: DbEventType, description: str, batch_size: int=10000, flush_interval: int=5):
+    def __init__(self, event_type: DbEventType, description: str, batch_size: int=10000, flush_interval: int=5, error_handler: Optional[Callable]=None, error_handler_kwargs: Optional[Dict[str, Any]]=None):
         self.event_type = event_type
         self.description = description
+        self.error_handler = error_handler  # 错误处理函数
+        self.error_handler_kwargs = error_handler_kwargs or {}  # 错误处理函数参数
         self.warning_msg = ""
         self._session = get_optimized_session(retries=0)
         self._semaphore = Semaphore(self._MAX_CONCURRENT)
@@ -119,6 +121,36 @@ class ApsEvent:
             self._send_request_with_control(self.event_type, event_data)
         except Exception as e:
             log_config.error(f"事件分发失败: {e}")
+            # 执行错误处理函数
+            if self.error_handler:
+                try:
+                    # 从 event_data 中提取 native_plno（如果有）
+                    native_plno = None
+                    if event_data:
+                        # 尝试从第一个事件数据中提取 supplyno 作为 native_plno
+                        first_event = event_data[0]
+                        if isinstance(first_event, dict):
+                            native_plno = first_event.get('supplyno')
+                    
+                    # 调用错误处理函数，确保参数匹配
+                    if native_plno:
+                        # 如果是 ApsHelpers.pl_release_failed 类型的错误处理函数
+                        self.error_handler(
+                            native_plno=native_plno, 
+                            msg=str(e), 
+                            push_data=event_data, 
+                            **self.error_handler_kwargs
+                        )
+                    else:
+                        # 通用错误处理函数调用
+                        self.error_handler(
+                            event_type=self.event_type, 
+                            event_data=event_data, 
+                            msg=str(e), 
+                            **self.error_handler_kwargs
+                        )
+                except Exception as handler_error:
+                    log_config.error(f"错误处理函数执行失败: {handler_error}")
 
 
     def add_event(self, event_data: dict):
@@ -137,10 +169,25 @@ class ApsEvent:
 
 # 只在第一次导入时注册事件
 if not _events_registered:
-    aps_pl_status_a2e_event = ApsEvent(event_type=DbEventType.PL_STATUS_A2E, description="PL 单据下达")
-    aps_pr_created_event = ApsEvent(event_type=DbEventType.PR_CREATED, description="PR 单据 创建")
-    aps_pl_typeto_mo_event = ApsEvent(event_type=DbEventType.PL_TYPETO_MO, description="PL 变更为 MO")
-    aps_pr_deleted_event = ApsEvent(event_type=DbEventType.PR_DELETED, description="PR 单据 删除")
+    # 注册事件并传入错误处理函数和参数
+    aps_pl_status_a2e_event = ApsEvent(
+        event_type=DbEventType.PL_STATUS_A2E, 
+        description="PL 单据下达",
+        error_handler=ApsHelpers.pl_release_failed,
+        error_handler_kwargs={"msg_from": "API"}
+    )
+    aps_pr_created_event = ApsEvent(
+        event_type=DbEventType.PR_CREATED, 
+        description="PR 单据 创建",
+    )
+    aps_pl_typeto_mo_event = ApsEvent(
+        event_type=DbEventType.PL_TYPETO_MO, 
+        description="PL 变更为 MO",
+    )
+    aps_pr_deleted_event = ApsEvent(
+        event_type=DbEventType.PR_DELETED, 
+        description="PR 单据 删除",
+    )
     _events_registered = True
     logger.success("数据库事件注册", "", "所有事件已成功注册")
 else:

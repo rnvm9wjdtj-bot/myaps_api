@@ -97,7 +97,7 @@ async def get_async_session(
     try:
         import httpx
         from apps.common.monitor.http_client_wrapper import HTTPAsyncMonitorWrapper
-        logger.success("HTTP/2 异步", "", "启用支持")
+        logger.debug("HTTP/2 异步启用支持")
         client = httpx.AsyncClient(
             http2=True,
             timeout=httpx.Timeout(

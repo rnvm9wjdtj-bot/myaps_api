@@ -80,10 +80,11 @@ def sap_post(url: str, session: requests.Session, interface_id: str, data: dict)
     if response.status_code == status.HTTP_200_OK:
         try:
             response_json = response.json()
-            CLIENT_LOGGER.success("POST请求", f"状态码{response.status_code}", f"响应{response_json}")
+            # CLIENT_LOGGER.success("POST请求", f"状态码{response.status_code}", f"响应{response_json}")
         except Exception as e:
             CLIENT_LOGGER.fail("POST请求", f"状态码{response.status_code}", f"解析JSON失败: {str(e)}")
             CLIENT_LOGGER.fail("POST请求", f"状态码{response.status_code}", f"响应文本: {response.text}")
+            pass
     else:
         CLIENT_LOGGER.fail("POST请求", f"状态码{response.status_code}", f"响应{response.text}")
     return {
@@ -284,7 +285,7 @@ async def batch_handle_pl_status_a2e(event_data: List[Dict]):
     from apps.io_api.models import TSupply
     
     supply_nos = [_['supplyno'] for _ in event_data]
-    supply_list = await TSupply.filter(supplyno__in=supply_nos).update(memo="正在推送。。。")
+    supply_list = await TSupply.filter(supplyno__in=supply_nos).update(memo=" 正在推送。。。")
     
     tasks = [handle_pl_status_a2e(item) for item in event_data]
     await asyncio.gather(*tasks)

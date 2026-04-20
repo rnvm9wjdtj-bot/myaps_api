@@ -931,6 +931,11 @@ class MySQLBinlogMonitor:
         start_time = time.time()
         
         try:
+            # 检查监控是否仍在运行
+            if not self.running:
+                logger.debug(f"监控已停止，跳过事件处理: {handler_name}")
+                return
+            
             result = handler(*args, **kwargs)
             # 检查是否是协程对象
             if hasattr(result, '__await__'):
@@ -972,10 +977,18 @@ class MySQLBinlogMonitor:
                             elif exec_time > 1.0:
                                 logger.debug(f"异步处理器 {handler_name} 执行时间: {exec_time:.2f}秒")
                         except Exception as e:
-                            logger.fail(f"异步处理器 {handler_name} 执行", "", str(e))
+                            # 检查是否是连接池关闭错误
+                            if "pool" in str(e).lower() and "close" in str(e).lower():
+                                logger.warning(f"连接池已关闭，跳过事件处理: {handler_name}")
+                            else:
+                                logger.fail(f"异步处理器 {handler_name} 执行", "", str(e))
                     future.add_done_callback(callback)
                 except Exception as e:
-                    logger.fail(f"异步处理器 {handler_name} 提交", "", str(e))
+                    # 检查是否是连接池关闭错误
+                    if "pool" in str(e).lower() and "close" in str(e).lower():
+                        logger.warning(f"连接池已关闭，跳过事件处理: {handler_name}")
+                    else:
+                        logger.fail(f"异步处理器 {handler_name} 提交", "", str(e))
             else:
                 # 同步函数执行完成
                 exec_time = time.time() - start_time
@@ -984,7 +997,11 @@ class MySQLBinlogMonitor:
                 elif exec_time > 1.0:
                     logger.debug(f"同步处理器 {handler_name} 执行时间: {exec_time:.2f}秒")
         except Exception as e:
-            logger.fail(f"处理器 {handler_name} 执行", "", str(e))
+            # 检查是否是连接池关闭错误
+            if "pool" in str(e).lower() and "close" in str(e).lower():
+                logger.warning(f"连接池已关闭，跳过事件处理: {handler_name}")
+            else:
+                logger.fail(f"处理器 {handler_name} 执行", "", str(e))
         finally:
             # 确保即使出错也能继续处理其他事件
             pass
@@ -1181,10 +1198,15 @@ class MySQLBinlogMonitor:
         """停止监控"""
         if self.running:
             self.running = False
+            
+            # 等待一段时间，让当前处理的事件完成
+            logger.info("⏳ 等待正在处理的事件完成...")
+            time.sleep(2)  # 等待2秒，让当前事件处理完成
+            
             # 关闭事件循环
             if self._event_loop:
                 try:
-                    self._event_loop.call_soon_threadsafe(self._event_loop.stop())
+                    self._event_loop.call_soon_threadsafe(self._event_loop.stop)
                     if self._loop_thread:
                         self._loop_thread.join(timeout=5)
                     logger.success("事件循环", "", "已关闭")
@@ -1193,6 +1215,7 @@ class MySQLBinlogMonitor:
             
             # 关闭线程池
             try:
+                # 等待所有任务完成，但最多等待10秒
                 self._thread_pool.shutdown(wait=True, cancel_futures=True)
                 logger.success("线程池", f"{self._thread_pool}", "已关闭")
             except Exception as e:
