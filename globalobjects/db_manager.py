@@ -503,9 +503,11 @@ class DbManager:
         # 获取表名
         table_name = model_class._meta.db_table
         
-        # 获取所有字段，排除指定字段
-        all_fields = [key for key in data_list[0].keys() 
-                     if key not in exclude_fields]
+        # 收集所有记录中的所有字段，排除指定字段
+        all_fields_set = set()
+        for data in data_list:
+            all_fields_set.update(data.keys())
+        all_fields = [field for field in all_fields_set if field not in exclude_fields]
         
         if not all_fields:
             raise ValueError("没有可插入的字段")
@@ -523,11 +525,8 @@ class DbManager:
             if not is_auto_increment_pk and field not in all_fields:
                 raise ValueError(f"字段 {field} 不在数据字段中")
         
-        # 如果有update_fields，验证其是否在数据字段中
-        if update_fields:
-            for field in update_fields:
-                if field not in all_fields:
-                    raise ValueError(f"字段 {field} 不在数据字段中")
+        # 注意：不再验证update_fields是否在all_fields中，因为不同批次可能包含不同的字段
+        # update_fields是从所有数据中收集的，而all_fields是从当前批次中收集的
         
         # 构建字段字符串，使用反引号包裹字段名
         fields_str = ', '.join([f"`{field}`" for field in all_fields])
@@ -542,16 +541,23 @@ class DbManager:
             placeholders = []
             values = []
             for data in batch:
-                # 只包含需要的字段
-                row_values = [data[field] for field in all_fields]
+                # 只包含需要的字段，对于不存在的字段使用None
+                row_values = [data.get(field) for field in all_fields]
                 placeholders.append('(' + ', '.join(['%s'] * len(all_fields)) + ')')
                 values.extend(row_values)
             
             # 构建 SQL
             if update_fields:
                 # 如果有update_fields，构建完整的UPSERT语句
+                # 获取当前批次中实际存在的字段
+                batch_fields_set = set()
+                for data in batch:
+                    batch_fields_set.update(data.keys())
+                # 只更新在当前批次中实际存在的字段
+                batch_update_fields = [field for field in update_fields if field in batch_fields_set]
+                
                 # 构建 ON DUPLICATE KEY UPDATE 部分
-                update_parts = [f"`{field}` = VALUES(`{field}`)" for field in update_fields]
+                update_parts = [f"`{field}` = VALUES(`{field}`)" for field in batch_update_fields]
                 conflict_fields_str = ', '.join([f"`{field}`" for field in conflict_fields])
                 update_str = ', '.join(update_parts)
                 
@@ -762,8 +768,10 @@ class DbManager:
             
             # 如果未提供update_fields，则自动使用所有非冲突非排除字段作为默认更新字段
             if update_fields is None and data_list:
-                # 获取所有字段
-                all_fields = set(data_list[0].keys())
+                # 收集所有记录中的所有字段
+                all_fields = set()
+                for data in data_list:
+                    all_fields.update(data.keys())
                 # 获取冲突字段和排除字段的集合
                 # 注意：即使exclude_fields为空，也需要排除冲突字段，因为它们不应该被更新
                 excluded_set = set(conflict_fields) | set(exclude_fields)

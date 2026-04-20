@@ -304,7 +304,7 @@ async def db_supsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
     )
 
 
-async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str, data_list: List[PydanticSchema | Dict[str, Any]], use_orm_or_sql: Literal["orm", "sql", "auto"] = "sql", exclude_none: bool = True):
+async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str, data_list: List[PydanticSchema | Dict[str, Any]], use_orm_or_sql: Literal["orm", "sql", "auto"] = "sql", exclude_none: bool = True, batch_size: int = 1000, on_batch_error: Literal["continue", "skip"] = "continue"):
     """
     通用批量写入操作，支持创建和更新
     融合了多账套处理逻辑与db_manager.py的高效数据库操作
@@ -314,6 +314,8 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
         data: 数据列表，可以是PydanticSchema对象或字典
         use_orm_or_sql
         exclude_none: 是否排除None值
+        batch_size: 批次大小，默认为1000
+        on_batch_error: 批次出错时的策略，"continue"继续下一批次，"skip"跳过后续所有批次
         
     Returns:
         标准响应格式
@@ -379,15 +381,19 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
             meta={"origin_total": origin_total, "success_db": success_db}
         )
     
-    update_fields = [field for field in upsert_data_list[0].keys() if field not in model_key]
+    # 收集所有记录中的所有字段，确保update_fields包含所有可能的字段
+    all_fields = set()
+    for item in upsert_data_list:
+        all_fields.update(item.keys())
+    update_fields = [field for field in all_fields if field not in model_key]
     
     # 排除字段（自增ID或不需要upsert的字段）
     exclude_fields = []
-    if hasattr(mdl._meta, 'pk_attr') and mdl._meta.pk_attr in upsert_data_list[0]:
+    if hasattr(mdl._meta, 'pk_attr'):
         pk_attr = mdl._meta.pk_attr
         # 检查主键是否是自增类型
         pk_field = mdl._meta.fields_map.get(pk_attr)
-        if pk_field.generated:
+        if pk_field and pk_field.generated:
             exclude_fields.append(pk_attr)
             if pk_attr in update_fields:
                 update_fields.remove(pk_attr)
@@ -397,24 +403,86 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
             # 获取该账套的专属DbManager实例
             db_manager = get_db_manager(db_name)
             
-            result = await db_manager.bulk_upsert(
-                model_class=mdl,
-                data_list=upsert_data_list,
-                update_fields=update_fields,
-                exclude_fields=exclude_fields,
-                conflict_fields=tuple(model_key) if model_key else None,
-                use_orm_or_sql=use_orm_or_sql
-            )
+            db_create_count = 0
+            db_update_count = 0
+            db_errors = []
+            db_skipped_count = 0
+            db_skipped_batches = []
+            
+            total_batches = (len(upsert_data_list) + batch_size - 1) // batch_size
+            for i in range(total_batches):
+                start_idx = i * batch_size
+                end_idx = min((i + 1) * batch_size, len(upsert_data_list))
+                batch_data = upsert_data_list[start_idx:end_idx]
+                
+                try:
+                    result = await db_manager.bulk_upsert(
+                        model_class=mdl,
+                        data_list=batch_data,
+                        update_fields=update_fields,
+                        exclude_fields=exclude_fields,
+                        conflict_fields=tuple(model_key) if model_key else None,
+                        use_orm_or_sql=use_orm_or_sql
+                    )
 
-            # 更新统计
-            create_count = result.get("inserted", 0)
-            update_count = result.get("updated", 0)
-            create_count_total += create_count
-            update_count_total += update_count
-            logger.insert("账套生效", db_name, f"新增{create_count}条，修改{update_count}条")
-            success_db.append({"db_name": db_name, "create": create_count, "update": update_count})
+                    batch_create = result.get("inserted", 0)
+                    batch_update = result.get("updated", 0)
+                    db_create_count += batch_create
+                    db_update_count += batch_update
+                    logger.insert("账套批次生效", f"{db_name} (批次{i+1}/{total_batches})", f"新增{batch_create}条，修改{batch_update}条")
+                except Exception as batch_error:
+                    db_errors.append({"batch": i + 1, "error": str(batch_error), "skipped_count": len(batch_data)})
+                    db_skipped_count += len(batch_data)
+                    db_skipped_batches.append(i + 1)
+                    logger.fail("账套批次失败", f"{db_name} (批次{i+1}/{total_batches})", str(batch_error))
+                    if on_batch_error == "skip":
+                        remaining_batches = total_batches - i - 1
+                        remaining_count = sum(len(upsert_data_list[j * batch_size:min((j + 1) * batch_size, len(upsert_data_list))]) for j in range(i + 1, total_batches))
+                        db_skipped_count += remaining_count
+                        db_skipped_batches.extend(range(i + 2, total_batches + 1))
+                        logger.warning("批量upsert", f"{db_name} 跳过后续{remaining_batches}个批次", f"跳过{remaining_count}条数据")
+                        break
+            
+            create_count_total += db_create_count
+            update_count_total += db_update_count
+            logger.insert("账套生效", db_name, f"新增{db_create_count}条，修改{db_update_count}条")
+            success_db.append({
+                "db_name": db_name,
+                "create": db_create_count,
+                "update": db_update_count,
+                "errors": db_errors,
+                "skipped_count": db_skipped_count,
+                "skipped_batches": db_skipped_batches
+            })
+        
+        has_errors = any(len(db_info["errors"]) > 0 for db_info in success_db)
         
         logger.success("批量upsert", f"{table_name}@{db_names}", f"生效{len(success_db)}个账套，新增{create_count_total}条，修改{update_count_total}条")
+        
+        if has_errors:
+            error_summary = []
+            for db_info in success_db:
+                if db_info["errors"]:
+                    error_summary.append({
+                        "db_name": db_info["db_name"],
+                        "errors": db_info["errors"],
+                        "skipped_count": db_info["skipped_count"],
+                        "skipped_batches": db_info["skipped_batches"]
+                    })
+            logger.warning("批量upsert", f"{table_name}@{db_names}", f"存在错误批次")
+            return standard_response(
+                success=1,
+                data=data_list,
+                message=f"生效{len(success_db)}个账套，总计新增{create_count_total}条，修改{update_count_total}条，但存在错误",
+                meta={
+                    "origin_total": origin_total,
+                    "distinct_total": len(processed_data_list),
+                    "success_db": success_db,
+                    "has_errors": True,
+                    "error_summary": error_summary,
+                    "total_skipped_count": sum(db_info["skipped_count"] for db_info in success_db)
+                }
+            )
         
         return standard_response(
             data=data_list,
@@ -423,13 +491,30 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
         )
         
     except Exception as e:
+        has_errors = any(len(db_info["errors"]) > 0 for db_info in success_db)
         logger.fail("批量upsert", f"{mdl._meta.db_table}@[{db_names}]，{str(e)}", f"{data_list}")
+        
+        error_summary = []
+        for db_info in success_db:
+            if db_info["errors"]:
+                error_summary.append({
+                    "db_name": db_info["db_name"],
+                    "errors": db_info["errors"],
+                    "skipped_count": db_info["skipped_count"],
+                    "skipped_batches": db_info["skipped_batches"]
+                })
+        
         return standard_response(
             success=0,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message=f"操作失败：{str(e)}",
-            meta={"origin_total": origin_total, "success_db": success_db},
-            # data=[item.processed_data for item in processed_data_list]
+            meta={
+                "origin_total": origin_total,
+                "success_db": success_db,
+                "has_errors": has_errors,
+                "error_summary": error_summary if error_summary else None,
+                "total_skipped_count": sum(db_info["skipped_count"] for db_info in success_db) if success_db else 0
+            },
             data=data_list
         )
 
