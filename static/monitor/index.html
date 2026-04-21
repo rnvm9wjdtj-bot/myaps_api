@@ -280,6 +280,51 @@
                     </div>
                 </div>
             </section>
+            
+            <!-- 死信队列卡片 -->
+            <section class="card full-width">
+                <div class="card-header">
+                    <h2>Dead Letter</h2>
+                    <div class="dead-letter-actions">
+                        <button class="btn btn-small" onclick="refreshDeadLetterStats()">刷新</button>
+                        <button class="btn btn-small btn-secondary" onclick="clearDeadLetters()">清空</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="dead-letter-summary" id="dead-letter-summary">
+                        <div class="summary-item">
+                            <span class="summary-label">死信总数</span>
+                            <span class="summary-value" id="dead-letter-total">--</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">最近死信</span>
+                            <span class="summary-value" id="dead-letter-recent">--</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">处理成功率</span>
+                            <span class="summary-value" id="dead-letter-success-rate">--%</span>
+                        </div>
+                    </div>
+                    <div class="dead-letter-table-container">
+                        <table class="dead-letter-table" id="dead-letter-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>事件类型</th>
+                                    <th>时间</th>
+                                    <th>数据库</th>
+                                    <th>表</th>
+                                    <th>错误信息</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dead-letter-tbody">
+                                <!-- 动态生成死信列表 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
         </main>
 
         <!-- 接收请求页面 -->

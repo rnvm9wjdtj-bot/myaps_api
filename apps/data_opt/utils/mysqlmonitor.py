@@ -65,46 +65,86 @@ from pymysqlreplication.row_event import (
 from core.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_DBMONITOR, TURNON_BINLOG_POSITION_MANAGER, MYAPS_ROOT_PASSWORD
 from globalobjects import logger as log_config
 from apps.common.utils.thread_pool_manager import global_pool_manager
+from apps.common.monitor.models import BinlogPosition, ProcessedEvent
 import os
+import asyncio
 
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 logger = log_config.get_logger(__name__, level=LOG_LEVEL)
 
 
-
-BINLOG_POSITION_FILE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-    "storage",
-    ".binlog_position.json"
-)
-
-
-
 class BinlogPositionManager:
-    """Binlog 位置管理器 - 负责持久化和恢复 binlog 位置"""
+    """Binlog 位置管理器 - 负责持久化和恢复 binlog 位置（基于数据库存储）"""
     
     def __init__(self):
-        self.position_file = BINLOG_POSITION_FILE
-        
         self._lock = threading.RLock()
         self._last_save_time = 0
         self._save_interval = 5  # 最少5秒保存一次，避免频繁写入
+        self._server_id = "default"  # 默认服务器标识
+    
+    async def _get_or_create_position(self):
+        """获取或创建位置记录"""
+        position = await BinlogPosition.filter(server_id=self._server_id).first()
+        if not position:
+            position = await BinlogPosition.create(
+                server_id=self._server_id,
+                log_file="",
+                log_pos=0
+            )
+        return position
     
     def load_position(self) -> Optional[Dict[str, Any]]:
         """加载保存的 binlog 位置"""
         try:
-            if os.path.exists(self.position_file):
-                with self._lock:
-                    with open(self.position_file, 'r', encoding='utf-8') as f:
-                        position = json.load(f)
-                        logger.info(f"📂 已加载 binlog 位置: {position.get('log_file')}:{position.get('log_pos')}")
-                        return position
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # 如果已经在事件循环中，创建任务
+                import concurrent.futures
+                def _load():
+                    try:
+                        loop_inner = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop_inner)
+                        try:
+                            position = loop_inner.run_until_complete(self._get_or_create_position())
+                            if position and position.log_file:
+                                return {
+                                    'log_file': position.log_file,
+                                    'log_pos': position.log_pos,
+                                    'timestamp': position.updated_at.timestamp() if position.updated_at else time.time()
+                                }
+                        finally:
+                            loop_inner.close()
+                    except Exception as e:
+                        logger.warning(f"⚠️ 加载 binlog 位置失败: {e}")
+                        return None
+                
+                executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+                future = executor.submit(_load)
+                return future.result(timeout=5)
+            else:
+                # 如果不在事件循环中，直接运行
+                return asyncio.run(self._load_position_async())
+        except Exception as e:
+            logger.warning(f"⚠️ 加载 binlog 位置失败: {e}")
+        return None
+    
+    async def _load_position_async(self) -> Optional[Dict[str, Any]]:
+        """异步加载 binlog 位置"""
+        try:
+            position = await self._get_or_create_position()
+            if position and position.log_file:
+                logger.info(f"📂 已加载 binlog 位置: {position.log_file}:{position.log_pos}")
+                return {
+                    'log_file': position.log_file,
+                    'log_pos': position.log_pos,
+                    'timestamp': position.updated_at.timestamp() if position.updated_at else time.time()
+                }
         except Exception as e:
             logger.warning(f"⚠️ 加载 binlog 位置失败: {e}")
         return None
     
     def save_position(self, log_file: str, log_pos: int, timestamp: Optional[float] = None):
-        """保存 binlog 位置到文件"""
+        """保存 binlog 位置到数据库"""
         current_time = time.time()
         
         # 限制保存频率
@@ -112,37 +152,186 @@ class BinlogPositionManager:
             return
         
         try:
-            with self._lock:
-                position = {
-                    'log_file': log_file,
-                    'log_pos': log_pos,
-                    'timestamp': timestamp or current_time,
-                    'datetime': datetime.fromtimestamp(timestamp or current_time).strftime('%Y-%m-%d %H:%M:%S')
-                }
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # 如果已经在事件循环中，创建任务
+                import concurrent.futures
+                def _save():
+                    try:
+                        loop_inner = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop_inner)
+                        try:
+                            return loop_inner.run_until_complete(self._save_position_async(log_file, log_pos))
+                        finally:
+                            loop_inner.close()
+                    except Exception as e:
+                        logger.error(f"❌ 保存 binlog 位置失败: {e}")
                 
-                # 先写入临时文件，再重命名，保证原子性
-                temp_file = self.position_file + '.tmp'
-                with open(temp_file, 'w', encoding='utf-8') as f:
-                    json.dump(position, f, indent=2)
-                
-                if os.path.exists(self.position_file):
-                    os.replace(temp_file, self.position_file)
-                else:
-                    os.rename(temp_file, self.position_file)
-                
-                self._last_save_time = current_time
-                logger.debug(f"💾 Binlog 位置已保存: {log_file}:{log_pos}")
+                executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+                executor.submit(_save)
+            else:
+                # 如果不在事件循环中，直接运行
+                asyncio.run(self._save_position_async(log_file, log_pos))
+            
+            self._last_save_time = current_time
+            logger.debug(f"💾 Binlog 位置已保存: {log_file}:{log_pos}")
+        except Exception as e:
+            logger.error(f"❌ 保存 binlog 位置失败: {e}")
+    
+    async def _save_position_async(self, log_file: str, log_pos: int):
+        """异步保存 binlog 位置"""
+        try:
+            position = await self._get_or_create_position()
+            position.log_file = log_file
+            position.log_pos = log_pos
+            await position.save()
         except Exception as e:
             logger.error(f"❌ 保存 binlog 位置失败: {e}")
     
     def clear_position(self):
         """清除保存的位置（通常在手动重置时使用）"""
         try:
-            if os.path.exists(self.position_file):
-                os.remove(self.position_file)
-                logger.info("🗑️ Binlog 位置已清除")
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                def _clear():
+                    try:
+                        loop_inner = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop_inner)
+                        try:
+                            loop_inner.run_until_complete(self._clear_position_async())
+                        finally:
+                            loop_inner.close()
+                    except Exception as e:
+                        logger.warning(f"⚠️ 清除 binlog 位置失败: {e}")
+                
+                executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+                executor.submit(_clear)
+            else:
+                asyncio.run(self._clear_position_async())
         except Exception as e:
             logger.warning(f"⚠️ 清除 binlog 位置失败: {e}")
+    
+    async def _clear_position_async(self):
+        """异步清除 binlog 位置"""
+        try:
+            await BinlogPosition.filter(server_id=self._server_id).delete()
+            logger.info("🗑️ Binlog 位置已清除")
+        except Exception as e:
+            logger.warning(f"⚠️ 清除 binlog 位置失败: {e}")
+    
+    def is_event_processed(self, event_id: str) -> bool:
+        """检查事件是否已处理"""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                def _check():
+                    try:
+                        loop_inner = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop_inner)
+                        try:
+                            return loop_inner.run_until_complete(self._is_event_processed_async(event_id))
+                        finally:
+                            loop_inner.close()
+                    except Exception as e:
+                        logger.warning(f"⚠️ 检查事件是否已处理失败: {e}")
+                        return False
+                
+                executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+                future = executor.submit(_check)
+                return future.result(timeout=5)
+            else:
+                return asyncio.run(self._is_event_processed_async(event_id))
+        except Exception as e:
+            logger.warning(f"⚠️ 检查事件是否已处理失败: {e}")
+            return False
+    
+    async def _is_event_processed_async(self, event_id: str) -> bool:
+        """异步检查事件是否已处理"""
+        try:
+            return await ProcessedEvent.filter(event_id=event_id).exists()
+        except Exception as e:
+            logger.warning(f"⚠️ 检查事件是否已处理失败: {e}")
+            return False
+    
+    def mark_event_processed(self, event_id: str, log_file: str, log_pos: int, event_type: str, table_name: str, database_name: str):
+        """标记事件为已处理"""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                def _mark():
+                    try:
+                        loop_inner = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop_inner)
+                        try:
+                            loop_inner.run_until_complete(self._mark_event_processed_async(
+                                event_id, log_file, log_pos, event_type, table_name, database_name
+                            ))
+                        finally:
+                            loop_inner.close()
+                    except Exception as e:
+                        logger.warning(f"⚠️ 标记事件为已处理失败: {e}")
+                
+                executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+                executor.submit(_mark)
+            else:
+                asyncio.run(self._mark_event_processed_async(
+                    event_id, log_file, log_pos, event_type, table_name, database_name
+                ))
+        except Exception as e:
+            logger.warning(f"⚠️ 标记事件为已处理失败: {e}")
+    
+    async def _mark_event_processed_async(self, event_id: str, log_file: str, log_pos: int, event_type: str, table_name: str, database_name: str):
+        """异步标记事件为已处理"""
+        try:
+            await ProcessedEvent.get_or_create(
+                event_id=event_id,
+                defaults={
+                    "log_file": log_file,
+                    "log_pos": log_pos,
+                    "event_type": event_type,
+                    "table_name": table_name,
+                    "database_name": database_name,
+                }
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ 标记事件为已处理失败: {e}")
+    
+    def cleanup_old_events(self, days: int = 7):
+        """清理旧的已处理事件记录"""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                def _cleanup():
+                    try:
+                        loop_inner = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop_inner)
+                        try:
+                            loop_inner.run_until_complete(self._cleanup_old_events_async(days))
+                        finally:
+                            loop_inner.close()
+                    except Exception as e:
+                        logger.warning(f"⚠️ 清理旧的已处理事件记录失败: {e}")
+                
+                executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+                executor.submit(_cleanup)
+            else:
+                asyncio.run(self._cleanup_old_events_async(days))
+        except Exception as e:
+            logger.warning(f"⚠️ 清理旧的已处理事件记录失败: {e}")
+    
+    async def _cleanup_old_events_async(self, days: int = 7):
+        """异步清理旧的已处理事件记录"""
+        try:
+            from datetime import timezone as tz
+            cutoff = datetime.now(tz.utc) - timedelta(days=days)
+            deleted_count = await ProcessedEvent.filter(processed_at__lt=cutoff).delete()
+            logger.info(f"🗑️ 已清理 {deleted_count} 条旧的已处理事件记录")
+        except Exception as e:
+            logger.warning(f"⚠️ 清理旧的已处理事件记录失败: {e}")
 
 
 class ConnectionHealthChecker:
@@ -329,14 +518,15 @@ class MySQLBinlogMonitor:
             self._position_manager = BinlogPositionManager()
             logger.info("✅ Binlog 位置管理器已启用")
         else:
+            # 禁用时清除现有的位置记录
+            try:
+                position_manager = BinlogPositionManager()
+                position_manager.clear_position()
+                logger.info("🗑️ 已清除现有的 binlog 位置记录")
+            except Exception as e:
+                logger.warning(f"⚠️ 清除 binlog 位置记录失败: {e}")
             self._position_manager = None
             logger.info("⚠️ Binlog 位置管理器已禁用")
-            if os.path.exists(BINLOG_POSITION_FILE):
-                try:
-                    os.remove(BINLOG_POSITION_FILE)
-                    logger.info("🗑️ 已删除旧的 binlog 标记点文件")
-                except Exception as e:
-                    logger.warning(f"⚠️ 删除 binlog 标记点文件失败: {e}")
         self._current_position = None  # 当前 binlog 位置
         
         # 初始化健康检查器
@@ -417,6 +607,9 @@ class MySQLBinlogMonitor:
             conn.close()
             logger.info("✅ MySQL连接测试成功")
             self._initialized = True  # 标记初始化完成
+            
+            # 验证 binlog 位置（如果位置管理器已启用）
+            self._validate_binlog_position()
                     
         except Exception as e:
             logger.warning(f"⚠️ MySQL连接测试警告: {e}")
@@ -479,7 +672,53 @@ class MySQLBinlogMonitor:
                 return self._table_name_mapping[database][lower_table_name]
         
         return table_name
-
+    
+    def _validate_binlog_position(self):
+        """验证 binlog 位置是否有效"""
+        if not TURNON_BINLOG_POSITION_MANAGER or not self._position_manager:
+            return
+        
+        saved_position = self._position_manager.load_position()
+        if not saved_position:
+            return
+        
+        try:
+            # 验证保存的位置是否在当前的 binlog 文件中
+            # 连接 MySQL 检查 binlog 文件是否存在
+            conn_params = {
+                "host": self.mysql_settings["host"],
+                "port": int(self.mysql_settings["port"]),
+                "user": self.mysql_settings["user"],
+                "password": self.mysql_settings["password"],
+                "connect_timeout": 5
+            }
+            conn = pymysql.connect(**conn_params)
+            
+            with conn.cursor() as cursor:
+                log_file = saved_position.get('log_file')
+                # 检查 binlog 文件是否存在
+                cursor.execute("SHOW BINARY LOGS")
+                logs = [row[0] for row in cursor.fetchall()]
+                
+                if log_file not in logs:
+                    logger.warning(f"⚠️ 保存的 binlog 文件不存在: {log_file}，将重新开始监控")
+                    self._position_manager.clear_position()
+                    
+                    # 获取当前的 binlog 文件和位置
+                    cursor.execute("SHOW MASTER STATUS")
+                    master_status = cursor.fetchone()
+                    if master_status:
+                        current_log_file = master_status[0]
+                        current_log_pos = master_status[1]
+                        logger.info(f"📍 当前 binlog 位置: {current_log_file}:{current_log_pos}")
+                        self._position_manager.save_position(current_log_file, current_log_pos)
+            
+            conn.close()
+        except Exception as e:
+            logger.warning(f"⚠️ 验证 binlog 位置失败: {e}")
+            # 如果验证失败，清除旧的位置
+            self._position_manager.clear_position()
+    
     def _get_column_names(self, database, table_name):
         """获取表的列名"""
         # 先尝试获取正确的表名
@@ -919,92 +1158,158 @@ class MySQLBinlogMonitor:
                 stream.close()
                 logger.success("Binlog流", "", "已关闭")
 
-    def _run_async_event(self, event):
+    def _add_to_dead_letter_queue(self, event, error_message):
+        """将失败的事件添加到死信队列"""
         try:
-            self._thread_pool.submit(self.process_binlog_event, event)
+            import json
+            import uuid
+            from datetime import datetime, timezone
+            
+            # 构建死信队列消息
+            dead_letter_message = {
+                'id': str(uuid.uuid4()),
+                'event_type': type(event).__name__,
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'error_message': error_message,
+                'event_data': {
+                    'database': getattr(event, 'schema', 'unknown'),
+                    'table': getattr(event, 'table', 'unknown'),
+                    'log_file': getattr(event, 'log_file', 'unknown'),
+                    'log_pos': getattr(event, 'log_pos', 0)
+                }
+            }
+            
+            # 保存到文件（作为简单的死信队列实现）
+            dead_letter_file = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+                'storage',
+                'dead_letter_queue.jsonl'
+            )
+            
+            # 确保目录存在
+            os.makedirs(os.path.dirname(dead_letter_file), exist_ok=True)
+            
+            # 追加到文件
+            with open(dead_letter_file, 'a', encoding='utf-8') as f:
+                json.dump(dead_letter_message, f, ensure_ascii=False)
+                f.write('\n')
+            
+            logger.info(f"📥 事件已添加到死信队列: {dead_letter_message['id']}")
         except Exception as e:
-            logger.fail("事件处理", "", str(e))
+            logger.error(f"❌ 添加到死信队列失败: {e}")
+    
+    def _run_async_event(self, event):
+        """异步运行事件处理，支持重试机制"""
+        max_retries = 3
+        retry_delay = 0.1  # 初始重试延迟（秒）
+        
+        for retry in range(max_retries):
+            try:
+                self._thread_pool.submit(self.process_binlog_event, event)
+                return
+            except Exception as e:
+                if retry < max_retries - 1:
+                    logger.warning(f"⚠️ 线程池任务提交失败，{retry+1}/{max_retries} 重试: {e}")
+                    # 指数退避策略
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # 每次重试延迟翻倍
+                else:
+                    logger.error(f"❌ 事件处理失败，已达到最大重试次数: {e}")
+                    # 添加到死信队列
+                    self._add_to_dead_letter_queue(event, str(e))
     
     def _run_handler(self, handler, *args, **kwargs):
-        """运行处理器函数，支持同步和异步函数"""
+        """运行处理器函数，支持同步和异步函数，带重试机制"""
         handler_name = getattr(handler, '__name__', str(handler))
         start_time = time.time()
+        max_retries = 3
+        retry_delay = 0.1
         
-        try:
-            # 检查监控是否仍在运行
-            if not self.running:
-                logger.debug(f"监控已停止，跳过事件处理: {handler_name}")
-                return
-            
-            result = handler(*args, **kwargs)
-            # 检查是否是协程对象
-            if hasattr(result, '__await__'):
-                # 启动事件循环线程（如果尚未启动）
-                if self._event_loop is None:
-                    self._loop_thread = threading.Thread(
-                        target=self._start_event_loop, 
-                        daemon=True,
-                        name='mysql-monitor-event-loop'
-                    )
-                    self._loop_thread.start()
-                    # 等待事件循环就绪
-                    for _ in range(10):
-                        if self._event_loop is not None:
-                            break
-                        time.sleep(0.1)
-                    else:
-                        logger.warning("事件循环启动超时，使用同步执行")
-                        # 回退到同步执行
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        try:
-                            loop.run_until_complete(result)
-                        finally:
-                            loop.close()
+        for retry in range(max_retries):
+            try:
+                # 检查监控是否仍在运行
+                if not self.running:
+                    logger.debug(f"监控已停止，跳过事件处理: {handler_name}")
                     return
                 
-                # 使用事件循环线程非阻塞执行
-                try:
-                    future = asyncio.run_coroutine_threadsafe(result, self._event_loop)
-                    # 不使用result()避免阻塞
-                    # 可以添加回调处理结果
-                    def callback(fut):
-                        try:
-                            fut.result()
-                            exec_time = time.time() - start_time
-                            if exec_time > 5.0:
-                                logger.warning(f"异步处理器 {handler_name} 执行时间过长: {exec_time:.2f}秒")
-                            elif exec_time > 1.0:
-                                logger.debug(f"异步处理器 {handler_name} 执行时间: {exec_time:.2f}秒")
-                        except Exception as e:
-                            # 检查是否是连接池关闭错误
-                            if "pool" in str(e).lower() and "close" in str(e).lower():
-                                logger.warning(f"连接池已关闭，跳过事件处理: {handler_name}")
-                            else:
-                                logger.fail(f"异步处理器 {handler_name} 执行", "", str(e))
-                    future.add_done_callback(callback)
-                except Exception as e:
-                    # 检查是否是连接池关闭错误
-                    if "pool" in str(e).lower() and "close" in str(e).lower():
-                        logger.warning(f"连接池已关闭，跳过事件处理: {handler_name}")
-                    else:
-                        logger.fail(f"异步处理器 {handler_name} 提交", "", str(e))
-            else:
-                # 同步函数执行完成
-                exec_time = time.time() - start_time
-                if exec_time > 5.0:
-                    logger.warning(f"同步处理器 {handler_name} 执行时间过长: {exec_time:.2f}秒")
-                elif exec_time > 1.0:
-                    logger.debug(f"同步处理器 {handler_name} 执行时间: {exec_time:.2f}秒")
-        except Exception as e:
-            # 检查是否是连接池关闭错误
-            if "pool" in str(e).lower() and "close" in str(e).lower():
-                logger.warning(f"连接池已关闭，跳过事件处理: {handler_name}")
-            else:
-                logger.fail(f"处理器 {handler_name} 执行", "", str(e))
-        finally:
-            # 确保即使出错也能继续处理其他事件
-            pass
+                result = handler(*args, **kwargs)
+                # 检查是否是协程对象
+                if hasattr(result, '__await__'):
+                    # 启动事件循环线程（如果尚未启动）
+                    if self._event_loop is None:
+                        self._loop_thread = threading.Thread(
+                            target=self._start_event_loop, 
+                            daemon=True,
+                            name='mysql-monitor-event-loop'
+                        )
+                        self._loop_thread.start()
+                        # 等待事件循环就绪
+                        for _ in range(10):
+                            if self._event_loop is not None:
+                                break
+                            time.sleep(0.1)
+                        else:
+                            logger.warning("事件循环启动超时，使用同步执行")
+                            # 回退到同步执行
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                            try:
+                                loop.run_until_complete(result)
+                            finally:
+                                loop.close()
+                        return
+                    
+                    # 使用事件循环线程非阻塞执行
+                    try:
+                        future = asyncio.run_coroutine_threadsafe(result, self._event_loop)
+                        # 不使用result()避免阻塞
+                        # 可以添加回调处理结果
+                        def callback(fut):
+                            try:
+                                fut.result()
+                                exec_time = time.time() - start_time
+                                if exec_time > 5.0:
+                                    logger.warning(f"异步处理器 {handler_name} 执行时间过长: {exec_time:.2f}秒")
+                                elif exec_time > 1.0:
+                                    logger.debug(f"异步处理器 {handler_name} 执行时间: {exec_time:.2f}秒")
+                            except Exception as e:
+                                # 检查是否是连接池关闭错误
+                                if "pool" in str(e).lower() and "close" in str(e).lower():
+                                    logger.warning(f"连接池已关闭，跳过事件处理: {handler_name}")
+                                else:
+                                    logger.fail(f"异步处理器 {handler_name} 执行", "", str(e))
+                        future.add_done_callback(callback)
+                    except Exception as e:
+                        # 检查是否是连接池关闭错误
+                        if "pool" in str(e).lower() and "close" in str(e).lower():
+                            logger.warning(f"连接池已关闭，跳过事件处理: {handler_name}")
+                            return
+                        elif retry < max_retries - 1:
+                            logger.warning(f"⚠️ 异步处理器提交失败，{retry+1}/{max_retries} 重试: {e}")
+                            time.sleep(retry_delay)
+                            retry_delay *= 2
+                            continue
+                        else:
+                            logger.fail(f"异步处理器 {handler_name} 提交", "", str(e))
+                else:
+                    # 同步函数执行完成
+                    exec_time = time.time() - start_time
+                    if exec_time > 5.0:
+                        logger.warning(f"同步处理器 {handler_name} 执行时间过长: {exec_time:.2f}秒")
+                    elif exec_time > 1.0:
+                        logger.debug(f"同步处理器 {handler_name} 执行时间: {exec_time:.2f}秒")
+                return
+            except Exception as e:
+                # 检查是否是连接池关闭错误
+                if "pool" in str(e).lower() and "close" in str(e).lower():
+                    logger.warning(f"连接池已关闭，跳过事件处理: {handler_name}")
+                    return
+                elif retry < max_retries - 1:
+                    logger.warning(f"⚠️ 处理器执行失败，{retry+1}/{max_retries} 重试: {e}")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                else:
+                    logger.fail(f"处理器 {handler_name} 执行", "", str(e))
         
 
     def process_binlog_event(self, event):

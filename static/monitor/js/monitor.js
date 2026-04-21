@@ -3951,3 +3951,143 @@ function formatLogDetail(log, index, selectedIndex) {
         ` : ''}
     `;
 }
+
+// 刷新死信队列统计
+async function refreshDeadLetterStats() {
+    try {
+        const response = await fetch(`${API_BASE}/dead-letter`);
+        const data = await response.json();
+        updateDeadLetterDisplay(data);
+    } catch (error) {
+        console.error('获取死信队列数据失败:', error);
+    }
+}
+
+// 清空死信队列
+async function clearDeadLetters() {
+    try {
+        const response = await fetch(`${API_BASE}/dead-letter/clear`, {
+            method: 'POST'
+        });
+        const data = await response.json();
+        if (data.success) {
+            refreshDeadLetterStats();
+            showNotification('死信队列已清空', 'success');
+        } else {
+            showNotification('清空死信队列失败', 'error');
+        }
+    } catch (error) {
+        console.error('清空死信队列失败:', error);
+        showNotification('清空死信队列失败', 'error');
+    }
+}
+
+// 更新死信队列显示
+function updateDeadLetterDisplay(data) {
+    const deadLetters = data.dead_letters || [];
+    const total = deadLetters.length;
+    const recent = deadLetters.length > 0 ? formatDateTime(deadLetters[0].timestamp) : '--';
+    const successRate = data.success_rate || 0;
+    
+    // 更新汇总数据
+    const totalEl = document.getElementById('dead-letter-total');
+    if (totalEl) totalEl.textContent = total;
+    
+    const recentEl = document.getElementById('dead-letter-recent');
+    if (recentEl) recentEl.textContent = recent;
+    
+    const rateEl = document.getElementById('dead-letter-success-rate');
+    if (rateEl) rateEl.textContent = successRate.toFixed(2) + '%';
+    
+    // 更新死信列表
+    const tbody = document.getElementById('dead-letter-tbody');
+    if (tbody) {
+        if (deadLetters.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无死信</td></tr>';
+            return;
+        }
+        
+        // 使用文档片段进行批量DOM操作
+        const fragment = document.createDocumentFragment();
+        deadLetters.forEach(letter => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${letter.id}</td>
+                <td>${letter.event_type}</td>
+                <td>${formatDateTime(letter.timestamp)}</td>
+                <td>${letter.event_data.database || 'unknown'}</td>
+                <td>${letter.event_data.table || 'unknown'}</td>
+                <td class="error-message">${letter.error_message}</td>
+                <td>
+                    <button class="btn btn-small" onclick="reprocessDeadLetter('${letter.id}')">重新处理</button>
+                </td>
+            `;
+            fragment.appendChild(tr);
+        });
+        
+        // 清空并添加新内容
+        tbody.innerHTML = '';
+        tbody.appendChild(fragment);
+    }
+}
+
+// 重新处理死信
+async function reprocessDeadLetter(letterId) {
+    try {
+        const response = await fetch(`${API_BASE}/dead-letter/reprocess/${letterId}`, {
+            method: 'POST'
+        });
+        const data = await response.json();
+        if (data.success) {
+            refreshDeadLetterStats();
+            showNotification('死信重新处理成功', 'success');
+        } else {
+            showNotification('死信重新处理失败', 'error');
+        }
+    } catch (error) {
+        console.error('重新处理死信失败:', error);
+        showNotification('重新处理死信失败', 'error');
+    }
+}
+
+// 显示通知
+function showNotification(message, type) {
+    // 创建通知元素
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.textContent = message;
+    
+    // 添加到页面
+    document.body.appendChild(notification);
+    
+    // 显示通知
+    setTimeout(() => {
+        notification.classList.add('show');
+    }, 10);
+    
+    // 3秒后隐藏通知
+    setTimeout(() => {
+        notification.classList.remove('show');
+        setTimeout(() => {
+            document.body.removeChild(notification);
+        }, 300);
+    }, 3000);
+}
+
+// 获取死信队列数据
+async function fetchDeadLetterStats() {
+    try {
+        const response = await fetch(`${API_BASE}/dead-letter`);
+        const data = await response.json();
+        updateDeadLetterDisplay(data);
+    } catch (error) {
+        console.error('获取死信队列数据失败:', error);
+    }
+}
+
+// 在数据库页面刷新时获取死信队列数据
+async function refreshDatabasePage() {
+    await fetchDatabaseDetail();
+    await fetchEventStats();
+    await fetchDeadLetterStats();
+}

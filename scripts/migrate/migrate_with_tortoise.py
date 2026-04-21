@@ -35,14 +35,14 @@ async def main():
         # 列出所有注册的模型
         logger.info("")
         logger.info("📋 已注册的模型:")
-        for app_name, app_models in Tortoise.get_models().items():
+        # 从配置中获取模型信息
+        for app_name, app_config in TORTOISE_ORM_CONFIG['apps'].items():
             logger.info(f"  - App '{app_name}':")
-            for model_name, model in app_models.items():
-                try:
-                    count = await model.all().count()
-                    logger.info(f"    - {model_name}: {count} 条记录")
-                except Exception as e:
-                    logger.warning(f"    - {model_name}: 查询失败 - {e}")
+            models = app_config.get('models', [])
+            for model_path in models:
+                if model_path == 'aerich.models':
+                    continue
+                logger.info(f"    - {model_path}")
         
         # 关闭连接
         await Tortoise.close_connections()

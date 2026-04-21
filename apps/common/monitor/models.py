@@ -192,6 +192,46 @@ class SystemLog(Model):
         ]
 
 
+class BinlogPosition(Model):
+    """Binlog 位置记录模型"""
+    
+    id = fields.IntField(pk=True, auto_generate=True)
+    server_id = fields.CharField(max_length=255, description="MySQL 服务器标识")
+    log_file = fields.CharField(max_length=255, description="Binlog 文件名")
+    log_pos = fields.BigIntField(description="Binlog 位置")
+    created_at = fields.DatetimeField(auto_now_add=True, description="创建时间")
+    updated_at = fields.DatetimeField(auto_now=True, description="更新时间")
+    
+    class Meta:
+        table = "binlog_positions"
+        default_connection = "local_data"
+        indexes = [
+            ("server_id",),
+        ]
+
+
+class ProcessedEvent(Model):
+    """已处理的事件记录模型（用于去重）"""
+    
+    id = fields.IntField(pk=True, auto_generate=True)
+    event_id = fields.CharField(max_length=512, unique=True, description="事件唯一标识")
+    log_file = fields.CharField(max_length=255, description="Binlog 文件名")
+    log_pos = fields.BigIntField(description="Binlog 位置")
+    event_type = fields.CharField(max_length=100, description="事件类型")
+    table_name = fields.CharField(max_length=255, description="表名")
+    database_name = fields.CharField(max_length=255, description="数据库名")
+    processed_at = fields.DatetimeField(auto_now_add=True, description="处理时间")
+    
+    class Meta:
+        table = "processed_events"
+        default_connection = "local_data"
+        indexes = [
+            ("event_id",),
+            ("log_file", "log_pos"),
+            ("processed_at",),
+        ]
+
+
 class FailedOperation(Model):
     """失败的数据库操作持久化模型"""
     
