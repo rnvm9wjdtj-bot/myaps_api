@@ -146,11 +146,13 @@ class ApsEvent:
 
 # 只在第一次导入时注册事件
 if not _events_registered:
-    # 注册事件并传入错误处理函数和参数
+    def error_handler(native_plno: str, msg: str, msg_from: str = None, **kwargs):
+        ApsHelpers().pl_release_failed(native_plno=native_plno, msg=msg, msg_from=msg_from or "API", **kwargs)
+
     aps_pl_status_a2e_event = ApsEvent(
         event_type=DbEventType.PL_STATUS_A2E, 
         description="PL 单据下达",
-        error_handler=ApsHelpers.pl_release_failed,
+        error_handler=error_handler,
         error_handler_kwargs={"msg_from": "API"}
     )
     aps_pr_created_event = ApsEvent(

@@ -10,13 +10,13 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 
 # from tortoise import Tortoise
-
+from core.settings import MAX_EVENTS_PER_SECOND
 from globalobjects.globalconst import OrderStatusEnum
 
 
 # ❗❗❗❗❗❗❗❗❗❗❗❗⬇️不要删掉，便于各项目文件引用 ❗❗❗❗❗❗❗❗❗❗❗❗
 from core.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET, SCHEDULER_MINUTE
-from globalobjects import logger as log_config, PROJECT_JSON_FILE, ProjectDefaultValues as pdv
+from globalobjects import logger as log_config, PROJECT_JSON_FILE, ProjectDefaultValues as pdv, RemindType, QqEmailReminder, Reminder
 from apps.io_api.utils.common import standard_response
 from apps.io_api.utils.db_operation import db_delete, db_bupsert, call_dbprocdure, db_query, db_supsert, db_update_by_index
 from apps.data_opt.utils.scheduler import cron_task
@@ -55,6 +55,10 @@ from core.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET, SCHEDULER_
 TaskResult = namedtuple('TaskResult', ['status', 'error'])
 
 
+
+#################################################################################
+# 令牌桶限流器
+#################################################################################
 class AsyncTokenBucket:
     """轻量异步令牌桶限流器"""
     def __init__(self, rate: int, per: float = 1.0):
@@ -199,3 +203,195 @@ def sync_rate_limit(rate: int = None):
     return decorator
 
 
+#################################################################################
+# 公共装饰器
+#################################################################################
+
+def async_timer(level: int = logging.INFO, prefix: str = "", reminder: Reminder = None):
+    """
+    异步函数执行时间计时装饰器
+    
+    用法:
+        @async_timer()
+        async def batch_handle_pl_status_a2e(event_data: List[Dict]):
+            ...
+    
+        @async_timer(reminder=qq_email_reminder)
+        async def batch_handle_pl_status_a2e(event_data: List[Dict]):
+            ...
+    
+    参数:
+        level: 日志级别，默认为 logging.INFO
+        prefix: 日志前缀，默认为空
+        reminder: 可选的 Reminder 实例，函数开始运行时将调用其 remind 方法发送通知
+    """
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            start_time = time.time()
+            if reminder is not None:
+                # 尝试从参数中提取 event_data
+                event_data = None
+                if args and len(args) > 0:
+                    event_data = args[0]
+                elif 'event_data' in kwargs:
+                    event_data = kwargs['event_data']
+                description = kwargs.get('description', None) or func.__name__
+
+                # 生成动态提醒内容
+                if event_data is not None:
+                    if isinstance(event_data, list):
+                        count = len(event_data)
+                        require_time_sec = count / MAX_EVENTS_PER_SECOND * 2
+                        require_time_min = f"{int(require_time_sec / 60)} 分 {int(require_time_sec % 60)} 秒"
+                        content = f"开始【{description}】，将处理【{count}】条数据，预计耗时【{require_time_min}】"
+                    else:
+                        content = f"开始【{description}】，处理数据：{str(event_data)[:1024]}"
+                else:
+                    content = f"开始【{description}】"
+                
+                await reminder.remind(content)
+            try:
+                result = await func(*args, **kwargs)
+                return result
+            finally:
+                end_time = time.time()
+                execution_time = end_time - start_time
+                log_message = f"{prefix}Function {func.__name__} executed in {execution_time:.4f} seconds"
+                CLIENT_LOGGER.log(level, log_message)
+        return wrapper
+    return decorator
+
+
+def with_result_collection(description: str = "", reminder: Reminder = None):
+    """
+    带结果收集的装饰器，用于 ApsHelpers 实例化和结果汇总
+    
+    用法:
+        @with_result_collection(description="PL 单据下达", reminder=qq_email_reminder)
+        async def batch_handle_pl_status_a2e(event_data: List[Dict], aph=None):
+            # 使用 aph 实例
+            await aph.pl_release_success_async(...)
+            ...
+    
+    参数:
+        description: 任务描述，用于日志和通知
+        reminder: 可选的 Reminder 实例，执行完成时将发送通知
+    
+    注意:
+        被装饰的函数需要接受 aph 参数
+    """
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            # 创建 ApsHelpers 实例
+            aph = ApsHelpers()
+            
+            # 将 aph 注入到关键字参数中
+            kwargs['aph'] = aph
+            
+            # 执行函数
+            result = await func(*args, **kwargs)
+            
+            # 获取执行结果汇总
+            summary = aph.get_summary()
+            CLIENT_LOGGER.info(f"{description} 执行完成，汇总结果: {json.dumps(summary, ensure_ascii=False)}")
+            
+            # 生成并发送通知
+            notification = aph.format_notification(description)
+            CLIENT_LOGGER.info(f"通知内容: {notification}")
+            
+            # 发送外部通知
+            if reminder is not None:
+                await reminder.remind(notification)
+            
+            return summary
+        return wrapper
+    return decorator
+
+
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import List, Dict, Any
+
+
+@dataclass
+class ExecutionResult:
+    success: bool
+    raw_data: Any = None
+    msg: str = None
+    mono: str = None
+    push_data: Dict = None
+    timestamp: datetime = field(default_factory=datetime.now)
+
+
+class ResultCollector:
+    """结果收集器，用于收集异步函数执行结果"""
+
+    def __init__(self):
+        self.results: List[ExecutionResult] = []
+        self._lock = asyncio.Lock()
+        self.batch_id = str(uuid.uuid4())[:8]
+        self.start_time = time.time()
+    
+
+    async def add_result(self, result: ExecutionResult):
+        async with self._lock:
+            self.results.append(result)
+    
+
+    def get_summary(self) -> Dict[str, Any]:
+        success_count = sum(1 for r in self.results if r.success)
+        total_time = time.time() - self.start_time
+        failed_results = [r for r in self.results if not r.success]
+        failed_details = []
+        for r in failed_results:
+            detail = {}
+            if r.raw_data is not None:
+                detail["raw_data"] = r.raw_data
+            if r.msg is not None:
+                detail["msg"] = r.msg
+            if r.push_data is not None:
+                detail["push_data"] = r.push_data
+            if r.timestamp is not None:
+                detail["timestamp"] = r.timestamp.isoformat()
+            failed_details.append(detail)
+        
+        # 转换 ExecutionResult 对象为字典
+        details = []
+        for r in self.results:
+            detail = {
+                "success": r.success,
+                "raw_data": r.raw_data,
+                "msg": r.msg,
+                "mono": r.mono,
+                "push_data": r.push_data,
+                "timestamp": r.timestamp.isoformat() if r.timestamp else None
+            }
+            # 过滤掉 None 值
+            detail = {k: v for k, v in detail.items() if v is not None}
+            details.append(detail)
+        
+        return {
+            "batch_id": self.batch_id,
+            "total": len(self.results),
+            "success": success_count,
+            "failed": len(self.results) - success_count,
+            "total_time_sec": round(total_time, 2),
+            "avg_time_per_item_sec": round(total_time / len(self.results), 2) if self.results else 0,
+            "details": details,
+            "failed_details": failed_details
+        }
+    
+    def format_notification(self, description: str = "任务") -> str:
+        summary = self.get_summary()
+        return (
+            f"【{description}】执行完成！\n"
+            f"批次ID: {summary['batch_id']}\n"
+            f"总计处理: {summary['total']} 条\n"
+            f"成功: {summary['success']} 条 ✅\n"
+            f"失败: {summary['failed']} 条 🚫\n"
+            f"总耗时: {summary['total_time_sec']} 秒\n"
+            f"平均每条: {summary['avg_time_per_item_sec']} 秒"
+        )

@@ -779,10 +779,17 @@ def get_production_cache() -> _ProductionDataCache:
 
 
 class ApsHelpers:
-    
-    # 物料信息缓存，最大缓存1000条
-    _material_cache = {}
-    _material_cache_max_size = 1000
+
+    def __init__(self):
+        from project_files._base import ResultCollector
+        self._collector = ResultCollector()
+        self._results = self._collector.results
+
+    def get_summary(self) -> Dict[str, Any]:
+        return self._collector.get_summary()
+
+    def format_notification(self, description: str = "任务") -> str:
+        return self._collector.format_notification(description)
 
     @staticmethod
     def _call_api_sync(method: str, url: str, **kwargs) -> Dict[str, Any]:
@@ -1158,8 +1165,7 @@ class ApsHelpers:
         return response_json
 
 
-    @staticmethod
-    def pl_release_success(native_plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _id: str=None, _entryid: str=None):
+    def pl_release_success(self, native_plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _id: str=None, _entryid: str=None):
         """
         通过调用自路由修改PL的Type、Status、SupplyNo、Memo等字段，作为私有方法在 def click_release_button() 中被直接调用
         🅰 native_plno: 原生PL计划单编号
@@ -1196,14 +1202,22 @@ class ApsHelpers:
             }
             response_json = ApsHelpers._call_api('PATCH', patch_url, json=patch_data)
             logger.info(f"更新PL状态响应：成功")
+            
+            from project_files._base import ExecutionResult
+            asyncio.create_task(self._collector.add_result(ExecutionResult(
+                success=True,
+                raw_data=native_plno,
+                msg=f"{msg_from}: {msg}" if msg else None,
+                mono=mono
+            )))
+            
             return response_json
         except Exception as e:
             error_msg = f"更新PL状态为MO时发生网络错误：{str(e)}"
             logger.fail("PL状态更新", native_plno, error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
 
-    @staticmethod
-    async def pl_release_success_async(native_plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _id: str=None, _entryid: str=None):
+    async def pl_release_success_async(self, native_plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _id: str=None, _entryid: str=None):
         """
         异步通过调用自路由修改PL的Type、Status、SupplyNo、Memo等字段
         🅰 native_plno: 原生PL计划单编号
@@ -1251,6 +1265,15 @@ class ApsHelpers:
             }
             response_json = await ApsHelpers._call_api_async('PATCH', patch_url, json=patch_data)
             logger.info(f"更新PL状态响应：成功")
+            
+            from project_files._base import ExecutionResult
+            await self._collector.add_result(ExecutionResult(
+                success=True,
+                raw_data=native_plno,
+                msg=f"{msg_from}: {msg}" if msg else None,
+                mono=mono
+            ))
+            
             return response_json
         except Exception as e:
             error_msg = f"更新PL状态为MO时发生网络错误：{str(e)}"
@@ -1258,8 +1281,7 @@ class ApsHelpers:
             return standard_response(status_code=500, success=0, message=error_msg)
 
 
-    @staticmethod
-    def pl_release_failed(native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, push_data: dict=None, msg_from: str=None, **kwargs):
+    def pl_release_failed(self, native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, push_data: dict=None, msg_from: str=None, **kwargs):
         logger.warning_msg(f"推送 MO {msg}", json.dumps(push_data, ensure_ascii=False), to_file=True)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if msg:
@@ -1272,14 +1294,22 @@ class ApsHelpers:
         try:
             response_json = ApsHelpers._modify_supply(supplyno=native_plno, to_status=to_status, memo=memo)
             logger.info(f"更新PL状态响应：成功")
+            
+            from project_files._base import ExecutionResult
+            asyncio.create_task(self._collector.add_result(ExecutionResult(
+                success=False,
+                raw_data=native_plno,
+                msg=f"{msg_from}: {msg}" if msg else None,
+                push_data=push_data
+            )))
+            
             return response_json
         except Exception as e:
             error_msg = f"更新PL状态时发生网络错误：{str(e)}"
             logger.fail("PL状态更新", native_plno, error_msg)
             return None
 
-    @staticmethod
-    async def pl_release_failed_async(native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, push_data: dict=None, msg_from: str=None):
+    async def pl_release_failed_async(self, native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, push_data: dict=None, msg_from: str=None):
         logger.warning_msg(f"推送 MO {msg}", json.dumps(push_data, ensure_ascii=False), to_file=True)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if msg:
@@ -1292,6 +1322,15 @@ class ApsHelpers:
         try:
             response_json = await ApsHelpers._modify_supply_async(supplyno=native_plno, to_status=to_status, memo=memo)
             logger.info(f"更新PL状态响应：成功")
+            
+            from project_files._base import ExecutionResult
+            await self._collector.add_result(ExecutionResult(
+                success=False,
+                raw_data=native_plno,
+                msg=f"{msg_from}: {msg}" if msg else None,
+                push_data=push_data
+            ))
+            
             return response_json
         except Exception as e:
             error_msg = f"更新PL状态时发生网络错误：{str(e)}"
@@ -1299,8 +1338,7 @@ class ApsHelpers:
             return None
 
 
-    @staticmethod
-    def rs_push_success(rsno: str, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
+    def rs_push_success(self, rsno: str, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = f"{now} ✅ {msg_from}: '{_code}, {_id}, {_entryid}' @ {rsno}"
@@ -1312,14 +1350,22 @@ class ApsHelpers:
                 'memo': memo,
             })
             logger.info(f"更新RS状态响应：成功")
+            
+            from project_files._base import ExecutionResult
+            asyncio.create_task(self._collector.add_result(ExecutionResult(
+                success=True,
+                raw_data=rsno,
+                msg=f"{msg_from}: {msg}" if msg else None,
+                mono=_code
+            )))
+            
             return response_json
         except Exception as e:
             error_msg = f"更新RS状态时发生网络错误：{str(e)}"
             logger.fail("RS状态更新", rsno, error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
 
-    @staticmethod
-    async def rs_push_success_async(rsno: str, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
+    async def rs_push_success_async(self, rsno: str, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = f"{now} ✅ {msg_from}: '{_code}, {_id}, {_entryid}' @ {rsno}"
@@ -1331,6 +1377,15 @@ class ApsHelpers:
                 'memo': memo,
             })
             logger.info(f"更新RS状态响应：成功")
+            
+            from project_files._base import ExecutionResult
+            await self._collector.add_result(ExecutionResult(
+                success=True,
+                raw_data=rsno,
+                msg=f"{msg_from}: {msg}" if msg else None,
+                mono=_code
+            ))
+            
             return response_json
         except Exception as e:
             error_msg = f"更新RS状态时发生网络错误：{str(e)}"
@@ -1338,8 +1393,7 @@ class ApsHelpers:
             return standard_response(status_code=500, success=0, message=error_msg)
 
 
-    @staticmethod
-    def rs_push_failed(rsno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None):
+    def rs_push_failed(self, rsno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None):
         logger.fail("推送 RS", json.dumps(push_data, ensure_ascii=False), msg)
         if msg:
             try:
@@ -1354,14 +1408,22 @@ class ApsHelpers:
             response_json = ApsHelpers._call_api('PATCH', url, json={
                 'memo': memo,
             })
+            
+            from project_files._base import ExecutionResult
+            asyncio.create_task(self._collector.add_result(ExecutionResult(
+                success=False,
+                raw_data=rsno,
+                msg=f"{msg_from}: {msg}" if msg else None,
+                push_data=push_data
+            )))
+            
             return response_json
         except Exception as e:
             error_msg = f"更新RS失败状态时发生网络错误：{str(e)}"
             logger.fail("RS状态更新", rsno, error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
 
-    @staticmethod
-    async def rs_push_failed_async(rsno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None):
+    async def rs_push_failed_async(self, rsno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None):
         logger.fail("推送 RS", json.dumps(push_data, ensure_ascii=False), msg)
         if msg:
             try:
@@ -1376,6 +1438,15 @@ class ApsHelpers:
             response_json = await ApsHelpers._call_api_async('PATCH', url, json={
                 'memo': memo,
             })
+            
+            from project_files._base import ExecutionResult
+            await self._collector.add_result(ExecutionResult(
+                success=False,
+                raw_data=rsno,
+                msg=f"{msg_from}: {msg}" if msg else None,
+                push_data=push_data
+            ))
+            
             return response_json
         except Exception as e:
             error_msg = f"更新RS失败状态时发生网络错误：{str(e)}"
@@ -1433,28 +1504,44 @@ class ApsHelpers:
         return result_df.to_dict('records')
 
 
-    @staticmethod
-    def pr_push_success(prno: str, msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
+    def pr_push_success(self, prno: str, msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = f"{now} ✅ {msg_from}: '{_code}, {_id}, {_entryid}' @ {prno}"
             logger.update("PR状态", prno, "")
             response_json = ApsHelpers._modify_supply(supplyno=prno, to_status='CRE', memo=memo, _sn=_code, _id=_id, _entryid=_entryid)
             logger.info(f"更新PR状态响应：成功")
+            
+            from project_files._base import ExecutionResult
+            asyncio.create_task(self._collector.add_result(ExecutionResult(
+                success=True,
+                raw_data=prno,
+                msg=f"{msg_from}: {msg}" if msg else None,
+                mono=_code
+            )))
+            
             return response_json
         except Exception as e:
             error_msg = f"更新PR状态时发生网络错误：{str(e)}"
             logger.fail("PR状态更新", prno, error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
 
-    @staticmethod
-    async def pr_push_success_async(prno: str, msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
+    async def pr_push_success_async(self, prno: str, msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = f"{now} ✅ {msg_from}: '{_code}, {_id}, {_entryid}' @ {prno}"
             logger.update("PR状态", prno, "")
             response_json = await ApsHelpers._modify_supply_async(supplyno=prno, to_status='CRE', memo=memo, _sn=_code, _id=_id, _entryid=_entryid)
             logger.info(f"更新PR状态响应：成功")
+            
+            from project_files._base import ExecutionResult
+            await self._collector.add_result(ExecutionResult(
+                success=True,
+                raw_data=prno,
+                msg=f"{msg_from}: {msg}" if msg else None,
+                mono=_code
+            ))
+            
             return response_json
         except Exception as e:
             error_msg = f"更新PR状态时发生网络错误：{str(e)}"
@@ -1462,8 +1549,7 @@ class ApsHelpers:
             return standard_response(status_code=500, success=0, message=error_msg)
 
 
-    @staticmethod
-    def pr_push_failed(prno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None):
+    def pr_push_failed(self, prno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None):
         if msg:
             try:
                 msg = str(msg)[:64]
@@ -1474,14 +1560,22 @@ class ApsHelpers:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = f"{now} 🚫 {msg_from}: '{msg}'"
             response_json = ApsHelpers._modify_supply(supplyno=prno, to_status='NEW', memo=memo)
+            
+            from project_files._base import ExecutionResult
+            asyncio.create_task(self._collector.add_result(ExecutionResult(
+                success=False,
+                raw_data=prno,
+                msg=f"{msg_from}: {msg}" if msg else None,
+                push_data=push_data
+            )))
+            
             return response_json
         except Exception as e:
             error_msg = f"更新PR失败状态时发生网络错误：{str(e)}"
             logger.fail("PR状态更新", prno, error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
 
-    @staticmethod
-    async def pr_push_failed_async(prno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None):
+    async def pr_push_failed_async(self, prno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None):
         if msg:
             try:
                 msg = str(msg)[:64]
@@ -1492,6 +1586,15 @@ class ApsHelpers:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             memo = f"{now} 🚫 {msg_from}: '{msg}'"
             response_json = await ApsHelpers._modify_supply_async(supplyno=prno, to_status='NEW', memo=memo)
+            
+            from project_files._base import ExecutionResult
+            await self._collector.add_result(ExecutionResult(
+                success=False,
+                raw_data=prno,
+                msg=f"{msg_from}: {msg}" if msg else None,
+                push_data=push_data
+            ))
+            
             return response_json
         except Exception as e:
             error_msg = f"更新PR失败状态时发生网络错误：{str(e)}"

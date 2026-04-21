@@ -63,11 +63,22 @@ from pymysqlreplication.row_event import (
 )
 
 from core.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_DBMONITOR, TURNON_BINLOG_POSITION_MANAGER, MYAPS_ROOT_PASSWORD
+from core.database import TORTOISE_ORM_CONFIG
+from tortoise import Tortoise
 from globalobjects import logger as log_config
 from apps.common.utils.thread_pool_manager import global_pool_manager
 from apps.common.monitor.models import BinlogPosition, ProcessedEvent
 import os
 import asyncio
+
+async def ensure_tortoise_init():
+    """确保 Tortoise ORM 已初始化"""
+    if not hasattr(Tortoise, '_inited') or not Tortoise._inited:
+        try:
+            await Tortoise.init(config=TORTOISE_ORM_CONFIG)
+            logger.info("✅ Tortoise ORM 已初始化")
+        except Exception as e:
+            logger.warning(f"⚠️ 初始化 Tortoise ORM 时出错: {e}")
 
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 logger = log_config.get_logger(__name__, level=LOG_LEVEL)
@@ -84,6 +95,7 @@ class BinlogPositionManager:
     
     async def _get_or_create_position(self):
         """获取或创建位置记录"""
+        await ensure_tortoise_init()
         position = await BinlogPosition.filter(server_id=self._server_id).first()
         if not position:
             position = await BinlogPosition.create(
@@ -215,6 +227,7 @@ class BinlogPositionManager:
     async def _clear_position_async(self):
         """异步清除 binlog 位置"""
         try:
+            await ensure_tortoise_init()
             await BinlogPosition.filter(server_id=self._server_id).delete()
             logger.info("🗑️ Binlog 位置已清除")
         except Exception as e:
@@ -250,6 +263,7 @@ class BinlogPositionManager:
     async def _is_event_processed_async(self, event_id: str) -> bool:
         """异步检查事件是否已处理"""
         try:
+            await ensure_tortoise_init()
             return await ProcessedEvent.filter(event_id=event_id).exists()
         except Exception as e:
             logger.warning(f"⚠️ 检查事件是否已处理失败: {e}")
@@ -286,6 +300,7 @@ class BinlogPositionManager:
     async def _mark_event_processed_async(self, event_id: str, log_file: str, log_pos: int, event_type: str, table_name: str, database_name: str):
         """异步标记事件为已处理"""
         try:
+            await ensure_tortoise_init()
             await ProcessedEvent.get_or_create(
                 event_id=event_id,
                 defaults={
@@ -326,6 +341,7 @@ class BinlogPositionManager:
     async def _cleanup_old_events_async(self, days: int = 7):
         """异步清理旧的已处理事件记录"""
         try:
+            await ensure_tortoise_init()
             from datetime import timezone as tz
             cutoff = datetime.now(tz.utc) - timedelta(days=days)
             deleted_count = await ProcessedEvent.filter(processed_at__lt=cutoff).delete()

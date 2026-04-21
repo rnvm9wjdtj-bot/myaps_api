@@ -141,7 +141,7 @@ class DatabaseHealthChecker:
             last_alert = self._last_alert_time.get(alert_key, 0)
 
             if current_time - last_alert >= self._alert_cooldown:
-                await alert_sender.trigger_alert(
+                await reminder_manager.trigger_remind(
                     RemindType.DB_CONNECTION,
                     f"数据库连接异常: {unhealthy_count} 个连接不健康"
                 )

@@ -9,7 +9,6 @@ from typing import Optional, Dict, Any
 from logging.handlers import TimedRotatingFileHandler, QueueHandler, QueueListener
 
 
-
 class EmojiManager:
     """
 emoji 管理类，根据终端支持情况提供相应的图标"""
@@ -1124,6 +1123,8 @@ class SmartLogger(logging.Logger):
             msg: 日志消息
             **kwargs: 额外的日志参数
         """
+        from core.settings import SQLITE_FILE
+        
         # 检查数据库是否已初始化
         global db_initialized
         if not db_initialized:
@@ -1200,7 +1201,7 @@ class SmartLogger(logging.Logger):
             # 尝试创建日志记录
             try:
                 # 确保模型有正确的默认连接
-                SystemLog._meta.default_connection = "local_data"
+                SystemLog._meta.default_connection = SQLITE_FILE
                 
                 await SystemLog.create(
                     level=logging.getLevelName(level),

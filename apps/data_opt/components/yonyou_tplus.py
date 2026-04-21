@@ -492,7 +492,7 @@ class TplusConfig:
 
 class TplusConnection(BaseConnection):
     
-    def __init__(self, config: TplusConfig=TplusConfig()):
+    def __init__(self, aph: 'ApsHelpers', config: TplusConfig=TplusConfig()):
         """
         初始化畅捷通连接
         """
@@ -500,6 +500,7 @@ class TplusConnection(BaseConnection):
         self.config = config
         self.base_url = self.config.base_url
         self.cache_file = self.config.cache_file
+        self.aph = aph
         # 从缓存文件中读取认证信息，并将其设置为类实例属性
         self.credential_keys = ("app_key", "app_secret", "access_token", "refresh_token", "org_id", "_auth_at_")
         cache_erp = self.cache_file.get("erp", {})
@@ -984,9 +985,10 @@ class TplusConnection(BaseConnection):
             tplus_mo_entryid = tplus_mo_data['ManufactureOrderDetails'][0]['ID']
 
             # 调用存储过程更改工单信息，❗一定放在最后一步，否则工单号变更太早，前面若有用原生供应号查询都会失败
-            _x_c = ApsHelpers.pl_release_success(native_plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
+            _x_c = self.aph.pl_release_success(native_plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
         else:
-            _x_d = ApsHelpers.pl_release_failed(native_plno=supplyno, msg=mo_create_response_json['message'], push_data=payload, msg_from='T+')
+            _x_d = self.aph.pl_release_failed(native_plno=supplyno, msg=mo_create_response_json['message'], push_data=payload, msg_from='T+')
+
 
     async def create_mo_async(self, supplyno: str, auto_push_rs: bool = True, remain_native_supplyno: bool = True, pydantic_model: PydanticModel=MoPushModel):
         """
@@ -1034,9 +1036,9 @@ class TplusConnection(BaseConnection):
             tplus_mo_entryid = tplus_mo_data['ManufactureOrderDetails'][0]['ID']
 
             # 调用存储过程更改工单信息，❗一定放在最后一步，否则工单号变更太早，前面若有用原生供应号查询都会失败
-            _x_c = await ApsHelpers.pl_release_success_async(native_plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
+            _x_c = await self.aph.pl_release_success_async(native_plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
         else:
-            _x_d = await ApsHelpers.pl_release_failed_async(native_plno=supplyno, msg=mo_create_response_json['message'], push_data=payload, msg_from='T+')
+            _x_d = await self.aph.pl_release_failed_async(native_plno=supplyno, msg=mo_create_response_json['message'], push_data=payload, msg_from='T+')
 
 
     def push_rs(self, mdlist_or_supplyno: str | list[dict], tplus_mo_data_or_id: dict | str | int, pydantic_model:PydanticModel=RsPushModel):
@@ -1081,11 +1083,11 @@ class TplusConnection(BaseConnection):
             response = self._post(endpoint=endpoint, data=payload)
             rs_push_response_json = response.json()
             if str(rs_push_response_json['code']) == '0': # 创建成功
-                ApsHelpers.rs_push_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
+                self.aph.rs_push_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
             else:
-                ApsHelpers.rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], push_data=processed_rsdata, msg_from='T+')
+                self.aph.rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], push_data=processed_rsdata, msg_from='T+')
         else:
-            ApsHelpers.rs_push_success(rsno=demandno, msg="无领料申请详情", msg_from='APS')
+            self.aph.rs_push_success(rsno=demandno, msg="无领料申请详情", msg_from='APS')
 
     def push_pr(self, data_list: list[dict]=None, pydantic_model:PydanticModel=PrPushModel):
         """
@@ -1121,14 +1123,14 @@ class TplusConnection(BaseConnection):
             tplus_pr_id = pr_push_response_json['data'].get('ID')
             tplus_pr_code = pr_push_response_json['data'].get('Code')
             for _ in data_list:
-                ApsHelpers.pr_push_success(prno=_['supplyno'], msg=pr_push_response_json['message'], msg_from='T+', _code=tplus_pr_code, _id=tplus_pr_id)
+                self.aph.pr_push_success(prno=_['supplyno'], msg=pr_push_response_json['message'], msg_from='T+', _code=tplus_pr_code, _id=tplus_pr_id)
             
             # 审批请购单
             approve_pr(tplus_pr_code=tplus_pr_code)
         
         else:
             for _ in data_list:
-                ApsHelpers.pr_push_failed(prno=_['supplyno'], msg=pr_push_response_json['message'], msg_from='T+', push_data=payload)
+                self.aph.pr_push_failed(prno=_['supplyno'], msg=pr_push_response_json['message'], msg_from='T+', push_data=payload)
 
 
     def delete_pr(self, tplus_pr_code: str):

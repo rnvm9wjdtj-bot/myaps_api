@@ -1,6 +1,6 @@
 """江阴海达橡塑"""
 
-import requests, uuid, asyncio#, logging#, os, atexit
+import requests, uuid, asyncio, json#, logging#, os, atexit
 import pandas as pd
 from datetime import datetime
 from typing import List, Dict
@@ -12,14 +12,16 @@ from dateutil.relativedelta import relativedelta
 from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
 from .._base import (
     get_scheduler_minute, async_rate_limit, get_production_cache, CacheItem,
-    ApsHelpers, CLIENT_LOGGER, standard_response, get_session,
-    cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, PROJECT_JSON_FILE, pdv
+    ApsHelpers, CLIENT_LOGGER, standard_response, get_session, async_timer,
+    cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, PROJECT_JSON_FILE, pdv,
+    RemindType, QqEmailReminder, Reminder, with_result_collection
 )
 
 
 #################################################################################
 # ⬇️对象及项目参数
 #################################################################################
+
 erp = PROJECT_JSON_FILE.get("erp", {})
 sap_url1 = erp.get("base_url", "") + '/zrestful_test2?sap-client=800'  # 库存
 sap_url2 = erp.get("base_url", "") + '/zrestful_plan?sap-client=' + erp.get("sap-client")  # 计划
@@ -227,7 +229,22 @@ def task_push_seasonpr_to_srm():
 #################################################################################
 # ⬇️APS事件
 #################################################################################
-async def batch_handle_pl_status_a2e(event_data: List[Dict]):
+
+
+
+qq_email_reminder = QqEmailReminder(
+    remind_types=[RemindType.APS_EVENT],
+    smtp_user="2982212683@qq.com",
+    smtp_password="jyboujldhplddhdf",
+    email_from="2982212683@qq.com",
+    email_default_to="2982212683@qq.com",
+)
+
+
+
+@async_timer(reminder=qq_email_reminder)
+@with_result_collection(reminder=qq_email_reminder, description="PL 单据下达（decorate）")
+async def batch_handle_pl_status_a2e(event_data: List[Dict], description="PL 单据下达", aph=None):
     @async_rate_limit()
     async def handle_pl_status_a2e(supplyno_or_data: str | dict):
         if isinstance(supplyno_or_data, str):
@@ -267,7 +284,7 @@ async def batch_handle_pl_status_a2e(event_data: List[Dict]):
             try:
                 sap_response = await asyncio.wait_for(sap_post_future, timeout=API_TIMEOUT)
             except asyncio.TimeoutError:
-                await ApsHelpers.pl_release_failed_async(native_plno=supplyno, msg=f"SAP API 调用超时（{API_TIMEOUT}秒）", push_data=data, msg_from='ERP')
+                await aph.pl_release_failed_async(native_plno=supplyno, msg=f"SAP API 调用超时（{API_TIMEOUT}秒）", push_data=data, msg_from='ERP')
                 return
             sap_response_json = sap_response['response_json']
             
@@ -276,20 +293,20 @@ async def batch_handle_pl_status_a2e(event_data: List[Dict]):
                     sap_mo_data = sap_response_json['BODY'][0]
                     
                     if sap_mo_data.get('STATUS') == 'S':
-                        await ApsHelpers.pl_release_success_async(native_plno=supplyno, mono=sap_mo_data.get('AUFNR'), msg=sap_mo_data.get('MESSAGE'), msg_from='ERP')
+                        await aph.pl_release_success_async(native_plno=supplyno, mono=sap_mo_data.get('AUFNR'), msg=sap_mo_data.get('MESSAGE'), msg_from='ERP')
                     else:
-                        await ApsHelpers.pl_release_failed_async(native_plno=supplyno, msg=sap_mo_data.get('MESSAGE', '未知错误'), push_data=data, msg_from='ERP')
+                        await aph.pl_release_failed_async(native_plno=supplyno, msg=sap_mo_data.get('MESSAGE', '未知错误'), push_data=data, msg_from='ERP')
                 else:
                     # 处理响应格式不正确的情况
-                    await ApsHelpers.pl_release_failed_async(native_plno=supplyno, msg=f"响应格式不正确: {sap_response['response_text']}", push_data=data, msg_from='ERP')
+                    await aph.pl_release_failed_async(native_plno=supplyno, msg=f"响应格式不正确: {sap_response['response_text']}", push_data=data, msg_from='ERP')
             except Exception as e:
                 # 处理其他异常
-                await ApsHelpers.pl_release_failed_async(native_plno=supplyno, msg=f"处理响应失败: {str(e)}", push_data=data, msg_from='ERP')
+                await aph.pl_release_failed_async(native_plno=supplyno, msg=f"处理响应失败: {str(e)}", push_data=data, msg_from='ERP')
         except requests.exceptions.Timeout as e:
             # 处理请求超时，按推送失败处理
-            await ApsHelpers.pl_release_failed_async(native_plno=supplyno, msg=f"请求超时: {str(e)}", push_data=data, msg_from='ERP')
+            await aph.pl_release_failed_async(native_plno=supplyno, msg=f"请求超时: {str(e)}", push_data=data, msg_from='ERP')
         except Exception as e:
-            await ApsHelpers.pl_release_failed_async(native_plno=supplyno, msg=str(e), push_data=data, msg_from='API')
+            await aph.pl_release_failed_async(native_plno=supplyno, msg=str(e), push_data=data, msg_from='API')
     
     from apps.io_api.models import TSupply
     

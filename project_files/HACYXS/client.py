@@ -165,6 +165,8 @@ class CustomRsPushModel(RsPushModel):
 
 
 def batch_handle_pl_status_a2e(supplyno_or_data_list: list[str | dict]):
+    aph = ApsHelpers()
+
     def handle_pl_status_a2e(supplyno_or_data: str | dict):
         """处理PL状态变更为A2E"""
         try:
@@ -176,7 +178,7 @@ def batch_handle_pl_status_a2e(supplyno_or_data_list: list[str | dict]):
             tplus_conn.create_mo(supplyno=supplyno, remain_native_supplyno=REMAIN_NATIVE_SUPPLYNO, pydantic_model=CustomMoPushModel)
         except Exception as e:
             CLIENT_LOGGER.fail("处理PL状态变更", str(supplyno_or_data), str(e))
-            ApsHelpers.pl_release_failed(supplyno, msg=str(e))
+            aph.pl_release_failed(supplyno, msg=str(e))
 
     if len(supplyno_or_data_list) >= 1:
         cache = get_production_cache()

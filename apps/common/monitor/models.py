@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 import ipaddress
 from typing import Optional
 
+from core.settings import SQLITE_FILE
+
 
 def is_internal_ip(ip_str: str) -> bool:
     """判断IP地址是否为内部/本地地址
@@ -123,7 +125,7 @@ class APIRequest(Model):
 
     class Meta:
         table = "api_requests"
-        default_connection = "local_data"
+        default_connection = SQLITE_FILE
         indexes = [
             ("timestamp",),
             ("path",),
@@ -155,7 +157,7 @@ class OutboundAPIRequest(Model):
 
     class Meta:
         table = "outbound_api_requests"
-        default_connection = "local_data"
+        default_connection = SQLITE_FILE
         indexes = [
             ("timestamp",),
             ("module",),
@@ -183,7 +185,7 @@ class SystemLog(Model):
 
     class Meta:
         table = "system_logs"
-        default_connection = "local_data"
+        default_connection = SQLITE_FILE
         indexes = [
             ("timestamp",),
             ("level",),
@@ -204,7 +206,7 @@ class BinlogPosition(Model):
     
     class Meta:
         table = "binlog_positions"
-        default_connection = "local_data"
+        default_connection = SQLITE_FILE
         indexes = [
             ("server_id",),
         ]
@@ -224,7 +226,7 @@ class ProcessedEvent(Model):
     
     class Meta:
         table = "processed_events"
-        default_connection = "local_data"
+        default_connection = SQLITE_FILE
         indexes = [
             ("event_id",),
             ("log_file", "log_pos"),
@@ -265,7 +267,7 @@ class FailedOperation(Model):
 
     class Meta:
         table = "failed_operations"
-        default_connection = "local_data"
+        default_connection = SQLITE_FILE
         indexes = [
             ("timestamp",),
             ("db_name", "status"),
@@ -287,7 +289,7 @@ class FailedOperation(Model):
 #
 #     class Meta:
 #         table = "api_logs"
-#         default_connection = "local_data"
+#         default_connection = SQLITE_FILE
 #         indexes = [
 #             ("timestamp",),
 #             ("level",),
@@ -310,7 +312,7 @@ class FailedOperation(Model):
 #
 #     class Meta:
 #         table = "performance_logs"
-#         default_connection = "local_data"
+#         default_connection = SQLITE_FILE
 #         indexes = [
 #             ("timestamp",),
 #             ("operation",),
@@ -333,7 +335,7 @@ class FailedOperation(Model):
 #
 #     class Meta:
 #         table = "security_logs"
-#         default_connection = "local_data"
+#         default_connection = SQLITE_FILE
 #         indexes = [
 #             ("timestamp",),
 #             ("event_type",),
