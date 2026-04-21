@@ -11,7 +11,7 @@ from dateutil.relativedelta import relativedelta
 
 from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
 from .._base import (
-    get_scheduler_minute, async_rate_limit,
+    get_scheduler_minute, async_rate_limit, get_production_cache, CacheItem,
     ApsHelpers, CLIENT_LOGGER, standard_response, get_session,
     cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, PROJECT_JSON_FILE, pdv
 )
@@ -30,6 +30,9 @@ sap_password = erp.get("password", "")
 sap_session = get_session(allowed_methods=["GET", "POST"])
 # 添加Basic认证
 add_basic_auth_requests(sap_session, sap_username, sap_password)
+
+# API 超时配置
+API_TIMEOUT = 30.0  # API 调用超时（秒）
 
 mes = PROJECT_JSON_FILE.get("mes", {})
 mes_url = mes.get("base_url", "")
@@ -253,14 +256,19 @@ async def batch_handle_pl_status_a2e(event_data: List[Dict]):
 
             # 将同步的 sap_post 调用放在线程池中执行，避免阻塞事件循环
             loop = asyncio.get_event_loop()
-            sap_response = await loop.run_in_executor(
-                None, 
-                sap_post, 
-                sap_url2, 
-                sap_session, 
-                "ZPP_PLAN_ORD_CREATE", 
+            sap_post_future = loop.run_in_executor(
+                None,
+                sap_post,
+                sap_url2,
+                sap_session,
+                "ZPP_PLAN_ORD_CREATE",
                 data
             )
+            try:
+                sap_response = await asyncio.wait_for(sap_post_future, timeout=API_TIMEOUT)
+            except asyncio.TimeoutError:
+                await ApsHelpers.pl_release_failed_async(native_plno=supplyno, msg=f"SAP API 调用超时（{API_TIMEOUT}秒）", push_data=data, msg_from='ERP')
+                return
             sap_response_json = sap_response['response_json']
             
             try:
@@ -287,7 +295,9 @@ async def batch_handle_pl_status_a2e(event_data: List[Dict]):
     
     supply_nos = [_['supplyno'] for _ in event_data]
     supply_list = await TSupply.filter(supplyno__in=supply_nos).update(memo=" 正在推送。。。")
-    
+    cache = get_production_cache()
+    cache.set_cache_items([CacheItem.SUPPLY_MO, CacheItem.ORDER_WC])
+    await cache.establish_production_cache(MYAPS_MAIN_DB, supplynos=supply_nos)
     tasks = [handle_pl_status_a2e(item) for item in event_data]
     await asyncio.gather(*tasks)
 

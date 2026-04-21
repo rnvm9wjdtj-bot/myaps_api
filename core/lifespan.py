@@ -7,7 +7,7 @@ import json
 import inspect
 from globalobjects import logger as log_config
 from apps.data_opt.utils.scheduler import scheduler_manager, get_scheduler_status, initialize_scheduler
-from apps.data_opt.utils.mysqlmonitor import mysql_monitor
+from apps.data_opt.utils.binlog_listener import binlog_listener
 from apps.common.utils.resource_monitor import resource_monitor
 from apps.common.monitor import (
     start_db_health_checker, stop_db_health_checker,
@@ -45,7 +45,7 @@ async def lifespan(app):
     log_config.info("服务器已就绪")
     
     if TURNON_DBMONITOR:
-        mysql_monitor.start_monitoring()
+        binlog_listener.start_monitoring()
         log_config.info("MySQL Binlog监控已启动")
     else:
         log_config.warning("⚠️ MySQL Binlog监控未启动")
@@ -250,7 +250,7 @@ async def lifespan(app):
     # 1. 先停止 MySQL Binlog 监控（最依赖数据库）
     if TURNON_DBMONITOR:
         log_config.info("正在停止 MySQL Binlog 监控...")
-        mysql_monitor.stop_monitoring()
+        binlog_listener.stop_monitoring()
         log_config.info("MySQL Binlog监控已停止")
     else:
         log_config.debug("⚠️ MySQL Binlog监控未启动，无需停止")

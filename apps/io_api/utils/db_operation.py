@@ -15,7 +15,7 @@ from core.settings import MYAPS_DB_SET, LOG_LEVEL
 from globalobjects.db_manager import get_db_managers, DbManager
 from globalobjects import logger as log_config
 from apps.common.monitor.models import FailedOperation
-from apps.common.monitor.allert import alert_sender, AlertType
+from globalobjects import RemindType, reminder_manager
 
 # 为了保持向后兼容，重新导出 db_managers
 def db_managers():
@@ -129,8 +129,8 @@ def retry_on_connection_error(max_retries: int = 3, retry_delay: float = 1.0):
                                     )
                                     
                                     # 触发告警
-                                    await alert_sender.trigger_alert(
-                                        AlertType.DB_CONNECTION,
+                                    await reminder_manager.trigger_remind(
+                                        RemindType.DB_CONNECTION,
                                         {
                                             "operation_id": operation_id,
                                             "db_name": db_name,

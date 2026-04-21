@@ -78,6 +78,10 @@ else:
 # 使用127.0.0.1代替localhost，避免DNS解析问题，提高连接稳定性
 THIS_BASE_URL = PROTOCOL + "127.0.0.1:" + str(PORT)
 
+
+
+
+
 # 项目目录
 PROJECT_DIR = os.getenv("PROJECT_DIR")
 if PROJECT_DIR is None:
@@ -86,8 +90,6 @@ if PROJECT_DIR is None:
 PROJECT_JSON = (os.getenv("PROJECT_JSON") or "dev") + ".json"
 CACHE_JSON_FILE = JSONManager(f"project_files/{PROJECT_DIR}/{PROJECT_JSON}")
 json_env_config = CACHE_JSON_FILE.get("env") or {}
-
-
 MYAPS_VERSION = (os.getenv("MYAPS_VERSION") or json_env_config.get("MYAPS_VERSION") or "L").upper()
 MYAPS_BASE_URL = os.getenv("MYAPS_BASE_URL") or json_env_config.get("MYAPS_BASE_URL")
 MYAPS_DB_HOST = os.getenv("MYAPS_DB_HOST") or json_env_config.get("MYAPS_DB_HOST")

@@ -22,7 +22,7 @@ from apps.io_api.utils.db_operation import db_delete, db_bupsert, call_dbprocdur
 from apps.data_opt.utils.scheduler import cron_task
 from apps.data_opt.utils.common import add_basic_auth_requests, get_session
 from apps.data_opt.utils.data_processor import DataProcessor
-from apps.data_opt.components._base import ApsHelpers, get_production_cache
+from apps.data_opt.components._base import ApsHelpers, get_production_cache, CacheItem
 from apps.data_opt.components.simple_hap import HapConnection
 
 
@@ -138,8 +138,8 @@ class SyncTokenBucket:
 
 
 # 全局共享令牌桶实例（所有装饰的函数共享同一个限流器）
-_global_async_bucket = None
-_global_sync_bucket = None
+db_event_async_bucket = None
+db_event_sync_bucket = None
 
 
 def async_rate_limit(rate: int = None):
@@ -153,19 +153,19 @@ def async_rate_limit(rate: int = None):
     
     限流维度: 基于被装饰函数的 event_count 参数指定的事件数量进行限流
     """
-    global _global_async_bucket
+    global db_event_async_bucket
     if rate is None:
         rate = MAX_EVENTS_PER_SECOND
     
-    if _global_async_bucket is None:
-        _global_async_bucket = AsyncTokenBucket(rate)
-        _global_async_bucket.start()
+    if db_event_async_bucket is None:
+        db_event_async_bucket = AsyncTokenBucket(rate)
+        db_event_async_bucket.start()
     
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, **kwargs):
             event_count = kwargs.pop('event_count', 1)
-            await _global_async_bucket.acquire(event_count)
+            await db_event_async_bucket.acquire(event_count)
             return await func(*args, **kwargs)
         return wrapper
     return decorator
@@ -182,18 +182,18 @@ def sync_rate_limit(rate: int = None):
     
     限流维度: 基于被装饰函数的 event_count 参数指定的事件数量进行限流
     """
-    global _global_sync_bucket
+    global db_event_sync_bucket
     if rate is None:
         rate = MAX_EVENTS_PER_SECOND
     
-    if _global_sync_bucket is None:
-        _global_sync_bucket = SyncTokenBucket(rate)
+    if db_event_sync_bucket is None:
+        db_event_sync_bucket = SyncTokenBucket(rate)
     
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
             event_count = kwargs.pop('event_count', 1)
-            _global_sync_bucket.acquire(event_count)
+            db_event_sync_bucket.acquire(event_count)
             return func(*args, **kwargs)
         return wrapper
     return decorator

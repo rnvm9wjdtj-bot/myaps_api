@@ -30,24 +30,24 @@ SHOW VARIABLES LIKE 'binlog_format';  -- 推荐ROW模式
 4. 重启 MySQL 使配置生效
 
 使用示例：
-    from apps.data_opt.utils.mysqlmonitor import mysql_monitor
+    from apps.data_opt.utils.binlog_listener import binlog_listener
     
     # 注册告警处理器（可选）
     def alert_handler(message, level):
         # 发送到企业微信/钉钉/邮件等
         print(f"[{level}] {message}")
     
-    mysql_monitor.register_alert_handler(alert_handler)
+    binlog_listener.register_alert_handler(alert_handler)
     
     # 启动监控
-    mysql_monitor.start_monitoring()
+    binlog_listener.start_monitoring()
     
     # 查看状态
-    status = mysql_monitor.get_status()
+    status = binlog_listener.get_status()
     print(status)
     
     # 停止监控
-    mysql_monitor.stop_monitoring()
+    binlog_listener.stop_monitoring()
 """
 
 
@@ -471,7 +471,7 @@ class ConnectionHealthChecker:
 
 
 
-class MySQLBinlogMonitor:
+class MySQLBinlogListener:
     # 单例模式实现
     _instance = None
     _lock = threading.RLock()
@@ -545,7 +545,7 @@ class MySQLBinlogMonitor:
             self._min_workers = 5
             self._max_workers = 5
             self._thread_pool = global_pool_manager.get_pool(
-                'mysql_monitor', 
+                'binlog_listener', 
                 max_workers=self._max_workers,
                 thread_name_prefix='mysql-monitor-'
             )
@@ -553,7 +553,7 @@ class MySQLBinlogMonitor:
             self._validate_config()
         else:
             self._thread_pool = global_pool_manager.get_pool(
-                'mysql_monitor', 
+                'binlog_listener', 
                 max_workers=1,
                 thread_name_prefix='mysql-monitor-'
             )
@@ -1560,24 +1560,24 @@ class MySQLBinlogMonitor:
 # 定义全局的MySQLBinlogMonitor单例实例
 # 用户可以直接导入并使用这个实例
 
-mysql_monitor = MySQLBinlogMonitor()
+binlog_listener = MySQLBinlogListener()
 
 
 # 使用说明：
 # 直接导入全局实例（推荐）
-#    from apps.data_opt.utils.mysqlmonitor import mysql_monitor
+#    from apps.data_opt.utils.binlog_listener import binlog_listener
 #    # 直接使用mysql_monitor对象
-#    await mysql_monitor.start_monitoring()
+#    await binlog_listener.start_monitoring()
 #  
 #  
 # 注册事件处理器示例：
-#    @mysql_monitor.on_insert_for_table("your_table", "your_database")
+#    @binlog_listener.on_insert_for_table("your_table", "your_database")
 #    async def handle_insert(database, table, data):
 #        # 处理插入事件
 #        pass
 #  
 # 停止监控：
-#    mysql_monitor.stop_monitoring()
+#    binlog_listener.stop_monitoring()
 
 
 def is_mysql_config_valid() -> bool:

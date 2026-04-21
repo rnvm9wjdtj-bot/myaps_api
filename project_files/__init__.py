@@ -56,7 +56,7 @@ except:
 # ⬇️MYAPS数据库事件HOOK
 #################################################################################
 from enum import Enum
-from apps.data_opt.utils.mysqlmonitor import mysql_monitor
+from apps.data_opt.utils.binlog_listener import binlog_listener
 from globalobjects import EVENT_AGGREGATOR
 
 
@@ -175,7 +175,7 @@ else:
 #################################################################################
 # ⬇️事件处理函数
 #################################################################################
-@mysql_monitor.on_update_for_table("t_supply", database=MYAPS_MAIN_DB)
+@binlog_listener.on_update_for_table("t_supply", database=MYAPS_MAIN_DB)
 def handle_update_supply(database: str, table: str, data: dict, data_diff: dict):
     """处理t_supply表的更新事件"""
     try:
@@ -197,7 +197,7 @@ def handle_update_supply(database: str, table: str, data: dict, data_diff: dict)
         logger.fail("处理t_supply更新事件", "", str(e))
 
 
-@mysql_monitor.on_insert_for_table("t_supply", database=MYAPS_MAIN_DB)
+@binlog_listener.on_insert_for_table("t_supply", database=MYAPS_MAIN_DB)
 def handle_insert_supply(database: str, table: str, data: dict):
     """处理t_supply表的插入事件"""
     try:
@@ -214,7 +214,7 @@ def handle_insert_supply(database: str, table: str, data: dict):
    
 
 
-# @mysql_monitor.on_delete_for_table("t_supply", database=MYAPS_MAIN_DB)
+# @binlog_listener.on_delete_for_table("t_supply", database=MYAPS_MAIN_DB)
 # def handle_delete_supply(database: str, table: str, data: dict):
 #     """处理t_supply表的删除事件"""
 #     from apps.data_opt.components._base import ApsHelpers

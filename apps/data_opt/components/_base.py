@@ -1,11 +1,12 @@
 import json
 import pandas as pd
-import requests
 import time
 import threading
 import asyncio
 import inspect
 from pathlib import Path
+
+from enum import Enum
 from typing import List, Dict, Optional, Literal, Callable, Union, Any, Type
 from collections import defaultdict
 from abc import ABC, abstractmethod
@@ -17,6 +18,7 @@ from pydantic import BaseModel as PydanticModel
 from core.settings import THIS_BASE_URL, MYAPS_MAIN_DB, MYAPS_DB_SET
 from apps.data_opt.utils.common import get_session, convert_timeunit, clean_value
 from apps.data_opt.utils.data_processor import DataProcessor
+from apps.io_api.utils.db_operation import db_exec_sql
 from apps.io_api.schemas import (
     model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
@@ -31,9 +33,6 @@ from globalobjects.json_manager import JSONManager
 
 
 logger = log_config.get_logger(__name__)
-
-
-SESSION = get_session()
 
 
 class BaseConnection(ABC):
@@ -101,11 +100,12 @@ class BaseConnection(ABC):
         pass
 
 
-
-
-# 缓存配置
-CACHE_REFRESH_INTERVAL = 300.0  # 5分钟（秒）
-# CACHE_MAX_PAGESIZE = 10000  # 单页最大数据量
+class CacheItem(Enum):
+    SUPPLY_MO = 'supply_mo'
+    ORDER_WC = 'orderwc'
+    DEMAND = 'demand'
+    PEG = 'peg'
+    MATERIAL = 'material'
 
 
 class _ProductionDataCache:
@@ -115,293 +115,505 @@ class _ProductionDataCache:
         # 状态标志
         self._initialized = False
         self._is_loading = False
-        self._load_lock = threading.Lock()
-        self._refresh_lock = threading.Lock()
+        self._load_lock = asyncio.Lock()
+        # [已移除] self._refresh_lock = threading.Lock()
+        
+        # 等待队列（用于批次间等待机制）
+        self._wait_queue: List[asyncio.Future] = []
+        self._wait_lock = asyncio.Lock()
+        
+        # 待合并的 supplynos（用于增量加载）
+        self._pending_supplynos: set = set()
+        self._pending_lock = asyncio.Lock()
+        
+        # 配置
+        self.WAIT_TIMEOUT = 30.0  # 等待超时（秒）
+        self.LOAD_TIMEOUT = 60.0  # 加载超时（秒）
+        
+        # 加载完成信号（用于跨协程通知）
+        self._loading_complete = asyncio.Event()
+        self._loading_complete.set()
+        
+        # 缓存项配置（由子类/项目配置覆盖）
+        self.CACHE_ITEMS = [CacheItem.SUPPLY_MO.value, CacheItem.ORDER_WC.value, CacheItem.DEMAND.value, CacheItem.PEG.value, CacheItem.MATERIAL.value]
+        
+        # 缓存项依赖关系（声明式配置）
+        # 格式：{ CacheItem: [依赖项列表] }
+        # 如果声明加载某项，但其依赖基础未在 CACHE_ITEMS 中，则自动补充
+        self.CACHE_ITEM_DEPS = {
+            CacheItem.DEMAND: [CacheItem.PEG],
+            CacheItem.ORDER_WC: [CacheItem.SUPPLY_MO],
+            CacheItem.PEG: [CacheItem.SUPPLY_MO],
+            CacheItem.MATERIAL: [CacheItem.SUPPLY_MO, CacheItem.DEMAND],
+        }
+        
+        # 强制加载的缓存项（即使未在 CACHE_ITEMS 中也会加载）
+        self.CACHE_ITEMS_FORCE = [CacheItem.SUPPLY_MO.value]
+        
+        # 解析后的有效缓存项（运行时计算）
+        self._effective_cache_items: List[str] = []
         
         # 缓存数据
         self._cache: Dict[str, Dict[Any, Any]] = {
-            'supply_mo': {},
-            'orderwc': {},
-            'demand': {},
-            'peg': {},
-            'material': {}
+            CacheItem.SUPPLY_MO.value: {},
+            CacheItem.ORDER_WC.value: {},
+            CacheItem.DEMAND.value: {},
+            CacheItem.PEG.value: {},
+            CacheItem.MATERIAL.value: {}
         }
-        
-        # 计时器（秒）
-        self._last_refresh_time = 0.0
-        
+    
         # 统计信息
         self._stats = {
             'total_hits': 0,
             'total_misses': 0,
             'total_refreshes': 0,
-            'last_refresh_time': None,
             'cache_size': 0
         }
 
-    
-    async def _full_refresh(self, db_name: str):
-        """全量刷新缓存"""
-        logger.info("生产数据缓存", "", "开始全量刷新...")
-        
-        try:
-            # 使用 API 方式构建缓存
-            self._build_supply_mo_cache(db_name)
-            self._build_orderwc_cache(db_name)
-            self._build_demand_cache(db_name)
-            self._build_peg_cache(db_name)
-            self._build_material_cache(db_name)
-            
-            self._last_refresh_time = time.time()
-            self._stats['total_refreshes'] += 1
-            self._stats['last_refresh_time'] = self._last_refresh_time
-            self._stats['cache_size'] = sum(
-                len(v) for v in self._cache.values() if isinstance(v, dict)
-            )
-            
-            logger.success("生产数据缓存", "", f"全量刷新完成，共 {self._stats['cache_size']} 条数据")
-            
-        except Exception as e:
-            logger.fail("生产数据缓存", "", f"全量刷新失败: {e}")
-            raise
-    
 
-    def ensure_initialized(self, db_name: str):
-        """同步方式确保缓存已初始化（使用线程事件阻塞）"""
+    def set_cache_items(self, cache_items: List[Union[str, 'CacheItem']]):
+        """设置缓存项配置
+        
+        允许使用字符串或 CacheItem 枚举对象来指定缓存项。
+        会自动处理依赖关系并更新有效缓存项列表。
+        
+        Args:
+            cache_items: 缓存项列表，可以是字符串或 CacheItem 枚举对象
+        """
+        # 处理输入，确保所有项都是字符串
+        processed_items = []
+        for item in cache_items:
+            if isinstance(item, CacheItem):
+                processed_items.append(item.value)
+            elif isinstance(item, str):
+                # 验证字符串是否是有效的缓存项
+                valid_values = [e.value for e in CacheItem]
+                if item in valid_values:
+                    processed_items.append(item)
+                else:
+                    logger.warning("生产数据缓存", "", f"忽略无效的缓存项: {item}")
+        
+        # 更新缓存项配置
+        self.CACHE_ITEMS = processed_items
+        
+        # 重新解析依赖关系，更新有效缓存项
+        self._resolve_cache_items()
+        logger.info("生产数据缓存", "", f"已设置缓存项: {self.CACHE_ITEMS}")
+
+
+    async def ensure_initialized(self):
+        """异步方式确保缓存已初始化
+        
+        [注意] 全量加载已禁用，请使用 load_on_demand 方法按需加载数据
+        
+        Args:
+            db_name: 数据库名称（此参数在当前实现中不再使用）
+        """
         if self._initialized:
             return
         
-        with self._load_lock:
-            if self._initialized:
-                return
-            
-            logger.info("生产数据缓存", "", "首次加载中，事件队列将等待...")
-            self._is_loading = True
-            
-            try:
-                # 直接运行同步版本的初始化，避免事件循环问题
-                # 这样可以确保在任何线程中都能正常工作
-                self._initialize(db_name)
-                
-                self._initialized = True
-                logger.success("生产数据缓存", "", "首次加载完成")
-                
-            except Exception as e:
-                logger.fail("生产数据缓存", "", f"首次加载失败: {e}")
-                raise
-            finally:
-                self._is_loading = False
+        # [已修改] 全量加载已禁用，提示用户使用按需加载
+        logger.warning(
+            "生产数据缓存", 
+            "", 
+            "全量加载已禁用。请使用 cache.load_on_demand(db_name, supplynos=[...]) 按需加载指定工单数据"
+        )
+        # 不执行任何加载操作，等待用户显式调用 load_on_demand
+        return
     
-
-    def _initialize(self, db_name: str):
-        """同步版本的初始化方法，使用 API 方式获取数据"""
+    def _resolve_cache_items(self) -> List[str]:
+        """解析缓存项配置，处理依赖补充和强制加载项
+        
+        依赖补充规则：
+        - 如果声明加载某项，但其依赖基础未在 CACHE_ITEMS 中，则自动补充
+        - 强制加载项（supply_mo, orderwc, peg）始终加载
+        - 支持多层依赖传递（如 demand -> peg -> supply_mo）
+        
+        Returns:
+            解析后的有效缓存项列表
+        """
+        def resolve_deps(item: CacheItem, resolved: set):
+            """递归解析依赖项"""
+            for dep in self.CACHE_ITEM_DEPS.get(item, []):
+                if dep not in resolved:
+                    resolved.add(dep.value)
+                    resolve_deps(dep, resolved)
+        
+        effective = set()
+        
+        for item in self.CACHE_ITEMS:
+            effective.add(item if isinstance(item, str) else item.value)
+        
+        for item in self.CACHE_ITEMS_FORCE:
+            effective.add(item if isinstance(item, str) else item.value)
+        
+        for item in list(effective):
+            item_enum = CacheItem(item) if item in [e.value for e in CacheItem] else None
+            if item_enum:
+                resolve_deps(item_enum, effective)
+        
+        self._effective_cache_items = list(effective)
+        return self._effective_cache_items
+    
+    async def _initialize_on_needed(self, db_name: str, supplynos: list):
+        """按需加载缓存，只加载指定 supplyno 相关的数据
+        
+        加载顺序：
+        1. supply_mo - 只加载指定的 supplyno 数据
+        2. orderwc - 只加载与指定 supplyno 相关的工序数据
+        3. peg - 只加载与指定 supplyno 相关的匹配关系，并收集 demandno
+        4. demand - 只加载 peg 中收集到的 demandno 数据
+        5. material - 全量加载（或根据需要优化）
+        
+        Args:
+            db_name: 数据库名称
+            supplynos: supplyno 列表，指定需要加载的数据
+        """
+        if not supplynos:
+            logger.warning("生产数据缓存", "", "传入的 supplyno 列表为空，跳过按需加载")
+            return
+        
         try:
-            logger.info("生产数据缓存", "", "开始构建 supply_mo 缓存...")
-            self._build_supply_mo_cache(db_name)
-            logger.success("生产数据缓存", "", f"supply_mo 缓存加载: {len(self._cache['supply_mo'])} 条")
+            effective_items = self._resolve_cache_items()
+            logger.info("生产数据缓存", "", f"开始按需加载，共 {len(supplynos)} 个 supplyno，缓存项: {effective_items}")
             
-            logger.info("生产数据缓存", "", "开始构建 orderwc 缓存...")
-            self._build_orderwc_cache(db_name)
-            logger.success("生产数据缓存", "", f"orderwc 缓存加载: {len(self._cache['orderwc'])} 条")
+            # 1. 加载 supply_mo 缓存（核心数据）- 必须加载
+            logger.info("生产数据缓存", "", "开始构建 supply_mo 缓存（按需）...")
+            await self._build_supply_mo_cache(db_name, supplynos=supplynos)
+            logger.success("生产数据缓存", "", f"{CacheItem.SUPPLY_MO.value} 缓存加载: {len(self._cache[CacheItem.SUPPLY_MO.value])} 条")
             
-            logger.info("生产数据缓存", "", "开始构建 demand 缓存...")
-            self._build_demand_cache(db_name)
-            logger.success("生产数据缓存", "", f"demand 缓存加载: {len(self._cache['demand'])} 条")
+            # 2. 加载 orderwc 缓存（子表，通过 supplyno 关联）- 必须加载
+            logger.info("生产数据缓存", "", "开始构建 orderwc 缓存（按需）...")
+            await self._build_orderwc_cache(db_name, supplynos=supplynos)
+            logger.success("生产数据缓存", "", f"{CacheItem.ORDER_WC.value} 缓存加载: {len(self._cache[CacheItem.ORDER_WC.value])} 条")
             
-            logger.info("生产数据缓存", "", "开始构建 peg 缓存...")
-            self._build_peg_cache(db_name)
-            logger.success("生产数据缓存", "", f"peg 缓存加载: {len(self._cache['peg']['demand_to_supply'])} 条 DemandNo")
+            # 3. 加载 peg 缓存（多对多关系），并收集 demandno - 必须加载
+            logger.info("生产数据缓存", "", "开始构建 peg 缓存（按需）...")
+            demand_nos = await self._build_peg_cache(db_name, supplynos=supplynos)
+            logger.success("生产数据缓存", "", f"{CacheItem.PEG.value} 缓存加载: {len(self._cache[CacheItem.PEG.value]['demand_to_supply'])} 条 DemandNo")
             
-            logger.info("生产数据缓存", "", "开始构建 material 缓存...")
-            self._build_material_cache(db_name)
-            logger.success("生产数据缓存", "", f"material 缓存加载: {len(self._cache['material'])} 条")
+            # 4. 加载 demand 缓存（根据 peg 中收集的 demandno）
+            if CacheItem.DEMAND.value in effective_items:
+                logger.info("生产数据缓存", "", "开始构建 demand 缓存（按需）...")
+                await self._build_demand_cache(db_name, demandnos=demand_nos)
+                logger.success("生产数据缓存", "", f"{CacheItem.DEMAND.value} 缓存加载: {len(self._cache[CacheItem.DEMAND.value])} 条")
+            else:
+                logger.info("生产数据缓存", "", "跳过 demand 缓存（未启用）")
             
-            # 更新最后刷新时间
-            self._last_refresh_time = time.time()
+            # 5. 加载 material 缓存（收集 supply_mo 和 demand 中的 materialno 并集）
+            if CacheItem.MATERIAL.value in effective_items:
+                material_nos_from_supply = {item.get('materialno') for item in self._cache[CacheItem.SUPPLY_MO.value].values() if item.get('materialno')}
+                material_nos_from_demand = {item.get('materialno') for item in self._cache[CacheItem.DEMAND.value].values() if item.get('materialno')}
+                material_nos = list(material_nos_from_supply | material_nos_from_demand)
+                logger.info("生产数据缓存", "", f"开始构建 material 缓存（按需），共 {len(material_nos)} 个物料号）...")
+                await self._build_material_cache(db_name, material_nos=material_nos)
+                logger.success("生产数据缓存", "", f"{CacheItem.MATERIAL.value} 缓存加载: {len(self._cache[CacheItem.MATERIAL.value])} 条")
+            else:
+                logger.info("生产数据缓存", "", "跳过 material 缓存（未启用）")
+            
             self._stats['total_refreshes'] += 1
-            self._stats['last_refresh_time'] = self._last_refresh_time
             self._stats['cache_size'] = sum(
                 len(v) for v in self._cache.values() if isinstance(v, dict)
             )
-            logger.success("生产数据缓存", "", f"全量加载完成，共 {self._stats['cache_size']} 条数据")
+            logger.success("生产数据缓存", "", f"按需加载完成，共 {self._stats['cache_size']} 条数据")
                 
         except Exception as e:
-            logger.fail("生产数据缓存", "", f"同步初始化失败: {e}")
+            logger.fail("生产数据缓存", "", f"按需加载失败: {e}")
             raise
     
 
-    def _fetch_paginated_data(self, url: str, page_size: int = 1000):
-        """通用的分页获取数据方法"""
-        all_data = []
-        page_index = 1
-        max_retries = 3
-        retry_delay = 2  # 秒
-        
-        while True:
-            paginated_url = f"{url}&page_index={page_index}&page_size={page_size}"
-            
-            for attempt in range(max_retries):
-                try:
-                    response = SESSION.get(paginated_url, timeout=(30, 60))
-                    response.raise_for_status()
-                    result = response.json()
-                    
-                    data_list = result.get('data', [])
-                    all_data.extend(data_list)
-                    
-                    # 检查是否还有下一页
-                    total = result.get('meta', {}).get('total', 0)
-                    if len(all_data) >= total:
-                        return all_data
-                    
-                    page_index += 1
-                    break
-                except Exception as e:
-                    logger.warning("生产数据缓存", "", f"分页获取数据失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-                    if attempt < max_retries - 1:
-                        time.sleep(retry_delay)
-                    else:
-                        # 达到最大重试次数，返回已获取的数据
-                        return all_data
-    
-
-    def _build_cache(self, db_name: str, api_endpoint: str, cache_name: str, cache_factory, process_item):
+    async def _build_cache(self, db_name: str, table_name: str, cache_name: str, cache_factory, process_item, filter_string: str = ''):
         """通用的缓存构建方法"""
         cache = cache_factory()
-        url = f"{THIS_BASE_URL}{api_endpoint}?db_name={db_name}"
         
-        # 使用分页机制获取数据
-        data_list = self._fetch_paginated_data(url)
+        # 直接从数据库获取数据，不分页，因为 db_query 已经处理了分页
+        result = await db_query(db_name=db_name, model_or_tablename=table_name, filter_string=filter_string, page_size=1000, page_index=0)
+        data_list = result.get('data', [])
+        
         for item in data_list:
             process_item(item, cache)
         
         self._cache[cache_name] = cache
+        return data_list
     
 
-    def _build_supply_mo_cache(self, db_name: str):
-        """使用 API 方式构建 supply_mo 缓存"""
+    async def _build_supply_mo_cache(self, db_name: str, supplynos: list = None):
+        """使用数据库查询方式构建 supply_mo 缓存
+        
+        Args:
+            db_name: 数据库名称
+            supplynos: 可选，supplyno 列表，如果提供则只加载这些 supplyno 的数据
+        """
         def process_item(item, cache):
             supply_no = item.get('supplyno', '')
             if supply_no:
                 cache[supply_no] = item
         
-        self._build_cache(
+        # 构建过滤条件
+        filter_string = ''
+        if supplynos:
+            formatted_nos = ','.join([f"'{s}'" for s in supplynos])
+            filter_string = f"`SupplyNo` IN ({formatted_nos})"
+        
+        await self._build_cache(
             db_name=db_name,
-            api_endpoint="/api/v_supply_mo/page",
-            cache_name="supply_mo",
+            table_name="v_supply_mo",
+            cache_name=CacheItem.SUPPLY_MO.value,
             cache_factory=dict,
-            process_item=process_item
+            process_item=process_item,
+            filter_string=filter_string
         )
     
 
-    def _build_orderwc_cache(self, db_name: str):
-        """使用 API 方式构建 orderwc 缓存（以 supplyno 为索引）"""
+    async def _build_orderwc_cache(self, db_name: str, supplynos: list = None):
+        """使用数据库查询方式构建 orderwc 缓存（以 supplyno 为索引）
+        
+        Args:
+            db_name: 数据库名称
+            supplynos: 可选，supplyno 列表，如果提供则只加载这些 supplyno 的数据
+        """
         def process_item(item, cache):
             supply_no = item.get('supplyno', '')
             if supply_no:
                 cache[supply_no].append(item)
         
-        self._build_cache(
+        # 构建过滤条件
+        filter_string = ''
+        if supplynos:
+            formatted_nos = ','.join([f"'{s}'" for s in supplynos])
+            filter_string = f"`SupplyNo` IN ({formatted_nos})"
+        
+        await self._build_cache(
             db_name=db_name,
-            api_endpoint="/api/v_orderwc/page",
-            cache_name="orderwc",
+            table_name="v_orderwc",
+            cache_name=CacheItem.ORDER_WC.value,
             cache_factory=lambda: defaultdict(list),
-            process_item=process_item
+            process_item=process_item,
+            filter_string=filter_string
         )
     
 
-    def _build_demand_cache(self, db_name: str):
-        """使用 API 方式构建 demand 缓存"""
+    async def _build_demand_cache(self, db_name: str, demandnos: list = None):
+        """使用数据库查询方式构建 demand 缓存
+        
+        Args:
+            db_name: 数据库名称
+            demandnos: 可选，demandno 列表，如果提供则只加载这些 demandno 的数据
+        """
         def process_item(item, cache):
             demand_no = item.get('demandno', '')
             if demand_no:
                 cache[demand_no].append(item)
         
-        self._build_cache(
+        # 构建过滤条件
+        filter_string = ''
+        if demandnos:
+            formatted_nos = ','.join([f"'{d}'" for d in demandnos])
+            filter_string = f"`DemandNo` IN ({formatted_nos})"
+        
+        await self._build_cache(
             db_name=db_name,
-            api_endpoint="/api/v_demand/page",
-            cache_name="demand",
+            table_name="v_demand",
+            cache_name=CacheItem.DEMAND.value,
             cache_factory=lambda: defaultdict(list),
-            process_item=process_item
+            process_item=process_item,
+            filter_string=filter_string
         )
 
 
-    def _build_peg_cache(self, db_name: str):
-        """使用 API 方式构建 peg 缓存（双向索引）"""
-        def process_item(item, cache):
-            demand_no = item.get('demandno', '')
-            s_supply_no = item.get('s_supplyno', '')
+    async def _build_peg_cache(self, db_name: str, supplynos: list = None):
+        """使用直接 SQL 方式构建 peg 缓存（双向索引），加快构建速度
+        
+        Args:
+            db_name: 数据库名称
+            supplynos: 可选，supplyno 列表，如果提供则只加载这些 supplyno 相关的 peg 数据
             
-            if demand_no and s_supply_no:
-                if s_supply_no not in cache['demand_to_supply'][demand_no]:
-                    cache['demand_to_supply'][demand_no].append(s_supply_no)
-                if demand_no not in cache['supply_to_demand'][s_supply_no]:
-                    cache['supply_to_demand'][s_supply_no].append(demand_no)
+        Returns:
+            list: 收集到的所有 demandno 列表
+        """
+        from apps.io_api.routers import MINI_PEG_SQL
+
+        demand_nos = set()
         
-        def peg_cache_factory():
-            return {
-                'demand_to_supply': defaultdict(list),
-                'supply_to_demand': defaultdict(list)
-            }
+        # 构建 peg 缓存结构
+        peg_cache = {
+            'demand_to_supply': defaultdict(list),
+            'supply_to_demand': defaultdict(list)
+        }
         
-        self._build_cache(
-            db_name=db_name,
-            api_endpoint="/api/v_peg/mini",
-            cache_name="peg",
-            cache_factory=peg_cache_factory,
-            process_item=process_item
-        )
+        # 构建 WHERE 子句
+        if supplynos:
+            formatted_nos = ','.join([f"'{s}'" for s in supplynos])
+            where_string = f"s.SupplyNo IN ({formatted_nos})"
+        else:
+            where_string = "1=1"  # 全量获取
+        
+        # 填充 SQL 语句
+        sql = MINI_PEG_SQL.format(where_string=where_string)
+        
+        # 执行 SQL 查询
+        try:
+            logger.info("生产数据缓存", "", f"开始执行 PEG SQL 查询，{'全量' if not supplynos else f'按需({len(supplynos)}个)'}模式")
+            result = await db_exec_sql(db_name, sql, description="构建 PEG 缓存")
+            
+            # 处理查询结果（db_exec_sql 返回 standard_response 格式）
+            data_list = result.get('data', []) if isinstance(result, dict) else result
+            
+            # 处理查询结果
+            for item in data_list:
+                demand_no = item.get('DemandNo', '')
+                s_supply_no = item.get('S_SupplyNo', '')
+                
+                if demand_no and s_supply_no:
+                    # 收集 demandno
+                    demand_nos.add(demand_no)
+                    
+                    # 构建双向索引
+                    if s_supply_no not in peg_cache['demand_to_supply'][demand_no]:
+                        peg_cache['demand_to_supply'][demand_no].append(s_supply_no)
+                    if demand_no not in peg_cache['supply_to_demand'][s_supply_no]:
+                        peg_cache['supply_to_demand'][s_supply_no].append(demand_no)
+            
+            # 更新缓存
+            self._cache[CacheItem.PEG.value] = peg_cache
+            logger.success("生产数据缓存", "", f"PEG 缓存构建完成，共 {len(peg_cache['demand_to_supply'])} 条 DemandNo")
+            
+        except Exception as e:
+            logger.fail("生产数据缓存", "", f"PEG 缓存构建失败: {e}")
+            raise
+        
+        return list(demand_nos)
     
 
-    def _build_material_cache(self, db_name: str):
-        """使用 API 方式构建 material 缓存"""
+    async def _build_material_cache(self, db_name: str, material_nos: list = None):
+        """使用数据库查询方式构建 material 缓存
+        
+        Args:
+            db_name: 数据库名称
+            material_nos: 可选，materialno 列表，如果提供则只加载这些物料号的数据
+        """
         def process_item(item, cache):
             material_no = item.get('materialno', '')
             if material_no:
                 cache[material_no] = item
         
-        self._build_cache(
+        filter_string = ''
+        if material_nos:
+            formatted_nos = ','.join([f"'{m}'" for m in material_nos])
+            filter_string = f"materialno IN ({formatted_nos})"
+        
+        await self._build_cache(
             db_name=db_name,
-            api_endpoint="/api/t_material/page",
-            cache_name="material",
+            table_name="t_material",
+            cache_name=CacheItem.MATERIAL.value,
             cache_factory=dict,
-            process_item=process_item
+            process_item=process_item,
+            filter_string=filter_string
         )
-    
 
-    def establish_production_cache(self, db_name: str):
-        """PL 状态变更事件处理"""
-        # 检查是否正在加载缓存，如果是则直接返回
-        if self._is_loading:
-            logger.debug("生产数据缓存", "", "缓存正在加载中，跳过 PL 状态变更事件")
+
+    async def _wait_for_loading(self, timeout: float = None) -> bool:
+        """等待缓存加载完成
+        
+        Args:
+            timeout: 等待超时时间（秒），默认使用 self.WAIT_TIMEOUT
+            
+        Returns:
+            bool: True 表示等待成功（加载完成），False 表示超时
+        """
+        if timeout is None:
+            timeout = self.WAIT_TIMEOUT
+        
+        try:
+            await asyncio.wait_for(self._loading_complete.wait(), timeout=timeout)
+            return True
+        except asyncio.TimeoutError:
+            logger.warning("生产数据缓存", "", f"等待缓存加载超时（{timeout}秒）")
+            return False
+
+
+    async def _merge_pending_supplynos(self, new_supplynos: list) -> list:
+        """合并待加载的 supplynos
+        
+        Args:
+            new_supplynos: 新的 supplyno 列表
+            
+        Returns:
+            list: 合并后的完整 supplyno 列表
+        """
+        async with self._pending_lock:
+            self._pending_supplynos.update(new_supplynos)
+            return list(self._pending_supplynos.copy())
+
+
+    def _clear_pending_supplynos(self):
+        """清除待加载的 supplynos"""
+        self._pending_supplynos.clear()
+
+
+    async def establish_production_cache(self, db_name: str, supplynos: list):
+        """PL 状态变更事件处理
+        
+        重新构建缓存：丢弃旧缓存，按需加载全新缓存。
+        支持多批次并发时的等待机制和增量合并。
+        
+        Args:
+            db_name: 数据库名称
+            supplynos: supplyno 列表，指定需要加载的数据
+        """
+        if not supplynos:
+            logger.warning("生产数据缓存", "", "传入的 supplyno 列表为空，跳过按需加载")
             return
         
-        # 确保缓存已初始化
-        self.ensure_initialized(db_name)
-        
-        # 检查是否需要刷新
-        with self._refresh_lock:
-            # 再次检查是否正在加载，避免并发问题
+        async with self._load_lock:
             if self._is_loading:
-                logger.debug("生产数据缓存", "", "缓存正在加载中，跳过 PL 状态变更事件")
-                return
+                logger.info("生产数据缓存", "", f"缓存正在加载中（{len(supplynos)}个supplyno等待中）...")
+                wait_success = await self._wait_for_loading()
                 
-            now = time.time()
-            elapsed = now - self._last_refresh_time
+                if not wait_success:
+                    logger.warning("生产数据缓存", "", "等待缓存加载超时")
+                else:
+                    logger.info("生产数据缓存", "", "等待的缓存加载已完成")
+                
+                if self._initialized:
+                    logger.info("生产数据缓存", "", "缓存已就绪，无需重新加载")
+                    return
             
-            # 只有当 _last_refresh_time 大于 0（即已经初始化过）时才检查是否需要刷新
-            if self._last_refresh_time > 0 and elapsed >= CACHE_REFRESH_INTERVAL:
-                logger.info("生产数据缓存", "", f"计时器超时({elapsed:.1f}秒)，开始刷新...")
-                # 使用同步方式刷新，避免事件循环问题
-                self._initialize(db_name)
-            else:
-                logger.debug("生产数据缓存", "", f"计时器重置({elapsed:.1f}秒 < 5分钟)")
-                # 计时器重置，但不实际重置变量，下次事件会重新计算
+            merged_supplynos = await self._merge_pending_supplynos(supplynos)
+            all_supplynos = list(set(merged_supplynos) | set(supplynos))
+            
+            logger.info("生产数据缓存", "", f"开始按需加载 {len(all_supplynos)} 个 supplyno 的数据...")
+            self._is_loading = True
+            self._loading_complete.clear()
+            
+            try:
+                await asyncio.wait_for(
+                    self._initialize_on_needed(db_name, all_supplynos),
+                    timeout=self.LOAD_TIMEOUT
+                )
+                self._initialized = True
+                self._clear_pending_supplynos()
+                logger.success("生产数据缓存", "", f"按需加载完成，共 {len(all_supplynos)} 个 supplyno")
+                
+            except asyncio.TimeoutError:
+                logger.fail("生产数据缓存", "", f"按需加载超时（{self.LOAD_TIMEOUT}秒）")
+                self._is_loading = False
+                self._loading_complete.set()
+                self._initialized = False
+                raise
+            except Exception as e:
+                logger.fail("生产数据缓存", "", f"按需加载失败: {e}")
+                self._loading_complete.set()
+                raise
+            finally:
+                if self._is_loading:
+                    self._is_loading = False
+                    self._loading_complete.set()
 
 
     def get_supply_mo(self, supply_no: str) -> Dict:
         """获取工单数据（按供应号查找）"""
-        data = self._cache['supply_mo'].get(supply_no)
+        data = self._cache[CacheItem.SUPPLY_MO.value].get(supply_no)
         if data:
             self._stats['total_hits'] += 1
             return data
@@ -414,7 +626,7 @@ class _ProductionDataCache:
         """批量获取工单数据"""
         results = []
         for supply_no in supplynos:
-            data = self._cache['supply_mo'].get(supply_no)
+            data = self._cache[CacheItem.SUPPLY_MO.value].get(supply_no)
             if data:
                 results.append(data)
                 self._stats['total_hits'] += 1
@@ -425,7 +637,7 @@ class _ProductionDataCache:
 
     def get_orderwc(self, supply_no: str) -> List[Dict]:
         """获取工序数据（按供应号查找）"""
-        data = self._cache['orderwc'].get(supply_no, [])
+        data = self._cache[CacheItem.ORDER_WC.value].get(supply_no, [])
         if data:
             self._stats['total_hits'] += 1
         else:
@@ -437,7 +649,7 @@ class _ProductionDataCache:
         """批量获取工序数据（按供应号查找）"""
         results = []
         for supply_no in supplynos:
-            data_list = self._cache['orderwc'].get(supply_no, [])
+            data_list = self._cache[CacheItem.ORDER_WC.value].get(supply_no, [])
             results.extend(data_list)
             if data_list:
                 self._stats['total_hits'] += 1
@@ -448,7 +660,7 @@ class _ProductionDataCache:
 
     def get_demand(self, demand_no: str) -> List[Dict]:
         """获取需求数据"""
-        data = self._cache['demand'].get(demand_no, [])
+        data = self._cache[CacheItem.DEMAND.value].get(demand_no, [])
         if data:
             self._stats['total_hits'] += 1
         else:
@@ -460,7 +672,7 @@ class _ProductionDataCache:
         """批量获取需求数据"""
         results = []
         for demand_no in demandnos:
-            data_list = self._cache['demand'].get(demand_no, [])
+            data_list = self._cache[CacheItem.DEMAND.value].get(demand_no, [])
             results.extend(data_list)
             if data_list:
                 self._stats['total_hits'] += 1
@@ -471,7 +683,7 @@ class _ProductionDataCache:
 
     def get_peg_by_demand(self, demand_no: str) -> List[str]:
         """根据 DemandNo 获取对应的 S_SupplyNo 列表"""
-        cache = self._cache['peg']['demand_to_supply']
+        cache = self._cache[CacheItem.PEG.value]['demand_to_supply']
         data = cache.get(demand_no, [])
         if data:
             self._stats['total_hits'] += 1
@@ -482,7 +694,7 @@ class _ProductionDataCache:
 
     def get_peg_by_supply(self, supply_no: str) -> List[str]:
         """根据 S_SupplyNo 获取对应的 DemandNo 列表"""
-        cache = self._cache['peg']['supply_to_demand']
+        cache = self._cache[CacheItem.PEG.value]['supply_to_demand']
         data = cache.get(supply_no, [])
         if data:
             self._stats['total_hits'] += 1
@@ -493,7 +705,7 @@ class _ProductionDataCache:
 
     def batch_get_peg_by_demand(self, demandnos: List[str]) -> Dict[str, List[str]]:
         """批量根据 DemandNo 获取 S_SupplyNo 列表"""
-        cache = self._cache['peg']['demand_to_supply']
+        cache = self._cache[CacheItem.PEG.value]['demand_to_supply']
         results = {}
         for demand_no in demandnos:
             data = cache.get(demand_no, [])
@@ -507,7 +719,7 @@ class _ProductionDataCache:
 
     def batch_get_peg_by_supply(self, supplynos: List[str]) -> Dict[str, List[str]]:
         """批量根据 S_SupplyNo 获取 DemandNo 列表"""
-        cache = self._cache['peg']['supply_to_demand']
+        cache = self._cache[CacheItem.PEG.value]['supply_to_demand']
         results = {}
         for supply_no in supplynos:
             data = cache.get(supply_no, [])
@@ -521,7 +733,7 @@ class _ProductionDataCache:
 
     def get_material(self, material_no: str) -> List[Dict]:
         """获取物料数据"""
-        data = self._cache['material'].get(material_no)
+        data = self._cache[CacheItem.MATERIAL.value].get(material_no)
         if data:
             self._stats['total_hits'] += 1
             return [data]
@@ -534,7 +746,7 @@ class _ProductionDataCache:
         """批量获取物料数据"""
         results = []
         for material_no in materialnos:
-            data = self._cache['material'].get(material_no)
+            data = self._cache[CacheItem.MATERIAL.value].get(material_no)
             if data:
                 results.append(data)
                 self._stats['total_hits'] += 1
@@ -548,11 +760,11 @@ class _ProductionDataCache:
         return {
             **self._stats,
             'cache_sizes': {
-                'supply_mo': len(self._cache['supply_mo']),
-                'orderwc': len(self._cache['orderwc']),
-                'demand': len(self._cache['demand']),
-                'peg': len(self._cache['peg']),
-                'material': len(self._cache['material'])
+                CacheItem.SUPPLY_MO.value: len(self._cache[CacheItem.SUPPLY_MO.value]),
+                CacheItem.ORDER_WC.value: len(self._cache[CacheItem.ORDER_WC.value]),
+                CacheItem.DEMAND.value: len(self._cache[CacheItem.DEMAND.value]),
+                CacheItem.PEG.value: len(self._cache[CacheItem.PEG.value]),
+                CacheItem.MATERIAL.value: len(self._cache[CacheItem.MATERIAL.value])
             }
         }
 
@@ -1325,7 +1537,7 @@ class ApsHelpers:
                 for item in api_data:
                     material_no = item.get('materialno', '')
                     if material_no:
-                        cache._cache['material'][material_no] = item
+                        cache._cache[CacheItem.MATERIAL.value][material_no] = item
                 
                 # 合并结果
                 cached_data.extend(api_data)
@@ -1377,7 +1589,7 @@ class ApsHelpers:
             try:
                 if supply_response_json.get('success') != 0 and supply_response_json.get('data'):
                     mo_data = supply_response_json['data'][0]
-                    cache._cache['supply_mo'][supplyno] = mo_data
+                    cache._cache[CacheItem.SUPPLY_MO.value][supplyno] = mo_data
                     return mo_data
                 else:
                     # raise Exception(f"API返回错误: {supply_response_json.get('message', '未知错误')}")
@@ -1426,7 +1638,7 @@ class ApsHelpers:
             try:
                 if supply_response_json.get('success') != 0 and supply_response_json.get('data'):
                     mo_data = supply_response_json['data'][0]
-                    cache._cache['supply_mo'][supplyno] = mo_data
+                    cache._cache[CacheItem.SUPPLY_MO.value][supplyno] = mo_data
                     return mo_data
                 else:
                     logger.fail("获取工单计划单详情", supplyno, f"API返回错误: {supply_response_json.get('message', '未知错误')}")
@@ -1454,7 +1666,7 @@ class ApsHelpers:
         api_data = demand_response_json.get('data', [])
         
         if api_data:
-            cache._cache['demand'][demandno] = api_data
+            cache._cache[CacheItem.DEMAND.value][demandno] = api_data
         
         return api_data
 
@@ -1478,7 +1690,7 @@ class ApsHelpers:
         api_data = demand_response_json.get('data', [])
         
         if api_data:
-            cache._cache['demand'][demandno] = api_data
+            cache._cache[CacheItem.DEMAND.value][demandno] = api_data
         
         return api_data
 

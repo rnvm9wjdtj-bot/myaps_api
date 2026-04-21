@@ -2,8 +2,8 @@ import json
 from datetime import datetime, timedelta
 from typing import List
 
+from globalobjects import RemindType, reminder_manager
 from apps.common.monitor.models import FailedOperation
-from apps.common.monitor.allert import alert_sender, AlertType
 from apps.io_api.utils.db_operation import (
     db_exec_sql,
     db_query,
@@ -136,8 +136,8 @@ class FailedOperationRecovery:
                 op.status = "failed"
                 
                 # 触发最终告警
-                await alert_sender.trigger_alert(
-                    AlertType.DB_CONNECTION,
+                await reminder_manager.trigger_remind(
+                    RemindType.DB_CONNECTION,
                     {
                         "operation_id": op.operation_id,
                         "db_name": op.db_name,

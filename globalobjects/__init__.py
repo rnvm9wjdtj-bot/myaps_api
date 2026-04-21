@@ -17,6 +17,12 @@ from .event_aggregator import get_global_handler_aggregator
 EVENT_AGGREGATOR = get_global_handler_aggregator()
 
 
+from .reminder import RemindType, reminder_manager
+
+__all__ = [
+    "RemindType",
+    "reminder_manager",
+]
 
 class ProjectDefaultValues:
     defaults = PROJECT_JSON_FILE.get("defaults", {})

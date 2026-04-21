@@ -29,218 +29,7 @@ _db_health_cache = {}
 _cache_timestamp = 0
 CACHE_DURATION = 60  # 缓存60秒
 
-# def _check_db_name(hap_wsid: str = None):
-#     """
-#     检查函数是否有db_name参数，如果没有则调用 HAP API
-#     """
-#     def decorator(func):
-#         @functools.wraps(func)
-#         async def wrapper(*args, **kwargs):
-#             # 获取函数签名
-#             sig = inspect.signature(func)
-            
-#             # 查找db_name参数
-#             db_name_param = None
-#             db_name_index = None
-#             for i, (param_name, param) in enumerate(sig.parameters.items()):
-#                 if param_name == 'db_name':
-#                     db_name_param = param
-#                     db_name_index = i
-#                     break
-            
-#             # 获取db_name的值
-#             db_name = None
-            
-#             if db_name_param is not None:
-#                 if db_name_index is not None and db_name_index < len(args):
-#                     # db_name作为位置参数传递
-#                     db_name = args[db_name_index]
-#                 elif 'db_name' in kwargs:
-#                     # db_name作为关键字参数传递
-#                     db_name = kwargs['db_name']
-#                 else:
-#                     # 使用默认值
-#                     db_name = db_name_param.default
-            
-#             # 如果没有db_name参数或db_name为None或空，调用 HAP API
-#             if db_name_param is None or db_name is None or db_name == "":
-#                 # 获取原函数的data参数
-#                 data_param = None
-#                 data_index = None
-#                 for i, (param_name, param) in enumerate(sig.parameters.items()):
-#                     if param_name == 'data':
-#                         data_param = param
-#                         data_index = i
-#                         break
-                
-#                 # 获取data的值
-#                 data_value = None
-#                 if data_param is not None:
-#                     if data_index is not None and data_index < len(args):
-#                         # data作为位置参数传递
-#                         data_value = args[data_index]
-#                     elif 'data' in kwargs:
-#                         # data作为关键字参数传递
-#                         data_value = kwargs['data']
-#                     else:
-#                         # 使用默认值
-#                         data_value = data_param.default
-                
-#                 # 处理pydantic对象列表到字典列表的转换
-#                 processed_data = None
-#                 if data_value is not None:
-#                     if hasattr(data_value, '__iter__') and not isinstance(data_value, (str, bytes)):
-#                         # 处理列表或可迭代对象
-#                         processed_data = []
-#                         for item in data_value:
-#                             processed_data.append(item._cached_raw_input_data)
-#                     else:
-#                         # 单个对象
-#                         if hasattr(data_value, 'dict'):
-#                             # pydantic v1 model
-#                             processed_data = data_value.dict()
-#                         elif hasattr(data_value, 'model_dump'):
-#                             # pydantic v2 model
-#                             processed_data = data_value.model_dump()
-#                         else:
-#                             # 普通对象
-#                             processed_data = data_value
-                
-#                 try:
-#                     if hap_conn is not None:
-#                         result = hap_conn.worksheet(hap_wsid).create_rows(
-#                             data_list=processed_data,
-#                             trigger_workflow=True
-#                         )
-#                         return standard_response(
-#                             status_code=status.HTTP_200_OK,
-#                             success=1,
-#                             message="HAP create rows success",
-#                             data=result
-#                         )
-#                     else:
-#                         return standard_response(
-#                             status_code=status.HTTP_400_BAD_REQUEST,
-#                             success=0,
-#                             message="no db_name parameter or db_name is empty, trigger hap call"
-#                         )
-#                 except Exception as e:
-#                     return standard_response(
-#                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#                         success=0,
-#                         message=f"HAP create rows failed: {str(e)}"
-#                     )
-            
-#             # db_name有效，正常执行原函数
-#             return await func(*args, **kwargs)
-#         return wrapper
-#     return decorator
-# V_SUPPLY_MO_SQL = """
-#     SELECT 
-#         -- 基础字段
-#         `s`.`MaterialNo`,
-#         (SELECT `Description` FROM t_material 
-#         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) AS Description,
-#         (SELECT `Unit` FROM t_material 
-#         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) AS Unit,
-#         (SELECT `Planner` FROM t_material 
-#         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) AS Planner,
-#         (SELECT `GroupNo` FROM t_material 
-#         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) AS GroupNo,
-#         (SELECT `PlanItem` FROM t_material 
-#         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) AS PlanItem,
-#         (SELECT `FIFO` FROM t_material 
-#         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) AS FIFO,
-#         (SELECT `ABC` FROM t_material 
-#         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) AS ABC,
-#         (SELECT `ExpDay` FROM t_material 
-#         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) AS ExpDay,
-#         (SELECT `GRDay` FROM t_material 
-#         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) AS GRDay,   
-#         (SELECT `Phantom` FROM t_material 
-#         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) AS Phantom,
-#         (SELECT `PhantomMin` FROM t_material 
-#         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) AS PhantomMin,
-        
-#         -- Group Color
-#         (SELECT `g`.`Color` FROM t_groupcolor g 
-#         WHERE `g`.`GroupNo` = (SELECT `GroupNo` FROM t_material 
-#                         WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) 
-#         LIMIT 1) AS Color,
-        
-#         -- Supply 表自身字段
-#         `s`.`SupplyNo`,
-#         `s`.`ItemNo`,
-#         `s`.`MatVer`,
-#         `s`.`Type`,
-#         `s`.`Category`,
-#         `s`.`Status`,
-#         `s`.`Priority`,
-#         `s`.`Avail_Qty`,
-        
-#         -- Delay Hour
-#         (SELECT `o`.`Delay_Hour` FROM v_orderwc_delay_hour o 
-#         WHERE `o`.`OrderNo` = `s`.`SupplyNo` LIMIT 1) AS Delay_Hour,
-        
-#         `s`.`Create_Date`,
-        
-#         -- Order Times (关键优化点)
-#         (SELECT MIN(DT_Start) FROM t_orderwc 
-#         WHERE `SupplyNo` = `s`.`SupplyNo`) AS DT_OrdStart,
-#         (SELECT MAX(DT_End) FROM t_orderwc 
-#         WHERE `SupplyNo` = `s`.`SupplyNo`) AS DT_OrdEnd,
-        
-#         -- 计算字段
-#         TIMEDIFF(
-#             (SELECT MAX(DT_End) FROM t_orderwc WHERE `SupplyNo` = `s`.`SupplyNo`),
-#             (SELECT MIN(DT_Start) FROM t_orderwc WHERE `SupplyNo` = `s`.`SupplyNo`)
-            
-#         ) AS OrdTime,
-        
-#         -- Avail Date
-#         IFNULL(
-#             (SELECT MAX(DT_End) FROM t_orderwc WHERE `SupplyNo` = `s`.`SupplyNo`) 
-#             + INTERVAL (SELECT `GRDay` FROM t_material 
-#                     WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) DAY,
-#             `s`.`Avail_Date`
-#         ) AS Avail_Date,
-        
-#         `s`.`Avail_End_Date`,
-#         `s`.`DT_Req`,
-        
-#         -- Req Date
-#         IFNULL(
-#             (SELECT `Req_Date` FROM v_peg_req_date_1st p 
-#             WHERE `p`.`SupplyNo` = `s`.`SupplyNo` LIMIT 1),
-#             `s`.`DT_Req`
-#         ) AS Req_Date,
-        
-#         -- RemainTime (核心计算)
-#         TIMESTAMPDIFF(
-#             HOUR,
-#             (SELECT MAX(DT_End) FROM t_orderwc WHERE `SupplyNo` = `s`.`SupplyNo`) 
-#             + INTERVAL (SELECT `GRDay` FROM t_material 
-#                     WHERE `MaterialNo` = `s`.`MaterialNo` AND `Type` = 'E' LIMIT 1) DAY,
-#             IFNULL(
-#                 (SELECT `Req_Date` FROM v_peg_req_date_1st p 
-#                 WHERE `p`.`SupplyNo` = `s`.`SupplyNo` LIMIT 1),
-#                 `s`.`DT_Req`
-#             )
-#         ) AS RemainTime,
-        
-#         -- 其他字段
-#         `s`.`VendorNo`,
-#         `s`.`Memo`,
-#         `s`.`Sys_Stamp`,
-#         `s`.`ApiEx_SN`,
-#         `s`.`ApiEx_ID`,
-#         `s`.`ApiEx_EntryID`
 
-#     FROM t_supply s
-#     WHERE `s`.`Type` IN ('PL', 'MO')
-#     AND `s`.`SupplyNo` IN ({supplynos})
-#     ORDER BY `s`.`SupplyNo`
-# """
 V_SUPPLY_MO_SQL = """
     SELECT 
         s.MaterialNo,
@@ -306,30 +95,10 @@ V_SUPPLY_MO_SQL = """
     ORDER BY s.SupplyNo;
 """
 
-V_PEG_SQL = """
+MINI_PEG_SQL = """
     SELECT DISTINCT
         p.DemandNO AS DemandNo,
-        -- p.ItemNo,
-        -- p.Type,
-        -- m.FIFO,
-        -- m.Description,
-        -- d.Category,
-        -- d.Priority,
-        -- d.Req_Date,
-        -- d.Req_Qty,
-        -- p.Pegging,
-        -- p.Balance,
-        -- TIMESTAMPDIFF(HOUR, s.Avail_Date, d.Req_Date) AS Delay_Hour,
-        s.SupplyNo AS S_SupplyNo    -- ,
-        -- s.ItemNo AS S_ItemNo,
-        -- s.Type AS S_Type,
-        -- s.Avail_Qty AS S_Avail_Qty,
-        -- s.Avail_Date AS S_Avail_Date,
-        -- s.Avail_End_Date,
-        -- d.RefNo,
-        -- s.VendorNo,
-        -- p.create_time AS create_date,
-        -- p.user_name
+        s.SupplyNo AS S_SupplyNo
     FROM t_peg p
     LEFT JOIN t_demand d ON p.MaterialNo = d.MaterialNo 
         AND p.DemandNO = d.DemandNo 
@@ -1092,7 +861,7 @@ async def get_mo_by_supplyno(
         prev_mo = []
         if demands_data:
             demands_no = ','.join([f"'{i['demandno']}'" for i in demands_data])
-            peg_query_result = await db_exec_sql(db_name=db_name, sql=V_PEG_SQL.format(where_string=f"p.DemandNO IN ({demands_no}) AND p.S_Type IN ('PL', 'MO')"), description=f"查询{demands_no}匹配的PL和MO")
+            peg_query_result = await db_exec_sql(db_name=db_name, sql=MINI_PEG_SQL.format(where_string=f"p.DemandNO IN ({demands_no}) AND p.S_Type IN ('PL', 'MO')"), description=f"查询{demands_no}匹配的PL和MO")
             if peg_query_result['data']:
                 supplies_no = ','.join([f"'{i['s_supplyno']}'" for i in peg_query_result['data']])
                 prev_mo_query_result = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplynos=supplies_no), description=f"查询{supplies_no}的前置工单信息")
@@ -1103,7 +872,7 @@ async def get_mo_by_supplyno(
         """
         通过工单 supplyno 号查询后 后置 工单
         """
-        in_pegs = await db_exec_sql(db_name=db_name, sql=V_PEG_SQL.format(where_string=f"p.S_SupplyNo='{mono}' AND p.Type IN ('DM', 'RS')"), description=f"查询{mono}匹配的DM和RS")
+        in_pegs = await db_exec_sql(db_name=db_name, sql=MINI_PEG_SQL.format(where_string=f"p.S_SupplyNo='{mono}' AND p.Type IN ('DM', 'RS')"), description=f"查询{mono}匹配的DM和RS")
         pegs_data = in_pegs['data']
         next_mo = []
         if pegs_data:
