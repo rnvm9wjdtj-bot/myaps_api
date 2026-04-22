@@ -134,8 +134,14 @@ class _ProductionDataCache:
         self._loading_complete = asyncio.Event()
         self._loading_complete.set()
         
-        # 缓存项配置（由子类/项目配置覆盖）
-        self.CACHE_ITEMS = [CacheItem.SUPPLY_MO.value, CacheItem.ORDER_WC.value, CacheItem.DEMAND.value, CacheItem.PEG.value, CacheItem.MATERIAL.value]
+        # 缓存项配置，包含所有可能的缓存项，用于依赖关系解析，可由 _set_cache_items 方法覆盖
+        self.CACHE_ITEMS = [
+            CacheItem.SUPPLY_MO.value,
+            CacheItem.ORDER_WC.value,
+            CacheItem.DEMAND.value,
+            CacheItem.PEG.value,
+            CacheItem.MATERIAL.value,
+        ]
         
         # 缓存项依赖关系（声明式配置）
         # 格式：{ CacheItem: [依赖项列表] }
@@ -171,7 +177,7 @@ class _ProductionDataCache:
         }
 
 
-    def set_cache_items(self, cache_items: List[Union[str, 'CacheItem']]):
+    def _set_cache_items(self, cache_items: List[Union[str, 'CacheItem']]):
         """设置缓存项配置
         
         允许使用字符串或 CacheItem 枚举对象来指定缓存项。
@@ -551,7 +557,7 @@ class _ProductionDataCache:
         self._pending_supplynos.clear()
 
 
-    async def establish_production_cache(self, db_name: str, supplynos: list):
+    async def establish_production_cache(self, supplynos: list, db_name: str = MYAPS_MAIN_DB, cache_items: List[Union[str, CacheItem]] = None):
         """PL 状态变更事件处理
         
         重新构建缓存：丢弃旧缓存，按需加载全新缓存。
@@ -560,10 +566,15 @@ class _ProductionDataCache:
         Args:
             db_name: 数据库名称
             supplynos: supplyno 列表，指定需要加载的数据
+            cache_items: 可选，指定需要加载的缓存项，若为None则加载所有缓存项
         """
         if not supplynos:
             logger.warning("生产数据缓存", "", "传入的 supplyno 列表为空，跳过按需加载")
             return
+
+        # 设置缓存项，根据传入的 cache_items 覆盖默认配置
+        if cache_items:
+            self._set_cache_items(cache_items)
         
         async with self._load_lock:
             if self._is_loading:
@@ -1019,38 +1030,6 @@ class ApsHelpers:
 
 
     @staticmethod
-    def mto_workreport_to_virtual_stock(db:str=MYAPS_MAIN_DB):
-        """
-        将报工数据 转化为 虚拟库存 数据，只处理MTO报工
-        🅰 db: 账套名称，默认MYAPS_MAIN_DB
-        """
-        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        url = f"{THIS_BASE_URL}/api/v_supply_complete?db_name={db}"
-        response_json = ApsHelpers._call_api('GET', url)
-        mo_complete_data = response_json.get('data')
-        df_mto_vir_st = None
-        if mo_complete_data:
-            df_mo_complete = pd.DataFrame(mo_complete_data)
-            df_mto_vir_st = (df_mo_complete[df_mo_complete['category'] == 'MTO']
-                    [['materialno', 'vendorno', 'finalopqty', 'category', 'avail_date']]
-                    .groupby('vendorno', as_index=False)
-                    .agg({
-                        'finalopqty': 'sum',
-                        'materialno': 'first',
-                        'category': 'first',
-                        'avail_date': 'first',
-                    }))
-            df_mto_vir_st['supplyno'] = df_mto_vir_st['materialno'] + '-' + df_mto_vir_st['vendorno']
-            df_mto_vir_st['type'] = 'ST'
-            df_mto_vir_st['priority'] = 0
-            df_mto_vir_st['status'] = 'NEW'
-            df_mto_vir_st['dt_req'] = df_mto_vir_st['avail_date']
-            df_mto_vir_st['create_date'] = now
-            df_mto_vir_st['itemno'] = pdv.ITEMNO
-            df_mto_vir_st.rename(columns={'finalopqty': 'avail_qty'}, inplace=True)
-        return df_mto_vir_st
-
-    @staticmethod
     async def mto_workreport_to_virtual_stock_async(db:str=MYAPS_MAIN_DB):
         """
         异步将报工数据 转化为 虚拟库存 数据，只处理MTO报工
@@ -1281,7 +1260,7 @@ class ApsHelpers:
             return standard_response(status_code=500, success=0, message=error_msg)
 
 
-    def pl_release_failed(self, native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, push_data: dict=None, msg_from: str=None, **kwargs):
+    def pl_release_failed(self, native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, raw_data: dict=None, push_data: dict=None, msg_from: str=None, **kwargs):
         logger.warning_msg(f"推送 MO {msg}", json.dumps(push_data, ensure_ascii=False), to_file=True)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if msg:
@@ -1298,7 +1277,7 @@ class ApsHelpers:
             from project_files._base import ExecutionResult
             asyncio.create_task(self._collector.add_result(ExecutionResult(
                 success=False,
-                raw_data=native_plno,
+                raw_data=native_plno, #raw_data or {'supplyno': native_plno},
                 msg=f"{msg_from}: {msg}" if msg else None,
                 push_data=push_data
             )))
@@ -1309,7 +1288,7 @@ class ApsHelpers:
             logger.fail("PL状态更新", native_plno, error_msg)
             return None
 
-    async def pl_release_failed_async(self, native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, push_data: dict=None, msg_from: str=None):
+    async def pl_release_failed_async(self, native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, raw_data: dict=None, push_data: dict=None, msg_from: str=None):
         logger.warning_msg(f"推送 MO {msg}", json.dumps(push_data, ensure_ascii=False), to_file=True)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if msg:
@@ -1321,7 +1300,7 @@ class ApsHelpers:
         memo = f"{now} 🚫 {msg_from}: '{msg}'"
         try:
             response_json = await ApsHelpers._modify_supply_async(supplyno=native_plno, to_status=to_status, memo=memo)
-            logger.info(f"更新PL状态响应：成功")
+            # logger.success(f"更新PL状态")
             
             from project_files._base import ExecutionResult
             await self._collector.add_result(ExecutionResult(
@@ -1393,7 +1372,7 @@ class ApsHelpers:
             return standard_response(status_code=500, success=0, message=error_msg)
 
 
-    def rs_push_failed(self, rsno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None):
+    def rs_push_failed(self, rsno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None, raw_data: dict | list=None):
         logger.fail("推送 RS", json.dumps(push_data, ensure_ascii=False), msg)
         if msg:
             try:
@@ -1423,7 +1402,7 @@ class ApsHelpers:
             logger.fail("RS状态更新", rsno, error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
 
-    async def rs_push_failed_async(self, rsno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None):
+    async def rs_push_failed_async(self, rsno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None, raw_data: dict | list=None):
         logger.fail("推送 RS", json.dumps(push_data, ensure_ascii=False), msg)
         if msg:
             try:
@@ -1549,7 +1528,7 @@ class ApsHelpers:
             return standard_response(status_code=500, success=0, message=error_msg)
 
 
-    def pr_push_failed(self, prno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None):
+    def pr_push_failed(self, prno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None, raw_data: dict | list=None):
         if msg:
             try:
                 msg = str(msg)[:64]
@@ -1575,7 +1554,7 @@ class ApsHelpers:
             logger.fail("PR状态更新", prno, error_msg)
             return standard_response(status_code=500, success=0, message=error_msg)
 
-    async def pr_push_failed_async(self, prno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None):
+    async def pr_push_failed_async(self, prno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None, raw_data: dict | list=None):
         if msg:
             try:
                 msg = str(msg)[:64]
@@ -1799,7 +1778,7 @@ class ApsHelpers:
 
 
     @staticmethod
-    def get_dategrouped_pr(db_name: str=None, period: int|str=30, groupdates: Optional[str]=None, field_map: dict=None):
+    async def get_dategrouped_pr_async(db_name: str=None, period: int|str=30, groupdates: Optional[str]=None, field_map: dict=None):
         """
         从数据库获取按日期分组的计划任务数据
         🅰 db_name: 账套名称，默认MYAPS_MAIN_DB
@@ -1809,7 +1788,7 @@ class ApsHelpers:
         """
         db_name = db_name or MYAPS_MAIN_DB
         url = f"{THIS_BASE_URL}/api/v_matdailyqtyreport?db_name={db_name}&period={period}&groupdates={groupdates}"
-        response_json = ApsHelpers._call_api('GET', url)
+        response_json = await ApsHelpers._call_api_async('GET', url)
         data = response_json.get('data', [])
         field_map = field_map or {
             'materialno': '料号',

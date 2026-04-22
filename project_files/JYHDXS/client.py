@@ -3,7 +3,7 @@
 import requests, uuid, asyncio, json#, logging#, os, atexit
 import pandas as pd
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Union
 
 from fastapi import status
 from dateutil.relativedelta import relativedelta
@@ -12,7 +12,7 @@ from dateutil.relativedelta import relativedelta
 from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
 from .._base import (
     get_scheduler_minute, async_rate_limit, get_production_cache, CacheItem,
-    ApsHelpers, CLIENT_LOGGER, standard_response, get_session, async_timer,
+    ApsHelpers, CLIENT_LOGGER, standard_response, get_session, async_reminder,
     cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, PROJECT_JSON_FILE, pdv,
     RemindType, QqEmailReminder, Reminder, with_result_collection
 )
@@ -99,7 +99,7 @@ def sap_post(url: str, session: requests.Session, interface_id: str, data: dict)
     }
 
 
-def refresh_stock(dbs: str=MYAPS_DB_SET):
+async def refresh_stock(dbs: str=MYAPS_DB_SET):
     """
     刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据
     db: 对哪些账套生效，多个账套用逗号分隔
@@ -153,7 +153,7 @@ def refresh_stock(dbs: str=MYAPS_DB_SET):
         return df_sap_st
 
     CLIENT_LOGGER.start("刷新库存任务")
-    mto_vir_st = ApsHelpers.mto_workreport_to_virtual_stock()
+    mto_vir_st = await ApsHelpers.mto_workreport_to_virtual_stock_async()
     df_sap_st = get_sap_stock_data()
 
     if mto_vir_st is not None:
@@ -163,15 +163,15 @@ def refresh_stock(dbs: str=MYAPS_DB_SET):
     
     # if stock_data_total is not None:
     stock_data_total.fillna('', inplace=True)
-    ApsHelpers.refresh_supply(stock_data_total.to_dict(orient='records'), dbs=dbs)
+    await ApsHelpers.refresh_supply_async(stock_data_total.to_dict(orient='records'), dbs=dbs)
 
 
-def push_pr(period: int = 30, groupdates: List[str] | str = None):
+async def push_pr(period: int = 30, groupdates: List[str] | str = None):
     if groupdates:
         if isinstance(groupdates, list):
             groupdates = ','.join(groupdates)
 
-    pr_data = ApsHelpers.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=period, field_map=srm_field_map, groupdates=groupdates)
+    pr_data = await ApsHelpers.get_dategrouped_pr_async(db_name=MYAPS_MAIN_DB, period=period, field_map=srm_field_map, groupdates=groupdates)
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     for item in pr_data:
         item["plant"] = "1000"
@@ -187,66 +187,65 @@ def push_pr(period: int = 30, groupdates: List[str] | str = None):
         CLIENT_LOGGER.fail(f"推送要货计划到SRM", response.text)
 
 
-def push_weekpr_to_srm():
+async def push_weekpr_to_srm():
     CLIENT_LOGGER.start("推送周要货计划到SRM任务")
-    push_pr(period=30)
+    await push_pr(period=30)
     CLIENT_LOGGER.success("推送周要货计划到SRM任务", "", "执行完成")
 
 
-def push_monthpr_to_srm():
+async def push_monthpr_to_srm():
     CLIENT_LOGGER.start("推送月度要货计划到SRM任务")
     date_list = [
         (datetime.now().replace(day=1) + relativedelta(months=i + 1) - relativedelta(days=1)).strftime('%Y-%m-%d')
         for i in range(3)
     ]
-    push_pr(period=90, groupdates=date_list)
+    await push_pr(period=90, groupdates=date_list)
     CLIENT_LOGGER.success("推送月度要货计划到SRM任务", "", "执行完成")
 #################################################################################
 # ⬇️定时任务设置
 #################################################################################
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(), description="刷新库存数据")
-def task_refresh_stock():
-    refresh_stock()
+async def task_refresh_stock():
+    await refresh_stock()
 
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2), description="确认报工")
-def task_confirm_workreport():
-    ApsHelpers.confirm_workreport()
+async def task_confirm_workreport():
+    await ApsHelpers.confirm_workreport_async()
 
 
 @cron_task(hour=23, minute=59, description="推送周要货计划到SRM")  # 每天23:59执行一次，需须在23:55拉取库存和确认报工之后
 # @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23", minute="0,5,10,15,20,25,30,35,40,45,50,55")
-def task_push_weekpr_to_srm():
-    push_weekpr_to_srm()
+async def task_push_weekpr_to_srm():
+    await push_weekpr_to_srm()
 
 
 @cron_task(day=1, hour=0, minute=5, description="推送月度要货计划到SRM")
-def task_push_seasonpr_to_srm():
-    push_monthpr_to_srm()
+async def task_push_seasonpr_to_srm():
+    await push_monthpr_to_srm()
 
 
 #################################################################################
 # ⬇️APS事件
 #################################################################################
 
-
-
 qq_email_reminder = QqEmailReminder(
     remind_types=[RemindType.APS_EVENT],
     smtp_user="2982212683@qq.com",
     smtp_password="jyboujldhplddhdf",
     email_from="2982212683@qq.com",
-    email_default_to="2982212683@qq.com",
+    email_default_to="2982212683@qq.com,fzc@yunchen.ltd",
 )
 
 
 
-@async_timer(reminder=qq_email_reminder)
-@with_result_collection(reminder=qq_email_reminder, description="PL 单据下达（decorate）")
-async def batch_handle_pl_status_a2e(event_data: List[Dict], description="PL 单据下达", aph=None):
+@async_reminder(reminder=qq_email_reminder)
+@with_result_collection(reminder=qq_email_reminder)
+async def batch_handle_pl_status_a2e(event_data: List[Dict], aph: ApsHelpers=None, description="PL 单据下达", error_wrapper=None):
     @async_rate_limit()
-    async def handle_pl_status_a2e(supplyno_or_data: str | dict):
+    async def handle_pl_status_a2e(supplyno_or_data: Union[str, dict]):
+
         if isinstance(supplyno_or_data, str):
             supplyno = supplyno_or_data
         else:
@@ -300,22 +299,24 @@ async def batch_handle_pl_status_a2e(event_data: List[Dict], description="PL 单
                     # 处理响应格式不正确的情况
                     await aph.pl_release_failed_async(native_plno=supplyno, msg=f"响应格式不正确: {sap_response['response_text']}", push_data=data, msg_from='ERP')
             except Exception as e:
-                # 处理其他异常
-                await aph.pl_release_failed_async(native_plno=supplyno, msg=f"处理响应失败: {str(e)}", push_data=data, msg_from='ERP')
+                if error_wrapper:
+                    await error_wrapper(**{'supplyno':supplyno, 'msg': str(e)})
+                return
         except requests.exceptions.Timeout as e:
-            # 处理请求超时，按推送失败处理
             await aph.pl_release_failed_async(native_plno=supplyno, msg=f"请求超时: {str(e)}", push_data=data, msg_from='ERP')
         except Exception as e:
-            await aph.pl_release_failed_async(native_plno=supplyno, msg=str(e), push_data=data, msg_from='API')
-    
+            if error_wrapper:
+                await error_wrapper(**{'supplyno':supplyno, 'msg': str(e)})
+            return
+
+
     from apps.io_api.models import TSupply
     
     supply_nos = [_['supplyno'] for _ in event_data]
     supply_list = await TSupply.filter(supplyno__in=supply_nos).update(memo=" 正在推送。。。")
     cache = get_production_cache()
-    cache.set_cache_items([CacheItem.SUPPLY_MO, CacheItem.ORDER_WC])
-    await cache.establish_production_cache(MYAPS_MAIN_DB, supplynos=supply_nos)
+    await cache.establish_production_cache(supplynos=supply_nos, cache_items=[CacheItem.SUPPLY_MO])
     tasks = [handle_pl_status_a2e(item) for item in event_data]
-    await asyncio.gather(*tasks)
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 

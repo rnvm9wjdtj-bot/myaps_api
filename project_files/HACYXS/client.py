@@ -182,9 +182,9 @@ def batch_handle_pl_status_a2e(supplyno_or_data_list: list[str | dict]):
 
     if len(supplyno_or_data_list) >= 1:
         cache = get_production_cache()
-        cache.set_cache_items([CacheItem.SUPPLY_MO, CacheItem.ORDER_WC, CacheItem.DEMAND, CacheItem.PEG, CacheItem.MATERIAL])
+        cache._set_cache_items([CacheItem.SUPPLY_MO, CacheItem.ORDER_WC, CacheItem.DEMAND, CacheItem.PEG, CacheItem.MATERIAL])
         supply_nos = [s['supplyno'] if isinstance(s, dict) else s for s in supplyno_or_data_list]
-        asyncio.run(cache.establish_production_cache(MYAPS_MAIN_DB, supplynos=supply_nos))
+        asyncio.run(cache.establish_production_cache(supplynos=supply_nos, cache_items=[CacheItem.SUPPLY_MO]))
     for supplyno_or_data in supplyno_or_data_list:
         handle_pl_status_a2e(supplyno_or_data)
     return
