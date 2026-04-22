@@ -231,7 +231,7 @@ async def task_push_seasonpr_to_srm():
 # ⬇️APS事件
 #################################################################################
 
-qq_email_reminder = QqEmailReminder(
+planner_email_reminder = QqEmailReminder(
     remind_types=[RemindType.APS_EVENT],
     smtp_user="2982212683@qq.com",
     smtp_password="jyboujldhplddhdf",
@@ -241,8 +241,8 @@ qq_email_reminder = QqEmailReminder(
 
 
 
-@start_reminder()
-@with_result_collection()
+@start_reminder(reminder=planner_email_reminder)
+@with_result_collection(reminder=planner_email_reminder)
 async def batch_handle_pl_status_a2e(event_data: List[Dict], apc: ApsChanger, description="PL 单据下达"):
     """
     Args:

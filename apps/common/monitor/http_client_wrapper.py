@@ -6,6 +6,7 @@ HTTP 客户端包装器
 
 import time
 import inspect
+import asyncio
 from typing import Dict, Any, Optional, Union
 import json
 from .collectors.outbound_http_collector import outbound_http_collector
@@ -305,13 +306,13 @@ class HTTPAsyncMonitorWrapper:
             
             # 尝试提取响应体
             try:
-                if hasattr(response, 'json'):
+                if hasattr(response, 'json') and callable(response.json):
                     response_body = await response.json()
-                elif hasattr(response, 'text'):
+                elif hasattr(response, 'text') and callable(response.text):
                     response_body = await response.text()
             except Exception:
                 # JSON解析失败，尝试获取响应文本
-                if hasattr(response, 'text'):
+                if hasattr(response, 'text') and callable(response.text):
                     response_body = await response.text()
                 
         except Exception as e:
@@ -325,19 +326,27 @@ class HTTPAsyncMonitorWrapper:
             # 获取调用模块
             module = self._get_calling_module()
             
-            # 记录请求信息
-            await self.collector.record_request(
-                method=method,
-                url=url,
-                status_code=status_code,
-                duration=duration,
-                request_headers=kwargs.get('headers', {}),
-                request_body=request_body,
-                response_headers=response_headers,
-                response_body=response_body,
-                error_message=error_message,
-                module=module
-            )
+            # 异步记录请求信息，不阻塞主请求流程
+            async def record_request_background():
+                try:
+                    await self.collector.record_request(
+                        method=method,
+                        url=url,
+                        status_code=status_code,
+                        duration=duration,
+                        request_headers=kwargs.get('headers', {}),
+                        request_body=request_body,
+                        response_headers=response_headers,
+                        response_body=response_body,
+                        error_message=error_message,
+                        module=module
+                    )
+                except Exception as record_error:
+                    # 记录异常，确保即使发生异常也不会影响主流程
+                    print(f"记录请求信息失败: {record_error}")
+            
+            # 创建后台任务
+            asyncio.create_task(record_request_background())
         
         return response
     
@@ -413,13 +422,13 @@ class HTTPAsyncMonitorWrapper:
             
             # 尝试提取响应体
             try:
-                if hasattr(response, 'json'):
+                if hasattr(response, 'json') and callable(response.json):
                     response_body = await response.json()
-                elif hasattr(response, 'text'):
+                elif hasattr(response, 'text') and callable(response.text):
                     response_body = await response.text()
             except Exception:
                 # JSON解析失败，尝试获取响应文本
-                if hasattr(response, 'text'):
+                if hasattr(response, 'text') and callable(response.text):
                     response_body = await response.text()
                 
         except Exception as e:
@@ -439,19 +448,27 @@ class HTTPAsyncMonitorWrapper:
             if not url:
                 url = 'UNKNOWN'
             
-            # 记录请求信息
-            await self.collector.record_request(
-                method=method,
-                url=url,
-                status_code=status_code,
-                duration=duration,
-                request_headers=request_headers,
-                request_body=request_body,
-                response_headers=response_headers,
-                response_body=response_body,
-                error_message=error_message,
-                module=module
-            )
+            # 异步记录请求信息，不阻塞主请求流程
+            async def record_request_background():
+                try:
+                    await self.collector.record_request(
+                        method=method,
+                        url=url,
+                        status_code=status_code,
+                        duration=duration,
+                        request_headers=request_headers,
+                        request_body=request_body,
+                        response_headers=response_headers,
+                        response_body=response_body,
+                        error_message=error_message,
+                        module=module
+                    )
+                except Exception as record_error:
+                    # 记录异常，确保即使发生异常也不会影响主流程
+                    print(f"记录请求信息失败: {record_error}")
+            
+            # 创建后台任务
+            asyncio.create_task(record_request_background())
         
         return response
     
@@ -472,10 +489,6 @@ class HTTPAsyncMonitorWrapper:
     # 代理其他属性和方法
     def __getattr__(self, name):
         """代理属性和方法到原始客户端"""
-        # 对于 HTTP 请求方法，确保调用的是本类中覆盖的方法
-        if name in ['get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'send']:
-            return getattr(self, name)
-        
         # 对于其他属性和方法，代理到原始客户端
         return getattr(self.client, name)
     

@@ -71,7 +71,7 @@ async def task_refresh_stock():
         # 不抛出异常，避免影响其他任务
 
 
-@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1), description="确认报工")
+# @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1), description="确认报工")
 async def task_confirm_workreport():
     """定时任务：确认报工"""
     try:

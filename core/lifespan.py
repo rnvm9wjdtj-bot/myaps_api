@@ -14,7 +14,7 @@ from apps.common.monitor import (
     start_failed_operation_recovery, stop_failed_operation_recovery
 )
 from globalobjects import EVENT_AGGREGATOR
-from core.settings import TURNON_DBMONITOR, TRUNON_SCHEDULER, REDIS_HOST, REDIS_PORT, REDIS_DB, REDIS_PASSWORD, MAX_EVENTS_BATCH_SIZE
+from core.settings import TURNON_BINLOG_LISTENER, TRUNON_SCHEDULER, REDIS_HOST, REDIS_PORT, REDIS_DB, REDIS_PASSWORD, MAX_EVENTS_BATCH_SIZE
 from core.database import check_db_connections, warmup_connections, start_pool_monitoring
 
 
@@ -44,7 +44,7 @@ async def lifespan(app):
     await asyncio.sleep(1)
     log_config.info("服务器已就绪")
     
-    if TURNON_DBMONITOR:
+    if TURNON_BINLOG_LISTENER:
         binlog_listener.start_monitoring()
         log_config.info("MySQL Binlog监控已启动")
     else:
@@ -248,7 +248,7 @@ async def lifespan(app):
     log_config.info("应用关闭中...")
     
     # 1. 先停止 MySQL Binlog 监控（最依赖数据库）
-    if TURNON_DBMONITOR:
+    if TURNON_BINLOG_LISTENER:
         log_config.info("正在停止 MySQL Binlog 监控...")
         binlog_listener.stop_monitoring()
         log_config.info("MySQL Binlog监控已停止")

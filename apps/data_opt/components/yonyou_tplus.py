@@ -520,10 +520,14 @@ class TplusConnection(BaseConnection):
                 return self.access_token
 
         # 获取新的异步会话
-        async_session = await self._get_async_session()
-        
+        async_session = None
         try:
-            auth_response = await async_session.get_async(
+            logger.debug("开始获取异步会话...")  # 临时日志，日后可删除
+            async_session = await self._get_async_session()
+            logger.debug(f"成功获取异步会话: {type(async_session).__name__}")  # 临时日志，日后可删除
+            
+            logger.debug(f"开始发送认证请求到: {self.base_url}/auth/v2/refreshToken")  # 临时日志，日后可删除
+            auth_response = await async_session.get(
                 url=f"{self.base_url}/auth/v2/refreshToken",
                 params={
                     "grantType": "refresh_token",
@@ -534,12 +538,16 @@ class TplusConnection(BaseConnection):
                     "appSecret": self.app_secret,
                     "Content-Type": "application/json",
                 })
+            logger.debug(f"请求发送成功，状态码: {getattr(auth_response, 'status_code', '未知')}")  # 临时日志，日后可删除
+            
             # 解析响应JSON
             if hasattr(auth_response, 'json'):
                 if inspect.iscoroutinefunction(auth_response.json):
                     auth_response = await auth_response.json()
                 else:
                     auth_response = auth_response.json()
+            logger.debug(f"响应解析完成: {type(auth_response).__name__}")  # 临时日志，日后可删除
+            
             auth_result = auth_response.get("result")
             if int(auth_response.get("code", 0)) == 200 and auth_result:
                 # 更新认证时间
@@ -557,26 +565,48 @@ class TplusConnection(BaseConnection):
             else:
                 logger.fail("获取畅捷通token", auth_response, )
                 raise Exception(auth_response.get("message", ""))
+        except Exception as e:
+            logger.fail("畅捷通认证失败", str(e))  # 临时日志，日后可删除
+            import traceback
+            logger.debug(f"认证失败详细错误：{traceback.format_exc()}")  # 临时日志，日后可删除
+            raise
         finally:
             # 关闭异步会话
+            if async_session:
+                try:
+                    if hasattr(async_session, 'aclose'):
+                        await async_session.aclose()
+                    elif hasattr(async_session, 'close'):
+                        async_session.close()
+                    logger.debug("异步会话已关闭")  # 临时日志，日后可删除
+                except Exception as close_error:
+                    logger.warning(f"关闭异步会话时出错: {close_error}")  # 临时日志，日后可删除
+
+
+    async def _get_async(self, endpoint: str, params: dict=None):
+        await self.auth_async()
+        async_session = await self._get_async_session()
+        
+        try:
+            headers = {
+                "appKey": self.app_key,
+                "appSecret": self.app_secret,
+                "openToken": self.access_token,
+                "Content-Type": "application/json",
+            }
+            response = await async_session.get(f"{self.base_url}{endpoint}", headers=headers, params=params)
+            if hasattr(response, 'json'):
+                if inspect.iscoroutinefunction(response.json):
+                    response = await response.json()
+                else:
+                    response = response.json()
+            return response
+        finally:
             if async_session:
                 if hasattr(async_session, 'aclose'):
                     await async_session.aclose()
                 elif hasattr(async_session, 'close'):
                     async_session.close()
-
-
-    async def _get_async(self, endpoint: str, params: dict=None):
-        # await self.auth_async()
-        response = await self._session.get_async(f"{self.base_url}{endpoint}", headers={
-            "appKey": self.app_key,
-            "appSecret": self.app_secret,
-            "Content-Type": "application/json",
-        }, params=params)
-        if hasattr(response, 'json'):
-            if inspect.iscoroutinefunction(response.json):
-                response = await response.json()
-            return response
 
 
     async def _post_async(self, endpoint: str, data: dict, max_retries: int = 3):
@@ -604,9 +634,14 @@ class TplusConnection(BaseConnection):
                         "openToken": self.access_token,
                         "Content-Type": "application/json",
                     }
-                    response = await async_session.post_async(f"{self.base_url}{endpoint}", headers=headers, json=data)
+                    response = await async_session.post(f"{self.base_url}{endpoint}", headers=headers, json=data)
                     if hasattr(response, 'status_code') and response.status_code >= 400 and response.status_code <= 500:
                         raise Exception(f"HTTP 错误: {response.status_code}")
+                    if hasattr(response, 'json'):
+                        if inspect.iscoroutinefunction(response.json):
+                            response = await response.json()
+                        else:
+                            response = response.json()
                     return response
                 finally:
                     if async_session:
@@ -644,10 +679,7 @@ class TplusConnection(BaseConnection):
 
         data_list = []
         while True:
-            response = await self._post_async(endpoint=endpoint, data={"param": params})
-            resp_json = response.json()
-            if inspect.iscoroutinefunction(resp_json):
-                resp_json = await resp_json
+            resp_json = await self._post_async(endpoint=endpoint, data={"param": params})
             try:
                 raw_data = resp_json['Data']
             except:

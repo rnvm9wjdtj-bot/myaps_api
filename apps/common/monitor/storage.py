@@ -1,5 +1,6 @@
 from typing import List, Dict, Any
 from datetime import datetime
+from core.settings import LOG_RETENTION
 from .models import APIRequest, OutboundAPIRequest, SystemLog
 
 
@@ -93,7 +94,7 @@ class RequestStorage:
         ).limit(limit).order_by('-timestamp').all()
         return error_requests
 
-    async def clean_old_data(self, days: int = 7):
+    async def clean_old_data(self, days: int = LOG_RETENTION):
         """清理指定天数前的数据"""
         from datetime import timedelta
         cutoff_date = datetime.utcnow() - timedelta(days=days)
@@ -170,7 +171,7 @@ class OutboundRequestStorage:
         ).limit(limit).order_by('-timestamp').all()
         return requests
 
-    async def clean_old_data(self, days: int = 7):
+    async def clean_old_data(self, days: int = LOG_RETENTION):
         """清理指定天数前的对外请求数据"""
         from datetime import timedelta
         cutoff_date = datetime.utcnow() - timedelta(days=days)
@@ -180,7 +181,7 @@ class OutboundRequestStorage:
 class SystemLogStorage:
     """系统日志存储服务"""
     
-    async def clean_old_data(self, days: int = 7):
+    async def clean_old_data(self, days: int = LOG_RETENTION):
         """清理指定天数前的系统日志数据"""
         from datetime import timedelta
         cutoff_date = datetime.utcnow() - timedelta(days=days)
@@ -193,11 +194,11 @@ outbound_request_storage = OutboundRequestStorage()
 system_log_storage = SystemLogStorage()
 
 
-async def clean_all_old_data(days: int = 30):
+async def clean_all_old_data(days: int = LOG_RETENTION):
     """统一清理所有旧的请求数据
     
     Args:
-        days: 保留多少天的数据，默认30天
+        days: 保留多少天的数据，默认使用配置文件中的 LOG_RETENTION
     """
     from globalobjects import logger as log_config
     logger = log_config.get_logger(__name__)

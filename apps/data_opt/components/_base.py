@@ -63,7 +63,7 @@ class BaseConnection(ABC):
             self._async_session = None
 
 
-    @abstractmethod
+    # @abstractmethod
     def auth(self, *args, **kwargs):
         """
         认证连接

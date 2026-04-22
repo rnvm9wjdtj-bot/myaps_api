@@ -62,7 +62,7 @@ from pymysqlreplication.row_event import (
     DeleteRowsEvent,
 )
 
-from core.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_DBMONITOR, TURNON_BINLOG_POSITION_MANAGER, MYAPS_ROOT_PASSWORD
+from core.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_BINLOG_LISTENER, TURNON_BINLOG_POSITION_MANAGER, MYAPS_ROOT_PASSWORD
 from core.database import TORTOISE_ORM_CONFIG
 from tortoise import Tortoise
 from globalobjects import logger as log_config
@@ -417,7 +417,7 @@ class ConnectionHealthChecker:
     def check_config(self) -> bool:
         """执行一次配置检查"""
         # 如果未启用数据库监控，跳过配置检查
-        if not TURNON_DBMONITOR:
+        if not TURNON_BINLOG_LISTENER:
             with self._lock:
                 # 未启用监控时，将配置状态设置为有效
                 self._is_config_valid = True
@@ -556,7 +556,7 @@ class MySQLBinlogListener:
         self._consecutive_errors = 0  # 连续错误计数
         self._last_error_time = 0  # 上次错误时间
         
-        if MYAPS_DBSET_LIST and TURNON_DBMONITOR:
+        if MYAPS_DBSET_LIST and TURNON_BINLOG_LISTENER:
             # 使用全局线程池管理器
             self._min_workers = 5
             self._max_workers = 5
@@ -584,7 +584,7 @@ class MySQLBinlogListener:
             if field not in self.mysql_settings or not self.mysql_settings[field]:
                 missing_fields.append(field)
         
-        if missing_fields and TURNON_DBMONITOR:
+        if missing_fields and TURNON_BINLOG_LISTENER:
             raise ValueError(f"❌ 缺少必要的MySQL配置: {', '.join(missing_fields)}")
         
         # 检查数据库配置
