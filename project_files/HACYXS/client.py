@@ -19,7 +19,7 @@ import asyncio
 from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR, SCHEDULER_MINUTE
 from .._base import (
     get_scheduler_minute, cron_task, CLIENT_LOGGER, CLIENT_SESSION, PROJECT_JSON_FILE,
-    ApsHelpers, get_session, get_production_cache, CacheItem
+    ApsHelper, get_session, CacheItem
 )
 
 
@@ -45,13 +45,13 @@ def get_tplus_conn():
 # ⬇️ 项目可复用逻辑
 #################################################################################
 
-def refresh_stock(dbs: str=MYAPS_DB_SET):
+async def refresh_stock(dbs: str=MYAPS_DB_SET):
     """刷新库存数据"""
     try:
         tplus_conn = get_tplus_conn()
-        stock_data = tplus_conn.pull_stock()
+        stock_data = await tplus_conn.pull_stock_async()
         if stock_data:
-            ApsHelpers.refresh_supply(stock_data, dbs=dbs)
+            await ApsHelper.refresh_supply_async(stock_data, dbs=dbs)
     except Exception as e:
         CLIENT_LOGGER.fail("刷新库存数据", "", str(e))
         raise
@@ -61,10 +61,10 @@ def refresh_stock(dbs: str=MYAPS_DB_SET):
 # ⬇️ 定时任务
 #################################################################################
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(), description="刷新库存数据")
-def task_refresh_stock():
+async def task_refresh_stock():
     """定时任务：刷新库存数据"""
     try:
-        refresh_stock()
+        await refresh_stock()
         CLIENT_LOGGER.success("定时任务执行", "刷新库存数据", "任务完成")
     except Exception as e:
         CLIENT_LOGGER.fail("定时任务执行", "刷新库存数据", f"任务失败: {str(e)}")
@@ -72,10 +72,10 @@ def task_refresh_stock():
 
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1), description="确认报工")
-def task_confirm_workreport():
+async def task_confirm_workreport():
     """定时任务：确认报工"""
     try:
-        ApsHelpers.confirm_workreport()
+        await ApsHelper.confirm_workreport_async()
         CLIENT_LOGGER.success("定时任务执行", "确认报工", "任务完成")
     except Exception as e:
         CLIENT_LOGGER.fail("定时任务执行", "确认报工", f"任务失败: {str(e)}")
@@ -107,7 +107,7 @@ class CustomMoPushModel(MoPushModel):
 
         # 批量查询所有物料的 free1 字段
         materialnos = [md['Inventory']['Code'] for md in mo_material_details]
-        materials = ApsHelpers.query_material(materialnos)
+        materials = ApsHelper.query_material(materialnos)
         materials = {item['materialno']: item for item in materials}
         
         for md in mo_material_details:
@@ -147,7 +147,7 @@ class CustomRsPushModel(RsPushModel):
 
         mr_details:list[dict] = cleaned_values['MaterialRequestDetails']
         materialnos = [md['Inventory']['Code'] for md in mr_details]
-        materials = ApsHelpers.query_material(materialnos)
+        materials = ApsHelper.query_material(materialnos)
         # materialnos = ','.join([md['Inventory']['Code'] for md in mr_details])
         # materials = CLIENT_SESSION.get(f"{THIS_BASE_URL}/api/t_material/{materialnos}")
         # materials = materials.json()['data']
@@ -164,10 +164,10 @@ class CustomRsPushModel(RsPushModel):
         return cleaned_values
 
 
-def batch_handle_pl_status_a2e(supplyno_or_data_list: list[str | dict]):
-    aph = ApsHelpers()
+async def batch_handle_pl_status_a2e(supplyno_or_data_list: list[str | dict]):
+    
 
-    def handle_pl_status_a2e(supplyno_or_data: str | dict):
+    async def handle_pl_status_a2e(supplyno_or_data: str | dict):
         """处理PL状态变更为A2E"""
         try:
             if isinstance(supplyno_or_data, str):
@@ -178,19 +178,17 @@ def batch_handle_pl_status_a2e(supplyno_or_data_list: list[str | dict]):
             tplus_conn.create_mo(supplyno=supplyno, remain_native_supplyno=REMAIN_NATIVE_SUPPLYNO, pydantic_model=CustomMoPushModel)
         except Exception as e:
             CLIENT_LOGGER.fail("处理PL状态变更", str(supplyno_or_data), str(e))
-            aph.pl_release_failed(supplyno, msg=str(e))
-
-    if len(supplyno_or_data_list) >= 1:
-        cache = get_production_cache()
-        cache._set_cache_items([CacheItem.SUPPLY_MO, CacheItem.ORDER_WC, CacheItem.DEMAND, CacheItem.PEG, CacheItem.MATERIAL])
-        supply_nos = [s['supplyno'] if isinstance(s, dict) else s for s in supplyno_or_data_list]
-        asyncio.run(cache.establish_production_cache(supplynos=supply_nos, cache_items=[CacheItem.SUPPLY_MO]))
-    for supplyno_or_data in supplyno_or_data_list:
-        handle_pl_status_a2e(supplyno_or_data)
-    return
+            await aph.pl_release_failed_async(supplyno, msg=str(e))
 
 
-def handle_pl_typeto_mo(supplyno_or_data: str | dict):
+    aph = ApsHelper()
+    supply_nos = [s['supplyno'] if isinstance(s, dict) else s for s in supplyno_or_data_list]
+    cache = await aph.establish_production_cache(supplynos=supply_nos)
+    tasks = [handle_pl_status_a2e(item) for item in supplyno_or_data_list]
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def handle_pl_typeto_mo(supplyno_or_data: str | dict):
     """处理PL类型变更：转为MO"""
     try:
         if isinstance(supplyno_or_data, str):
@@ -198,7 +196,7 @@ def handle_pl_typeto_mo(supplyno_or_data: str | dict):
         elif isinstance(supplyno_or_data, dict):
             supplyno = supplyno_or_data['supplyno']
         tplus_conn = get_tplus_conn()
-        mo_data = tplus_conn.query_mo(index_value=supplyno, filter_field='voucherCode')
+        mo_data = await tplus_conn.query_mo_async(index_value=supplyno, filter_field='voucherCode')
         if mo_data:
             tplus_conn.push_rs(mdlist_or_supplyno=supplyno, tplus_mo_data_or_id=mo_data, pydantic_model=CustomRsPushModel)
     except Exception as e:
@@ -206,11 +204,11 @@ def handle_pl_typeto_mo(supplyno_or_data: str | dict):
         raise
 
 
-def batch_handle_pr_created(pr_data_list: list[dict]):
+async def batch_handle_pr_created_async(pr_data_list: list[dict]):
     """批量处理PR创建"""
     try:
         tplus_conn = get_tplus_conn()
-        tplus_conn.push_pr(pr_data_list)
+        await tplus_conn.push_pr_async(pr_data_list)
     except Exception as e:
         CLIENT_LOGGER.fail("批量处理PR创建", "", str(e))
         raise

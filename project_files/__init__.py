@@ -21,7 +21,7 @@ from globalobjects.globalconst import OrderStatusEnum
 from apps.io_api.utils.common import dict_to_lower_keys
 from globalobjects import logger as log_config
 from apps.data_opt.utils.scheduler import cron_task
-from apps.data_opt.components._base import ApsHelpers
+from apps.data_opt.components._base import ApsHelper
 from apps.data_opt.utils.common import get_optimized_session
 
 
@@ -146,8 +146,8 @@ class ApsEvent:
 
 # 只在第一次导入时注册事件
 if not _events_registered:
-    def error_handler(native_plno: str, msg: str, msg_from: str = None, **kwargs):
-        ApsHelpers().pl_release_failed(native_plno=native_plno, msg=msg, msg_from=msg_from or "API", **kwargs)
+    async def error_handler(native_plno: str, msg: str, msg_from: str = None, **kwargs):
+        await ApsHelper().pl_release_failed_async(native_plno=native_plno, msg=msg, msg_from=msg_from or "API", **kwargs)
 
     aps_pl_status_a2e_event = ApsEvent(
         event_type=DbEventType.PL_STATUS_A2E, 
@@ -203,7 +203,7 @@ def handle_update_supply(database: str, table: str, data: dict, data_diff: dict)
 def handle_insert_supply(database: str, table: str, data: dict):
     """处理t_supply表的插入事件"""
     try:
-        from apps.data_opt.components._base import ApsHelpers
+        from apps.data_opt.components._base import ApsHelper
 
         new_data = dict_to_lower_keys(data['new'])
         type_ = new_data['type']

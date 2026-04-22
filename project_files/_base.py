@@ -22,7 +22,7 @@ from apps.io_api.utils.db_operation import db_delete, db_bupsert, call_dbprocdur
 from apps.data_opt.utils.scheduler import cron_task
 from apps.data_opt.utils.common import add_basic_auth_requests, get_session
 from apps.data_opt.utils.data_processor import DataProcessor
-from apps.data_opt.components._base import ApsHelpers, get_production_cache, CacheItem
+from apps.data_opt.components._base import ApsHelper, ApsChanger, CacheItem
 from apps.data_opt.components.simple_hap import HapConnection
 
 
@@ -207,16 +207,16 @@ def sync_rate_limit(rate: int = None):
 # 公共装饰器
 #################################################################################
 
-def async_reminder(reminder: Reminder, error_handler: Union[callable, str] = None, final_handler: callable = None):
+def start_reminder(reminder: Reminder = None, error_handler: Union[callable, str] = None, final_handler: callable = None):
     """
     异步函数执行提示装饰器
 
     用法:
-        @async_reminder()
+        @start_reminder()
         async def batch_handle_pl_status_a2e(event_data: List[Dict]):
             ...
 
-        @async_reminder(reminder=qq_email_reminder)
+        @start_reminder(reminder=qq_email_reminder)
         async def batch_handle_pl_status_a2e(event_data: List[Dict]):
             ...
 
@@ -349,15 +349,15 @@ def with_result_collection(description: str = None, reminder: Reminder = None):
 
     用法:
         @with_result_collection(reminder=qq_email_reminder)
-        async def batch_handle_pl_status_a2e(event_data: List[Dict], description="PL 单据下达", aph=None):
+        async def batch_handle_pl_status_a2e(event_data: List[Dict], description="PL 单据下达", apc=None):
             @async_rate_limit()
             async def handle_pl_status_a2e(item):
                 try:
                     # ... 业务逻辑
                     pass
                 except Exception as e:
-                    # 直接调用 aph 方法记录错误
-                    await aph.pl_release_failed_async(msg=str(e), msg_from="API")
+                    # 直接调用 apc 方法记录错误
+                    await apc.pl_release_failed_async(msg=str(e), msg_from="API")
                     return
 
             tasks = [handle_pl_status_a2e(item) for item in event_data]
@@ -368,7 +368,7 @@ def with_result_collection(description: str = None, reminder: Reminder = None):
         reminder: 可选的 Reminder 实例，执行完成时将发送通知
 
     注意:
-        被装饰的函数需要接受 aph 参数
+        被装饰的函数需要接受 apc 参数
     """
     def decorator(func):
         @wraps(func)
@@ -381,7 +381,7 @@ def with_result_collection(description: str = None, reminder: Reminder = None):
                     try:
                         import inspect
                         sig = inspect.signature(func)
-                        # 绑定原始参数，还没有注入 aph
+                        # 绑定原始参数，还没有注入 apc
                         bound_args = sig.bind(*args, **kwargs)
                         bound_args.apply_defaults()
                         actual_description = bound_args.arguments.get('description')
@@ -390,17 +390,17 @@ def with_result_collection(description: str = None, reminder: Reminder = None):
                 if actual_description is None:
                     actual_description = func.__name__
             
-            # 然后创建并注入 aph
-            aph = ApsHelpers()
-            kwargs['aph'] = aph
+            # 然后创建并注入 apc
+            apc = ApsChanger()
+            kwargs['apc'] = apc
             
             try:
                 result = await func(*args, **kwargs)
             finally:
                 # 使用之前获取的 actual_description
-                summary = aph.get_summary()
+                summary = apc.get_summary()     
                 CLIENT_LOGGER.info(f"{actual_description} 执行完成，汇总结果: {json.dumps(summary, ensure_ascii=False)}")
-                notification = aph.format_notification(actual_description)
+                notification = apc.format_notification(actual_description)
                 CLIENT_LOGGER.info(f"通知内容: {notification}")
                 
                 if reminder is not None:

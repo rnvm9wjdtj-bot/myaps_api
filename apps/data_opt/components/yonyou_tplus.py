@@ -15,7 +15,7 @@ from ._base import (
     PydanticModel, JSONManager,
     logger,
     DataProcessor, globalconst, PROJECT_JSON_FILE, pdv,
-    BaseConnection, ApsHelpers, convert_timeunit, clean_value,
+    BaseConnection, ApsHelper, ApsChanger, convert_timeunit, clean_value,
     model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold, AcceptSupply, AcceptConfirm,
@@ -492,7 +492,7 @@ class TplusConfig:
 
 class TplusConnection(BaseConnection):
     
-    def __init__(self, aph: 'ApsHelpers', config: TplusConfig=TplusConfig()):
+    def __init__(self, config: TplusConfig=TplusConfig()):
         """
         初始化畅捷通连接
         """
@@ -500,7 +500,6 @@ class TplusConnection(BaseConnection):
         self.config = config
         self.base_url = self.config.base_url
         self.cache_file = self.config.cache_file
-        self.aph = aph
         # 从缓存文件中读取认证信息，并将其设置为类实例属性
         self.credential_keys = ("app_key", "app_secret", "access_token", "refresh_token", "org_id", "_auth_at_")
         cache_erp = self.cache_file.get("erp", {})
@@ -508,45 +507,6 @@ class TplusConnection(BaseConnection):
             setattr(self, key, cache_erp.get(key, ""))
         self._BOM_CODES = None  # 缓存已处理的BOM编码，用于取工艺路线（因为 T+ 的工艺路线是抽象的，具体到物料的工艺路线是在 BOM 中定义的，而只有通过具体BOM编号查询BOM时，才会展示工艺路线详情 
 
-
-    def auth(self):
-        assert self.access_token and self.refresh_token, "畅捷通token缺失"
-        if self._auth_at_:
-            expire_time = datetime.strptime(self._auth_at_, "%Y-%m-%d %H:%M:%S") + timedelta(seconds=self.config.token_expire_seconds)
-            if datetime.now() < expire_time:
-                logger.debug(f"畅捷通token有效，有效期至：{expire_time.strftime('%Y-%m-%d %H:%M:%S')}")
-                return self.access_token
-
-        auth_response = self._session.get(
-            url=f"{self.base_url}/auth/v2/refreshToken",
-            params={
-                "grantType": "refresh_token",
-                "refreshToken": self.refresh_token,
-            },
-            headers={
-                "appKey": self.app_key,
-                "appSecret": self.app_secret,
-                "Content-Type": "application/json",
-            })
-        # 解析响应JSON
-        auth_response = auth_response.json()
-        auth_result = auth_response.get("result")
-        if int(auth_response.get("code", 0)) == 200 and auth_result:
-            # 更新认证时间
-            self._auth_at_ = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            self.access_token = auth_result["access_token"]
-            self.refresh_token = auth_result["refresh_token"]
-            # 保存更新后的认证信息到缓存文件
-            self.cache_file.update("erp", {
-                "_auth_at_": self._auth_at_,
-                "access_token": self.access_token,
-                "refresh_token": self.refresh_token})
-            self.cache_file.save()
-            logger.debug(f"畅捷通token刷新为：{self.access_token}")
-            return self.access_token
-        else:
-            logger.fail("获取畅捷通token", auth_response, )
-            raise Exception(auth_response.get("message", ""))
 
     async def auth_async(self):
         """
@@ -606,54 +566,18 @@ class TplusConnection(BaseConnection):
                     async_session.close()
 
 
-    def _get(self, endpoint: str, params: dict=None):
-        # self.auth()
-        response = self._session.get(f"{self.base_url}{endpoint}", headers={
+    async def _get_async(self, endpoint: str, params: dict=None):
+        # await self.auth_async()
+        response = await self._session.get_async(f"{self.base_url}{endpoint}", headers={
             "appKey": self.app_key,
             "appSecret": self.app_secret,
             "Content-Type": "application/json",
         }, params=params)
-        response.raise_for_status()
-        return response
+        if hasattr(response, 'json'):
+            if inspect.iscoroutinefunction(response.json):
+                response = await response.json()
+            return response
 
-
-    def _post(self, endpoint: str, data: dict, max_retries: int = 3):
-        """
-        发送POST请求到畅捷通API，支持重试机制
-        Args:
-            endpoint: API端点路径
-            data: 请求体数据
-            max_retries: 最大重试次数，默认3次
-        Returns:
-            响应JSON数据
-        """
-        retry_count = 0
-        last_error = None
-        
-        while retry_count < max_retries:
-            try:
-                self.auth()
-                headers = {
-                    "appKey": self.app_key,
-                    "appSecret": self.app_secret,
-                    "openToken": self.access_token,
-                    "Content-Type": "application/json",
-                }
-                response = self._session.post(f"{self.base_url}{endpoint}", headers=headers, json=data)
-                response.raise_for_status()
-                return response
-            except Exception as e:
-                retry_count += 1
-                last_error = e
-                if retry_count < max_retries:
-                    wait_time = 2 * retry_count  # 递增等待时间
-                    logger.warning_msg(f"API请求失败，{wait_time}秒后重试", endpoint, f"第{retry_count}/{max_retries}次重试: {str(e)}")
-                    time.sleep(wait_time)
-                else:
-                    logger.fail(f"API请求失败，已达最大重试次数", endpoint, str(e))
-        
-        # 所有重试都失败，抛出最后一个错误
-        raise last_error
 
     async def _post_async(self, endpoint: str, data: dict, max_retries: int = 3):
         """
@@ -704,40 +628,6 @@ class TplusConnection(BaseConnection):
         raise last_error
 
 
-    def _pull_simple_data(self, pull_interface: PullInterface, filter: dict=None, pydantic_model: PydanticModel=None):
-        self.auth()
-        endpoint = pull_interface.endpoint
-        field_map = pull_interface.field_map
-        base_filter = pull_interface.base_filter
-        params = {
-            "PageIndex": 1,
-            "PageSize": self.config.max_page_size,
-            "SelectFields": ",".join(field_map.keys()),
-            **base_filter,
-        }
-        if filter:
-            params.update(filter)
-
-        data_list = []
-        while True:
-            response = self._post(endpoint=endpoint, data={"param": params})
-            resp_json = response.json()
-            try:
-                raw_data = resp_json['Data']
-            except:
-                raw_data = resp_json
-            if not raw_data:
-                break
-            params["PageIndex"] += 1
-            ts_value = raw_data[-1].get("Ts") or raw_data[-1].get("TS")
-            params["Ts"] = ts_value
-            data_list.extend([{v: row.get(k) for k, v in field_map.items()} for row in raw_data])
-            
-        if pydantic_model:
-            # data_list = [pydantic_model(**item).model_dump(exclude_unset=True) for item in data_list]
-            data_list = [pydantic_model(**item).model_dump(exclude_none=True) for item in data_list]
-        return data_list
-
     async def _pull_simple_data_async(self, pull_interface: PullInterface, filter: dict=None, pydantic_model: PydanticModel=None):
         await self.auth_async()
         endpoint = pull_interface.endpoint
@@ -774,21 +664,16 @@ class TplusConnection(BaseConnection):
         return data_list
 
 
-    def pull_material(self, filter: dict=None, pull_interface: PullInterface=MaterialPullInterface, pydantic_model: PydanticModel=MaterialPullModel):
-        return self._pull_simple_data(pull_interface=pull_interface, filter=filter, pydantic_model=pydantic_model)
-
     async def pull_material_async(self, filter: dict=None, pull_interface: PullInterface=MaterialPullInterface, pydantic_model: PydanticModel=MaterialPullModel):
         return await self._pull_simple_data_async(pull_interface=pull_interface, filter=filter, pydantic_model=pydantic_model)
     
-    def pull_workcenter(self, filter: dict=None, pull_interface: PullInterface=WorkcenterPullInterface, pydantic_model: PydanticModel=WorkcenterPullModel):
-        return self._pull_simple_data(pull_interface=pull_interface, filter=filter, pydantic_model=pydantic_model)
 
     async def pull_workcenter_async(self, filter: dict=None, pull_interface: PullInterface=WorkcenterPullInterface, pydantic_model: PydanticModel=WorkcenterPullModel):
         return await self._pull_simple_data_async(pull_interface=pull_interface, filter=filter, pydantic_model=pydantic_model)
 
 
-    def pull_stock(self, filter: dict=None, pull_interface: PullInterface=StockPullInterface, pydantic_model: PydanticModel=StockPullModel):
-        stock_data = self._pull_simple_data(pull_interface=pull_interface, filter=filter, pydantic_model=pydantic_model)
+    async def pull_stock_async(self, filter: dict=None, pull_interface: PullInterface=StockPullInterface, pydantic_model: PydanticModel=StockPullModel):
+        stock_data = await self._pull_simple_data_async(pull_interface=pull_interface, filter=filter, pydantic_model=pydantic_model)
         if stock_data:
             timestamp = datetime.now().strftime('%m%d-%H%M')
             df = pd.DataFrame(stock_data)
@@ -808,10 +693,10 @@ class TplusConnection(BaseConnection):
             return None
 
 
-    def pull_routing(self, only_today: bool = False, pull_interface: PullInterface=RoutingPullInterface, pydantic_model: PydanticModel=RoutePullModel):
+    async def pull_routing_async(self, only_today: bool = False, pull_interface: PullInterface=RoutingPullInterface, pydantic_model: PydanticModel=RoutePullModel):
         bom_codes = self._BOM_CODES
         assert bom_codes, "请先拉取BOM数据，获取BOM CODES"
-        self.auth()
+        await self.auth_async()
         endpoint = pull_interface.endpoint
         field_map = pull_interface.field_map
         base_filter = pull_interface.base_filter
@@ -839,23 +724,23 @@ class TplusConnection(BaseConnection):
                     processed_data.append({v: row.get(k) for k, v in field_map.items()})
                 return processed_data
 
-        def get_route_by_bomcode(bom_code):
+        async def get_route_by_bomcode_async(bom_code: str):
             payload = {
                 "dto": {"code": bom_code}
             }
-            response = self._post(endpoint=endpoint, data=payload)
-            bom_data = response.json()[0]     # 变量名没错，确实是 bom
+            response = await self._post_async(endpoint=endpoint, data=payload)
+            bom_data = await response.json()[0]     # 变量名没错，确实是 bom
             return process_route_data(bom_data, field_map=field_map)
         
         # 创建线程池，最大线程数为10
         with ThreadPoolExecutor(max_workers=10) as executor:
             # 提交所有任务
-            future_to_bom = {executor.submit(get_route_by_bomcode, bom_code): bom_code for bom_code in bom_codes}
+            future_to_bom = {executor.submit(get_route_by_bomcode_async, bom_code): bom_code for bom_code in bom_codes}
             # 收集结果
             for future in as_completed(future_to_bom):
                 bom_code = future_to_bom[future]
                 try:
-                    result = future.result()
+                    result = await future.result()
                     data_list.extend(result)
                 except Exception as exc:
                     logger.fail("BOM处理", bom_code, str(exc))
@@ -865,8 +750,8 @@ class TplusConnection(BaseConnection):
         return data_list
 
 
-    def pull_bom(self, only_today: bool = False, pull_interface: PullInterface=BomPullInterface, pydantic_model: PydanticModel=BomPullModel):
-        def process_bomdata(bomdata_list: list, field_map: dict):
+    async def pull_bom_async(self, only_today: bool = False, pull_interface: PullInterface=BomPullInterface, pydantic_model: PydanticModel=BomPullModel):
+        async def process_bomdata_async(bomdata_list: list, field_map: dict):   
             """
             处理BOM数据，提取产品编码、产品名称、组件编码、组件名称、组件数量
             """
@@ -879,7 +764,7 @@ class TplusConnection(BaseConnection):
                     processed_data.append({v: row.get(k) for k, v in field_map.items()})
             return processed_data
         
-        self.auth()
+        await self.auth_async()
         endpoint = pull_interface.endpoint
         field_map = pull_interface.field_map
         base_filter = pull_interface.base_filter
@@ -897,8 +782,8 @@ class TplusConnection(BaseConnection):
         data_list = []
 
         while True:
-            response = self._post(endpoint=endpoint, data={"param": params})
-            resp_json = response.json()
+            response = await self._post_async(endpoint=endpoint, data={"param": params})
+            resp_json = await response.json()
             try:
                 raw_data = resp_json['Data']
             except:
@@ -906,25 +791,11 @@ class TplusConnection(BaseConnection):
             if not raw_data:
                 break
             params["PageIndex"] += 1
-            data_list.extend(process_bomdata(raw_data, field_map=field_map))
+            data_list.extend(await process_bomdata_async(raw_data, field_map=field_map))
 
         data_list = [pydantic_model(**item).model_dump() for item in data_list]
         return data_list
 
-
-    def query_mo(self, index_value: str | int, filter_field: Literal['voucherID', 'voucherCode', 'externalCode']='voucherID') -> dict:
-        """
-        查询单个工单详情
-        """
-        self.auth()
-        endpoint = SingleMoQueryInterface.endpoint
-        payload = {"param": {filter_field: index_value}}
-        response = self._post(endpoint=endpoint, data=payload)
-        resp_json = response.json()
-        try:
-            return resp_json['data']
-        except:
-            return None
 
     async def query_mo_async(self, index_value: str | int, filter_field: Literal['voucherID', 'voucherCode', 'externalCode']='voucherID') -> dict:
         """
@@ -943,54 +814,15 @@ class TplusConnection(BaseConnection):
             return None
         
     
-    def create_mo(self, supplyno: str, auto_push_rs: bool = True, remain_native_supplyno: bool = True, pydantic_model: PydanticModel=MoPushModel):
-        """
-        创建MO
-        :param supplyno: APS 中的 PL号
-        :param auto_push_rs: 是否自动推送领料申请
-        :param remain_native_supplyno: 是否保留原生供应号，若为 false 则使用 T+ 生成的工单号作为 MO 供应号
-        :return:
-        """
-        def approve_mo(tplus_moid):
-            endpoint = MoApproveInterface.endpoint
-            payload = {"param": {'voucherID': tplus_moid}}
-            response = self._post(endpoint=endpoint, data=payload)
-            return response.json()
-        
-        self.auth()
-        endpoint = MoCreateInterface.endpoint
-        # 材料需求
-        demand_list = ApsHelpers.get_demand_datalist(demandno=supplyno)
-        # PL及工序详情
-        supplymo_detaildata = ApsHelpers.get_supplymo_detaildata(supplyno=supplyno, get_next_mo=True, get_origin_so=True)
-        supplymo_detaildata['demand_list'] = demand_list
-        # dto = pydantic_model(**supplymo_detaildata).model_dump(exclude_unset=True)
-        dto = pydantic_model(**supplymo_detaildata).model_dump(exclude_none=True)
-        if remain_native_supplyno:
-            dto['Code'] = supplyno
-        payload = {"dto": dto}
-        logger.debug(f"向 T+ 推送生产加工单，发送数据：{json.dumps(payload, ensure_ascii=False)}")
-        mo_create_response = self._post(endpoint=endpoint, data=payload)
-        mo_create_response_json = mo_create_response.json()
-        if str(mo_create_response_json['code']) == '0': # 响应错误码为0，MO 创建成功
-            # 从响应中提取 data
-            response_data = mo_create_response_json['data']
-            tplus_mo_id = response_data['ID']
-            tplus_mo_code = supplyno if remain_native_supplyno else response_data['Code']
-            # 审批 MO ，要在领料申请前批准
-            _x_a = approve_mo(tplus_moid=tplus_mo_id)
-            # 查询推送成功的 MO 在 T+ 中的详情
-            tplus_mo_data = self.query_mo(index_value=tplus_mo_id)
-            # 从 T+ 中提取 MO 详情中的第一个详情记录的 ID 作为 _entryid
-            tplus_mo_entryid = tplus_mo_data['ManufactureOrderDetails'][0]['ID']
-
-            # 调用存储过程更改工单信息，❗一定放在最后一步，否则工单号变更太早，前面若有用原生供应号查询都会失败
-            _x_c = self.aph.pl_release_success(native_plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
-        else:
-            _x_d = self.aph.pl_release_failed(native_plno=supplyno, msg=mo_create_response_json['message'], push_data=payload, msg_from='T+')
-
-
-    async def create_mo_async(self, supplyno: str, auto_push_rs: bool = True, remain_native_supplyno: bool = True, pydantic_model: PydanticModel=MoPushModel):
+    async def create_mo_async(
+        self,
+        supplyno: str,
+        apc: ApsChanger,
+        aph: ApsHelper,
+        # auto_push_rs: bool = True,
+        remain_native_supplyno: bool = True,
+        pydantic_model: PydanticModel=MoPushModel
+    ):
         """
         异步创建MO
         :param supplyno: APS 中的 PL号
@@ -998,58 +830,61 @@ class TplusConnection(BaseConnection):
         :param remain_native_supplyno: 是否保留原生供应号，若为 false 则使用 T+ 生成的工单号作为 MO 供应号
         :return:
         """
-        async def approve_mo(tplus_moid):
+        async def approve_mo_async(tplus_moid):
             endpoint = MoApproveInterface.endpoint
             payload = {"param": {'voucherID': tplus_moid}}
             response = await self._post_async(endpoint=endpoint, data=payload)
-            resp_json = response.json()
-            if inspect.iscoroutinefunction(resp_json):
-                resp_json = await resp_json
-            return resp_json
+            return response.json()
         
-        await self.auth_async()
+        await self.auth_async() 
         endpoint = MoCreateInterface.endpoint
         # 材料需求
-        demand_list = await ApsHelpers.get_demand_datalist_async(demandno=supplyno)
+        demand_list = await aph.get_demand_datalist_async(demandno=supplyno)
         # PL及工序详情
-        supplymo_detaildata = await ApsHelpers.get_supplymo_detaildata_async(supplyno=supplyno, get_next_mo=True, get_origin_so=True)
+        supplymo_detaildata = await aph.get_supplymo_detaildata_async(supplyno=supplyno, get_next_mo=True, get_origin_so=True)   
         supplymo_detaildata['demand_list'] = demand_list
+        # dto = pydantic_model(**supplymo_detaildata).model_dump(exclude_unset=True)
         dto = pydantic_model(**supplymo_detaildata).model_dump(exclude_none=True)
         if remain_native_supplyno:
             dto['Code'] = supplyno
         payload = {"dto": dto}
         logger.debug(f"向 T+ 推送生产加工单，发送数据：{json.dumps(payload, ensure_ascii=False)}")
         mo_create_response = await self._post_async(endpoint=endpoint, data=payload)
-        mo_create_response_json = mo_create_response.json()
-        if inspect.iscoroutinefunction(mo_create_response_json):
-            mo_create_response_json = await mo_create_response_json
+        mo_create_response_json = await mo_create_response.json()
         if str(mo_create_response_json['code']) == '0': # 响应错误码为0，MO 创建成功
             # 从响应中提取 data
             response_data = mo_create_response_json['data']
             tplus_mo_id = response_data['ID']
             tplus_mo_code = supplyno if remain_native_supplyno else response_data['Code']
             # 审批 MO ，要在领料申请前批准
-            _x_a = await approve_mo(tplus_moid=tplus_mo_id)
+            _x_a = await approve_mo_async(tplus_moid=tplus_mo_id)
             # 查询推送成功的 MO 在 T+ 中的详情
             tplus_mo_data = await self.query_mo_async(index_value=tplus_mo_id)
             # 从 T+ 中提取 MO 详情中的第一个详情记录的 ID 作为 _entryid
             tplus_mo_entryid = tplus_mo_data['ManufactureOrderDetails'][0]['ID']
 
             # 调用存储过程更改工单信息，❗一定放在最后一步，否则工单号变更太早，前面若有用原生供应号查询都会失败
-            _x_c = await self.aph.pl_release_success_async(native_plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
+            _x_c = await apc.pl_release_success(native_plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
         else:
-            _x_d = await self.aph.pl_release_failed_async(native_plno=supplyno, msg=mo_create_response_json['message'], push_data=payload, msg_from='T+')
+            _x_d = await apc.pl_release_failed(native_plno=supplyno, msg=mo_create_response_json['message'], push_data=payload, msg_from='T+')
 
 
-    def push_rs(self, mdlist_or_supplyno: str | list[dict], tplus_mo_data_or_id: dict | str | int, pydantic_model:PydanticModel=RsPushModel):
+    async def push_rs_async(
+        self,
+        mdlist_or_supplyno: str | list[dict],
+        aph: ApsHelper,
+        apc: ApsChanger,
+        tplus_mo_data_or_id: dict | str | int,
+        pydantic_model:PydanticModel=RsPushModel
+    ):
         """
-        创建领料申请
+        异步创建领料申请
         🅰 mdlist_or_supplyno: 材料需求列表或工单号
         🅰 tplus_mo_data_or_id: T+ MO 数据 或 记录ID
         """
         endpoint = RsCreateInterface.endpoint
         if isinstance(mdlist_or_supplyno, str):
-            rs_data = ApsHelpers.get_demand_datalist(demandno=mdlist_or_supplyno)     # 查询 指定工单号所需物料
+            rs_data = await aph.get_demand_datalist_async(demandno=mdlist_or_supplyno)     # 查询 指定工单号所需物料
             demandno = mdlist_or_supplyno
         else:
             rs_data = mdlist_or_supplyno
@@ -1058,7 +893,7 @@ class TplusConnection(BaseConnection):
         if isinstance(tplus_mo_data_or_id, dict):
             mo_data = tplus_mo_data_or_id
         else:
-            mo_data = self.query_mo(index_value=tplus_mo_data_or_id)
+            mo_data = await aph.query_mo_async(index_value=tplus_mo_data_or_id)
 
         processed_rsdata = DataProcessor.merge_common_fields(data=rs_data, merge_with=["demandno", "type", "status", "create_date"], entries_key=MERGE_ENTRIY_KEY)
 
@@ -1080,25 +915,31 @@ class TplusConnection(BaseConnection):
         if dto["MaterialRequestDetails"]:   # 有领料申请详情
             payload = {"dto": dto}
             logger.debug(f"向 T+ 推送领料申请，发送数据：{json.dumps(payload, ensure_ascii=False)}")
-            response = self._post(endpoint=endpoint, data=payload)
-            rs_push_response_json = response.json()
+            response = await self._post_async(endpoint=endpoint, data=payload)
+            rs_push_response_json = await response.json()
             if str(rs_push_response_json['code']) == '0': # 创建成功
-                self.aph.rs_push_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
+                await apc.rs_push_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
             else:
-                self.aph.rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], push_data=processed_rsdata, msg_from='T+')
+                await apc.rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], push_data=processed_rsdata, msg_from='T+')
         else:
-            self.aph.rs_push_success(rsno=demandno, msg="无领料申请详情", msg_from='APS')
+            await apc.rs_push_success(rsno=demandno, msg="无领料申请详情", msg_from='APS')
 
-    def push_pr(self, data_list: list[dict]=None, pydantic_model:PydanticModel=PrPushModel):
+
+    async def push_pr_async(
+        self,
+        data_list: list[dict],
+        aph: ApsHelper,
+        apc: ApsChanger,
+        pydantic_model:PydanticModel=PrPushModel):
         """
-        推送采购申请
+        异步推送采购申请
         :param data_list: APS 中的 PR 数据
         """
-        def approve_pr(tplus_pr_code):
+        async def approve_pr(tplus_pr_code: str):
             endpoint = PrApproveInterface.endpoint
             # payload = {"param": {'voucherID': tplus_pr_id}}
             payload = {"param": {'voucherCode': tplus_pr_code}}
-            response = self._post(endpoint=endpoint, data=payload)
+            response = await self._post_async(endpoint=endpoint, data=payload)
             response_json = response.json()
             if str(response_json['code']) == '0':
                 logger.success("审批请购单", tplus_pr_code)
@@ -1106,42 +947,42 @@ class TplusConnection(BaseConnection):
                 logger.fail("审批请购单", tplus_pr_code, response_json['message'])
             return response_json
         
-        if not data_list:
-            data_list = ApsHelpers.get_new_pr_data()
-            if not data_list:
-                logger.debug("没有新的请购单数据")
-                return
+        # if not data_list:
+        #     data_list = await aph.get_new_pr_data()
+        #     if not data_list:
+        #         logger.debug("没有新的请购单数据")
+        #         return
 
-        agg_data_list = ApsHelpers.aggregate_pr_data(data_list)
+        agg_data_list = await aph.aggregate_pr_data(data_list=data_list)
         tplus_pr_data = pydantic_model(data=agg_data_list).model_dump(exclude_none=True)
         payload = {"dto": tplus_pr_data}
         logger.debug(f"向 T+ 推送请购单，发送数据：{json.dumps(payload, ensure_ascii=False)}")
         endpoint = PrCreateInterface.endpoint
-        response = self._post(endpoint=endpoint, data=payload)
+        response = await self._post_async(endpoint=endpoint, data=payload)
         pr_push_response_json = response.json()
         if str(pr_push_response_json['code']) == '0':
             tplus_pr_id = pr_push_response_json['data'].get('ID')
             tplus_pr_code = pr_push_response_json['data'].get('Code')
             for _ in data_list:
-                self.aph.pr_push_success(prno=_['supplyno'], msg=pr_push_response_json['message'], msg_from='T+', _code=tplus_pr_code, _id=tplus_pr_id)
+                await apc.pr_push_success(prno=_['supplyno'], msg=pr_push_response_json['message'], msg_from='T+', _code=tplus_pr_code, _id=tplus_pr_id)
             
             # 审批请购单
-            approve_pr(tplus_pr_code=tplus_pr_code)
+            await approve_pr(tplus_pr_code=tplus_pr_code)
         
         else:
             for _ in data_list:
-                self.aph.pr_push_failed(prno=_['supplyno'], msg=pr_push_response_json['message'], msg_from='T+', push_data=payload)
+                await apc.pr_push_failed(prno=_['supplyno'], msg=pr_push_response_json['message'], msg_from='T+', push_data=payload)
 
 
-    def delete_pr(self, tplus_pr_code: str):
+    async def delete_pr_async(self, tplus_pr_code: str):
         """
         删除采购申请（仅能删除未审核的）
         :param tplus_pr_code: T+ 采购申请编号
         """
         endpoint = PrDeleteInterface.endpoint
         payload = {"param": {'voucherCode': tplus_pr_code}}
-        response = self._post(endpoint=endpoint, data=payload)
-        response_json = response.json()
+        response = await self._post_async(endpoint=endpoint, data=payload)
+        response_json = await response.json()
         if str(response_json['code']) == '0':
             logger.success("删除请购单", tplus_pr_code)
         else:

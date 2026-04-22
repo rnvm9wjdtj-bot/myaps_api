@@ -91,3 +91,7 @@ project_files/**/prod.json
 *.sqlite*
 storage/
 storage/**/
+
+
+migrations/
+migrations/**/

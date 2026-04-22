@@ -25,7 +25,7 @@ from apps.io_api.schemas import (
     AcceptMold, AcceptMatWcMold, AcceptSupply, AcceptConfirm
 )
 from apps.io_api.models import TSupply, TDemand
-from apps.io_api.utils.db_operation import db_query
+from apps.io_api.utils.db_operation import db_query, db_update_by_index, db_query, db_delete, db_bupsert, call_dbprocdure
 from apps.io_api.utils.common import standard_response
 from globalobjects import globalconst, logger as log_config, PROJECT_JSON_FILE, ProjectDefaultValues as pdv
 from globalobjects.json_manager import JSONManager
@@ -780,128 +780,34 @@ class _ProductionDataCache:
         }
 
 
-# 全局缓存实例
-_production_cache = _ProductionDataCache()
+class ApsHelper:
 
-
-def get_production_cache() -> _ProductionDataCache:
-    """获取生产数据缓存管理器实例"""
-    return _production_cache
-
-
-class ApsHelpers:
-
-    def __init__(self):
-        from project_files._base import ResultCollector
-        self._collector = ResultCollector()
-        self._results = self._collector.results
-
-    def get_summary(self) -> Dict[str, Any]:
-        return self._collector.get_summary()
-
-    def format_notification(self, description: str = "任务") -> str:
-        return self._collector.format_notification(description)
-
-    @staticmethod
-    def _call_api_sync(method: str, url: str, **kwargs) -> Dict[str, Any]:
+    def __init__(self, production_cache_items: List[CacheItem] = None):
         """
-        通用 API 调用方法，包含错误处理、超时设置和重试机制
+        初始化APS助手类
         
         Args:
-            method: HTTP 方法，如 'GET', 'POST', 'PATCH', 'PUT'
-            url: API 地址
-            **kwargs: 其他参数，如 json, timeout 等
-        
-        Returns:
-            API 返回的 JSON 数据
-        
-        Raises:
-            Exception: API 调用失败
+            production_cache_items: 要缓存的生产数据项，默认所有项
         """
-        max_retries = 3
-        retry_count = 0
-        timeout = kwargs.pop('timeout', (30, 60))
-        
-        while retry_count < max_retries:
-            try:
-                if method.upper() == 'GET':
-                    response = SESSION.get(url, timeout=timeout, **kwargs)
-                elif method.upper() == 'POST':
-                    response = SESSION.post(url, timeout=timeout, **kwargs)
-                elif method.upper() == 'PATCH':
-                    response = SESSION.patch(url, timeout=timeout, **kwargs)
-                elif method.upper() == 'PUT':
-                    response = SESSION.put(url, timeout=timeout, **kwargs)
-                elif method.upper() == 'DELETE':
-                    response = SESSION.delete(url, timeout=timeout, **kwargs)
-                else:
-                    raise ValueError(f"不支持的 HTTP 方法: {method}")
-                
-                response.raise_for_status()  # 检查 HTTP 状态码
-                return response.json()
-                
-            except (requests.RequestException, ValueError, KeyError) as e:
-                retry_count += 1
-                logger.warning(f"API 调用失败，第{retry_count}次重试: {str(e)}")
-                if retry_count >= max_retries:
-                    logger.fail("API 调用", url, str(e))
-                    raise
-                time.sleep(1 * retry_count)  # 指数退避策略
-        
-        # 理论上不会走到这里
-        raise Exception("API 调用失败：达到最大重试次数")
 
-    @staticmethod
-    def _call_api(method: str, url: str, **kwargs) -> Dict[str, Any]:
+        self._production_cache = _ProductionDataCache()
+        if production_cache_items:
+            self._production_cache._set_cache_items(cache_items=production_cache_items)
+
+
+    async def establish_production_cache(self, supplynos: List[str]) -> _ProductionDataCache:
         """
-        通用 API 调用方法，包含错误处理、超时设置和重试机制
+        建立生产缓存
         
         Args:
-            method: HTTP 方法，如 'GET', 'POST', 'PATCH', 'PUT'
-            url: API 地址
-            **kwargs: 其他参数，如 json, timeout 等
-        
-        Returns:
-            API 返回的 JSON 数据
-        
-        Raises:
-            Exception: API 调用失败
+            supplynos: S_SupplyNo 列表
         """
-        max_retries = 3
-        retry_count = 0
-        timeout = kwargs.pop('timeout', (30, 60))
-        
-        while retry_count < max_retries:
-            try:
-                if method.upper() == 'GET':
-                    response = SESSION.get(url, timeout=timeout, **kwargs)
-                elif method.upper() == 'POST':
-                    response = SESSION.post(url, timeout=timeout, **kwargs)
-                elif method.upper() == 'PATCH':
-                    response = SESSION.patch(url, timeout=timeout, **kwargs)
-                elif method.upper() == 'PUT':
-                    response = SESSION.put(url, timeout=timeout, **kwargs)
-                elif method.upper() == 'DELETE':
-                    response = SESSION.delete(url, timeout=timeout, **kwargs)
-                else:
-                    raise ValueError(f"不支持的 HTTP 方法: {method}")
-                
-                response.raise_for_status()  # 检查 HTTP 状态码
-                return response.json()
-                
-            except (requests.RequestException, ValueError, KeyError) as e:
-                retry_count += 1
-                logger.warning(f"API 调用失败，第{retry_count}次重试: {str(e)}")
-                if retry_count >= max_retries:
-                    logger.fail("API 调用", url, str(e))
-                    raise
-                time.sleep(1 * retry_count)  # 指数退避策略
-        
-        # 理论上不会走到这里
-        raise Exception("API 调用失败：达到最大重试次数")
+        await self._production_cache.establish_production_cache(supplynos=supplynos)
+        return self._production_cache
 
-    @staticmethod
-    async def _call_api_async(method: str, url: str, **kwargs) -> Dict[str, Any]:
+
+    @classmethod
+    async def _call_api_async(cls, method: str, url: str, **kwargs) -> Dict[str, Any]:
         """
         异步通用 API 调用方法，包含错误处理、超时设置和重试机制
         
@@ -1029,15 +935,14 @@ class ApsHelpers:
         raise Exception("API 调用失败：达到最大重试次数")
 
 
-    @staticmethod
-    async def mto_workreport_to_virtual_stock_async(db:str=MYAPS_MAIN_DB):
+    @classmethod
+    async def mto_workreport_to_virtual_stock_async(cls, db_name:str=MYAPS_MAIN_DB):
         """
         异步将报工数据 转化为 虚拟库存 数据，只处理MTO报工
         🅰 db: 账套名称，默认MYAPS_MAIN_DB
         """
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        url = f"{THIS_BASE_URL}/api/v_supply_complete?db_name={db}"
-        response_json = await ApsHelpers._call_api_async('GET', url)
+        response_json = await db_query(db_name=db_name, model_or_tablename="v_supply_complete")
         mo_complete_data = response_json.get('data')
         df_mto_vir_st = None
         if mo_complete_data:
@@ -1062,67 +967,54 @@ class ApsHelpers:
         return df_mto_vir_st
 
 
-    @staticmethod
-    def refresh_supply(supply_data:Union[List[Dict[str, Any]], pd.DataFrame], type_:Literal['ST', 'SO']='ST', dbs:str=MYAPS_DB_SET):
+    @classmethod
+    async def refresh_supply_async(cls, supply_data:Union[List[Dict[str, Any]], pd.DataFrame], type_:Literal['ST', 'PO']='ST', dbs:str=MYAPS_DB_SET):
         from apps.io_api.schemas import AcceptSupply
 
         if isinstance(supply_data, pd.DataFrame):
             supply_data = supply_data.to_dict('records')
         supply_data = [AcceptSupply(**item).model_dump(exclude_none=True) for item in supply_data]
-        url = f"{THIS_BASE_URL}/api/t_supply/type/{type_}?db_name={dbs}"
-        refresh_result_json = ApsHelpers._call_api('PUT', url, json=supply_data)
-        if refresh_result_json.get('success'):
-            logger.success("刷新供应数据", f"type_{type_}", f"账套{dbs}")
+        
+        # 首先删除该类型的所有供应记录
+        delete_result = await db_delete(db_names=dbs, model_or_tablename="t_supply", filter_string=f"`Type`='{type_}'")
+        
+        # 然后新增这些供应记录
+        if supply_data:
+            create_result = await db_bupsert(db_names=dbs, model_or_tablename="t_supply", data_list=supply_data)
+            if create_result.get('success'):
+                logger.success("刷新供应数据", f"type_{type_}", f"账套{dbs}")
+            else:
+                logger.fail("刷新供应数据", f"type_{type_}", create_result.get('message'))
         else:
-            logger.fail("刷新供应数据", f"type_{type_}", refresh_result_json.get('message'))
-
-    @staticmethod
-    async def refresh_supply_async(supply_data:Union[List[Dict[str, Any]], pd.DataFrame], type_:Literal['ST', 'SO']='ST', dbs:str=MYAPS_DB_SET):
-        from apps.io_api.schemas import AcceptSupply
-
-        if isinstance(supply_data, pd.DataFrame):
-            supply_data = supply_data.to_dict('records')
-        supply_data = [AcceptSupply(**item).model_dump(exclude_none=True) for item in supply_data]
-        url = f"{THIS_BASE_URL}/api/t_supply/type/{type_}?db_name={dbs}"
-        refresh_result_json = await ApsHelpers._call_api_async('PUT', url, json=supply_data)
-        if refresh_result_json.get('success'):
-            logger.success("刷新供应数据", f"type_{type_}", f"账套{dbs}")
-        else:
-            logger.fail("刷新供应数据", f"type_{type_}", refresh_result_json.get('message'))
+            if delete_result.get('success'):
+                logger.success("刷新供应数据", f"type_{type_}", f"账套{dbs}")
+            else:
+                logger.fail("刷新供应数据", f"type_{type_}", delete_result.get('message'))
 
 
-    @staticmethod
-    def confirm_workreport(db_name:str=MYAPS_MAIN_DB):
-        """
-        确认 工作报工 数据
-        🅰 workreport_data: 工作报工数据
-        🅰 db_name: 账套名称，默认MYAPS_MAIN_DB
-        """
-        logger.start("确认报工记录任务")
-        url = f"{THIS_BASE_URL}/api/t_confirm?db_name={db_name}"
-        response_json = ApsHelpers._call_api('PATCH', url)
-        logger.success("确认报工记录任务")
-        return response_json
-
-    @staticmethod
-    async def confirm_workreport_async(db_name:str=MYAPS_MAIN_DB):
+    @classmethod
+    async def confirm_workreport_async(cls, db_name:str=MYAPS_MAIN_DB):
         """
         异步确认 工作报工 数据
         🅰 workreport_data: 工作报工数据
         🅰 db_name: 账套名称，默认MYAPS_MAIN_DB
         """
         logger.start("确认报工记录任务")
-        url = f"{THIS_BASE_URL}/api/t_confirm?db_name={db_name}"
-        response_json = await ApsHelpers._call_api_async('PATCH', url)
+        response_json = await call_dbprocdure(db_names=db_name, procedure_name="UpdateConfirmQtyToOrderWC")
         logger.success("确认报工记录任务")
         return response_json
 
 
-
-    @staticmethod
-    def _modify_supply(supplyno: str, to_status: Literal['NEW', 'CRE', 'E2A', 'REL']=None, memo: str=None, _sn: str=None, _id: str=None, _entryid: str=None):
+    @classmethod
+    async def _modify_supply_async(
+        cls,
+        supplyno: str,
+        to_status: Literal['NEW', 'CRE', 'E2A', 'REL']=None,
+        memo: str=None,
+        _sn: str=None, _id: str=None, _entryid: str=None
+    ):
         url = f'{THIS_BASE_URL}/api/t_supply/{supplyno}/...?db_name={MYAPS_MAIN_DB}'
-        response_json = ApsHelpers._call_api('PATCH', url, json={
+        response_json = await cls._call_api_async('PATCH', url, json={
             'status': to_status,
             'memo': memo[:255],
             'apiex_sn': _sn,
@@ -1131,320 +1023,15 @@ class ApsHelpers:
         })
         return response_json
 
-    @staticmethod
-    async def _modify_supply_async(supplyno: str, to_status: Literal['NEW', 'CRE', 'E2A', 'REL']=None, memo: str=None, _sn: str=None, _id: str=None, _entryid: str=None):
-        url = f'{THIS_BASE_URL}/api/t_supply/{supplyno}/...?db_name={MYAPS_MAIN_DB}'
-        response_json = await ApsHelpers._call_api_async('PATCH', url, json={
-            'status': to_status,
-            'memo': memo[:255],
-            'apiex_sn': _sn,
-            'apiex_id': _id,
-            'apiex_entryid': _entryid,
-        })
-        return response_json
 
-
-    def pl_release_success(self, native_plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _id: str=None, _entryid: str=None):
-        """
-        通过调用自路由修改PL的Type、Status、SupplyNo、Memo等字段，作为私有方法在 def click_release_button() 中被直接调用
-        🅰 native_plno: 原生PL计划单编号
-        🅰 mono: MO号，可选，若传值则更改PL的原生SupplyNo
-        🅰 to_status: 转化成MO后，Status设为哪个状态，默认'REL'
-        🅰 msg: 外部系统返回信息
-        🅰 msg_from: 外部系统名称
-        🅰 _id: 外部系统返回的 MO ID
-        🅰 _entryid: 外部系统返回的 MO 详情 ID（对于某些有表头的ERP，具体的 MO 是存在于子表中的，有单独的行记录id
-        """
-        mono = mono or native_plno
-        try:
-            # logger.query("PL信息", native_plno, "")
-            # mo_data = ApsHelpers.get_supplymo_detaildata(supplyno=native_plno)
-            # logger.info(f"查询PL信息响应：成功")
-
-            # if mo_data.get("type") != "PL":
-            #     logger.fail("PL查询", native_plno, "非PL类型", to_file=True)
-            #     return standard_response(status_code=400, success=0, message=f"Supply {native_plno} is not a PL.")
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            logger.success("推送 MO", f"原供应号{native_plno}", f"MO单号{mono}", to_file=True)
-
-            memo = f"{now} ✅ {msg_from}: '{msg}, {mono}, {_id}, {_entryid}' @ {native_plno}"
-            
-            logger.update("PL状态", native_plno, f"目标状态{to_status}，MO单号{mono}")
-            patch_url = f'{THIS_BASE_URL}/api/t_supply/{native_plno}?db_name={MYAPS_MAIN_DB}'
-            patch_data = {
-                'status': to_status,
-                'apiex_sn': str(mono),
-                'apiex_id': str(_id or ""),
-                'apiex_entryid': str(_entryid or ""),
-                'supplyno': str(mono),
-                'memo': memo,
-            }
-            response_json = ApsHelpers._call_api('PATCH', patch_url, json=patch_data)
-            logger.info(f"更新PL状态响应：成功")
-            
-            from project_files._base import ExecutionResult
-            asyncio.create_task(self._collector.add_result(ExecutionResult(
-                success=True,
-                raw_data=native_plno,
-                msg=f"{msg_from}: {msg}" if msg else None,
-                mono=mono
-            )))
-            
-            return response_json
-        except Exception as e:
-            error_msg = f"更新PL状态为MO时发生网络错误：{str(e)}"
-            logger.fail("PL状态更新", native_plno, error_msg)
-            return standard_response(status_code=500, success=0, message=error_msg)
-
-    async def pl_release_success_async(self, native_plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _id: str=None, _entryid: str=None):
-        """
-        异步通过调用自路由修改PL的Type、Status、SupplyNo、Memo等字段
-        🅰 native_plno: 原生PL计划单编号
-        🅰 mono: MO号，可选，若传值则更改PL的原生SupplyNo
-        🅰 to_status: 转化成MO后，Status设为哪个状态，默认'REL'
-        🅰 msg: 外部系统返回信息
-        🅰 msg_from: 外部系统名称
-        🅰 _id: 外部系统返回的 MO ID
-        🅰 _entryid: 外部系统返回的 MO 详情 ID（对于某些有表头的ERP，具体的 MO 是存在于子表中的，有单独的行记录id
-        """
-        mono = mono or native_plno
-        try:
-            logger.query("PL信息", native_plno, "")
-            query_url = f"{THIS_BASE_URL}/api/v_supply_mo/{native_plno}?db_name={MYAPS_MAIN_DB}"
-            query_result_json = await ApsHelpers._call_api_async('GET', query_url)
-            logger.info(f"查询PL信息响应：成功")
-
-            if query_result_json.get('success') == 0:
-                logger.fail("PL查询", native_plno, query_result_json.get('message'))
-                return standard_response(status_code=query_result_json.get('status_code', 500), success=0, message=query_result_json.get('message'))
-
-            query_data = query_result_json.get('data', [])
-            if not query_data or len(query_data) > 1:
-                logger.fail("PL查询", native_plno, "未找到或多条匹配", to_file=True)
-                return standard_response(success=0, message=f"PL {native_plno} not found or multiple records matched.")
-
-            if query_data[0].get("type") != "PL":
-                logger.fail("PL查询", native_plno, "非PL类型", to_file=True)
-                return standard_response(status_code=400, success=0, message=f"Supply {native_plno} is not a PL.")
-
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            logger.success("推送 MO", f"原供应号{native_plno}", f"MO单号{mono}", to_file=True)
-
-            memo = f"{now} ✅ {msg_from}: '{msg}, {mono}, {_id}, {_entryid}' @ {native_plno}"
-            
-            logger.update("PL状态", native_plno, f"目标状态{to_status}，MO单号{mono}")
-            patch_url = f'{THIS_BASE_URL}/api/t_supply/{native_plno}?db_name={MYAPS_MAIN_DB}'
-            patch_data = {
-                'status': to_status,
-                'apiex_sn': str(mono),
-                'apiex_id': str(_id or ""),
-                'apiex_entryid': str(_entryid or ""),
-                'supplyno': str(mono),
-                'memo': memo,
-            }
-            response_json = await ApsHelpers._call_api_async('PATCH', patch_url, json=patch_data)
-            logger.info(f"更新PL状态响应：成功")
-            
-            from project_files._base import ExecutionResult
-            await self._collector.add_result(ExecutionResult(
-                success=True,
-                raw_data=native_plno,
-                msg=f"{msg_from}: {msg}" if msg else None,
-                mono=mono
-            ))
-            
-            return response_json
-        except Exception as e:
-            error_msg = f"更新PL状态为MO时发生网络错误：{str(e)}"
-            logger.fail("PL状态更新", native_plno, error_msg)
-            return standard_response(status_code=500, success=0, message=error_msg)
-
-
-    def pl_release_failed(self, native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, raw_data: dict=None, push_data: dict=None, msg_from: str=None, **kwargs):
-        logger.warning_msg(f"推送 MO {msg}", json.dumps(push_data, ensure_ascii=False), to_file=True)
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        if msg:
-            try:
-                msg = str(msg)[:64]
-            except Exception as e:
-                pass
-
-        memo = f"{now} 🚫 {msg_from}: '{msg}'"
-        try:
-            response_json = ApsHelpers._modify_supply(supplyno=native_plno, to_status=to_status, memo=memo)
-            logger.info(f"更新PL状态响应：成功")
-            
-            from project_files._base import ExecutionResult
-            asyncio.create_task(self._collector.add_result(ExecutionResult(
-                success=False,
-                raw_data=native_plno, #raw_data or {'supplyno': native_plno},
-                msg=f"{msg_from}: {msg}" if msg else None,
-                push_data=push_data
-            )))
-            
-            return response_json
-        except Exception as e:
-            error_msg = f"更新PL状态时发生网络错误：{str(e)}"
-            logger.fail("PL状态更新", native_plno, error_msg)
-            return None
-
-    async def pl_release_failed_async(self, native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, raw_data: dict=None, push_data: dict=None, msg_from: str=None):
-        logger.warning_msg(f"推送 MO {msg}", json.dumps(push_data, ensure_ascii=False), to_file=True)
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        if msg:
-            try:
-                msg = str(msg)[:64]
-            except Exception as e:
-                pass
-
-        memo = f"{now} 🚫 {msg_from}: '{msg}'"
-        try:
-            response_json = await ApsHelpers._modify_supply_async(supplyno=native_plno, to_status=to_status, memo=memo)
-            # logger.success(f"更新PL状态")
-            
-            from project_files._base import ExecutionResult
-            await self._collector.add_result(ExecutionResult(
-                success=False,
-                raw_data=native_plno,
-                msg=f"{msg_from}: {msg}" if msg else None,
-                push_data=push_data
-            ))
-            
-            return response_json
-        except Exception as e:
-            error_msg = f"更新PL状态时发生网络错误：{str(e)}"
-            logger.fail("PL状态更新", native_plno, error_msg)
-            return None
-
-
-    def rs_push_success(self, rsno: str, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
-        try:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            memo = f"{now} ✅ {msg_from}: '{_code}, {_id}, {_entryid}' @ {rsno}"
-            
-            logger.update("RS状态", rsno, f"目标状态{to_status}")
-            url = f'{THIS_BASE_URL}/api/t_demand/{rsno}/.../...?db_name={MYAPS_MAIN_DB}'
-            response_json = ApsHelpers._call_api('PATCH', url, json={
-                'status': to_status,
-                'memo': memo,
-            })
-            logger.info(f"更新RS状态响应：成功")
-            
-            from project_files._base import ExecutionResult
-            asyncio.create_task(self._collector.add_result(ExecutionResult(
-                success=True,
-                raw_data=rsno,
-                msg=f"{msg_from}: {msg}" if msg else None,
-                mono=_code
-            )))
-            
-            return response_json
-        except Exception as e:
-            error_msg = f"更新RS状态时发生网络错误：{str(e)}"
-            logger.fail("RS状态更新", rsno, error_msg)
-            return standard_response(status_code=500, success=0, message=error_msg)
-
-    async def rs_push_success_async(self, rsno: str, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
-        try:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            memo = f"{now} ✅ {msg_from}: '{_code}, {_id}, {_entryid}' @ {rsno}"
-            
-            logger.update("RS状态", rsno, f"目标状态{to_status}")
-            url = f'{THIS_BASE_URL}/api/t_demand/{rsno}/.../...?db_name={MYAPS_MAIN_DB}'
-            response_json = await ApsHelpers._call_api_async('PATCH', url, json={
-                'status': to_status,
-                'memo': memo,
-            })
-            logger.info(f"更新RS状态响应：成功")
-            
-            from project_files._base import ExecutionResult
-            await self._collector.add_result(ExecutionResult(
-                success=True,
-                raw_data=rsno,
-                msg=f"{msg_from}: {msg}" if msg else None,
-                mono=_code
-            ))
-            
-            return response_json
-        except Exception as e:
-            error_msg = f"更新RS状态时发生网络错误：{str(e)}"
-            logger.fail("RS状态更新", rsno, error_msg)
-            return standard_response(status_code=500, success=0, message=error_msg)
-
-
-    def rs_push_failed(self, rsno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None, raw_data: dict | list=None):
-        logger.fail("推送 RS", json.dumps(push_data, ensure_ascii=False), msg)
-        if msg:
-            try:
-                msg = str(msg)[:64]
-            except Exception as e:
-                pass
-        try:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            memo = f"{now} 🚫 {msg_from}: '{msg}'"
-
-            url = f'{THIS_BASE_URL}/api/t_demand/{rsno}/.../...?db_name={MYAPS_MAIN_DB}'
-            response_json = ApsHelpers._call_api('PATCH', url, json={
-                'memo': memo,
-            })
-            
-            from project_files._base import ExecutionResult
-            asyncio.create_task(self._collector.add_result(ExecutionResult(
-                success=False,
-                raw_data=rsno,
-                msg=f"{msg_from}: {msg}" if msg else None,
-                push_data=push_data
-            )))
-            
-            return response_json
-        except Exception as e:
-            error_msg = f"更新RS失败状态时发生网络错误：{str(e)}"
-            logger.fail("RS状态更新", rsno, error_msg)
-            return standard_response(status_code=500, success=0, message=error_msg)
-
-    async def rs_push_failed_async(self, rsno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None, raw_data: dict | list=None):
-        logger.fail("推送 RS", json.dumps(push_data, ensure_ascii=False), msg)
-        if msg:
-            try:
-                msg = str(msg)[:64]
-            except Exception as e:
-                pass
-        try:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            memo = f"{now} 🚫 {msg_from}: '{msg}'"
-
-            url = f'{THIS_BASE_URL}/api/t_demand/{rsno}/.../...?db_name={MYAPS_MAIN_DB}'
-            response_json = await ApsHelpers._call_api_async('PATCH', url, json={
-                'memo': memo,
-            })
-            
-            from project_files._base import ExecutionResult
-            await self._collector.add_result(ExecutionResult(
-                success=False,
-                raw_data=rsno,
-                msg=f"{msg_from}: {msg}" if msg else None,
-                push_data=push_data
-            ))
-            
-            return response_json
-        except Exception as e:
-            error_msg = f"更新RS失败状态时发生网络错误：{str(e)}"
-            logger.fail("RS状态更新", rsno, error_msg)
-            return standard_response(status_code=500, success=0, message=error_msg)
-
-
-    @staticmethod
-    def get_new_pr_data():
-        import asyncio
-        from apps.io_api.utils.db_operation import db_query
-
-        # 使用 asyncio.run 来运行异步代码
-        result = asyncio.run(db_query(MYAPS_MAIN_DB, "v_supply", "`Type`='PR' AND `Status`='NEW'"))
+    @classmethod
+    async def get_new_pr_data_async(cls):
+        result = await db_query(MYAPS_MAIN_DB, "v_supply", "`Type`='PR' AND `Status`='NEW'")
         return result.get('data', [])
 
 
-    @staticmethod
-    def aggregate_pr_data(pr_data_list: list[dict]=None, group_by: list=['materialno', 'avail_date', 'vendorno']) -> list[dict]:
+    @classmethod
+    async def aggregate_pr_data_async(cls, pr_data_list: list[dict]=None, group_by: list=['materialno', 'avail_date', 'vendorno']) -> list[dict]:
         """
         聚合 PR avail_qty 字段
         Args:
@@ -1456,7 +1043,7 @@ class ApsHelpers:
         import pandas as pd
 
         if not pr_data_list:
-            pr_data_list = ApsHelpers.get_new_pr_data()
+            pr_data_list = await cls.get_new_pr_data_async()
             if not pr_data_list:
                 return []
 
@@ -1483,302 +1070,8 @@ class ApsHelpers:
         return result_df.to_dict('records')
 
 
-    def pr_push_success(self, prno: str, msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
-        try:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            memo = f"{now} ✅ {msg_from}: '{_code}, {_id}, {_entryid}' @ {prno}"
-            logger.update("PR状态", prno, "")
-            response_json = ApsHelpers._modify_supply(supplyno=prno, to_status='CRE', memo=memo, _sn=_code, _id=_id, _entryid=_entryid)
-            logger.info(f"更新PR状态响应：成功")
-            
-            from project_files._base import ExecutionResult
-            asyncio.create_task(self._collector.add_result(ExecutionResult(
-                success=True,
-                raw_data=prno,
-                msg=f"{msg_from}: {msg}" if msg else None,
-                mono=_code
-            )))
-            
-            return response_json
-        except Exception as e:
-            error_msg = f"更新PR状态时发生网络错误：{str(e)}"
-            logger.fail("PR状态更新", prno, error_msg)
-            return standard_response(status_code=500, success=0, message=error_msg)
-
-    async def pr_push_success_async(self, prno: str, msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
-        try:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            memo = f"{now} ✅ {msg_from}: '{_code}, {_id}, {_entryid}' @ {prno}"
-            logger.update("PR状态", prno, "")
-            response_json = await ApsHelpers._modify_supply_async(supplyno=prno, to_status='CRE', memo=memo, _sn=_code, _id=_id, _entryid=_entryid)
-            logger.info(f"更新PR状态响应：成功")
-            
-            from project_files._base import ExecutionResult
-            await self._collector.add_result(ExecutionResult(
-                success=True,
-                raw_data=prno,
-                msg=f"{msg_from}: {msg}" if msg else None,
-                mono=_code
-            ))
-            
-            return response_json
-        except Exception as e:
-            error_msg = f"更新PR状态时发生网络错误：{str(e)}"
-            logger.fail("PR状态更新", prno, error_msg)
-            return standard_response(status_code=500, success=0, message=error_msg)
-
-
-    def pr_push_failed(self, prno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None, raw_data: dict | list=None):
-        if msg:
-            try:
-                msg = str(msg)[:64]
-            except Exception as e:
-                pass
-        logger.fail("推送 PR", json.dumps(push_data, ensure_ascii=False), msg)
-        try:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            memo = f"{now} 🚫 {msg_from}: '{msg}'"
-            response_json = ApsHelpers._modify_supply(supplyno=prno, to_status='NEW', memo=memo)
-            
-            from project_files._base import ExecutionResult
-            asyncio.create_task(self._collector.add_result(ExecutionResult(
-                success=False,
-                raw_data=prno,
-                msg=f"{msg_from}: {msg}" if msg else None,
-                push_data=push_data
-            )))
-            
-            return response_json
-        except Exception as e:
-            error_msg = f"更新PR失败状态时发生网络错误：{str(e)}"
-            logger.fail("PR状态更新", prno, error_msg)
-            return standard_response(status_code=500, success=0, message=error_msg)
-
-    async def pr_push_failed_async(self, prno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None, raw_data: dict | list=None):
-        if msg:
-            try:
-                msg = str(msg)[:64]
-            except Exception as e:
-                pass
-        logger.fail("推送 PR", json.dumps(push_data, ensure_ascii=False), msg)
-        try:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            memo = f"{now} 🚫 {msg_from}: '{msg}'"
-            response_json = await ApsHelpers._modify_supply_async(supplyno=prno, to_status='NEW', memo=memo)
-            
-            from project_files._base import ExecutionResult
-            await self._collector.add_result(ExecutionResult(
-                success=False,
-                raw_data=prno,
-                msg=f"{msg_from}: {msg}" if msg else None,
-                push_data=push_data
-            ))
-            
-            return response_json
-        except Exception as e:
-            error_msg = f"更新PR失败状态时发生网络错误：{str(e)}"
-            logger.fail("PR状态更新", prno, error_msg)
-            return standard_response(status_code=500, success=0, message=error_msg)
-
-
-
-    @staticmethod
-    def query_material(materialnos: str | list[str]) -> list:
-        """
-        查询物料信息（优先从缓存获取，缓存未命中则访问API并加入缓存）
-        Args:
-            materialnos: 物料编号（多个用半角逗号分隔）或物料编号列表
-        Returns:
-            物料信息列表
-        """
-        if isinstance(materialnos, list):
-            material_list = [m.strip() for m in materialnos if m.strip()]
-        else:
-            material_list = [m.strip() for m in materialnos.split(',') if m.strip()]
-        
-        if not material_list:
-            return []
-        
-        cache = get_production_cache()
-        
-        # 批量从缓存获取
-        cached_data = cache.batch_get_material(material_list)
-        
-        # 检查缓存命中情况
-        cached_keys = {item['materialno'] for item in cached_data}
-        missing_materials = [m for m in material_list if m not in cached_keys]
-        
-        if missing_materials:
-            materialnos_str = ','.join(missing_materials)
-            url = f"{THIS_BASE_URL}/api/t_material/{materialnos_str}?db_name={MYAPS_MAIN_DB}"
-            try:
-                response_json = ApsHelpers._call_api('GET', url)
-                api_data = response_json.get('data', [])
-                
-                # 补充缓存
-                for item in api_data:
-                    material_no = item.get('materialno', '')
-                    if material_no:
-                        cache._cache[CacheItem.MATERIAL.value][material_no] = item
-                
-                # 合并结果
-                cached_data.extend(api_data)
-            except Exception as e:
-                error_msg = f"查询物料信息时发生网络错误：{str(e)}"
-                logger.fail("查询物料信息", materialnos_str, error_msg)
-        
-        return cached_data
-
-
-    @staticmethod
-    def get_supplymo_detaildata(supplyno: str, get_prev_mo:bool=False, get_next_mo:bool=False, get_origin_so:bool=False):
-        """
-        获取工单的工序详情、及MTO销售订单信息
-        Args:
-            supplyno: 工单号
-            get_prev_mo: 是否查询前 前置 工单
-            get_next_mo: 是否查询后 后置 工单
-        Returns:
-            工单计划单详情
-        """
-        cache = get_production_cache()
-        mo_data = cache.get_supply_mo(supplyno)
-
-        if mo_data:
-
-            mo_data['orderwc'] = cache.get_orderwc(supplyno)
-            
-            if get_origin_so:
-                vendorno = mo_data.get('vendorno', '')
-                if vendorno:
-                    mo_data['so'] = ApsHelpers.get_demand_datalist(vendorno)
-
-            if get_prev_mo:
-                related_demand = cache.get_demand(demand_no=supplyno)
-                demands_data = [_ for _ in related_demand if _.get('type') != 'SO']
-                if demands_data:
-                    demands_no = [_['demandno'] for _ in demands_data]
-                    peg_query_result = cache.batch_get_peg_by_demand(demands_no)
-                    mo_data['prev_mo'] = cache.batch_get_supply_mo(peg_query_result)
-                
-            if get_next_mo:
-                demands_no = cache.get_peg_by_supply(supplyno)
-                mo_data['next_mo'] = cache.batch_get_supply_mo(demands_no)
-            return mo_data
-        else:
-            url = f"{THIS_BASE_URL}/api/v_supply_mo/{supplyno}?db_name={MYAPS_MAIN_DB}&prev_mo={get_prev_mo}&next_mo={get_next_mo}&origin_so={get_origin_so}"
-            supply_response_json = ApsHelpers._call_api('GET', url)
-            try:
-                if supply_response_json.get('success') != 0 and supply_response_json.get('data'):
-                    mo_data = supply_response_json['data'][0]
-                    cache._cache[CacheItem.SUPPLY_MO.value][supplyno] = mo_data
-                    return mo_data
-                else:
-                    # raise Exception(f"API返回错误: {supply_response_json.get('message', '未知错误')}")
-                    logger.fail("获取工单计划单详情", supplyno, f"API返回错误: {supply_response_json.get('message', '未知错误')}")
-            except Exception as e:
-                logger.fail("获取工单计划单详情", supplyno, f"{str(e)}")
-
-    @staticmethod
-    async def get_supplymo_detaildata_async(supplyno: str, get_prev_mo:bool=False, get_next_mo:bool=False, get_origin_so:bool=False):
-        """
-        异步获取工单的工序详情、及MTO销售订单信息
-        Args:
-            supplyno: 工单号
-            get_prev_mo: 是否查询前 前置 工单
-            get_next_mo: 是否查询后 后置 工单
-        Returns:
-            工单计划单详情
-        """
-        cache = get_production_cache()
-        mo_data = cache.get_supply_mo(supplyno)
-
-        if mo_data:
-
-            mo_data['orderwc'] = cache.get_orderwc(supplyno)
-            
-            if get_origin_so:
-                vendorno = mo_data.get('vendorno', '')
-                if vendorno:
-                    mo_data['so'] = await ApsHelpers.get_demand_datalist_async(vendorno)
-
-            if get_prev_mo:
-                related_demand = cache.get_demand(demand_no=supplyno)
-                demands_data = [_ for _ in related_demand if _.get('type') != 'SO']
-                if demands_data:
-                    demands_no = [_['demandno'] for _ in demands_data]
-                    peg_query_result = cache.batch_get_peg_by_demand(demands_no)
-                    mo_data['prev_mo'] = cache.batch_get_supply_mo(peg_query_result)
-                
-            if get_next_mo:
-                demands_no = cache.get_peg_by_supply(supplyno)
-                mo_data['next_mo'] = cache.batch_get_supply_mo(demands_no)
-            return mo_data
-        else:
-            url = f"{THIS_BASE_URL}/api/v_supply_mo/{supplyno}?db_name={MYAPS_MAIN_DB}&prev_mo={get_prev_mo}&next_mo={get_next_mo}&origin_so={get_origin_so}"
-            supply_response_json = await ApsHelpers._call_api_async('GET', url)
-            try:
-                if supply_response_json.get('success') != 0 and supply_response_json.get('data'):
-                    mo_data = supply_response_json['data'][0]
-                    cache._cache[CacheItem.SUPPLY_MO.value][supplyno] = mo_data
-                    return mo_data
-                else:
-                    logger.fail("获取工单计划单详情", supplyno, f"API返回错误: {supply_response_json.get('message', '未知错误')}")
-            except Exception as e:
-                logger.fail("获取工单计划单详情", supplyno, f"{str(e)}")
-
-
-    @staticmethod
-    def get_demand_datalist(demandno: str) -> List[Dict]:
-        """
-        获取需求信息（优先从缓存获取，缓存未命中则访问API并加入缓存）
-        Args:
-            demandno: 需求编号，根据 APS pegging 算法，也即供应号
-        Returns:
-            工单原料需求详情
-        """
-        cache = get_production_cache()
-        result_data = cache.get_demand(demandno)
-        
-        if result_data:
-            return result_data
-        
-        url = f"{THIS_BASE_URL}/api/v_demand/{demandno}?db_name={MYAPS_MAIN_DB}"
-        demand_response_json = ApsHelpers._call_api('GET', url)
-        api_data = demand_response_json.get('data', [])
-        
-        if api_data:
-            cache._cache[CacheItem.DEMAND.value][demandno] = api_data
-        
-        return api_data
-
-    @staticmethod
-    async def get_demand_datalist_async(demandno: str) -> List[Dict]:
-        """
-        异步获取需求信息（优先从缓存获取，缓存未命中则访问API并加入缓存）
-        Args:
-            demandno: 需求编号，根据 APS pegging 算法，也即供应号
-        Returns:
-            工单原料需求详情
-        """
-        cache = get_production_cache()
-        result_data = cache.get_demand(demandno)
-        
-        if result_data:
-            return result_data
-        
-        url = f"{THIS_BASE_URL}/api/v_demand/{demandno}?db_name={MYAPS_MAIN_DB}"
-        demand_response_json = await ApsHelpers._call_api_async('GET', url)
-        api_data = demand_response_json.get('data', [])
-        
-        if api_data:
-            cache._cache[CacheItem.DEMAND.value][demandno] = api_data
-        
-        return api_data
-
-
-    @staticmethod
-    async def get_dategrouped_pr_async(db_name: str=None, period: int|str=30, groupdates: Optional[str]=None, field_map: dict=None):
+    @classmethod
+    async def get_dategrouped_pr_async(cls, db_name: str=None, period: int|str=30, groupdates: Optional[str]=None, field_map: dict=None):
         """
         从数据库获取按日期分组的计划任务数据
         🅰 db_name: 账套名称，默认MYAPS_MAIN_DB
@@ -1788,7 +1081,7 @@ class ApsHelpers:
         """
         db_name = db_name or MYAPS_MAIN_DB
         url = f"{THIS_BASE_URL}/api/v_matdailyqtyreport?db_name={db_name}&period={period}&groupdates={groupdates}"
-        response_json = await ApsHelpers._call_api_async('GET', url)
+        response_json = await cls._call_api_async('GET', url)
         data = response_json.get('data', [])
         field_map = field_map or {
             'materialno': '料号',
@@ -1809,3 +1102,380 @@ class ApsHelpers:
                 mapped_item[field_map.get(k, k)] = v
             result.append(mapped_item)
         return result
+
+
+    async def query_material(self, materialnos: str | list[str]) -> list:
+        """
+        异步查询物料信息（优先从缓存获取，缓存未命中则访问数据库并加入缓存）
+        Args:
+            materialnos: 物料编号（多个用半角逗号分隔）或物料编号列表
+        Returns:
+            物料信息列表
+        """
+        if isinstance(materialnos, list):
+            material_list = [m.strip() for m in materialnos if m.strip()]
+        else:
+            material_list = [m.strip() for m in materialnos.split(',') if m.strip()]
+        
+        if not material_list:
+            return []
+
+        # 批量从缓存获取
+        cached_data = self._production_cache.batch_get_material(material_list)
+        
+        # 检查缓存命中情况
+        cached_keys = {item['materialno'] for item in cached_data}
+        missing_materials = [m for m in material_list if m not in cached_keys]
+        
+        if missing_materials:
+            materialnos_str = ','.join([f"'{m}'" for m in missing_materials])
+            filter_string = f"`MaterialNo` IN ({materialnos_str})"
+            try:
+                response_json = await db_query(db_name=MYAPS_MAIN_DB, model_or_tablename="t_material", filter_string=filter_string)
+                api_data = response_json.get('data', [])
+                
+                # 补充缓存
+                for item in api_data:
+                    material_no = item.get('materialno', '')
+                    if material_no:
+                        self._production_cache._cache[CacheItem.MATERIAL.value][material_no] = item
+                
+                # 合并结果
+                cached_data.extend(api_data)
+            except Exception as e:
+                error_msg = f"查询物料信息时发生数据库错误：{str(e)}"
+                logger.fail("查询物料信息", ','.join(missing_materials), error_msg)
+        
+        return cached_data
+
+
+    async def get_supplymo_detaildata_async(self, supplyno: str, get_prev_mo:bool=False, get_next_mo:bool=False, get_origin_so:bool=False):
+        """
+        异步获取工单的工序详情、及MTO销售订单信息
+        Args:
+            supplyno: 工单号
+            get_prev_mo: 是否查询前 前置 工单
+            get_next_mo: 是否查询后 后置 工单
+        Returns:
+            工单计划单详情
+        """
+        mo_data = self._production_cache.get_supply_mo(supplyno)
+
+        if mo_data:
+            mo_data['orderwc'] = self._production_cache.get_orderwc(supplyno)
+            
+            if get_origin_so:
+                vendorno = mo_data.get('vendorno', '')
+                if vendorno:
+                    mo_data['so'] = await self.get_demand_datalist_async(vendorno)
+
+            if get_prev_mo:
+                related_demand = self._production_cache.get_demand(demand_no=supplyno)
+                demands_data = [_ for _ in related_demand if _.get('type') != 'SO']
+                if demands_data:
+                    demands_no = [_['demandno'] for _ in demands_data]
+                    peg_query_result = self._production_cache.batch_get_peg_by_demand(demands_no)
+                    mo_data['prev_mo'] = self._production_cache.batch_get_supply_mo(peg_query_result)
+                
+            if get_next_mo:
+                demands_no = self._production_cache.get_peg_by_supply(supplyno)
+                mo_data['next_mo'] = self._production_cache.batch_get_supply_mo(demands_no)
+            return mo_data
+        else:
+            url = f"{THIS_BASE_URL}/api/v_supply_mo/{supplyno}?db_name={MYAPS_MAIN_DB}&prev_mo={get_prev_mo}&next_mo={get_next_mo}&origin_so={get_origin_so}"
+            supply_response_json = await self._call_api_async('GET', url)
+            try:
+                if supply_response_json.get('success') != 0 and supply_response_json.get('data'):
+                    mo_data = supply_response_json['data'][0]
+                    self._production_cache._cache[CacheItem.SUPPLY_MO.value][supplyno] = mo_data
+                    return mo_data
+                else:
+                    logger.fail("获取工单计划单详情", supplyno, f"API返回错误: {supply_response_json.get('message', '未知错误')}")
+            except Exception as e:
+                logger.fail("获取工单计划单详情", supplyno, f"{str(e)}")
+
+
+    async def get_demand_datalist_async(self, demandno: str) -> List[Dict]:
+        """
+        异步获取需求信息（优先从缓存获取，缓存未命中则访问API并加入缓存）
+        Args:
+            demandno: 需求编号，根据 APS pegging 算法，也即供应号
+        Returns:
+            工单原料需求详情
+        """
+        result_data = self._production_cache.get_demand(demandno)
+        
+        if result_data:
+            return result_data
+        
+        filter_string = f"`DemandNo`='{demandno}'"
+        demand_response_json = await db_query(db_name=MYAPS_MAIN_DB, model_or_tablename="v_demand", filter_string=filter_string)
+        api_data = demand_response_json.get('data', [])
+        
+        if api_data:
+            self._production_cache._cache[CacheItem.DEMAND.value][demandno] = api_data
+        
+        return api_data
+
+
+
+class ApsChanger:
+
+    def __init__(self, db_name: str=MYAPS_MAIN_DB):
+        from project_files._base import ResultCollector
+        self.db_name = db_name
+        self._collector = ResultCollector()
+        self._results = self._collector.results
+
+
+    def get_summary(self) -> Dict[str, Any]:
+        return self._collector.get_summary()
+
+
+    def format_notification(self, description: str = "任务") -> str:
+        return self._collector.format_notification(description)
+
+
+    async def pl_release_success(self, native_plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _id: str=None, _entryid: str=None):
+        """
+        修改PL的Status、SupplyNo、Memo等字段
+        🅰 native_plno: 原生PL计划单编号
+        🅰 mono: MO号，可选，若传值则更改PL的原生SupplyNo
+        🅰 to_status: 转化成MO后，Status设为哪个状态，默认'REL'
+        🅰 msg: 外部系统返回信息
+        🅰 msg_from: 外部系统名称
+        🅰 _id: 外部系统返回的 MO ID
+        🅰 _entryid: 外部系统返回的 MO 详情 ID（对于某些有表头的ERP，具体的 MO 是存在于子表中的，有单独的行记录id
+        """
+
+        mono = mono or native_plno
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        memo = f"{now} ✅ {msg_from}: '{msg}, {mono}, {_id}, {_entryid}' @ {native_plno}"
+        
+        logger.update("PL状态", native_plno, f"目标状态{to_status}，MO单号{mono}")
+        
+        patch_data = {
+            'status': to_status,
+            'apiex_sn': str(mono),
+            'apiex_id': str(_id or ""),
+            'apiex_entryid': str(_entryid or ""),
+            'supplyno': str(mono),
+            'memo': memo,
+        }
+        
+        response_json = await db_update_by_index(
+            db_names=self.db_name,
+            model_or_tablename="t_supply",
+            index_dict={"SupplyNo": native_plno},
+            new_values_dict=patch_data,
+            not_found_behavior="skip"
+        )
+        
+        logger.info(f"更新PL状态响应：成功")
+        
+        from project_files._base import ExecutionResult
+        await self._collector.add_result(ExecutionResult(
+            success=True,
+            raw_data=native_plno,
+            msg=f"{msg_from}: {msg}" if msg else None,
+            mono=mono
+        ))
+        
+        return response_json
+
+
+
+    async def pl_release_failed(self, native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, raw_data: dict=None, push_data: dict=None, msg_from: str=None):
+        
+        
+        logger.warning_msg(f"推送 MO {msg}", json.dumps(push_data, ensure_ascii=False), to_file=True)
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if msg:
+            try:
+                msg = str(msg)[:64]
+            except Exception as e:
+                pass
+
+        memo = f"{now} 🚫 {msg_from}: '{msg}'"
+        
+        patch_data = {
+            'status': to_status,
+            'memo': memo[:255],
+        }
+        
+        response_json = await db_update_by_index(
+            db_names=self.db_name,
+            model_or_tablename="t_supply",
+            index_dict={"SupplyNo": native_plno},
+            new_values_dict=patch_data,
+            not_found_behavior="skip"
+        )
+        
+        from project_files._base import ExecutionResult
+        await self._collector.add_result(ExecutionResult(
+            success=False,
+            raw_data=native_plno,
+            msg=f"{msg_from}: {msg}" if msg else None,
+            push_data=push_data
+        ))
+        
+        return response_json
+
+
+
+    async def rs_push_success(self, rsno: str, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
+        
+        
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        memo = f"{now} ✅ {msg_from}: '{_code}, {_id}, {_entryid}' @ {rsno}"
+        
+        logger.update("RS状态", rsno, f"目标状态{to_status}")
+        
+        patch_data = {
+            'status': to_status,
+            'memo': memo,
+        }
+        
+        response_json = await db_update_by_index(
+            db_names=self.db_name,
+            model_or_tablename="t_demand",
+            index_dict={"DemandNo": rsno},
+            new_values_dict=patch_data,
+            not_found_behavior="skip"
+        )
+        
+        logger.info(f"更新RS状态响应：成功")
+        
+        from project_files._base import ExecutionResult
+        await self._collector.add_result(ExecutionResult(
+            success=True,
+            raw_data=rsno,
+            msg=f"{msg_from}: {msg}" if msg else None,
+            mono=_code
+        ))
+        
+        return response_json
+
+
+
+    async def rs_push_failed(self, rsno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None, raw_data: dict | list=None):
+        
+        
+        logger.fail("推送 RS", json.dumps(push_data, ensure_ascii=False), msg)
+        if msg:
+            try:
+                msg = str(msg)[:64]
+            except Exception as e:
+                pass
+        try:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            memo = f"{now} 🚫 {msg_from}: '{msg}'"
+
+            patch_data = {
+                'memo': memo,
+            }
+            
+            response_json = await db_update_by_index(
+                db_names=self.db_name,
+                model_or_tablename="t_demand",
+                index_dict={"DemandNo": rsno},
+                new_values_dict=patch_data,
+                not_found_behavior="skip"
+            )
+            
+            from project_files._base import ExecutionResult
+            await self._collector.add_result(ExecutionResult(
+                success=False,
+                raw_data=rsno,
+                msg=f"{msg_from}: {msg}" if msg else None,
+                push_data=push_data
+            ))
+            
+            return response_json
+        except Exception as e:
+            error_msg = f"更新RS失败状态时发生网络错误：{str(e)}"
+            logger.fail("RS状态更新", rsno, error_msg)
+            return standard_response(status_code=500, success=0, message=error_msg)
+
+
+    async def pr_push_success(self, prno: str, msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
+
+        
+        try:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            memo = f"{now} ✅ {msg_from}: '{_code}, {_id}, {_entryid}' @ {prno}"
+            logger.update("PR状态", prno, "")
+            
+            patch_data = {
+                'status': 'CRE',
+                'memo': memo[:255],
+                'apiex_sn': _code,
+                'apiex_id': _id,
+                'apiex_entryid': _entryid,
+            }
+            
+            response_json = await db_update_by_index(
+                db_names=self.db_name,
+                model_or_tablename="t_supply",
+                index_dict={"SupplyNo": prno},
+                new_values_dict=patch_data,
+                not_found_behavior="skip"
+            )
+            
+            logger.info(f"更新PR状态响应：成功")
+            
+            from project_files._base import ExecutionResult
+            await self._collector.add_result(ExecutionResult(
+                success=True,
+                raw_data=prno,
+                msg=f"{msg_from}: {msg}" if msg else None,
+                mono=_code
+            ))
+            
+            return response_json
+        except Exception as e:
+            error_msg = f"更新PR状态时发生网络错误：{str(e)}"
+            logger.fail("PR状态更新", prno, error_msg)
+            return standard_response(status_code=500, success=0, message=error_msg)
+
+
+    async def pr_push_failed(self, prno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None, raw_data: dict | list=None):
+        
+        
+        if msg:
+            try:
+                msg = str(msg)[:64]
+            except Exception as e:
+                pass
+        logger.fail("推送 PR", json.dumps(push_data, ensure_ascii=False), msg)
+        try:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            memo = f"{now} 🚫 {msg_from}: '{msg}'"
+            
+            patch_data = {
+                'status': 'NEW',
+                'memo': memo[:255],
+            }
+            
+            response_json = await db_update_by_index(
+                db_names=self.db_name,
+                model_or_tablename="t_supply",
+                index_dict={"SupplyNo": prno},
+                new_values_dict=patch_data,
+                not_found_behavior="skip"
+            )
+            
+            from project_files._base import ExecutionResult
+            await self._collector.add_result(ExecutionResult(
+                success=False,
+                raw_data=prno,
+                msg=f"{msg_from}: {msg}" if msg else None,
+                push_data=push_data
+            ))
+            
+            return response_json
+        except Exception as e:
+            error_msg = f"更新PR失败状态时发生网络错误：{str(e)}"
+            logger.fail("PR状态更新", prno, error_msg)
+            return standard_response(status_code=500, success=0, message=error_msg)
+

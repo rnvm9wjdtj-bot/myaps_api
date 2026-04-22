@@ -1,6 +1,7 @@
 """
 使用 Tortoise ORM 直接生成表的脚本（更可靠）
 替代 aerich 迁移方案，直接调用 generate_schemas()
+同时提供 Aerich 迁移所需的配置
 """
 import asyncio
 import sys
@@ -14,6 +15,9 @@ from core.database import TORTOISE_ORM_CONFIG
 from globalobjects import logger as log_config
 
 logger = log_config.get_logger(__name__)
+
+# Aerich 迁移所需的配置变量
+monitor_orm_config = TORTOISE_ORM_CONFIG
 
 async def main():
     """主函数 - 直接生成所有表"""

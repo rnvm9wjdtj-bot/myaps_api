@@ -1,5 +1,6 @@
 """江阴海达橡塑"""
 
+from re import A
 import requests, uuid, asyncio, json#, logging#, os, atexit
 import pandas as pd
 from datetime import datetime
@@ -11,8 +12,8 @@ from dateutil.relativedelta import relativedelta
 
 from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
 from .._base import (
-    get_scheduler_minute, async_rate_limit, get_production_cache, CacheItem,
-    ApsHelpers, CLIENT_LOGGER, standard_response, get_session, async_reminder,
+    get_scheduler_minute, async_rate_limit, CacheItem,
+    ApsHelper, ApsChanger, CLIENT_LOGGER, standard_response, get_session, start_reminder,
     cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, PROJECT_JSON_FILE, pdv,
     RemindType, QqEmailReminder, Reminder, with_result_collection
 )
@@ -153,7 +154,7 @@ async def refresh_stock(dbs: str=MYAPS_DB_SET):
         return df_sap_st
 
     CLIENT_LOGGER.start("刷新库存任务")
-    mto_vir_st = await ApsHelpers.mto_workreport_to_virtual_stock_async()
+    mto_vir_st = await ApsHelper.mto_workreport_to_virtual_stock_async()
     df_sap_st = get_sap_stock_data()
 
     if mto_vir_st is not None:
@@ -163,7 +164,7 @@ async def refresh_stock(dbs: str=MYAPS_DB_SET):
     
     # if stock_data_total is not None:
     stock_data_total.fillna('', inplace=True)
-    await ApsHelpers.refresh_supply_async(stock_data_total.to_dict(orient='records'), dbs=dbs)
+    await ApsHelper.refresh_supply_async(stock_data_total.to_dict(orient='records'), dbs=dbs)
 
 
 async def push_pr(period: int = 30, groupdates: List[str] | str = None):
@@ -171,7 +172,7 @@ async def push_pr(period: int = 30, groupdates: List[str] | str = None):
         if isinstance(groupdates, list):
             groupdates = ','.join(groupdates)
 
-    pr_data = await ApsHelpers.get_dategrouped_pr_async(db_name=MYAPS_MAIN_DB, period=period, field_map=srm_field_map, groupdates=groupdates)
+    pr_data = await ApsHelper.get_dategrouped_pr_async(db_name=MYAPS_MAIN_DB, period=period, field_map=srm_field_map, groupdates=groupdates)
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     for item in pr_data:
         item["plant"] = "1000"
@@ -212,7 +213,7 @@ async def task_refresh_stock():
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2), description="确认报工")
 async def task_confirm_workreport():
-    await ApsHelpers.confirm_workreport_async()
+    await ApsHelper.confirm_workreport_async()
 
 
 @cron_task(hour=23, minute=59, description="推送周要货计划到SRM")  # 每天23:59执行一次，需须在23:55拉取库存和确认报工之后
@@ -235,16 +236,28 @@ qq_email_reminder = QqEmailReminder(
     smtp_user="2982212683@qq.com",
     smtp_password="jyboujldhplddhdf",
     email_from="2982212683@qq.com",
-    email_default_to="2982212683@qq.com,fzc@yunchen.ltd",
+    email_to="2982212683@qq.com,fzc@yunchen.ltd",
 )
 
 
 
-@async_reminder(reminder=qq_email_reminder)
-@with_result_collection(reminder=qq_email_reminder)
-async def batch_handle_pl_status_a2e(event_data: List[Dict], aph: ApsHelpers=None, description="PL 单据下达", error_wrapper=None):
+@start_reminder()
+@with_result_collection()
+async def batch_handle_pl_status_a2e(event_data: List[Dict], apc: ApsChanger, description="PL 单据下达"):
+    """
+    Args:
+        event_data: 事件数据，由数据库事件触发时注入
+        apc: ApsChanger 实例，用于变更APS数据，由装饰器注入
+        description: 事件描述，会被两个装饰器捕获，邮件头文字
+    """
     @async_rate_limit()
-    async def handle_pl_status_a2e(supplyno_or_data: Union[str, dict]):
+    async def handle_pl_status_a2e(supplyno_or_data: Union[str, dict], aph: ApsHelper):
+        """
+        处理单个PL状态变为A2E事件
+        Args:
+            supplyno_or_data: supplyno 或包含 supplyno 的字典，由主函数注入
+            aph: ApsHelper 实例，用于获取APS数据或缓存，由主函数注入
+        """
 
         if isinstance(supplyno_or_data, str):
             supplyno = supplyno_or_data
@@ -252,11 +265,11 @@ async def batch_handle_pl_status_a2e(event_data: List[Dict], aph: ApsHelpers=Non
             supplyno = supplyno_or_data['supplyno']
 
         # 使用异步版本的函数，避免阻塞事件循环
-        supplymo_detaildata = await ApsHelpers.get_supplymo_detaildata_async(supplyno=supplyno)
+        supplymo_detaildata = await aph.get_supplymo_detaildata_async(supplyno=supplyno)
         try:
             start_datetime: str = supplymo_detaildata['dt_ordstart'].split(" ")[0]
             end_datetime: str = supplymo_detaildata['dt_ordend'].split(" ")[0]
-            orderwc: list = supplymo_detaildata['orderwc']
+            orderwc: list = supplymo_detaildata.get('orderwc', [])
 
             data = {
                 "WERKS": werks,  # 工厂
@@ -283,7 +296,7 @@ async def batch_handle_pl_status_a2e(event_data: List[Dict], aph: ApsHelpers=Non
             try:
                 sap_response = await asyncio.wait_for(sap_post_future, timeout=API_TIMEOUT)
             except asyncio.TimeoutError:
-                await aph.pl_release_failed_async(native_plno=supplyno, msg=f"SAP API 调用超时（{API_TIMEOUT}秒）", push_data=data, msg_from='ERP')
+                await apc.pl_release_failed(native_plno=supplyno, msg=f"SAP API 调用超时（{API_TIMEOUT}秒）", push_data=data, msg_from='ERP')
                 return
             sap_response_json = sap_response['response_json']
             
@@ -292,31 +305,28 @@ async def batch_handle_pl_status_a2e(event_data: List[Dict], aph: ApsHelpers=Non
                     sap_mo_data = sap_response_json['BODY'][0]
                     
                     if sap_mo_data.get('STATUS') == 'S':
-                        await aph.pl_release_success_async(native_plno=supplyno, mono=sap_mo_data.get('AUFNR'), msg=sap_mo_data.get('MESSAGE'), msg_from='ERP')
+                        await apc.pl_release_success(native_plno=supplyno, mono=sap_mo_data.get('AUFNR'), msg=sap_mo_data.get('MESSAGE'), msg_from='ERP')
                     else:
-                        await aph.pl_release_failed_async(native_plno=supplyno, msg=sap_mo_data.get('MESSAGE', '未知错误'), push_data=data, msg_from='ERP')
+                        await apc.pl_release_failed(native_plno=supplyno, msg=sap_mo_data.get('MESSAGE', '未知错误'), push_data=data, msg_from='ERP')
                 else:
                     # 处理响应格式不正确的情况
-                    await aph.pl_release_failed_async(native_plno=supplyno, msg=f"响应格式不正确: {sap_response['response_text']}", push_data=data, msg_from='ERP')
+                    await apc.pl_release_failed(native_plno=supplyno, msg=f"响应格式不正确: {sap_response['response_text']}", push_data=data, msg_from='ERP')
             except Exception as e:
-                if error_wrapper:
-                    await error_wrapper(**{'supplyno':supplyno, 'msg': str(e)})
-                return
-        except requests.exceptions.Timeout as e:
-            await aph.pl_release_failed_async(native_plno=supplyno, msg=f"请求超时: {str(e)}", push_data=data, msg_from='ERP')
+                await apc.pl_release_failed(native_plno=supplyno, msg=f"处理响应时出错: {str(e)}", push_data=data, msg_from='ERP')           
         except Exception as e:
-            if error_wrapper:
-                await error_wrapper(**{'supplyno':supplyno, 'msg': str(e)})
-            return
+            await apc.pl_release_failed(native_plno=supplyno, msg=f"处理请求时出错: {str(e)}", push_data=data, msg_from='ERP')
 
 
     from apps.io_api.models import TSupply
     
+    if not event_data:
+        return
+        
     supply_nos = [_['supplyno'] for _ in event_data]
     supply_list = await TSupply.filter(supplyno__in=supply_nos).update(memo=" 正在推送。。。")
-    cache = get_production_cache()
-    await cache.establish_production_cache(supplynos=supply_nos, cache_items=[CacheItem.SUPPLY_MO])
-    tasks = [handle_pl_status_a2e(item) for item in event_data]
+    aph = ApsHelper(production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.ORDER_WC])
+    cache = await aph.establish_production_cache(supplynos=supply_nos)
+    tasks = [handle_pl_status_a2e(supplyno_or_data=item, aph=aph) for item in event_data]
     await asyncio.gather(*tasks, return_exceptions=True)
 
 

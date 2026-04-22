@@ -63,7 +63,7 @@ if exist "migrations\monitor_models" (
     echo [OK] Migration folder already exists
 ) else (
     echo [INFO] Initializing aerich...
-    venv\Scripts\python.exe -m aerich init -t scripts.migrate.monitor_orm_config.monitor_orm_config
+    venv\Scripts\python.exe -m aerich init -t scripts.migrate.migrate_with_tortoise.monitor_orm_config
     if errorlevel 1 (
         echo [WARN] Init failed, continuing...
     )
@@ -134,7 +134,7 @@ if exist "migrations" (
 
 echo.
 echo [2/3] Re-initializing aerich...
-venv\Scripts\python.exe -m aerich init -t scripts.migrate.monitor_orm_config.monitor_orm_config
+venv\Scripts\python.exe -m aerich init -t scripts.migrate.migrate_with_tortoise.monitor_orm_config
 if errorlevel 1 goto :error
 echo [OK] Aerich initialized
 
@@ -168,6 +168,18 @@ setx PROJECT_DIR "%PROJECT_DIR%" >nul 2>&1
 set PROJECT_DIR=%PROJECT_DIR%
 
 echo Project Directory: %PROJECT_DIR%
+
+if not exist "storage" (
+    echo [INFO] Creating storage directory...
+    mkdir storage
+    if errorlevel 1 (
+        echo [ERROR] Failed to create storage directory
+        pause
+        exit /b 1
+    )
+    echo [OK] Storage directory created
+)
+
 exit /b 0
 
 :success
