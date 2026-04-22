@@ -5,7 +5,9 @@ from typing import Dict, List, Callable, Any, Optional
 from functools import wraps
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
+from apscheduler.executors.asyncio import AsyncIOExecutor
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED, EVENT_JOB_EXECUTED
 
@@ -67,8 +69,10 @@ class SchedulerManager:
             jobstores = {
                 'default': MemoryJobStore()
             }
+            
             executors = {
                 'default': ThreadPoolExecutor(20),  # 增加线程数支持更多任务
+                'asyncio': AsyncIOExecutor(),  # 用于异步任务
             }
             job_defaults = {
                 'coalesce': True,
@@ -76,7 +80,7 @@ class SchedulerManager:
             'misfire_grace_time': 60  # 减少宽限期
             }
             
-            self.scheduler = BackgroundScheduler(
+            self.scheduler = AsyncIOScheduler(
                 jobstores=jobstores,
                 executors=executors,
                 job_defaults=job_defaults,
@@ -155,6 +159,11 @@ class SchedulerManager:
                     **task_info['trigger_args']
                 }
                 
+                # 为异步任务指定使用 asyncio 执行器
+                import inspect
+                if inspect.iscoroutinefunction(safe_func):
+                    job_kwargs['executor'] = 'asyncio'
+                
                 # 直接存储描述信息到scheduler_manager的字典中，而不是依赖APScheduler的extra参数
                 if 'description' in task_info and task_info['description']:
                     self._job_descriptions[job_id] = task_info['description']
@@ -227,21 +236,7 @@ class SchedulerManager:
                     logger.fail("异步任务执行", task_name, error_msg)
                     # 重新抛出异常，让 APScheduler 触发 EVENT_JOB_ERROR 事件
                     raise
-            # 为异步函数创建同步包装器
-            @wraps(func)
-            def wrapper():
-                try:
-                    # 直接执行异步包装器，确保异常能够传播
-                    import asyncio
-                    result = asyncio.run(async_wrapper())
-                    # 执行成功，事件监听器会处理执行记录的添加
-                    return result
-                except Exception as e:
-                    logger.fail("异步任务执行", "", str(e))
-                    # 执行失败，事件监听器会处理执行记录的添加
-                    # 重新抛出异常，让 APScheduler 触发 EVENT_JOB_ERROR 事件
-                    raise
-            return wrapper
+            return async_wrapper
         else:
             # 原有的同步函数处理逻辑
             @wraps(func)
