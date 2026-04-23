@@ -11,6 +11,7 @@ from fastapi import WebSocket
 from .collectors import ResourceCollector, DatabaseCollector, SchedulerCollector, HTTPCollector
 from .collectors.outbound_http_collector import outbound_http_collector
 from .collectors.event_collector import EventCollector
+from apps.common.utils.event_helpers import get_callback_tracker, get_dead_letter_queue, get_event_deduplicator
 from globalobjects import logger as log_config
 
 logger = log_config.get_logger(__name__)
@@ -47,6 +48,7 @@ class MonitorService:
             "http": 1,  # 1秒
             "outbound_http": 1,  # 1秒
             "event": 5,  # 5秒
+            "event_helpers": 5,  # 5秒
         }
         self._log_cache = {}
         self._log_cache_expiry = 120  # 120秒（优化：增加缓存时间）
@@ -222,6 +224,68 @@ class MonitorService:
         # 设置缓存
         self._set_cache_data("event", metrics)
         return metrics
+
+    def get_event_helpers_metrics(self) -> Dict[str, Any]:
+        """获取事件辅助模块监控指标"""
+        # 尝试从缓存获取
+        cached = self._get_cached_data("event_helpers")
+        if cached:
+            return cached
+        
+        # 缓存过期，重新采集
+        try:
+            tracker = get_callback_tracker()
+            dlq = get_dead_letter_queue()
+            deduplicator = get_event_deduplicator()
+            
+            metrics = {
+                "timestamp": time.time(),
+                "callback_tracker": tracker.get_stats(),
+                "dead_letter_queue": dlq.get_stats(),
+                "event_deduplicator": deduplicator.get_stats()
+            }
+        except Exception as e:
+            logger.error(f"获取事件辅助模块监控指标失败: {e}")
+            metrics = {
+                "timestamp": time.time(),
+                "error": str(e),
+                "callback_tracker": {},
+                "dead_letter_queue": {},
+                "event_deduplicator": {}
+            }
+        
+        # 设置缓存
+        self._set_cache_data("event_helpers", metrics)
+        return metrics
+
+    def get_dead_letter_events(self, limit: int = 50) -> Dict:
+        """获取死信队列事件"""
+        try:
+            dlq = get_dead_letter_queue()
+            events = dlq.get_events(limit)
+            stats = dlq.get_stats()
+            
+            return {
+                "dead_letters": events,
+                "stats": stats,
+                "success": True
+            }
+        except Exception as e:
+            logger.error(f"获取死信队列事件失败: {e}")
+            return {
+                "error": str(e),
+                "success": False
+            }
+
+    def clear_dead_letters(self) -> Dict:
+        """清空死信队列"""
+        try:
+            dlq = get_dead_letter_queue()
+            dlq.clear()
+            return {"success": True, "message": "死信队列已清空"}
+        except Exception as e:
+            logger.error(f"清空死信队列失败: {e}")
+            return {"success": False, "error": str(e)}
 
     def flush_events_now(self, event_type: str = None):
         """立即刷新事件聚合器"""
@@ -715,7 +779,8 @@ class MonitorService:
                             **overview,
                             "logs": logs,
                             "api_requests": api_requests,
-                            "outbound_requests": outbound_requests
+                            "outbound_requests": outbound_requests,
+                            "event_helpers": self.get_event_helpers_metrics()
                         }
                     }
                     # 广播数据

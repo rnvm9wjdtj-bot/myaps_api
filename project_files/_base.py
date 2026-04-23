@@ -207,16 +207,16 @@ def sync_rate_limit(rate: int = None):
 # 公共装饰器
 #################################################################################
 
-def start_reminder(reminder: Reminder = None, error_handler: Union[callable, str] = None, final_handler: callable = None):
+def start_event_batch_reminder(reminder: Reminder = None, error_handler: Union[callable, str] = None, final_handler: callable = None):
     """
     异步函数执行提示装饰器
 
     用法:
-        @start_reminder()
+        @event_batch_start_reminder()
         async def batch_handle_pl_status_a2e(event_data: List[Dict]):
             ...
 
-        @start_reminder(reminder=qq_email_reminder)
+        @event_batch_start_reminder(reminder=qq_email_reminder)
         async def batch_handle_pl_status_a2e(event_data: List[Dict]):
             ...
 
@@ -239,7 +239,8 @@ def start_reminder(reminder: Reminder = None, error_handler: Union[callable, str
                 try:
                     import inspect
                     sig = inspect.signature(func)
-                    bound_args = sig.bind(*args, **kwargs)
+                    # 使用 bind_partial 绑定参数，避免缺少参数导致绑定失败
+                    bound_args = sig.bind_partial(*args, **kwargs)
                     bound_args.apply_defaults()
                     description = bound_args.arguments.get('description')
                 except:
@@ -343,12 +344,12 @@ def start_reminder(reminder: Reminder = None, error_handler: Union[callable, str
     return decorator
 
 
-def with_result_collection(description: str = None, reminder: Reminder = None):
+def finish_event_batch_reminder(description: str = None, reminder: Reminder = None):
     """
     带结果收集的装饰器，用于 ApsHelpers 实例化和结果汇总
 
     用法:
-        @with_result_collection(reminder=qq_email_reminder)
+        @event_batch_finish_reminder(reminder=qq_email_reminder)
         async def batch_handle_pl_status_a2e(event_data: List[Dict], description="PL 单据下达", apc=None):
             @async_rate_limit()
             async def handle_pl_status_a2e(item):
@@ -381,8 +382,8 @@ def with_result_collection(description: str = None, reminder: Reminder = None):
                     try:
                         import inspect
                         sig = inspect.signature(func)
-                        # 绑定原始参数，还没有注入 apc
-                        bound_args = sig.bind(*args, **kwargs)
+                        # 使用 bind_partial 绑定原始参数，避免缺少 apc 参数导致绑定失败
+                        bound_args = sig.bind_partial(*args, **kwargs)
                         bound_args.apply_defaults()
                         actual_description = bound_args.arguments.get('description')
                     except:

@@ -305,6 +305,49 @@ class DeadLetterQueue:
             'running': self._running
         }
 
+    def get_events(self, limit: int = 50) -> list:
+        """
+        获取死信事件列表
+
+        Args:
+            limit: 返回事件数量限制
+
+        Returns:
+            死信事件列表
+        """
+        events = []
+        if DEAD_LETTER_FILE.exists():
+            try:
+                with open(DEAD_LETTER_FILE, 'r', encoding='utf-8') as f:
+                    for line in reversed(list(f)):
+                        if len(events) >= limit:
+                            break
+                        try:
+                            event = json.loads(line.strip())
+                            events.append(event)
+                        except Exception:
+                            pass
+            except Exception as e:
+                logger.error(f"读取死信文件失败: {e}")
+        return events
+
+    def clear(self):
+        """
+        清空死信队列
+        """
+        # 清空内存队列
+        with self._write_lock:
+            self._queue.clear()
+        
+        # 清空文件
+        if DEAD_LETTER_FILE.exists():
+            try:
+                with open(DEAD_LETTER_FILE, 'w', encoding='utf-8') as f:
+                    f.write('')
+                logger.info("死信队列已清空")
+            except Exception as e:
+                logger.error(f"清空死信文件失败: {e}")
+
 
 class EventDeduplicator:
     """事件去重器 - 基于事件键的去重机制"""

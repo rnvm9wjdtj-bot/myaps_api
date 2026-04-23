@@ -17,9 +17,10 @@
             <nav class="nav-menu">
                 <a href="#" class="nav-item active" data-page="overview">Overview</a>
                 <a href="#" class="nav-item" data-page="database">数据库<span id="database-badge" class="nav-badge" style="display: none;"></span></a>
+                <a href="#" class="nav-item" data-page="event-helpers">事件处理</a>
+                <a href="#" class="nav-item" data-page="scheduler">定时任务</a>
                 <a href="#" class="nav-item" data-page="api-requests">接收请求<span id="api-requests-badge" class="nav-badge" style="display: none;"></span></a>
                 <a href="#" class="nav-item" data-page="outbound-requests">发送请求<span id="outbound-requests-badge" class="nav-badge" style="display: none;"></span></a>
-                <a href="#" class="nav-item" data-page="scheduler">定时任务</a>
                 <a href="#" class="nav-item" data-page="logs">日志<span id="logs-badge" class="nav-badge" style="display: none;"></span></a>
             </nav>
             <div class="header-info">
@@ -30,7 +31,7 @@
         </header>
 
         <!-- Overview 页面 -->
-        <main class="main-content page-content" id="page-overview">
+        <main class="main-content page-content active" id="page-overview">
             <!-- 资源监控卡片 -->
             <section class="card">
                 <div class="card-header">
@@ -185,7 +186,7 @@
         </main>
 
         <!-- 数据库页面 -->
-        <main class="main-content page-content" id="page-database" style="display: none;">
+        <main class="main-content page-content" id="page-database">
             <!-- 数据库详细信息卡片 -->
             <section class="card full-width">
                 <div class="card-header">
@@ -218,117 +219,10 @@
                     </div>
                 </div>
             </section>
-            
-            <!-- 事件监听卡片 -->
-            <section class="card full-width">
-                <div class="card-header">
-                    <h2>事件监听</h2>
-                    <div class="events-actions">
-                        <button class="btn btn-small" onclick="refreshEventStats()">刷新</button>
-                        <button class="btn btn-small" onclick="flushAllEvents()">立即刷新所有</button>
-                        <button class="btn btn-small btn-secondary" onclick="resetEventStats()">重置统计</button>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div class="events-summary" id="events-summary">
-                        <div class="summary-item">
-                            <span class="summary-label">总接收事件</span>
-                            <span class="summary-value" id="events-total-received">--</span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="summary-label">已处理事件</span>
-                            <span class="summary-value healthy" id="events-total-processed">--</span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="summary-label">中止处理</span>
-                            <span class="summary-value error" id="events-total-failed">--</span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="summary-label">待处理</span>
-                            <span class="summary-value" id="events-total-pending">--</span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="summary-label">整体成功率</span>
-                            <span class="summary-value" id="events-success-rate">--%</span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="summary-label">活跃事件类型</span>
-                            <span class="summary-value" id="events-active-types">--</span>
-                        </div>
-                    </div>
-                    <div class="events-table-container">
-                        <table class="events-table" id="events-table">
-                            <thead>
-                                <tr>
-                                    <th>描述</th>
-                                    <th>总接收</th>
-                                    <th>待处理</th>
-                                    <th>已处理</th>
-                                    <th>中止</th>
-                                    <th>完成率</th>
-                                    <th>平均延迟</th>
-                                    <th>缓冲区</th>
-                                    <th>最后活动</th>
-                                    <th>状态</th>
-                                    <th>操作</th>
-                                </tr>
-                            </thead>
-                            <tbody id="events-tbody">
-                                <!-- 动态生成事件统计列表 -->
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </section>
-            
-            <!-- 死信队列卡片 -->
-            <section class="card full-width">
-                <div class="card-header">
-                    <h2>Dead Letter</h2>
-                    <div class="dead-letter-actions">
-                        <button class="btn btn-small" onclick="refreshDeadLetterStats()">刷新</button>
-                        <button class="btn btn-small btn-secondary" onclick="clearDeadLetters()">清空</button>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div class="dead-letter-summary" id="dead-letter-summary">
-                        <div class="summary-item">
-                            <span class="summary-label">死信总数</span>
-                            <span class="summary-value" id="dead-letter-total">--</span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="summary-label">最近死信</span>
-                            <span class="summary-value" id="dead-letter-recent">--</span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="summary-label">处理成功率</span>
-                            <span class="summary-value" id="dead-letter-success-rate">--%</span>
-                        </div>
-                    </div>
-                    <div class="dead-letter-table-container">
-                        <table class="dead-letter-table" id="dead-letter-table">
-                            <thead>
-                                <tr>
-                                    <th>ID</th>
-                                    <th>事件类型</th>
-                                    <th>时间</th>
-                                    <th>数据库</th>
-                                    <th>表</th>
-                                    <th>错误信息</th>
-                                    <th>操作</th>
-                                </tr>
-                            </thead>
-                            <tbody id="dead-letter-tbody">
-                                <!-- 动态生成死信列表 -->
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </section>
         </main>
 
         <!-- 接收请求页面 -->
-        <main class="main-content page-content" id="page-api-requests" style="display: none;">
+        <main class="main-content page-content" id="page-api-requests">
             <section class="card full-width">
                 <div class="card-header">
                     <h2>接收请求记录</h2>
@@ -414,7 +308,7 @@
         </main>
 
         <!-- 定时任务页面 -->
-        <main class="main-content page-content" id="page-scheduler" style="display: none;">
+        <main class="main-content page-content" id="page-scheduler">
             <section class="card full-width">
                 <div class="card-header">
                     <h2>定时任务详情</h2>
@@ -430,7 +324,7 @@
         </main>
 
         <!-- 发送请求页面 -->
-        <main class="main-content page-content" id="page-outbound-requests" style="display: none;">
+        <main class="main-content page-content" id="page-outbound-requests">
             <section class="card full-width">
                 <div class="card-header">
                     <h2>发送请求记录</h2>
@@ -476,8 +370,8 @@
             </section>
         </main>
 
-        <!-- 鏃ュ織椤甸潰 -->
-        <main class="main-content page-content" id="page-logs" style="display: none;">
+        <!-- 日志页面 -->
+        <main class="main-content page-content" id="page-logs">
             <section class="card full-width">
                 <div class="card-header">
                     <h2>日志记录</h2>
@@ -519,6 +413,194 @@
                     </div>
                 </div>
             </section>
+        </main>
+
+        <!-- 事件处理页面 -->
+        <main class="main-content page-content" id="page-event-helpers">
+            <!-- 事件监听卡片 -->
+            <section class="card full-width">
+                <div class="card-header">
+                    <h2>事件监听</h2>
+                    <div class="events-actions">
+                        <button class="btn btn-small" onclick="refreshEventStats()">刷新</button>
+                        <button class="btn btn-small" onclick="flushAllEvents()">立即刷新所有</button>
+                        <button class="btn btn-small btn-secondary" onclick="resetEventStats()">重置统计</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="events-summary" id="events-summary">
+                        <div class="summary-item">
+                            <span class="summary-label">总接收事件</span>
+                            <span class="summary-value" id="events-total-received">--</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">已处理事件</span>
+                            <span class="summary-value healthy" id="events-total-processed">--</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">中止处理</span>
+                            <span class="summary-value error" id="events-total-failed">--</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">待处理</span>
+                            <span class="summary-value" id="events-total-pending">--</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">整体成功率</span>
+                            <span class="summary-value" id="events-success-rate">--%</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">活跃事件类型</span>
+                            <span class="summary-value" id="events-active-types">--</span>
+                        </div>
+                    </div>
+                    <div class="events-table-container">
+                        <table class="events-table" id="events-table">
+                            <thead>
+                                <tr>
+                                    <th>描述</th>
+                                    <th>总接收</th>
+                                    <th>待处理</th>
+                                    <th>已处理</th>
+                                    <th>中止</th>
+                                    <th>完成率</th>
+                                    <th>平均延迟</th>
+                                    <th>缓冲区</th>
+                                    <th>最后活动</th>
+                                    <th>状态</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="events-tbody">
+                                <!-- 动态生成事件统计列表 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 主布局：左侧是回调跟踪器和事件去重器，右侧是死信队列 -->
+            <div class="event-helpers-layout">
+                <!-- 左侧：回调跟踪器和事件去重器 -->
+                <div class="left-column">
+                    <!-- 回调跟踪器卡片 -->
+                    <section class="card">
+                        <div class="card-header">
+                            <h2>回调跟踪器</h2>
+                            <span class="badge" id="callback-badge">监控中</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="metrics-grid">
+                                <div class="metric-item">
+                                    <div class="metric-label">待处理回调</div>
+                                    <div class="metric-value" id="callback-pending">--</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-label">最大重试次数</div>
+                                    <div class="metric-value" id="callback-max-retries">--</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-label">待处理重试</div>
+                                    <div class="metric-value" id="callback-pending-retries">--</div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- 事件去重器卡片 -->
+                    <section class="card">
+                        <div class="card-header">
+                            <h2>事件去重器</h2>
+                            <span class="badge" id="deduplicator-badge">监控中</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="metrics-grid">
+                                <div class="metric-item">
+                                    <div class="metric-label">总缓存条目</div>
+                                    <div class="metric-value" id="deduplicator-total">--</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-label">活跃条目</div>
+                                    <div class="metric-value" id="deduplicator-active">--</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-label">TTL (秒)</div>
+                                    <div class="metric-value" id="deduplicator-ttl">--</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-label">最大条目</div>
+                                    <div class="metric-value" id="deduplicator-max">--</div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- 右侧：死信队列 -->
+                <div class="right-column">
+                    <section class="card dead-letter-card">
+                        <div class="card-header">
+                            <h2>Dead Letter Queue</h2>
+                            <div class="dead-letter-actions">
+                                <button class="btn btn-small" onclick="refreshDeadLetterStats()">刷新</button>
+                                <button class="btn btn-small btn-secondary" onclick="clearDeadLetters()">清空</button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="metrics-grid">
+                                <div class="metric-item">
+                                    <div class="metric-label">待写入事件</div>
+                                    <div class="metric-value" id="dlq-pending">--</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-label">总事件数</div>
+                                    <div class="metric-value" id="dlq-total">--</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-label">文件大小</div>
+                                    <div class="metric-value" id="dlq-file-size">--</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-label">运行状态</div>
+                                    <div class="metric-value" id="dlq-running">--</div>
+                                </div>
+                            </div>
+                            <div class="dead-letter-summary" id="dead-letter-summary" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e2e8f0;">
+                                <div class="summary-item">
+                                    <span class="summary-label">DL总数</span>
+                                    <span class="summary-value" id="dead-letter-total">--</span>
+                                </div>
+                                <div class="summary-item">
+                                    <span class="summary-label">最近DL</span>
+                                    <span class="summary-value" id="dead-letter-recent">--</span>
+                                </div>
+                                <div class="summary-item">
+                                    <span class="summary-label">处理成功率</span>
+                                    <span class="summary-value" id="dead-letter-success-rate">--%</span>
+                                </div>
+                            </div>
+                            <div class="dead-letter-table-container" style="margin-top: 15px;">
+                                <table class="dead-letter-table" id="dead-letter-table">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>事件类型</th>
+                                            <th>时间</th>
+                                            <th>数据库</th>
+                                            <th>表</th>
+                                            <th>错误信息</th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="dead-letter-tbody">
+                                        <!-- 动态生成死信列表 -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
         </main>
 
         <footer class="footer">

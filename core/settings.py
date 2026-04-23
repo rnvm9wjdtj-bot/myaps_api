@@ -75,7 +75,7 @@ BASE_PORT = int(os.getenv("PORT", 8000))
 START_MODE = os.getenv("START_MODE", "")
 
 if START_MODE == "direct":
-    PORT = BASE_PORT + 1
+    PORT = BASE_PORT + 2
 else:
     PORT = BASE_PORT
 

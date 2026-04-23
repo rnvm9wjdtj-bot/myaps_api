@@ -506,6 +506,11 @@ function handleWebSocketData(data) {
             updateOutboundRequestsDisplay(data.outbound_requests);
         }
         
+        // 更新事件辅助模块数据
+        if (data.event_helpers) {
+            updateEventHelpersDisplay(data.event_helpers);
+        }
+        
         // 更新最后更新时间
         updateLastUpdateTime();
     }
@@ -682,6 +687,13 @@ async function refreshAll() {
                     break;
                 case 'scheduler':
                     await fetchSchedulerPage();
+                    break;
+                case 'event-helpers':
+                    await Promise.all([
+                        fetchEventStats(),
+                        fetchEventHelpers(),
+                        fetchDeadLetterStats()
+                    ]);
                     break;
             }
             
@@ -1623,20 +1635,23 @@ function switchPage(pageName) {
     });
     
     document.querySelectorAll('.page-content').forEach(page => {
-        page.style.display = 'none';
+        page.classList.remove('active');
     });
     
     const targetPage = document.getElementById(`page-${pageName}`);
     if (targetPage) {
-        targetPage.style.display = 'grid';
+        targetPage.classList.add('active');
     }
     
     // 处理其他页面的逻辑
     if (pageName === 'database') {
         fetchDatabaseDetail();
-        fetchEventStats();
     } else if (pageName === 'scheduler') {
         fetchSchedulerPage();
+    } else if (pageName === 'event-helpers') {
+        fetchEventStats();
+        fetchEventHelpers();
+        fetchDeadLetterStats();
     } else if (pageName === 'logs') {
         fetchLogsPage();
     }
@@ -1658,6 +1673,23 @@ async function fetchEventStats() {
         updateEventStatsDisplay(data);
     } catch (error) {
         console.error('获取事件统计失败:', error);
+    }
+}
+
+// 获取事件辅助模块数据
+async function fetchEventHelpers() {
+    // 如果用户不活动，不发送请求
+    if (isInactive) {
+        console.log('用户不活动，跳过事件辅助模块数据获取');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE}/event-helpers`);
+        const data = await response.json();
+        updateEventHelpersDisplay(data);
+    } catch (error) {
+        console.error('获取事件辅助模块数据失败:', error);
     }
 }
 
@@ -4085,9 +4117,56 @@ async function fetchDeadLetterStats() {
     }
 }
 
-// 在数据库页面刷新时获取死信队列数据
+// 在数据库页面刷新时获取数据库详细信息
 async function refreshDatabasePage() {
     await fetchDatabaseDetail();
-    await fetchEventStats();
-    await fetchDeadLetterStats();
+}
+
+// 更新事件辅助模块显示
+function updateEventHelpersDisplay(data) {
+    if (!data) return;
+    
+    // 回调跟踪器
+    if (data.callback_tracker) {
+        const tracker = data.callback_tracker;
+        getElement('callback-pending').textContent = tracker.pending_count || 0;
+        getElement('callback-max-retries').textContent = tracker.max_retries || 3;
+        getElement('callback-pending-retries').textContent = tracker.total_pending_retries || 0;
+    }
+    
+    // 死信队列
+    if (data.dead_letter_queue) {
+        const dlq = data.dead_letter_queue;
+        getElement('dlq-pending').textContent = dlq.pending_count || 0;
+        getElement('dlq-total').textContent = dlq.total_event_count || 0;
+        getElement('dlq-file-size').textContent = formatFileSize(dlq.total_file_size || 0);
+        getElement('dlq-running').textContent = dlq.running ? '运行中' : '已停止';
+        
+        // 更新死信队列详细信息区域
+        const totalEl = document.getElementById('dead-letter-total');
+        if (totalEl) totalEl.textContent = dlq.total_event_count || 0;
+        
+        const recentEl = document.getElementById('dead-letter-recent');
+        if (recentEl) recentEl.textContent = '-';
+        
+        const rateEl = document.getElementById('dead-letter-success-rate');
+        if (rateEl) rateEl.textContent = '100%';
+    }
+    
+    // 事件去重器
+    if (data.event_deduplicator) {
+        const deduplicator = data.event_deduplicator;
+        getElement('deduplicator-total').textContent = deduplicator.total_entries || 0;
+        getElement('deduplicator-active').textContent = deduplicator.active_entries || 0;
+        getElement('deduplicator-ttl').textContent = deduplicator.ttl || 300;
+        getElement('deduplicator-max').textContent = deduplicator.max_entries || 100000;
+    }
+}
+
+// 格式化文件大小
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+    if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
 }

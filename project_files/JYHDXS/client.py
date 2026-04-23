@@ -13,9 +13,9 @@ from dateutil.relativedelta import relativedelta
 from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
 from .._base import (
     get_scheduler_minute, async_rate_limit, CacheItem,
-    ApsHelper, ApsChanger, CLIENT_LOGGER, standard_response, get_session, start_reminder,
+    ApsHelper, ApsChanger, CLIENT_LOGGER, standard_response, get_session, start_event_batch_reminder,
     cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, PROJECT_JSON_FILE, pdv,
-    RemindType, QqEmailReminder, Reminder, with_result_collection
+    RemindType, QqEmailReminder, Reminder, finish_event_batch_reminder
 )
 
 
@@ -241,8 +241,8 @@ planner_email_reminder = QqEmailReminder(
 
 
 
-@start_reminder(reminder=planner_email_reminder)
-@with_result_collection(reminder=planner_email_reminder)
+@start_event_batch_reminder(reminder=planner_email_reminder)
+@finish_event_batch_reminder(reminder=planner_email_reminder)
 async def batch_handle_pl_status_a2e(event_data: List[Dict], apc: ApsChanger, description="PL 单据下达"):
     """
     Args:
