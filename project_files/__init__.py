@@ -158,6 +158,7 @@ if not _events_registered:
     aps_pl_typeto_mo_event = ApsEvent(
         event_type=DbEventType.PL_TYPETO_MO, 
         description="PL 变更为 MO",
+        flush_interval=30,
     )
     aps_pr_deleted_event = ApsEvent(
         event_type=DbEventType.PR_DELETED, 
@@ -185,18 +186,6 @@ def handle_update_supply(database: str, table: str, data: dict, data_diff: dict)
         type_now = data_now['type']
         status_now = data_now['status']
         
-        # if type_now == 'PL' and status_now == "A2E" and status_before in ["NEW", "CRE"]:
-        #     plno = data_now['supplyno']        
-        #     aps_pl_status_a2e_event.add_event(data_now)
-        #     return
-        # elif type_before == 'PL' and type_now == 'MO':
-        #     # 当 PL下达成功后，推送领料申请（RS）
-        #     aps_pl_typeto_mo_event.add_event(data_now)
-        #     return
-        # elif type_now == 'PR' and status_now == "A2E" and status_before in ["NEW", "CRE"]:
-        #     prno = data_now['supplyno']        
-        #     aps_pr_status_a2e_event.add_event(data_now)
-        #     return
         match (type_now, status_now, type_before, status_before):
             case ('PL', 'A2E', _, 'NEW' | 'CRE'):  # 或逻辑
                 plno = data_now['supplyno']        

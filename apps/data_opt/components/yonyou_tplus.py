@@ -847,8 +847,7 @@ class TplusConnection(BaseConnection):
         await self.auth()
         endpoint = SingleMoQueryInterface.endpoint
         payload = {"param": {filter_field: index_value}}
-        response = await self._post(endpoint=endpoint, data=payload)
-        resp_json = response.json()
+        resp_json = await self._post(endpoint=endpoint, data=payload)
         if inspect.iscoroutinefunction(resp_json):
             resp_json = await resp_json
         try:

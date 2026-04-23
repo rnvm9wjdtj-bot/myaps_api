@@ -1,0 +1,3 @@
+@echo off
+echo Starting binlog listener...
+python binlog_listener_service.py

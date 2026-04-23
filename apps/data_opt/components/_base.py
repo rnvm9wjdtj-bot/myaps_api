@@ -128,7 +128,7 @@ class _ProductionDataCache:
         
         # 配置
         self.WAIT_TIMEOUT = 30.0  # 等待超时（秒）
-        self.LOAD_TIMEOUT = 60.0  # 加载超时（秒）
+        self.LOAD_TIMEOUT = 120.0  # 加载超时（秒）
         
         # 加载完成信号（用于跨协程通知）
         self._loading_complete = asyncio.Event()
@@ -298,10 +298,11 @@ class _ProductionDataCache:
             demand_nos = await self._build_peg_cache(db_name, supplynos=supplynos)
             logger.success("生产数据缓存", "", f"{CacheItem.PEG.value} 缓存加载: {len(self._cache[CacheItem.PEG.value]['demand_to_supply'])} 条 DemandNo")
             
-            # 4. 加载 demand 缓存（根据 peg 中收集的 demandno）
+            # 4. 加载 demand 缓存（根据 peg 中收集的 demandno + 全部 supplyno）
             if CacheItem.DEMAND.value in effective_items:
                 logger.info("生产数据缓存", "", "开始构建 demand 缓存（按需）...")
-                await self._build_demand_cache(db_name, demandnos=demand_nos)
+                extended_demandnos = list(set(demand_nos + supplynos))
+                await self._build_demand_cache(db_name, demandnos=extended_demandnos)
                 logger.success("生产数据缓存", "", f"{CacheItem.DEMAND.value} 缓存加载: {len(self._cache[CacheItem.DEMAND.value])} 条")
             else:
                 logger.info("生产数据缓存", "", "跳过 demand 缓存（未启用）")
@@ -309,7 +310,7 @@ class _ProductionDataCache:
             # 5. 加载 material 缓存（收集 supply_mo 和 demand 中的 materialno 并集）
             if CacheItem.MATERIAL.value in effective_items:
                 material_nos_from_supply = {item.get('materialno') for item in self._cache[CacheItem.SUPPLY_MO.value].values() if item.get('materialno')}
-                material_nos_from_demand = {item.get('materialno') for item in self._cache[CacheItem.DEMAND.value].values() if item.get('materialno')}
+                material_nos_from_demand = {subitem.get('materialno') for items in self._cache[CacheItem.DEMAND.value].values() for subitem in items if subitem.get('materialno')}
                 material_nos = list(material_nos_from_supply | material_nos_from_demand)
                 logger.info("生产数据缓存", "", f"开始构建 material 缓存（按需），共 {len(material_nos)} 个物料号）...")
                 await self._build_material_cache(db_name, material_nos=material_nos)
@@ -472,8 +473,8 @@ class _ProductionDataCache:
             
             # 处理查询结果
             for item in data_list:
-                demand_no = item.get('DemandNo', '')
-                s_supply_no = item.get('S_SupplyNo', '')
+                demand_no = item.get('demandno', '')
+                s_supply_no = item.get('s_supplyno', '')
                 
                 if demand_no and s_supply_no:
                     # 收集 demandno
@@ -511,7 +512,7 @@ class _ProductionDataCache:
         filter_string = ''
         if material_nos:
             formatted_nos = ','.join([f"'{m}'" for m in material_nos])
-            filter_string = f"materialno IN ({formatted_nos})"
+            filter_string = f"`MaterialNo` IN ({formatted_nos})"
         else:
             # 如果没有指定 material_nos，跳过查询，避免全量查询
             logger.info("生产数据缓存", "", "没有指定 material_nos，跳过 material 缓存构建")
@@ -1365,7 +1366,7 @@ class ApsChanger:
         return self._collector.format_notification(description)
 
 
-    async def pl_release_success(self, native_plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _id: str=None, _entryid: str=None):
+    async def pl_release_success(self, native_plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str='SYSTEM', _id: str=None, _entryid: str=None):
         """
         修改PL的Status、SupplyNo、Memo等字段
         🅰 native_plno: 原生PL计划单编号
@@ -1383,21 +1384,10 @@ class ApsChanger:
         
         logger.update("PL状态", native_plno, f"目标状态{to_status}，MO单号{mono}")
         
-        patch_data = {
-            'status': to_status,
-            'apiex_sn': str(mono),
-            'apiex_id': str(_id or ""),
-            'apiex_entryid': str(_entryid or ""),
-            'supplyno': str(mono),
-            'memo': memo,
-        }
-        
-        response_json = await db_update_by_index(
+        response_json = await call_dbprocdure(
             db_names=self.db_name,
-            model_or_tablename="t_supply",
-            index_dict={"SupplyNo": native_plno},
-            new_values_dict=patch_data,
-            not_found_behavior="skip"
+            procedure_name="SupplyConvertMOByE2A",
+            params_list=[[native_plno, mono, to_status, str(_id or ""), str(_entryid or ""), memo]]
         )
         
         logger.info(f"更新PL状态响应：成功")
@@ -1414,7 +1404,7 @@ class ApsChanger:
 
 
 
-    async def pl_release_failed(self, native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, raw_data: dict=None, push_data: dict=None, msg_from: str=None):
+    async def pl_release_failed(self, native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, raw_data: dict=None, push_data: dict=None, msg_from: str='SYSTEM'):
         
         
         logger.warning_msg(f"推送 MO {msg}", json.dumps(push_data, ensure_ascii=False), to_file=True)
@@ -1452,7 +1442,7 @@ class ApsChanger:
 
 
 
-    async def rs_push_success(self, rsno: str, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
+    async def rs_push_success(self, rsno: str, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str='SYSTEM', _code: str=None, _id: str=None, _entryid: str=None):
         
         
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1487,7 +1477,7 @@ class ApsChanger:
 
 
 
-    async def rs_push_failed(self, rsno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None, raw_data: dict | list=None):
+    async def rs_push_failed(self, rsno: str, msg: str=None, msg_from: str='SYSTEM', push_data: dict | list=None, raw_data: dict | list=None):
         
         
         logger.fail("推送 RS", json.dumps(push_data, ensure_ascii=False), msg)
@@ -1527,7 +1517,7 @@ class ApsChanger:
             return standard_response(status_code=500, success=0, message=error_msg)
 
 
-    async def pr_push_success(self, prno: str, msg: str=None, msg_from: str=None, _code: str=None, _id: str=None, _entryid: str=None):
+    async def pr_push_success(self, prno: str, msg: str=None, msg_from: str='SYSTEM', _code: str=None, _id: str=None, _entryid: str=None):
 
         
         try:
@@ -1568,7 +1558,7 @@ class ApsChanger:
             return standard_response(status_code=500, success=0, message=error_msg)
 
 
-    async def pr_push_failed(self, prno: str, msg: str=None, msg_from: str=None, push_data: dict | list=None, raw_data: dict | list=None):
+    async def pr_push_failed(self, prno: str, msg: str=None, msg_from: str='SYSTEM', push_data: dict | list=None, raw_data: dict | list=None):
         
         
         if msg:

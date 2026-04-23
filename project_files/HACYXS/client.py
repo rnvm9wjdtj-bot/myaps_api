@@ -157,7 +157,7 @@ def create_custom_rs_push_model(aph: ApsHelper):
 
             mr_details:list[dict] = cleaned_values['MaterialRequestDetails']
             materialnos = [md['Inventory']['Code'] for md in mr_details]
-            materials = aph.query_material(materialnos)
+            materials = aph.query_material_sync(materialnos)
             # materialnos = ','.join([md['Inventory']['Code'] for md in mr_details])
             # materials = CLIENT_SESSION.get(f"{THIS_BASE_URL}/api/t_material/{materialnos}")
             # materials = materials.json()['data']
@@ -189,7 +189,7 @@ planner_email_reminder = QqEmailReminder(
 @finish_event_batch_reminder(reminder=planner_email_reminder)
 async def batch_handle_pl_status_a2e(supplyno_or_data_list: list[str | dict], apc: ApsChanger, description="PL 单据下达"):
     @async_rate_limit()
-    async def handle_pl_status_a2e(supplyno_or_data: Union[str, dict], aph: ApsHelper, apc: ApsChanger):
+    async def handle_pl_status_a2e(supplyno_or_data: Union[str, dict], aph: ApsHelper):
         """处理PL状态变更为A2E"""
         try:
             if isinstance(supplyno_or_data, str):
@@ -209,20 +209,19 @@ async def batch_handle_pl_status_a2e(supplyno_or_data_list: list[str | dict], ap
 
     aph = ApsHelper(production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL])
     _CustomMoPushModel = create_custom_mo_push_model(aph)
-    apc = ApsChanger()
 
     supply_nos = [s['supplyno'] for s in supplyno_or_data_list]
     cache = await aph.establish_production_cache(supplynos=supply_nos)
-    tasks = [handle_pl_status_a2e(item, aph, apc) for item in supplyno_or_data_list]
+    tasks = [handle_pl_status_a2e(item, aph) for item in supplyno_or_data_list]
     await asyncio.gather(*tasks, return_exceptions=True)
 
 
 @start_event_batch_reminder(reminder=planner_email_reminder)
 @finish_event_batch_reminder(reminder=planner_email_reminder)
-async def batch_handle_pl_typeto_mo(supplyno_or_data_list: list[str | dict]):
+async def batch_handle_pl_to_mo(supplyno_or_data_list: list[str | dict], apc: ApsChanger, description="推送领料申请"):
     
     @async_rate_limit()
-    async def handle_pl_typeto_mo(supplyno_or_data: Union[str, dict], aph: ApsHelper, apc: ApsChanger):
+    async def handle_pl_to_mo(supplyno_or_data: Union[str, dict], aph: ApsHelper):
         """处理PL类型变更：转为MO"""
         try:
             if isinstance(supplyno_or_data, str):
@@ -235,14 +234,13 @@ async def batch_handle_pl_typeto_mo(supplyno_or_data_list: list[str | dict]):
                 await tplus_conn.push_rs(mdlist_or_supplyno=supplyno, tplus_mo_data_or_id=mo_data, pydantic_model=_CustomRsPushModel, apc=apc, aph=aph)
         except Exception as e:
             CLIENT_LOGGER.fail("处理PL类型变更", str(supplyno_or_data), str(e))
-            raise
+            apc.rs_push_failed(rsno=supplyno, msg=str(e))
 
     aph = ApsHelper(production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL])
     _CustomRsPushModel = create_custom_rs_push_model(aph)
-    apc = ApsChanger()
     supply_nos = [s['supplyno'] for s in supplyno_or_data_list]
     cache = await aph.establish_production_cache(supplynos=supply_nos)
-    tasks = [handle_pl_typeto_mo(item, aph, apc) for item in supplyno_or_data_list]
+    tasks = [handle_pl_to_mo(item, aph) for item in supplyno_or_data_list]
     await asyncio.gather(*tasks, return_exceptions=True)
 
 
