@@ -64,7 +64,7 @@ class DbEventType(Enum):
     """数据库事件类型"""
     PL_STATUS_A2E = "pl_status_a2e"  # PL状态变为 A2E
     PL_TYPETO_MO = "pl_to_mo"  # PL类型变为 MO
-    PR_CREATED = "pr_created"  # PR 新增
+    PR_STATUS_A2E = "pr_status_a2e"  # PR状态变为 A2E
     PR_DELETED = "pr_deleted"  # PR 删除
 
 
@@ -147,13 +147,13 @@ if not _events_registered:
 
     aps_pl_status_a2e_event = ApsEvent(
         event_type=DbEventType.PL_STATUS_A2E, 
-        description="PL 单据下达",
+        description="PL 单据 下达",
         error_handler=error_handler,
         error_handler_kwargs={"msg_from": "API"}
     )
-    aps_pr_created_event = ApsEvent(
-        event_type=DbEventType.PR_CREATED, 
-        description="PR 单据 创建",
+    aps_pr_status_a2e_event = ApsEvent(
+        event_type=DbEventType.PR_STATUS_A2E, 
+        description="PR 单据 下达",
     )
     aps_pl_typeto_mo_event = ApsEvent(
         event_type=DbEventType.PL_TYPETO_MO, 
@@ -185,12 +185,30 @@ def handle_update_supply(database: str, table: str, data: dict, data_diff: dict)
         type_now = data_now['type']
         status_now = data_now['status']
         
-        if type_now == 'PL' and status_now == "A2E" and status_before in ["NEW", "CRE"]:
-            plno = data_now['supplyno']        
-            aps_pl_status_a2e_event.add_event(data_now)
-        elif type_before == 'PL' and type_now == 'MO':
-            # 当 PL下达成功后，推送领料申请（RS）
-            aps_pl_typeto_mo_event.add_event(data_now)
+        # if type_now == 'PL' and status_now == "A2E" and status_before in ["NEW", "CRE"]:
+        #     plno = data_now['supplyno']        
+        #     aps_pl_status_a2e_event.add_event(data_now)
+        #     return
+        # elif type_before == 'PL' and type_now == 'MO':
+        #     # 当 PL下达成功后，推送领料申请（RS）
+        #     aps_pl_typeto_mo_event.add_event(data_now)
+        #     return
+        # elif type_now == 'PR' and status_now == "A2E" and status_before in ["NEW", "CRE"]:
+        #     prno = data_now['supplyno']        
+        #     aps_pr_status_a2e_event.add_event(data_now)
+        #     return
+        match (type_now, status_now, type_before, status_before):
+            case ('PL', 'A2E', _, 'NEW' | 'CRE'):  # 或逻辑
+                plno = data_now['supplyno']        
+                aps_pl_status_a2e_event.add_event(data_now)
+                return
+            case ('MO', _, 'PL', _):
+                aps_pl_typeto_mo_event.add_event(data_now)
+                return
+            case ('PR', 'A2E', _, 'NEW' | 'CRE'):
+                prno = data_now['supplyno']        
+                aps_pr_status_a2e_event.add_event(data_now)
+                return
     except Exception as e:
         logger.fail("处理t_supply更新事件", "", str(e))
 
@@ -206,7 +224,7 @@ def handle_insert_supply(database: str, table: str, data: dict):
         # status_now = new_data['status']
 
         if type_ == 'PR':
-            aps_pr_created_event.add_event(new_data)
+            aps_pr_status_a2e_event.add_event(new_data)
     except Exception as e:
         logger.fail("处理t_supply插入事件", "", str(e))
    

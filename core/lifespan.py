@@ -80,6 +80,49 @@ async def lifespan(app):
     # 启动失败操作恢复管理器（后台自动重试失败的数据库操作）
     await start_failed_operation_recovery()
 
+    # 启动 Redis 健康检查任务
+    async def schedule_redis_checks():
+        """定期执行 Redis 连接检查"""
+        # 系统启动阶段延迟执行，避免与其他服务竞争资源
+        await asyncio.sleep(10)
+        
+        while True:
+            try:
+                from apps.common.utils.redis_pool_manager import get_redis_pool_manager
+                pool_manager = get_redis_pool_manager()
+                is_healthy = pool_manager.is_healthy()
+                if is_healthy:
+                    log_config.debug("Redis 连接健康")
+                else:
+                    log_config.warning("Redis 连接不健康，尝试重新初始化")
+                    pool_manager._init_pool()
+                
+                # 检查缓冲大小
+                buffer_size = pool_manager.get_buffer_size()
+                if buffer_size > 0:
+                    log_config.info(f"Redis 本地缓冲中有 {buffer_size} 个事件")
+                    # 尝试刷新缓冲
+                    flushed = pool_manager.flush_buffer()
+                    if flushed > 0:
+                        log_config.info(f"成功刷新 {flushed} 个事件到 Redis")
+                
+                # 获取监控指标并检查是否需要告警
+                metrics = pool_manager.get_monitoring_metrics()
+                if metrics.get('needs_alert', False):
+                    alerts = metrics.get('alerts', [])
+                    for alert in alerts:
+                        log_config.warning(f"Redis 监控告警: {alert}")
+                    # 这里可以添加告警通知逻辑，如发送邮件、短信等
+            except Exception as e:
+                log_config.error(f"Redis 健康检查失败: {e}")
+            
+            # 每90秒检查一次，与数据库检查时间错开
+            await asyncio.sleep(90)
+
+    # 创建 Redis 健康检查任务
+    redis_check_task = asyncio.create_task(schedule_redis_checks())
+    log_config.info("Redis 健康检查任务已启动")
+
     # 启动 Redis 消息消费者（处理来自数据库监听器的事件）
     async def start_redis_consumer():
         """启动 Redis 消息消费者，处理来自数据库监听器的事件"""
@@ -127,8 +170,8 @@ async def lifespan(app):
                         data = event_data.get('data')
                         log_config.info(f"从消息队列接收到事件: {event_type}")
                         asyncio.create_task(handle_redis_event(event_type, data))
-                except redis.ConnectionError as e:
-                    log_config.warning(f"Redis 连接断开，尝试重新获取连接: {e}")
+                except (redis.ConnectionError, redis.TimeoutError) as e:
+                    log_config.warning(f"Redis 连接断开或超时，尝试重新获取连接: {e}")
                     await asyncio.sleep(1)
                     redis_client = await loop.run_in_executor(executor, get_redis_client)
                     if redis_client is None:
@@ -232,8 +275,8 @@ async def lifespan(app):
                                     expired_count += 1
 
                         log_config.info(f"事件清理完成，处理了 {processed_count} 个事件，清理了 {expired_count} 个过期事件")
-                except redis.ConnectionError as e:
-                    log_config.warning(f"Redis 连接断开: {e}")
+                except (redis.ConnectionError, redis.TimeoutError) as e:
+                    log_config.warning(f"Redis 连接断开或超时: {e}")
                     await asyncio.sleep(10)
                 except Exception as e:
                     log_config.error(f"清理过期事件失败: {e}")
@@ -351,6 +394,16 @@ async def lifespan(app):
         except asyncio.CancelledError:
             pass
         log_config.info("连接池监控任务已取消")
+
+    # 取消 Redis 健康检查任务
+    if 'redis_check_task' in locals():
+        log_config.info("正在取消 Redis 健康检查任务...")
+        redis_check_task.cancel()
+        try:
+            await redis_check_task
+        except asyncio.CancelledError:
+            pass
+        log_config.info("Redis 健康检查任务已取消")
 
     # 11. 等待一段时间，确保所有任务真正完成
     log_config.info("⏳ 等待所有任务彻底完成...")

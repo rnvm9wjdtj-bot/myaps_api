@@ -11,6 +11,7 @@ from fastapi import WebSocket
 from .collectors import ResourceCollector, DatabaseCollector, SchedulerCollector, HTTPCollector
 from .collectors.outbound_http_collector import outbound_http_collector
 from .collectors.event_collector import EventCollector
+from .collectors.redis_collector import redis_collector
 from apps.common.utils.event_helpers import get_callback_tracker, get_dead_letter_queue, get_event_deduplicator
 from globalobjects import logger as log_config
 
@@ -38,6 +39,7 @@ class MonitorService:
         self.http_collector = HTTPCollector()
         self.outbound_http_collector = outbound_http_collector
         self.event_collector = EventCollector()
+        self.redis_collector = redis_collector
         self._alerts: List[Dict[str, Any]] = []
         self._max_alerts = 100
         self._cache = {}
@@ -49,6 +51,7 @@ class MonitorService:
             "outbound_http": 1,  # 1秒
             "event": 5,  # 5秒
             "event_helpers": 5,  # 5秒
+            "redis": 5,  # 5秒
         }
         self._log_cache = {}
         self._log_cache_expiry = 120  # 120秒（优化：增加缓存时间）
@@ -258,6 +261,27 @@ class MonitorService:
         self._set_cache_data("event_helpers", metrics)
         return metrics
 
+    def get_redis_metrics(self) -> Dict[str, Any]:
+        """获取 Redis 监控指标"""
+        # 尝试从缓存获取
+        cached = self._get_cached_data("redis")
+        if cached:
+            return cached
+        
+        # 缓存过期，重新采集
+        metrics = self.redis_collector.collect()
+        metrics["timestamp"] = time.time()
+        
+        # 检查是否需要告警
+        if metrics.get("needs_alert", False):
+            alerts = metrics.get("alerts", [])
+            for alert in alerts:
+                self._add_alert("warning", alert, "redis")
+        
+        # 设置缓存
+        self._set_cache_data("redis", metrics)
+        return metrics
+
     def get_dead_letter_events(self, limit: int = 50) -> Dict:
         """获取死信队列事件"""
         try:
@@ -304,6 +328,7 @@ class MonitorService:
             "scheduler": self.get_scheduler_metrics(),
             "http": await self.get_http_metrics(),
             "outbound_http": self.get_outbound_http_metrics(),
+            "redis": self.get_redis_metrics(),
             "alerts": self.get_recent_alerts(10),
         }
 
@@ -400,6 +425,22 @@ class MonitorService:
             error_msg = f"对外 HTTP 请求检查失败: {str(e)}"
             checks["outbound_http"] = {"status": "error", "message": error_msg}
             self._add_alert("error", error_msg, "outbound_http")
+            total_count += 1
+
+        # 检查 Redis
+        try:
+            redis_metrics = self.get_redis_metrics()
+            if redis_metrics.get("healthy", False):
+                checks["redis"] = {"status": "healthy", "message": "Redis 连接正常"}
+                healthy_count += 1
+            else:
+                checks["redis"] = {"status": "warning", "message": "Redis 连接异常"}
+                self._add_alert("warning", "Redis 连接异常", "redis")
+            total_count += 1
+        except Exception as e:
+            error_msg = f"Redis 检查失败: {str(e)}"
+            checks["redis"] = {"status": "error", "message": error_msg}
+            self._add_alert("error", error_msg, "redis")
             total_count += 1
 
         # 确定整体状态
@@ -780,7 +821,8 @@ class MonitorService:
                             "logs": logs,
                             "api_requests": api_requests,
                             "outbound_requests": outbound_requests,
-                            "event_helpers": self.get_event_helpers_metrics()
+                            "event_helpers": self.get_event_helpers_metrics(),
+                            "redis": self.get_redis_metrics()
                         }
                     }
                     # 广播数据

@@ -154,7 +154,7 @@ async def refresh_stock(dbs: str=MYAPS_DB_SET):
         return df_sap_st
 
     CLIENT_LOGGER.start("刷新库存任务")
-    mto_vir_st = await ApsHelper.mto_workreport_to_virtual_stock_async()
+    mto_vir_st = await ApsHelper.mto_workreport_to_virtual_stock()
     df_sap_st = get_sap_stock_data()
 
     if mto_vir_st is not None:
@@ -164,7 +164,7 @@ async def refresh_stock(dbs: str=MYAPS_DB_SET):
     
     # if stock_data_total is not None:
     stock_data_total.fillna('', inplace=True)
-    await ApsHelper.refresh_supply_async(stock_data_total.to_dict(orient='records'), dbs=dbs)
+    await ApsHelper.refresh_supply(stock_data_total.to_dict(orient='records'), dbs=dbs)
 
 
 async def push_pr(period: int = 30, groupdates: List[str] | str = None):
@@ -172,7 +172,7 @@ async def push_pr(period: int = 30, groupdates: List[str] | str = None):
         if isinstance(groupdates, list):
             groupdates = ','.join(groupdates)
 
-    pr_data = await ApsHelper.get_dategrouped_pr_async(db_name=MYAPS_MAIN_DB, period=period, field_map=srm_field_map, groupdates=groupdates)
+    pr_data = await ApsHelper.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=period, field_map=srm_field_map, groupdates=groupdates)
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     for item in pr_data:
         item["plant"] = "1000"
@@ -213,7 +213,7 @@ async def task_refresh_stock():
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2), description="确认报工")
 async def task_confirm_workreport():
-    await ApsHelper.confirm_workreport_async()
+    await ApsHelper.confirm_workreport()
 
 
 @cron_task(hour=23, minute=59, description="推送周要货计划到SRM")  # 每天23:59执行一次，需须在23:55拉取库存和确认报工之后
@@ -265,7 +265,7 @@ async def batch_handle_pl_status_a2e(event_data: List[Dict], apc: ApsChanger, de
             supplyno = supplyno_or_data['supplyno']
 
         # 使用异步版本的函数，避免阻塞事件循环
-        supplymo_detaildata = await aph.get_supplymo_detaildata_async(supplyno=supplyno)
+        supplymo_detaildata = await aph.get_supplymo_detaildata(supplyno=supplyno)
         try:
             start_datetime: str = supplymo_detaildata['dt_ordstart'].split(" ")[0]
             end_datetime: str = supplymo_detaildata['dt_ordend'].split(" ")[0]

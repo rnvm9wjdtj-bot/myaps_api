@@ -2570,3 +2570,45 @@ td {
     margin-right: 4px;
     margin-bottom: 4px;
 }
+
+/* Redis 监控样式 */
+.redis-metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.redis-pool-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.redis-buffer-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+/* 响应式调整 */
+@media (max-width: 1200px) {
+    .redis-metrics-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .redis-pool-metrics,
+    .redis-buffer-metrics {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .redis-metrics-grid,
+    .redis-pool-metrics,
+    .redis-buffer-metrics {
+        grid-template-columns: 1fr;
+    }
+}

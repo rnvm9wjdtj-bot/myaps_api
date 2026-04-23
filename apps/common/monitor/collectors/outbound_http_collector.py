@@ -116,20 +116,22 @@ class OutboundHTTPCollector:
         # 限制请求体和响应体大小（不持有锁）
         max_size = 1024 * 1024 * 5  # 5MB
         try:
-            if request_body and isinstance(request_body, (dict, list)):
-                request_body = json.dumps(request_body, ensure_ascii=False)[:max_size]
-            elif request_body and isinstance(request_body, str):
-                request_body = request_body[:max_size]
+            if request_body is not None:
+                if isinstance(request_body, (dict, list)):
+                    request_body = json.dumps(request_body, ensure_ascii=False)[:max_size]
+                elif isinstance(request_body, str):
+                    request_body = request_body[:max_size]
         except:
-            request_body = str(request_body)[:max_size] if request_body else None
+            request_body = str(request_body)[:max_size] if request_body is not None else None
 
         try:
-            if response_body and isinstance(response_body, (dict, list)):
-                response_body = json.dumps(response_body, ensure_ascii=False)[:max_size]
-            elif response_body and isinstance(response_body, str):
-                response_body = response_body[:max_size]
+            if response_body is not None:
+                if isinstance(response_body, (dict, list)):
+                    response_body = json.dumps(response_body, ensure_ascii=False)[:max_size]
+                elif isinstance(response_body, str):
+                    response_body = response_body[:max_size]
         except:
-            response_body = str(response_body)[:max_size] if response_body else None
+            response_body = str(response_body)[:max_size] if response_body is not None else None
 
         # 构建请求信息
         timestamp = time.time()
@@ -333,20 +335,22 @@ class OutboundHTTPCollector:
         # 增加大小限制到 5MB，避免频繁截断
         max_size = 1024 * 1024 * 5  # 5MB
         try:
-            if request_body and isinstance(request_body, (dict, list)):
-                request_body = json.dumps(request_body, ensure_ascii=False)[:max_size]  # 限制为 5MB
-            elif request_body and isinstance(request_body, str):
-                request_body = request_body[:max_size]  # 限制为 5MB
+            if request_body is not None:
+                if isinstance(request_body, (dict, list)):
+                    request_body = json.dumps(request_body, ensure_ascii=False)[:max_size]  # 限制为 5MB
+                elif isinstance(request_body, str):
+                    request_body = request_body[:max_size]  # 限制为 5MB
         except:
-            request_body = str(request_body)[:max_size]
+            request_body = str(request_body)[:max_size] if request_body is not None else None
 
         try:
-            if response_body and isinstance(response_body, (dict, list)):
-                response_body = json.dumps(response_body, ensure_ascii=False)[:max_size]  # 限制为 5MB
-            elif response_body and isinstance(response_body, str):
-                response_body = response_body[:max_size]  # 限制为 5MB
+            if response_body is not None:
+                if isinstance(response_body, (dict, list)):
+                    response_body = json.dumps(response_body, ensure_ascii=False)[:max_size]  # 限制为 5MB
+                elif isinstance(response_body, str):
+                    response_body = response_body[:max_size]  # 限制为 5MB
         except:
-            response_body = str(response_body)[:max_size]
+            response_body = str(response_body)[:max_size] if response_body is not None else None
 
         request_info = {
             "timestamp": time.time(),

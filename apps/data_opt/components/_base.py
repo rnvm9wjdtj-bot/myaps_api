@@ -416,6 +416,11 @@ class _ProductionDataCache:
         if demandnos:
             formatted_nos = ','.join([f"'{d}'" for d in demandnos])
             filter_string = f"`DemandNo` IN ({formatted_nos})"
+        else:
+            # 如果没有指定 demandnos，跳过查询，避免全量查询
+            logger.info("生产数据缓存", "", "没有指定 demandnos，跳过 demand 缓存构建")
+            self._cache[CacheItem.DEMAND.value] = defaultdict(list)
+            return
         
         await self._build_cache(
             db_name=db_name,
@@ -507,6 +512,11 @@ class _ProductionDataCache:
         if material_nos:
             formatted_nos = ','.join([f"'{m}'" for m in material_nos])
             filter_string = f"materialno IN ({formatted_nos})"
+        else:
+            # 如果没有指定 material_nos，跳过查询，避免全量查询
+            logger.info("生产数据缓存", "", "没有指定 material_nos，跳过 material 缓存构建")
+            self._cache[CacheItem.MATERIAL.value] = {}
+            return
         
         await self._build_cache(
             db_name=db_name,
@@ -793,6 +803,26 @@ class ApsHelper:
         self._production_cache = _ProductionDataCache()
         if production_cache_items:
             self._production_cache._set_cache_items(cache_items=production_cache_items)
+        
+        # 导入必要的模块
+        from apps.data_opt.utils.common import get_session
+        from concurrent.futures import ThreadPoolExecutor
+        
+        # 创建标准的 requests 会话（避免 httpx 可能的事件循环冲突）
+        self._http_session_sync = get_session(
+            retries=3,
+            pool_connections=50,
+            pool_maxsize=100,
+            connect_timeout=5.0,
+            read_timeout=15.0,
+            enable_monitor=False  # 禁用监控包装器，避免可能的冲突
+        )
+        
+        # 创建线程池
+        import os
+        cpu_count = os.cpu_count() or 4
+        max_workers = min(cpu_count * 5, 50)  # 最多50个线程
+        self._executor = ThreadPoolExecutor(max_workers=max_workers)
 
 
     async def establish_production_cache(self, supplynos: List[str]) -> _ProductionDataCache:
@@ -807,7 +837,7 @@ class ApsHelper:
 
 
     @classmethod
-    async def _call_api_async(cls, method: str, url: str, **kwargs) -> Dict[str, Any]:
+    async def _call_api(cls, method: str, url: str, **kwargs) -> Dict[str, Any]:
         """
         异步通用 API 调用方法，包含错误处理、超时设置和重试机制
         
@@ -936,7 +966,7 @@ class ApsHelper:
 
 
     @classmethod
-    async def mto_workreport_to_virtual_stock_async(cls, db_name:str=MYAPS_MAIN_DB):
+    async def mto_workreport_to_virtual_stock(cls, db_name:str=MYAPS_MAIN_DB):
         """
         异步将报工数据 转化为 虚拟库存 数据，只处理MTO报工
         🅰 db: 账套名称，默认MYAPS_MAIN_DB
@@ -968,7 +998,7 @@ class ApsHelper:
 
 
     @classmethod
-    async def refresh_supply_async(cls, supply_data:Union[List[Dict[str, Any]], pd.DataFrame], type_:Literal['ST', 'PO']='ST', dbs:str=MYAPS_DB_SET):
+    async def refresh_supply(cls, supply_data:Union[List[Dict[str, Any]], pd.DataFrame], type_:Literal['ST', 'PO']='ST', dbs:str=MYAPS_DB_SET):
         from apps.io_api.schemas import AcceptSupply
 
         if isinstance(supply_data, pd.DataFrame):
@@ -993,7 +1023,7 @@ class ApsHelper:
 
 
     @classmethod
-    async def confirm_workreport_async(cls, db_name:str=MYAPS_MAIN_DB):
+    async def confirm_workreport(cls, db_name:str=MYAPS_MAIN_DB):
         """
         异步确认 工作报工 数据
         🅰 workreport_data: 工作报工数据
@@ -1006,7 +1036,7 @@ class ApsHelper:
 
 
     @classmethod
-    async def _modify_supply_async(
+    async def _modify_supply(
         cls,
         supplyno: str,
         to_status: Literal['NEW', 'CRE', 'E2A', 'REL']=None,
@@ -1014,7 +1044,7 @@ class ApsHelper:
         _sn: str=None, _id: str=None, _entryid: str=None
     ):
         url = f'{THIS_BASE_URL}/api/t_supply/{supplyno}/...?db_name={MYAPS_MAIN_DB}'
-        response_json = await cls._call_api_async('PATCH', url, json={
+        response_json = await cls._call_api('PATCH', url, json={
             'status': to_status,
             'memo': memo[:255],
             'apiex_sn': _sn,
@@ -1025,13 +1055,13 @@ class ApsHelper:
 
 
     @classmethod
-    async def get_new_pr_data_async(cls):
+    async def get_new_pr_data(cls):
         result = await db_query(MYAPS_MAIN_DB, "v_supply", "`Type`='PR' AND `Status`='NEW'")
         return result.get('data', [])
 
 
     @classmethod
-    async def aggregate_pr_data_async(cls, pr_data_list: list[dict]=None, group_by: list=['materialno', 'avail_date', 'vendorno']) -> list[dict]:
+    async def aggregate_pr_data(cls, pr_data_list: list[dict]=None, group_by: list=['materialno', 'avail_date', 'vendorno']) -> list[dict]:
         """
         聚合 PR avail_qty 字段
         Args:
@@ -1043,7 +1073,7 @@ class ApsHelper:
         import pandas as pd
 
         if not pr_data_list:
-            pr_data_list = await cls.get_new_pr_data_async()
+            pr_data_list = await cls.get_new_pr_data()
             if not pr_data_list:
                 return []
 
@@ -1071,7 +1101,7 @@ class ApsHelper:
 
 
     @classmethod
-    async def get_dategrouped_pr_async(cls, db_name: str=None, period: int|str=30, groupdates: Optional[str]=None, field_map: dict=None):
+    async def get_dategrouped_pr(cls, db_name: str=None, period: int|str=30, groupdates: Optional[str]=None, field_map: dict=None):
         """
         从数据库获取按日期分组的计划任务数据
         🅰 db_name: 账套名称，默认MYAPS_MAIN_DB
@@ -1081,7 +1111,7 @@ class ApsHelper:
         """
         db_name = db_name or MYAPS_MAIN_DB
         url = f"{THIS_BASE_URL}/api/v_matdailyqtyreport?db_name={db_name}&period={period}&groupdates={groupdates}"
-        response_json = await cls._call_api_async('GET', url)
+        response_json = await cls._call_api('GET', url)
         data = response_json.get('data', [])
         field_map = field_map or {
             'materialno': '料号',
@@ -1104,6 +1134,31 @@ class ApsHelper:
         return result
 
 
+    def _process_materialnos_and_get_cache(self, materialnos: str | list[str]) -> tuple[list, list, list]:
+        """
+        处理物料编号参数并从缓存获取数据
+        Args:
+            materialnos: 物料编号（多个用半角逗号分隔）或物料编号列表
+        Returns:
+            (material_list, cached_data, missing_materials)
+        """
+        if isinstance(materialnos, list):
+            material_list = [m.strip() for m in materialnos if m.strip()]
+        else:
+            material_list = [m.strip() for m in materialnos.split(',') if m.strip()]
+        
+        if not material_list:
+            return [], [], []
+
+        # 批量从缓存获取
+        cached_data = self._production_cache.batch_get_material(material_list)
+        
+        # 检查缓存命中情况
+        cached_keys = {item['materialno'] for item in cached_data}
+        missing_materials = [m for m in material_list if m not in cached_keys]
+        
+        return material_list, cached_data, missing_materials
+
     async def query_material(self, materialnos: str | list[str]) -> list:
         """
         异步查询物料信息（优先从缓存获取，缓存未命中则访问数据库并加入缓存）
@@ -1112,20 +1167,10 @@ class ApsHelper:
         Returns:
             物料信息列表
         """
-        if isinstance(materialnos, list):
-            material_list = [m.strip() for m in materialnos if m.strip()]
-        else:
-            material_list = [m.strip() for m in materialnos.split(',') if m.strip()]
+        material_list, cached_data, missing_materials = self._process_materialnos_and_get_cache(materialnos)
         
         if not material_list:
             return []
-
-        # 批量从缓存获取
-        cached_data = self._production_cache.batch_get_material(material_list)
-        
-        # 检查缓存命中情况
-        cached_keys = {item['materialno'] for item in cached_data}
-        missing_materials = [m for m in material_list if m not in cached_keys]
         
         if missing_materials:
             materialnos_str = ','.join([f"'{m}'" for m in missing_materials])
@@ -1149,7 +1194,91 @@ class ApsHelper:
         return cached_data
 
 
-    async def get_supplymo_detaildata_async(self, supplyno: str, get_prev_mo:bool=False, get_next_mo:bool=False, get_origin_so:bool=False):
+    def _fetch_materials_http(self, missing_materials):
+        """
+        通过 HTTP API 获取物料信息
+        Args:
+            missing_materials: 缺失的物料编号列表
+        Returns:
+            物料信息列表
+        """
+        materialnos_str = ','.join(missing_materials)
+        api_url = f"{THIS_BASE_URL}/api/t_material/{materialnos_str}?db_name={MYAPS_MAIN_DB}"
+
+        try:
+            # 确保在同步上下文中执行
+            # import asyncio
+            # if asyncio.get_event_loop().is_running():
+            #     # 在异步上下文中，使用线程池执行
+            #     def _sync_request():
+            #         response = self._http_session_sync.get(api_url, timeout=(5, 15))
+            #         response.raise_for_status()
+            #         return response.json()
+                
+            #     # 使用单独的线程执行同步请求
+            #     import threading
+            #     result = []
+            #     event = threading.Event()
+                
+            #     def _run_in_thread():
+            #         nonlocal result
+            #         try:
+            #             result = _sync_request()
+            #         finally:
+            #             event.set()
+                
+            #     thread = threading.Thread(target=_run_in_thread)
+            #     thread.start()
+            #     event.wait(timeout=20)  # 最多等待20秒
+                
+            #     if not result:
+            #         raise TimeoutError("HTTP请求超时")
+                
+            #     return result.get('data', [])
+            # else:
+                # 在同步上下文中，直接执行
+                response = self._http_session_sync.get(api_url, timeout=(5, 15))
+                response.raise_for_status()
+                response_json = response.json()
+                return response_json.get('data', [])
+        except Exception as e:
+            error_msg = f"查询物料信息时发生HTTP请求错误：{str(e)}"
+            logger.fail("查询物料信息", ','.join(missing_materials), error_msg)
+            return []
+
+
+    def query_material_sync(self, materialnos: str | list[str]) -> list:
+        """
+        同步查询物料信息（优先从缓存获取，缓存未命中则通过HTTP API获取并加入缓存）
+        Args:
+            materialnos: 物料编号（多个用半角逗号分隔）或物料编号列表
+        Returns:
+            物料信息列表
+        """
+        material_list, cached_data, missing_materials = self._process_materialnos_and_get_cache(materialnos)
+
+        if not material_list:
+            return []
+
+        if missing_materials:
+            # 使用线程池执行 HTTP 请求
+            # future = self._executor.submit(self._fetch_materials_http, missing_materials)
+            # api_data = future.result()  # 获取结果
+            api_data = self._fetch_materials_http(missing_materials)
+            
+            # 补充缓存
+            for item in api_data:
+                material_no = item.get('materialno', '')
+                if material_no:
+                    self._production_cache._cache[CacheItem.MATERIAL.value][material_no] = item
+
+            # 合并结果
+            cached_data.extend(api_data)
+
+        return cached_data
+
+
+    async def get_supplymo_detaildata(self, supplyno: str, get_prev_mo:bool=False, get_next_mo:bool=False, get_origin_so:bool=False):
         """
         异步获取工单的工序详情、及MTO销售订单信息
         Args:
@@ -1167,7 +1296,7 @@ class ApsHelper:
             if get_origin_so:
                 vendorno = mo_data.get('vendorno', '')
                 if vendorno:
-                    mo_data['so'] = await self.get_demand_datalist_async(vendorno)
+                    mo_data['so'] = await self.get_demand_datalist(vendorno)
 
             if get_prev_mo:
                 related_demand = self._production_cache.get_demand(demand_no=supplyno)
@@ -1183,7 +1312,7 @@ class ApsHelper:
             return mo_data
         else:
             url = f"{THIS_BASE_URL}/api/v_supply_mo/{supplyno}?db_name={MYAPS_MAIN_DB}&prev_mo={get_prev_mo}&next_mo={get_next_mo}&origin_so={get_origin_so}"
-            supply_response_json = await self._call_api_async('GET', url)
+            supply_response_json = await self._call_api('GET', url)
             try:
                 if supply_response_json.get('success') != 0 and supply_response_json.get('data'):
                     mo_data = supply_response_json['data'][0]
@@ -1195,7 +1324,7 @@ class ApsHelper:
                 logger.fail("获取工单计划单详情", supplyno, f"{str(e)}")
 
 
-    async def get_demand_datalist_async(self, demandno: str) -> List[Dict]:
+    async def get_demand_datalist(self, demandno: str) -> List[Dict]:
         """
         异步获取需求信息（优先从缓存获取，缓存未命中则访问API并加入缓存）
         Args:

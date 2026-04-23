@@ -197,6 +197,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 加载已确认的错误状态
     loadBadgeConfirmedHasError();
     initResourceChart();
+    initRedisCharts();
     fetchEnvironment();
     // 无论当前在哪个页面，都获取一次日志数据来检查未读状态
     await fetchLogsPage();
@@ -511,6 +512,11 @@ function handleWebSocketData(data) {
             updateEventHelpersDisplay(data.event_helpers);
         }
         
+        // 更新 Redis 指标
+        if (data.redis) {
+            updateRedisDisplay(data.redis);
+        }
+        
         // 更新最后更新时间
         updateLastUpdateTime();
     }
@@ -645,6 +651,19 @@ function startAutoRefresh() {
     refreshInterval = setInterval(throttledRefreshAll, 10000);
 }
 
+// 获取 Redis 指标
+async function fetchRedis() {
+    try {
+        const response = await fetch(`${API_BASE}/overview`);
+        const data = await response.json();
+        if (data.redis) {
+            updateRedisDisplay(data.redis);
+        }
+    } catch (error) {
+        console.error('获取 Redis 指标失败:', error);
+    }
+}
+
 // 刷新所有数据
 async function refreshAll() {
     // 如果用户不活动，不发送请求
@@ -671,6 +690,7 @@ async function refreshAll() {
                 fetchHTTP(),
                 fetchAlerts(),
                 fetchOverviewOutboundRequests(),
+                fetchRedis(),
                 // 无论在哪个页面都刷新日志列表、API 请求记录和发送请求记录
                 fetchLogsPage(),
                 fetchAPIRequests(),
@@ -1519,6 +1539,161 @@ async function clearAlerts() {
     } catch (error) {
         console.error('清空告警失败:', error);
     }
+}
+
+// Redis 图表实例
+let redisConnectionsChart = null;
+let redisBufferChart = null;
+
+// 初始化 Redis 图表
+function initRedisCharts() {
+    // 初始化连接池使用情况图表
+    const connectionsCtx = document.getElementById('redis-connections-chart');
+    if (connectionsCtx) {
+        redisConnectionsChart = new Chart(connectionsCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: '使用连接数',
+                    data: [],
+                    borderColor: '#1890ff',
+                    backgroundColor: 'rgba(24, 144, 255, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'top'
+                    }
+                }
+            }
+        });
+    }
+    
+    // 初始化缓冲大小变化图表
+    const bufferCtx = document.getElementById('redis-buffer-chart');
+    if (bufferCtx) {
+        redisBufferChart = new Chart(bufferCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: '缓冲大小 (MB)',
+                    data: [],
+                    borderColor: '#52c41a',
+                    backgroundColor: 'rgba(82, 196, 26, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'top'
+                    }
+                }
+            }
+        });
+    }
+}
+
+// 更新 Redis 监控显示
+function updateRedisDisplay(data) {
+    // 更新状态指示器
+    const statusIndicator = document.getElementById('redis-status');
+    const redisBadge = document.getElementById('redis-badge');
+    
+    if (data.healthy) {
+        statusIndicator.textContent = '健康';
+        statusIndicator.className = 'status healthy';
+        redisBadge.textContent = '正常';
+        redisBadge.className = 'badge healthy';
+    } else {
+        statusIndicator.textContent = '异常';
+        statusIndicator.className = 'status error';
+        redisBadge.textContent = '异常';
+        redisBadge.className = 'badge error';
+    }
+    
+    // 更新主机信息
+    document.getElementById('redis-host').textContent = data.host || '-';
+    document.getElementById('redis-port').textContent = data.port || '-';
+    document.getElementById('redis-db').textContent = data.db || '-';
+    
+    // 更新连接池信息
+    document.getElementById('redis-connections-used').textContent = data.connections_used || 0;
+    document.getElementById('redis-connections-max').textContent = data.connections_max || 0;
+    document.getElementById('redis-connection-usage').textContent = (data.connection_usage || 0).toFixed(2) + '%';
+    
+    // 更新缓冲信息
+    document.getElementById('redis-buffer-size').textContent = formatBytes(data.buffer_size || 0);
+    document.getElementById('redis-buffer-threshold').textContent = formatBytes(data.buffer_threshold || 0);
+    document.getElementById('redis-buffer-usage').textContent = (data.buffer_usage || 0).toFixed(2) + '%';
+    
+    // 更新图表
+    updateRedisCharts(data);
+}
+
+// 更新 Redis 图表
+function updateRedisCharts(data) {
+    const now = new Date();
+    const timeLabel = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+    
+    // 更新连接池使用情况图表
+    if (redisConnectionsChart) {
+        redisConnectionsChart.data.labels.push(timeLabel);
+        redisConnectionsChart.data.datasets[0].data.push(data.connections_used || 0);
+        
+        // 保持最多20个数据点
+        if (redisConnectionsChart.data.labels.length > 20) {
+            redisConnectionsChart.data.labels.shift();
+            redisConnectionsChart.data.datasets[0].data.shift();
+        }
+        
+        redisConnectionsChart.update('none');
+    }
+    
+    // 更新缓冲大小变化图表
+    if (redisBufferChart) {
+        // 将字节转换为MB
+        const bufferSizeMB = (data.buffer_size || 0) / (1024 * 1024);
+        redisBufferChart.data.labels.push(timeLabel);
+        redisBufferChart.data.datasets[0].data.push(bufferSizeMB);
+        
+        // 保持最多20个数据点
+        if (redisBufferChart.data.labels.length > 20) {
+            redisBufferChart.data.labels.shift();
+            redisBufferChart.data.datasets[0].data.shift();
+        }
+        
+        redisBufferChart.update('none');
+    }
+}
+
+// 格式化字节大小
+function formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
 // 获取日志
@@ -3084,6 +3259,8 @@ let showInternalRequests = false;
 let showAPIIntternalRequests = false;
 // 开关状态：是否显示已读日志，默认隐藏已读
 let showReadLogs = false;
+// 存储发送请求数据
+let outboundRequestsData = [];
 
 // 获取发送请求数据
 async function fetchOutboundRequests() {
@@ -3095,7 +3272,13 @@ async function fetchOutboundRequests() {
     
     try {
         const response = await fetch(`${API_BASE}/outbound-http/all`);
-        const requests = await response.json();
+        const data = await response.json();
+        
+        // 调试：打印API返回的数据
+        console.log('API返回的发送请求数据:', data);
+        
+        // 处理API响应数据，兼容不同的数据结构
+        const requests = Array.isArray(data) ? data : (data.value || []);
         
         // 计算24小时前的时间戳
         const twentyFourHoursAgo = Date.now() / 1000 - (24 * 60 * 60);
@@ -3107,6 +3290,9 @@ async function fetchOutboundRequests() {
                 // 检查URL是否包含localhost或127.0.0.1，同时检查时间
                 return !request.url.includes('localhost') && !request.url.includes('127.0.0.1') && request.timestamp >= twentyFourHoursAgo;
             });
+        
+        // 调试：打印过滤后的数据
+        console.log('过滤后的发送请求数据:', filteredRequests);
         
         updateOutboundRequestsTable(filteredRequests);
         
@@ -3176,6 +3362,9 @@ function updateOutboundRequestsTable(requests) {
     // 限制存储最近100条数据
     outboundRequestsData = requests.slice(0, 100);
     
+    // 调试：打印outboundRequestsData
+    console.log('outboundRequestsData:', outboundRequestsData);
+    
     if (outboundRequestsData.length === 0) {
         tableBody.innerHTML = '<tr><td colspan="6" class="empty-state">暂无发送请求记录</td></tr>';
         return;
@@ -3244,6 +3433,14 @@ function formatOutboundRequestRow(request, index) {
 // 显示发送请求详情
 function showOutboundRequestDetail(index) {
     const request = outboundRequestsData[index];
+    // 调试：打印请求数据
+    console.log('显示请求详情，索引:', index);
+    console.log('请求数据:', request);
+    console.log('响应体:', request.response_body);
+    console.log('响应体类型:', typeof request.response_body);
+    console.log('响应体是否为undefined:', request.response_body === undefined);
+    console.log('响应体是否为null:', request.response_body === null);
+    console.log('响应体条件判断结果:', request.response_body !== undefined && request.response_body !== null);
     const modal = document.createElement('div');
     modal.className = 'modal';
     modal.innerHTML = `
@@ -3318,7 +3515,7 @@ function showOutboundRequestDetail(index) {
                     <pre><code class="language-json">${JSON.stringify(request.response_headers, null, 2)}</code></pre>
                 </div>
                 ` : ''}
-                ${request.response_body ? `
+                ${request.response_body !== undefined && request.response_body !== null ? `
                 <div class="detail-section">
                     <h4>响应体</h4>
                     <pre><code class="language-json">${typeof request.response_body === 'string' ? (function() {
@@ -3526,7 +3723,7 @@ function exportOutboundRequestDetail(index) {
                     <pre><code class="language-json">${JSON.stringify(request.response_headers, null, 2)}</code></pre>
                 </div>
                 ` : ''}
-                ${request.response_body ? `
+                ${request.response_body !== undefined && request.response_body !== null ? `
                 <div class="detail-section">
                     <h4>响应体</h4>
                     <pre><code class="language-json">${typeof request.response_body === 'string' ? (function() {

@@ -72,7 +72,7 @@
                 </div>
             </section>
 
-            <!-- 数据库监控卡片 -->
+            <!-- 数据库状态卡片 -->
             <section class="card">
                 <div class="card-header">
                     <h2>数据库状态</h2>
@@ -99,7 +99,7 @@
                 </div>
             </section>
 
-            <!-- 告警信息卡片 -->
+            <!-- 提醒信息卡片 -->
             <section class="card">
                 <div class="card-header">
                     <h2>最近告警</h2>
@@ -190,7 +190,7 @@
             <!-- 数据库详细信息卡片 -->
             <section class="card full-width">
                 <div class="card-header">
-                    <h2>数据库详细信息</h2>
+                    <h2>账套</h2>
                     <span class="badge" id="db-detail-badge">检查中</span>
                 </div>
                 <div class="card-body">
@@ -209,13 +209,77 @@
                                     <th>使用中连接</th>
                                     <th>使用率</th>
                                     <th>处理记录</th>
-                                    <th>批次数</th>
+                                    <th>次数</th>
                                 </tr>
                             </thead>
                             <tbody id="db-detail-tbody">
                                 <!-- 动态生成数据库详细信息 -->
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Redis 监控卡片 -->
+            <section class="card full-width">
+                <div class="card-header">
+                    <h2>Redis</h2>
+                    <span class="badge" id="redis-badge">检查中</span>
+                </div>
+                <div class="card-body">
+                    <div class="redis-metrics-grid">
+                        <div class="metric-item">
+                            <div class="metric-label">连接状态</div>
+                            <div class="metric-value" id="redis-status">--</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">主机</div>
+                            <div class="metric-value" id="redis-host">--</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">端口</div>
+                            <div class="metric-value" id="redis-port">--</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">数据库</div>
+                            <div class="metric-value" id="redis-db">--</div>
+                        </div>
+                    </div>
+                    <div class="redis-pool-metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">使用连接数</div>
+                            <div class="metric-value" id="redis-connections-used">0</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">最大连接数</div>
+                            <div class="metric-value" id="redis-connections-max">0</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">连接使用率</div>
+                            <div class="metric-value" id="redis-connection-usage">0%</div>
+                        </div>
+                    </div>
+                    <div class="redis-buffer-metrics">
+                        <div class="metric-item">
+                            <div class="metric-label">缓冲大小</div>
+                            <div class="metric-value" id="redis-buffer-size">0</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">缓冲阈值</div>
+                            <div class="metric-value" id="redis-buffer-threshold">0</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">缓冲使用率</div>
+                            <div class="metric-value" id="redis-buffer-usage">0%</div>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <h3>Redis 连接池使用情况</h3>
+                        <canvas id="redis-connections-chart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>Redis 缓冲大小变化</h3>
+                        <canvas id="redis-buffer-chart"></canvas>
                     </div>
                 </div>
             </section>
@@ -438,7 +502,7 @@
                             <span class="summary-value healthy" id="events-total-processed">--</span>
                         </div>
                         <div class="summary-item">
-                            <span class="summary-label">中止处理</span>
+                            <span class="summary-label">中断处理</span>
                             <span class="summary-value error" id="events-total-failed">--</span>
                         </div>
                         <div class="summary-item">
@@ -462,11 +526,11 @@
                                     <th>总接收</th>
                                     <th>待处理</th>
                                     <th>已处理</th>
-                                    <th>中止</th>
+                                    <th>中断</th>
                                     <th>完成率</th>
                                     <th>平均延迟</th>
-                                    <th>缓冲区</th>
-                                    <th>最后活动</th>
+                                    <th>操作</th>
+                                    <th>最后动作</th>
                                     <th>状态</th>
                                     <th>操作</th>
                                 </tr>
@@ -479,9 +543,9 @@
                 </div>
             </section>
 
-            <!-- 主布局：左侧是回调跟踪器和事件去重器，右侧是死信队列 -->
+            <!-- 下半部分：左边是回调跟踪器和事件去重器，右边是死信队列 -->
             <div class="event-helpers-layout">
-                <!-- 左侧：回调跟踪器和事件去重器 -->
+                <!-- 左边：回调跟踪器和事件去重器 -->
                 <div class="left-column">
                     <!-- 回调跟踪器卡片 -->
                     <section class="card">
@@ -516,11 +580,11 @@
                         <div class="card-body">
                             <div class="metrics-grid">
                                 <div class="metric-item">
-                                    <div class="metric-label">总缓存条目</div>
+                                    <div class="metric-label">总存储条目</div>
                                     <div class="metric-value" id="deduplicator-total">--</div>
                                 </div>
                                 <div class="metric-item">
-                                    <div class="metric-label">活跃条目</div>
+                                    <div class="metric-label">活跃项目</div>
                                     <div class="metric-value" id="deduplicator-active">--</div>
                                 </div>
                                 <div class="metric-item">
@@ -536,7 +600,7 @@
                     </section>
                 </div>
 
-                <!-- 右侧：死信队列 -->
+                <!-- 右边：死信队列 -->
                 <div class="right-column">
                     <section class="card dead-letter-card">
                         <div class="card-header">
@@ -614,7 +678,7 @@
         <div class="modal-overlay"></div>
         <div class="modal-content">
             <div class="modal-header">
-                <h3>⚠️ 监控已暂停</h3>
+                <h3>⌛ 监控已超时</h3>
             </div>
             <div class="modal-body">
                 <p>由于长时间未活动，监控已自动暂停以节省资源。</p>

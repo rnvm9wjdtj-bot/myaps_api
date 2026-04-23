@@ -9,5 +9,6 @@ from .db_collector import DatabaseCollector
 from .scheduler_collector import SchedulerCollector
 from .http_collector import HTTPCollector
 from .outbound_http_collector import OutboundHTTPCollector, outbound_http_collector
+from .redis_collector import RedisCollector, redis_collector
 
-__all__ = ["ResourceCollector", "DatabaseCollector", "SchedulerCollector", "HTTPCollector", "OutboundHTTPCollector"]
+__all__ = ["ResourceCollector", "DatabaseCollector", "SchedulerCollector", "HTTPCollector", "OutboundHTTPCollector", "RedisCollector"]
