@@ -1916,26 +1916,40 @@ def setup_logger(name: str, level: str = 'INFO', auto_file: bool = True) -> logg
 
 
 class SmartFileHandler(logging.Handler):
-    """智能文件处理器，根据日志级别选择对应文件"""
+    """智能文件处理器，根据日志级别选择对应文件
+    
+    日志级别与文件写入规则（受 LOG_LEVEL 控制，但 DEBUG/INFO 始终不写磁盘）：
+    - DEBUG: 仅控制台输出，不写入任何文件
+    - INFO: 仅控制台输出，不写入任何文件
+    - WARNING: 写入 app.log
+    - ERROR: 写入 app.log 和 error.log
+    - CRITICAL: 写入 app.log 和 error.log
+    """
     
     def __init__(self, name: str):
         super().__init__()
         self.name = name
-        # 直接创建不同类型的文件日志器
-        self.default_logger = setup_file_logging(name, "app.log")  # app.log (INFO及以上)
-        self.default_logger.setLevel(logging.INFO)
+        # 只创建 error.log 的文件日志器（WARNING 及以上级别）
+        self.default_logger = setup_file_logging(name, "app.log")  # app.log (WARNING及以上)
+        self.default_logger.setLevel(logging.WARNING)
         self.error_logger = setup_file_logging(name, "error.log")  # error.log (ERROR及以上)
         self.error_logger.setLevel(logging.ERROR)
-        self.debug_logger = setup_file_logging(name, "debug.log")  # debug.log (所有级别)
-        self.debug_logger.setLevel(logging.DEBUG)
+        # 不再创建 debug.log，因为 DEBUG 级别不写磁盘
     
     def emit(self, record):
-        """根据日志级别选择对应文件"""
-        # DEBUG 级别只写入 debug.log
+        """根据日志级别选择对应文件
+        
+        重要：DEBUG 和 INFO 级别的日志永远不会写入磁盘文件，
+        无论 LOG_LEVEL 环境变量设置为何值。这是为了防止日志体积过大。
+        """
+        # DEBUG 级别只输出到控制台，不写入任何文件
         if record.levelno == logging.DEBUG:
-            self.debug_logger.handle(record)
-        # INFO/WARNING 级别写入 app.log
-        elif record.levelno in (logging.INFO, logging.WARNING):
+            pass  # 不写入任何文件
+        # INFO 级别只输出到控制台，不写入任何文件
+        elif record.levelno == logging.INFO:
+            pass  # 不写入任何文件
+        # WARNING 级别写入 app.log
+        elif record.levelno == logging.WARNING:
             self.default_logger.handle(record)
         # ERROR/CRITICAL 级别同时写入 error.log 和 app.log
         elif record.levelno >= logging.ERROR:

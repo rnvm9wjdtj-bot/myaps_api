@@ -6,13 +6,20 @@
 2. 定时批量处理事件
 3. 支持去重
 4. 支持分组处理
+5. 支持独立线程池隔离
+
+线程池策略：
+- 每个事件类型拥有独立的线程池，避免争抢
+- 线程池大小根据事件类型静态配置
+- 支持线程池监控
 """
 import os
 import threading
 import time
 from collections import defaultdict, deque
-from typing import Callable, Any, List, Dict, Set
+from typing import Callable, Any, List, Dict, Set, Optional
 from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 
 from globalobjects import logger as log_config
 
@@ -21,11 +28,358 @@ LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 
 logger = log_config.get_logger(__name__, level=LOG_LEVEL)
 
-# 全局线程池，用于处理事件批次
-# 根据系统CPU核心数设置线程池大小
 import multiprocessing
 CPU_COUNT = multiprocessing.cpu_count() or 4
-GLOBAL_THREAD_POOL = ThreadPoolExecutor(max_workers=CPU_COUNT * 2)
+
+
+class EventThreadPoolManager:
+    """事件类型独立线程池管理器"""
+
+    _instance = None
+    _lock = Lock()
+
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+
+    def __init__(self):
+        if hasattr(self, '_initialized') and self._initialized:
+            return
+
+        self._pools: Dict[str, ThreadPoolExecutor] = {}
+        self._pool_configs: Dict[str, Dict] = {}
+        self._pool_locks: Dict[str, Lock] = {}
+        self._global_lock = Lock()
+        
+        # 动态调整相关
+        self._pool_stats: Dict[str, Dict] = {}  # 线程池运行时统计
+        self._adjust_thread: Optional[threading.Thread] = None
+        self._adjust_running = False
+        self._adjust_interval = 10  # 调整检查间隔（秒）
+        self._scale_up_threshold = 50  # 队列长度超过此值时扩容
+        self._scale_down_threshold = 5  # 队列长度低于此值时缩容
+        self._cooldown_time = 30  # 调整冷却时间（秒）
+        
+        self._initialized = True
+
+        self._register_default_pools()
+        self._start_adjust_thread()
+
+    def _register_default_pools(self):
+        """注册默认线程池配置"""
+        default_configs = {
+            'pl_status_a2e': {
+                'min_workers': 3,
+                'max_workers': 10,
+                'description': 'PL状态变更A2E事件'
+            },
+            'pr_created': {
+                'min_workers': 2,
+                'max_workers': 6,
+                'description': 'PR创建事件'
+            },
+            'pl_to_mo': {
+                'min_workers': 2,
+                'max_workers': 6,
+                'description': 'PL变更为MO事件'
+            },
+            'pr_deleted': {
+                'min_workers': 1,
+                'max_workers': 4,
+                'description': 'PR删除事件'
+            },
+            'default': {
+                'min_workers': 2,
+                'max_workers': 5,
+                'description': '默认事件'
+            }
+        }
+
+        for name, config in default_configs.items():
+            self.register_pool(name, **config)
+
+    def register_pool(self, name: str, min_workers: int = 2, max_workers: int = 5, description: str = ''):
+        """注册一个事件类型的线程池"""
+        with self._global_lock:
+            if name in self._pools:
+                logger.warning(f"线程池 {name} 已存在，将重新创建")
+                self._pools[name].shutdown(wait=False)
+                del self._pools[name]
+
+            self._pool_configs[name] = {
+                'min_workers': min_workers,
+                'max_workers': max_workers,
+                'description': description
+            }
+            self._pool_locks[name] = Lock()
+            self._pools[name] = ThreadPoolExecutor(
+                max_workers=min_workers,
+                thread_name_prefix=f'event-{name}-'
+            )
+            logger.success(f"事件线程池注册", name, f"min={min_workers}, max={max_workers}")
+
+    def get_pool(self, name: str) -> Optional[ThreadPoolExecutor]:
+        """获取事件类型的线程池，如果不存在则自动注册"""
+        with self._global_lock:
+            if name not in self._pools:
+                logger.info(f"线程池 {name} 不存在，自动注册独立线程池")
+                self._pool_configs[name] = {
+                    'min_workers': 2,
+                    'max_workers': 5,
+                    'description': f'自动注册的事件线程池: {name}'
+                }
+                self._pool_locks[name] = Lock()
+                self._pools[name] = ThreadPoolExecutor(
+                    max_workers=2,
+                    thread_name_prefix=f'event-{name}-'
+                )
+                logger.success(f"事件线程池自动注册", name, "min=2, max=5")
+            return self._pools.get(name)
+
+    def get_pool_stats(self, name: str) -> Dict:
+        """获取线程池统计信息"""
+        with self._global_lock:
+            if name not in self._pool_configs:
+                return {}
+
+            config = self._pool_configs[name]
+            pool = self._pools.get(name)
+
+            return {
+                'name': name,
+                'min_workers': config['min_workers'],
+                'max_workers': config['max_workers'],
+                'description': config['description'],
+                'pool_active': pool is not None and not pool._shutdown,
+            }
+
+    def get_all_stats(self) -> Dict[str, Dict]:
+        """获取所有线程池的统计信息"""
+        return {name: self.get_pool_stats(name) for name in self._pool_configs.keys()}
+
+    def shutdown_all(self):
+        """关闭所有线程池"""
+        self._stop_adjust_thread()
+        with self._global_lock:
+            for name, pool in self._pools.items():
+                pool.shutdown(wait=True)
+                logger.info(f"线程池已关闭", name)
+            self._pools.clear()
+
+    def _start_adjust_thread(self):
+        """启动动态调整监控线程"""
+        if self._adjust_thread is not None and self._adjust_thread.is_alive():
+            return
+        
+        self._adjust_running = True
+        self._adjust_thread = threading.Thread(
+            target=self._adjust_loop,
+            daemon=True,
+            name='event-pool-adjuster'
+        )
+        self._adjust_thread.start()
+        logger.info("✅ 事件线程池动态调整线程已启动")
+
+    def _stop_adjust_thread(self):
+        """停止动态调整监控线程"""
+        self._adjust_running = False
+        if self._adjust_thread and self._adjust_thread.is_alive():
+            self._adjust_thread.join(timeout=5)
+        logger.info("🛑 事件线程池动态调整线程已停止")
+
+    def _adjust_loop(self):
+        """动态调整循环"""
+        while self._adjust_running:
+            try:
+                self._check_and_adjust_pools()
+            except Exception as e:
+                logger.error(f"线程池动态调整检查失败: {e}")
+            
+            time.sleep(self._adjust_interval)
+
+    def _check_and_adjust_pools(self):
+        """检查并调整所有线程池"""
+        with self._global_lock:
+            for name in list(self._pools.keys()):
+                try:
+                    self._adjust_pool_size(name)
+                except Exception as e:
+                    logger.warning(f"调整线程池 {name} 失败: {e}")
+
+    def _adjust_pool_size(self, name: str):
+        """
+        调整单个线程池的大小
+        
+        扩容条件：队列长度 > scale_up_threshold
+        缩容条件：队列长度 < scale_down_threshold 且持续一段时间
+        """
+        if name not in self._pools or name not in self._pool_configs:
+            return
+        
+        pool = self._pools[name]
+        config = self._pool_configs[name]
+        
+        if pool._shutdown:
+            return
+        
+        # 获取队列长度
+        queue_size = self._get_queue_size(pool)
+        current_workers = getattr(pool, '_max_workers', config['min_workers'])
+        min_workers = config['min_workers']
+        max_workers = config['max_workers']
+        
+        # 初始化统计
+        if name not in self._pool_stats:
+            self._pool_stats[name] = {
+                'last_adjust_time': 0,
+                'low_queue_count': 0,
+                'current_workers': current_workers
+            }
+        
+        stats = self._pool_stats[name]
+        now = time.time()
+        
+        # 检查冷却时间
+        if now - stats['last_adjust_time'] < self._cooldown_time:
+            return
+        
+        target_workers = current_workers
+        
+        # 扩容逻辑
+        if queue_size > self._scale_up_threshold and current_workers < max_workers:
+            target_workers = min(current_workers + 1, max_workers)
+            logger.info(f"📈 线程池 {name} 队列堆积({queue_size})，扩容: {current_workers} → {target_workers}")
+        
+        # 缩容逻辑（需要连续多次检测队列都较低）
+        elif queue_size < self._scale_down_threshold:
+            stats['low_queue_count'] = stats.get('low_queue_count', 0) + 1
+            if stats['low_queue_count'] >= 3 and current_workers > min_workers:
+                target_workers = max(current_workers - 1, min_workers)
+                logger.info(f"📉 线程池 {name} 队列空闲({queue_size})，缩容: {current_workers} → {target_workers}")
+                stats['low_queue_count'] = 0
+        else:
+            stats['low_queue_count'] = 0
+        
+        # 执行调整
+        if target_workers != current_workers:
+            self._resize_pool(name, target_workers)
+            stats['last_adjust_time'] = now
+            stats['current_workers'] = target_workers
+
+    def _get_queue_size(self, pool: ThreadPoolExecutor) -> int:
+        """获取线程池工作队列大小"""
+        try:
+            if hasattr(pool, '_work_queue'):
+                return pool._work_queue.qsize()
+            return 0
+        except Exception:
+            return 0
+
+    def _resize_pool(self, name: str, new_size: int):
+        """
+        调整线程池大小
+        
+        注意：Python ThreadPoolExecutor 不支持动态调整 max_workers
+        这里采用创建新线程池的方式实现
+        """
+        if name not in self._pools:
+            return
+        
+        old_pool = self._pools[name]
+        config = self._pool_configs[name]
+        
+        # 创建新线程池
+        new_pool = ThreadPoolExecutor(
+            max_workers=new_size,
+            thread_name_prefix=f'event-{name}-'
+        )
+        
+        # 替换线程池（旧线程池会在现有任务完成后自动关闭）
+        self._pools[name] = new_pool
+        
+        # 标记旧线程池为待关闭
+        try:
+            old_pool.shutdown(wait=False)
+        except Exception:
+            pass
+        
+        logger.success(f"线程池大小调整", name, f"workers={new_size}")
+
+    def get_pool_detailed_stats(self, name: str) -> Dict:
+        """获取线程池详细统计信息"""
+        with self._global_lock:
+            if name not in self._pool_configs:
+                return {}
+
+            config = self._pool_configs[name]
+            pool = self._pools.get(name)
+            stats = self._pool_stats.get(name, {})
+
+            queue_size = 0
+            active_count = 0
+            
+            if pool and not pool._shutdown:
+                queue_size = self._get_queue_size(pool)
+                if hasattr(pool, '_threads'):
+                    active_count = len([t for t in pool._threads if t.is_alive()])
+
+            return {
+                'name': name,
+                'min_workers': config['min_workers'],
+                'max_workers': config['max_workers'],
+                'current_workers': stats.get('current_workers', config['min_workers']),
+                'active_threads': active_count,
+                'queue_size': queue_size,
+                'description': config['description'],
+                'pool_active': pool is not None and not pool._shutdown,
+                'last_adjust_time': stats.get('last_adjust_time', 0),
+            }
+
+    def get_all_detailed_stats(self) -> Dict[str, Dict]:
+        """获取所有线程池的详细统计信息"""
+        return {name: self.get_pool_detailed_stats(name) for name in self._pool_configs.keys()}
+
+    def set_adjust_config(self, 
+                          adjust_interval: int = None,
+                          scale_up_threshold: int = None,
+                          scale_down_threshold: int = None,
+                          cooldown_time: int = None):
+        """
+        配置动态调整参数
+        
+        Args:
+            adjust_interval: 调整检查间隔（秒）
+            scale_up_threshold: 扩容阈值（队列长度）
+            scale_down_threshold: 缩容阈值（队列长度）
+            cooldown_time: 调整冷却时间（秒）
+        """
+        if adjust_interval is not None:
+            self._adjust_interval = adjust_interval
+        if scale_up_threshold is not None:
+            self._scale_up_threshold = scale_up_threshold
+        if scale_down_threshold is not None:
+            self._scale_down_threshold = scale_down_threshold
+        if cooldown_time is not None:
+            self._cooldown_time = cooldown_time
+        
+        logger.info(f"动态调整参数已更新: interval={self._adjust_interval}s, "
+                   f"scale_up={self._scale_up_threshold}, scale_down={self._scale_down_threshold}, "
+                   f"cooldown={self._cooldown_time}s")
+
+
+_event_pool_manager: Optional[EventThreadPoolManager] = None
+
+
+def get_event_pool_manager() -> EventThreadPoolManager:
+    """获取事件线程池管理器单例"""
+    global _event_pool_manager
+    if _event_pool_manager is None:
+        _event_pool_manager = EventThreadPoolManager()
+    return _event_pool_manager
 
 
 
@@ -122,13 +476,21 @@ class EventAggregator:
         with self._lock:
             if not self._buffer:
                 return
-            
+
             # 复制缓冲区数据
             buffer_copy = dict(self._buffer)
             self._buffer.clear()
-        
-        # 提交到全局线程池处理，实现批次间并行
-        GLOBAL_THREAD_POOL.submit(self._process_batch, buffer_copy)
+
+        # 提交到事件专属线程池处理，实现批次间并行且隔离
+        pool_manager = get_event_pool_manager()
+        event_pool = pool_manager.get_pool(self.name)
+        if event_pool:
+            event_pool.submit(self._process_batch, buffer_copy)
+        else:
+            logger.warning(f"未找到事件线程池 {self.name}，使用默认线程池")
+            default_pool = pool_manager.get_pool('default')
+            if default_pool:
+                default_pool.submit(self._process_batch, buffer_copy)
     
     def _process_batch(self, buffer_copy):
         """处理单个批次的事件"""

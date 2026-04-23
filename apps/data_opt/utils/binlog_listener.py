@@ -51,7 +51,7 @@ SHOW VARIABLES LIKE 'binlog_format';  -- 推荐ROW模式
 """
 
 
-import os, asyncio, time, logging, threading, concurrent.futures, json, pickle, pymysql
+import os, asyncio, time, logging, threading, concurrent.futures, json, pickle, pymysql, uuid, random
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, Callable
 # from functools import wraps
@@ -248,7 +248,7 @@ class BinlogPositionManager:
                         finally:
                             loop_inner.close()
                     except Exception as e:
-                        logger.warning(f"⚠️ 检查事件是否已处理失败: {e}")
+                        logger.warning(f"⚠️ 检查 binlog监听 事件是否已处理失败: {e}")
                         return False
                 
                 executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -257,7 +257,7 @@ class BinlogPositionManager:
             else:
                 return asyncio.run(self._is_event_processed_async(event_id))
         except Exception as e:
-            logger.warning(f"⚠️ 检查事件是否已处理失败: {e}")
+            logger.warning(f"⚠️ 检查 binlog监听 事件是否已处理失败: {e}")
             return False
     
     async def _is_event_processed_async(self, event_id: str) -> bool:
@@ -266,7 +266,7 @@ class BinlogPositionManager:
             await ensure_tortoise_init()
             return await ProcessedEvent.filter(event_id=event_id).exists()
         except Exception as e:
-            logger.warning(f"⚠️ 检查事件是否已处理失败: {e}")
+            logger.warning(f"⚠️ 检查 binlog监听 事件是否已处理失败: {e}")
             return False
     
     def mark_event_processed(self, event_id: str, log_file: str, log_pos: int, event_type: str, table_name: str, database_name: str):
@@ -286,7 +286,7 @@ class BinlogPositionManager:
                         finally:
                             loop_inner.close()
                     except Exception as e:
-                        logger.warning(f"⚠️ 标记事件为已处理失败: {e}")
+                        logger.warning(f"⚠️ 标记 binlog监听 事件为已处理失败: {e}")
                 
                 executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
                 executor.submit(_mark)
@@ -295,10 +295,10 @@ class BinlogPositionManager:
                     event_id, log_file, log_pos, event_type, table_name, database_name
                 ))
         except Exception as e:
-            logger.warning(f"⚠️ 标记事件为已处理失败: {e}")
+            logger.warning(f"⚠️ 标记 binlog监听 事件为已处理失败: {e}")
     
     async def _mark_event_processed_async(self, event_id: str, log_file: str, log_pos: int, event_type: str, table_name: str, database_name: str):
-        """异步标记事件为已处理"""
+        """异步标记 binlog监听 事件为已处理"""
         try:
             await ensure_tortoise_init()
             await ProcessedEvent.get_or_create(
@@ -312,7 +312,7 @@ class BinlogPositionManager:
                 }
             )
         except Exception as e:
-            logger.warning(f"⚠️ 标记事件为已处理失败: {e}")
+            logger.warning(f"⚠️ 标记 binlog监听 事件为已处理失败: {e}")
     
     def cleanup_old_events(self, days: int = 7):
         """清理旧的已处理事件记录"""
@@ -329,17 +329,17 @@ class BinlogPositionManager:
                         finally:
                             loop_inner.close()
                     except Exception as e:
-                        logger.warning(f"⚠️ 清理旧的已处理事件记录失败: {e}")
+                        logger.warning(f"⚠️ 清理旧的已处理 binlog监听 事件记录失败: {e}")
                 
                 executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
                 executor.submit(_cleanup)
             else:
                 asyncio.run(self._cleanup_old_events_async(days))
         except Exception as e:
-            logger.warning(f"⚠️ 清理旧的已处理事件记录失败: {e}")
+            logger.warning(f"⚠️ 清理旧的已处理 binlog监听 事件记录失败: {e}")
     
     async def _cleanup_old_events_async(self, days: int = 7):
-        """异步清理旧的已处理事件记录"""
+        """异步清理旧的已处理 binlog监听 事件记录"""
         try:
             await ensure_tortoise_init()
             from datetime import timezone as tz
@@ -971,12 +971,12 @@ class MySQLBinlogListener:
                 # 由于线程池工作队列可能无法直接访问，这里简化监控逻辑
                 # 基于时间间隔进行简单的线程池调整
                 # 实际生产环境中可以根据实际负载情况调整
-                logger.debug(f"线程池状态: 当前线程数={current_workers}, 最大线程数={self._max_workers}")
+                logger.debug(f"binlog监听线程池状态: 当前线程数={current_workers}, 最大线程数={self._max_workers}")
                 
                 # 这里可以添加更复杂的监控逻辑，例如基于系统负载、任务执行时间等
                 
             except Exception as e:
-                logger.fail("线程池监控", "", str(e))
+                logger.fail("binlog监听线程池监控", "", str(e))
             
             # 每10秒检查一次
             for _ in range(10):
@@ -996,9 +996,9 @@ class MySQLBinlogListener:
                         max_workers=self._min_workers, 
                         thread_name_prefix='mysql-monitor-'
                     )
-                    logger.success("线程池", "", "已重新创建")
+                    logger.success("binlog监听线程池", "", "已重新创建")
             except Exception as e:
-                logger.fail("线程池创建", "", str(e))
+                logger.fail("binlog监听线程池创建", "", str(e))
             
             # 启动Binlog监控线程
             monitoring_thread = threading.Thread(target=self._monitor_binlog_with_retry, daemon=True, name='mysql-monitor-binlog')
@@ -1008,10 +1008,10 @@ class MySQLBinlogListener:
             pool_monitor_thread = threading.Thread(target=self._monitor_thread_pool, daemon=True, name='mysql-monitor-pool')
             pool_monitor_thread.start()
             
-            logger.info("✅ Binlog监控线程已启动")
-            logger.info("✅ 线程池监控线程已启动")
+            logger.info("✅ Binlog监听线程已启动")
+            logger.info("✅ binlog监听线程池监控线程已启动")
         else:
-            logger.info("⚠️ Binlog监控已经在运行")
+            logger.info("⚠️ Binlog监听已经在运行")
 
     def _monitor_binlog_with_retry(self):
         """增强版重试机制 - 无限重试 + 持久化位置 + 健康检查"""
@@ -1032,7 +1032,7 @@ class MySQLBinlogListener:
                     # 发送告警（限制频率）
                     current_time = time.time()
                     if current_time - last_alert_time > alert_interval:
-                        self._send_alert(f"Binlog 监控等待 MySQL 连接恢复，已重试 {retry_count} 次", "warning")
+                        self._send_alert(f"binlog监听等待 MySQL 连接恢复，已重试 {retry_count} 次", "warning")
                         last_alert_time = current_time
                     
                     time.sleep(wait_time)
@@ -1044,8 +1044,8 @@ class MySQLBinlogListener:
                 
                 # 成功连接后重置计数
                 if retry_count > 0:
-                    logger.success("Binlog监控", "", f"连接已恢复，共重试 {retry_count} 次")
-                    self._send_alert(f"Binlog 监控已恢复，共重试 {retry_count} 次", "info")
+                    logger.success("binlog监听", "", f"连接已恢复，共重试 {retry_count} 次")
+                    self._send_alert(f"binlog监听已恢复，共重试 {retry_count} 次", "info")
                 retry_count = 0
                 self._consecutive_errors = 0
                 
@@ -1067,7 +1067,7 @@ class MySQLBinlogListener:
                 # 发送告警（限制频率）
                 current_time = time.time()
                 if current_time - last_alert_time > alert_interval:
-                    self._send_alert(f"Binlog 监控连接失败: {e}，已重试 {retry_count} 次", "error")
+                    self._send_alert(f"binlog监听连接失败: {e}，已重试 {retry_count} 次", "error")
                     last_alert_time = current_time
                 
                 # 等待后重试
@@ -1075,10 +1075,10 @@ class MySQLBinlogListener:
         
         # 停止健康检查
         self._health_checker.stop()
-        logger.info("🛑 Binlog 监控重试循环已退出")
+        logger.info("🛑 binlog监听重试循环已退出")
 
     def _start_binlog_stream(self):
-        """启动Binlog流 - 支持多数据库 + 位置持久化"""
+        """启动binlog流   支持多数据库 + 位置持久化"""
         settings = {
             "host": self.mysql_settings["host"],
             "port": int(self.mysql_settings["port"]),
@@ -1114,14 +1114,14 @@ class MySQLBinlogListener:
         # 如果指定了数据库，只监控这些数据库
         if self.mysql_settings.get("databases"):
             stream_config["only_schemas"] = self.mysql_settings["databases"]
-            logger.info(f"监控数据库：{', '.join(self.mysql_settings['databases'])}")
+            logger.info(f"binlog监听指定数据库：{', '.join(self.mysql_settings['databases'])}")
         else:
-            logger.info("监控所有数据库")
+            logger.info("binlog监听监控所有数据库")
         
         stream = None
         try:
             stream = BinLogStreamReader(**stream_config)
-            logger.success("Binlog监控", f"@{MYAPS_MAIN_DB}", "开始监控")
+            logger.success("binlog监听", f"@{MYAPS_MAIN_DB}", "开始运行")
             
             event_count = 0
             last_position_save = time.time()
@@ -1160,7 +1160,7 @@ class MySQLBinlogListener:
                     logger.info(f"💾 异常前保存位置: {stream.log_file}:{stream.log_pos}")
                 except:
                     pass
-            logger.fail("Binlog流处理", "", str(e))
+            logger.fail("binlog监听处理", "", str(e))
             raise
         finally:
             if stream:
@@ -1172,16 +1172,13 @@ class MySQLBinlogListener:
                     except:
                         pass
                 stream.close()
-                logger.success("Binlog流", "", "已关闭")
+                logger.success("binlog监听", "", "已关闭")
 
     def _add_to_dead_letter_queue(self, event, error_message):
-        """将失败的事件添加到死信队列"""
+        """将失败的事件添加到死信队列（异步写入）"""
         try:
-            import json
-            import uuid
-            from datetime import datetime, timezone
-            
-            # 构建死信队列消息
+            from apps.common.utils.event_helpers import get_dead_letter_queue
+
             dead_letter_message = {
                 'id': str(uuid.uuid4()),
                 'event_type': type(event).__name__,
@@ -1194,30 +1191,24 @@ class MySQLBinlogListener:
                     'log_pos': getattr(event, 'log_pos', 0)
                 }
             }
-            
-            # 保存到文件（作为简单的死信队列实现）
-            dead_letter_file = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
-                'storage',
-                'dead_letter_queue.jsonl'
-            )
-            
-            # 确保目录存在
-            os.makedirs(os.path.dirname(dead_letter_file), exist_ok=True)
-            
-            # 追加到文件
-            with open(dead_letter_file, 'a', encoding='utf-8') as f:
-                json.dump(dead_letter_message, f, ensure_ascii=False)
-                f.write('\n')
-            
-            logger.info(f"📥 事件已添加到死信队列: {dead_letter_message['id']}")
+
+            dlq = get_dead_letter_queue()
+            dlq.add_failed_event(dead_letter_message, error_message, type(event).__name__)
+            logger.info(f"📥 binlog监听事件已添加到死信队列: {dead_letter_message['id']}")
         except Exception as e:
-            logger.error(f"❌ 添加到死信队列失败: {e}")
+            logger.error(f"❌ binlog监听添加到死信队列失败: {e}")
+    
+    def _get_retry_delay(self, retry: int, base_delay: float = 0.5) -> float:
+        """计算带抖动的指数退避延迟，防止重试风暴"""
+        # 指数退避：0.5s, 1s, 2s, 4s...
+        delay = base_delay * (2 ** retry)
+        # 添加 ±20% 的抖动，错开重试时间
+        jitter = random.uniform(0.8, 1.2)
+        return delay * jitter
     
     def _run_async_event(self, event):
         """异步运行事件处理，支持重试机制"""
         max_retries = 3
-        retry_delay = 0.1  # 初始重试延迟（秒）
         
         for retry in range(max_retries):
             try:
@@ -1225,12 +1216,11 @@ class MySQLBinlogListener:
                 return
             except Exception as e:
                 if retry < max_retries - 1:
-                    logger.warning(f"⚠️ 线程池任务提交失败，{retry+1}/{max_retries} 重试: {e}")
-                    # 指数退避策略
-                    time.sleep(retry_delay)
-                    retry_delay *= 2  # 每次重试延迟翻倍
+                    delay = self._get_retry_delay(retry)
+                    logger.warning(f"⚠️ binlog监听线程池任务提交失败，{retry+1}/{max_retries} 重试 ({delay:.2f}s后): {e}")
+                    time.sleep(delay)
                 else:
-                    logger.error(f"❌ 事件处理失败，已达到最大重试次数: {e}")
+                    logger.error(f"❌ binlog监听事件处理失败，已达到最大重试次数: {e}")
                     # 添加到死信队列
                     self._add_to_dead_letter_queue(event, str(e))
     
@@ -1239,13 +1229,12 @@ class MySQLBinlogListener:
         handler_name = getattr(handler, '__name__', str(handler))
         start_time = time.time()
         max_retries = 3
-        retry_delay = 0.1
         
         for retry in range(max_retries):
             try:
                 # 检查监控是否仍在运行
                 if not self.running:
-                    logger.debug(f"监控已停止，跳过事件处理: {handler_name}")
+                    logger.debug(f"binlog监听已停止，跳过事件处理: {handler_name}")
                     return
                 
                 result = handler(*args, **kwargs)
@@ -1265,7 +1254,7 @@ class MySQLBinlogListener:
                                 break
                             time.sleep(0.1)
                         else:
-                            logger.warning("事件循环启动超时，使用同步执行")
+                            logger.warning("binlog监听事件循环启动超时，使用同步执行")
                             # 回退到同步执行
                             loop = asyncio.new_event_loop()
                             asyncio.set_event_loop(loop)
@@ -1285,47 +1274,47 @@ class MySQLBinlogListener:
                                 fut.result()
                                 exec_time = time.time() - start_time
                                 if exec_time > 5.0:
-                                    logger.warning(f"异步处理器 {handler_name} 执行时间过长: {exec_time:.2f}秒")
+                                    logger.warning(f"binlog监听异步处理器 {handler_name} 执行时间过长: {exec_time:.2f}秒")
                                 elif exec_time > 1.0:
-                                    logger.debug(f"异步处理器 {handler_name} 执行时间: {exec_time:.2f}秒")
+                                    logger.debug(f"binlog监听异步处理器 {handler_name} 执行时间: {exec_time:.2f}秒")
                             except Exception as e:
                                 # 检查是否是连接池关闭错误
                                 if "pool" in str(e).lower() and "close" in str(e).lower():
-                                    logger.warning(f"连接池已关闭，跳过事件处理: {handler_name}")
+                                    logger.warning(f"binlog监听连接池已关闭，跳过事件处理: {handler_name}")
                                 else:
-                                    logger.fail(f"异步处理器 {handler_name} 执行", "", str(e))
+                                    logger.fail(f"binlog监听异步处理器 {handler_name} 执行", "", str(e))
                         future.add_done_callback(callback)
                     except Exception as e:
                         # 检查是否是连接池关闭错误
                         if "pool" in str(e).lower() and "close" in str(e).lower():
-                            logger.warning(f"连接池已关闭，跳过事件处理: {handler_name}")
+                            logger.warning(f"binlog监听连接池已关闭，跳过事件处理: {handler_name}")
                             return
                         elif retry < max_retries - 1:
-                            logger.warning(f"⚠️ 异步处理器提交失败，{retry+1}/{max_retries} 重试: {e}")
-                            time.sleep(retry_delay)
-                            retry_delay *= 2
+                            delay = self._get_retry_delay(retry)
+                            logger.warning(f"⚠️ binlog监听异步处理器提交失败，{retry+1}/{max_retries} 重试 ({delay:.2f}s后): {e}")
+                            time.sleep(delay)
                             continue
                         else:
-                            logger.fail(f"异步处理器 {handler_name} 提交", "", str(e))
+                            logger.fail(f"binlog监听异步处理器 {handler_name} 提交", "", str(e))
                 else:
                     # 同步函数执行完成
                     exec_time = time.time() - start_time
                     if exec_time > 5.0:
-                        logger.warning(f"同步处理器 {handler_name} 执行时间过长: {exec_time:.2f}秒")
+                        logger.warning(f"binlog监听同步处理器 {handler_name} 执行时间过长: {exec_time:.2f}秒")
                     elif exec_time > 1.0:
-                        logger.debug(f"同步处理器 {handler_name} 执行时间: {exec_time:.2f}秒")
+                        logger.debug(f"binlog监听同步处理器 {handler_name} 执行时间: {exec_time:.2f}秒")
                 return
             except Exception as e:
                 # 检查是否是连接池关闭错误
                 if "pool" in str(e).lower() and "close" in str(e).lower():
-                    logger.warning(f"连接池已关闭，跳过事件处理: {handler_name}")
+                    logger.warning(f"binlog监听连接池已关闭，跳过事件处理: {handler_name}")
                     return
                 elif retry < max_retries - 1:
-                    logger.warning(f"⚠️ 处理器执行失败，{retry+1}/{max_retries} 重试: {e}")
-                    time.sleep(retry_delay)
-                    retry_delay *= 2
+                    delay = self._get_retry_delay(retry)
+                    logger.warning(f"⚠️ binlog监听同步处理器执行失败，{retry+1}/{max_retries} 重试 ({delay:.2f}s后): {e}")
+                    time.sleep(delay)
                 else:
-                    logger.fail(f"处理器 {handler_name} 执行", "", str(e))
+                    logger.fail(f"binlog监听同步处理器 {handler_name} 执行", "", str(e))
         
 
     def process_binlog_event(self, event):
@@ -1334,7 +1323,7 @@ class MySQLBinlogListener:
             table = getattr(event, 'table', 'unknown_table')
             schema = getattr(event, 'schema', 'unknown_database')  # 数据库名称
             
-            logger.debug(f"✅ 处理事件: 数据库={schema}, 表={table}, 类型={type(event).__name__}")
+            logger.debug(f"✅ binlog监听处理事件: 数据库={schema}, 表={table}, 类型={type(event).__name__}")
             
             if isinstance(event, WriteRowsEvent):
                 batch_count = len(event.rows)
@@ -1530,25 +1519,25 @@ class MySQLBinlogListener:
                     self._event_loop.call_soon_threadsafe(self._event_loop.stop)
                     if self._loop_thread:
                         self._loop_thread.join(timeout=5)
-                    logger.success("事件循环", "", "已关闭")
+                    logger.success("binlog监听事件循环", "", "已关闭")
                 except Exception as e:
-                    logger.fail("事件循环关闭", "", str(e))
+                    logger.fail("binlog监听事件循环关闭", "", str(e))
             
             # 关闭线程池
             try:
                 # 等待所有任务完成，但最多等待10秒
                 self._thread_pool.shutdown(wait=True, cancel_futures=True)
-                logger.success("线程池", f"{self._thread_pool}", "已关闭")
+                logger.success("binlog监听线程池", f"{self._thread_pool}", "已关闭")
             except Exception as e:
-                logger.fail("线程池关闭", f"{self._thread_pool}", str(e))
+                logger.fail("binlog监听线程池关闭", f"{self._thread_pool}", str(e))
             
             # 重置状态
             self._event_loop = None
             self._loop_thread = None
             
-            logger.success("Binlog监控", f"@{MYAPS_MAIN_DB}", "已停止")
+            logger.success("binlog监听", f"@{MYAPS_MAIN_DB}", "已停止")
         else:
-            logger.info("⚠️ Binlog监控已经停止")
+            logger.info("⚠️ binlog监听已经停止")
 
     @staticmethod
     def get_mysql_config(is_single_db=True):
@@ -1566,9 +1555,9 @@ class MySQLBinlogListener:
         
         if databases:
             config["databases"] = databases
-            logger.info(f"🔭 监控数据库: {', '.join(databases)}")
+            logger.info(f"🔭 binlog监听数据库: {', '.join(databases)}")
         else:
-            logger.warning("⚠️ 未设置数据库，将监控所有数据库")
+            logger.warning("⚠️ 未设置binlog监听数据库，将监控所有数据库")
         return config
 
 

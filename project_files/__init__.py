@@ -8,7 +8,6 @@ from typing import List, Dict, Optional, Callable, Any
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
-import redis
 
 # 加载环境变量
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -16,13 +15,14 @@ env_file = os.path.join(BASE_DIR, '.env')
 load_dotenv(env_file)
 
 # 导入模块
-from core.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET, MYAPS_DBSET_LIST, PROJECT_DIR, REDIS_HOST, REDIS_PORT, REDIS_DB, REDIS_PASSWORD
+from core.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET, MYAPS_DBSET_LIST, PROJECT_DIR
 from globalobjects.globalconst import OrderStatusEnum
 from apps.io_api.utils.common import dict_to_lower_keys
 from globalobjects import logger as log_config
 from apps.data_opt.utils.scheduler import cron_task
 from apps.data_opt.components._base import ApsHelper
 from apps.data_opt.utils.common import get_optimized_session
+from apps.common.utils.redis_pool_manager import get_redis_pool_manager
 
 
 logger = log_config.get_logger(__name__)
@@ -91,22 +91,18 @@ class ApsEvent:
     def _send_request_with_control(self, event_type: DbEventType, event_data: List[Dict]):
         try:
             log_config.info(f"准备发送事件到消息队列: {event_type.value}")
-            redis_client = redis.Redis(
-                host=REDIS_HOST, 
-                port=REDIS_PORT, 
-                db=REDIS_DB, 
-                password=REDIS_PASSWORD if REDIS_PASSWORD else None,
-                decode_responses=False,
-                socket_connect_timeout=5,
-                socket_timeout=5
-            )
             event_message = {
                 'event_type': event_type.value,
                 'data': event_data,
                 'timestamp': time.time()
             }
-            redis_client.lpush('db_events', json.dumps(event_message))
-            log_config.info(f"事件已发送到消息队列: {event_type.value}")
+            message_json = json.dumps(event_message)
+            pool_manager = get_redis_pool_manager()
+            success = pool_manager.lpush_safe('db_events', message_json)
+            if success:
+                log_config.info(f"事件已发送到消息队列: {event_type.value}")
+            else:
+                log_config.warning(f"事件已写入本地缓冲: {event_type.value}")
         except Exception as e:
             log_config.error(f"发送事件到消息队列失败: {e}")
 

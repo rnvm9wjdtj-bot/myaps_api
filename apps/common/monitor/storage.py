@@ -1,25 +1,77 @@
 from typing import List, Dict, Any
 from datetime import datetime
-from core.settings import LOG_RETENTION
+from core.settings import LOG_RETENTION, LOG_LEVEL
 from .models import APIRequest, OutboundAPIRequest, SystemLog
+
+# 日志级别优先级映射
+LOG_LEVEL_PRIORITY = {
+    'DEBUG': 10,
+    'INFO': 20,
+    'WARNING': 30,
+    'ERROR': 40,
+    'CRITICAL': 50
+}
+
+# 获取当前 LOG_LEVEL 的优先级
+CURRENT_LOG_LEVEL_PRIORITY = LOG_LEVEL_PRIORITY.get(LOG_LEVEL.upper(), 20)
+
+
+def should_record_to_db(required_level: str) -> bool:
+    """
+    判断是否应该记录到数据库
+    
+    Args:
+        required_level: 需要的最低日志级别
+        
+    Returns:
+        bool: 是否应该记录
+    """
+    required_priority = LOG_LEVEL_PRIORITY.get(required_level.upper(), 20)
+    return CURRENT_LOG_LEVEL_PRIORITY <= required_priority
 
 
 class RequestStorage:
     """请求数据存储服务"""
 
     async def save_request(self, request_data: Dict[str, Any]) -> APIRequest:
-        """保存单个请求数据"""
-        request = await APIRequest.create(**request_data)
-        return request
+        """
+        保存单个请求数据
+        - 普通请求：INFO 级别
+        - 错误请求/慢请求：WARNING 级别（总是记录）
+        """
+        is_error = request_data.get('is_error', False)
+        is_slow = request_data.get('is_slow', False)
+        
+        # 错误请求和慢请求总是记录
+        if is_error or is_slow:
+            request = await APIRequest.create(**request_data)
+            return request
+        
+        # 普通请求根据 LOG_LEVEL 决定是否记录
+        if should_record_to_db('INFO'):
+            request = await APIRequest.create(**request_data)
+            return request
+        return None
 
     async def save_requests(self, requests_data: List[Dict[str, Any]]) -> List[APIRequest]:
         """批量保存请求数据"""
         if not requests_data:
             return []
-        requests = await APIRequest.bulk_create(
-            [APIRequest(**data) for data in requests_data]
-        )
-        return requests
+        
+        # 过滤需要保存的请求
+        requests_to_save = []
+        for data in requests_data:
+            is_error = data.get('is_error', False)
+            is_slow = data.get('is_slow', False)
+            if is_error or is_slow or should_record_to_db('INFO'):
+                requests_to_save.append(data)
+        
+        if requests_to_save:
+            requests = await APIRequest.bulk_create(
+                [APIRequest(**data) for data in requests_to_save]
+            )
+            return requests
+        return []
 
     async def get_request_by_timestamp_and_path(self, timestamp: float, path: str) -> APIRequest:
         """通过时间戳和路径获取请求记录"""
@@ -107,18 +159,44 @@ class OutboundRequestStorage:
     """对外请求数据存储服务"""
 
     async def save_request(self, request_data: Dict[str, Any]) -> OutboundAPIRequest:
-        """保存单个对外请求数据"""
-        request = await OutboundAPIRequest.create(**request_data)
-        return request
+        """
+        保存单个对外请求数据
+        - 普通请求：INFO 级别
+        - 错误请求/慢请求：WARNING 级别（总是记录）
+        """
+        is_error = request_data.get('is_error', False)
+        is_slow = request_data.get('is_slow', False)
+        
+        # 错误请求和慢请求总是记录
+        if is_error or is_slow:
+            request = await OutboundAPIRequest.create(**request_data)
+            return request
+        
+        # 普通请求根据 LOG_LEVEL 决定是否记录
+        if should_record_to_db('INFO'):
+            request = await OutboundAPIRequest.create(**request_data)
+            return request
+        return None
 
     async def save_requests(self, requests_data: List[Dict[str, Any]]) -> List[OutboundAPIRequest]:
         """批量保存对外请求数据"""
         if not requests_data:
             return []
-        requests = await OutboundAPIRequest.bulk_create(
-            [OutboundAPIRequest(**data) for data in requests_data]
-        )
-        return requests
+        
+        # 过滤需要保存的请求
+        requests_to_save = []
+        for data in requests_data:
+            is_error = data.get('is_error', False)
+            is_slow = data.get('is_slow', False)
+            if is_error or is_slow or should_record_to_db('INFO'):
+                requests_to_save.append(data)
+        
+        if requests_to_save:
+            requests = await OutboundAPIRequest.bulk_create(
+                [OutboundAPIRequest(**data) for data in requests_to_save]
+            )
+            return requests
+        return []
 
     async def get_requests_by_date(self, date: str, limit: int = 1000) -> List[OutboundAPIRequest]:
         """按日期获取对外请求记录"""

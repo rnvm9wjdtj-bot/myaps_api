@@ -60,7 +60,22 @@ class OutboundHTTPCollector:
             }
             self._lock = None  # 延迟初始化锁，确保绑定到正确的事件循环
             self._thread_lock = threading.Lock()
+            
+            # 批量保存相关配置
+            self._batch_size = 50  # 批量保存的请求数量阈值
+            self._batch_timeout = 5.0  # 批量保存的超时时间（秒）
+            self._pending_requests: deque = deque(maxlen=5000)  # 待批量保存的请求队列
+            
+            # 信号量限制并发数据库操作
+            self._db_semaphore = asyncio.Semaphore(10)  # 最多10个并发数据库操作
+            
+            # 降级模式标志
+            self._degraded_mode = False  # 数据库繁忙时启用降级模式
+            self._degraded_counter = 0  # 连续失败计数
+            
             self._initialized = True
+            self._batch_task = None  # 批量保存定时任务
+            self._last_batch_time = time.time()  # 上次批量保存时间
             
     def _get_lock(self):
         """
@@ -98,28 +113,88 @@ class OutboundHTTPCollector:
             error_message: 错误信息
             module: 发起请求的模块
         """
+        # 限制请求体和响应体大小（不持有锁）
+        max_size = 1024 * 1024 * 5  # 5MB
+        try:
+            if request_body and isinstance(request_body, (dict, list)):
+                request_body = json.dumps(request_body, ensure_ascii=False)[:max_size]
+            elif request_body and isinstance(request_body, str):
+                request_body = request_body[:max_size]
+        except:
+            request_body = str(request_body)[:max_size] if request_body else None
+
+        try:
+            if response_body and isinstance(response_body, (dict, list)):
+                response_body = json.dumps(response_body, ensure_ascii=False)[:max_size]
+            elif response_body and isinstance(response_body, str):
+                response_body = response_body[:max_size]
+        except:
+            response_body = str(response_body)[:max_size] if response_body else None
+
+        # 构建请求信息
+        timestamp = time.time()
+        is_error = bool(status_code >= 400 or error_message)
+        is_slow = duration >= self._slow_threshold
+        is_internal = is_internal_url(url)
+
+        request_info = {
+            "timestamp": timestamp,
+            "method": method,
+            "url": url,
+            "status_code": status_code,
+            "duration": duration,
+            "request_headers": request_headers,
+            "request_body": request_body,
+            "response_headers": response_headers,
+            "response_body": response_body,
+            "error_message": error_message,
+            "module": module,
+            "is_error": is_error,
+            "is_slow": is_slow,
+            "is_internal": is_internal,
+        }
+
+        # 更新内存统计（持有锁，但只做轻量级操作）
         async with self._get_lock():
-            # 限制请求体和响应体大小
-            # 增加大小限制到 5MB，避免频繁截断
-            max_size = 1024 * 1024 * 5  # 5MB
-            try:
-                if request_body and isinstance(request_body, (dict, list)):
-                    request_body = json.dumps(request_body, ensure_ascii=False)[:max_size]  # 限制为 5MB
-                elif request_body and isinstance(request_body, str):
-                    request_body = request_body[:max_size]  # 限制为 5MB
-            except:
-                request_body = str(request_body)[:max_size]
+            self._requests.append(request_info)
 
-            try:
-                if response_body and isinstance(response_body, (dict, list)):
-                    response_body = json.dumps(response_body, ensure_ascii=False)[:max_size]  # 限制为 5MB
-                elif response_body and isinstance(response_body, str):
-                    response_body = response_body[:max_size]  # 限制为 5MB
-            except:
-                response_body = str(response_body)[:max_size]
+            # 更新统计
+            self._stats["total_requests"] += 1
+            if is_error:
+                self._stats["total_errors"] += 1
+            if is_slow:
+                self._stats["total_slow_requests"] += 1
 
-            request_info = {
-                "timestamp": time.time(),
+            # URL 统计
+            url_key = f"{method} {url}"
+            self._stats["url_stats"][url_key]["count"] += 1
+            self._stats["url_stats"][url_key]["total_time"] += duration
+            if is_error:
+                self._stats["url_stats"][url_key]["errors"] += 1
+            if is_slow:
+                self._stats["url_stats"][url_key]["slow_requests"] += 1
+
+            # 状态码统计
+            self._stats["status_codes"][status_code] += 1
+
+            # 模块统计
+            if module:
+                self._stats["module_stats"][module]["count"] += 1
+                self._stats["module_stats"][module]["total_time"] += duration
+                if is_error:
+                    self._stats["module_stats"][module]["errors"] += 1
+
+            # 定期清理统计（使用计数器避免每次都清理）
+            self._cleanup_counter = getattr(self, '_cleanup_counter', 0) + 1
+            if self._cleanup_counter >= 100:  # 每100次请求清理一次
+                self._cleanup_counter = 0
+                self._cleanup_stats()
+
+        # 异步保存到数据库（使用信号量和批量机制）
+        if not self._degraded_mode:
+            # 正常模式：将请求加入待批量保存队列
+            self._pending_requests.append({
+                "timestamp": timestamp,
                 "method": method,
                 "url": url,
                 "status_code": status_code,
@@ -130,95 +205,101 @@ class OutboundHTTPCollector:
                 "response_body": response_body,
                 "error_message": error_message,
                 "module": module,
-                "is_error": bool(status_code >= 400 or error_message),
-                "is_slow": duration >= self._slow_threshold,
-                "is_internal": is_internal_url(url),
-            }
+                "is_error": is_error,
+                "is_slow": is_slow,
+                "is_internal": is_internal,
+            })
+            
+            # 检查是否需要触发批量保存
+            if len(self._pending_requests) >= self._batch_size:
+                asyncio.create_task(self._flush_batch())
+            elif time.time() - self._last_batch_time >= self._batch_timeout:
+                asyncio.create_task(self._flush_batch())
+        else:
+            # 降级模式：只打印日志，不保存到数据库
+            print(f"降级模式：跳过保存请求 {method} {url}")
 
-            self._requests.append(request_info)
-
-            # 更新统计
-            self._stats["total_requests"] += 1
-            if request_info["is_error"]:
-                self._stats["total_errors"] += 1
-            if request_info["is_slow"]:
-                self._stats["total_slow_requests"] += 1
-
-            # URL 统计
-            url_key = f"{method} {url}"
-            self._stats["url_stats"][url_key]["count"] += 1
-            self._stats["url_stats"][url_key]["total_time"] += duration
-            if request_info["is_error"]:
-                self._stats["url_stats"][url_key]["errors"] += 1
-            if request_info["is_slow"]:
-                self._stats["url_stats"][url_key]["slow_requests"] += 1
-
-            # 状态码统计
-            self._stats["status_codes"][status_code] += 1
-
-            # 模块统计
-            if module:
-                self._stats["module_stats"][module]["count"] += 1
-                self._stats["module_stats"][module]["total_time"] += duration
-                if request_info["is_error"]:
-                    self._stats["module_stats"][module]["errors"] += 1
-
-            # 清理 URL 统计，避免无限增长
-            if len(self._stats["url_stats"]) > self._max_url_stats:
-                # 按请求次数排序，保留请求次数多的 URL
-                sorted_urls = sorted(
-                    self._stats["url_stats"].items(),
-                    key=lambda x: x[1]["count"],
-                    reverse=True
-                )
-                # 只保留前 max_url_stats 个
-                for url_key, _ in sorted_urls[self._max_url_stats:]:
-                    del self._stats["url_stats"][url_key]
-
-            # 清理模块统计，避免无限增长
-            if len(self._stats["module_stats"]) > self._max_module_stats:
-                # 按请求次数排序，保留请求次数多的模块
-                sorted_modules = sorted(
-                    self._stats["module_stats"].items(),
-                    key=lambda x: x[1]["count"],
-                    reverse=True
-                )
-                # 只保留前 max_module_stats 个
-                for module_key, _ in sorted_modules[self._max_module_stats:]:
-                    del self._stats["module_stats"][module_key]
-
-            # 清理状态码统计，只保留常见状态码
-            common_status_codes = {200, 201, 204, 400, 401, 403, 404, 500, 502, 503, 504}
-            status_codes_to_remove = []
-            for code in self._stats["status_codes"]:
-                if code not in common_status_codes and self._stats["status_codes"][code] < 10:
-                    status_codes_to_remove.append(code)
-            for code in status_codes_to_remove:
-                del self._stats["status_codes"][code]
-
-            # 持久化到数据库
+    async def _flush_batch(self):
+        """批量保存待处理的请求到数据库"""
+        if not self._pending_requests:
+            return
+            
+        async with self._db_semaphore:
+            batch_to_save = list(self._pending_requests)
+            self._pending_requests.clear()
+            self._last_batch_time = time.time()
+            
             try:
-                request_data = {
-                    "timestamp": datetime.fromtimestamp(request_info["timestamp"], timezone.utc),
-                    "method": method,
-                    "url": url,
-                    "status_code": status_code,
-                    "duration": duration,
-                    "request_headers": json.dumps(request_headers) if request_headers else None,
-                    "request_body": request_body,
-                    "response_headers": json.dumps(response_headers) if response_headers else None,
-                    "response_body": response_body,
-                    "error_message": error_message,
-                    "module": module,
-                    "is_error": request_info["is_error"],
-                    "is_slow": request_info["is_slow"],
-                    "is_internal": request_info["is_internal"],
-                }
-                await outbound_request_storage.save_request(request_data)
+                requests_data = []
+                for req in batch_to_save:
+                    requests_data.append({
+                        "timestamp": datetime.fromtimestamp(req["timestamp"], timezone.utc),
+                        "method": req["method"],
+                        "url": req["url"],
+                        "status_code": req["status_code"],
+                        "duration": req["duration"],
+                        "request_headers": json.dumps(req["request_headers"]) if req["request_headers"] else None,
+                        "request_body": req["request_body"],
+                        "response_headers": json.dumps(req["response_headers"]) if req["response_headers"] else None,
+                        "response_body": req["response_body"],
+                        "error_message": req["error_message"],
+                        "module": req["module"],
+                        "is_error": req["is_error"],
+                        "is_slow": req["is_slow"],
+                        "is_internal": req["is_internal"],
+                    })
+                
+                await outbound_request_storage.save_requests(requests_data)
+                
+                # 批量保存成功后，重置降级相关状态
+                if self._degraded_mode:
+                    self._degraded_counter = 0
+                    print("数据库恢复正常，退出降级模式")
+                
             except Exception as e:
-                # 记录异常，确保即使发生异常也不会影响主流程
-                print(f"保存对外请求到数据库失败: {e}")
-                pass
+                print(f"批量保存请求到数据库失败: {e}")
+                self._degraded_counter += 1
+                
+                # 连续失败5次后进入降级模式
+                if self._degraded_counter >= 5:
+                    self._degraded_mode = True
+                    print("数据库连续失败，进入降级模式：只保存内存数据，不再写入数据库")
+                
+                # 将未保存的请求重新放回队列
+                for req in batch_to_save:
+                    if len(self._pending_requests) < 5000:
+                        self._pending_requests.append(req)
+
+    def _cleanup_stats(self):
+        """清理统计信息，避免无限增长（必须在锁内调用）"""
+        # 清理 URL 统计
+        if len(self._stats["url_stats"]) > self._max_url_stats:
+            sorted_urls = sorted(
+                self._stats["url_stats"].items(),
+                key=lambda x: x[1]["count"],
+                reverse=True
+            )
+            for url_key, _ in sorted_urls[self._max_url_stats:]:
+                del self._stats["url_stats"][url_key]
+
+        # 清理模块统计
+        if len(self._stats["module_stats"]) > self._max_module_stats:
+            sorted_modules = sorted(
+                self._stats["module_stats"].items(),
+                key=lambda x: x[1]["count"],
+                reverse=True
+            )
+            for module_key, _ in sorted_modules[self._max_module_stats:]:
+                del self._stats["module_stats"][module_key]
+
+        # 清理状态码统计
+        common_status_codes = {200, 201, 204, 400, 401, 403, 404, 500, 502, 503, 504}
+        status_codes_to_remove = [
+            code for code in self._stats["status_codes"]
+            if code not in common_status_codes and self._stats["status_codes"][code] < 10
+        ]
+        for code in status_codes_to_remove:
+            del self._stats["status_codes"][code]
 
     def record_request_sync(
         self,
