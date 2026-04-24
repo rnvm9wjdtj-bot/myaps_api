@@ -20,6 +20,7 @@ from .utils.common import standard_response, drop_matched_data
 from .utils.db_operation import db_exec_sql, db_managers, db_query, db_supsert, db_bupsert, db_delete, call_dbprocdure, db_update_by_index
 # from project_files import hap_conn
 from apps.data_opt.utils.data_processor import DataProcessor
+from apps.data_opt.components._base import ApsPayloadStorage
 
 
 logger = log_config.get_logger(__name__)
@@ -30,87 +31,6 @@ _cache_timestamp = 0
 CACHE_DURATION = 60  # 缓存60秒
 
 
-V_SUPPLY_MO_SQL = """
-    SELECT 
-        s.MaterialNo,
-        m.Description,
-        m.Unit,
-        -- m.Planner,
-        -- m.GroupNo,
-        -- m.PlanItem,
-        -- m.FIFO,
-        -- m.ABC,
-        -- m.ExpDay,
-        -- m.GRDay,
-        -- m.Phantom,
-        -- m.PhantomMin,
-        -- g.Color,
-        s.SupplyNo,
-        s.ItemNo,
-        s.MatVer,
-        s.Type,
-        s.Category,
-        s.Status,
-        -- s.Priority,
-        s.Avail_Qty,
-        d.Delay_Hour,
-        s.Create_Date,
-        o.DT_OrdStart,
-        o.DT_OrdEnd,
-        o.OrdTime,
-        IFNULL(o.DT_OrdEnd + INTERVAL m.GRDay DAY, s.Avail_Date) AS Avail_Date,
-        s.Avail_End_Date,
-        s.DT_Req,
-        IFNULL(p.Req_Date, s.DT_Req) AS Req_Date,
-        TIMESTAMPDIFF(
-            HOUR,
-            o.DT_OrdEnd + INTERVAL m.GRDay DAY,
-            IFNULL(p.Req_Date, s.DT_Req)
-        ) AS RemainTime,
-        s.VendorNo,
-        -- s.Memo,
-        -- s.Sys_Stamp,
-        s.ApiEx_SN,
-        s.ApiEx_ID,
-        s.ApiEx_EntryID
-    FROM t_supply s
-    -- 利用主键：MaterialNo
-    JOIN t_material m ON s.MaterialNo = m.MaterialNo AND m.Type = 'E'
-    -- 预计算工单时间
-    JOIN (
-        SELECT 
-            SupplyNo,
-            MIN(DT_Start) AS DT_OrdStart,
-            MAX(DT_End) AS DT_OrdEnd,
-            TIMEDIFF(MAX(DT_End), MIN(DT_Start)) AS OrdTime
-        FROM t_orderwc
-        WHERE SupplyNo IN ({supplynos})
-        GROUP BY SupplyNo
-    ) o ON s.SupplyNo = o.SupplyNo
-    LEFT JOIN t_groupcolor g ON m.GroupNo = g.GroupNo
-    LEFT JOIN v_orderwc_delay_hour d ON s.SupplyNo = d.OrderNo
-    LEFT JOIN v_peg_req_date_1st p ON s.SupplyNo = p.SupplyNo
-    WHERE s.Type IN ('PL', 'MO')
-    AND s.SupplyNo IN ({supplynos})
-    ORDER BY s.SupplyNo;
-"""
-
-MINI_PEG_SQL = """
-    SELECT DISTINCT
-        p.DemandNO AS DemandNo,
-        s.SupplyNo AS S_SupplyNo
-    FROM t_peg p
-    LEFT JOIN t_demand d ON p.MaterialNo = d.MaterialNo 
-        AND p.DemandNO = d.DemandNo 
-        AND p.ItemNo = d.ItemNo
-    LEFT JOIN t_supply s ON s.MaterialNo = p.MaterialNo 
-        AND s.SupplyNo = p.S_SupplyNo 
-        AND s.ItemNo = p.S_ItemNo
-    INNER JOIN t_material m ON m.MaterialNo = p.MaterialNo
-    -- 所有条件集中在这里
-    WHERE {where_string}
-    ORDER BY p.id, d.MaterialNo, d.Priority, s.Avail_Date, s.Avail_Qty;
-"""
 ########################################################################
 def get_client_ip(request: Request):
     """获取客户端IP地址"""
@@ -260,8 +180,6 @@ async def get_material_page(
     tags=["主数据 - 物料"],
     summary="根据料号获取物料信息",
     description="根据料号获取物料信息",
-    include_in_schema=False,
-    dependencies=[Depends(only_localhost())]
 )
 async def get_material(
     materialnos: str = Path(..., description="料号，多个用逗号隔开"),
@@ -442,22 +360,22 @@ async def post_mat_wc_mold(
 ########################################################################
 # 生产数据接口
 ########################################################################
-@rt.get(
-    "/v_supply/{supplyno}",
-    tags=["生产数据 - 供应"],
-    summary="获取供应记录",
-    description="获取供应记录"
-)
-async def get_supply(
-    db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-    supplyno: str = Path(..., description="供应号"),
-):
-    filter_string = f"`SupplyNo`='{supplyno}'"
+# @rt.get(
+#     "/v_supply/{supplyno}",
+#     tags=["生产数据 - 供应"],
+#     summary="获取供应记录",
+#     description="获取供应记录"
+# )
+# async def get_supply(
+#     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+#     supplyno: str = Path(..., description="供应号"),
+# ):
+#     filter_string = f"`SupplyNo`='{supplyno}'"
 
-    supply_query_result = await db_query(db_name=db_name, model_or_tablename="v_supply", filter_string=filter_string)
-    supply_data = supply_query_result['data']
+#     supply_query_result = await db_query(db_name=db_name, model_or_tablename="v_supply", filter_string=filter_string)
+#     supply_data = supply_query_result['data']
 
-    return standard_response(data=supply_data)
+#     return standard_response(data=supply_data)
 
 
 @rt.post("/t_supply",
@@ -474,79 +392,76 @@ async def post_supply(
     return await db_bupsert(db_names=db_name, model_or_tablename="t_supply", data_list=data)
 
 
-
-@rt.patch(
-    "/t_supply/{supplyno}/{materialno}",
-    tags=["生产数据 - 供应"],
-    summary="修改供应记录",
-    description="根据供应号、料号修改供应记录",
-    include_in_schema=False,
-    dependencies=[Depends(only_localhost())]
-)
-async def patch_supply_by_materialno(
-    supplyno: str = Path(..., description="要修改的供应记录的供应号"),
-    materialno: str = Path(..., description="料号"),
-    data: ModifySupply = Body(..., description="修改为这些信息"),
-    if_not_exist: Literal["skip", "insert"] = Query("skip", description="如果不存在如何处理"),
-    db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-    x_api_key: str = Header(None, description="API密钥")
-):
-    db_name = db_name.replace(" ", "")
-    if isinstance(data, ModifySupply):
-        data = data.model_dump(exclude_unset=True)
-        # data = data.model_dump()
-    if "supplyno" in data:
-        data.pop("supplyno")    # 从data中移除supplyno，防止意外修改 供应号
-    index_dict = {"SupplyNo": supplyno}
-    if not materialno == "...":
-        index_dict["MaterialNo"] = materialno
-    return await db_update_by_index(
-        db_names=db_name,
-        model_or_tablename="t_supply",
-        index_dict=index_dict,
-        new_values_dict=data,
-        not_found_behavior=if_not_exist
-    )
-
+# @rt.patch(
+#     "/t_supply/{supplyno}/{materialno}",
+#     tags=["生产数据 - 供应"],
+#     summary="修改供应记录",
+#     description="根据供应号、料号修改供应记录",
+#     include_in_schema=False,
+#     dependencies=[Depends(only_localhost())]
+# )
+# async def patch_supply_by_materialno(
+#     supplyno: str = Path(..., description="要修改的供应记录的供应号"),
+#     materialno: str = Path(..., description="料号"),
+#     data: ModifySupply = Body(..., description="修改为这些信息"),
+#     if_not_exist: Literal["skip", "insert"] = Query("skip", description="如果不存在如何处理"),
+#     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+#     x_api_key: str = Header(None, description="API密钥")
+# ):
+#     db_name = db_name.replace(" ", "")
+#     if isinstance(data, ModifySupply):
+#         data = data.model_dump(exclude_unset=True)
+#         # data = data.model_dump()
+#     if "supplyno" in data:
+#         data.pop("supplyno")    # 从data中移除supplyno，防止意外修改 供应号
+#     index_dict = {"SupplyNo": supplyno}
+#     if not materialno == "...":
+#         index_dict["MaterialNo"] = materialno
+#     return await db_update_by_index(
+#         db_names=db_name,
+#         model_or_tablename="t_supply",
+#         index_dict=index_dict,
+#         new_values_dict=data,
+#         not_found_behavior=if_not_exist
+#     )
 
 
-@rt.patch(
-    "/t_supply/{supplyno}",
-    tags=["生产数据 - 供应"],
-    summary="将 PL 转为 MO",
-    description="根据供应号更新 PL 记录 ，转化时允许修改供应号",
-    include_in_schema=False,
-    dependencies=[Depends(only_localhost())]
-)
-async def patch_supply(
-    supplyno: str = Path(..., description="要修改的供应记录的供应号"),
-    data: ModifySupply = Body(..., description="修改为这些信息"),
-    db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-    x_api_key: str = Header(None, description="API密钥")
-):
-    db_name = db_name.replace(" ", "")
-    query_result = await db_query(db_name=db_name, model_or_tablename="t_supply", filter_string=f"`SupplyNo`='{supplyno}'")
+# @rt.patch(
+#     "/t_supply/{supplyno}",
+#     tags=["生产数据 - 供应"],
+#     summary="将 PL 转为 MO",
+#     description="根据供应号更新 PL 记录 ，转化时允许修改供应号",
+#     include_in_schema=False,
+#     dependencies=[Depends(only_localhost())]
+# )
+# async def patch_supply(
+#     supplyno: str = Path(..., description="要修改的供应记录的供应号"),
+#     data: ModifySupply = Body(..., description="修改为这些信息"),
+#     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+#     x_api_key: str = Header(None, description="API密钥")
+# ):
+#     db_name = db_name.replace(" ", "")
+#     query_result = await db_query(db_name=db_name, model_or_tablename="t_supply", filter_string=f"`SupplyNo`='{supplyno}'")
 
-    query_data = query_result['data']
-    if not query_data[0]["type"] == "PL":
-        return standard_response(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            success=0,
-            message=f"Supply {supplyno} is not a PL.")
+#     query_data = query_result['data']
+#     if not query_data[0]["type"] == "PL":
+#         return standard_response(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             success=0,
+#             message=f"Supply {supplyno} is not a PL.")
 
-    if isinstance(data, ModifySupply):
-        # data = data.model_dump(exclude_unset=True, exclude_none=True)
-        data = data.model_dump(exclude_none=True)
-    data['materialno'] = query_data[0]['materialno']
-    # 如果未指定供应号，则延用
-    if not data.get('supplyno'):
-        data['supplyno'] = supplyno
-    # 调用存储过程SupplyConvertMOByE2A，将PL转为MO
-    params_list = [[supplyno, data['supplyno'], data['status'], data['apiex_id'], data['apiex_entryid'], data['memo']]]
-    result = await call_dbprocdure(db_names=db_name, procedure_name="SupplyConvertMOByE2A", params_list=params_list)
-    return result
+#     if isinstance(data, ModifySupply):
+#         # data = data.model_dump(exclude_unset=True, exclude_none=True)
+#         data = data.model_dump(exclude_none=True)
+#     data['materialno'] = query_data[0]['materialno']
+#     # 如果未指定供应号，则延用
+#     if not data.get('supplyno'):
+#         data['supplyno'] = supplyno
+#     # 调用存储过程SupplyConvertMOByE2A，将PL转为MO
+#     params_list = [[supplyno, data['supplyno'], data['status'], data['apiex_id'], data['apiex_entryid'], data['memo']]]
+#     result = await call_dbprocdure(db_names=db_name, procedure_name="SupplyConvertMOByE2A", params_list=params_list)
+#     return result
     
-
 
 @rt.put("/t_supply/type/{type_}",
     tags=["生产数据 - 供应"],
@@ -578,7 +493,6 @@ async def replace_supply(
         return delete_result
 
 
-
 @rt.delete(
     "/t_supply/{supplyno}",
     tags=["生产数据 - 供应"],
@@ -598,52 +512,52 @@ async def delete_supply(
 
 
 # 需求接口
-@rt.get(
-    "/v_demand/page",
-    tags=["生产数据 - 需求"],
-    summary="获取需求报表",
-    description="根据需求类型查询需求记录",
-    include_in_schema=False,
-    dependencies=[Depends(only_localhost())]
-)
-async def get_demand_page(
-    db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-    start_time: str = Query(None, description="需求开始时间"),
-    end_time: str = Query(None, description="需求截止时间"),
-    page_size: int = Query(1000, description="每页数量"),
-    page_index: int = Query(0, description="页码"),
-):
-    db_name = db_name.replace(" ", "")
-    filter = []
-    if start_time:
-        filter.append(f"`Req_Date` >= '{start_time}'")
-    if end_time:
-        filter.append(f"`Req_Date` <= '{end_time}'")
-    filter_string = " AND ".join(filter)
-    return await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=filter_string, page_size=page_size, page_index=page_index)
+# @rt.get(
+#     "/v_demand/page",
+#     tags=["生产数据 - 需求"],
+#     summary="获取需求报表",
+#     description="根据需求类型查询需求记录",
+#     include_in_schema=False,
+#     dependencies=[Depends(only_localhost())]
+# )
+# async def get_demand_page(
+#     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+#     start_time: str = Query(None, description="需求开始时间"),
+#     end_time: str = Query(None, description="需求截止时间"),
+#     page_size: int = Query(1000, description="每页数量"),
+#     page_index: int = Query(0, description="页码"),
+# ):
+#     db_name = db_name.replace(" ", "")
+#     filter = []
+#     if start_time:
+#         filter.append(f"`Req_Date` >= '{start_time}'")
+#     if end_time:
+#         filter.append(f"`Req_Date` <= '{end_time}'")
+#     filter_string = " AND ".join(filter)
+#     return await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=filter_string, page_size=page_size, page_index=page_index)
 
 
-@rt.get(
-    "/v_demand/{demandno}",
-    tags=["生产数据 - 需求"],
-    summary="根据需求号获取物料需求详情",
-    description="根据 APS pegging 算法，需求号与供应号一致，所以该接口也即是：根据工单的 supplyno 获取原料需求"
-)
-async def get_demand(
-    db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-    demandno: str = Path(..., description="需求号"),
-    # type_: str = Path(..., enum=["DM", "RS"], description="需求类型"),
-):
-    query_result_demand = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{demandno}'")
-    if query_result_demand["success"] == 0:
-        return query_result_demand
-    query_result_supply = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplynos=f"'{demandno}'"), description="查询工单信息")
-    if query_result_supply["success"] == 0:
-        return query_result_demand
-    if query_result_supply["data"]:
-        # 合并需求和供应数据
-        query_result_demand["meta"]["mo"] = query_result_supply["data"][0]
-    return query_result_demand
+# @rt.get(
+#     "/v_demand/{demandno}",
+#     tags=["生产数据 - 需求"],
+#     summary="根据需求号获取物料需求详情",
+#     description="根据 APS pegging 算法，需求号与供应号一致，所以该接口也即是：根据工单的 supplyno 获取原料需求"
+# )
+# async def get_demand(
+#     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+#     demandno: str = Path(..., description="需求号"),
+#     # type_: str = Path(..., enum=["DM", "RS"], description="需求类型"),
+# ):
+#     query_result_demand = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{demandno}'")
+#     if query_result_demand["success"] == 0:
+#         return query_result_demand
+#     query_result_supply = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=f"`SupplyNo`='{demandno}'")
+#     if query_result_supply["success"] == 0:
+#         return query_result_demand
+#     if query_result_supply["data"]:
+#         # 合并需求和供应数据
+#         query_result_demand["meta"]["mo"] = query_result_supply["data"][0]
+#     return query_result_demand
 
 
 @rt.post(
@@ -661,41 +575,40 @@ async def post_demand(
     return await db_bupsert(db_names=db_name, model_or_tablename="t_demand", data_list=data)
 
 
+# @rt.patch(
+#     "/t_demand/{demandno}/{materialno}/{itemno}",
+#     tags=["生产数据 - 需求"],
+#     summary="修改需求记录",
+#     description="根据需求号修改记录"
+# )
+# async def patch_demand(
+#     demandno: str = Path(..., description="需要修改的需求记录的需求号"),
+#     materialno: str = Path(..., description="料号"),
+#     itemno: str = Path(..., description="项目号"),
+#     data: ModifyDemand = Body(..., description="修改为这些信息"),
+#     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+#     if_not_exist: Literal["skip", "insert"] = Query("skip", description="如果不存在如何处理"),
+#     x_api_key: str = Header(None, description="API密钥")
+# ):
+#     db_name = db_name.replace(" ", "")
+#     index_dict = {"DemandNo": demandno}
+#     if not materialno == "...":
+#         index_dict["MaterialNo"] = materialno
+#     if not itemno == "...":
+#         index_dict["ItemNo"] = itemno
 
-@rt.patch(
-    "/t_demand/{demandno}/{materialno}/{itemno}",
-    tags=["生产数据 - 需求"],
-    summary="修改需求记录",
-    description="根据需求号修改记录"
-)
-async def patch_demand(
-    demandno: str = Path(..., description="需要修改的需求记录的需求号"),
-    materialno: str = Path(..., description="料号"),
-    itemno: str = Path(..., description="项目号"),
-    data: ModifyDemand = Body(..., description="修改为这些信息"),
-    db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-    if_not_exist: Literal["skip", "insert"] = Query("skip", description="如果不存在如何处理"),
-    x_api_key: str = Header(None, description="API密钥")
-):
-    db_name = db_name.replace(" ", "")
-    index_dict = {"DemandNo": demandno}
-    if not materialno == "...":
-        index_dict["MaterialNo"] = materialno
-    if not itemno == "...":
-        index_dict["ItemNo"] = itemno
+#     # new_values_dict = data.model_dump(exclude_unset=True, exclude_none=True)
+#     new_values_dict = data.model_dump(exclude_none=True)
+#     # new_values_dict['apiex_sn'] = demandno    # 已在MOA2E存储过程修改
+#     response = await db_update_by_index(
+#         db_names=db_name,
+#         model_or_tablename="t_demand",
+#         index_dict=index_dict,
+#         new_values_dict=new_values_dict,
+#         not_found_behavior=if_not_exist,
+#     )
 
-    # new_values_dict = data.model_dump(exclude_unset=True, exclude_none=True)
-    new_values_dict = data.model_dump(exclude_none=True)
-    # new_values_dict['apiex_sn'] = demandno    # 已在MOA2E存储过程修改
-    response = await db_update_by_index(
-        db_names=db_name,
-        model_or_tablename="t_demand",
-        index_dict=index_dict,
-        new_values_dict=new_values_dict,
-        not_found_behavior=if_not_exist,
-    )
-
-    return response
+#     return response
 ########################################################################
 # 报表接口
 ########################################################################
@@ -742,189 +655,24 @@ async def get_mo_by_supplyno(
     origin_so: bool = Query(False, description="是否查询销售订单SO"),
     # x_api_key: str = Header(None, description="API密钥")
 ):
-
-    async def get_orderwc(mono: str):
-        sql = f"""
-            WITH filtered_orders AS (
-                -- 步骤1：先过滤核心数据
-                SELECT 
-                    o.OrderNo,
-                    o.SupplyNo,
-                    o.ItemNo,
-                    s.MatVer,
-                    o.MaterialNo,
-                    o.WorkCenter,
-                    o.MoldNo,
-                    o.SortNo,
-                    o.Fix,
-                    o.Priority,
-                    o.Status,
-                    o.OrderQty,
-                    o.Rate,
-                    o.BaseQty,
-                    o.BaseSec,
-                    o.FixQty,
-                    o.FixSec,
-                    o.SF,
-                    o.OffSetSec,
-                    o.SetupCost,
-                    o.SetupSec,
-                    o.DT_Start,
-                    o.DT_End,
-                    o.MEMO,
-                    o.Sys_Stamp,
-                    -- 来自 t_supply 的字段
-                    s.Type,
-                    s.Category,
-                    s.Priority AS S_Priority,
-                    s.Avail_Qty,
-                    s.DT_Req,
-                    s.Avail_Date,
-                    s.VendorNo
-                FROM t_orderwc o
-                JOIN t_supply s ON o.SupplyNo = s.SupplyNo AND s.Type IN ('PL', 'MO')
-                WHERE o.SupplyNo = '{mono}'
-            )
-            SELECT DISTINCT
-                fo.OrderNo,
-                fo.SupplyNo,
-                fo.ItemNo,
-                fo.MatVer,
-                fo.MaterialNo,
-                m.Description,
-                fo.WorkCenter,
-                fo.MoldNo,
-                k.MoldNum,
-                fo.SortNo,
-                w.Bottleneck,
-                CASE 
-                    WHEN (fo.MoldNo IS NOT NULL AND fo.MoldNo <> '') 
-                    THEN fo.MoldNo 
-                    ELSE m.GroupNo 
-                END AS GroupNo,
-                g.Color,
-                fo.Fix,
-                fo.Type,
-                fo.Category,
-                fo.Priority,
-                fo.S_Priority,
-                fo.Status,
-                (fo.OrderQty * IFNULL(fo.Rate, 1)) AS OrderQty,
-                ((fo.Avail_Qty * IFNULL(fo.Rate, 1)) - (fo.OrderQty * IFNULL(fo.Rate, 1))) AS ConfirmQty,
-                (fo.Avail_Qty * IFNULL(fo.Rate, 1)) AS OriginalQty,
-                fo.BaseQty,
-                fo.BaseSec,
-                CASE 
-                    WHEN (fo.FixQty IS NULL OR fo.FixQty = 0) 
-                    THEN IFNULL(fo.FixSec, 0) 
-                    ELSE IFNULL(CEILING(fo.OrderQty / fo.FixQty) * fo.FixSec, 0) 
-                END AS FixSec,
-                fo.SF,
-                fo.OffSetSec,
-                fo.SetupCost,
-                fo.SetupSec,
-                d.ABC,
-                d.Delay_Hour,
-                CASE 
-                    WHEN (fo.SetupSec IS NULL OR fo.SetupSec = 0) 
-                    THEN '0' 
-                    ELSE SEC_TO_TIME(fo.SetupSec) 
-                END AS SetupTime,
-                fo.DT_Start,
-                fo.DT_End,
-                TIMEDIFF(fo.DT_End, fo.DT_Start) AS ProcessTime,
-                fo.DT_Req,
-                IFNULL(p.Req_Date, fo.DT_Req) AS Req_Date,
-                TIMESTAMPDIFF(HOUR, fo.Avail_Date, IFNULL(p.Req_Date, fo.DT_Req)) AS RemainTime,
-                fo.VendorNo,
-                fo.MEMO,
-                fo.Sys_Stamp
-            FROM filtered_orders fo
-            -- 关联其他表
-            JOIN t_material m ON fo.MaterialNo = m.MaterialNo AND m.Type = 'E'
-            JOIN t_workcenter w ON fo.WorkCenter = w.WorkCenter
-            LEFT JOIN t_groupcolor g ON m.GroupNo = g.GroupNo
-            LEFT JOIN t_mold k ON fo.MoldNo = k.MoldNo
-            LEFT JOIN v_orderwc_delay_hour d ON fo.SupplyNo = d.OrderNo AND d.OrderNo = '{mono}'
-            LEFT JOIN v_peg_req_date_1st p ON fo.SupplyNo = p.SupplyNo AND p.SupplyNo = '{mono}'
-            ORDER BY fo.SortNo;
-        """
-        orderwc = await db_exec_sql(db_name=db_name, sql=sql, description="查询工序信息")
-        return orderwc['data']
-
-    async def get_prev_mo(mono: str):
-        """
-        通过工单 supplyno 号查询前 前置 工单
-        """
-        for_demands = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{mono}' AND `Type` IN ('DM', 'RS', 'PR', 'PO')")
-        demands_data = for_demands['data']
-        prev_mo = []
-        if demands_data:
-            demands_no = ','.join([f"'{i['demandno']}'" for i in demands_data])
-            peg_query_result = await db_exec_sql(db_name=db_name, sql=MINI_PEG_SQL.format(where_string=f"p.DemandNO IN ({demands_no}) AND p.S_Type IN ('PL', 'MO')"), description=f"查询{demands_no}匹配的PL和MO")
-            if peg_query_result['data']:
-                supplies_no = ','.join([f"'{i['s_supplyno']}'" for i in peg_query_result['data']])
-                prev_mo_query_result = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplynos=supplies_no), description=f"查询{supplies_no}的前置工单信息")
-                prev_mo = prev_mo_query_result['data']
-        return prev_mo
-
-    async def get_next_mo(mono: str): 
-        """
-        通过工单 supplyno 号查询后 后置 工单
-        """
-        in_pegs = await db_exec_sql(db_name=db_name, sql=MINI_PEG_SQL.format(where_string=f"p.S_SupplyNo='{mono}' AND p.Type IN ('DM', 'RS')"), description=f"查询{mono}匹配的DM和RS")
-        pegs_data = in_pegs['data']
-        next_mo = []
-        if pegs_data:
-            demands_no = ','.join([f"'{i['demandno']}'" for i in pegs_data])
-            next_mo_query_result = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplynos=demands_no), description=f"查询{mono}的后续置工单信息")
-            next_mo = next_mo_query_result['data']
-        return next_mo
-
-    async def get_so(so_demandno: str):
-        """
-        通过工单 supplyno 号查询销售订单
-        """
-        so_query_result = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{so_demandno}' AND `Type`='SO'")
-        so_data = so_query_result['data']
-        if so_data:
-            return so_data[0]
-
-    db_name = db_name.replace(" ", "")
-
-    result = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplynos=f"'{supplyno}'"), description=f"查询{supplyno}的工单信息")
-    
-    if result['success'] and result['meta']['total'] == 1:  # 筛选到唯一的工单，则补充工序信息（v_orderwc）
-        result['data'][0]['orderwc'] = await get_orderwc(mono=supplyno)
-
-        vendorno = result['data'][0].get('vendorno')
-        if origin_so and result['data'][0].get('category') == 'MTO' and vendorno:
-            result['data'][0]['so'] = await get_so(vendorno)
-                
-        if prev_mo:
-            result['data'][0]['prev_mo'] = await get_prev_mo(supplyno)
-        if next_mo:
-            result['data'][0]['next_mo'] = await get_next_mo(supplyno)
-
-    return result
+    return await ApsPayloadStorage.get_mo_by_supplyno(db_name=db_name, supplyno=supplyno, prev_mo=prev_mo, next_mo=next_mo, origin_so=origin_so)
 
 
-@rt.get(
-    "/v_supply_complete",
-    tags=["生产数据 - 报工"],
-    summary="查询工单完成情况",
-    description="以最后一步工序完成数量为依据，汇总工单完成情况"
-)
-async def query_workreport(
-    db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套")
-):
-    """
-    查询报工记录
-    db_name: str，数据库名称，多个数据库名称用逗号分隔
-    """
-    db_name = db_name.replace(" ", "")
-    return await db_query(db_name=db_name, model_or_tablename="v_supply_complete")
-
+# @rt.get(
+#     "/v_supply_complete",
+#     tags=["生产数据 - 报工"],
+#     summary="查询工单完成情况",
+#     description="以最后一步工序完成数量为依据，汇总工单完成情况"
+# )
+# async def query_workreport(
+#     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套")
+# ):
+#     """
+#     查询报工记录
+#     db_name: str，数据库名称，多个数据库名称用逗号分隔
+#     """
+#     db_name = db_name.replace(" ", "")
+#     return await db_query(db_name=db_name, model_or_tablename="v_supply_complete")
 
 
 @rt.get(
@@ -969,7 +717,8 @@ async def get_orderwc(
 
 @rt.get(
     "/v_peg/page",
-    include_in_schema=False, dependencies=[Depends(only_localhost())]
+    include_in_schema=False,
+    dependencies=[Depends(only_localhost())]
 )
 async def get_peg_page(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
@@ -980,23 +729,21 @@ async def get_peg_page(
     return await db_query(db_name=db_name, model_or_tablename="v_peg", page_size=page_size, page_index=page_index)  
 
 
-@rt.get(
-    "/v_peg/mini",
-    tags=["报表 - 匹配关系"],
-    summary="获取匹配关系",
-    description="获取需求与供应的匹配关系，极简版本，仅体现对应关系",
-    include_in_schema=False,
-    dependencies=[Depends(only_localhost())]
-)
-async def get_peg_relation(
-    db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-    page_size: int = Query(10000, description="每页数量"),
-    page_index: int = Query(0, description="页码"),
-):
-    db_name = db_name.replace(" ", "")
-    return await db_query(db_name=db_name, model_or_tablename="v_peg", page_size=page_size, page_index=page_index)
-    # return await db_exec_sql(db_name=db_name, sql=V_PEG_SQL.format(where_string="1=1"), description="查询需求与供应的匹配关系")
-
+# @rt.get(
+#     "/v_peg/mini",
+#     tags=["报表 - 匹配关系"],
+#     summary="获取匹配关系",
+#     description="获取需求与供应的匹配关系，极简版本，仅体现对应关系",
+#     include_in_schema=False,
+#     dependencies=[Depends(only_localhost())]
+# )
+# async def get_peg_relation(
+#     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+#     page_size: int = Query(10000, description="每页数量"),
+#     page_index: int = Query(0, description="页码"),
+# ):
+#     db_name = db_name.replace(" ", "")
+#     return await db_query(db_name=db_name, model_or_tablename="v_peg", page_size=page_size, page_index=page_index)
 
 
 @rt.get(
@@ -1170,23 +917,23 @@ async def delete_workreport(
     return result
 
 
-@rt.patch(
-    "/t_confirm",
-    tags=["生产数据 - 报工"],
-    summary="确认报工记录",
-    description="确认报工记录",
-    include_in_schema=False,
-    dependencies=[Depends(only_localhost())]
-)
-async def confirm_workreport(
-    db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-    x_api_key: str = Header(None, description="API密钥")
-):
-    """
-    确认报工记录
-    db_name: str，数据库名称，多个数据库名称用逗号分隔
-    """
-    db_name = db_name.replace(" ", "")
-    result = await call_dbprocdure(db_names=db_name, procedure_name="UpdateConfirmQtyToOrderWC")
-    return result
+# @rt.patch(
+#     "/t_confirm",
+#     tags=["生产数据 - 报工"],
+#     summary="确认报工记录",
+#     description="确认报工记录",
+#     include_in_schema=False,
+#     dependencies=[Depends(only_localhost())]
+# )
+# async def confirm_workreport(
+#     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+#     x_api_key: str = Header(None, description="API密钥")
+# ):
+#     """
+#     确认报工记录
+#     db_name: str，数据库名称，多个数据库名称用逗号分隔
+#     """
+#     db_name = db_name.replace(" ", "")
+#     result = await call_dbprocdure(db_names=db_name, procedure_name="UpdateConfirmQtyToOrderWC")
+#     return result
 

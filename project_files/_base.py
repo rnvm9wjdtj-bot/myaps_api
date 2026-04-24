@@ -15,14 +15,15 @@ from globalobjects.globalconst import OrderStatusEnum
 
 
 # ❗❗❗❗❗❗❗❗❗❗❗❗⬇️不要删掉，便于各项目文件引用 ❗❗❗❗❗❗❗❗❗❗❗❗
-from core.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET, SCHEDULER_MINUTE
+from core.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET, SCHEDULER_MINUTE, PROJECT_JSON
 from globalobjects import logger as log_config, PROJECT_JSON_FILE, ProjectDefaultValues as pdv, AlertType, QqEmailReminder, Reminder
 from apps.io_api.utils.common import standard_response
 from apps.io_api.utils.db_operation import db_delete, db_bupsert, call_dbprocdure, db_query, db_supsert, db_update_by_index
+from apps.io_api.models import TSupply
 from apps.data_opt.utils.scheduler import cron_task
 from apps.data_opt.utils.common import add_basic_auth_requests, get_session
 from apps.data_opt.utils.data_processor import DataProcessor
-from apps.data_opt.components._base import ApsHelper, ApsChanger, CacheItem
+from apps.data_opt.components._base import ApsPayloadStorage, EventResultPoster, CacheItem
 from apps.data_opt.components.simple_hap import HapConnection
 
 
@@ -350,15 +351,15 @@ def finish_event_batch_reminder(description: str = None, reminder: Reminder = No
 
     用法:
         @event_batch_finish_reminder(reminder=qq_email_reminder)
-        async def batch_handle_pl_status_a2e(event_data: List[Dict], description="PL 单据下达", apc=None):
+        async def batch_handle_pl_status_a2e(event_data: List[Dict], description="PL 单据下达", _erp=None):
             @async_rate_limit()
             async def handle_pl_status_a2e(item):
                 try:
                     # ... 业务逻辑
                     pass
                 except Exception as e:
-                    # 直接调用 apc 方法记录错误
-                    await apc.pl_release_failed_async(msg=str(e), msg_from="API")
+                    # 直接调用 _erp 方法记录错误
+                    await _erp.pl_release_failed_async(msg=str(e), msg_from="API")
                     return
 
             tasks = [handle_pl_status_a2e(item) for item in event_data]
@@ -369,7 +370,7 @@ def finish_event_batch_reminder(description: str = None, reminder: Reminder = No
         reminder: 可选的 Reminder 实例，执行完成时将发送通知
 
     注意:
-        被装饰的函数需要接受 apc 参数
+        被装饰的函数需要接受 _erp 参数
     """
     def decorator(func):
         @wraps(func)
@@ -382,7 +383,7 @@ def finish_event_batch_reminder(description: str = None, reminder: Reminder = No
                     try:
                         import inspect
                         sig = inspect.signature(func)
-                        # 使用 bind_partial 绑定原始参数，避免缺少 apc 参数导致绑定失败
+                        # 使用 bind_partial 绑定原始参数，避免缺少 _erp 参数导致绑定失败
                         bound_args = sig.bind_partial(*args, **kwargs)
                         bound_args.apply_defaults()
                         actual_description = bound_args.arguments.get('description')
@@ -391,17 +392,17 @@ def finish_event_batch_reminder(description: str = None, reminder: Reminder = No
                 if actual_description is None:
                     actual_description = func.__name__
             
-            # 然后创建并注入 apc
-            apc = ApsChanger()
-            kwargs['apc'] = apc
+            # 然后创建并注入 _erp
+            _erp = EventResultPoster()
+            kwargs['_erp'] = _erp
             
             try:
                 result = await func(*args, **kwargs)
             finally:
                 # 使用之前获取的 actual_description
-                summary = apc.get_summary()     
+                summary = _erp.get_summary()     
                 CLIENT_LOGGER.info(f"{actual_description} 执行完成，汇总结果: {json.dumps(summary, ensure_ascii=False)}")
-                notification = apc.format_notification(actual_description)
+                notification = _erp.format_notification(actual_description)
                 CLIENT_LOGGER.info(f"通知内容: {notification}")
                 
                 if reminder is not None:

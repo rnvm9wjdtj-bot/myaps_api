@@ -20,7 +20,7 @@ from globalobjects.globalconst import OrderStatusEnum
 from apps.io_api.utils.common import dict_to_lower_keys
 from globalobjects import logger as log_config
 from apps.data_opt.utils.scheduler import cron_task
-from apps.data_opt.components._base import ApsHelper
+from apps.data_opt.components._base import ApsPayloadStorage
 from apps.data_opt.utils.common import get_optimized_session
 from apps.common.utils.redis_pool_manager import get_redis_pool_manager
 
@@ -142,29 +142,15 @@ class ApsEvent:
 
 # 只在第一次导入时注册事件
 if not _events_registered:
-    async def error_handler(native_plno: str, msg: str, msg_from: str = None, **kwargs):
-        await ApsHelper().pl_release_failed_async(native_plno=native_plno, msg=msg, msg_from=msg_from or "API", **kwargs)
 
-    aps_pl_status_a2e_event = ApsEvent(
-        event_type=DbEventType.PL_STATUS_A2E, 
-        description="PL 单据 下达",
-        flush_interval=15,
-        error_handler=error_handler,
-        error_handler_kwargs={"msg_from": "API"}
-    )
-    aps_pr_status_a2e_event = ApsEvent(
-        event_type=DbEventType.PR_STATUS_A2E,
-        description="PR 单据 下达",
-    )
-    aps_pl_typeto_mo_event = ApsEvent(
-        event_type=DbEventType.PL_TYPETO_MO, 
-        description="PL 变更为 MO",
-        flush_interval=120,
-    )
-    aps_pr_deleted_event = ApsEvent(
-        event_type=DbEventType.PR_DELETED, 
-        description="PR 单据 删除",
-    )
+    aps_pl_status_a2e_event = ApsEvent(event_type=DbEventType.PL_STATUS_A2E, description="PL 单据 下达", flush_interval=15)
+
+    aps_pr_status_a2e_event = ApsEvent(event_type=DbEventType.PR_STATUS_A2E, description="PR 单据 下达", flush_interval=15)
+
+    aps_pl_typeto_mo_event = ApsEvent(event_type=DbEventType.PL_TYPETO_MO, description="PL 变更为 MO", flush_interval=120)
+
+    aps_pr_deleted_event = ApsEvent(event_type=DbEventType.PR_DELETED, description="PR 单据 删除")
+
     _events_registered = True
     logger.success("数据库事件注册", "", "所有事件已成功注册")
 else:
@@ -188,35 +174,35 @@ def handle_update_supply(database: str, table: str, data: dict, data_diff: dict)
         status_now = data_now['status']
         
         match (type_now, status_now, type_before, status_before):
-            case ('PL', 'A2E', _, 'NEW' | 'CRE'):  # 或逻辑
-                plno = data_now['supplyno']        
+            case ('PL', 'A2E', _, 'NEW' | 'CRE'):
+                # plno = data_now['supplyno']
                 aps_pl_status_a2e_event.add_event(data_now)
-                return
+
             case ('MO', _, 'PL', _):
                 aps_pl_typeto_mo_event.add_event(data_now)
-                return
-            case ('PR', 'A2E', _, 'NEW' | 'CRE'):
-                prno = data_now['supplyno']        
+
+            case ('PR', 'A2E', 'PR', 'NEW' | 'CRE'):
+                # prno = data_now['supplyno']
                 aps_pr_status_a2e_event.add_event(data_now)
-                return
+
     except Exception as e:
         logger.fail("处理t_supply更新事件", "", str(e))
 
 
-@binlog_listener.on_insert_for_table("t_supply", database=MYAPS_MAIN_DB)
-def handle_insert_supply(database: str, table: str, data: dict):
-    """处理t_supply表的插入事件"""
-    try:
-        from apps.data_opt.components._base import ApsHelper
+# @binlog_listener.on_insert_for_table("t_supply", database=MYAPS_MAIN_DB)
+# def handle_insert_supply(database: str, table: str, data: dict):
+#     """处理t_supply表的插入事件"""
+#     try:
+#         from apps.data_opt.components._base import ApsHelper
 
-        new_data = dict_to_lower_keys(data['new'])
-        type_ = new_data['type']
-        # status_now = new_data['status']
+#         new_data = dict_to_lower_keys(data['new'])
+#         type_ = new_data['type']
+#         # status_now = new_data['status']
 
-        if type_ == 'PR':
-            aps_pr_status_a2e_event.add_event(new_data)
-    except Exception as e:
-        logger.fail("处理t_supply插入事件", "", str(e))
+#         if type_ == 'PR':
+#             aps_pr_status_a2e_event.add_event(new_data)
+#     except Exception as e:
+#         logger.fail("处理t_supply插入事件", "", str(e))
    
 
 

@@ -19,11 +19,14 @@ EVENT_AGGREGATOR = get_global_handler_aggregator()
 
 from .reminder import Reminder, AlertType, alert_manager, QqEmailReminder
 
+from .globalconst import ConstEnum
+
 __all__ = [
     "Reminder",
     "AlertType",
     "alert_manager",
     "QqEmailReminder",
+    "ConstEnum",
 ]
 
 class ProjectDefaultValues:

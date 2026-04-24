@@ -78,6 +78,10 @@ class SfEnum(str, Enum):
     F = "F"
 
 
+class ConstEnum(Enum):
+    RELEASE_SUCCESS = "✅"
+    RELEASE_FAILED = "🚫"
+
 # LOT_SIZE = {
 #     "EX": "一对一",
 #     "FX": "固定批",

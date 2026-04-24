@@ -15,7 +15,7 @@ from ._base import (
     PydanticModel, JSONManager,
     logger,
     DataProcessor, globalconst, PROJECT_JSON_FILE, pdv,
-    BaseConnection, ApsHelper, ApsChanger, convert_timeunit, clean_value,
+    BaseConnection, ApsPayloadStorage, EventResultPoster, convert_timeunit, clean_value,
     model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold, AcceptSupply, AcceptConfirm,
@@ -861,8 +861,8 @@ class TplusConnection(BaseConnection):
     async def create_mo(
         self,
         supplyno: str,
-        aph: ApsHelper,
-        apc: ApsChanger,
+        _aps: ApsPayloadStorage,
+        _erp: EventResultPoster,
         remain_native_supplyno: bool = True,
         pydantic_model: PydanticModel=MoPushModel,
     ):
@@ -871,8 +871,8 @@ class TplusConnection(BaseConnection):
         :param supplyno: APS 中的 PL号
         :param remain_native_supplyno: 是否保留原生供应号，若为 false 则使用 T+ 生成的工单号作为 MO 供应号
         :param pydantic_model: 数据模型
-        :param apc: ApsChanger 实例
-        :param aph: ApsHelper 实例
+        :param _erp: EventResultPoster 实例
+        :param _aps: ApsPayloadStorage 实例
         :return:
         """
         async def approve_mo_async(tplus_moid):
@@ -887,9 +887,9 @@ class TplusConnection(BaseConnection):
         await self.auth() 
         endpoint = MoCreateInterface.endpoint
         # 材料需求
-        demand_list = await aph.get_demand_datalist(demandno=supplyno)
+        demand_list = await _aps.get_demand_datalist(demandno=supplyno)
         # PL及工序详情
-        supplymo_detaildata = await aph.get_supplymo_detaildata(supplyno=supplyno, get_next_mo=True, get_origin_so=True)   
+        supplymo_detaildata = await _aps.get_supplymo_detaildata(supplyno=supplyno, get_next_mo=True, get_origin_so=True)   
         supplymo_detaildata['demand_list'] = demand_list
         # Pydantic V2: 模型实例化是同步的，异步验证器由 Pydantic 内部处理
         dto = pydantic_model(**supplymo_detaildata).model_dump(exclude_none=True)
@@ -915,17 +915,17 @@ class TplusConnection(BaseConnection):
             tplus_mo_entryid = tplus_mo_data['ManufactureOrderDetails'][0]['ID']
 
             # 调用存储过程更改工单信息，❗一定放在最后一步，否则工单号变更太早，前面若有用原生供应号查询都会失败
-            _x_c = await apc.pl_release_success(native_plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
+            _x_c = await _erp.mo_release_success(native_plno=supplyno, msg=mo_create_response_json['message'], msg_from='T+', mono=tplus_mo_code, _id=tplus_mo_id, _entryid=tplus_mo_entryid)
         else:
-            _x_d = await apc.pl_release_failed(native_plno=supplyno, msg=mo_create_response_json['message'], push_data=payload, msg_from='T+')
+            _x_d = await _erp.mo_release_failed(native_plno=supplyno, msg=mo_create_response_json['message'], push_data=payload, msg_from='T+')
 
 
     async def push_rs(
         self,
         mdlist_or_supplyno: str | list[dict],
         tplus_mo_data_or_id: dict | str | int,
-        aph: ApsHelper,
-        apc: ApsChanger,
+        _aps: ApsPayloadStorage,
+        _erp: EventResultPoster,
         pydantic_model:PydanticModel=RsPushModel,
     ):
         """
@@ -935,7 +935,7 @@ class TplusConnection(BaseConnection):
         """
         endpoint = RsCreateInterface.endpoint
         if isinstance(mdlist_or_supplyno, str):
-            rs_data = await aph.get_demand_datalist(demandno=mdlist_or_supplyno)     # 查询 指定工单号所需物料
+            rs_data = await _aps.get_demand_datalist(demandno=mdlist_or_supplyno)     # 查询 指定工单号所需物料
             demandno = mdlist_or_supplyno
         else:
             rs_data = mdlist_or_supplyno
@@ -944,7 +944,7 @@ class TplusConnection(BaseConnection):
         if isinstance(tplus_mo_data_or_id, dict):
             mo_data = tplus_mo_data_or_id
         else:
-            mo_data = await aph.query_mo_async(index_value=tplus_mo_data_or_id)
+            mo_data = await _aps.query_mo_async(index_value=tplus_mo_data_or_id)
 
         processed_rsdata = DataProcessor.merge_common_fields(data=rs_data, merge_with=["demandno", "type", "status", "create_date"], entries_key=MERGE_ENTRIY_KEY)
 
@@ -972,18 +972,18 @@ class TplusConnection(BaseConnection):
                 response = await response
             rs_push_response_json = response
             if str(rs_push_response_json['code']) == '0': # 创建成功
-                await apc.rs_push_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
+                await _erp.rs_release_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
             else:
-                await apc.rs_push_failed(rsno=demandno, msg=rs_push_response_json['message'], push_data=processed_rsdata, msg_from='T+')
+                await _erp.rs_release_failed(rsno=demandno, msg=rs_push_response_json['message'], push_data=processed_rsdata, msg_from='T+')
         else:
-            await apc.rs_push_success(rsno=demandno, msg="无领料申请详情", msg_from='APS')
+            await _erp.rs_release_success(rsno=demandno, msg="无领料申请详情", msg_from='APS')
 
 
     async def push_pr(
         self,
         data_list: list[dict],
-        aph: ApsHelper,
-        apc: ApsChanger,
+        _aps: ApsPayloadStorage,
+        _erp: EventResultPoster,
         pydantic_model:PydanticModel=PrPushModel):
         """
         异步推送采购申请
@@ -1002,15 +1002,15 @@ class TplusConnection(BaseConnection):
             return response_json
         
         # if not data_list:
-        #     data_list = await aph.get_new_pr_data()
+        #     data_list = await _aps.get_new_pr_data()
         #     if not data_list:
         #         logger.debug("没有新的请购单数据")
         #         return
 
-        agg_data_list = await aph.aggregate_pr_data(data_list=data_list)
+        agg_data_list = await _aps.aggregate_pr_data(pr_data_list=data_list)
         tplus_pr_data = pydantic_model(data=agg_data_list).model_dump(exclude_none=True)
         payload = {"dto": tplus_pr_data}
-        logger.debug(f"向 T+ 推送请购单，发送数据：{json.dumps(payload, ensure_ascii=False)}")
+        # logger.debug(f"向 T+ 推送请购单，发送数据：{json.dumps(payload, ensure_ascii=False)}")
         endpoint = PrCreateInterface.endpoint
         response = await self._post(endpoint=endpoint, data=payload)
         pr_push_response_json = response.json()
@@ -1018,14 +1018,14 @@ class TplusConnection(BaseConnection):
             tplus_pr_id = pr_push_response_json['data'].get('ID')
             tplus_pr_code = pr_push_response_json['data'].get('Code')
             for _ in data_list:
-                await apc.pr_push_success(prno=_['supplyno'], msg=pr_push_response_json['message'], msg_from='T+', _code=tplus_pr_code, _id=tplus_pr_id)
+                await _erp.pr_release_success(prno=_['supplyno'], msg=pr_push_response_json['message'], msg_from='T+', _code=tplus_pr_code, _id=tplus_pr_id)
             
             # 审批请购单
             await approve_pr(tplus_pr_code=tplus_pr_code)
         
         else:
-            for _ in data_list:
-                await apc.pr_push_failed(prno=_['supplyno'], msg=pr_push_response_json['message'], msg_from='T+', push_data=payload)
+            tasks = [_erp.pr_release_failed(prno=item['supplyno'], msg=pr_push_response_json['message'], msg_from='T+') for item in data_list]
+            await asyncio.gather(*tasks)
 
 
     async def delete_pr(self, tplus_pr_code: str):

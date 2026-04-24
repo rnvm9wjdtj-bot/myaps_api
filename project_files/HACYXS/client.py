@@ -16,11 +16,13 @@
 #     - free3 包装要求
 """
 import asyncio
+from apps.io_api.models import TSupply
 from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR, SCHEDULER_MINUTE
 from .._base import (
     get_scheduler_minute, cron_task, CLIENT_LOGGER, CLIENT_SESSION, PROJECT_JSON_FILE,
-    ApsHelper, ApsChanger, get_session, CacheItem,
-    QqEmailReminder, AlertType, async_rate_limit, start_event_batch_reminder, finish_event_batch_reminder
+    ApsPayloadStorage, EventResultPoster, get_session, CacheItem,
+    QqEmailReminder, AlertType, async_rate_limit, start_event_batch_reminder, finish_event_batch_reminder,
+    TSupply
 )
 
 
@@ -52,7 +54,7 @@ async def refresh_stock(dbs: str=MYAPS_DB_SET):
         tplus_conn = get_tplus_conn()
         stock_data = await tplus_conn.pull_stock()
         if stock_data:
-            await ApsHelper.refresh_supply(stock_data, dbs=dbs)
+            await ApsPayloadStorage.refresh_supply(stock_data, dbs=dbs)
     except Exception as e:
         CLIENT_LOGGER.fail("刷新库存数据", "", str(e))
         raise
@@ -76,7 +78,7 @@ async def task_refresh_stock():
 async def task_confirm_workreport():
     """定时任务：确认报工"""
     try:
-        await ApsHelper.confirm_workreport()
+        await ApsPayloadStorage.confirm_workreport()
         CLIENT_LOGGER.success("定时任务执行", "确认报工", "任务完成")
     except Exception as e:
         CLIENT_LOGGER.fail("定时任务执行", "确认报工", f"任务失败: {str(e)}")
@@ -88,7 +90,7 @@ async def task_confirm_workreport():
 
 back_flush_warehouse = 'ck06'
 
-def create_custom_mo_push_model(aph: ApsHelper):
+def create_custom_mo_push_model(_aps: ApsPayloadStorage):
     """创建带有 ApsHelper 实例的 CustomMoPushModel 类"""
     
     class CustomMoPushModel(MoPushModel):
@@ -113,8 +115,8 @@ def create_custom_mo_push_model(aph: ApsHelper):
 
             # 批量查询所有物料的 free1 字段
             materialnos = [md['Inventory']['Code'] for md in mo_material_details]
-            # 使用闭包中的 aph 实例，调用同步方法
-            materials = aph.query_material_sync(materialnos)
+            # 使用闭包中的 _aps 实例，调用同步方法
+            materials = _aps.query_material_sync(materialnos)
             materials = {item['materialno']: item for item in materials}
             
             for md in mo_material_details:
@@ -144,7 +146,7 @@ def create_custom_mo_push_model(aph: ApsHelper):
     return CustomMoPushModel
 
 
-def create_custom_rs_push_model(aph: ApsHelper):
+def create_custom_rs_push_model(_aps: ApsPayloadStorage):
     class CustomRsPushModel(RsPushModel):
 
         class Config:
@@ -157,7 +159,7 @@ def create_custom_rs_push_model(aph: ApsHelper):
 
             mr_details:list[dict] = cleaned_values['MaterialRequestDetails']
             materialnos = [md['Inventory']['Code'] for md in mr_details]
-            materials = aph.query_material_sync(materialnos)
+            materials = _aps.query_material_sync(materialnos)
             # materialnos = ','.join([md['Inventory']['Code'] for md in mr_details])
             # materials = CLIENT_SESSION.get(f"{THIS_BASE_URL}/api/t_material/{materialnos}")
             # materials = materials.json()['data']
@@ -187,9 +189,9 @@ planner_email_reminder = None
 
 @start_event_batch_reminder(reminder=planner_email_reminder)
 @finish_event_batch_reminder(reminder=planner_email_reminder)
-async def batch_handle_pl_status_a2e(supplyno_or_data_list: list[str | dict], apc: ApsChanger, description="PL 单据下达"):
+async def batch_handle_pl_status_a2e(supplyno_or_data_list: list[str | dict], _erp: EventResultPoster, description="下达生产加工单至 T+"):
     @async_rate_limit()
-    async def handle_pl_status_a2e(supplyno_or_data: Union[str, dict], aph: ApsHelper):
+    async def handle_pl_status_a2e(supplyno_or_data: Union[str, dict], _aps: ApsPayloadStorage):
         """处理PL状态变更为A2E"""
         try:
             if isinstance(supplyno_or_data, str):
@@ -201,27 +203,28 @@ async def batch_handle_pl_status_a2e(supplyno_or_data_list: list[str | dict], ap
                 supplyno=supplyno,
                 remain_native_supplyno=REMAIN_NATIVE_SUPPLYNO,
                 pydantic_model=_CustomMoPushModel,
-                apc=apc, aph=aph
+                _erp=_erp, _aps=_aps
             )
         except Exception as e:
             CLIENT_LOGGER.fail("处理PL状态变更", str(supplyno_or_data), str(e))
-            await apc.pl_release_failed(supplyno, msg=str(e))
+            await _erp.mo_release_failed(supplyno, msg=str(e))
 
-    aph = ApsHelper(production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL])
-    _CustomMoPushModel = create_custom_mo_push_model(aph)
+    _aps = ApsPayloadStorage(production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL])
+    _CustomMoPushModel = create_custom_mo_push_model(_aps)
 
     supply_nos = [s['supplyno'] for s in supplyno_or_data_list]
-    cache = await aph.establish_production_cache(supplynos=supply_nos)
-    tasks = [handle_pl_status_a2e(item, aph) for item in supplyno_or_data_list]
+    TSupply.objects.filter(supplyno__in=supply_nos).update(memo=" 📤 正在推送至 T+ ...")
+    cache = await _aps.establish_production_cache(supplynos=supply_nos)
+    tasks = [handle_pl_status_a2e(item, _aps) for item in supplyno_or_data_list]
     await asyncio.gather(*tasks, return_exceptions=True)
 
 
 @start_event_batch_reminder(reminder=planner_email_reminder)
 @finish_event_batch_reminder(reminder=planner_email_reminder)
-async def batch_handle_pl_to_mo(supplyno_or_data_list: list[str | dict], apc: ApsChanger, description="推送领料申请"):
+async def batch_handle_pl_to_mo(supplyno_or_data_list: list[str | dict], _erp: EventResultPoster, description="推送领料申请至 T+)"):
     
     @async_rate_limit()
-    async def handle_pl_to_mo(supplyno_or_data: Union[str, dict], aph: ApsHelper):
+    async def handle_pl_to_mo(supplyno_or_data: Union[str, dict], _aps: ApsPayloadStorage):
         """处理PL类型变更：转为MO"""
         try:
             if isinstance(supplyno_or_data, str):
@@ -231,27 +234,30 @@ async def batch_handle_pl_to_mo(supplyno_or_data_list: list[str | dict], apc: Ap
             tplus_conn = get_tplus_conn()
             mo_data = await tplus_conn.query_mo(index_value=supplyno, filter_field='voucherCode')
             if mo_data:
-                await tplus_conn.push_rs(mdlist_or_supplyno=supplyno, tplus_mo_data_or_id=mo_data, pydantic_model=_CustomRsPushModel, apc=apc, aph=aph)
+                await tplus_conn.push_rs(mdlist_or_supplyno=supplyno, tplus_mo_data_or_id=mo_data, pydantic_model=_CustomRsPushModel, _erp=_erp, _aps=_aps)
         except Exception as e:
             CLIENT_LOGGER.fail("处理PL类型变更", str(supplyno_or_data), str(e))
-            apc.rs_push_failed(rsno=supplyno, msg=str(e))
+            _erp.rs_release_failed(rsno=supplyno, msg=str(e))
 
-    aph = ApsHelper(production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL])
-    _CustomRsPushModel = create_custom_rs_push_model(aph)
+    _aps = ApsPayloadStorage(production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL])
+    _CustomRsPushModel = create_custom_rs_push_model(_aps)
     supply_nos = [s['supplyno'] for s in supplyno_or_data_list]
-    cache = await aph.establish_production_cache(supplynos=supply_nos)
-    tasks = [handle_pl_to_mo(item, aph) for item in supplyno_or_data_list]
+    cache = await _aps.establish_production_cache(supplynos=supply_nos)
+    tasks = [handle_pl_to_mo(item, _aps) for item in supplyno_or_data_list]
     await asyncio.gather(*tasks, return_exceptions=True)
 
 
-async def batch_handle_pr_status_a2e(pr_data_list: list[dict], apc: ApsChanger, description="推送请购单"):
+@start_event_batch_reminder(reminder=planner_email_reminder)
+@finish_event_batch_reminder(reminder=planner_email_reminder)
+async def batch_handle_pr_status_a2e(pr_data_list: list[dict], _erp: EventResultPoster, description="推送请购单至 T+"):
     """批量处理PR状态变更为A2E"""
+    _aps = ApsPayloadStorage(production_cache_items=[CacheItem.DEMAND, CacheItem.MATERIAL])
     try:
         tplus_conn = get_tplus_conn()
-        await tplus_conn.push_pr(pr_data_list)
+        await tplus_conn.push_pr(pr_data_list, _erp=_erp, _aps=_aps)
     except Exception as e:
         CLIENT_LOGGER.fail("批量处理PR状态变更", str(pr_data_list), str(e))
-        raise
+        
 
 
 if __name__ == '__main__':

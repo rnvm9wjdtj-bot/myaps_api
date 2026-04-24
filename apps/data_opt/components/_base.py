@@ -27,7 +27,7 @@ from apps.io_api.schemas import (
 from apps.io_api.models import TSupply, TDemand
 from apps.io_api.utils.db_operation import db_query, db_update_by_index, db_query, db_delete, db_bupsert, call_dbprocdure
 from apps.io_api.utils.common import standard_response
-from globalobjects import globalconst, logger as log_config, PROJECT_JSON_FILE, ProjectDefaultValues as pdv
+from globalobjects import globalconst, logger as log_config, PROJECT_JSON_FILE, ProjectDefaultValues as pdv, ConstEnum as ce
 from globalobjects.json_manager import JSONManager
 
 
@@ -528,6 +528,26 @@ class CacheItem(Enum):
     MATERIAL = 'material'
 
 
+
+MINI_PEG_SQL = """
+    SELECT DISTINCT
+        p.DemandNO AS DemandNo,
+        s.SupplyNo AS S_SupplyNo
+    FROM t_peg p
+    LEFT JOIN t_demand d ON p.MaterialNo = d.MaterialNo 
+        AND p.DemandNO = d.DemandNo 
+        AND p.ItemNo = d.ItemNo
+    LEFT JOIN t_supply s ON s.MaterialNo = p.MaterialNo 
+        AND s.SupplyNo = p.S_SupplyNo 
+        AND s.ItemNo = p.S_ItemNo
+    INNER JOIN t_material m ON m.MaterialNo = p.MaterialNo
+    -- 所有条件集中在这里
+    WHERE {where_string}
+    ORDER BY p.id, d.MaterialNo, d.Priority, s.Avail_Date, s.Avail_Qty;
+"""
+
+
+
 class _ProductionDataCache:
     """生产数据缓存管理器"""
     
@@ -864,7 +884,6 @@ class _ProductionDataCache:
         Returns:
             list: 收集到的所有 demandno 列表
         """
-        from apps.io_api.routers import MINI_PEG_SQL
 
         demand_nos = set()
         
@@ -1218,11 +1237,77 @@ class _ProductionDataCache:
         }
 
 
-class ApsHelper:
 
+# V_SUPPLY_MO_SQL = """
+#     SELECT 
+#         s.MaterialNo,
+#         m.Description,
+#         m.Unit,
+#         -- m.Planner,
+#         -- m.GroupNo,
+#         -- m.PlanItem,
+#         -- m.FIFO,
+#         -- m.ABC,
+#         -- m.ExpDay,
+#         -- m.GRDay,
+#         -- m.Phantom,
+#         -- m.PhantomMin,
+#         -- g.Color,
+#         s.SupplyNo,
+#         s.ItemNo,
+#         s.MatVer,
+#         s.Type,
+#         s.Category,
+#         s.Status,
+#         -- s.Priority,
+#         s.Avail_Qty,
+#         d.Delay_Hour,
+#         s.Create_Date,
+#         o.DT_OrdStart,
+#         o.DT_OrdEnd,
+#         o.OrdTime,
+#         IFNULL(o.DT_OrdEnd + INTERVAL m.GRDay DAY, s.Avail_Date) AS Avail_Date,
+#         s.Avail_End_Date,
+#         s.DT_Req,
+#         IFNULL(p.Req_Date, s.DT_Req) AS Req_Date,
+#         TIMESTAMPDIFF(
+#             HOUR,
+#             o.DT_OrdEnd + INTERVAL m.GRDay DAY,
+#             IFNULL(p.Req_Date, s.DT_Req)
+#         ) AS RemainTime,
+#         s.VendorNo,
+#         -- s.Memo,
+#         -- s.Sys_Stamp,
+#         s.ApiEx_SN,
+#         s.ApiEx_ID,
+#         s.ApiEx_EntryID
+#     FROM t_supply s
+#     -- 利用主键：MaterialNo
+#     JOIN t_material m ON s.MaterialNo = m.MaterialNo AND m.Type = 'E'
+#     -- 预计算工单时间
+#     JOIN (
+#         SELECT 
+#             SupplyNo,
+#             MIN(DT_Start) AS DT_OrdStart,
+#             MAX(DT_End) AS DT_OrdEnd,
+#             TIMEDIFF(MAX(DT_End), MIN(DT_Start)) AS OrdTime
+#         FROM t_orderwc
+#         WHERE SupplyNo IN ({supplynos})
+#         GROUP BY SupplyNo
+#     ) o ON s.SupplyNo = o.SupplyNo
+#     LEFT JOIN t_groupcolor g ON m.GroupNo = g.GroupNo
+#     LEFT JOIN v_orderwc_delay_hour d ON s.SupplyNo = d.OrderNo
+#     LEFT JOIN v_peg_req_date_1st p ON s.SupplyNo = p.SupplyNo
+#     WHERE s.Type IN ('PL', 'MO')
+#     AND s.SupplyNo IN ({supplynos})
+#     ORDER BY s.SupplyNo;
+# """
+
+
+class ApsPayloadStorage:
     def __init__(self, production_cache_items: List[CacheItem] = None):
         """
-        初始化APS助手类
+        初始化APS数据存储类
         
         Args:
             production_cache_items: 要缓存的生产数据项，默认所有项
@@ -1464,25 +1549,6 @@ class ApsHelper:
 
 
     @classmethod
-    async def _modify_supply(
-        cls,
-        supplyno: str,
-        to_status: Literal['NEW', 'CRE', 'E2A', 'REL']=None,
-        memo: str=None,
-        _sn: str=None, _id: str=None, _entryid: str=None
-    ):
-        url = f'{THIS_BASE_URL}/api/t_supply/{supplyno}/...?db_name={MYAPS_MAIN_DB}'
-        response_json = await cls._call_api('PATCH', url, json={
-            'status': to_status,
-            'memo': memo[:255],
-            'apiex_sn': _sn,
-            'apiex_id': _id,
-            'apiex_entryid': _entryid,
-        })
-        return response_json
-
-
-    @classmethod
     async def get_new_pr_data(cls):
         result = await db_query(MYAPS_MAIN_DB, "v_supply", "`Type`='PR' AND `Status`='NEW'")
         return result.get('data', [])
@@ -1639,41 +1705,10 @@ class ApsHelper:
         api_url = f"{THIS_BASE_URL}/api/t_material/{materialnos_str}?db_name={MYAPS_MAIN_DB}"
 
         try:
-            # 确保在同步上下文中执行
-            # import asyncio
-            # if asyncio.get_event_loop().is_running():
-            #     # 在异步上下文中，使用线程池执行
-            #     def _sync_request():
-            #         response = self._http_session_sync.get(api_url, timeout=(5, 15))
-            #         response.raise_for_status()
-            #         return response.json()
-                
-            #     # 使用单独的线程执行同步请求
-            #     import threading
-            #     result = []
-            #     event = threading.Event()
-                
-            #     def _run_in_thread():
-            #         nonlocal result
-            #         try:
-            #             result = _sync_request()
-            #         finally:
-            #             event.set()
-                
-            #     thread = threading.Thread(target=_run_in_thread)
-            #     thread.start()
-            #     event.wait(timeout=20)  # 最多等待20秒
-                
-            #     if not result:
-            #         raise TimeoutError("HTTP请求超时")
-                
-            #     return result.get('data', [])
-            # else:
-                # 在同步上下文中，直接执行
-                response = self._http_session_sync.get(api_url, timeout=(5, 15))
-                response.raise_for_status()
-                response_json = response.json()
-                return response_json.get('data', [])
+            response = self._http_session_sync.get(api_url, timeout=(5, 15))
+            response.raise_for_status()
+            response_json = response.json()
+            return response_json.get('data', [])
         except Exception as e:
             error_msg = f"查询物料信息时发生HTTP请求错误：{str(e)}"
             logger.fail("查询物料信息", ','.join(missing_materials), error_msg)
@@ -1744,8 +1779,7 @@ class ApsHelper:
                 mo_data['next_mo'] = self._production_cache.batch_get_supply_mo(demands_no)
             return mo_data
         else:
-            url = f"{THIS_BASE_URL}/api/v_supply_mo/{supplyno}?db_name={MYAPS_MAIN_DB}&prev_mo={get_prev_mo}&next_mo={get_next_mo}&origin_so={get_origin_so}"
-            supply_response_json = await self._call_api('GET', url)
+            supply_response_json = await self.get_mo_by_supplyno(supplyno, db_name=MYAPS_MAIN_DB, prev_mo=get_prev_mo, next_mo=get_next_mo, origin_so=get_origin_so)
             try:
                 if supply_response_json.get('success') != 0 and supply_response_json.get('data'):
                     mo_data = supply_response_json['data'][0]
@@ -1755,6 +1789,83 @@ class ApsHelper:
                     logger.fail("获取工单计划单详情", supplyno, f"API返回错误: {supply_response_json.get('message', '未知错误')}")
             except Exception as e:
                 logger.fail("获取工单计划单详情", supplyno, f"{str(e)}")
+
+
+    @classmethod
+    async def get_mo_by_supplyno(cls, supplyno: str, db_name: str=MYAPS_MAIN_DB, prev_mo:bool=False, next_mo:bool=False, origin_so:bool=False) -> List[Dict]:
+        """
+        异步获取工单的工序详情、及MTO销售订单信息
+        Args:
+            supplyno: 工单号
+            db_name: 数据库名称
+            prev_mo: 是否查询前 前置 工单
+            next_mo: 是否查询后 后置 工单
+            origin_so: 是否查询原始销售订单信息
+        Returns:
+            工单计划单详情
+        """
+        async def get_orderwc(mono: str):
+            orderwc = await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=f"`SupplyNo`='{mono}'")
+            return orderwc['data']
+
+        async def get_prev_mo(mono: str):
+            """
+            通过工单 supplyno 号查询前 前置 工单
+            """
+            for_demands = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{mono}' AND `Type` IN ('DM', 'RS', 'PR', 'PO')")
+            demands_data = for_demands['data']
+            prev_mo = []
+            if demands_data:
+                demands_no = ','.join([f"'{i['demandno']}'" for i in demands_data])
+                peg_query_result = await db_exec_sql(db_name=db_name, sql=MINI_PEG_SQL.format(where_string=f"p.DemandNO IN ({demands_no}) AND p.S_Type IN ('PL', 'MO')"), description=f"查询{demands_no}匹配的PL和MO")
+                if peg_query_result['data']:
+                    supplies_no = ','.join([f"'{i['s_supplyno']}'" for i in peg_query_result['data']])
+                    # prev_mo_query_result = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplynos=supplies_no), description=f"查询{supplies_no}的前置工单信息")
+                    prev_mo_query_result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", select="`SupplyNo`", filter_string=f"`SupplyNo` IN ({supplies_no})")
+                    prev_mo = prev_mo_query_result['data']
+            return prev_mo
+
+        async def get_next_mo(mono: str): 
+            """
+            通过工单 supplyno 号查询后 后置 工单
+            """
+            in_pegs = await db_exec_sql(db_name=db_name, sql=MINI_PEG_SQL.format(where_string=f"p.S_SupplyNo='{mono}' AND p.Type IN ('DM', 'RS')"), description=f"查询{mono}匹配的DM和RS")
+            pegs_data = in_pegs['data']
+            next_mo = []
+            if pegs_data:
+                demands_no = ','.join([f"'{i['demandno']}'" for i in pegs_data])
+                # next_mo_query_result = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplynos=demands_no), description=f"查询{mono}的后续置工单信息")
+                next_mo_query_result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", select="`SupplyNo`", filter_string=f"`SupplyNo` IN ({demands_no})")
+                next_mo = next_mo_query_result['data']
+            return next_mo
+
+        async def get_so(so_demandno: str):
+            """
+            通过工单 supplyno 号查询销售订单
+            """
+            so_query_result = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{so_demandno}' AND `Type`='SO'")
+            so_data = so_query_result['data']
+            if so_data:
+                return so_data[0]
+
+        db_name = db_name.replace(" ", "")
+
+        # result = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplynos=f"'{supplyno}'"), description=f"查询{supplyno}的工单信息")
+        result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=f"`SupplyNo`='{supplyno}'")
+        
+        if result['success'] and result['meta']['total'] == 1:  # 筛选到唯一的工单，则补充工序信息（v_orderwc）
+            result['data'][0]['orderwc'] = await get_orderwc(mono=supplyno)
+
+            vendorno = result['data'][0].get('vendorno')
+            if origin_so and result['data'][0].get('category') == 'MTO' and vendorno:
+                result['data'][0]['so'] = await get_so(vendorno)
+                    
+            if prev_mo:
+                result['data'][0]['prev_mo'] = await get_prev_mo(supplyno)
+            if next_mo:
+                result['data'][0]['next_mo'] = await get_next_mo(supplyno)
+
+        return result
 
 
     async def get_demand_datalist(self, demandno: str) -> List[Dict]:
@@ -1781,7 +1892,7 @@ class ApsHelper:
 
 
 
-class ApsChanger:
+class EventResultPoster:
 
     def __init__(self, db_name: str=MYAPS_MAIN_DB):
         from project_files._base import ResultCollector
@@ -1798,7 +1909,7 @@ class ApsChanger:
         return self._collector.format_notification(description)
 
 
-    async def pl_release_success(self, native_plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str='SYSTEM', _id: str=None, _entryid: str=None):
+    async def mo_release_success(self, native_plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str='SYSTEM', _id: str=None, _entryid: str=None):
         """
         修改PL的Status、SupplyNo、Memo等字段
         🅰 native_plno: 原生PL计划单编号
@@ -1812,7 +1923,7 @@ class ApsChanger:
 
         mono = mono or native_plno
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        memo = f"{now} ✅ {msg_from}: '{msg}, {mono}, {_id}, {_entryid}' @ {native_plno}"
+        memo = f"{now} {ce.RELEASE_SUCCESS.value} {msg_from}: '{msg}, {mono}, {_id}, {_entryid}' @ {native_plno}"
         
         logger.update("PL状态", native_plno, f"目标状态{to_status}，MO单号{mono}")
         
@@ -1835,9 +1946,7 @@ class ApsChanger:
         return response_json
 
 
-
-    async def pl_release_failed(self, native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, raw_data: dict=None, push_data: dict=None, msg_from: str='SYSTEM'):
-        
+    async def mo_release_failed(self, native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, raw_data: dict=None, push_data: dict=None, msg_from: str='SYSTEM'):
         
         logger.warning_msg(f"推送 MO {msg}", json.dumps(push_data, ensure_ascii=False), to_file=True)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1847,7 +1956,7 @@ class ApsChanger:
             except Exception as e:
                 pass
 
-        memo = f"{now} 🚫 {msg_from}: '{msg}'"
+        memo = f"{now} {ce.RELEASE_FAILED.value} {msg_from}: '{msg}'"
         
         patch_data = {
             'status': to_status,
@@ -1873,12 +1982,11 @@ class ApsChanger:
         return response_json
 
 
-
-    async def rs_push_success(self, rsno: str, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str='SYSTEM', _code: str=None, _id: str=None, _entryid: str=None):
+    async def rs_release_success(self, rsno: str, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str='SYSTEM', _code: str=None, _id: str=None, _entryid: str=None):
         
         
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        memo = f"{now} ✅ {msg_from}: '{_code}, {_id}, {_entryid}' @ {rsno}"
+        memo = f"{now} {ce.RELEASE_SUCCESS.value} {msg_from}: '{_code}, {_id}, {_entryid}' @ {rsno}"
         
         logger.update("RS状态", rsno, f"目标状态{to_status}")
         
@@ -1908,7 +2016,7 @@ class ApsChanger:
         return response_json
 
 
-    async def rs_push_failed(self, rsno: str, msg: str=None, msg_from: str='SYSTEM', push_data: dict | list=None, raw_data: dict | list=None):
+    async def rs_release_failed(self, rsno: str, msg: str=None, msg_from: str='SYSTEM', push_data: dict | list=None, raw_data: dict | list=None):
         logger.fail("推送 RS", json.dumps(push_data, ensure_ascii=False), msg)
         if msg:
             try:
@@ -1917,7 +2025,7 @@ class ApsChanger:
                 pass
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            memo = f"{now} 🚫 {msg_from}: '{msg}'"
+            memo = f"{now} {ce.RELEASE_FAILED.value} {msg_from}: '{msg}'"
 
             patch_data = {
                 'memo': memo,
@@ -1946,12 +2054,10 @@ class ApsChanger:
             return standard_response(status_code=500, success=0, message=error_msg)
 
 
-    async def pr_push_success(self, prno: str, msg: str=None, msg_from: str='SYSTEM', _code: str=None, _id: str=None, _entryid: str=None):
-
-        
+    async def pr_release_success(self, prno: str, msg: str=None, msg_from: str='SYSTEM', _code: str=None, _id: str=None, _entryid: str=None):        
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            memo = f"{now} ✅ {msg_from}: '{_code}, {_id}, {_entryid}' @ {prno}"
+            memo = f"{now} {ce.RELEASE_SUCCESS.value} {msg_from}: '{_code}, {_id}, {_entryid}' @ {prno}"
             logger.update("PR状态", prno, "")
             
             patch_data = {
@@ -1987,7 +2093,7 @@ class ApsChanger:
             return standard_response(status_code=500, success=0, message=error_msg)
 
 
-    async def pr_push_failed(self, prno: str, msg: str=None, msg_from: str='SYSTEM', push_data: dict | list=None, raw_data: dict | list=None):
+    async def pr_release_failed(self, prno: str, msg: str=None, msg_from: str='SYSTEM', push_data: dict | list=None, raw_data: dict | list=None):
         
         
         if msg:
@@ -1998,7 +2104,7 @@ class ApsChanger:
         logger.fail("推送 PR", json.dumps(push_data, ensure_ascii=False), msg)
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            memo = f"{now} 🚫 {msg_from}: '{msg}'"
+            memo = f"{now} {ce.RELEASE_FAILED.value} {msg_from}: '{msg}'"
             
             patch_data = {
                 'status': 'NEW',
