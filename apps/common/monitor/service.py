@@ -321,16 +321,80 @@ class MonitorService:
 
     async def get_overview(self) -> Dict[str, Any]:
         """获取监控总览"""
-        return {
-            "timestamp": time.time(),
-            "resource": self.get_resource_metrics(),
-            "database": await self.get_database_metrics(),
-            "scheduler": self.get_scheduler_metrics(),
-            "http": await self.get_http_metrics(),
-            "outbound_http": self.get_outbound_http_metrics(),
-            "redis": self.get_redis_metrics(),
-            "alerts": self.get_recent_alerts(10),
-        }
+        try:
+            # 分别获取各个指标，每个指标都有异常处理
+            resource_metrics = {}
+            try:
+                resource_metrics = self.get_resource_metrics()
+            except Exception as e:
+                logger.error(f"获取资源指标失败: {e}")
+                resource_metrics = {"error": str(e)}
+            
+            database_metrics = {}
+            try:
+                database_metrics = await self.get_database_metrics()
+            except Exception as e:
+                logger.error(f"获取数据库指标失败: {e}")
+                database_metrics = {"error": str(e)}
+            
+            scheduler_metrics = {}
+            try:
+                scheduler_metrics = self.get_scheduler_metrics()
+            except Exception as e:
+                logger.error(f"获取调度器指标失败: {e}")
+                scheduler_metrics = {"error": str(e)}
+            
+            http_metrics = {}
+            try:
+                http_metrics = await self.get_http_metrics()
+            except Exception as e:
+                logger.error(f"获取 HTTP 指标失败: {e}")
+                http_metrics = {"error": str(e)}
+            
+            outbound_http_metrics = {}
+            try:
+                outbound_http_metrics = self.get_outbound_http_metrics()
+            except Exception as e:
+                logger.error(f"获取对外 HTTP 请求指标失败: {e}")
+                outbound_http_metrics = {"error": str(e)}
+            
+            redis_metrics = {}
+            try:
+                redis_metrics = self.get_redis_metrics()
+            except Exception as e:
+                logger.error(f"获取 Redis 指标失败: {e}")
+                redis_metrics = {"error": str(e)}
+            
+            alerts = []
+            try:
+                alerts = self.get_recent_alerts(10)
+            except Exception as e:
+                logger.error(f"获取告警失败: {e}")
+                alerts = []
+            
+            return {
+                "timestamp": time.time(),
+                "resource": resource_metrics,
+                "database": database_metrics,
+                "scheduler": scheduler_metrics,
+                "http": http_metrics,
+                "outbound_http": outbound_http_metrics,
+                "redis": redis_metrics,
+                "alerts": alerts,
+            }
+        except Exception as e:
+            logger.error(f"获取监控总览失败: {e}")
+            return {
+                "timestamp": time.time(),
+                "error": str(e),
+                "resource": {},
+                "database": {},
+                "scheduler": {},
+                "http": {},
+                "outbound_http": {},
+                "redis": {},
+                "alerts": [],
+            }
 
     async def get_health_status(self) -> Dict[str, Any]:
         """获取健康检查状态"""

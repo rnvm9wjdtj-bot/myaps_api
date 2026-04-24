@@ -15,7 +15,7 @@ from core.settings import MYAPS_DB_SET, LOG_LEVEL
 from globalobjects.db_manager import get_db_managers, DbManager
 from globalobjects import logger as log_config
 from apps.common.monitor.models import FailedOperation
-from globalobjects import RemindType, reminder_manager
+from globalobjects import AlertType, alert_manager
 
 # 为了保持向后兼容，重新导出 db_managers
 def db_managers():
@@ -129,8 +129,8 @@ def retry_on_connection_error(max_retries: int = 3, retry_delay: float = 1.0):
                                     )
                                     
                                     # 触发告警
-                                    await reminder_manager.trigger_remind(
-                                        RemindType.DB_CONNECTION,
+                                    await alert_manager.trigger_remind(
+                                        AlertType.DB_CONNECTION,
                                         {
                                             "operation_id": operation_id,
                                             "db_name": db_name,
@@ -276,7 +276,7 @@ async def db_exec_sql(db_name: str, sql: str, params: Optional[List[Any]] = None
 
     
 @retry_on_connection_error(max_retries=3, retry_delay=1.0)
-async def db_query(db_name: str, model_or_tablename: TortoiseBaseModel | str, filter_string: str = '', order_string: str = '', page_size: int = 1000, page_index: int = 1):
+async def db_query(db_name: str, model_or_tablename: TortoiseBaseModel | str, select="*", filter_string: str = '', order_string: str = '', page_size: int = 1000, page_index: int = 1):
     _, table_name = process_model_or_tablename(model_or_tablename)
     try:
         valid_db = validate_databases(db_name)[0]
@@ -286,6 +286,7 @@ async def db_query(db_name: str, model_or_tablename: TortoiseBaseModel | str, fi
         
         query_result = await db_manager.query_data(
             table_name=table_name,
+            select_fields=select,
             filter_string=filter_string,
             order_string=order_string,
             page_size=page_size,

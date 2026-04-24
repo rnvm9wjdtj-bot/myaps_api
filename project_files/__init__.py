@@ -148,17 +148,18 @@ if not _events_registered:
     aps_pl_status_a2e_event = ApsEvent(
         event_type=DbEventType.PL_STATUS_A2E, 
         description="PL 单据 下达",
+        flush_interval=15,
         error_handler=error_handler,
         error_handler_kwargs={"msg_from": "API"}
     )
     aps_pr_status_a2e_event = ApsEvent(
-        event_type=DbEventType.PR_STATUS_A2E, 
+        event_type=DbEventType.PR_STATUS_A2E,
         description="PR 单据 下达",
     )
     aps_pl_typeto_mo_event = ApsEvent(
         event_type=DbEventType.PL_TYPETO_MO, 
         description="PL 变更为 MO",
-        flush_interval=30,
+        flush_interval=120,
     )
     aps_pr_deleted_event = ApsEvent(
         event_type=DbEventType.PR_DELETED, 

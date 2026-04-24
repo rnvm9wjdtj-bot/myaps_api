@@ -15,7 +15,7 @@ from .._base import (
     get_scheduler_minute, async_rate_limit, CacheItem,
     ApsHelper, ApsChanger, CLIENT_LOGGER, standard_response, get_session, start_event_batch_reminder,
     cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, PROJECT_JSON_FILE, pdv,
-    RemindType, QqEmailReminder, Reminder, finish_event_batch_reminder
+    AlertType, QqEmailReminder, Reminder, finish_event_batch_reminder
 )
 
 
@@ -232,7 +232,6 @@ async def task_push_seasonpr_to_srm():
 #################################################################################
 
 planner_email_reminder = QqEmailReminder(
-    remind_types=[RemindType.APS_EVENT],
     smtp_user="2982212683@qq.com",
     smtp_password="jyboujldhplddhdf",
     email_from="2982212683@qq.com",

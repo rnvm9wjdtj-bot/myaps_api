@@ -17,12 +17,12 @@ from .event_aggregator import get_global_handler_aggregator
 EVENT_AGGREGATOR = get_global_handler_aggregator()
 
 
-from .reminder import Reminder, RemindType, reminder_manager, QqEmailReminder
+from .reminder import Reminder, AlertType, alert_manager, QqEmailReminder
 
 __all__ = [
     "Reminder",
-    "RemindType",
-    "reminder_manager",
+    "AlertType",
+    "alert_manager",
     "QqEmailReminder",
 ]
 

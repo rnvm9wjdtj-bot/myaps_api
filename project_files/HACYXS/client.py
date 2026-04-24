@@ -20,7 +20,7 @@ from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_
 from .._base import (
     get_scheduler_minute, cron_task, CLIENT_LOGGER, CLIENT_SESSION, PROJECT_JSON_FILE,
     ApsHelper, ApsChanger, get_session, CacheItem,
-    QqEmailReminder, RemindType, async_rate_limit, start_event_batch_reminder, finish_event_batch_reminder
+    QqEmailReminder, AlertType, async_rate_limit, start_event_batch_reminder, finish_event_batch_reminder
 )
 
 
@@ -176,13 +176,13 @@ def create_custom_rs_push_model(aph: ApsHelper):
     return CustomRsPushModel
 
 
-planner_email_reminder = QqEmailReminder(
-    remind_types=[RemindType.APS_EVENT],
-    smtp_user="2982212683@qq.com",
-    smtp_password="jyboujldhplddhdf",
-    email_from="2982212683@qq.com",
-    email_to="2982212683@qq.com,fzc@yunchen.ltd",
-)
+planner_email_reminder = None
+# planner_email_reminder = QqEmailReminder(
+#     smtp_user="2982212683@qq.com",
+#     smtp_password="jyboujldhplddhdf",
+#     email_from="2982212683@qq.com",
+#     email_to="2982212683@qq.com,1312075034@QQ.com",
+# )
 
 
 @start_event_batch_reminder(reminder=planner_email_reminder)
@@ -205,7 +205,7 @@ async def batch_handle_pl_status_a2e(supplyno_or_data_list: list[str | dict], ap
             )
         except Exception as e:
             CLIENT_LOGGER.fail("处理PL状态变更", str(supplyno_or_data), str(e))
-            await aph.pl_release_failed(supplyno, msg=str(e))
+            await apc.pl_release_failed(supplyno, msg=str(e))
 
     aph = ApsHelper(production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL])
     _CustomMoPushModel = create_custom_mo_push_model(aph)
@@ -244,7 +244,7 @@ async def batch_handle_pl_to_mo(supplyno_or_data_list: list[str | dict], apc: Ap
     await asyncio.gather(*tasks, return_exceptions=True)
 
 
-async def batch_handle_pr_status_a2e(pr_data_list: list[dict]):
+async def batch_handle_pr_status_a2e(pr_data_list: list[dict], apc: ApsChanger, description="推送请购单"):
     """批量处理PR状态变更为A2E"""
     try:
         tplus_conn = get_tplus_conn()

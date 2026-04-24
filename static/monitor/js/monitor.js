@@ -417,7 +417,7 @@ function startWebSocketHeartbeat() {
     }, WS_HEARTBEAT_INTERVAL);
 }
 
-// 尝试重连
+// 尝试重新连接
 function attemptReconnect() {
     if (isInactive) {
         console.log('用户不活动，跳过 WebSocket 重连');
@@ -426,24 +426,26 @@ function attemptReconnect() {
     
     if (wsReconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
         console.error('WebSocket 重连失败，已达到最大尝试次数');
+        if (wsReconnectInterval) {
+            clearInterval(wsReconnectInterval);
+            wsReconnectInterval = null;
+        }
         return;
     }
     
-    // 指数退避重连策略
-    const delay = Math.min(
-        WS_RECONNECT_BASE_DELAY * Math.pow(2, wsReconnectAttempts),
-        WS_MAX_RECONNECT_DELAY
-    );
-    
-    console.log(`WebSocket 将在 ${delay}ms 后尝试重连...`);
+    wsReconnectAttempts++;
+    console.log(`尝试重新连接 WebSocket (${wsReconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
     
     if (wsReconnectInterval) {
         clearInterval(wsReconnectInterval);
     }
     
-    wsReconnectInterval = setTimeout(function() {
-        wsReconnectAttempts++;
-        console.log(`WebSocket 尝试重连 (${wsReconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+    const delay = Math.min(
+        RECONNECT_DELAY * Math.pow(2, wsReconnectAttempts - 1),
+        30000
+    );
+    
+    wsReconnectInterval = setTimeout(() => {
         initWebSocket();
     }, delay);
 }
@@ -574,34 +576,6 @@ function updateOutboundRequestsDisplay(data) {
     }
 }
 
-// 尝试重新连接
-function attemptReconnect() {
-    // 如果用户不活动，不尝试重新连接
-    if (isInactive) {
-        console.log('用户不活动，跳过 WebSocket 重新连接');
-        return;
-    }
-    
-    if (wsReconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-        wsReconnectAttempts++;
-        console.log(`尝试重新连接 WebSocket (${wsReconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
-        
-        if (wsReconnectInterval) {
-            clearInterval(wsReconnectInterval);
-        }
-        
-        wsReconnectInterval = setInterval(() => {
-            initWebSocket();
-        }, RECONNECT_DELAY);
-    } else {
-        console.error('WebSocket 重新连接失败，已达到最大尝试次数');
-        if (wsReconnectInterval) {
-            clearInterval(wsReconnectInterval);
-            wsReconnectInterval = null;
-        }
-    }
-}
-
 // 关闭 WebSocket 连接
 function closeWebSocket() {
     if (ws) {
@@ -676,11 +650,12 @@ async function refreshAll() {
         // 先检查健康状态
         await fetchHealth();
         
-        // 检查系统状态是否为错误
+        // 检查系统状态是否为错误（只有连接失败才算是系统错误）
         const statusIndicator = getElement('status-indicator');
-        const isSystemError = statusIndicator && statusIndicator.classList.contains('error');
+        const statusText = statusIndicator ? statusIndicator.textContent : '';
+        const isSystemError = statusIndicator && statusIndicator.classList.contains('error') && statusText.includes('连接失败');
         
-        // 如果系统状态正常，才继续获取其他数据
+        // 如果系统状态不是连接失败，继续获取其他数据
         if (!isSystemError) {
             // 基础数据，无论哪个页面都需要刷新
             await Promise.all([
@@ -3443,7 +3418,28 @@ function showOutboundRequestDetail(index) {
     console.log('响应体条件判断结果:', request.response_body !== undefined && request.response_body !== null);
     const modal = document.createElement('div');
     modal.className = 'modal';
-    modal.innerHTML = `
+    
+    // 解析可能的JSON字符串字段
+    let parsedRequestHeaders = request.request_headers;
+    if (typeof parsedRequestHeaders === 'string') {
+        try {
+            parsedRequestHeaders = JSON.parse(parsedRequestHeaders);
+        } catch (e) {
+            console.log('解析请求头JSON失败', e);
+        }
+    }
+    
+    let parsedResponseHeaders = request.response_headers;
+    if (typeof parsedResponseHeaders === 'string') {
+        try {
+            parsedResponseHeaders = JSON.parse(parsedResponseHeaders);
+        } catch (e) {
+            console.log('解析响应头JSON失败', e);
+        }
+    }
+    
+    // 构建HTML内容
+    let htmlContent = `
         <div class="modal-overlay"></div>
         <div class="modal-content">
             <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 15px;">
@@ -3460,7 +3456,7 @@ function showOutboundRequestDetail(index) {
                         <tbody>
                             <tr>
                                 <td class="detail-label">时间戳:</td>
-                                <td class="detail-value">${new Date(request.timestamp * 1000).toLocaleString('zh-CN')}</td>
+                                <td class="detail-value">${typeof request.timestamp === 'string' ? request.timestamp : new Date(request.timestamp * 1000).toLocaleString('zh-CN')}</td>
                             </tr>
                             <tr>
                                 <td class="detail-label">方法:</td>
@@ -3481,55 +3477,105 @@ function showOutboundRequestDetail(index) {
                             <tr>
                                 <td class="detail-label">模块:</td>
                                 <td class="detail-value">${request.module || 'unknown'}</td>
-                            </tr>
-                            ${request.error_message ? `
-                            <tr>
-                                <td class="detail-label">错误信息:</td>
-                                <td class="detail-value error">${request.error_message}</td>
-                            </tr>
-                            ` : ''}
+                            </tr>`;
+    
+    // 错误信息部分
+    if (request.error_message) {
+        htmlContent += `
+        <tr>
+            <td class="detail-label">错误信息:</td>
+            <td class="detail-value error">${request.error_message}</td>
+        </tr>`;
+    }
+    
+    htmlContent += `
                         </tbody>
                     </table>
-                </div>
-                ${request.request_headers ? `
-                <div class="detail-section">
-                    <h4>请求头</h4>
-                    <pre><code class="language-json">${JSON.stringify(request.request_headers, null, 2)}</code></pre>
-                </div>
-                ` : ''}
-                ${request.request_body ? `
-                <div class="detail-section">
-                    <h4>请求体</h4>
-                    <pre><code class="language-json">${typeof request.request_body === 'string' ? (function() {
-                        try {
-                            return JSON.stringify(JSON.parse(request.request_body), null, 2);
-                        } catch (e) {
-                            return request.request_body;
-                        }
-                    })() : JSON.stringify(request.request_body, null, 2)}</code></pre>
-                </div>
-                ` : ''}
-                ${request.response_headers ? `
-                <div class="detail-section">
-                    <h4>响应头</h4>
-                    <pre><code class="language-json">${JSON.stringify(request.response_headers, null, 2)}</code></pre>
-                </div>
-                ` : ''}
-                ${request.response_body !== undefined && request.response_body !== null ? `
-                <div class="detail-section">
-                    <h4>响应体</h4>
-                    <pre><code class="language-json">${typeof request.response_body === 'string' ? (function() {
-                        try {
-                            return JSON.stringify(JSON.parse(request.response_body), null, 2);
-                        } catch (e) {
-                            return request.response_body;
-                        }
-                    })() : JSON.stringify(request.response_body, null, 2)}</code></pre>
-                </div>
-                ` : ''}
+                </div>`;
+    
+    // 请求头部分
+    if (parsedRequestHeaders) {
+        htmlContent += `
+        <div class="detail-section">
+            <h4>请求头</h4>
+            <pre><code class="language-json">${JSON.stringify(parsedRequestHeaders, null, 2)}</code></pre>
+        </div>`;
+    }
+    
+    // 请求体部分
+    if (request.request_body) {
+        let formattedRequestBody = request.request_body;
+        if (typeof request.request_body === 'string') {
+            try {
+                formattedRequestBody = JSON.stringify(JSON.parse(request.request_body), null, 2);
+            } catch (e) {
+                formattedRequestBody = request.request_body;
+            }
+        } else {
+            formattedRequestBody = JSON.stringify(request.request_body, null, 2);
+        }
+        htmlContent += `
+        <div class="detail-section">
+            <h4>请求体</h4>
+            <pre><code class="language-json">${formattedRequestBody}</code></pre>
+        </div>`;
+    }
+    
+    // 响应头部分
+    if (parsedResponseHeaders) {
+        htmlContent += `
+        <div class="detail-section">
+            <h4>响应头</h4>
+            <pre><code class="language-json">${JSON.stringify(parsedResponseHeaders, null, 2)}</code></pre>
+        </div>`;
+    }
+    
+    // 响应体部分 - 关键修复：显示所有情况的响应体
+    console.log('准备添加响应体部分...');
+    console.log('响应体原始值:', request.response_body);
+    console.log('响应体类型:', typeof request.response_body);
+    console.log('响应体长度:', request.response_body ? request.response_body.length : 0);
+    
+    // 始终添加响应体部分
+    let responseBodyContent = '无响应体数据';
+    
+    if (request.response_body !== undefined && request.response_body !== null) {
+        console.log('响应体不为空，准备渲染...');
+        try {
+            if (typeof request.response_body === 'string') {
+                try {
+                    // 尝试解析JSON
+                    const parsed = JSON.parse(request.response_body);
+                    responseBodyContent = JSON.stringify(parsed, null, 2);
+                } catch (e) {
+                    console.log('JSON解析失败，使用原始响应体:', e);
+                    responseBodyContent = request.response_body;
+                }
+            } else {
+                responseBodyContent = JSON.stringify(request.response_body, null, 2);
+            }
+            console.log('格式化后的响应体:', responseBodyContent);
+            console.log('格式化后响应体长度:', responseBodyContent.length);
+        } catch (e) {
+            console.log('响应体处理失败:', e);
+            responseBodyContent = '响应体处理失败: ' + e.message;
+        }
+    } else {
+        console.log('响应体为空或未定义');
+    }
+    
+    // 强制添加响应体部分
+    htmlContent += `
+    <div class="detail-section">
+        <h4>响应体</h4>
+        <pre><code class="language-json">${responseBodyContent}</code></pre>
+    </div>`;
+    
+    htmlContent += `
             </div>
-        </div>
-    `;
+        </div>`;
+    
+    modal.innerHTML = htmlContent;
     document.body.appendChild(modal);
     Prism.highlightAll();
 }
@@ -3538,8 +3584,73 @@ function showOutboundRequestDetail(index) {
 function exportOutboundRequestDetail(index) {
     const request = outboundRequestsData[index];
     
-    // 创建导出HTML
-    const html = `
+    // 解析可能的JSON字符串字段
+    let parsedRequestHeaders = request.request_headers;
+    if (typeof parsedRequestHeaders === 'string') {
+        try {
+            parsedRequestHeaders = JSON.parse(parsedRequestHeaders);
+        } catch (e) {
+            console.log('解析请求头JSON失败', e);
+        }
+    }
+    
+    let parsedResponseHeaders = request.response_headers;
+    if (typeof parsedResponseHeaders === 'string') {
+        try {
+            parsedResponseHeaders = JSON.parse(parsedResponseHeaders);
+        } catch (e) {
+            console.log('解析响应头JSON失败', e);
+        }
+    }
+    
+    // 格式化请求体
+    let formattedRequestBody = '';
+    if (request.request_body) {
+        formattedRequestBody = request.request_body;
+        if (typeof request.request_body === 'string') {
+            try {
+                formattedRequestBody = JSON.stringify(JSON.parse(request.request_body), null, 2);
+            } catch (e) {
+                formattedRequestBody = request.request_body;
+            }
+        } else {
+            formattedRequestBody = JSON.stringify(request.request_body, null, 2);
+        }
+    }
+    
+    // 格式化响应体
+    let formattedResponseBody = '无响应体数据';
+    if (request.response_body !== undefined && request.response_body !== null) {
+        try {
+            if (typeof request.response_body === 'string') {
+                try {
+                    // 尝试解析JSON
+                    const parsed = JSON.parse(request.response_body);
+                    formattedResponseBody = JSON.stringify(parsed, null, 2);
+                } catch (e) {
+                    formattedResponseBody = request.response_body;
+                }
+            } else {
+                formattedResponseBody = JSON.stringify(request.response_body, null, 2);
+            }
+        } catch (e) {
+            formattedResponseBody = '响应体处理失败: ' + e.message;
+        }
+    }
+    
+    // 处理时间戳
+    let timestampDisplay = '';
+    let filenameTimestamp = '';
+    if (typeof request.timestamp === 'string') {
+        timestampDisplay = request.timestamp;
+        filenameTimestamp = request.timestamp.replace(/[: ]/g, '-');
+    } else {
+        timestampDisplay = new Date(request.timestamp * 1000).toLocaleString('zh-CN');
+        filenameTimestamp = new Date(request.timestamp * 1000).toISOString().replace(/[: ]/g, '-');
+    }
+    
+    // 构建导出HTML
+    let html = `
     <!DOCTYPE html>
     <html lang="zh-CN">
     <head>
@@ -3571,32 +3682,6 @@ function exportOutboundRequestDetail(index) {
             .modal-header h3 {
                 margin: 0;
                 color: #333;
-            }
-            .modal-actions {
-                display: flex;
-                gap: 10px;
-            }
-            .export-btn, .close-btn {
-                padding: 8px 16px;
-                border: none;
-                border-radius: 8px;
-                cursor: pointer;
-                font-size: 14px;
-                transition: all 0.3s ease;
-            }
-            .export-btn {
-                background-color: #4CAF50;
-                color: white;
-                font-weight: bold;
-            }
-            .export-btn:hover {
-                background-color: #45a049;
-                transform: translateY(-1px);
-                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-            }
-            .close-btn {
-                background-color: #f44336;
-                color: white;
             }
             .detail-section {
                 margin-bottom: 20px;
@@ -3643,21 +3728,6 @@ function exportOutboundRequestDetail(index) {
             code {
                 font-family: 'Courier New', Courier, monospace;
             }
-            .language-json .token.key {
-                color: #0000ff;
-            }
-            .language-json .token.string {
-                color: #008000;
-            }
-            .language-json .token.number {
-                color: #ff0000;
-            }
-            .language-json .token.boolean {
-                color: #800080;
-            }
-            .language-json .token.null {
-                color: #808080;
-            }
         </style>
     </head>
     <body>
@@ -3672,7 +3742,7 @@ function exportOutboundRequestDetail(index) {
                         <tbody>
                             <tr>
                                 <td class="detail-label">时间戳:</td>
-                                <td class="detail-value">${new Date(request.timestamp * 1000).toLocaleString('zh-CN')}</td>
+                                <td class="detail-value">${timestampDisplay}</td>
                             </tr>
                             <tr>
                                 <td class="detail-label">方法:</td>
@@ -3689,52 +3759,54 @@ function exportOutboundRequestDetail(index) {
                             <tr>
                                 <td class="detail-label">响应时间:</td>
                                 <td class="detail-value ${request.duration > 1 ? 'slow' : ''}">${(request.duration * 1000).toFixed(0)}ms</td>
-                            </tr>
-                            ${request.error_message ? `
+                            </tr>`;
+    
+    if (request.error_message) {
+        html += `
                             <tr>
                                 <td class="detail-label">错误信息:</td>
                                 <td class="detail-value error">${request.error_message}</td>
-                            </tr>
-                            ` : ''}
+                            </tr>`;
+    }
+    
+    html += `
                         </tbody>
                     </table>
-                </div>
-                ${request.request_headers ? `
+                </div>`;
+    
+    if (parsedRequestHeaders) {
+        html += `
                 <div class="detail-section">
                     <h4>请求头</h4>
-                    <pre><code class="language-json">${JSON.stringify(request.request_headers, null, 2)}</code></pre>
-                </div>
-                ` : ''}
-                ${request.request_body ? `
+                    <pre><code>${JSON.stringify(parsedRequestHeaders, null, 2)}</code></pre>
+                </div>`;
+    }
+    
+    if (formattedRequestBody) {
+        html += `
                 <div class="detail-section">
                     <h4>请求体</h4>
-                    <pre><code class="language-json">${typeof request.request_body === 'string' ? (function() {
-                        try {
-                            return JSON.stringify(JSON.parse(request.request_body), null, 2);
-                        } catch (e) {
-                            return request.request_body;
-                        }
-                    })() : JSON.stringify(request.request_body, null, 2)}</code></pre>
-                </div>
-                ` : ''}
-                ${request.response_headers ? `
+                    <pre><code>${formattedRequestBody}</code></pre>
+                </div>`;
+    }
+    
+    if (parsedResponseHeaders) {
+        html += `
                 <div class="detail-section">
                     <h4>响应头</h4>
-                    <pre><code class="language-json">${JSON.stringify(request.response_headers, null, 2)}</code></pre>
-                </div>
-                ` : ''}
-                ${request.response_body !== undefined && request.response_body !== null ? `
+                    <pre><code>${JSON.stringify(parsedResponseHeaders, null, 2)}</code></pre>
+                </div>`;
+    }
+    
+    if (formattedResponseBody) {
+        html += `
                 <div class="detail-section">
                     <h4>响应体</h4>
-                    <pre><code class="language-json">${typeof request.response_body === 'string' ? (function() {
-                        try {
-                            return JSON.stringify(JSON.parse(request.response_body), null, 2);
-                        } catch (e) {
-                            return request.response_body;
-                        }
-                    })() : JSON.stringify(request.response_body, null, 2)}</code></pre>
-                </div>
-                ` : ''}
+                    <pre><code>${formattedResponseBody}</code></pre>
+                </div>`;
+    }
+    
+    html += `
             </div>
         </div>
     </body>
@@ -3748,8 +3820,7 @@ function exportOutboundRequestDetail(index) {
     a.href = urlBlob;
     
     // 获取时间戳作为文件名
-    const timestamp = new Date(request.timestamp * 1000).toISOString().replace(/[: ]/g, '-');
-    a.download = `outbound-request-${timestamp}.html`;
+    a.download = `outbound-request-${filenameTimestamp}.html`;
     
     document.body.appendChild(a);
     a.click();

@@ -8,7 +8,7 @@ import asyncio
 import os
 import time
 from typing import Dict, Any, Optional
-from globalobjects import logger as log_config, RemindType, reminder_manager
+from globalobjects import logger as log_config, AlertType, alert_manager
 from .collectors import DatabaseCollector
 
 from .failed_operation_recovery import FailedOperationRecovery
@@ -141,8 +141,8 @@ class DatabaseHealthChecker:
             last_alert = self._last_alert_time.get(alert_key, 0)
 
             if current_time - last_alert >= self._alert_cooldown:
-                await reminder_manager.trigger_remind(
-                    RemindType.DB_CONNECTION,
+                await alert_manager.trigger_remind(
+                    AlertType.DB_CONNECTION,
                     f"数据库连接异常: {unhealthy_count} 个连接不健康"
                 )
                 self._last_alert_time[alert_key] = current_time

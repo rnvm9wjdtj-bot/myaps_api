@@ -239,12 +239,13 @@ class DbManager:
                 raise last_exception
     
 
-    async def query_data(self, table_name: str, filter_string: str = '', order_string: str = '', page_size: int = 1000, page_index: int = 0, max_retries: int = 3) -> Dict[str, Any]:
+    async def query_data(self, table_name: str, select_fields: str = '*', filter_string: str = '', order_string: str = '', page_size: int = 1000, page_index: int = 0, max_retries: int = 3) -> Dict[str, Any]:
         """
         查询数据库表数据，获取符合筛选条件的数据，支持重试机制
         
         Args:
             table_name: 表名
+            select_fields: SELECT字段字符串（默认"*"，即查询所有字段）
             filter_string: WHERE条件字符串（可选）
             order_string: ORDER BY排序字符串（可选）
             page_size: 分页查询的页大小（最大/默认1000）
@@ -284,7 +285,7 @@ class DbManager:
                 offset = max((page_index - 1) * page_size, 0)
                 while offset < total:
                     # 构建带LIMIT和OFFSET的分页查询SQL
-                    sql = f'SELECT * FROM `{table_name}` {where} {order} LIMIT {page_size} OFFSET {offset}'
+                    sql = f'SELECT {select_fields} FROM `{table_name}` {where} {order} LIMIT {page_size} OFFSET {offset}'
                     _, batch_data = await conn.execute_query(sql)
                     all_data.extend(batch_data)
                     if page_index > 0:  # 若page_index大于0，说明需要查询指定页数据，查询当前页后直接退出

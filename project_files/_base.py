@@ -16,7 +16,7 @@ from globalobjects.globalconst import OrderStatusEnum
 
 # ❗❗❗❗❗❗❗❗❗❗❗❗⬇️不要删掉，便于各项目文件引用 ❗❗❗❗❗❗❗❗❗❗❗❗
 from core.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET, SCHEDULER_MINUTE
-from globalobjects import logger as log_config, PROJECT_JSON_FILE, ProjectDefaultValues as pdv, RemindType, QqEmailReminder, Reminder
+from globalobjects import logger as log_config, PROJECT_JSON_FILE, ProjectDefaultValues as pdv, AlertType, QqEmailReminder, Reminder
 from apps.io_api.utils.common import standard_response
 from apps.io_api.utils.db_operation import db_delete, db_bupsert, call_dbprocdure, db_query, db_supsert, db_update_by_index
 from apps.data_opt.utils.scheduler import cron_task
@@ -257,7 +257,7 @@ def start_event_batch_reminder(reminder: Reminder = None, error_handler: Union[c
                 if event_data is not None:
                     if isinstance(event_data, list):
                         count = len(event_data)
-                        require_time_sec = count * 2 / MAX_EVENTS_PER_SECOND    # 预计耗时，单位秒，这个公式没什么道理
+                        require_time_sec = 30 + count * 2 / MAX_EVENTS_PER_SECOND    # 预计耗时，单位秒，这个公式没什么道理
                         require_time_min = f"{int(require_time_sec / 60)} 分 {int(require_time_sec % 60)} 秒"
                         content = f"开始【{description}】，将处理【{count}】条数据，预计耗时【{require_time_min}】"
                     else:
@@ -346,7 +346,7 @@ def start_event_batch_reminder(reminder: Reminder = None, error_handler: Union[c
 
 def finish_event_batch_reminder(description: str = None, reminder: Reminder = None):
     """
-    带结果收集的装饰器，用于 ApsHelpers 实例化和结果汇总
+    带结果收集的装饰器，用于结果汇总
 
     用法:
         @event_batch_finish_reminder(reminder=qq_email_reminder)

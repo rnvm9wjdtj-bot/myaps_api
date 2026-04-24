@@ -617,13 +617,13 @@ class TplusConnection(BaseConnection):
                     async_session.close()
 
 
-    async def _post(self, endpoint: str, data: dict, max_retries: int = 3):
+    async def _post(self, endpoint: str, data: dict, max_retries: int = 5):
         """
         异步发送POST请求到畅捷通API，支持重试机制
         Args:
             endpoint: API端点路径
             data: 请求体数据
-            max_retries: 最大重试次数，默认3次
+            max_retries: 最大重试次数，默认5次
         Returns:
             响应JSON数据
         """
@@ -668,6 +668,8 @@ class TplusConnection(BaseConnection):
                     logger.fail(f"API请求失败，已达最大重试次数", endpoint, str(e))
         
         # 所有重试都失败，抛出最后一个错误
+        if last_error is None:
+            raise Exception(f"API请求失败，已达最大重试次数，但未捕获到具体错误")
         raise last_error
 
 

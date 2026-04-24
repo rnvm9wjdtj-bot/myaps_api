@@ -250,7 +250,7 @@ class K3Connection(BaseConnection):
             # 获取当前系统时区时间
             current_time = datetime.now().astimezone()
             if self._cookie is None or self._cookie_expire is None or (current_time + timedelta(minutes=15)) > self._cookie_expire:
-                response = self._session.post(
+                response = self._sync_session.post(
                     f"{self.base_url}{self.config.AUTH_ENDPOINT}",
                     data={
                         "acctid": self.acctid,
@@ -266,7 +266,7 @@ class K3Connection(BaseConnection):
                 self._cookie = cookie_value
                 self._cookie_expire = expire_time
 
-                self._session.headers.update({
+                self._sync_session.headers.update({
                     "Cookie": self._cookie,
                 })
         except Exception as e:
@@ -294,7 +294,7 @@ class K3Connection(BaseConnection):
         page_size = self.config.PAGE_SIZE
         data_list = []
         while True:
-            response = self._session.post(
+            response = self._sync_session.post(
                 url=f"{self.base_url}{self.config.QUERY_ENDPOINT}",
                 json={
                     "data": {

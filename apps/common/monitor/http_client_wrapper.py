@@ -56,19 +56,41 @@ class HTTPMonitorWrapper:
             status_code = response.status_code
             
             # 提取响应头
-            if hasattr(response, 'headers'):
-                response_headers = dict(response.headers)
+            try:
+                if hasattr(response, 'headers'):
+                    # 尝试将响应头转换为字典
+                    try:
+                        response_headers = dict(response.headers)
+                    except Exception:
+                        # 如果转换失败，尝试直接使用
+                        response_headers = getattr(response, 'headers', {})
+            except Exception as e:
+                error_message = f"响应头提取失败: {str(e)}"
+                response_headers = {}
             
             # 尝试提取响应体
             try:
-                if hasattr(response, 'json'):
-                    response_body = response.json()
-                elif hasattr(response, 'text'):
-                    response_body = response.text
-            except Exception:
-                # JSON解析失败，尝试获取响应文本
+                # 先尝试使用 text 属性
                 if hasattr(response, 'text'):
-                    response_body = response.text
+                    try:
+                        response_body = response.text
+                    except Exception:
+                        # text 属性失败，尝试 content
+                        if hasattr(response, 'content'):
+                            try:
+                                response_body = response.content.decode('utf-8')
+                            except Exception:
+                                response_body = str(response.content)
+                # 如果没有 text 属性，尝试使用 content 属性
+                elif hasattr(response, 'content'):
+                    try:
+                        response_body = response.content.decode('utf-8')
+                    except Exception:
+                        response_body = str(response.content)
+            except Exception as e:
+                # 响应体提取失败
+                error_message = f"响应体提取失败: {str(e)}"
+                response_body = None
                 
         except Exception as e:
             status_code = 500
@@ -174,19 +196,41 @@ class HTTPMonitorWrapper:
             status_code = response.status_code
             
             # 提取响应头
-            if hasattr(response, 'headers'):
-                response_headers = dict(response.headers)
+            try:
+                if hasattr(response, 'headers'):
+                    # 尝试将响应头转换为字典
+                    try:
+                        response_headers = dict(response.headers)
+                    except Exception:
+                        # 如果转换失败，尝试直接使用
+                        response_headers = getattr(response, 'headers', {})
+            except Exception as e:
+                error_message = f"响应头提取失败: {str(e)}"
+                response_headers = {}
             
             # 尝试提取响应体
             try:
-                if hasattr(response, 'json'):
-                    response_body = response.json()
-                elif hasattr(response, 'text'):
-                    response_body = response.text
-            except Exception:
-                # JSON解析失败，尝试获取响应文本
+                # 先尝试使用 text 属性
                 if hasattr(response, 'text'):
-                    response_body = response.text
+                    try:
+                        response_body = response.text
+                    except Exception:
+                        # text 属性失败，尝试 content
+                        if hasattr(response, 'content'):
+                            try:
+                                response_body = response.content.decode('utf-8')
+                            except Exception:
+                                response_body = str(response.content)
+                # 如果没有 text 属性，尝试使用 content 属性
+                elif hasattr(response, 'content'):
+                    try:
+                        response_body = response.content.decode('utf-8')
+                    except Exception:
+                        response_body = str(response.content)
+            except Exception as e:
+                # 响应体提取失败
+                error_message = f"响应体提取失败: {str(e)}"
+                response_body = None
                 
         except Exception as e:
             status_code = 500
@@ -301,19 +345,79 @@ class HTTPAsyncMonitorWrapper:
             status_code = response.status_code
             
             # 提取响应头
-            if hasattr(response, 'headers'):
-                response_headers = dict(response.headers)
+            try:
+                if hasattr(response, 'headers'):
+                    # 尝试将响应头转换为字典
+                    try:
+                        response_headers = dict(response.headers)
+                    except Exception:
+                        # 如果转换失败，尝试直接使用
+                        response_headers = getattr(response, 'headers', {})
+            except Exception as e:
+                error_message = f"响应头提取失败: {str(e)}"
+                response_headers = {}
             
             # 尝试提取响应体
             try:
-                if hasattr(response, 'json') and callable(response.json):
-                    response_body = await response.json()
-                elif hasattr(response, 'text') and callable(response.text):
-                    response_body = await response.text()
-            except Exception:
-                # JSON解析失败，尝试获取响应文本
-                if hasattr(response, 'text') and callable(response.text):
-                    response_body = await response.text()
+                # 先尝试获取文本响应体，确保能获取到数据
+                if hasattr(response, 'text'):
+                    if callable(response.text):
+                        try:
+                            response_body = await response.text()
+                            # 然后尝试解析JSON
+                            if hasattr(response, 'json') and callable(response.json):
+                                try:
+                                    response_body = await response.json()
+                                except Exception:
+                                    # JSON解析失败，使用文本响应体
+                                    pass
+                        except Exception:
+                            # 文本提取失败，尝试其他方式
+                            if hasattr(response, 'content'):
+                                if callable(response.content):
+                                    try:
+                                        content = await response.content()
+                                        response_body = content.decode('utf-8')
+                                    except Exception:
+                                        response_body = str(content)
+                                else:
+                                    try:
+                                        response_body = response.content.decode('utf-8')
+                                    except Exception:
+                                        response_body = str(response.content)
+                    else:
+                        try:
+                            response_body = response.text
+                        except Exception:
+                            # text 属性失败，尝试 content
+                            if hasattr(response, 'content'):
+                                try:
+                                    response_body = response.content.decode('utf-8')
+                                except Exception:
+                                    response_body = str(response.content)
+                # 如果没有 text 属性，尝试使用 content 属性
+                elif hasattr(response, 'content'):
+                    if callable(response.content):
+                        try:
+                            content = await response.content()
+                            response_body = content.decode('utf-8')
+                        except Exception:
+                            response_body = str(content)
+                    else:
+                        try:
+                            response_body = response.content.decode('utf-8')
+                        except Exception:
+                            response_body = str(response.content)
+                # 对于某些特殊的响应对象，尝试其他方式
+                elif hasattr(response, 'data'):
+                    try:
+                        response_body = response.data
+                    except Exception:
+                        response_body = str(response.data)
+            except Exception as e:
+                # 响应体提取失败
+                error_message = f"响应体提取失败: {str(e)}"
+                response_body = None
                 
         except Exception as e:
             status_code = 500
@@ -417,19 +521,79 @@ class HTTPAsyncMonitorWrapper:
             status_code = response.status_code
             
             # 提取响应头
-            if hasattr(response, 'headers'):
-                response_headers = dict(response.headers)
+            try:
+                if hasattr(response, 'headers'):
+                    # 尝试将响应头转换为字典
+                    try:
+                        response_headers = dict(response.headers)
+                    except Exception:
+                        # 如果转换失败，尝试直接使用
+                        response_headers = getattr(response, 'headers', {})
+            except Exception as e:
+                error_message = f"响应头提取失败: {str(e)}"
+                response_headers = {}
             
             # 尝试提取响应体
             try:
-                if hasattr(response, 'json') and callable(response.json):
-                    response_body = await response.json()
-                elif hasattr(response, 'text') and callable(response.text):
-                    response_body = await response.text()
-            except Exception:
-                # JSON解析失败，尝试获取响应文本
-                if hasattr(response, 'text') and callable(response.text):
-                    response_body = await response.text()
+                # 先尝试获取文本响应体，确保能获取到数据
+                if hasattr(response, 'text'):
+                    if callable(response.text):
+                        try:
+                            response_body = await response.text()
+                            # 然后尝试解析JSON
+                            if hasattr(response, 'json') and callable(response.json):
+                                try:
+                                    response_body = await response.json()
+                                except Exception:
+                                    # JSON解析失败，使用文本响应体
+                                    pass
+                        except Exception:
+                            # 文本提取失败，尝试其他方式
+                            if hasattr(response, 'content'):
+                                if callable(response.content):
+                                    try:
+                                        content = await response.content()
+                                        response_body = content.decode('utf-8')
+                                    except Exception:
+                                        response_body = str(content)
+                                else:
+                                    try:
+                                        response_body = response.content.decode('utf-8')
+                                    except Exception:
+                                        response_body = str(response.content)
+                    else:
+                        try:
+                            response_body = response.text
+                        except Exception:
+                            # text 属性失败，尝试 content
+                            if hasattr(response, 'content'):
+                                try:
+                                    response_body = response.content.decode('utf-8')
+                                except Exception:
+                                    response_body = str(response.content)
+                # 如果没有 text 属性，尝试使用 content 属性
+                elif hasattr(response, 'content'):
+                    if callable(response.content):
+                        try:
+                            content = await response.content()
+                            response_body = content.decode('utf-8')
+                        except Exception:
+                            response_body = str(content)
+                    else:
+                        try:
+                            response_body = response.content.decode('utf-8')
+                        except Exception:
+                            response_body = str(response.content)
+                # 对于某些特殊的响应对象，尝试其他方式
+                elif hasattr(response, 'data'):
+                    try:
+                        response_body = response.data
+                    except Exception:
+                        response_body = str(response.data)
+            except Exception as e:
+                # 响应体提取失败
+                error_message = f"响应体提取失败: {str(e)}"
+                response_body = None
                 
         except Exception as e:
             status_code = 500
