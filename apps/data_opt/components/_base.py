@@ -774,15 +774,19 @@ class _ProductionDataCache:
         """通用的缓存构建方法"""
         cache = cache_factory()
         
-        # 直接从数据库获取数据，不分页，因为 db_query 已经处理了分页
-        result = await db_query(db_name=db_name, model_or_tablename=table_name, filter_string=filter_string, page_size=1000, page_index=0)
-        data_list = result.get('data', [])
-        
-        for item in data_list:
-            process_item(item, cache)
-        
-        self._cache[cache_name] = cache
-        return data_list
+        try:
+            # 直接从数据库获取数据，不分页，因为 db_query 已经处理了分页
+            result = await db_query(db_name=db_name, model_or_tablename=table_name, filter_string=filter_string, page_size=1000, page_index=0)
+            data_list = result.get('data', [])
+            
+            for item in data_list:
+                process_item(item, cache)
+            
+            self._cache[cache_name] = cache
+            return data_list
+        except Exception as e:
+            logger.fail("生产数据缓存", f"构建 {cache_name} 缓存", f"{e}")
+            raise e
     
 
     async def _build_supply_mo_cache(self, db_name: str, supplynos: list = None):
@@ -908,7 +912,7 @@ class _ProductionDataCache:
             logger.info("生产数据缓存", "", f"开始执行 PEG SQL 查询，{'全量' if not supplynos else f'按需({len(supplynos)}个)'}模式")
             result = await db_exec_sql(db_name, sql, description="构建 PEG 缓存")
             
-            # 处理查询结果（db_exec_sql 返回 standard_response 格式）
+            # 处理查询结果（db_exec_sql 返回统一格式）
             data_list = result.get('data', []) if isinstance(result, dict) else result
             
             # 处理查询结果
@@ -932,7 +936,7 @@ class _ProductionDataCache:
             
         except Exception as e:
             logger.fail("生产数据缓存", "", f"PEG 缓存构建失败: {e}")
-            raise
+            raise e
         
         return list(demand_nos)
     
@@ -1484,55 +1488,63 @@ class ApsPayloadStorage:
         异步将报工数据 转化为 虚拟库存 数据，只处理MTO报工
         🅰 db: 账套名称，默认MYAPS_MAIN_DB
         """
-        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        response_json = await db_query(db_name=db_name, model_or_tablename="v_supply_complete")
-        mo_complete_data = response_json.get('data')
-        df_mto_vir_st = None
-        if mo_complete_data:
-            df_mo_complete = pd.DataFrame(mo_complete_data)
-            df_mto_vir_st = (df_mo_complete[df_mo_complete['category'] == 'MTO']
-                    [['materialno', 'vendorno', 'finalopqty', 'category', 'avail_date']]
-                    .groupby('vendorno', as_index=False)
-                    .agg({
-                        'finalopqty': 'sum',
-                        'materialno': 'first',
-                        'category': 'first',
-                        'avail_date': 'first',
-                    }))
-            df_mto_vir_st['supplyno'] = df_mto_vir_st['materialno'] + '-' + df_mto_vir_st['vendorno']
-            df_mto_vir_st['type'] = 'ST'
-            df_mto_vir_st['priority'] = 0
-            df_mto_vir_st['status'] = 'NEW'
-            df_mto_vir_st['dt_req'] = df_mto_vir_st['avail_date']
-            df_mto_vir_st['create_date'] = now
-            df_mto_vir_st['itemno'] = pdv.ITEMNO
-            df_mto_vir_st.rename(columns={'finalopqty': 'avail_qty'}, inplace=True)
-        return df_mto_vir_st
+        try:
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            response_json = await db_query(db_name=db_name, model_or_tablename="v_supply_complete")
+            mo_complete_data = response_json.get('data')
+            df_mto_vir_st = None
+            if mo_complete_data:
+                df_mo_complete = pd.DataFrame(mo_complete_data)
+                df_mto_vir_st = (df_mo_complete[df_mo_complete['category'] == 'MTO']
+                        [['materialno', 'vendorno', 'finalopqty', 'category', 'avail_date']]
+                        .groupby('vendorno', as_index=False)
+                        .agg({
+                            'finalopqty': 'sum',
+                            'materialno': 'first',
+                            'category': 'first',
+                            'avail_date': 'first',
+                        }))
+                df_mto_vir_st['supplyno'] = df_mto_vir_st['materialno'] + '-' + df_mto_vir_st['vendorno']
+                df_mto_vir_st['type'] = 'ST'
+                df_mto_vir_st['priority'] = 0
+                df_mto_vir_st['status'] = 'NEW'
+                df_mto_vir_st['dt_req'] = df_mto_vir_st['avail_date']
+                df_mto_vir_st['create_date'] = now
+                df_mto_vir_st['itemno'] = pdv.ITEMNO
+                df_mto_vir_st.rename(columns={'finalopqty': 'avail_qty'}, inplace=True)
+            return df_mto_vir_st
+        except Exception as e:
+            logger.fail("MTO报工转虚拟库存", "", f"{e}")
+            raise e
 
 
     @classmethod
     async def refresh_supply(cls, supply_data:Union[List[Dict[str, Any]], pd.DataFrame], type_:Literal['ST', 'PO']='ST', dbs:str=MYAPS_DB_SET):
-        from apps.io_api.schemas import AcceptSupply
+        try:
+            from apps.io_api.schemas import AcceptSupply
 
-        if isinstance(supply_data, pd.DataFrame):
-            supply_data = supply_data.to_dict('records')
-        supply_data = [AcceptSupply(**item).model_dump(exclude_none=True) for item in supply_data]
-        
-        # 首先删除该类型的所有供应记录
-        delete_result = await db_delete(db_names=dbs, model_or_tablename="t_supply", filter_string=f"`Type`='{type_}'")
-        
-        # 然后新增这些供应记录
-        if supply_data:
-            create_result = await db_bupsert(db_names=dbs, model_or_tablename="t_supply", data_list=supply_data)
-            if create_result.get('success'):
-                logger.success("刷新供应数据", f"type_{type_}", f"账套{dbs}")
+            if isinstance(supply_data, pd.DataFrame):
+                supply_data = supply_data.to_dict('records')
+            supply_data = [AcceptSupply(**item).model_dump(exclude_none=True) for item in supply_data]
+            
+            # 首先删除该类型的所有供应记录
+            delete_result = await db_delete(db_names=dbs, model_or_tablename="t_supply", filter_string=f"`Type`='{type_}'")
+            
+            # 然后新增这些供应记录
+            if supply_data:
+                create_result = await db_bupsert(db_names=dbs, model_or_tablename="t_supply", data_list=supply_data)
+                if create_result.get('success'):
+                    logger.success("刷新供应数据", f"type_{type_}", f"账套{dbs}")
+                else:
+                    logger.fail("刷新供应数据", f"type_{type_}", create_result.get('message'))
             else:
-                logger.fail("刷新供应数据", f"type_{type_}", create_result.get('message'))
-        else:
-            if delete_result.get('success'):
-                logger.success("刷新供应数据", f"type_{type_}", f"账套{dbs}")
-            else:
-                logger.fail("刷新供应数据", f"type_{type_}", delete_result.get('message'))
+                if delete_result.get('success'):
+                    logger.success("刷新供应数据", f"type_{type_}", f"账套{dbs}")
+                else:
+                    logger.fail("刷新供应数据", f"type_{type_}", delete_result.get('message'))
+        except Exception as e:
+            logger.fail("刷新供应数据", f"type_{type_}", f"{e}")
+            raise e
 
 
     @classmethod
@@ -1542,16 +1554,24 @@ class ApsPayloadStorage:
         🅰 workreport_data: 工作报工数据
         🅰 db_name: 账套名称，默认MYAPS_MAIN_DB
         """
-        logger.start("确认报工记录任务")
-        response_json = await call_dbprocdure(db_names=db_name, procedure_name="UpdateConfirmQtyToOrderWC")
-        logger.success("确认报工记录任务")
-        return response_json
+        try:
+            logger.start("确认报工记录任务")
+            response_json = await call_dbprocdure(db_names=db_name, procedure_name="UpdateConfirmQtyToOrderWC")
+            logger.success("确认报工记录任务")
+            return response_json
+        except Exception as e:
+            logger.fail("确认报工记录任务", "", f"{e}")
+            raise e
 
 
     @classmethod
     async def get_new_pr_data(cls):
-        result = await db_query(MYAPS_MAIN_DB, "v_supply", "`Type`='PR' AND `Status`='NEW'")
-        return result.get('data', [])
+        try:
+            result = await db_query(MYAPS_MAIN_DB, "v_supply", "`Type`='PR' AND `Status`='NEW'")
+            return result.get('data', [])
+        except Exception as e:
+            logger.fail("获取新PR数据", "", f"{e}")
+            return []
 
 
     @classmethod

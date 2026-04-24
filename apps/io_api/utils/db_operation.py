@@ -248,63 +248,78 @@ async def db_exec_sql(db_name: str, sql: str, params: Optional[List[Any]] = None
         params: SQL参数列表（可选）
 
     Returns:
-        执行结果（根据SQL语句类型而定）
+        Dict[str, Any]: 统一格式的返回值，包含 'success', 'data', 'message', 'meta'
     """
-    try:
-        valid_db = validate_databases(db_name)[0]
-        assert valid_db, "未指定账套或账套不存在"
+    valid_db = validate_databases(db_name)[0]
+    assert valid_db, "未指定账套或账套不存在"
 
-        db_manager = get_db_manager(valid_db)
+    db_manager = get_db_manager(valid_db)
 
-        count, data_list = await db_manager._execute_native_sql(
-            sql=sql,
-            params=params if params is not None else [],
-            description=f"执行SQL {description}..."
-        )
+    count, data_list = await db_manager._execute_native_sql(
+        sql=sql,
+        params=params if params is not None else [],
+        description=f"执行SQL {description}..."
+    )
 
-        return standard_response(
-            data=data_list,
-            meta={"total": count}
-        )
-    except Exception as e:
-        return standard_response(
-            success=0,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message=f"操作失败：{str(e)}"
-        )
+    return {
+        "success": 1,
+        "data": data_list,
+        "message": f"执行SQL成功，影响{count}条记录",
+        "meta": {
+            "affected_rows": count,
+            "db_names": [valid_db],
+            "table_name": ""
+        }
+    }
 
 
     
 @retry_on_connection_error(max_retries=3, retry_delay=1.0)
 async def db_query(db_name: str, model_or_tablename: TortoiseBaseModel | str, select="*", filter_string: str = '', order_string: str = '', page_size: int = 1000, page_index: int = 1):
-    _, table_name = process_model_or_tablename(model_or_tablename)
-    try:
-        valid_db = validate_databases(db_name)[0]
-        assert valid_db, "未指定账套或账套不存在"
+    """
+    查询数据
 
-        db_manager = get_db_manager(valid_db)
-        
-        query_result = await db_manager.query_data(
-            table_name=table_name,
-            select_fields=select,
-            filter_string=filter_string,
-            order_string=order_string,
-            page_size=page_size,
-            page_index=page_index,
-        )
-        formatted_data = [format_query_result(row) for row in query_result['data']]
-        total = query_result['total']
-        
-        return standard_response(
-            data=formatted_data,
-            meta={"total": total}
-        )
-    except Exception as e:
-        return standard_response(
-            success=0,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message=f"操作失败：{str(e)}"
-        )
+    Args:
+        db_name: 数据库连接名称
+        model_or_tablename: 模型类或表名
+        select: 要查询的字段，默认为 "*"
+        filter_string: WHERE子句，用于指定查询条件
+        order_string: ORDER BY子句，用于指定排序
+        page_size: 每页大小，默认为 1000
+        page_index: 页码，默认为 1
+
+    Returns:
+        Dict[str, Any]: 统一格式的返回值，包含 'success', 'data', 'message', 'meta'
+    """
+    _, table_name = process_model_or_tablename(model_or_tablename)
+    valid_db = validate_databases(db_name)[0]
+    assert valid_db, "未指定账套或账套不存在"
+
+    db_manager = get_db_manager(valid_db)
+    
+    query_result = await db_manager.query_data(
+        table_name=table_name,
+        select_fields=select,
+        filter_string=filter_string,
+        order_string=order_string,
+        page_size=page_size,
+        page_index=page_index,
+    )
+    formatted_data = [format_query_result(row) for row in query_result['data']]
+    total = query_result['total']
+    
+    return {
+        "success": 1,
+        "data": formatted_data,
+        "message": f"查询成功，共{total}条记录",
+        "meta": {
+            "affected_rows": total,
+            "page_size": page_size,
+            "page_index": page_index,
+            "db_names": [valid_db],
+            "table_name": table_name
+        }
+    }
 
 
 
@@ -390,25 +405,19 @@ async def db_supsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
     """
     通用单条数据写入操作，支持创建和更新，整体逻辑类似于旧版的逐条创建或更新。比 db_bupsert 颗粒度更细，但会损失一定性能
     
-    :param db_names: 账套名称，多个可用半角逗号分隔
-    :param model_or_tablename: 模型类或表名
-    :param data_item: 数据，字典或PydanticSchema对象
-    :param use_rawdata: 是否使用原始数据（若传入的数据为PydanticSchema对象，默认使用未被 validator 处理的数据）
-    :return: 操作结果
+    Args:
+        db_names: 账套名称，多个可用半角逗号分隔
+        model_or_tablename: 模型类或表名
+        data_item: 数据，字典或PydanticSchema对象
+        use_rawdata: 是否使用原始数据（若传入的数据为PydanticSchema对象，默认使用未被 validator 处理的数据）
+
+    Returns:
+        Dict[str, Any]: 统一格式的返回值，包含 'success', 'data', 'message', 'meta'
     """
     mdl, table_name = process_model_or_tablename(model_or_tablename)
     
     if not mdl:
-        return standard_response(
-            success=0,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="操作失败：未找到对应模型",
-            meta={
-                "input_table_name": table_name,
-                "available_tables": list(TABLE_MODEL_MAPPING.keys()),
-            },
-            data=[data_item]
-        )
+        raise ValueError(f"操作失败：未找到对应模型，input_table_name: {table_name}, available_tables: {list(TABLE_MODEL_MAPPING.keys())}")
 
     if isinstance(data_item, PydanticSchema):
         if use_rawdata:
@@ -421,16 +430,7 @@ async def db_supsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
     valid_dbs = validate_databases(db_names)
     if not valid_dbs:
         logger.fail("数据库验证", f"{db_names}", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
-        return standard_response(
-            success=0,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="操作失败：未找到有效账套",
-            meta={
-                "input_db_name": db_names,
-                "available_dbs": MYAPS_DB_SET,
-            },
-            data=[data_item]
-        )
+        raise ValueError(f"操作失败：未找到有效账套，input_db_name: {db_names}, available_dbs: {MYAPS_DB_SET}")
 
     success_db = []
     create_count_total = 0
@@ -449,14 +449,18 @@ async def db_supsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
             create_count_total += result['inserted']
             update_count_total += result['updated']
 
-    return standard_response(
-        meta={
-            "success_db": success_db,
-            "create": create_count_total,
-            "update": update_count_total,
-        },
-        data=[data_item]
-    )
+    return {
+        "success": 1,
+        "data": [data_item],
+        "message": f"数据写入成功，新增{create_count_total}条，修改{update_count_total}条",
+        "meta": {
+            "affected_rows": create_count_total + update_count_total,
+            "created_rows": create_count_total,
+            "updated_rows": update_count_total,
+            "db_names": valid_dbs,
+            "table_name": table_name
+        }
+    }
 
 
 @retry_on_connection_error(max_retries=3, retry_delay=1.0)
@@ -465,46 +469,27 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
     通用批量写入操作，支持创建和更新
     融合了多账套处理逻辑与db_manager.py的高效数据库操作
     Args:
-        db_name: 账套名称，支持逗号分隔的多个账套
-        mdl: Tortoise模型类
-        data: 数据列表，可以是PydanticSchema对象或字典
-        use_orm_or_sql
+        db_names: 账套名称，支持逗号分隔的多个账套
+        model_or_tablename: 模型类或表名
+        data_list: 数据列表，可以是PydanticSchema对象或字典
+        use_orm_or_sql: 使用ORM还是SQL，可选值："orm", "sql", "auto"
         exclude_none: 是否排除None值
         batch_size: 批次大小，默认为1000
         on_batch_error: 批次出错时的策略，"continue"继续下一批次，"skip"跳过后续所有批次
         
     Returns:
-        标准响应格式
+        Dict[str, Any]: 包含 'success', 'data', 'message', 'meta'
     """
     # 验证账套
     valid_dbs = validate_databases(db_names)
     if not valid_dbs:
         logger.fail("数据库验证", "", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
-        return standard_response(
-            success=0,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="操作失败：未找到有效账套",
-            meta={
-                "input_db_name": db_names,
-                "available_dbs": MYAPS_DB_SET,
-            },
-            # data=[item.processed_data for item in processed_data_list]
-            data=data_list
-        )
+        raise ValueError(f"操作失败：未找到有效账套，input_db_name: {db_names}, available_dbs: {MYAPS_DB_SET}")
 
     mdl, table_name = process_model_or_tablename(model_or_tablename)
     
     if not mdl:
-        return standard_response(
-            success=0,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="操作失败：未找到对应模型",
-            meta={
-                "input_table_name": table_name,
-                "available_tables": list(TABLE_MODEL_MAPPING.keys()),
-            },
-            data=data_list
-        )
+        raise ValueError(f"操作失败：未找到对应模型，input_table_name: {table_name}, available_tables: {list(TABLE_MODEL_MAPPING.keys())}")
 
     origin_total = len(data_list)
     # 记录日志
@@ -531,11 +516,12 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
     # 检查upsert_data_list是否为空
     if not upsert_data_list:
         logger.warning("批量upsert", mdl._meta.db_table, "没有可处理的数据")
-        return standard_response(
-            data=data_list,
-            message=f"生效{len(success_db)}个账套，无数据处理",
-            meta={"origin_total": origin_total, "success_db": success_db}
-        )
+        return {
+            "success": 1,
+            "data": data_list,
+            "message": f"生效{len(success_db)}个账套，无数据处理",
+            "meta": {"origin_total": origin_total, "success_db": success_db}
+        }
     
     # 收集所有记录中的所有字段，确保update_fields包含所有可能的字段
     all_fields = set()
@@ -553,103 +539,69 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
             exclude_fields.append(pk_attr)
             if pk_attr in update_fields:
                 update_fields.remove(pk_attr)
-    try:
-        # 处理每个账套，使用专属的DbManager实例
-        for db_name in valid_dbs:
-            # 获取该账套的专属DbManager实例
-            db_manager = get_db_manager(db_name)
+    
+    # 处理每个账套，使用专属的DbManager实例
+    for db_name in valid_dbs:
+        # 获取该账套的专属DbManager实例
+        db_manager = get_db_manager(db_name)
+        
+        db_create_count = 0
+        db_update_count = 0
+        db_errors = []
+        db_skipped_count = 0
+        db_skipped_batches = []
+        
+        total_batches = (len(upsert_data_list) + batch_size - 1) // batch_size
+        for i in range(total_batches):
+            start_idx = i * batch_size
+            end_idx = min((i + 1) * batch_size, len(upsert_data_list))
+            batch_data = upsert_data_list[start_idx:end_idx]
             
-            db_create_count = 0
-            db_update_count = 0
-            db_errors = []
-            db_skipped_count = 0
-            db_skipped_batches = []
-            
-            total_batches = (len(upsert_data_list) + batch_size - 1) // batch_size
-            for i in range(total_batches):
-                start_idx = i * batch_size
-                end_idx = min((i + 1) * batch_size, len(upsert_data_list))
-                batch_data = upsert_data_list[start_idx:end_idx]
-                
-                try:
-                    result = await db_manager.bulk_upsert(
-                        model_class=mdl,
-                        data_list=batch_data,
-                        update_fields=update_fields,
-                        exclude_fields=exclude_fields,
-                        conflict_fields=tuple(model_key) if model_key else None,
-                        use_orm_or_sql=use_orm_or_sql
-                    )
+            try:
+                result = await db_manager.bulk_upsert(
+                    model_class=mdl,
+                    data_list=batch_data,
+                    update_fields=update_fields,
+                    exclude_fields=exclude_fields,
+                    conflict_fields=tuple(model_key) if model_key else None,
+                    use_orm_or_sql=use_orm_or_sql
+                )
 
-                    batch_create = result.get("inserted", 0)
-                    batch_update = result.get("updated", 0)
-                    db_create_count += batch_create
-                    db_update_count += batch_update
-                    logger.insert("账套批次生效", f"{db_name} (批次{i+1}/{total_batches})", f"新增{batch_create}条，修改{batch_update}条")
-                except Exception as batch_error:
-                    db_errors.append({"batch": i + 1, "error": str(batch_error), "skipped_count": len(batch_data)})
-                    db_skipped_count += len(batch_data)
-                    db_skipped_batches.append(i + 1)
-                    logger.fail("账套批次失败", f"{db_name} (批次{i+1}/{total_batches})", str(batch_error))
-                    if on_batch_error == "skip":
-                        remaining_batches = total_batches - i - 1
-                        remaining_count = sum(len(upsert_data_list[j * batch_size:min((j + 1) * batch_size, len(upsert_data_list))]) for j in range(i + 1, total_batches))
-                        db_skipped_count += remaining_count
-                        db_skipped_batches.extend(range(i + 2, total_batches + 1))
-                        logger.warning("批量upsert", f"{db_name} 跳过后续{remaining_batches}个批次", f"跳过{remaining_count}条数据")
-                        break
-            
-            create_count_total += db_create_count
-            update_count_total += db_update_count
-            logger.insert("账套生效", db_name, f"新增{db_create_count}条，修改{db_update_count}条")
-            success_db.append({
-                "db_name": db_name,
-                "create": db_create_count,
-                "update": db_update_count,
-                "errors": db_errors,
-                "skipped_count": db_skipped_count,
-                "skipped_batches": db_skipped_batches
-            })
+                batch_create = result.get("inserted", 0)
+                batch_update = result.get("updated", 0)
+                db_create_count += batch_create
+                db_update_count += batch_update
+                logger.insert("账套批次生效", f"{db_name} (批次{i+1}/{total_batches})", f"新增{batch_create}条，修改{batch_update}条")
+            except Exception as batch_error:
+                db_errors.append({"batch": i + 1, "error": str(batch_error), "skipped_count": len(batch_data)})
+                db_skipped_count += len(batch_data)
+                db_skipped_batches.append(i + 1)
+                logger.fail("账套批次失败", f"{db_name} (批次{i+1}/{total_batches})", str(batch_error))
+                if on_batch_error == "skip":
+                    remaining_batches = total_batches - i - 1
+                    remaining_count = sum(len(upsert_data_list[j * batch_size:min((j + 1) * batch_size, len(upsert_data_list))]) for j in range(i + 1, total_batches))
+                    db_skipped_count += remaining_count
+                    db_skipped_batches.extend(range(i + 2, total_batches + 1))
+                    logger.warning("批量upsert", f"{db_name} 跳过后续{remaining_batches}个批次", f"跳过{remaining_count}条数据")
+                    break
         
-        has_errors = any(len(db_info["errors"]) > 0 for db_info in success_db)
-        
-        logger.success("批量upsert", f"{table_name}@{db_names}", f"生效{len(success_db)}个账套，新增{create_count_total}条，修改{update_count_total}条")
-        
-        if has_errors:
-            error_summary = []
-            for db_info in success_db:
-                if db_info["errors"]:
-                    error_summary.append({
-                        "db_name": db_info["db_name"],
-                        "errors": db_info["errors"],
-                        "skipped_count": db_info["skipped_count"],
-                        "skipped_batches": db_info["skipped_batches"]
-                    })
-            logger.warning("批量upsert", f"{table_name}@{db_names}", f"存在错误批次")
-            return standard_response(
-                success=1,
-                data=data_list,
-                message=f"生效{len(success_db)}个账套，总计新增{create_count_total}条，修改{update_count_total}条，但存在错误",
-                meta={
-                    "origin_total": origin_total,
-                    "distinct_total": len(processed_data_list),
-                    "success_db": success_db,
-                    "has_errors": True,
-                    "error_summary": error_summary,
-                    "total_skipped_count": sum(db_info["skipped_count"] for db_info in success_db)
-                }
-            )
-        
-        return standard_response(
-            data=data_list,
-            message=f"生效{len(success_db)}个账套，总计新增{create_count_total}条，修改{update_count_total}条",
-            meta={"origin_total": origin_total, "distinct_total": len(processed_data_list), "success_db": success_db}
-        )
-        
-    except Exception as e:
-        has_errors = any(len(db_info["errors"]) > 0 for db_info in success_db)
-        logger.fail("批量upsert", f"{mdl._meta.db_table}@[{db_names}]，{str(e)}", f"{data_list}")
-        
+        create_count_total += db_create_count
+        update_count_total += db_update_count
+        logger.insert("账套生效", db_name, f"新增{db_create_count}条，修改{db_update_count}条")
+        success_db.append({
+            "db_name": db_name,
+            "create": db_create_count,
+            "update": db_update_count,
+            "errors": db_errors,
+            "skipped_count": db_skipped_count,
+            "skipped_batches": db_skipped_batches
+        })
+    
+    has_errors = any(len(db_info["errors"]) > 0 for db_info in success_db)
+    
+    logger.success("批量upsert", f"{table_name}@{db_names}", f"生效{len(success_db)}个账套，新增{create_count_total}条，修改{update_count_total}条")
+    
+    if has_errors:
         error_summary = []
         for db_info in success_db:
             if db_info["errors"]:
@@ -659,56 +611,78 @@ async def db_bupsert(db_names: str, model_or_tablename: TortoiseBaseModel | str,
                     "skipped_count": db_info["skipped_count"],
                     "skipped_batches": db_info["skipped_batches"]
                 })
-        
-        return standard_response(
-            success=0,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message=f"操作失败：{str(e)}",
-            meta={
+        logger.warning("批量upsert", f"{table_name}@{db_names}", f"存在错误批次")
+        return {
+            "success": 1,
+            "data": data_list,
+            "message": f"生效{len(success_db)}个账套，总计新增{create_count_total}条，修改{update_count_total}条，但存在错误",
+            "meta": {
+                "affected_rows": create_count_total + update_count_total,
+                "created_rows": create_count_total,
+                "updated_rows": update_count_total,
                 "origin_total": origin_total,
-                "success_db": success_db,
-                "has_errors": has_errors,
-                "error_summary": error_summary if error_summary else None,
-                "total_skipped_count": sum(db_info["skipped_count"] for db_info in success_db) if success_db else 0
-            },
-            data=data_list
-        )
+                "distinct_total": len(processed_data_list),
+                "db_names": valid_dbs,
+                "table_name": table_name,
+                "has_errors": True,
+                "error_summary": error_summary,
+                "total_skipped_count": sum(db_info["skipped_count"] for db_info in success_db)
+            }
+        }
+    
+    return {
+        "success": 1,
+        "data": data_list,
+        "message": f"生效{len(success_db)}个账套，总计新增{create_count_total}条，修改{update_count_total}条",
+        "meta": {
+            "affected_rows": create_count_total + update_count_total,
+            "created_rows": create_count_total,
+            "updated_rows": update_count_total,
+            "origin_total": origin_total,
+            "distinct_total": len(processed_data_list),
+            "db_names": valid_dbs,
+            "table_name": table_name
+        }
+    }
 
 
 @retry_on_connection_error(max_retries=3, retry_delay=1.0)
 async def db_delete(db_names: str, model_or_tablename: TortoiseBaseModel | str, filter_string: str | None = None):
     """
     执行SQL删除操作
-    :param db_names: 账套名称，多个可用半角逗号分隔
-    :param model_or_tablename: 模型类或表名
-    :param filter_string: WHERE子句，用于指定删除条件；若为None则清空整个表
-    :return: 操作结果
+    
+    Args:
+        db_names: 账套名称，多个可用半角逗号分隔
+        model_or_tablename: 模型类或表名
+        filter_string: WHERE子句，用于指定删除条件；若为None则清空整个表
+
+    Returns:
+        Dict[str, Any]: 统一格式的返回值，包含 'success', 'data', 'message', 'meta'
     """
     _, table_name = process_model_or_tablename(model_or_tablename)
-    try:
-        valid_dbs = validate_databases(db_names)
-        assert valid_dbs, "未指定账套或账套不存在"
-        total_count = 0
-        is_truncate = filter_string is None
-        for db_name in valid_dbs:
-            db_manager = get_db_manager(db_name)
-            exe_result = await db_manager.delete_data(table_name=table_name, filter_string=filter_string or '')
+    valid_dbs = validate_databases(db_names)
+    assert valid_dbs, "未指定账套或账套不存在"
+    total_count = 0
+    is_truncate = filter_string is None
+    for db_name in valid_dbs:
+        db_manager = get_db_manager(db_name)
+        exe_result = await db_manager.delete_data(table_name=table_name, filter_string=filter_string or '')
 
-            count = exe_result.get("affected_rows", 0)
-            total_count += count
-            logger.delete(f"{table_name}@{db_name}", "ALL DATA" if is_truncate else filter_string, count)
-        logger.success("SQL删除", f"{table_name}@{db_names}", f"共删除{total_count}条")
-        return standard_response(
-            meta={"affect_count": total_count, "affect_dbs": ", ".join(valid_dbs)}
-        )
-        
-    except Exception as e:
-        logger.fail("SQL删除", f"{table_name}@{db_names}", f"条件{filter_string}，{str(e)}")
-        return standard_response(
-            success=0,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message=f"操作失败：{str(e)}"
-        )
+        count = exe_result.get("affected_rows", 0)
+        total_count += count
+        logger.delete(f"{table_name}@{db_name}", "ALL DATA" if is_truncate else filter_string, count)
+    logger.success("SQL删除", f"{table_name}@{db_names}", f"共删除{total_count}条")
+    return {
+        "success": 1,
+        "data": [],
+        "message": f"删除成功，共删除{total_count}条记录",
+        "meta": {
+            "affected_rows": total_count, 
+            "db_names": valid_dbs,
+            "table_name": table_name,
+            "is_truncate": is_truncate
+        }
+    }
 
 
 
@@ -716,36 +690,37 @@ async def db_delete(db_names: str, model_or_tablename: TortoiseBaseModel | str, 
 async def call_dbprocdure(db_names: str, procedure_name: str, params_list: List[List[Any]] = [[]]):
     """
     调用数据库存储过程
-    :param db_names: 账套名称，多个可用半角逗号分隔
-    :param procedure_name: 存储过程名称
-    :param params_list: 存储过程参数列表，每个元素是一个参数列表
-    :return: 操作结果
+    
+    Args:
+        db_names: 账套名称，多个可用半角逗号分隔
+        procedure_name: 存储过程名称
+        params_list: 存储过程参数列表，每个元素是一个参数列表
+
+    Returns:
+        Dict[str, Any]: 统一格式的返回值，包含 'success', 'data', 'message', 'meta'
     """
     valid_dbs = validate_databases(db_names)
     assert valid_dbs, "未指定账套或账套不存在"
     total_affect_count = 0
     # meta = {}
     affect_rows = 0
-    try:
-        for db_name in valid_dbs:
-            db_manager = get_db_manager(db_name)
-            exe_result = await db_manager.call_stored_procedure(procedure_name=procedure_name, params_list=params_list)
-            affect_rows += exe_result.get('affected_rows', 0)
-            total_affect_count += affect_rows
-            # logger.success("存储过程调用", f"{procedure_name}@{db_name}", f"影响{affect_rows}条记录")
-            # meta[db_name] = affect_rows
-        return standard_response(
-            # message=f"调用存储过程`{procedure_name}`@{db_name}成功，影响{total_affect_count}条记录",
-            meta={"affect_rows": affect_rows, "affect_dbs": ", ".join(valid_dbs)},
-            
-        )
-    except Exception as e:
-        logger.fail("存储过程调用", f"{procedure_name}@{db_names}", str(e))
-        return standard_response(
-            success=0,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message=f"操作失败：{str(e)}"
-        )
+    for db_name in valid_dbs:
+        db_manager = get_db_manager(db_name)
+        exe_result = await db_manager.call_stored_procedure(procedure_name=procedure_name, params_list=params_list)
+        affect_rows += exe_result.get('affected_rows', 0)
+        total_affect_count += affect_rows
+        # logger.success("存储过程调用", f"{procedure_name}@{db_name}", f"影响{affect_rows}条记录")
+        # meta[db_name] = affect_rows
+    return {
+        "success": 1,
+        "data": [],
+        "message": f"存储过程调用成功，影响{affect_rows}条记录",
+        "meta": {
+            "affected_rows": affect_rows, 
+            "db_names": valid_dbs,
+            "procedure_name": procedure_name
+        }
+    }
 
 
 @retry_on_connection_error(max_retries=3, retry_delay=1.0)
@@ -767,73 +742,52 @@ async def db_update_by_index(
         not_found_behavior: 找不到记录时的行为："insert" 新增，"error" 报错，"skip" 略过
         
     Returns:
-        标准响应格式
+        Dict[str, Any]: 统一格式的返回值，包含 'success', 'data', 'message', 'meta'
     """
     mdl, table_name = process_model_or_tablename(model_or_tablename)
     
     if not mdl:
-        return standard_response(
-            success=0,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="操作失败：未找到对应模型",
-            meta={
-                "input_table_name": table_name,
-                "available_tables": list(TABLE_MODEL_MAPPING.keys()),
-            },
-            data=[index_dict, new_values_dict]
-        )
+        raise ValueError(f"操作失败：未找到对应模型，input_table_name: {table_name}, available_tables: {list(TABLE_MODEL_MAPPING.keys())}")
 
     valid_dbs = validate_databases(db_names)
     if not valid_dbs:
         logger.fail("数据库验证", "", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
-        return standard_response(
-            success=0,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="操作失败：未找到有效账套",
-            meta={
-                "input_db_name": db_names,
-                "available_dbs": MYAPS_DB_SET,
-            },
-            data=[index_dict, new_values_dict]
-        )
+        raise ValueError(f"操作失败：未找到有效账套，input_db_name: {db_names}, available_dbs: {MYAPS_DB_SET}")
 
     success_db = []
     affect_count_total = 0
+    operation_type = None
 
-    try:
-        for db_name in valid_dbs:
-            db_manager = get_db_manager(db_name)
-
-
-            logger.debug(f"index_dict: {index_dict}")
-            logger.debug(f"new_values_dict: {new_values_dict}")
+    for db_name in valid_dbs:
+        db_manager = get_db_manager(db_name)
 
 
-            result = await db_manager.update_by_index(
-                model_class=mdl,
-                index_dict=index_dict,
-                new_values_dict=new_values_dict,
-                not_found_behavior=not_found_behavior
-            )
+        logger.debug(f"index_dict: {index_dict}")
+        logger.debug(f"new_values_dict: {new_values_dict}")
 
-            if result['success']:
-                success_db.append(db_name)
-                affect_count_total += result['affected_rows']
-                logger.update("索引更新", f"{table_name}@{db_name}", f"操作{result['operation_type']}，影响{result['affected_rows']}条")
 
-        return standard_response(
-            meta={
-                "success_db": success_db,
-                "affect_count": affect_count_total,
-                "operation_type": result.get('operation_type')
-            },
-            data=[index_dict, new_values_dict]
+        result = await db_manager.update_by_index(
+            model_class=mdl,
+            index_dict=index_dict,
+            new_values_dict=new_values_dict,
+            not_found_behavior=not_found_behavior
         )
-    except Exception as e:
-        logger.fail("索引更新", f"{table_name}@[{db_names}]", str(e))
-        return standard_response(
-            success=0,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message=f"操作失败：{str(e)}",
-            data=[index_dict, new_values_dict]
-        )
+
+        if result['success']:
+            success_db.append(db_name)
+            affect_count_total += result['affected_rows']
+            operation_type = result.get('operation_type')
+            logger.update("索引更新", f"{table_name}@{db_name}", f"操作{operation_type}，影响{result['affected_rows']}条")
+
+    return {
+        "success": 1,
+        "data": [index_dict, new_values_dict],
+        "message": f"索引更新成功，影响{affect_count_total}条记录",
+        "meta": {
+            "affected_rows": affect_count_total,
+            "operation_type": operation_type,
+            "db_names": valid_dbs,
+            "table_name": table_name,
+            "not_found_behavior": not_found_behavior
+        }
+    }

@@ -203,6 +203,9 @@ async def drop_matched_data(data: List[Any], db_names: str, table_name: str, mat
         db_fields: 数据库字段，用于删除数据，如 ("MaterialNo", "MatVer")
     """
     from .db_operation import db_delete
+    from globalobjects import logger as log_config
+    logger = log_config.get_logger(__name__)
+    
     # 收集唯一组合
     db_fields = db_fields or match_on
     unique_combinations = set()
@@ -235,4 +238,8 @@ async def drop_matched_data(data: List[Any], db_names: str, table_name: str, mat
                 condition = " AND ".join(field_conditions)
                 conditions.append(f"({condition})")
             filter_string = " OR ".join(conditions)
-            await db_delete(db_names=db_names, model_or_tablename=table_name, filter_string=filter_string)
+            try:
+                await db_delete(db_names=db_names, model_or_tablename=table_name, filter_string=filter_string)
+            except Exception as e:
+                logger.error(f"删除数据失败: {str(e)}")
+                raise e

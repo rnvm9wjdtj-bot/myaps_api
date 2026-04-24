@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 import time
 import asyncio
+import functools
 
 from tortoise import Tortoise
 from tortoise.connection import connections
@@ -20,6 +21,45 @@ LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 logger = log_config.get_logger(__name__, level=LOG_LEVEL)
 
 
+class DbManagerError(Exception):
+    """数据库管理错误基类"""
+    def __init__(self, message, operation=None, table=None, connection=None):
+        self.message = message
+        self.operation = operation
+        self.table = table
+        self.connection = connection
+        super().__init__(message)
+    
+    def to_dict(self):
+        return {
+            "error": self.__class__.__name__,
+            "message": self.message,
+            "operation": self.operation,
+            "table": self.table,
+            "connection": self.connection
+        }
+
+
+class DbConnectionError(DbManagerError):
+    """数据库连接错误"""
+    pass
+
+
+class DbQueryError(DbManagerError):
+    """数据库查询错误"""
+    pass
+
+
+class DbTransactionError(DbManagerError):
+    """数据库事务错误"""
+    pass
+
+
+class DbDeadlockError(DbManagerError):
+    """数据库死锁错误"""
+    pass
+
+
 def with_transaction(func):
     """
     事务装饰器，根据实例配置或方法参数决定是否使用事务
@@ -30,19 +70,169 @@ def with_transaction(func):
     Returns:
         装饰后的方法
     """
+    @functools.wraps(func)
     async def wrapper(self, *args, **kwargs):
         # 检查是否有use_transaction参数，如果有则使用，否则使用实例默认值
         transaction_mode = kwargs.pop('use_transaction', self.use_transaction)
         
-        if transaction_mode:
-            # 使用事务
-            async with in_transaction(self.connection_name):
+        try:
+            if transaction_mode:
+                # 使用事务
+                async with in_transaction(self.connection_name):
+                    return await func(self, *args, **kwargs)
+            else:
+                # 不使用事务
                 return await func(self, *args, **kwargs)
-        else:
-            # 不使用事务
-            return await func(self, *args, **kwargs)
+        except Exception as e:
+            # 特殊处理 bulk_upsert 方法在非事务模式下的错误
+            if func.__name__ == 'bulk_upsert' and not transaction_mode:
+                # 对于 bulk_upsert 方法，在非事务模式下返回错误信息
+                db_table = None
+                if 'model_class' in kwargs:
+                    db_table = getattr(kwargs['model_class']._meta, 'db_table', None)
+                logger.fail("批量upsert", f"{db_table}@{self.connection_name}", str(e))
+                data_list = kwargs.get('data_list', [])
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "total_records": len(data_list),
+                    "inserted": 0,
+                    "updated": 0
+                }
+            else:
+                # 转换为自定义异常
+                operation = func.__name__
+                table = None
+                
+                # 尝试从参数中获取表名
+                if 'table_name' in kwargs:
+                    table = kwargs['table_name']
+                elif 'model_class' in kwargs:
+                    table = getattr(kwargs['model_class']._meta, 'db_table', None)
+                
+                error_str = str(e).upper()
+                is_deadlock = 'DEADLOCK' in error_str or '1213' in str(e) or '死锁' in str(e)
+                is_operational_error = "OperationalError" in str(type(e))
+                is_connection_closed = "Cannot acquire connection after closing pool" in str(e)
+                is_none_type_error = "NoneType" in str(e)
+                is_connection_error = "Connection" in str(type(e))
+                is_timeout_error = "Timeout" in str(type(e))
+                is_network_error = "Network" in str(type(e)) or "网络" in str(e)
+                is_pool_error = "Pool" in str(type(e))
+                
+                if is_deadlock:
+                    logger.fail(operation, f"@{self.connection_name}", str(e))
+                    raise DbDeadlockError(f"数据库死锁: {str(e)}", operation, table, self.connection_name)
+                elif is_connection_error or is_operational_error or is_connection_closed:
+                    logger.fail(operation, f"@{self.connection_name}", str(e))
+                    raise DbConnectionError(f"数据库连接错误: {str(e)}", operation, table, self.connection_name)
+                else:
+                    logger.fail(operation, f"@{self.connection_name}", str(e))
+                    raise DbQueryError(f"数据库操作错误: {str(e)}", operation, table, self.connection_name)
     
     return wrapper
+
+
+def handle_db_errors(max_retries: int = 3):
+    """
+    带重试机制的数据库错误处理装饰器
+    
+    Args:
+        max_retries: 最大重试次数
+        
+    Returns:
+        装饰后的方法
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        async def wrapper(self, *args, **kwargs):
+            retry_count = 0
+            last_exception = None
+            
+            while retry_count <= max_retries:
+                try:
+                    return await func(self, *args, **kwargs)
+                except Exception as e:
+                    error_str = str(e).upper()
+                    is_deadlock = 'DEADLOCK' in error_str or '1213' in str(e) or '死锁' in str(e)
+                    is_operational_error = "OperationalError" in str(type(e))
+                    is_connection_closed = "Cannot acquire connection after closing pool" in str(e)
+                    is_none_type_error = "NoneType" in str(e)
+                    is_connection_error = "Connection" in str(type(e))
+                    is_timeout_error = "Timeout" in str(type(e))
+                    is_network_error = "Network" in str(type(e)) or "网络" in str(e)
+                    is_pool_error = "Pool" in str(type(e))
+                    
+                    is_retryable = (is_deadlock or is_operational_error or is_connection_closed or 
+                                  is_none_type_error or is_connection_error or is_timeout_error or 
+                                  is_network_error or is_pool_error)
+                    
+                    if is_retryable and retry_count < max_retries:
+                        retry_count += 1
+                        
+                        # 使用指数退避策略
+                        if is_connection_closed:
+                            base_delay = 3.0
+                        elif is_deadlock:
+                            base_delay = 2.0
+                        else:
+                            base_delay = 1.0
+                        
+                        current_delay = base_delay * (2 ** (retry_count - 1))
+                        current_delay = min(current_delay, 20.0)
+                        
+                        error_type = "连接错误"
+                        if is_connection_closed:
+                            error_type = "连接池关闭"
+                        elif is_deadlock:
+                            error_type = "死锁"
+                        elif is_timeout_error:
+                            error_type = "超时错误"
+                        elif is_network_error:
+                            error_type = "网络错误"
+                        
+                        logger.warning_msg(
+                            func.__name__,
+                            f"@{self.connection_name} 检测到{error_type}，第{retry_count}次重试中...",
+                            f"等待{current_delay:.1f}秒后重试"
+                        )
+                        
+                        # 尝试刷新连接
+                        if not is_deadlock:
+                            await self.refresh_connection(fast_mode=is_connection_closed)
+                        
+                        await asyncio.sleep(current_delay)
+                        continue
+                    else:
+                        # 转换为自定义异常
+                        operation = func.__name__
+                        table = None
+                        
+                        # 尝试从参数中获取表名
+                        if 'table_name' in kwargs:
+                            table = kwargs['table_name']
+                        elif 'model_class' in kwargs:
+                            table = getattr(kwargs['model_class']._meta, 'db_table', None)
+                        
+                        if is_deadlock:
+                            logger.fail(operation, f"@{self.connection_name}", str(e))
+                            raise DbDeadlockError(f"数据库死锁: {str(e)}", operation, table, self.connection_name)
+                        elif is_connection_error or is_operational_error or is_connection_closed:
+                            logger.fail(operation, f"@{self.connection_name}", str(e))
+                            raise DbConnectionError(f"数据库连接错误: {str(e)}", operation, table, self.connection_name)
+                        elif isinstance(e, IntegrityError):
+                            logger.fail(operation, f"@{self.connection_name}", str(e))
+                            raise DbTransactionError(f"数据完整性错误: {str(e)}", operation, table, self.connection_name)
+                        else:
+                            logger.fail(operation, f"@{self.connection_name}", str(e))
+                            raise DbQueryError(f"数据库操作错误: {str(e)}", operation, table, self.connection_name)
+            
+            if last_exception:
+                raise last_exception
+        
+        return wrapper
+    
+    return decorator
 
 
 class DbManager:
@@ -109,13 +299,12 @@ class DbManager:
     
 
     @with_transaction
+    @handle_db_errors(max_retries=5)
     async def call_stored_procedure(
         self, 
         procedure_name: str, 
         params_list: List[List[Any]] = None, 
-        use_transaction: Optional[bool] = None,
-        max_retries: int = 5, 
-        retry_delay: float = 2.0 
+        use_transaction: Optional[bool] = None
     ) -> Dict[str, Any]:
         """
         调用数据库存储过程（支持死锁自动重试）
@@ -124,122 +313,53 @@ class DbManager:
             procedure_name: 存储过程名称
             params_list: 存储过程参数列表，每个元素是一个参数列表（可选，默认[[]]）
             use_transaction: 是否使用事务（可选，默认使用实例配置的use_transaction）
-            max_retries: 最大重试次数，默认5次
-            retry_delay: 基础重试延迟时间（秒），默认2秒
             
         Returns:
             包含执行结果的字典，包括成功状态、执行时间、影响记录数等
             
         Raises:
-            Exception: 如果存储过程执行失败且重试耗尽
+            DbManagerError: 如果存储过程执行失败
         """
         if params_list is None:
             params_list = [[]]
             
         start_time = datetime.now()
-        retry_count = 0
-        last_exception = None
         
-        while retry_count <= max_retries:
-            try:
-                # 优化：在获取连接前先检查连接池状态
-                if retry_count > 0:
-                    # 等待并确保连接刷新完成
-                    await asyncio.sleep(0.5)
-                
-                conn = Tortoise.get_connection(self.connection_name)
-                affect_count = 0
-                results = []
-                
-                for params in params_list:
-                    result = await conn.execute_query(
-                        f'CALL `{procedure_name}`({", ".join(["%s"] * len(params))})', 
-                        params
-                    )
-                    count = result[0] if result else 0
-                    affect_count += count
-                    results.append(result)
-                
-                execution_time = (datetime.now() - start_time).total_seconds()
-                
-                self.stats['total_processed'] += len(params_list)
-                self.stats['batches_executed'] += len(params_list)
-                self.stats['last_execution_time'] = execution_time
-                
-                response = {
-                    "success": True,
-                    "procedure_name": procedure_name,
-                    "execution_time": execution_time,
-                    "total_calls": len(params_list),
-                    "affected_rows": affect_count,
-                    "results": results,
-                    "retry_count": retry_count
-                }
-                
-                if retry_count > 0:
-                    logger.success("存储过程调用", f"{procedure_name}@{self.connection_name}", f"执行时间{execution_time:.3f}秒（第{retry_count}次重试成功），影响记录数{affect_count}条")
-                else:
-                    logger.success("存储过程调用", f"{procedure_name}@{self.connection_name}", f"执行时间{execution_time:.3f}秒，影响记录数{affect_count}条")
-                return response
-                
-            except Exception as e:
-                last_exception = e
-                
-                error_str = str(e).upper()
-                is_deadlock = 'DEADLOCK' in error_str or '1213' in str(e) or '死锁' in str(e)
-                is_operational_error = "OperationalError" in str(type(e))
-                is_connection_closed = "Cannot acquire connection after closing pool" in str(e)
-                is_none_type_error = "NoneType" in str(e)
-                is_connection_error = "Connection" in str(type(e))
-                is_timeout_error = "Timeout" in str(type(e))
-                is_network_error = "Network" in str(type(e)) or "网络" in str(e)
-                is_pool_error = "Pool" in str(type(e))
-                
-                if (is_deadlock or is_operational_error or is_connection_closed or is_none_type_error or 
-                    is_connection_error or is_timeout_error or is_network_error or is_pool_error) and retry_count < max_retries:
-                    retry_count += 1
-                    # 使用指数退避策略，增加重试延迟时间
-                    # 对于连接池关闭的错误，使用更长的延迟确保完全恢复
-                    if is_connection_closed:
-                        base_delay = 3.0  # 连接池关闭需要更长的恢复时间
-                    elif is_deadlock:
-                        base_delay = retry_delay * 2
-                    else:
-                        base_delay = retry_delay
-                    
-                    current_delay = base_delay * (2 ** (retry_count - 1))
-                    # 限制最大延迟时间为20秒
-                    current_delay = min(current_delay, 20.0)
-                    
-                    error_type = "连接错误"
-                    if is_connection_closed:
-                        error_type = "连接池关闭"
-                    elif is_deadlock:
-                        error_type = "死锁"
-                    elif is_timeout_error:
-                        error_type = "超时错误"
-                    elif is_network_error:
-                        error_type = "网络错误"
-                    
-                    logger.warning_msg(
-                        "存储过程调用", 
-                        f"{procedure_name}@{self.connection_name} 检测到{error_type}，第{retry_count}次重试中...", 
-                        f"等待{current_delay:.1f}秒后重试"
-                    )
-                    
-                    # 尝试刷新连接
-                    if not is_deadlock:
-                        # 对于连接池关闭的错误，使用快速模式刷新
-                        await self.refresh_connection(fast_mode=is_connection_closed)
-                    
-                    await asyncio.sleep(current_delay)
-                    continue
-                
-                logger.fail("存储过程调用", f"{procedure_name}@{self.connection_name}", str(e))
-                raise last_exception
+        # 优化：在获取连接前先检查连接池状态
+        conn = Tortoise.get_connection(self.connection_name)
+        affect_count = 0
+        results = []
+        
+        for params in params_list:
+            result = await conn.execute_query(
+                f'CALL `{procedure_name}`({", ".join(["%s"] * len(params))})', 
+                params
+            )
+            count = result[0] if result else 0
+            affect_count += count
+            results.append(result)
+        
+        execution_time = (datetime.now() - start_time).total_seconds()
+        
+        self.stats['total_processed'] += len(params_list)
+        self.stats['batches_executed'] += len(params_list)
+        self.stats['last_execution_time'] = execution_time
+        
+        response = {
+            "success": True,
+            "procedure_name": procedure_name,
+            "execution_time": execution_time,
+            "total_calls": len(params_list),
+            "affected_rows": affect_count,
+            "results": results
+        }
+        
+        logger.success("存储过程调用", f"{procedure_name}@{self.connection_name}", f"执行时间{execution_time:.3f}秒，影响记录数{affect_count}条")
+        return response
     
 
-    async def query_data(self, table_name: str, select_fields: str = '*', filter_string: str = '', order_string: str = '', page_size: int = 1000, page_index: int = 0, max_retries: int = 3) -> Dict[str, Any]:
+    @handle_db_errors(max_retries=3)
+    async def query_data(self, table_name: str, select_fields: str = '*', filter_string: str = '', order_string: str = '', page_size: int = 1000, page_index: int = 0) -> Dict[str, Any]:
         """
         查询数据库表数据，获取符合筛选条件的数据，支持重试机制
         
@@ -250,102 +370,71 @@ class DbManager:
             order_string: ORDER BY排序字符串（可选）
             page_size: 分页查询的页大小（最大/默认1000）
             page_index: 分页查询的页码（默认0，获取全部数据；若大于0则取对应页数据）
-            max_retries: 最大重试次数（默认3次）
             
         Returns:
             包含查询结果的字典，包括成功状态、数据列表、总数、执行时间等
             
         Raises:
-            Exception: 如果查询失败
+            DbManagerError: 如果查询失败
         """
-        retry_count = 0
-        last_exception = None
         page_size = min(page_size, 1000)  # 限制最大页大小为1000
+        start_time = datetime.now()
         
-        while retry_count <= max_retries:
-            start_time = datetime.now()
-            
-            try:
-                # 使用Tortoise的连接池机制，不需要手动关闭连接
-                # Tortoise会自动管理连接的获取和释放
-                conn = Tortoise.get_connection(self.connection_name)
-                
-                # 构建WHERE和ORDER子句
-                where = f" WHERE {filter_string}" if filter_string else ''
-                order = f" ORDER BY {order_string}" if order_string else ''
-                
-                # 先获取数据总条数
-                count_sql = f'SELECT COUNT(*) as total FROM `{table_name}` {where}'
-                count_result = await conn.execute_query(count_sql)
-                total = count_result[1][0].get('total', 0)
-                
-                # 查询数据
-                all_data = []
-                
-                offset = max((page_index - 1) * page_size, 0)
-                while offset < total:
-                    # 构建带LIMIT和OFFSET的分页查询SQL
-                    sql = f'SELECT {select_fields} FROM `{table_name}` {where} {order} LIMIT {page_size} OFFSET {offset}'
-                    _, batch_data = await conn.execute_query(sql)
-                    all_data.extend(batch_data)
-                    if page_index > 0:  # 若page_index大于0，说明需要查询指定页数据，查询当前页后直接退出
-                        break
-                    offset += page_size
-                    # 如果当前批次数据不足page_size，说明已经获取完所有数据
-                    if len(batch_data) < page_size:
-                        break
-            
-                execution_time = (datetime.now() - start_time).total_seconds()
-                
-                # 更新统计信息
-                self.stats['total_processed'] += total
-                self.stats['batches_executed'] += (total + page_size - 1) // page_size
-                self.stats['last_execution_time'] = execution_time
-                
-                response = {
-                    "success": True,
-                    "table_name": table_name,
-                    "filter": filter_string,
-                    "order": order_string,
-                    "execution_time": execution_time,
-                    "total": total,
-                    "page_size": page_size,
-                    "page_index": page_index,
-                    "data": [dict_to_lower_keys(item) for item in all_data]
-                }
-                
-                if retry_count > 0:
-                    logger.success(f"数据查询成功（第{retry_count + 1}次重试）", f"{table_name}@{self.connection_name}", f"执行时间{execution_time:.3f}秒")
-                
-                logger.debug(f"数据查询完成：{response}")
-                return response
-                
-            except Exception as e:
-                last_exception = e
-                retry_count += 1
-                
-                # 特殊处理连接相关错误
-                error_msg = str(e)
-                if "OperationalError" in str(type(e)) or "Cannot acquire connection after closing pool" in error_msg or "NoneType" in error_msg:
-                    logger.warning(f"数据库连接错误，将进行第{retry_count}次重试", f"{table_name}@{self.connection_name}", str(e))
-                    # 尝试刷新连接
-                    await self.refresh_connection()
-                elif retry_count <= max_retries:
-                    logger.warning(f"数据查询失败，将进行第{retry_count}次重试", f"{table_name}@{self.connection_name}", str(e))
-                
-                if retry_count <= max_retries:
-                    import asyncio
-                    await asyncio.sleep(1)  # 等待1秒后重试
-                else:
-                    logger.fail("数据查询", f"{table_name}@{self.connection_name}", str(e))
-                    raise
+        # 使用Tortoise的连接池机制，不需要手动关闭连接
+        # Tortoise会自动管理连接的获取和释放
+        conn = Tortoise.get_connection(self.connection_name)
         
-        # 理论上不会走到这里，但为了代码完整性
-        if last_exception:
-            raise last_exception
+        # 构建WHERE和ORDER子句
+        where = f" WHERE {filter_string}" if filter_string else ''
+        order = f" ORDER BY {order_string}" if order_string else ''
+        
+        # 先获取数据总条数
+        count_sql = f'SELECT COUNT(*) as total FROM `{table_name}` {where}'
+        count_result = await conn.execute_query(count_sql)
+        total = count_result[1][0].get('total', 0)
+        
+        # 查询数据
+        all_data = []
+        
+        offset = max((page_index - 1) * page_size, 0)
+        while offset < total:
+            # 构建带LIMIT和OFFSET的分页查询SQL
+            sql = f'SELECT {select_fields} FROM `{table_name}` {where} {order} LIMIT {page_size} OFFSET {offset}'
+            _, batch_data = await conn.execute_query(sql)
+            all_data.extend(batch_data)
+            if page_index > 0:  # 若page_index大于0，说明需要查询指定页数据，查询当前页后直接退出
+                break
+            offset += page_size
+            # 如果当前批次数据不足page_size，说明已经获取完所有数据
+            if len(batch_data) < page_size:
+                break
+        
+        execution_time = (datetime.now() - start_time).total_seconds()
+        
+        # 更新统计信息
+        self.stats['total_processed'] += total
+        self.stats['batches_executed'] += (total + page_size - 1) // page_size
+        self.stats['last_execution_time'] = execution_time
+        
+        response = {
+            "success": True,
+            "table_name": table_name,
+            "filter": filter_string,
+            "order": order_string,
+            "execution_time": execution_time,
+            "total": total,
+            "page_size": page_size,
+            "page_index": page_index,
+            "data": [dict_to_lower_keys(item) for item in all_data]
+        }
+        
+        logger.success("数据查询", f"{table_name}@{self.connection_name}", f"执行时间{execution_time:.3f}秒")
+        logger.debug(f"数据查询完成：{response}")
+        return response
     
 
     @with_transaction
+    @handle_db_errors(max_retries=3)
     async def delete_data(self, table_name: str, filter_string: str = '', use_transaction: Optional[bool] = None) -> Dict[str, Any]:
         """
         删除数据库表数据
@@ -359,116 +448,85 @@ class DbManager:
             包含删除结果的字典，包括成功状态、删除记录数、执行时间等
             
         Raises:
-            Exception: 如果删除失败
+            DbManagerError: 如果删除失败
         """
         start_time = datetime.now()
-        retry_count = 0
-        max_retries = 3
         
-        while retry_count <= max_retries:
-            try:
-                # 使用Tortoise的连接池机制，不需要手动关闭连接
-                # Tortoise会自动管理连接的获取和释放
-                conn = Tortoise.get_connection(self.connection_name)
-                
-                # 构建WHERE子句
-                where = f" WHERE {filter_string}" if filter_string else ''
-                
-                # 构建DELETE SQL语句
-                delete_sql = f'DELETE FROM `{table_name}` {where}'
-                
-                # 移除事务分支，统一执行核心逻辑
-                affected_rows, data = await conn.execute_query(delete_sql)
-                
-                execution_time = (datetime.now() - start_time).total_seconds()
-                
-                # 更新统计信息
-                self.stats['total_processed'] += affected_rows
-                self.stats['batches_executed'] += 1
-                self.stats['last_execution_time'] = execution_time
-                
-                response = {
-                    "success": True,
-                    "table_name": table_name,
-                    "filter": filter_string,
-                    "execution_time": execution_time,
-                    "affected_rows": affected_rows,
-                    "connection_name": self.connection_name
-                }
-                
-                if retry_count > 0:
-                    logger.success(f"数据删除成功（第{retry_count + 1}次重试）", f"{table_name}@{self.connection_name}", f"影响{affected_rows}行")
-                else:
-                    logger.success("数据删除", f"{table_name}@{self.connection_name}", f"影响{affected_rows}行")
-                return response
-                
-            except Exception as e:
-                # 特殊处理连接相关错误
-                error_msg = str(e)
-                if ("OperationalError" in str(type(e)) or "Cannot acquire connection after closing pool" in error_msg or "NoneType" in error_msg) and retry_count < max_retries:
-                    retry_count += 1
-                    logger.warning(f"数据库连接错误，将进行第{retry_count}次重试", f"{table_name}@{self.connection_name}", str(e))
-                    # 尝试刷新连接
-                    await self.refresh_connection()
-                    import asyncio
-                    await asyncio.sleep(1)  # 等待1秒后重试
-                else:
-                    logger.fail("数据删除", f"{table_name}@{self.connection_name}", str(e))
-                    raise
+        # 使用Tortoise的连接池机制，不需要手动关闭连接
+        # Tortoise会自动管理连接的获取和释放
+        conn = Tortoise.get_connection(self.connection_name)
+        
+        # 构建WHERE子句
+        where = f" WHERE {filter_string}" if filter_string else ''
+        
+        # 构建DELETE SQL语句
+        delete_sql = f'DELETE FROM `{table_name}` {where}'
+        
+        # 执行删除操作
+        affected_rows, data = await conn.execute_query(delete_sql)
+        
+        execution_time = (datetime.now() - start_time).total_seconds()
+        
+        # 更新统计信息
+        self.stats['total_processed'] += affected_rows
+        self.stats['batches_executed'] += 1
+        self.stats['last_execution_time'] = execution_time
+        
+        response = {
+            "success": True,
+            "table_name": table_name,
+            "filter": filter_string,
+            "execution_time": execution_time,
+            "affected_rows": affected_rows,
+            "connection_name": self.connection_name
+        }
+        
+        logger.success("数据删除", f"{table_name}@{self.connection_name}", f"影响{affected_rows}行")
+        return response
     
 
+    @handle_db_errors(max_retries=3)
     async def _execute_native_sql(self, sql: str, params: List[Any], description: str = "") -> int:
         """
         执行原生 SQL 查询
-        """
-        retry_count = 0
-        max_retries = 3
         
-        while retry_count <= max_retries:
-            try:
-                start_time = datetime.now()
-                # 使用Tortoise的连接池机制，不需要手动关闭连接
-                # Tortoise会自动管理连接的获取和释放
-                conn = Tortoise.get_connection(self.connection_name)
-                
-                # 检查连接是否有效
-                if conn is None:
-                    raise Exception("获取数据库连接失败：连接对象为None")
-                
-                # 检查连接是否已关闭
-                if hasattr(conn, 'closed') and conn.closed:
-                    raise Exception("获取数据库连接失败：连接已关闭")
-                
-                # 检查连接是否有execute_query方法
-                if not hasattr(conn, 'execute_query'):
-                    raise Exception("获取数据库连接失败：连接对象不支持execute_query方法")
-                
-                count, data_list = await conn.execute_query(sql, params)
-                if data_list:
-                    data_list = [dict_to_lower_keys(row) for row in data_list]
-                execution_time = (datetime.now() - start_time).total_seconds()
-                
-                if description:
-                    if retry_count > 0:
-                        logger.info(f"{description}（第{retry_count + 1}次重试） - 执行时间：{execution_time:.3f}秒")
-                    else:
-                        logger.info(f"{description} - 执行时间：{execution_time:.3f}秒")
-                
-                return (count if count else 0, data_list)
-            except Exception as e:
-                # 特殊处理连接相关错误
-                error_msg = str(e)
-                if ("OperationalError" in str(type(e)) or "NoneType" in error_msg or "execute_command" in error_msg or "closed" in error_msg or "Cannot acquire connection after closing pool" in error_msg) and retry_count < max_retries:
-                    retry_count += 1
-                    logger.warning(f"数据库连接错误，将进行第{retry_count}次重试", f"{description}@{self.connection_name}", error_msg)
-                    # 尝试刷新连接
-                    await self.refresh_connection()
-                    import asyncio
-                    await asyncio.sleep(1)  # 等待1秒后重试
-                else:
-                    logger.fail("SQL执行", f"{description}@{self.connection_name}", error_msg)
-                    logger.debug(f"SQL：{sql[:200]}...")
-                    raise
+        Args:
+            sql: SQL语句
+            params: SQL参数列表
+            description: 操作描述（可选）
+            
+        Returns:
+            包含影响行数和数据列表的元组
+            
+        Raises:
+            DbManagerError: 如果执行失败
+        """
+        start_time = datetime.now()
+        # 使用Tortoise的连接池机制，不需要手动关闭连接
+        # Tortoise会自动管理连接的获取和释放
+        conn = Tortoise.get_connection(self.connection_name)
+        
+        # 检查连接是否有效
+        if conn is None:
+            raise Exception("获取数据库连接失败：连接对象为None")
+        
+        # 检查连接是否已关闭
+        if hasattr(conn, 'closed') and conn.closed:
+            raise Exception("获取数据库连接失败：连接已关闭")
+        
+        # 检查连接是否有execute_query方法
+        if not hasattr(conn, 'execute_query'):
+            raise Exception("获取数据库连接失败：连接对象不支持execute_query方法")
+        
+        count, data_list = await conn.execute_query(sql, params)
+        if data_list:
+            data_list = [dict_to_lower_keys(row) for row in data_list]
+        execution_time = (datetime.now() - start_time).total_seconds()
+        
+        if description:
+            logger.info(f"{description} - 执行时间：{execution_time:.3f}秒")
+        
+        return (count if count else 0, data_list)
     
 
     async def _bulk_upsert_native_sql(
@@ -610,6 +668,7 @@ class DbManager:
         }
     
     
+    @handle_db_errors(max_retries=3)
     async def _bulk_upsert_orm(
         self,
         model_class,
@@ -631,6 +690,9 @@ class DbManager:
             
         Returns:
             包含新增和更新数量的字典: {'inserted': int, 'updated': int, 'total': int}
+            
+        Raises:
+            DbManagerError: 如果执行失败
         """        
         # 获取冲突字段
         # 获取数据库连接对象
@@ -730,6 +792,7 @@ class DbManager:
     
 
     @with_transaction
+    @handle_db_errors(max_retries=3)
     async def bulk_upsert(
         self,
         model_class,
@@ -753,89 +816,73 @@ class DbManager:
             use_transaction: 是否使用事务（可选，默认使用实例配置的use_transaction）
         Returns:
             执行统计信息
+            
+        Raises:
+            DbManagerError: 如果执行失败且使用事务
         """
-        
         start_time = datetime.now()
         db_table = model_class._meta.db_table
-        try:
-            # 获取冲突字段（需要在计算默认update_fields之前获取）
-            if conflict_fields is None:
-                conflict_fields = self._get_conflict_fields(model_class, conflict_fields)
-            
-            # 如果未提供exclude_fields，则初始化为空列表
-            # 注意：不再默认排除冲突字段，因为它们可能是必需的主键字段
-            if exclude_fields is None:
-                exclude_fields = []
-            
-            # 如果未提供update_fields，则自动使用所有非冲突非排除字段作为默认更新字段
-            if update_fields is None and data_list:
-                # 收集所有记录中的所有字段
-                all_fields = set()
-                for data in data_list:
-                    all_fields.update(data.keys())
-                # 获取冲突字段和排除字段的集合
-                # 注意：即使exclude_fields为空，也需要排除冲突字段，因为它们不应该被更新
-                excluded_set = set(conflict_fields) | set(exclude_fields)
-                # 计算默认更新字段：所有非冲突非排除字段
-                update_fields = list(all_fields - excluded_set)
-            
-            # 选择执行策略
-            if use_orm_or_sql == "orm" or (use_orm_or_sql == "auto" and len(data_list) < 100):
-                method = "orm"
-                result = await self._bulk_upsert_orm(
-                    model_class, data_list, update_fields,
-                    exclude_fields, conflict_fields
-                )
-            else:
-                method = "native_sql"
-                result = await self._bulk_upsert_native_sql(
-                    model_class, data_list, update_fields, 
-                    exclude_fields, conflict_fields
-                )
+        
+        # 获取冲突字段（需要在计算默认update_fields之前获取）
+        if conflict_fields is None:
+            conflict_fields = self._get_conflict_fields(model_class, conflict_fields)
+        
+        # 如果未提供exclude_fields，则初始化为空列表
+        # 注意：不再默认排除冲突字段，因为它们可能是必需的主键字段
+        if exclude_fields is None:
+            exclude_fields = []
+        
+        # 如果未提供update_fields，则自动使用所有非冲突非排除字段作为默认更新字段
+        if update_fields is None and data_list:
+            # 收集所有记录中的所有字段
+            all_fields = set()
+            for data in data_list:
+                all_fields.update(data.keys())
+            # 获取冲突字段和排除字段的集合
+            # 注意：即使exclude_fields为空，也需要排除冲突字段，因为它们不应该被更新
+            excluded_set = set(conflict_fields) | set(exclude_fields)
+            # 计算默认更新字段：所有非冲突非排除字段
+            update_fields = list(all_fields - excluded_set)
+        
+        # 选择执行策略
+        if use_orm_or_sql == "orm" or (use_orm_or_sql == "auto" and len(data_list) < 100):
+            method = "orm"
+            result = await self._bulk_upsert_orm(
+                model_class, data_list, update_fields,
+                exclude_fields, conflict_fields
+            )
+        else:
+            method = "native_sql"
+            result = await self._bulk_upsert_native_sql(
+                model_class, data_list, update_fields, 
+                exclude_fields, conflict_fields
+            )
 
-            execution_time = (datetime.now() - start_time).total_seconds()
-            
-            # 更新统计
-            self.stats['total_processed'] += len(data_list)
-            self.stats['last_execution_time'] = execution_time
-            
-            response = {
-                "success": True,
-                "method": method,
-                "total_records": len(data_list),
-                "affected_rows": result['total'],
-                "inserted": result['inserted'],
-                "updated": result['updated'],
-                "execution_time": execution_time,
-                "batch_size": len(data_list),
-                "conflict_fields": conflict_fields,
-                "update_fields": update_fields
-            }
-            
-            logger.success("批量upsert", f"{db_table}@{self.connection_name}", f"插入{result['inserted']}条，更新{result['updated']}条")
-            return response
-            
-        except IntegrityError as e:
-            logger.fail("数据完整性", f"{db_table}@{self.connection_name}", str(e))
-            raise
-        except Exception as e:
-            logger.fail("批量upsert", f"{db_table}@{self.connection_name}", str(e))
-            # 保留异常处理的特殊逻辑，因为它涉及到不同的异常处理策略
-            transaction_mode = self.use_transaction if use_transaction is None else use_transaction
-            if transaction_mode:
-                # 事务会自动回滚
-                raise
-            else:
-                return {
-                    "success": False,
-                    "error": str(e),
-                    "total_records": len(data_list),
-                    "inserted": 0,
-                    "updated": 0
-                }
+        execution_time = (datetime.now() - start_time).total_seconds()
+        
+        # 更新统计
+        self.stats['total_processed'] += len(data_list)
+        self.stats['last_execution_time'] = execution_time
+        
+        response = {
+            "success": True,
+            "method": method,
+            "total_records": len(data_list),
+            "affected_rows": result['total'],
+            "inserted": result['inserted'],
+            "updated": result['updated'],
+            "execution_time": execution_time,
+            "batch_size": len(data_list),
+            "conflict_fields": conflict_fields,
+            "update_fields": update_fields
+        }
+        
+        logger.success("批量upsert", f"{db_table}@{self.connection_name}", f"插入{result['inserted']}条，更新{result['updated']}条")
+        return response
 
 
     @with_transaction
+    @handle_db_errors(max_retries=3)
     async def single_upsert(
         self,
         model_class,
@@ -861,6 +908,7 @@ class DbManager:
             
         Raises:
             ValueError: 如果存在多个与冲突字段匹配的记录
+            DbManagerError: 如果执行失败
         """
         # 获取冲突字段
         if conflict_fields is None:
@@ -952,6 +1000,7 @@ class DbManager:
 
 
     @with_transaction
+    @handle_db_errors(max_retries=3)
     async def conditional_bulk_upsert(
         self,
         model_class,
@@ -977,6 +1026,9 @@ class DbManager:
             
         Returns:
             包含新增和更新数量的字典: {'inserted': int, 'updated': int, 'total': int}
+            
+        Raises:
+            DbManagerError: 如果执行失败
         """
         # 获取冲突字段
         conflict_fields = self._get_conflict_fields(model_class, conflict_fields)
