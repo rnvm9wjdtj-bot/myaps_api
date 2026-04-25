@@ -13,12 +13,14 @@ from abc import ABC, abstractmethod
 from Crypto.Util.Padding import unpad
 from datetime import date, datetime
 from pydantic import BaseModel as PydanticModel
+import uuid
+from dataclasses import dataclass, field
 
 
 from core.settings import THIS_BASE_URL, MYAPS_MAIN_DB, MYAPS_DB_SET
 from apps.data_opt.utils.common import get_session, get_async_session, convert_timeunit, clean_value
 from apps.data_opt.utils.data_processor import DataProcessor
-from apps.io_api.utils.db_operation import db_exec_sql
+from apps.io_api.utils.db_operation import db_exec_sql, DbResult, MultiDbResult
 from apps.io_api.schemas import (
     model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
@@ -33,6 +35,7 @@ from globalobjects.json_manager import JSONManager
 
 
 logger = log_config.get_logger(__name__)
+
 
 
 class SyncTokenBucket:
@@ -776,8 +779,8 @@ class _ProductionDataCache:
         
         try:
             # 直接从数据库获取数据，不分页，因为 db_query 已经处理了分页
-            result = await db_query(db_name=db_name, model_or_tablename=table_name, filter_string=filter_string, page_size=1000, page_index=0)
-            data_list = result.get('data', [])
+            result: DbResult = await db_query(db_name=db_name, model_or_tablename=table_name, filter_string=filter_string, page_size=1000, page_index=0)
+            data_list = result.data
             
             for item in data_list:
                 process_item(item, cache)
@@ -910,10 +913,10 @@ class _ProductionDataCache:
         # 执行 SQL 查询
         try:
             logger.info("生产数据缓存", "", f"开始执行 PEG SQL 查询，{'全量' if not supplynos else f'按需({len(supplynos)}个)'}模式")
-            result = await db_exec_sql(db_name, sql, description="构建 PEG 缓存")
+            result: DbResult = await db_exec_sql(db_name, sql, description="构建 PEG 缓存")
             
-            # 处理查询结果（db_exec_sql 返回统一格式）
-            data_list = result.get('data', []) if isinstance(result, dict) else result
+            # 处理查询结果
+            data_list = result.data
             
             # 处理查询结果
             for item in data_list:
@@ -1308,7 +1311,7 @@ class _ProductionDataCache:
 # """
 
 
-class ApsPayloadStorage:
+class ApsPayloadSponsor:
     def __init__(self, production_cache_items: List[CacheItem] = None):
         """
         初始化APS数据存储类
@@ -1490,8 +1493,8 @@ class ApsPayloadStorage:
         """
         try:
             now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            response_json = await db_query(db_name=db_name, model_or_tablename="v_supply_complete")
-            mo_complete_data = response_json.get('data')
+            response_json: DbResult = await db_query(db_name=db_name, model_or_tablename="v_supply_complete")
+            mo_complete_data = response_json.data
             df_mto_vir_st = None
             if mo_complete_data:
                 df_mo_complete = pd.DataFrame(mo_complete_data)
@@ -1528,20 +1531,20 @@ class ApsPayloadStorage:
             supply_data = [AcceptSupply(**item).model_dump(exclude_none=True) for item in supply_data]
             
             # 首先删除该类型的所有供应记录
-            delete_result = await db_delete(db_names=dbs, model_or_tablename="t_supply", filter_string=f"`Type`='{type_}'")
+            delete_result: MultiDbResult = await db_delete(db_names=dbs, model_or_tablename="t_supply", filter_string=f"`Type`='{type_}'")
             
             # 然后新增这些供应记录
             if supply_data:
-                create_result = await db_bupsert(db_names=dbs, model_or_tablename="t_supply", data_list=supply_data)
-                if create_result.get('success'):
+                create_result: MultiDbResult = await db_bupsert(db_names=dbs, model_or_tablename="t_supply", data_list=supply_data)
+                if create_result.success:
                     logger.success("刷新供应数据", f"type_{type_}", f"账套{dbs}")
                 else:
-                    logger.fail("刷新供应数据", f"type_{type_}", create_result.get('message'))
+                    logger.fail("刷新供应数据", f"type_{type_}", create_result.message)
             else:
-                if delete_result.get('success'):
+                if delete_result.success:
                     logger.success("刷新供应数据", f"type_{type_}", f"账套{dbs}")
                 else:
-                    logger.fail("刷新供应数据", f"type_{type_}", delete_result.get('message'))
+                    logger.fail("刷新供应数据", f"type_{type_}", delete_result.message)
         except Exception as e:
             logger.fail("刷新供应数据", f"type_{type_}", f"{e}")
             raise e
@@ -1556,7 +1559,7 @@ class ApsPayloadStorage:
         """
         try:
             logger.start("确认报工记录任务")
-            response_json = await call_dbprocdure(db_names=db_name, procedure_name="UpdateConfirmQtyToOrderWC")
+            response_json: MultiDbResult = await call_dbprocdure(db_names=db_name, procedure_name="UpdateConfirmQtyToOrderWC")
             logger.success("确认报工记录任务")
             return response_json
         except Exception as e:
@@ -1567,8 +1570,8 @@ class ApsPayloadStorage:
     @classmethod
     async def get_new_pr_data(cls):
         try:
-            result = await db_query(MYAPS_MAIN_DB, "v_supply", "`Type`='PR' AND `Status`='NEW'")
-            return result.get('data', [])
+            result: DbResult = await db_query(MYAPS_MAIN_DB, "v_supply", "`Type`='PR' AND `Status`='NEW'")
+            return result.data
         except Exception as e:
             logger.fail("获取新PR数据", "", f"{e}")
             return []
@@ -1690,7 +1693,7 @@ class ApsPayloadStorage:
             materialnos_str = ','.join([f"'{m}'" for m in missing_materials])
             filter_string = f"`MaterialNo` IN ({materialnos_str})"
             try:
-                response_json = await db_query(
+                response_json: DbResult = await db_query(
                     db_name=MYAPS_MAIN_DB,
                     model_or_tablename="t_material",
                     select="MaterialNo, Free1, Free2, Free3",
@@ -1824,68 +1827,72 @@ class ApsPayloadStorage:
         Returns:
             工单计划单详情
         """
-        async def get_orderwc(mono: str):
-            orderwc = await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=f"`SupplyNo`='{mono}'")
-            return orderwc['data']
+        try:
+            async def get_orderwc(mono: str):
+                orderwc: DbResult = await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=f"`SupplyNo`='{mono}'")
+                return orderwc.data
 
-        async def get_prev_mo(mono: str):
-            """
-            通过工单 supplyno 号查询前 前置 工单
-            """
-            for_demands = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{mono}' AND `Type` IN ('DM', 'RS', 'PR', 'PO')")
-            demands_data = for_demands['data']
-            prev_mo = []
-            if demands_data:
-                demands_no = ','.join([f"'{i['demandno']}'" for i in demands_data])
-                peg_query_result = await db_exec_sql(db_name=db_name, sql=MINI_PEG_SQL.format(where_string=f"p.DemandNO IN ({demands_no}) AND p.S_Type IN ('PL', 'MO')"), description=f"查询{demands_no}匹配的PL和MO")
-                if peg_query_result['data']:
-                    supplies_no = ','.join([f"'{i['s_supplyno']}'" for i in peg_query_result['data']])
-                    # prev_mo_query_result = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplynos=supplies_no), description=f"查询{supplies_no}的前置工单信息")
-                    prev_mo_query_result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", select="`SupplyNo`", filter_string=f"`SupplyNo` IN ({supplies_no})")
-                    prev_mo = prev_mo_query_result['data']
-            return prev_mo
+            async def get_prev_mo(mono: str):
+                """
+                通过工单 supplyno 号查询前 前置 工单
+                """
+                for_demands: DbResult = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{mono}' AND `Type` IN ('DM', 'RS', 'PR', 'PO')")
+                demands_data = for_demands.data
+                prev_mo = []
+                if demands_data:
+                    demands_no = ','.join([f"'{i['demandno']}'" for i in demands_data])
+                    peg_query_result: DbResult = await db_exec_sql(db_name=db_name, sql=MINI_PEG_SQL.format(where_string=f"p.DemandNO IN ({demands_no}) AND p.S_Type IN ('PL', 'MO')"), description=f"查询{demands_no}匹配的PL和MO")
+                    if peg_query_result.data:
+                        supplies_no = ','.join([f"'{i['s_supplyno']}'" for i in peg_query_result.data])
+                        # prev_mo_query_result = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplynos=supplies_no), description=f"查询{supplies_no}的前置工单信息")
+                        prev_mo_query_result: DbResult = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", select="`SupplyNo`", filter_string=f"`SupplyNo` IN ({supplies_no})")
+                        prev_mo = prev_mo_query_result.data
+                return prev_mo
 
-        async def get_next_mo(mono: str): 
-            """
-            通过工单 supplyno 号查询后 后置 工单
-            """
-            in_pegs = await db_exec_sql(db_name=db_name, sql=MINI_PEG_SQL.format(where_string=f"p.S_SupplyNo='{mono}' AND p.Type IN ('DM', 'RS')"), description=f"查询{mono}匹配的DM和RS")
-            pegs_data = in_pegs['data']
-            next_mo = []
-            if pegs_data:
-                demands_no = ','.join([f"'{i['demandno']}'" for i in pegs_data])
-                # next_mo_query_result = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplynos=demands_no), description=f"查询{mono}的后续置工单信息")
-                next_mo_query_result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", select="`SupplyNo`", filter_string=f"`SupplyNo` IN ({demands_no})")
-                next_mo = next_mo_query_result['data']
-            return next_mo
+            async def get_next_mo(mono: str): 
+                """
+                通过工单 supplyno 号查询后 后置 工单
+                """
+                in_pegs: DbResult = await db_exec_sql(db_name=db_name, sql=MINI_PEG_SQL.format(where_string=f"p.S_SupplyNo='{mono}' AND p.Type IN ('DM', 'RS')"), description=f"查询{mono}匹配的DM和RS")
+                pegs_data = in_pegs.data
+                next_mo = []
+                if pegs_data:
+                    demands_no = ','.join([f"'{i['demandno']}'" for i in pegs_data])
+                    # next_mo_query_result = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplynos=demands_no), description=f"查询{mono}的后续置工单信息")
+                    next_mo_query_result: DbResult = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", select="`SupplyNo`", filter_string=f"`SupplyNo` IN ({demands_no})")
+                    next_mo = next_mo_query_result.data
+                return next_mo
 
-        async def get_so(so_demandno: str):
-            """
-            通过工单 supplyno 号查询销售订单
-            """
-            so_query_result = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{so_demandno}' AND `Type`='SO'")
-            so_data = so_query_result['data']
-            if so_data:
-                return so_data[0]
+            async def get_so(so_demandno: str):
+                """
+                通过工单 supplyno 号查询销售订单
+                """
+                so_query_result: DbResult = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{so_demandno}' AND `Type`='SO'")
+                so_data = so_query_result.data
+                if so_data:
+                    return so_data[0]
 
-        db_name = db_name.replace(" ", "")
+            db_name = db_name.replace(" ", "")
 
-        # result = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplynos=f"'{supplyno}'"), description=f"查询{supplyno}的工单信息")
-        result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=f"`SupplyNo`='{supplyno}'")
-        
-        if result['success'] and result['meta']['total'] == 1:  # 筛选到唯一的工单，则补充工序信息（v_orderwc）
-            result['data'][0]['orderwc'] = await get_orderwc(mono=supplyno)
+            # result = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplynos=f"'{supplyno}'"), description=f"查询{supplyno}的工单信息")
+            result: DbResult = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=f"`SupplyNo`='{supplyno}'")
+            
+            if result.success and result.meta.get('total') == 1:  # 筛选到唯一的工单，则补充工序信息（v_orderwc）
+                result.data[0]['orderwc'] = await get_orderwc(mono=supplyno)
 
-            vendorno = result['data'][0].get('vendorno')
-            if origin_so and result['data'][0].get('category') == 'MTO' and vendorno:
-                result['data'][0]['so'] = await get_so(vendorno)
-                    
-            if prev_mo:
-                result['data'][0]['prev_mo'] = await get_prev_mo(supplyno)
-            if next_mo:
-                result['data'][0]['next_mo'] = await get_next_mo(supplyno)
+                vendorno = result.data[0].get('vendorno')
+                if origin_so and result.data[0].get('category') == 'MTO' and vendorno:
+                    result.data[0]['so'] = await get_so(vendorno)
+                        
+                if prev_mo:
+                    result.data[0]['prev_mo'] = await get_prev_mo(supplyno)
+                if next_mo:
+                    result.data[0]['next_mo'] = await get_next_mo(supplyno)
 
-        return result
+            return result
+        except Exception as e:
+            logger.fail("获取工单详情", supplyno, f"{e}")
+            raise
 
 
     async def get_demand_datalist(self, demandno: str) -> List[Dict]:
@@ -1901,23 +1908,154 @@ class ApsPayloadStorage:
         if result_data:
             return result_data
         
-        filter_string = f"`DemandNo`='{demandno}'"
-        demand_response_json = await db_query(db_name=MYAPS_MAIN_DB, model_or_tablename="v_demand", filter_string=filter_string)
-        api_data = demand_response_json.get('data', [])
-        
-        if api_data:
-            self._production_cache._cache[CacheItem.DEMAND.value][demandno] = api_data
-        
-        return api_data
+        try:
+            filter_string = f"`DemandNo`='{demandno}'"
+            demand_response_json: DbResult = await db_query(db_name=MYAPS_MAIN_DB, model_or_tablename="v_demand", filter_string=filter_string)
+            api_data = demand_response_json.data
+            
+            if api_data:
+                self._production_cache._cache[CacheItem.DEMAND.value][demandno] = api_data
+            
+            return api_data
+        except Exception as e:
+            logger.fail("获取需求数据", demandno, f"{e}")
+            raise
 
+
+
+@dataclass
+class ExecutionResult:
+    success: bool
+    raw_data: Any = None
+    msg: str = None
+    mono: str = None
+    push_data: Dict = None
+    timestamp: datetime = field(default_factory=datetime.now)
+
+
+
+class _ResultCollector:
+    """结果收集器，用于收集异步函数执行结果"""
+
+    def __init__(self):
+        self.results: List[ExecutionResult] = []
+        self._lock = asyncio.Lock()
+        self.batch_id = str(uuid.uuid4())[:8]
+        self.start_time = time.time()
+    
+
+    async def add_result(self, result: ExecutionResult):
+        async with self._lock:
+            self.results.append(result)
+    
+
+    def get_summary(self) -> Dict[str, Any]:
+        success_count = sum(1 for r in self.results if r.success)
+        total_time = time.time() - self.start_time
+        failed_results = [r for r in self.results if not r.success]
+        failed_details = []
+        for r in failed_results:
+            detail = {}
+            if r.raw_data is not None:
+                detail["raw_data"] = r.raw_data
+            if r.msg is not None:
+                detail["msg"] = r.msg
+            if r.push_data is not None:
+                detail["push_data"] = r.push_data
+            if r.timestamp is not None:
+                detail["timestamp"] = r.timestamp.isoformat()
+            failed_details.append(detail)
+        
+        # 转换 ExecutionResult 对象为字典
+        details = []
+        for r in self.results:
+            detail = {
+                "success": r.success,
+                "raw_data": r.raw_data,
+                "msg": r.msg,
+                "mono": r.mono,
+                "push_data": r.push_data,
+                "timestamp": r.timestamp.isoformat() if r.timestamp else None
+            }
+            # 过滤掉 None 值
+            detail = {k: v for k, v in detail.items() if v is not None}
+            details.append(detail)
+        
+        # 按错误信息分类汇总失败记录
+        failed_by_msg = {}
+        for r in failed_results:
+            error_msg = r.msg or "Unknown error"
+            if error_msg not in failed_by_msg:
+                failed_by_msg[error_msg] = 0
+            failed_by_msg[error_msg] += 1
+        
+        # 按错误信息升序排序
+        failed_by_msg = dict(sorted(failed_by_msg.items(), key=lambda x: x[0]))
+        
+        return {
+            "batch_id": self.batch_id,
+            "total": len(self.results),
+            "success": success_count,
+            "failed": len(self.results) - success_count,
+            "total_time_sec": round(total_time, 2),
+            "avg_time_per_item_sec": round(total_time / len(self.results), 2) if self.results else 0,
+            "details": details,
+            "failed_details": failed_details,
+            "failed_by_msg": failed_by_msg
+        }
+    
+    def format_notification(self, description: str = "任务") -> str:
+        summary = self.get_summary()
+        
+        # 转换总耗时为友好格式
+        total_seconds = summary['total_time_sec']
+        if total_seconds < 60:
+            time_str = f"{total_seconds:.1f} 秒"
+        elif total_seconds < 3600:
+            minutes = total_seconds / 60
+            time_str = f"{minutes:.1f} 分钟"
+        else:
+            hours = total_seconds / 3600
+            time_str = f"{hours:.1f} 小时"
+        
+        notification = (
+            f"【{description}】执行完成！\n"
+            f"批次ID: {summary['batch_id']}\n"
+            f"总计处理: {summary['total']} 条\n"
+            f"\t✅ 成功: {summary['success']} 条\n"
+            f"\t🚫 失败: {summary['failed']} 条\n"
+            f"总耗时: {time_str}\n"
+            f"平均每条: {summary['avg_time_per_item_sec']} 秒"
+        )
+        
+        if summary.get('failed_by_msg'):
+            notification += "\n\n📊失败原因汇总\n"
+            for error_msg, count in summary['failed_by_msg'].items():
+                notification += f"\t🔴 {error_msg}: 【{count}】 条\n"
+        
+        return notification
+
+
+
+def async_error_handler(operation_name):
+    def decorator(func):
+        async def wrapper(self, *args, **kwargs):
+            # 尝试获取操作对象（通常是第一个参数）
+            target_obj = args[0] if args else kwargs.get(list(kwargs.keys())[0], "未知")
+            try:
+                return await func(self, *args, **kwargs)
+            except Exception as e:
+                logger.fail(operation_name, target_obj, f"{operation_name}时发生错误：{e}")
+                raise
+        return wrapper
+    return decorator
 
 
 class EventResultPoster:
 
     def __init__(self, db_name: str=MYAPS_MAIN_DB):
-        from project_files._base import ResultCollector
         self.db_name = db_name
-        self._collector = ResultCollector()
+        self._collector = _ResultCollector()
         self._results = self._collector.results
 
 
@@ -1929,7 +2067,17 @@ class EventResultPoster:
         return self._collector.format_notification(description)
 
 
-    async def mo_release_success(self, native_plno: str, mono: str=None, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str='SYSTEM', _id: str=None, _entryid: str=None):
+    @async_error_handler("MO发布成功")
+    async def mo_release_success(
+        self,
+        native_plno: str,
+        mono: str = None,
+        to_status: Literal['E2A', 'REL'] = 'E2A',
+        msg: str = None,
+        msg_from: str = 'SYSTEM',
+        _id: str = None,
+        _entryid: str = None
+    ):
         """
         修改PL的Status、SupplyNo、Memo等字段
         🅰 native_plno: 原生PL计划单编号
@@ -1940,22 +2088,20 @@ class EventResultPoster:
         🅰 _id: 外部系统返回的 MO ID
         🅰 _entryid: 外部系统返回的 MO 详情 ID（对于某些有表头的ERP，具体的 MO 是存在于子表中的，有单独的行记录id
         """
-
         mono = mono or native_plno
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         memo = f"{now} {ce.RELEASE_SUCCESS.value} {msg_from}: '{msg}, {mono}, {_id}, {_entryid}' @ {native_plno}"
         
         logger.update("PL状态", native_plno, f"目标状态{to_status}，MO单号{mono}")
         
-        response_json = await call_dbprocdure(
+        response_json: MultiDbResult = await call_dbprocdure(
             db_names=self.db_name,
             procedure_name="SupplyConvertMOByE2A",
             params_list=[[native_plno, mono, to_status, str(_id or ""), str(_entryid or ""), memo]]
         )
         
         logger.info(f"更新PL状态响应：成功")
-        
-        from project_files._base import ExecutionResult
+
         await self._collector.add_result(ExecutionResult(
             success=True,
             raw_data=native_plno,
@@ -1966,8 +2112,16 @@ class EventResultPoster:
         return response_json
 
 
-    async def mo_release_failed(self, native_plno: str, to_status: Literal['NEW', 'CRE']='CRE', msg: str=None, raw_data: dict=None, push_data: dict=None, msg_from: str='SYSTEM'):
-        
+    @async_error_handler("MO发布失败")
+    async def mo_release_failed(
+        self,
+        native_plno: str,
+        to_status: Literal['NEW', 'CRE'] = 'CRE',
+        msg: str = None,
+        raw_data: dict = None,
+        push_data: dict = None,
+        msg_from: str = 'SYSTEM'
+    ):
         logger.warning_msg(f"推送 MO {msg}", json.dumps(push_data, ensure_ascii=False), to_file=True)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if msg:
@@ -1983,7 +2137,7 @@ class EventResultPoster:
             'memo': memo[:255],
         }
         
-        response_json = await db_update_by_index(
+        response_json: MultiDbResult = await db_update_by_index(
             db_names=self.db_name,
             model_or_tablename="t_supply",
             index_dict={"SupplyNo": native_plno},
@@ -1991,7 +2145,6 @@ class EventResultPoster:
             not_found_behavior="skip"
         )
         
-        from project_files._base import ExecutionResult
         await self._collector.add_result(ExecutionResult(
             success=False,
             raw_data=native_plno,
@@ -2002,9 +2155,17 @@ class EventResultPoster:
         return response_json
 
 
-    async def rs_release_success(self, rsno: str, to_status: Literal['E2A', 'REL']='E2A', msg: str=None, msg_from: str='SYSTEM', _code: str=None, _id: str=None, _entryid: str=None):
-        
-        
+    @async_error_handler("RS发布成功")
+    async def rs_release_success(
+        self,
+        rsno: str,
+        to_status: Literal['E2A', 'REL'] = 'E2A',
+        msg: str = None,
+        msg_from: str = 'SYSTEM',
+        _code: str = None,
+        _id: str = None,
+        _entryid: str = None
+    ):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         memo = f"{now} {ce.RELEASE_SUCCESS.value} {msg_from}: '{_code}, {_id}, {_entryid}' @ {rsno}"
         
@@ -2015,7 +2176,7 @@ class EventResultPoster:
             'memo': memo,
         }
         
-        response_json = await db_update_by_index(
+        response_json: MultiDbResult = await db_update_by_index(
             db_names=self.db_name,
             model_or_tablename="t_demand",
             index_dict={"DemandNo": rsno},
@@ -2025,7 +2186,6 @@ class EventResultPoster:
         
         logger.info(f"更新RS状态响应：成功")
         
-        from project_files._base import ExecutionResult
         await self._collector.add_result(ExecutionResult(
             success=True,
             raw_data=rsno,
@@ -2036,120 +2196,125 @@ class EventResultPoster:
         return response_json
 
 
-    async def rs_release_failed(self, rsno: str, msg: str=None, msg_from: str='SYSTEM', push_data: dict | list=None, raw_data: dict | list=None):
-        logger.fail("推送 RS", json.dumps(push_data, ensure_ascii=False), msg)
+    @async_error_handler("RS发布失败")
+    async def rs_release_failed(
+        self,
+        rsno: str,
+        msg: str = None,
+        msg_from: str = 'SYSTEM',
+        push_data: dict | list = None,
+        raw_data: dict | list = None
+    ):
+        logger.warning_msg(f"推送 RS {msg}", json.dumps(push_data, ensure_ascii=False), to_file=True)
         if msg:
             try:
                 msg = str(msg)[:64]
             except Exception as e:
                 pass
-        try:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            memo = f"{now} {ce.RELEASE_FAILED.value} {msg_from}: '{msg}'"
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        memo = f"{now} {ce.RELEASE_FAILED.value} {msg_from}: '{msg}'"
 
-            patch_data = {
-                'memo': memo,
-            }
-            
-            response_json = await db_update_by_index(
-                db_names=self.db_name,
-                model_or_tablename="t_demand",
-                index_dict={"DemandNo": rsno},
-                new_values_dict=patch_data,
-                not_found_behavior="skip"
-            )
-            
-            from project_files._base import ExecutionResult
-            await self._collector.add_result(ExecutionResult(
-                success=False,
-                raw_data=rsno,
-                msg=f"{msg_from}: {msg}" if msg else None,
-                push_data=push_data
-            ))
-            
-            return response_json
-        except Exception as e:
-            error_msg = f"更新RS失败状态时发生网络错误：{str(e)}"
-            logger.fail("RS状态更新", rsno, error_msg)
-            return standard_response(status_code=500, success=0, message=error_msg)
-
-
-    async def pr_release_success(self, prno: str, msg: str=None, msg_from: str='SYSTEM', _code: str=None, _id: str=None, _entryid: str=None):        
-        try:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            memo = f"{now} {ce.RELEASE_SUCCESS.value} {msg_from}: '{_code}, {_id}, {_entryid}' @ {prno}"
-            logger.update("PR状态", prno, "")
-            
-            patch_data = {
-                'status': 'CRE',
-                'memo': memo[:255],
-                'apiex_sn': _code,
-                'apiex_id': _id,
-                'apiex_entryid': _entryid,
-            }
-            
-            response_json = await db_update_by_index(
-                db_names=self.db_name,
-                model_or_tablename="t_supply",
-                index_dict={"SupplyNo": prno},
-                new_values_dict=patch_data,
-                not_found_behavior="skip"
-            )
-            
-            logger.info(f"更新PR状态响应：成功")
-            
-            from project_files._base import ExecutionResult
-            await self._collector.add_result(ExecutionResult(
-                success=True,
-                raw_data=prno,
-                msg=f"{msg_from}: {msg}" if msg else None,
-                mono=_code
-            ))
-            
-            return response_json
-        except Exception as e:
-            error_msg = f"更新PR状态时发生网络错误：{str(e)}"
-            logger.fail("PR状态更新", prno, error_msg)
-            return standard_response(status_code=500, success=0, message=error_msg)
-
-
-    async def pr_release_failed(self, prno: str, msg: str=None, msg_from: str='SYSTEM', push_data: dict | list=None, raw_data: dict | list=None):
+        patch_data = {
+            'memo': memo,
+        }
         
+        response_json: MultiDbResult = await db_update_by_index(
+            db_names=self.db_name,
+            model_or_tablename="t_demand",
+            index_dict={"DemandNo": rsno},
+            new_values_dict=patch_data,
+            not_found_behavior="skip"
+        )
         
+        await self._collector.add_result(ExecutionResult(
+            success=False,
+            raw_data=rsno,
+            msg=f"{msg_from}: {msg}" if msg else None,
+            push_data=push_data
+        ))
+        
+        return response_json
+
+
+    @async_error_handler("PR发布成功")
+    async def pr_release_success(
+        self,
+        prno: str,
+        msg: str = None,
+        msg_from: str = 'SYSTEM',
+        _code: str = None,
+        _id: str = None,
+        _entryid: str = None
+    ):
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        memo = f"{now} {ce.RELEASE_SUCCESS.value} {msg_from}: '{_code}, {_id}, {_entryid}' @ {prno}"
+        logger.update("PR状态", prno, "")
+        
+        patch_data = {
+            'status': 'CRE',
+            'memo': memo[:255],
+            'apiex_sn': _code,
+            'apiex_id': _id,
+            'apiex_entryid': _entryid,
+        }
+        
+        response_json: MultiDbResult = await db_update_by_index(
+            db_names=self.db_name,
+            model_or_tablename="t_supply",
+            index_dict={"SupplyNo": prno},
+            new_values_dict=patch_data,
+            not_found_behavior="skip"
+        )
+        
+        logger.info(f"更新PR状态响应：成功")
+        
+        await self._collector.add_result(ExecutionResult(
+            success=True,
+            raw_data=prno,
+            msg=f"{msg_from}: {msg}" if msg else None,
+            mono=_code
+        ))
+        
+        return response_json
+
+
+    @async_error_handler("PR发布失败")
+    async def pr_release_failed(
+        self,
+        prno: str,
+        msg: str = None,
+        msg_from: str = 'SYSTEM',
+        push_data: dict | list = None,
+        raw_data: dict | list = None
+    ):
         if msg:
             try:
                 msg = str(msg)[:64]
             except Exception as e:
                 pass
-        logger.fail("推送 PR", json.dumps(push_data, ensure_ascii=False), msg)
-        try:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            memo = f"{now} {ce.RELEASE_FAILED.value} {msg_from}: '{msg}'"
-            
-            patch_data = {
-                'status': 'NEW',
-                'memo': memo[:255],
-            }
-            
-            response_json = await db_update_by_index(
-                db_names=self.db_name,
-                model_or_tablename="t_supply",
-                index_dict={"SupplyNo": prno},
-                new_values_dict=patch_data,
-                not_found_behavior="skip"
-            )
-            
-            from project_files._base import ExecutionResult
-            await self._collector.add_result(ExecutionResult(
-                success=False,
-                raw_data=prno,
-                msg=f"{msg_from}: {msg}" if msg else None,
-                push_data=push_data
-            ))
-            
-            return response_json
-        except Exception as e:
-            error_msg = f"更新PR失败状态时发生网络错误：{str(e)}"
-            logger.fail("PR状态更新", prno, error_msg)
-            return standard_response(status_code=500, success=0, message=error_msg)
+        logger.warning_msg(f"推送 PR {msg}", json.dumps(push_data, ensure_ascii=False), to_file=True)
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        memo = f"{now} {ce.RELEASE_FAILED.value} {msg_from}: '{msg}'"
+        
+        patch_data = {
+            'status': 'NEW',
+            'memo': memo[:255],
+        }
+        
+        response_json: MultiDbResult = await db_update_by_index(
+            db_names=self.db_name,
+            model_or_tablename="t_supply",
+            index_dict={"SupplyNo": prno},
+            new_values_dict=patch_data,
+            not_found_behavior="skip"
+        )
+        
+        await self._collector.add_result(ExecutionResult(
+            success=False,
+            raw_data=prno,
+            msg=f"{msg_from}: {msg}" if msg else None,
+            push_data=push_data
+        ))
+        
+        return response_json
 

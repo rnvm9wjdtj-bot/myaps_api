@@ -15,7 +15,7 @@ from ._base import (
     PydanticModel, JSONManager,
     logger,
     DataProcessor, globalconst, PROJECT_JSON_FILE, pdv,
-    BaseConnection, ApsPayloadStorage, EventResultPoster, convert_timeunit, clean_value,
+    BaseConnection, ApsPayloadSponsor, EventResultPoster, convert_timeunit, clean_value,
     model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold, AcceptSupply, AcceptConfirm,
@@ -861,7 +861,7 @@ class TplusConnection(BaseConnection):
     async def create_mo(
         self,
         supplyno: str,
-        _aps: ApsPayloadStorage,
+        _aps: ApsPayloadSponsor,
         _erp: EventResultPoster,
         remain_native_supplyno: bool = True,
         pydantic_model: PydanticModel=MoPushModel,
@@ -924,7 +924,7 @@ class TplusConnection(BaseConnection):
         self,
         mdlist_or_supplyno: str | list[dict],
         tplus_mo_data_or_id: dict | str | int,
-        _aps: ApsPayloadStorage,
+        _aps: ApsPayloadSponsor,
         _erp: EventResultPoster,
         pydantic_model:PydanticModel=RsPushModel,
     ):
@@ -982,7 +982,7 @@ class TplusConnection(BaseConnection):
     async def push_pr(
         self,
         data_list: list[dict],
-        _aps: ApsPayloadStorage,
+        _aps: ApsPayloadSponsor,
         _erp: EventResultPoster,
         pydantic_model:PydanticModel=PrPushModel):
         """

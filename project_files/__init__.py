@@ -20,7 +20,7 @@ from globalobjects.globalconst import OrderStatusEnum
 from apps.io_api.utils.common import dict_to_lower_keys
 from globalobjects import logger as log_config
 from apps.data_opt.utils.scheduler import cron_task
-from apps.data_opt.components._base import ApsPayloadStorage
+from apps.data_opt.components._base import ApsPayloadSponsor
 from apps.data_opt.utils.common import get_optimized_session
 from apps.common.utils.redis_pool_manager import get_redis_pool_manager
 

@@ -20,7 +20,7 @@ from .utils.common import standard_response, drop_matched_data
 from .utils.db_operation import db_exec_sql, db_managers, db_query, db_supsert, db_bupsert, db_delete, call_dbprocdure, db_update_by_index
 # from project_files import hap_conn
 from apps.data_opt.utils.data_processor import DataProcessor
-from apps.data_opt.components._base import ApsPayloadStorage
+from apps.data_opt.components._base import ApsPayloadSponsor
 
 
 logger = log_config.get_logger(__name__)
@@ -176,10 +176,10 @@ async def get_material_page(
         result = await db_query(db_name=db_name, model_or_tablename="t_material", page_index=page_index, page_size=page_size)
         return standard_response(
             status_code=200,
-            success=result['success'],
-            message=result['message'],
-            data=result['data'],
-            meta=result['meta']
+            success=result.success,
+            message=result.message,
+            data=result.data,
+            meta=result.meta
         )
     except Exception as e:
         logger.error(f"获取物料分页数据失败: {str(e)}")
@@ -212,10 +212,10 @@ async def get_material(
         result = await db_query(db_name=db_name, model_or_tablename="t_material", filter_string=filter_string)
         return standard_response(
             status_code=200,
-            success=result['success'],
-            message=result['message'],
-            data=result['data'],
-            meta=result['meta']
+            success=result.success,
+            message=result.message,
+            data=result.data,
+            meta=result.meta
         )
     except Exception as e:
         logger.error(f"根据料号获取物料信息失败: {str(e)}")
@@ -238,6 +238,7 @@ async def get_material(
 async def post_material(
     data: List[AcceptMaterial] = Body(..., description="新增或修改的物料数据"),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+    return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥")
     ):
     db_name = db_name.replace(" ", "")
@@ -263,10 +264,10 @@ async def post_material(
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_material", data_list=data)
         return standard_response(
             status_code=200,
-            success=result['success'],
-            message=result['message'],
-            data=result['data'],
-            meta=result['meta']
+            success=result.success,
+            message=result.message,
+            data=result.data if return_data else None,
+            meta=result.meta
         )
     except Exception as e:
         logger.error(f"新增或修改物料失败: {str(e)}")
@@ -289,6 +290,7 @@ async def post_material(
 async def post_workcenter(
     data: List[AcceptWorkcenter] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+    return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥")
     ):
     db_name = db_name.replace(" ", "")
@@ -296,10 +298,10 @@ async def post_workcenter(
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_workcenter", data_list=data)
         return standard_response(
             status_code=200,
-            success=result['success'],
-            message=result['message'],
-            data=result['data'],
-            meta=result['meta']
+            success=result.success,
+            message=result.message,
+            data=result.data if return_data else None,
+            meta=result.meta
         )
     except Exception as e:
         logger.error(f"新增或修改工作中心失败: {str(e)}")
@@ -320,9 +322,10 @@ async def post_workcenter(
     description="根据🗝️【料号+产线版本号+工序项目】形成的联合索引新增或修改工序记录"
 )
 async def post_mat_wc(
-    data: List[AcceptMatWc | Dict] = Body(...),
+    data: List[AcceptMatWc] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     drop: Literal["all", "matched"] = Query(None, description="丢弃旧数据的方式"),
+    return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥")
 ):
     db_table = "t_mat_wc"
@@ -341,10 +344,10 @@ async def post_mat_wc(
         result = await db_bupsert(db_names=db_name, model_or_tablename=db_table, data_list=data)
         return standard_response(
             status_code=200,
-            success=result['success'],
-            message=result['message'],
-            data=result['data'],
-            meta=result['meta']
+            success=result.success,
+            message=result.message,
+            data=result.data if return_data else None,
+            meta=result.meta
         )
     except Exception as e:
         logger.error(f"新增或修改工序失败: {str(e)}")
@@ -364,8 +367,9 @@ async def post_mat_wc(
     description="根据🗝️【料号+产线版本号】形成的联合索引新增或修改产线版本记录"
 )
 async def post_mat_ver(
-    data: List[AcceptMatVer | Dict] = Body(...),
+    data: List[AcceptMatVer] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+    return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥")
 ):
     db_name = db_name.replace(" ", "")
@@ -373,10 +377,10 @@ async def post_mat_ver(
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_mat_ver", data_list=data)
         return standard_response(
             status_code=200,
-            success=result['success'],
-            message=result['message'],
-            data=result['data'],
-            meta=result['meta']
+            success=result.success,
+            message=result.message,
+            data=result.data if return_data else None,
+            meta=result.meta
         )
     except Exception as e:
         logger.error(f"新增或修改产线版本失败: {str(e)}")
@@ -396,9 +400,10 @@ async def post_mat_ver(
     description="根据🗝️【产品料号+子件料号+产线版本号+工序项目】形成的联合索引新增或修改BOM记录"
 )
 async def post_mat_wc_bom(
-    data: List[AcceptMatWcBom | Dict] = Body(...),
+    data: List[AcceptMatWcBom] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     drop: Literal["all", "matched"] = Query(None, description="丢弃旧数据的方式"),
+    return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥")
 ):
     db_table = "t_mat_wc_bom"
@@ -417,10 +422,10 @@ async def post_mat_wc_bom(
         result = await db_bupsert(db_names=db_name, model_or_tablename=db_table, data_list=data)
         return standard_response(
             status_code=200,
-            success=result['success'],
-            message=result['message'],
-            data=result['data'],
-            meta=result['meta']
+            success=result.success,
+            message=result.message,
+            data=result.data if return_data else None,
+            meta=result.meta
         )
     except Exception as e:
         logger.error(f"新增或修改BOM失败: {str(e)}")
@@ -440,8 +445,9 @@ async def post_mat_wc_bom(
     description="根据🗝️【模具编号】新增或修改模具"
 )
 async def post_mold(
-    data: List[AcceptMold | Dict] = Body(...),
+    data: List[AcceptMold] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+    return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥")
 ):
     db_name = db_name.replace(" ", "")
@@ -449,10 +455,10 @@ async def post_mold(
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_mold", data_list=data)
         return standard_response(
             status_code=200,
-            success=result['success'],
-            message=result['message'],
-            data=result['data'],
-            meta=result['meta']
+            success=result.success,
+            message=result.message,
+            data=result.data if return_data else None,
+            meta=result.meta
         )
     except Exception as e:
         logger.error(f"新增或修改模具失败: {str(e)}")
@@ -472,9 +478,10 @@ async def post_mold(
     description="根据🗝️【料号+工作中心+工序项目+模具编号】形成的联合索引新增或修改机台模具记录"
 )
 async def post_mat_wc_mold(
-    data: List[AcceptMatWcMold | Dict] = Body(...),
+    data: List[AcceptMatWcMold] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     drop: Literal["all", "matched"] = Query(None, description="丢弃旧数据的方式"),
+    return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥")
 ):
     db_name = db_name.replace(" ", "")
@@ -493,10 +500,10 @@ async def post_mat_wc_mold(
         result = await db_bupsert(db_names=db_name, model_or_tablename=db_table, data_list=data)
         return standard_response(
             status_code=200,
-            success=result['success'],
-            message=result['message'],
-            data=result['data'],
-            meta=result['meta']
+            success=result.success,
+            message=result.message,
+            data=result.data if return_data else None,
+            meta=result.meta
         )
     except Exception as e:
         logger.error(f"新增或修改机台模具失败: {str(e)}")
@@ -536,8 +543,9 @@ async def post_mat_wc_mold(
     description="根据🗝️【料号+供应号】新增或修改供应记录"
 )
 async def post_supply(
-    data: List[AcceptSupply | Dict] = Body(...),
+    data: List[AcceptSupply] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+    return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥")
 ):
     db_name = db_name.replace(" ", "")
@@ -545,10 +553,10 @@ async def post_supply(
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_supply", data_list=data)
         return standard_response(
             status_code=200,
-            success=result['success'],
-            message=result['message'],
-            data=result['data'],
-            meta=result['meta']
+            success=result.success,
+            message=result.message,
+            data=result.data if return_data else None,
+            meta=result.meta
         )
     except Exception as e:
         logger.error(f"新增或修改供应记录失败: {str(e)}")
@@ -640,7 +648,7 @@ async def post_supply(
 async def replace_supply(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     type_: str = Path(..., enum=['PL', 'MO', 'PR', 'PO', 'ST'], description="供应类型"),
-    data: List[AcceptSupply | Dict] = Body(..., description="替换为这些供应记录"),
+    data: List[AcceptSupply] = Body(..., description="替换为这些供应记录"),
     x_api_key: str = Header(None, description="API密钥")
 ):
     wrong_type_count = 0
@@ -660,18 +668,18 @@ async def replace_supply(
             create_result = await db_bupsert(db_names=db_name, model_or_tablename="t_supply", data_list=data)
             return standard_response(
                 status_code=200,
-                success=create_result['success'],
-                message=create_result['message'],
-                data=create_result['data'],
-                meta=create_result['meta']
+                success=create_result.success,
+                message=create_result.message,
+                data=create_result.data,
+                meta=create_result.meta
             )
         else:
             return standard_response(
                 status_code=200,
-                success=delete_result['success'],
-                message=delete_result['message'],
-                data=delete_result['data'],
-                meta=delete_result['meta']
+                success=delete_result.success,
+                message=delete_result.message,
+                data=delete_result.data,
+                meta=delete_result.meta
             )
     except Exception as e:
         logger.error(f"按类型替换供应记录失败: {str(e)}")
@@ -700,10 +708,10 @@ async def delete_supply(
         result = await call_dbprocdure(db_names=db_name, procedure_name="SupplyDeleteAll", params_list=[[supplyno]])
         return standard_response(
             status_code=200,
-            success=result['success'],
+            success=result.success,
             message="success",
-            data=result['data'],
-            meta=result['meta']
+            data=result.data,
+            meta=result.meta
         )
     except Exception as e:
         logger.error(f"删除供应记录失败: {str(e)}")
@@ -773,8 +781,9 @@ async def delete_supply(
     description="根据🗝️【料号+需求号+项目号】新增或修改需求记录"
 )
 async def post_demand(
-    data: List[AcceptDemand | Dict] = Body(...),
+    data: List[AcceptDemand] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+    return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥")
 ):
     db_name = db_name.replace(" ", "")
@@ -782,10 +791,10 @@ async def post_demand(
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_demand", data_list=data)
         return standard_response(
             status_code=200,
-            success=result['success'],
-            message=result['message'],
-            data=result['data'],
-            meta=result['meta']
+            success=result.success,
+            message=result.message,
+            data=result.data if return_data else None,
+            meta=result.meta
         )
     except Exception as e:
         logger.error(f"新增或修改需求记录失败: {str(e)}")
@@ -864,10 +873,10 @@ async def get_mo_page(
         result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=filter_string, page_size=page_size, page_index=page_index)
         return standard_response(
             status_code=200,
-            success=result['success'],
-            message=result['message'],
-            data=result['data'],
-            meta=result['meta']
+            success=result.success,
+            message=result.message,
+            data=result.data,
+            meta=result.meta
         )
     except Exception as e:
         logger.error(f"获取工单报表失败: {str(e)}")
@@ -894,7 +903,7 @@ async def get_mo_by_supplyno(
     origin_so: bool = Query(False, description="是否查询销售订单SO"),
     # x_api_key: str = Header(None, description="API密钥")
 ):
-    return await ApsPayloadStorage.get_mo_by_supplyno(db_name=db_name, supplyno=supplyno, prev_mo=prev_mo, next_mo=next_mo, origin_so=origin_so)
+    return await ApsPayloadSponsor.get_mo_by_supplyno(db_name=db_name, supplyno=supplyno, prev_mo=prev_mo, next_mo=next_mo, origin_so=origin_so)
 
 
 # @rt.get(
@@ -939,10 +948,10 @@ async def get_orderwc_page(
         result = await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=filter_string, page_size=page_size, page_index=page_index)
         return standard_response(
             status_code=200,
-            success=result['success'],
-            message=result['message'],
-            data=result['data'],
-            meta=result['meta']
+            success=result.success,
+            message=result.message,
+            data=result.data,
+            meta=result.meta
         )
     except Exception as e:
         logger.error(f"获取工序报表失败: {str(e)}")
@@ -972,10 +981,10 @@ async def get_orderwc(
         result = await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=filter_string)
         return standard_response(
             status_code=200,
-            success=result['success'],
-            message=result['message'],
-            data=result['data'],
-            meta=result['meta']
+            success=result.success,
+            message=result.message,
+            data=result.data,
+            meta=result.meta
         )
     except Exception as e:
         logger.error(f"获取工序报表失败: {str(e)}")
@@ -1172,8 +1181,9 @@ async def get_matdailyqtyreport(
     description="新增报工记录"
 )
 async def create_workreport(
-    data: List[AcceptConfirm | Dict] = Body(...),
+    data: List[AcceptConfirm] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+    return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥")
 ):
     """
@@ -1188,7 +1198,7 @@ async def create_workreport(
             status_code=200,
             success=result['success'],
             message=result['message'],
-            data=result['data'],
+            data=result['data'] if return_data else None,
             meta=result['meta']
         )
     except Exception as e:
@@ -1223,10 +1233,10 @@ async def delete_workreport(
         result = await db_delete(db_names=db_name, model_or_tablename="t_confirm", filter_string=filter_string)
         return standard_response(
             status_code=200,
-            success=result['success'],
-            message=result['message'],
-            data=result['data'],
-            meta=result['meta']
+            success=result.success,
+            message=result.message,
+            data=result.data,
+            meta=result.meta
         )
     except Exception as e:
         logger.error(f"删除报工记录失败: {str(e)}")

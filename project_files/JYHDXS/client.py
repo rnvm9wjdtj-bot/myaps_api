@@ -13,7 +13,7 @@ from dateutil.relativedelta import relativedelta
 from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
 from .._base import (
     get_scheduler_minute, async_rate_limit, CacheItem,
-    ApsPayloadStorage, EventResultPoster, CLIENT_LOGGER, standard_response, get_session, start_event_batch_reminder,
+    ApsPayloadSponsor, EventResultPoster, CLIENT_LOGGER, standard_response, get_session, start_event_batch_reminder,
     cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, PROJECT_JSON_FILE, pdv,
     AlertType, QqEmailReminder, Reminder, finish_event_batch_reminder
 )
@@ -154,7 +154,7 @@ async def refresh_stock(dbs: str=MYAPS_DB_SET):
         return df_sap_st
 
     CLIENT_LOGGER.start("刷新库存任务")
-    mto_vir_st = await ApsPayloadStorage.mto_workreport_to_virtual_stock()
+    mto_vir_st = await ApsPayloadSponsor.mto_workreport_to_virtual_stock()
     df_sap_st = get_sap_stock_data()
 
     if mto_vir_st is not None:
@@ -164,7 +164,7 @@ async def refresh_stock(dbs: str=MYAPS_DB_SET):
     
     # if stock_data_total is not None:
     stock_data_total.fillna('', inplace=True)
-    await ApsPayloadStorage.refresh_supply(stock_data_total.to_dict(orient='records'), dbs=dbs)
+    await ApsPayloadSponsor.refresh_supply(stock_data_total.to_dict(orient='records'), dbs=dbs)
 
 
 async def push_pr(period: int = 30, groupdates: List[str] | str = None):
@@ -172,7 +172,7 @@ async def push_pr(period: int = 30, groupdates: List[str] | str = None):
         if isinstance(groupdates, list):
             groupdates = ','.join(groupdates)
 
-    pr_data = await ApsPayloadStorage.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=period, field_map=srm_field_map, groupdates=groupdates)
+    pr_data = await ApsPayloadSponsor.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=period, field_map=srm_field_map, groupdates=groupdates)
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     for item in pr_data:
         item["plant"] = "1000"
@@ -213,7 +213,7 @@ async def task_refresh_stock():
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2), description="确认报工")
 async def task_confirm_workreport():
-    await ApsPayloadStorage.confirm_workreport()
+    await ApsPayloadSponsor.confirm_workreport()
 
 
 @cron_task(hour=23, minute=59, description="推送周要货计划到SRM")  # 每天23:59执行一次，需须在23:55拉取库存和确认报工之后
@@ -250,7 +250,7 @@ async def batch_handle_pl_status_a2e(event_data: List[Dict], _erp: EventResultPo
         description: 事件描述，会被两个装饰器捕获，邮件头文字
     """
     @async_rate_limit()
-    async def handle_pl_status_a2e(supplyno_or_data: Union[str, dict], _aps: ApsPayloadStorage):
+    async def handle_pl_status_a2e(supplyno_or_data: Union[str, dict], _aps: ApsPayloadSponsor):
         """
         处理单个PL状态变为A2E事件
         Args:
@@ -323,7 +323,7 @@ async def batch_handle_pl_status_a2e(event_data: List[Dict], _erp: EventResultPo
         
     supply_nos = [_['supplyno'] for _ in event_data]
     supply_list = await TSupply.filter(supplyno__in=supply_nos).update(memo=" 正在推送。。。")
-    _aps = ApsPayloadStorage(production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.ORDER_WC])
+    _aps = ApsPayloadSponsor(production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.ORDER_WC])
     cache = await _aps.establish_production_cache(supplynos=supply_nos)
     tasks = [handle_pl_status_a2e(supplyno_or_data=item, _aps=_aps) for item in event_data]
     await asyncio.gather(*tasks, return_exceptions=True)

@@ -7,13 +7,11 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel as PydanticSchema
 
+# 从 globalobjects.db_manager 导入 dict_to_lower_keys 函数
+from globalobjects.db_manager import dict_to_lower_keys
+
 # from core.settings import MYAPS_MAIN_DB
 # from globalobjects.globalconst import SupplyTypeEnum
-
-
-
-def dict_to_lower_keys(d: dict) -> dict:
-    return {k.lower(): v for k, v in d.items()}
 
 def format_query_result(d: dict) -> dict:
     """
@@ -53,6 +51,19 @@ def standard_response(
     data: Any = None,
     meta: Dict[str, Any] = None
 ):
+    # 延迟导入，避免循环依赖
+    from .db_operation import DbResult, MultiDbResult
+    
+    # 处理 DbResult 或 MultiDbResult 类型的返回值
+    if isinstance(data, (DbResult, MultiDbResult)):
+        return {
+            "status_code": status_code,
+            "success": data.success,
+            "message": data.message,
+            "meta": data.meta,
+            "data": data.data
+        }
+    
     return {
         "status_code": status_code,
         "success": success,

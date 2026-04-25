@@ -3,19 +3,19 @@
 """
 
 # import threading
-import os, asyncio, logging, json, requests, pandas as pd, threading
+import os, asyncio, logging, json, requests, pandas as pd, threading, inspect
 from socket import MsgFlag
 from typing import Literal, List, Dict, Any, Optional, Union
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 
 # from tortoise import Tortoise
-from core.settings import MAX_EVENTS_PER_SECOND
+from core.settings import MAX_EVENTS_PER_SECOND, SCHEDULER_MINUTE
 from globalobjects.globalconst import OrderStatusEnum
 
 
 # ❗❗❗❗❗❗❗❗❗❗❗❗⬇️不要删掉，便于各项目文件引用 ❗❗❗❗❗❗❗❗❗❗❗❗
-from core.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET, SCHEDULER_MINUTE, PROJECT_JSON
+from core.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET, PROJECT_JSON
 from globalobjects import logger as log_config, PROJECT_JSON_FILE, ProjectDefaultValues as pdv, AlertType, QqEmailReminder, Reminder
 from apps.io_api.utils.common import standard_response
 from apps.io_api.utils.db_operation import db_delete, db_bupsert, call_dbprocdure, db_query, db_supsert, db_update_by_index
@@ -23,7 +23,7 @@ from apps.io_api.models import TSupply
 from apps.data_opt.utils.scheduler import cron_task
 from apps.data_opt.utils.common import add_basic_auth_requests, get_session
 from apps.data_opt.utils.data_processor import DataProcessor
-from apps.data_opt.components._base import ApsPayloadStorage, EventResultPoster, CacheItem
+from apps.data_opt.components._base import ApsPayloadSponsor, EventResultPoster, CacheItem
 from apps.data_opt.components.simple_hap import HapConnection
 
 
@@ -49,13 +49,8 @@ from functools import wraps
 from collections import namedtuple
 from threading import Lock
 
-# ❗❗❗❗❗❗❗❗❗❗❗❗⬇️不要删掉，便于各项目文件引用 ❗❗❗❗❗❗❗❗❗❗❗❗
-from core.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET, SCHEDULER_MINUTE, MAX_EVENTS_PER_SECOND
-
 # 定义任务执行结果的具名元组
 TaskResult = namedtuple('TaskResult', ['status', 'error'])
-
-
 
 #################################################################################
 # 令牌桶限流器
@@ -238,7 +233,6 @@ def start_event_batch_reminder(reminder: Reminder = None, error_handler: Union[c
             description = kwargs.get('description', None)
             if description is None:
                 try:
-                    import inspect
                     sig = inspect.signature(func)
                     # 使用 bind_partial 绑定参数，避免缺少参数导致绑定失败
                     bound_args = sig.bind_partial(*args, **kwargs)
@@ -279,7 +273,6 @@ def start_event_batch_reminder(reminder: Reminder = None, error_handler: Union[c
                 if error_handler is not None:
                     CLIENT_LOGGER.info(f"尝试使用 {error_handler} 进行错误捕获处理。。。")
                     if isinstance(error_handler, str):
-                        import inspect
                         if hasattr(func, '__self__'):
                             error_method = getattr(func.__self__, error_handler, None)
                         else:
@@ -303,7 +296,6 @@ def start_event_batch_reminder(reminder: Reminder = None, error_handler: Union[c
                     else:
                         if callable(error_handler):
                             try:
-                                import inspect
                                 if inspect.iscoroutinefunction(error_handler):
                                     await error_handler(e, *args, **kwargs)
                                 else:
@@ -327,7 +319,6 @@ def start_event_batch_reminder(reminder: Reminder = None, error_handler: Union[c
                 if final_handler is not None:
                     if callable(final_handler):
                         try:
-                            import inspect
                             if inspect.iscoroutinefunction(final_handler):
                                 await final_handler(result, *args, **kwargs)
                             else:
@@ -381,7 +372,6 @@ def finish_event_batch_reminder(description: str = None, reminder: Reminder = No
                 actual_description = kwargs.get('description', None)
                 if actual_description is None:
                     try:
-                        import inspect
                         sig = inspect.signature(func)
                         # 使用 bind_partial 绑定原始参数，避免缺少 _erp 参数导致绑定失败
                         bound_args = sig.bind_partial(*args, **kwargs)
@@ -412,120 +402,3 @@ def finish_event_batch_reminder(description: str = None, reminder: Reminder = No
         return wrapper
     return decorator
 
-
-import uuid
-from dataclasses import dataclass, field
-from datetime import datetime
-from typing import List, Dict, Any
-
-
-@dataclass
-class ExecutionResult:
-    success: bool
-    raw_data: Any = None
-    msg: str = None
-    mono: str = None
-    push_data: Dict = None
-    timestamp: datetime = field(default_factory=datetime.now)
-
-
-class ResultCollector:
-    """结果收集器，用于收集异步函数执行结果"""
-
-    def __init__(self):
-        self.results: List[ExecutionResult] = []
-        self._lock = asyncio.Lock()
-        self.batch_id = str(uuid.uuid4())[:8]
-        self.start_time = time.time()
-    
-
-    async def add_result(self, result: ExecutionResult):
-        async with self._lock:
-            self.results.append(result)
-    
-
-    def get_summary(self) -> Dict[str, Any]:
-        success_count = sum(1 for r in self.results if r.success)
-        total_time = time.time() - self.start_time
-        failed_results = [r for r in self.results if not r.success]
-        failed_details = []
-        for r in failed_results:
-            detail = {}
-            if r.raw_data is not None:
-                detail["raw_data"] = r.raw_data
-            if r.msg is not None:
-                detail["msg"] = r.msg
-            if r.push_data is not None:
-                detail["push_data"] = r.push_data
-            if r.timestamp is not None:
-                detail["timestamp"] = r.timestamp.isoformat()
-            failed_details.append(detail)
-        
-        # 转换 ExecutionResult 对象为字典
-        details = []
-        for r in self.results:
-            detail = {
-                "success": r.success,
-                "raw_data": r.raw_data,
-                "msg": r.msg,
-                "mono": r.mono,
-                "push_data": r.push_data,
-                "timestamp": r.timestamp.isoformat() if r.timestamp else None
-            }
-            # 过滤掉 None 值
-            detail = {k: v for k, v in detail.items() if v is not None}
-            details.append(detail)
-        
-        # 按错误信息分类汇总失败记录
-        failed_by_msg = {}
-        for r in failed_results:
-            error_msg = r.msg or "Unknown error"
-            if error_msg not in failed_by_msg:
-                failed_by_msg[error_msg] = 0
-            failed_by_msg[error_msg] += 1
-        
-        # 按错误信息升序排序
-        failed_by_msg = dict(sorted(failed_by_msg.items(), key=lambda x: x[0]))
-        
-        return {
-            "batch_id": self.batch_id,
-            "total": len(self.results),
-            "success": success_count,
-            "failed": len(self.results) - success_count,
-            "total_time_sec": round(total_time, 2),
-            "avg_time_per_item_sec": round(total_time / len(self.results), 2) if self.results else 0,
-            "details": details,
-            "failed_details": failed_details,
-            "failed_by_msg": failed_by_msg
-        }
-    
-    def format_notification(self, description: str = "任务") -> str:
-        summary = self.get_summary()
-        
-        # 转换总耗时为友好格式
-        total_seconds = summary['total_time_sec']
-        if total_seconds < 60:
-            time_str = f"{total_seconds:.1f} 秒"
-        elif total_seconds < 3600:
-            minutes = total_seconds / 60
-            time_str = f"{minutes:.1f} 分钟"
-        else:
-            hours = total_seconds / 3600
-            time_str = f"{hours:.1f} 小时"
-        
-        notification = (
-            f"【{description}】执行完成！\n"
-            f"批次ID: {summary['batch_id']}\n"
-            f"总计处理: {summary['total']} 条\n"
-            f"\t✅ 成功: {summary['success']} 条\n"
-            f"\t🚫 失败: {summary['failed']} 条\n"
-            f"总耗时: {time_str}\n"
-            f"平均每条: {summary['avg_time_per_item_sec']} 秒"
-        )
-        
-        if summary.get('failed_by_msg'):
-            notification += "\n\n📊失败原因汇总\n"
-            for error_msg, count in summary['failed_by_msg'].items():
-                notification += f"\t🔴 {error_msg}: 【{count}】 条\n"
-        
-        return notification

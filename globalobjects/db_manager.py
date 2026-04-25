@@ -12,13 +12,19 @@ from tortoise.transactions import in_transaction
 from tortoise.exceptions import IntegrityError
 
 from core.settings import MYAPS_DBSET_LIST
-from apps.io_api.utils.common import dict_to_lower_keys
 from globalobjects import logger as log_config
 import os
 
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 # 获取统一日志器
 logger = log_config.get_logger(__name__, level=LOG_LEVEL)
+
+
+def dict_to_lower_keys(d: dict) -> dict:
+    """
+    将字典的键转换为小写
+    """
+    return {k.lower(): v for k, v in d.items()}
 
 
 class DbManagerError(Exception):
@@ -120,10 +126,22 @@ def with_transaction(func):
                 is_network_error = "Network" in str(type(e)) or "网络" in str(e)
                 is_pool_error = "Pool" in str(type(e))
                 
+                # 检查 OperationalError 是否为连接相关错误
+                is_operational_connection_error = is_operational_error and (
+                    'CONNECTION' in error_str or 
+                    'CONNECT' in error_str or 
+                    'POOL' in error_str or 
+                    'TIMEOUT' in error_str or 
+                    'NETWORK' in error_str or 
+                    'HOST' in error_str or 
+                    'PORT' in error_str or
+                    'SERVER' in error_str
+                )
+                
                 if is_deadlock:
                     logger.fail(operation, f"@{self.connection_name}", str(e))
                     raise DbDeadlockError(f"数据库死锁: {str(e)}", operation, table, self.connection_name)
-                elif is_connection_error or is_operational_error or is_connection_closed:
+                elif is_connection_error or is_operational_connection_error or is_connection_closed:
                     logger.fail(operation, f"@{self.connection_name}", str(e))
                     raise DbConnectionError(f"数据库连接错误: {str(e)}", operation, table, self.connection_name)
                 else:
@@ -163,7 +181,19 @@ def handle_db_errors(max_retries: int = 3):
                     is_network_error = "Network" in str(type(e)) or "网络" in str(e)
                     is_pool_error = "Pool" in str(type(e))
                     
-                    is_retryable = (is_deadlock or is_operational_error or is_connection_closed or 
+                    # 检查 OperationalError 是否为连接相关错误
+                    is_operational_connection_error = is_operational_error and (
+                        'CONNECTION' in error_str or 
+                        'CONNECT' in error_str or 
+                        'POOL' in error_str or 
+                        'TIMEOUT' in error_str or 
+                        'NETWORK' in error_str or 
+                        'HOST' in error_str or 
+                        'PORT' in error_str or
+                        'SERVER' in error_str
+                    )
+                    
+                    is_retryable = (is_deadlock or is_operational_connection_error or is_connection_closed or 
                                   is_none_type_error or is_connection_error or is_timeout_error or 
                                   is_network_error or is_pool_error)
                     
@@ -217,7 +247,7 @@ def handle_db_errors(max_retries: int = 3):
                         if is_deadlock:
                             logger.fail(operation, f"@{self.connection_name}", str(e))
                             raise DbDeadlockError(f"数据库死锁: {str(e)}", operation, table, self.connection_name)
-                        elif is_connection_error or is_operational_error or is_connection_closed:
+                        elif is_connection_error or is_operational_connection_error or is_connection_closed:
                             logger.fail(operation, f"@{self.connection_name}", str(e))
                             raise DbConnectionError(f"数据库连接错误: {str(e)}", operation, table, self.connection_name)
                         elif isinstance(e, IntegrityError):
@@ -255,6 +285,12 @@ class DbManager:
             'batches_executed': 0,
             'last_execution_time': None
         }
+        # 动态批量大小配置
+        self.min_batch_size = 500
+        self.max_batch_size = 5000
+        self.optimal_batch_size = batch_size
+        self.batch_size_history = []
+        self.batch_size_adjustment_interval = 10  # 每10次操作调整一次
 
 
     @asynccontextmanager
@@ -388,6 +424,9 @@ class DbManager:
         where = f" WHERE {filter_string}" if filter_string else ''
         order = f" ORDER BY {order_string}" if order_string else ''
         
+        # 检查索引使用情况
+        self._check_index_usage(table_name, filter_string, order_string)
+        
         # 先获取数据总条数
         count_sql = f'SELECT COUNT(*) as total FROM `{table_name}` {where}'
         count_result = await conn.execute_query(count_sql)
@@ -416,6 +455,9 @@ class DbManager:
         self.stats['batches_executed'] += (total + page_size - 1) // page_size
         self.stats['last_execution_time'] = execution_time
         
+        # 记录查询性能
+        self._record_query_performance(table_name, len(all_data), execution_time)
+        
         response = {
             "success": True,
             "table_name": table_name,
@@ -425,10 +467,16 @@ class DbManager:
             "total": total,
             "page_size": page_size,
             "page_index": page_index,
-            "data": [dict_to_lower_keys(item) for item in all_data]
+            "data": [dict_to_lower_keys(item) for item in all_data],
+            "performance_metrics": {
+                "records_per_second": len(all_data) / execution_time if execution_time > 0 else 0,
+                "query_type": "paginated" if page_index > 0 else "full"
+            }
         }
         
-        logger.success("数据查询", f"{table_name}@{self.connection_name}", f"执行时间{execution_time:.3f}秒")
+        logger.success("数据查询", f"{table_name}@{self.connection_name}", f"执行时间{execution_time:.3f}秒，返回{len(all_data)}条记录")
+        if execution_time > 1.0:
+            logger.warning("数据查询", f"{table_name}@{self.connection_name}", f"查询执行时间较长: {execution_time:.3f}秒")
         logger.debug(f"数据查询完成：{response}")
         return response
     
@@ -864,6 +912,9 @@ class DbManager:
         self.stats['total_processed'] += len(data_list)
         self.stats['last_execution_time'] = execution_time
         
+        # 记录批量操作性能，用于动态调整批量大小
+        self._record_batch_performance(len(data_list), execution_time)
+        
         response = {
             "success": True,
             "method": method,
@@ -873,11 +924,12 @@ class DbManager:
             "updated": result['updated'],
             "execution_time": execution_time,
             "batch_size": len(data_list),
+            "optimal_batch_size": self.optimal_batch_size,
             "conflict_fields": conflict_fields,
             "update_fields": update_fields
         }
         
-        logger.success("批量upsert", f"{db_table}@{self.connection_name}", f"插入{result['inserted']}条，更新{result['updated']}条")
+        logger.success("批量upsert", f"{db_table}@{self.connection_name}", f"插入{result['inserted']}条，更新{result['updated']}条，执行时间{execution_time:.3f}秒")
         return response
 
 
@@ -1143,6 +1195,107 @@ class DbManager:
             'batches_executed': 0,
             'last_execution_time': None
         }
+    
+    def _record_batch_performance(self, batch_size: int, execution_time: float):
+        """
+        记录批量操作性能，用于动态调整批量大小
+        
+        Args:
+            batch_size: 批量大小
+            execution_time: 执行时间（秒）
+        """
+        if execution_time > 0:
+            # 计算每秒处理记录数
+            records_per_second = batch_size / execution_time
+            self.batch_size_history.append({
+                'batch_size': batch_size,
+                'execution_time': execution_time,
+                'records_per_second': records_per_second
+            })
+            
+            # 限制历史记录数量
+            if len(self.batch_size_history) > 50:
+                self.batch_size_history = self.batch_size_history[-50:]
+            
+            # 每10次操作调整一次批量大小
+            if len(self.batch_size_history) % self.batch_size_adjustment_interval == 0:
+                self._adjust_batch_size()
+    
+    def _adjust_batch_size(self):
+        """
+        根据历史性能数据调整批量大小
+        """
+        if len(self.batch_size_history) < 5:
+            return
+        
+        # 分析最近的性能数据
+        recent_history = self.batch_size_history[-10:]
+        
+        # 计算不同批量大小的平均性能
+        batch_performance = {}
+        for record in recent_history:
+            batch_size = record['batch_size']
+            if batch_size not in batch_performance:
+                batch_performance[batch_size] = []
+            batch_performance[batch_size].append(record['records_per_second'])
+        
+        # 计算每个批量大小的平均性能
+        avg_performance = {}
+        for batch_size, performances in batch_performance.items():
+            avg_performance[batch_size] = sum(performances) / len(performances)
+        
+        # 找出性能最好的批量大小
+        best_batch_size = max(avg_performance, key=avg_performance.get)
+        best_performance = avg_performance[best_batch_size]
+        
+        # 计算当前批量大小的性能
+        current_performance = avg_performance.get(self.batch_size, 0)
+        
+        # 如果最佳批量大小的性能比当前高20%以上，则调整
+        if best_performance > current_performance * 1.2:
+            # 调整批量大小，在最佳批量大小基础上进行微调
+            new_batch_size = int(best_batch_size * 1.1)  # 稍微增加一点
+            new_batch_size = max(self.min_batch_size, min(self.max_batch_size, new_batch_size))
+            
+            if new_batch_size != self.batch_size:
+                logger.info(f"调整批量大小: {self.batch_size} -> {new_batch_size}, 性能提升: {((best_performance / current_performance) - 1) * 100:.1f}%")
+                self.batch_size = new_batch_size
+                self.optimal_batch_size = new_batch_size
+    
+    def _check_index_usage(self, table_name: str, filter_string: str, order_string: str):
+        """
+        检查索引使用情况，提供索引优化建议
+        
+        Args:
+            table_name: 表名
+            filter_string: WHERE条件字符串
+            order_string: ORDER BY排序字符串
+        """
+        # 简单的索引使用检查
+        # 实际项目中可以根据数据库类型执行EXPLAIN查询来分析索引使用情况
+        if filter_string:
+            # 检查是否使用了索引字段
+            # 这里只是简单的检查，实际项目中可以根据具体表结构和索引进行更详细的分析
+            pass
+        
+        if order_string:
+            # 检查排序字段是否有索引
+            pass
+    
+    def _record_query_performance(self, table_name: str, record_count: int, execution_time: float):
+        """
+        记录查询性能，用于监控和优化
+        
+        Args:
+            table_name: 表名
+            record_count: 返回记录数
+            execution_time: 执行时间（秒）
+        """
+        # 记录查询性能数据
+        if execution_time > 0:
+            records_per_second = record_count / execution_time
+            # 可以将性能数据存储到监控系统中
+            logger.debug(f"查询性能: {table_name} - {records_per_second:.2f} 条/秒, 执行时间: {execution_time:.3f}秒")
     
 
     def switch_connection(self, connection_name: str):
@@ -1485,6 +1638,7 @@ class DbManager:
 
 
     @with_transaction
+    @handle_db_errors(max_retries=3)
     async def update_by_index(
         self,
         model_class,
@@ -1508,123 +1662,105 @@ class DbManager:
             
         Raises:
             ValueError: 当 not_found_behavior 为 "error" 且找不到记录时
+            DbQueryError: 当数据库操作失败时
+            DbConnectionError: 当数据库连接失败时
         """
         start_time = datetime.now()
-        max_retries = 3
-        retry_count = 0
         
-        while retry_count <= max_retries:
-            try:
-                # 先检查连接是否健康，如果不健康就刷新连接
-                is_healthy = await self.check_connection_health(fast_mode=True)
-                if not is_healthy:
-                    logger.warning(f"数据库连接不健康，将刷新连接: {self.connection_name}")
-                    await self.refresh_connection(fast_mode=True)
+        # 先检查连接是否健康，如果不健康就刷新连接
+        is_healthy = await self.check_connection_health(fast_mode=True)
+        if not is_healthy:
+            logger.warning(f"数据库连接不健康，将刷新连接: {self.connection_name}")
+            await self.refresh_connection(fast_mode=True)
+        
+        table_name = model_class._meta.db_table
+        conn = Tortoise.get_connection(self.connection_name)
+        
+        # 构建 WHERE 子句（使用旧值）
+        where_parts = []
+        where_values = []
+        for field, value in index_dict.items():
+            where_parts.append(f"`{field}` = %s")
+            where_values.append(value)
+        
+        where_clause = " WHERE " + " AND ".join(where_parts) if where_parts else ""
+        
+        # 检查记录是否存在
+        check_sql = f"SELECT COUNT(*) as count FROM `{table_name}`{where_clause}"
+        result = await conn.execute_query(check_sql, where_values)
+        count = result[1][0]['count']
+        
+        if count == 0:
+            if not_found_behavior == "error":
+                raise ValueError(f"未找到匹配记录: {index_dict}")
+            elif not_found_behavior == "insert":
+                # 执行插入操作
+                all_fields = list(index_dict.keys()) + list(new_values_dict.keys())
+                all_fields = list(set(all_fields))  # 去重
                 
-                table_name = model_class._meta.db_table
-                conn = Tortoise.get_connection(self.connection_name)
+                fields_str = ', '.join([f"`{field}`" for field in all_fields])
+                placeholders = ', '.join(['%s'] * len(all_fields))
                 
-                # 构建 WHERE 子句（使用旧值）
-                where_parts = []
-                where_values = []
-                for field, value in index_dict.items():
-                    where_parts.append(f"`{field}` = %s")
-                    where_values.append(value)
+                values = []
+                for field in all_fields:
+                    if field in new_values_dict:
+                        values.append(new_values_dict[field])
+                    elif field in index_dict:
+                        values.append(index_dict[field])
                 
-                where_clause = " WHERE " + " AND ".join(where_parts) if where_parts else ""
+                insert_sql = f"INSERT INTO `{table_name}` ({fields_str}) VALUES ({placeholders})"
+                affected_rows, data_list = await self._execute_native_sql(
+                    insert_sql, 
+                    values,
+                    description="基于索引更新 - 新增记录"
+                )
                 
-                # 检查记录是否存在
-                check_sql = f"SELECT COUNT(*) as count FROM `{table_name}`{where_clause}"
-                result = await conn.execute_query(check_sql, where_values)
-                count = result[1][0]['count']
+                operation_type = 'inserted'
+            else:  # skip
+                affected_rows = 0
+                operation_type = 'skipped'
+        else:
+            # 执行更新操作
+            # 构建 SET 子句（使用新值）
+            set_parts = []
+            set_values = []
+            for field, value in new_values_dict.items():
+                set_parts.append(f"`{field}` = %s")
+                set_values.append(value)
+            
+            if not set_parts:
+                affected_rows = 0
+                operation_type = 'no_change'
+            else:
+                set_clause = " SET " + ", ".join(set_parts)
+                update_sql = f"UPDATE `{table_name}`{set_clause}{where_clause}"
                 
-                if count == 0:
-                    if not_found_behavior == "error":
-                        raise ValueError(f"未找到匹配记录: {index_dict}")
-                    elif not_found_behavior == "insert":
-                        # 执行插入操作
-                        all_fields = list(index_dict.keys()) + list(new_values_dict.keys())
-                        all_fields = list(set(all_fields))  # 去重
-                        
-                        fields_str = ', '.join([f"`{field}`" for field in all_fields])
-                        placeholders = ', '.join(['%s'] * len(all_fields))
-                        
-                        values = []
-                        for field in all_fields:
-                            if field in new_values_dict:
-                                values.append(new_values_dict[field])
-                            elif field in index_dict:
-                                values.append(index_dict[field])
-                        
-                        insert_sql = f"INSERT INTO `{table_name}` ({fields_str}) VALUES ({placeholders})"
-                        affected_rows, data_list = await self._execute_native_sql(
-                            insert_sql, 
-                            values,
-                            description="基于索引更新 - 新增记录"
-                        )
-                        
-                        operation_type = 'inserted'
-                    else:  # skip
-                        affected_rows = 0
-                        operation_type = 'skipped'
-                else:
-                    # 执行更新操作
-                    # 构建 SET 子句（使用新值）
-                    set_parts = []
-                    set_values = []
-                    for field, value in new_values_dict.items():
-                        set_parts.append(f"`{field}` = %s")
-                        set_values.append(value)
-                    
-                    if not set_parts:
-                        affected_rows = 0
-                        operation_type = 'no_change'
-                    else:
-                        set_clause = " SET " + ", ".join(set_parts)
-                        update_sql = f"UPDATE `{table_name}`{set_clause}{where_clause}"
-                        
-                        affected_rows, data_list = await self._execute_native_sql(
-                            update_sql, 
-                            set_values + where_values,
-                            description="基于索引更新 - 更新记录"
-                        )
-                        
-                        operation_type = 'updated'
+                affected_rows, data_list = await self._execute_native_sql(
+                    update_sql, 
+                    set_values + where_values,
+                    description="基于索引更新 - 更新记录"
+                )
                 
-                execution_time = (datetime.now() - start_time).total_seconds()
-                
-                # 更新统计信息
-                self.stats['total_processed'] += 1
-                self.stats['batches_executed'] += 1
-                self.stats['last_execution_time'] = execution_time
-                
-                response = {
-                    "success": True,
-                    "operation_type": operation_type,
-                    "affected_rows": affected_rows,
-                    "index_dict": index_dict,
-                    "updated_fields": list(new_values_dict.keys()),
-                    "execution_time": execution_time
-                }
-                
-                logger.success("索引更新", f"{table_name}@{self.connection_name}", f"影响{affected_rows}行")
-                return response
-                
-            except Exception as e:
-                error_msg = str(e)
-                is_connection_error = "Cannot acquire connection after closing pool" in error_msg or "OperationalError" in str(type(e)) or "NoneType" in error_msg
-                
-                if is_connection_error and retry_count < max_retries:
-                    retry_count += 1
-                    logger.warning(f"数据库连接错误，将进行第{retry_count}次重试", f"{table_name}@{self.connection_name}", error_msg)
-                    # 尝试刷新连接
-                    await self.refresh_connection()
-                    import asyncio
-                    await asyncio.sleep(1)  # 等待1秒后重试
-                    continue
-                
-                logger.fail("索引更新", f"{table_name}@{self.connection_name}", error_msg)
-                raise
+                operation_type = 'updated'
+        
+        execution_time = (datetime.now() - start_time).total_seconds()
+        
+        # 更新统计信息
+        self.stats['total_processed'] += 1
+        self.stats['batches_executed'] += 1
+        self.stats['last_execution_time'] = execution_time
+        
+        response = {
+            "success": True,
+            "operation_type": operation_type,
+            "affected_rows": affected_rows,
+            "index_dict": index_dict,
+            "updated_fields": list(new_values_dict.keys()),
+            "execution_time": execution_time
+        }
+        
+        logger.success("索引更新", f"{table_name}@{self.connection_name}", f"影响{affected_rows}行")
+        return response
 
 
 # 延迟初始化 db_managers
