@@ -2474,7 +2474,7 @@ class EventResultPoster:
     async def pr_release_failed(
         self,
         prno: str,
-        to_status: Literal['E2A', 'REL'] = 'CRE',
+        to_status: Literal['E2A', 'REL'] = 'NEW',
         msg: str = None,
         msg_from: str = 'SYSTEM',
         push_data: dict | list = None,

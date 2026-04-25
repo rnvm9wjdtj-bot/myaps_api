@@ -1012,10 +1012,10 @@ async def get_peg_page(
         result = await db_query(db_name=db_name, model_or_tablename="v_peg", page_size=page_size, page_index=page_index)
         return standard_response(
             status_code=200,
-            success=result['success'],
-            message=result['message'],
-            data=result['data'],
-            meta=result['meta']
+            success=result.success,
+            message=result.message,
+            data=result.data,
+            meta=result.meta
         )
     except Exception as e:
         logger.error(f"获取匹配关系报表失败: {str(e)}")
@@ -1196,10 +1196,10 @@ async def create_workreport(
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_confirm", data_list=data)
         return standard_response(
             status_code=200,
-            success=result['success'],
-            message=result['message'],
-            data=result['data'] if return_data else None,
-            meta=result['meta']
+            success=result.success,
+            message=result.message,
+            data=result.data if return_data else None,
+            meta=result.meta
         )
     except Exception as e:
         logger.error(f"新增报工记录失败: {str(e)}")
