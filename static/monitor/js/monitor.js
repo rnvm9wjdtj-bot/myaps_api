@@ -4303,7 +4303,7 @@ function updateDeadLetterDisplay(data) {
     const tbody = document.getElementById('dead-letter-tbody');
     if (tbody) {
         if (deadLetters.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无死信</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无DL</td></tr>';
             return;
         }
         

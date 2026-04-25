@@ -1,4 +1,7 @@
 import json
+# 兼容旧版本 NumPy
+import numpy as np
+istitle = np.char.istitle
 import pandas as pd
 import time
 import threading
@@ -554,24 +557,31 @@ MINI_PEG_SQL = """
 class _ProductionDataCache:
     """生产数据缓存管理器"""
     
+    DEFAULT_WAIT_TIMEOUT: float = 30.0  # 等待队列超时时间（秒）
+    DEFAULT_LOAD_TIMEOUT: float = 120.0  # 缓存加载超时时间（秒）
+    SECONDS_PER_HOUR: int = 3600  # 每小时的秒数
+    DEFAULT_CACHE_EXPIRY_HOURS: int = 24  # 缓存过期时间（小时）
+    DEFAULT_PAGE_SIZE: int = 1000  # 数据库查询默认页大小
+    DEFAULT_PAGE_INDEX: int = 0  # 数据库查询默认页索引
+    FULL_LOAD_CONDITION: str = "1=1"  # 全量加载的 SQL 条件
+    PEG_DEMAND_TO_SUPPLY_KEY: str = "demand_to_supply"  # PEG 缓存中需求到供应的映射键
+    PEG_SUPPLY_TO_DEMAND_KEY: str = "supply_to_demand"  # PEG 缓存中供应到需求的映射键
+    FILTER_SUPPLY_NO: str = "`SupplyNo`"  # 数据库查询中的 SupplyNo 字段过滤
+    FILTER_DEMAND_NO: str = "`DemandNo`"  # 数据库查询中的 DemandNo 字段过滤
+    
     def __init__(self):
-        # 状态标志
         self._initialized = False
         self._is_loading = False
         self._load_lock = asyncio.Lock()
-        # [已移除] self._refresh_lock = threading.Lock()
         
-        # 等待队列（用于批次间等待机制）
         self._wait_queue: List[asyncio.Future] = []
         self._wait_lock = asyncio.Lock()
         
-        # 待合并的 supplynos（用于增量加载）
         self._pending_supplynos: set = set()
         self._pending_lock = asyncio.Lock()
         
-        # 配置
-        self.WAIT_TIMEOUT = 30.0  # 等待超时（秒）
-        self.LOAD_TIMEOUT = 120.0  # 加载超时（秒）
+        self.WAIT_TIMEOUT = self.DEFAULT_WAIT_TIMEOUT
+        self.LOAD_TIMEOUT = self.DEFAULT_LOAD_TIMEOUT
         
         # 加载完成信号（用于跨协程通知）
         self._loading_complete = asyncio.Event()
@@ -602,6 +612,9 @@ class _ProductionDataCache:
         # 解析后的有效缓存项（运行时计算）
         self._effective_cache_items: List[str] = []
         
+        # 缓存过期配置
+        self.CACHE_EXPIRY_HOURS = self.DEFAULT_CACHE_EXPIRY_HOURS  # 缓存过期时间（小时）
+        
         # 缓存数据
         self._cache: Dict[str, Dict[Any, Any]] = {
             CacheItem.SUPPLY_MO.value: {},
@@ -610,13 +623,23 @@ class _ProductionDataCache:
             CacheItem.PEG.value: {},
             CacheItem.MATERIAL.value: {}
         }
+        
+        # 缓存时间戳（记录每个缓存项的加载时间）
+        self._cache_timestamps: Dict[str, float] = {
+            CacheItem.SUPPLY_MO.value: 0.0,
+            CacheItem.ORDER_WC.value: 0.0,
+            CacheItem.DEMAND.value: 0.0,
+            CacheItem.PEG.value: 0.0,
+            CacheItem.MATERIAL.value: 0.0
+        }
     
         # 统计信息
         self._stats = {
             'total_hits': 0,
             'total_misses': 0,
             'total_refreshes': 0,
-            'cache_size': 0
+            'cache_size': 0,
+            'total_expired': 0
         }
 
 
@@ -779,13 +802,20 @@ class _ProductionDataCache:
         
         try:
             # 直接从数据库获取数据，不分页，因为 db_query 已经处理了分页
-            result: DbResult = await db_query(db_name=db_name, model_or_tablename=table_name, filter_string=filter_string, page_size=1000, page_index=0)
+            result: DbResult = await db_query(
+                db_name=db_name,
+                model_or_tablename=table_name,
+                filter_string=filter_string,
+                page_size=self.DEFAULT_PAGE_SIZE,
+                page_index=self.DEFAULT_PAGE_INDEX
+            )
             data_list = result.data
             
             for item in data_list:
                 process_item(item, cache)
             
             self._cache[cache_name] = cache
+            self._update_cache_timestamp(cache_name)  # 更新缓存时间戳
             return data_list
         except Exception as e:
             logger.fail("生产数据缓存", f"构建 {cache_name} 缓存", f"{e}")
@@ -896,8 +926,8 @@ class _ProductionDataCache:
         
         # 构建 peg 缓存结构
         peg_cache = {
-            'demand_to_supply': defaultdict(list),
-            'supply_to_demand': defaultdict(list)
+            self.PEG_DEMAND_TO_SUPPLY_KEY: defaultdict(list),
+            self.PEG_SUPPLY_TO_DEMAND_KEY: defaultdict(list)
         }
         
         # 构建 WHERE 子句
@@ -913,7 +943,11 @@ class _ProductionDataCache:
         # 执行 SQL 查询
         try:
             logger.info("生产数据缓存", "", f"开始执行 PEG SQL 查询，{'全量' if not supplynos else f'按需({len(supplynos)}个)'}模式")
-            result: DbResult = await db_exec_sql(db_name, sql, description="构建 PEG 缓存")
+            result: DbResult = await db_exec_sql(
+                db_name=db_name,
+                sql=sql,
+                description="构建 PEG 缓存"
+            )
             
             # 处理查询结果
             data_list = result.data
@@ -928,14 +962,15 @@ class _ProductionDataCache:
                     demand_nos.add(demand_no)
                     
                     # 构建双向索引
-                    if s_supply_no not in peg_cache['demand_to_supply'][demand_no]:
-                        peg_cache['demand_to_supply'][demand_no].append(s_supply_no)
-                    if demand_no not in peg_cache['supply_to_demand'][s_supply_no]:
-                        peg_cache['supply_to_demand'][s_supply_no].append(demand_no)
+                    if s_supply_no not in peg_cache[self.PEG_DEMAND_TO_SUPPLY_KEY][demand_no]:
+                        peg_cache[self.PEG_DEMAND_TO_SUPPLY_KEY][demand_no].append(s_supply_no)
+                    if demand_no not in peg_cache[self.PEG_SUPPLY_TO_DEMAND_KEY][s_supply_no]:
+                        peg_cache[self.PEG_SUPPLY_TO_DEMAND_KEY][s_supply_no].append(demand_no)
             
             # 更新缓存
             self._cache[CacheItem.PEG.value] = peg_cache
-            logger.success("生产数据缓存", "", f"PEG 缓存构建完成，共 {len(peg_cache['demand_to_supply'])} 条 DemandNo")
+            self._update_cache_timestamp(CacheItem.PEG.value)  # 更新缓存时间戳
+            logger.success("生产数据缓存", "", f"PEG 缓存加载: {len(peg_cache[self.PEG_DEMAND_TO_SUPPLY_KEY])} 条 DemandNo")
             
         except Exception as e:
             logger.fail("生产数据缓存", "", f"PEG 缓存构建失败: {e}")
@@ -1013,6 +1048,60 @@ class _ProductionDataCache:
     def _clear_pending_supplynos(self):
         """清除待加载的 supplynos"""
         self._pending_supplynos.clear()
+    
+    def _is_cache_expired(self, cache_name: str) -> bool:
+        """检查缓存是否过期
+        
+        Args:
+            cache_name: 缓存项名称
+            
+        Returns:
+            bool: True 表示缓存已过期，False 表示缓存有效
+        """
+        import time
+        current_time = time.time()
+        cache_time = self._cache_timestamps.get(cache_name, 0.0)
+        expiry_seconds = self.CACHE_EXPIRY_HOURS * self.SECONDS_PER_HOUR
+        
+        if cache_time == 0:
+            return True  # 未加载过，视为过期
+        
+        if current_time - cache_time > expiry_seconds:
+            return True  # 已过期
+        
+        return False  # 未过期
+    
+    def _update_cache_timestamp(self, cache_name: str):
+        """更新缓存时间戳
+        
+        Args:
+            cache_name: 缓存项名称
+        """
+        import time
+        self._cache_timestamps[cache_name] = time.time()
+    
+    def _clear_expired_cache(self):
+        """清理过期的缓存
+        
+        Returns:
+            int: 清理的缓存项数量
+        """
+        import time
+        expired_count = 0
+        current_time = time.time()
+        expiry_seconds = self.CACHE_EXPIRY_HOURS * self.SECONDS_PER_HOUR
+        
+        for cache_name in self._cache:
+            cache_time = self._cache_timestamps.get(cache_name, 0.0)
+            if cache_time > 0 and current_time - cache_time > expiry_seconds:
+                # 清理过期缓存
+                self._cache[cache_name].clear()
+                self._cache_timestamps[cache_name] = 0.0
+                expired_count += 1
+                self._stats['total_expired'] += 1
+                logger.info("生产数据缓存", "", f"清理过期缓存: {cache_name}")
+        
+        return expired_count
 
 
     async def establish_production_cache(self, supplynos: list, db_name: str = MYAPS_MAIN_DB, cache_items: List[Union[str, CacheItem]] = None):
@@ -1088,6 +1177,11 @@ class _ProductionDataCache:
 
     def get_supply_mo(self, supply_no: str) -> Dict:
         """获取工单数据（按供应号查找）"""
+        # 检查缓存是否过期
+        if self._is_cache_expired(CacheItem.SUPPLY_MO.value):
+            self._stats['total_misses'] += 1
+            return {}
+        
         data = self._cache[CacheItem.SUPPLY_MO.value].get(supply_no)
         if data:
             self._stats['total_hits'] += 1
@@ -1099,6 +1193,12 @@ class _ProductionDataCache:
 
     def batch_get_supply_mo(self, supplynos: List[str]) -> List[Dict]:
         """批量获取工单数据"""
+        # 检查缓存是否过期
+        if self._is_cache_expired(CacheItem.SUPPLY_MO.value):
+            for _ in supplynos:
+                self._stats['total_misses'] += 1
+            return []
+        
         results = []
         for supply_no in supplynos:
             data = self._cache[CacheItem.SUPPLY_MO.value].get(supply_no)
@@ -1112,6 +1212,11 @@ class _ProductionDataCache:
 
     def get_orderwc(self, supply_no: str) -> List[Dict]:
         """获取工序数据（按供应号查找）"""
+        # 检查缓存是否过期
+        if self._is_cache_expired(CacheItem.ORDER_WC.value):
+            self._stats['total_misses'] += 1
+            return []
+        
         data = self._cache[CacheItem.ORDER_WC.value].get(supply_no, [])
         if data:
             self._stats['total_hits'] += 1
@@ -1122,6 +1227,12 @@ class _ProductionDataCache:
 
     def batch_get_orderwc(self, supplynos: List[str]) -> List[Dict]:
         """批量获取工序数据（按供应号查找）"""
+        # 检查缓存是否过期
+        if self._is_cache_expired(CacheItem.ORDER_WC.value):
+            for _ in supplynos:
+                self._stats['total_misses'] += 1
+            return []
+        
         results = []
         for supply_no in supplynos:
             data_list = self._cache[CacheItem.ORDER_WC.value].get(supply_no, [])
@@ -1135,6 +1246,11 @@ class _ProductionDataCache:
 
     def get_demand(self, demand_no: str) -> List[Dict]:
         """获取需求数据"""
+        # 检查缓存是否过期
+        if self._is_cache_expired(CacheItem.DEMAND.value):
+            self._stats['total_misses'] += 1
+            return []
+        
         data = self._cache[CacheItem.DEMAND.value].get(demand_no, [])
         if data:
             self._stats['total_hits'] += 1
@@ -1145,6 +1261,12 @@ class _ProductionDataCache:
 
     def batch_get_demand(self, demandnos: List[str]) -> List[Dict]:
         """批量获取需求数据"""
+        # 检查缓存是否过期
+        if self._is_cache_expired(CacheItem.DEMAND.value):
+            for _ in demandnos:
+                self._stats['total_misses'] += 1
+            return []
+        
         results = []
         for demand_no in demandnos:
             data_list = self._cache[CacheItem.DEMAND.value].get(demand_no, [])
@@ -1158,7 +1280,11 @@ class _ProductionDataCache:
 
     def get_peg_by_demand(self, demand_no: str) -> List[str]:
         """根据 DemandNo 获取对应的 S_SupplyNo 列表"""
-        cache = self._cache[CacheItem.PEG.value]['demand_to_supply']
+        if self._is_cache_expired(CacheItem.PEG.value):
+            self._stats['total_misses'] += 1
+            return []
+        
+        cache = self._cache[CacheItem.PEG.value][self.PEG_DEMAND_TO_SUPPLY_KEY]
         data = cache.get(demand_no, [])
         if data:
             self._stats['total_hits'] += 1
@@ -1169,7 +1295,11 @@ class _ProductionDataCache:
 
     def get_peg_by_supply(self, supply_no: str) -> List[str]:
         """根据 S_SupplyNo 获取对应的 DemandNo 列表"""
-        cache = self._cache[CacheItem.PEG.value]['supply_to_demand']
+        if self._is_cache_expired(CacheItem.PEG.value):
+            self._stats['total_misses'] += 1
+            return []
+        
+        cache = self._cache[CacheItem.PEG.value][self.PEG_SUPPLY_TO_DEMAND_KEY]
         data = cache.get(supply_no, [])
         if data:
             self._stats['total_hits'] += 1
@@ -1180,7 +1310,14 @@ class _ProductionDataCache:
 
     def batch_get_peg_by_demand(self, demandnos: List[str]) -> Dict[str, List[str]]:
         """批量根据 DemandNo 获取 S_SupplyNo 列表"""
-        cache = self._cache[CacheItem.PEG.value]['demand_to_supply']
+        if self._is_cache_expired(CacheItem.PEG.value):
+            results = {}
+            for demand_no in demandnos:
+                results[demand_no] = []
+                self._stats['total_misses'] += 1
+            return results
+        
+        cache = self._cache[CacheItem.PEG.value][self.PEG_DEMAND_TO_SUPPLY_KEY]
         results = {}
         for demand_no in demandnos:
             data = cache.get(demand_no, [])
@@ -1194,7 +1331,14 @@ class _ProductionDataCache:
 
     def batch_get_peg_by_supply(self, supplynos: List[str]) -> Dict[str, List[str]]:
         """批量根据 S_SupplyNo 获取 DemandNo 列表"""
-        cache = self._cache[CacheItem.PEG.value]['supply_to_demand']
+        if self._is_cache_expired(CacheItem.PEG.value):
+            results = {}
+            for supply_no in supplynos:
+                results[supply_no] = []
+                self._stats['total_misses'] += 1
+            return results
+        
+        cache = self._cache[CacheItem.PEG.value][self.PEG_SUPPLY_TO_DEMAND_KEY]
         results = {}
         for supply_no in supplynos:
             data = cache.get(supply_no, [])
@@ -1208,6 +1352,11 @@ class _ProductionDataCache:
 
     def get_material(self, material_no: str) -> List[Dict]:
         """获取物料数据"""
+        # 检查缓存是否过期
+        if self._is_cache_expired(CacheItem.MATERIAL.value):
+            self._stats['total_misses'] += 1
+            return []
+        
         data = self._cache[CacheItem.MATERIAL.value].get(material_no)
         if data:
             self._stats['total_hits'] += 1
@@ -1219,6 +1368,12 @@ class _ProductionDataCache:
 
     def batch_get_material(self, materialnos: List[str]) -> List[Dict]:
         """批量获取物料数据"""
+        # 检查缓存是否过期
+        if self._is_cache_expired(CacheItem.MATERIAL.value):
+            for _ in materialnos:
+                self._stats['total_misses'] += 1
+            return []
+        
         results = []
         for material_no in materialnos:
             data = self._cache[CacheItem.MATERIAL.value].get(material_no)
@@ -1232,83 +1387,37 @@ class _ProductionDataCache:
 
     def get_cache_stats(self) -> Dict[str, Any]:
         """获取缓存统计信息"""
+        # 计算当前缓存大小
+        self._stats['cache_size'] = sum(
+            len(v) for v in self._cache.values() if isinstance(v, dict)
+        )
+        # 添加详细的缓存大小信息
         return {
             **self._stats,
             'cache_sizes': {
                 CacheItem.SUPPLY_MO.value: len(self._cache[CacheItem.SUPPLY_MO.value]),
                 CacheItem.ORDER_WC.value: len(self._cache[CacheItem.ORDER_WC.value]),
                 CacheItem.DEMAND.value: len(self._cache[CacheItem.DEMAND.value]),
-                CacheItem.PEG.value: len(self._cache[CacheItem.PEG.value]),
+                CacheItem.PEG.value: len(self._cache[CacheItem.PEG.value].get(self.PEG_DEMAND_TO_SUPPLY_KEY, {})),
                 CacheItem.MATERIAL.value: len(self._cache[CacheItem.MATERIAL.value])
-            }
+            },
+            'expiry_hours': self.CACHE_EXPIRY_HOURS,
+            'cache_timestamps': self._cache_timestamps
         }
 
 
 
-# V_SUPPLY_MO_SQL = """
-#     SELECT 
-#         s.MaterialNo,
-#         m.Description,
-#         m.Unit,
-#         -- m.Planner,
-#         -- m.GroupNo,
-#         -- m.PlanItem,
-#         -- m.FIFO,
-#         -- m.ABC,
-#         -- m.ExpDay,
-#         -- m.GRDay,
-#         -- m.Phantom,
-#         -- m.PhantomMin,
-#         -- g.Color,
-#         s.SupplyNo,
-#         s.ItemNo,
-#         s.MatVer,
-#         s.Type,
-#         s.Category,
-#         s.Status,
-#         -- s.Priority,
-#         s.Avail_Qty,
-#         d.Delay_Hour,
-#         s.Create_Date,
-#         o.DT_OrdStart,
-#         o.DT_OrdEnd,
-#         o.OrdTime,
-#         IFNULL(o.DT_OrdEnd + INTERVAL m.GRDay DAY, s.Avail_Date) AS Avail_Date,
-#         s.Avail_End_Date,
-#         s.DT_Req,
-#         IFNULL(p.Req_Date, s.DT_Req) AS Req_Date,
-#         TIMESTAMPDIFF(
-#             HOUR,
-#             o.DT_OrdEnd + INTERVAL m.GRDay DAY,
-#             IFNULL(p.Req_Date, s.DT_Req)
-#         ) AS RemainTime,
-#         s.VendorNo,
-#         -- s.Memo,
-#         -- s.Sys_Stamp,
-#         s.ApiEx_SN,
-#         s.ApiEx_ID,
-#         s.ApiEx_EntryID
-#     FROM t_supply s
-#     -- 利用主键：MaterialNo
-#     JOIN t_material m ON s.MaterialNo = m.MaterialNo AND m.Type = 'E'
-#     -- 预计算工单时间
-#     JOIN (
-#         SELECT 
-#             SupplyNo,
-#             MIN(DT_Start) AS DT_OrdStart,
-#             MAX(DT_End) AS DT_OrdEnd,
-#             TIMEDIFF(MAX(DT_End), MIN(DT_Start)) AS OrdTime
-#         FROM t_orderwc
-#         WHERE SupplyNo IN ({supplynos})
-#         GROUP BY SupplyNo
-#     ) o ON s.SupplyNo = o.SupplyNo
-#     LEFT JOIN t_groupcolor g ON m.GroupNo = g.GroupNo
-#     LEFT JOIN v_orderwc_delay_hour d ON s.SupplyNo = d.OrderNo
-#     LEFT JOIN v_peg_req_date_1st p ON s.SupplyNo = p.SupplyNo
-#     WHERE s.Type IN ('PL', 'MO')
-#     AND s.SupplyNo IN ({supplynos})
-#     ORDER BY s.SupplyNo;
-# """
+def async_aps_error_handler(operation_name: str):
+    def decorator(func):
+        async def wrapper(self, *args, **kwargs):
+            target_obj = args[0] if args else "未知"
+            try:
+                return await func(self, *args, **kwargs)
+            except Exception as e:
+                logger.fail(operation_name, target_obj, f"{operation_name}时发生错误：{e}")
+                raise
+        return wrapper
+    return decorator
 
 
 class ApsPayloadSponsor:
@@ -1319,6 +1428,7 @@ class ApsPayloadSponsor:
         Args:
             production_cache_items: 要缓存的生产数据项，默认所有项
         """
+        self._is_closed = False
 
         self._production_cache = _ProductionDataCache()
         if production_cache_items:
@@ -1344,7 +1454,41 @@ class ApsPayloadSponsor:
         max_workers = min(cpu_count * 5, 50)  # 最多50个线程
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
 
+    def __enter__(self):
+        return self
 
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
+    def close(self):
+        """关闭并释放资源"""
+        if self._is_closed:
+            return
+        
+        self._is_closed = True
+        
+        if hasattr(self, '_http_session_sync') and self._http_session_sync:
+            try:
+                self._http_session_sync.close()
+            except Exception:
+                pass
+        
+        if hasattr(self, '_executor') and self._executor:
+            try:
+                self._executor.shutdown(wait=False)
+            except Exception:
+                pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
+
+    @async_aps_error_handler("建立生产缓存")
     async def establish_production_cache(self, supplynos: List[str]) -> _ProductionDataCache:
         """
         建立生产缓存
@@ -1570,7 +1714,11 @@ class ApsPayloadSponsor:
     @classmethod
     async def get_new_pr_data(cls):
         try:
-            result: DbResult = await db_query(MYAPS_MAIN_DB, "v_supply", "`Type`='PR' AND `Status`='NEW'")
+            result: DbResult = await db_query(
+                db_name=MYAPS_MAIN_DB,
+                model_or_tablename="v_supply",
+                filter_string="`Type`='PR' AND `Status`='NEW'"
+            )
             return result.data
         except Exception as e:
             logger.fail("获取新PR数据", "", f"{e}")
@@ -1676,6 +1824,7 @@ class ApsPayloadSponsor:
         
         return material_list, cached_data, missing_materials
 
+    @async_aps_error_handler("查询物料信息")
     async def query_material(self, materialnos: str | list[str]) -> list:
         """
         异步查询物料信息（优先从缓存获取，缓存未命中则访问数据库并加入缓存）
@@ -1692,26 +1841,22 @@ class ApsPayloadSponsor:
         if missing_materials:
             materialnos_str = ','.join([f"'{m}'" for m in missing_materials])
             filter_string = f"`MaterialNo` IN ({materialnos_str})"
-            try:
-                response_json: DbResult = await db_query(
-                    db_name=MYAPS_MAIN_DB,
-                    model_or_tablename="t_material",
-                    select="MaterialNo, Free1, Free2, Free3",
-                    filter_string=filter_string
-                )
-                api_data = response_json.get('data', [])
-                
-                # 补充缓存
-                for item in api_data:
-                    material_no = item.get('materialno', '')
-                    if material_no:
-                        self._production_cache._cache[CacheItem.MATERIAL.value][material_no] = item
-                
-                # 合并结果
-                cached_data.extend(api_data)
-            except Exception as e:
-                error_msg = f"查询物料信息时发生数据库错误：{str(e)}"
-                logger.fail("查询物料信息", ','.join(missing_materials), error_msg)
+            response_json: DbResult = await db_query(
+                db_name=MYAPS_MAIN_DB,
+                model_or_tablename="t_material",
+                select="MaterialNo, Free1, Free2, Free3",
+                filter_string=filter_string
+            )
+            api_data = response_json.get('data', [])
+            
+            # 补充缓存
+            for item in api_data:
+                material_no = item.get('materialno', '')
+                if material_no:
+                    self._production_cache._cache[CacheItem.MATERIAL.value][material_no] = item
+            
+            # 合并结果
+            cached_data.extend(api_data)
         
         return cached_data
 
@@ -1769,6 +1914,7 @@ class ApsPayloadSponsor:
         return cached_data
 
 
+    @async_aps_error_handler("获取工单计划单详情")
     async def get_supplymo_detaildata(self, supplyno: str, get_prev_mo:bool=False, get_next_mo:bool=False, get_origin_so:bool=False):
         """
         异步获取工单的工序详情、及MTO销售订单信息
@@ -1803,15 +1949,12 @@ class ApsPayloadSponsor:
             return mo_data
         else:
             supply_response_json = await self.get_mo_by_supplyno(supplyno, db_name=MYAPS_MAIN_DB, prev_mo=get_prev_mo, next_mo=get_next_mo, origin_so=get_origin_so)
-            try:
-                if supply_response_json.get('success') != 0 and supply_response_json.get('data'):
-                    mo_data = supply_response_json['data'][0]
-                    self._production_cache._cache[CacheItem.SUPPLY_MO.value][supplyno] = mo_data
-                    return mo_data
-                else:
-                    logger.fail("获取工单计划单详情", supplyno, f"API返回错误: {supply_response_json.get('message', '未知错误')}")
-            except Exception as e:
-                logger.fail("获取工单计划单详情", supplyno, f"{str(e)}")
+            if supply_response_json.get('success') != 0 and supply_response_json.get('data'):
+                mo_data = supply_response_json['data'][0]
+                self._production_cache._cache[CacheItem.SUPPLY_MO.value][supplyno] = mo_data
+                return mo_data
+            else:
+                logger.fail("获取工单计划单详情", supplyno, f"API返回错误: {supply_response_json.get('message', '未知错误')}")
 
 
     @classmethod
@@ -1841,11 +1984,20 @@ class ApsPayloadSponsor:
                 prev_mo = []
                 if demands_data:
                     demands_no = ','.join([f"'{i['demandno']}'" for i in demands_data])
-                    peg_query_result: DbResult = await db_exec_sql(db_name=db_name, sql=MINI_PEG_SQL.format(where_string=f"p.DemandNO IN ({demands_no}) AND p.S_Type IN ('PL', 'MO')"), description=f"查询{demands_no}匹配的PL和MO")
+                    peg_query_result: DbResult = await db_exec_sql(
+                        db_name=db_name,
+                        sql=MINI_PEG_SQL.format(where_string=f"p.DemandNO IN ({demands_no}) AND p.S_Type IN ('PL', 'MO')"),
+                        description=f"查询{demands_no}匹配的PL和MO"
+                    )
                     if peg_query_result.data:
                         supplies_no = ','.join([f"'{i['s_supplyno']}'" for i in peg_query_result.data])
                         # prev_mo_query_result = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplynos=supplies_no), description=f"查询{supplies_no}的前置工单信息")
-                        prev_mo_query_result: DbResult = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", select="`SupplyNo`", filter_string=f"`SupplyNo` IN ({supplies_no})")
+                        prev_mo_query_result: DbResult = await db_query(
+                            db_name=db_name,
+                            model_or_tablename="v_supply_mo",
+                            select="`SupplyNo`",
+                            filter_string=f"`SupplyNo` IN ({supplies_no})"
+                        )
                         prev_mo = prev_mo_query_result.data
                 return prev_mo
 
@@ -1859,7 +2011,12 @@ class ApsPayloadSponsor:
                 if pegs_data:
                     demands_no = ','.join([f"'{i['demandno']}'" for i in pegs_data])
                     # next_mo_query_result = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplynos=demands_no), description=f"查询{mono}的后续置工单信息")
-                    next_mo_query_result: DbResult = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", select="`SupplyNo`", filter_string=f"`SupplyNo` IN ({demands_no})")
+                    next_mo_query_result: DbResult = await db_query(
+                        db_name=db_name,
+                        model_or_tablename="v_supply_mo",
+                        select="`SupplyNo`",
+                        filter_string=f"`SupplyNo` IN ({demands_no})"
+                    )
                     next_mo = next_mo_query_result.data
                 return next_mo
 
@@ -1867,15 +2024,22 @@ class ApsPayloadSponsor:
                 """
                 通过工单 supplyno 号查询销售订单
                 """
-                so_query_result: DbResult = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{so_demandno}' AND `Type`='SO'")
+                so_query_result: DbResult = await db_query(
+                    db_name=db_name,
+                    model_or_tablename="v_demand",
+                    filter_string=f"`DemandNo`='{so_demandno}' AND `Type`='SO'"
+                )
                 so_data = so_query_result.data
                 if so_data:
                     return so_data[0]
 
             db_name = db_name.replace(" ", "")
 
-            # result = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplynos=f"'{supplyno}'"), description=f"查询{supplyno}的工单信息")
-            result: DbResult = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=f"`SupplyNo`='{supplyno}'")
+            result: DbResult = await db_query(
+                db_name=db_name,
+                model_or_tablename="v_supply_mo",
+                filter_string=f"`SupplyNo`='{supplyno}'"
+            )
             
             if result.success and result.meta.get('total') == 1:  # 筛选到唯一的工单，则补充工序信息（v_orderwc）
                 result.data[0]['orderwc'] = await get_orderwc(mono=supplyno)
@@ -1895,6 +2059,7 @@ class ApsPayloadSponsor:
             raise
 
 
+    @async_aps_error_handler("获取需求数据")
     async def get_demand_datalist(self, demandno: str) -> List[Dict]:
         """
         异步获取需求信息（优先从缓存获取，缓存未命中则访问API并加入缓存）
@@ -1908,18 +2073,14 @@ class ApsPayloadSponsor:
         if result_data:
             return result_data
         
-        try:
-            filter_string = f"`DemandNo`='{demandno}'"
-            demand_response_json: DbResult = await db_query(db_name=MYAPS_MAIN_DB, model_or_tablename="v_demand", filter_string=filter_string)
-            api_data = demand_response_json.data
-            
-            if api_data:
-                self._production_cache._cache[CacheItem.DEMAND.value][demandno] = api_data
-            
-            return api_data
-        except Exception as e:
-            logger.fail("获取需求数据", demandno, f"{e}")
-            raise
+        filter_string = f"`DemandNo`='{demandno}'"
+        demand_response_json: DbResult = await db_query(db_name=MYAPS_MAIN_DB, model_or_tablename="v_demand", filter_string=filter_string)
+        api_data = demand_response_json.data
+        
+        if api_data:
+            self._production_cache._cache[CacheItem.DEMAND.value][demandno] = api_data
+        
+        return api_data
 
 
 
@@ -2090,14 +2251,14 @@ class EventResultPoster:
         """
         mono = mono or native_plno
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        memo = f"{now} {ce.RELEASE_SUCCESS.value} {msg_from}: '{msg}, {mono}, {_id}, {_entryid}' @ {native_plno}"
+        memo = f"{now} {ce.RELEASE_SUCCESS.value} {msg_from}: '{msg}' @ {native_plno}"
         
         logger.update("PL状态", native_plno, f"目标状态{to_status}，MO单号{mono}")
         
         response_json: MultiDbResult = await call_dbprocdure(
             db_names=self.db_name,
             procedure_name="SupplyConvertMOByE2A",
-            params_list=[[native_plno, mono, to_status, str(_id or ""), str(_entryid or ""), memo]]
+            params_list=[[native_plno, mono, to_status, str(_id or ""), str(_entryid or ""), memo[:255]]]
         )
         
         logger.info(f"更新PL状态响应：成功")
@@ -2133,8 +2294,8 @@ class EventResultPoster:
         memo = f"{now} {ce.RELEASE_FAILED.value} {msg_from}: '{msg}'"
         
         patch_data = {
-            'status': to_status,
-            'memo': memo[:255],
+            'Status': to_status,
+            'Memo': memo[:255],
         }
         
         response_json: MultiDbResult = await db_update_by_index(
@@ -2167,13 +2328,16 @@ class EventResultPoster:
         _entryid: str = None
     ):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        memo = f"{now} {ce.RELEASE_SUCCESS.value} {msg_from}: '{_code}, {_id}, {_entryid}' @ {rsno}"
+        memo = f"{now} {ce.RELEASE_SUCCESS.value} {msg_from}: '{msg}' @ {rsno}"
         
         logger.update("RS状态", rsno, f"目标状态{to_status}")
         
         patch_data = {
-            'status': to_status,
-            'memo': memo,
+            'Status': to_status,
+            'Memo': memo[:255],
+            'ApiEx_SN': _code or "",
+            'ApiEx_ID': _id or "",
+            'ApiEx_EntryID': _entryid or "",
         }
         
         response_json: MultiDbResult = await db_update_by_index(
@@ -2200,6 +2364,7 @@ class EventResultPoster:
     async def rs_release_failed(
         self,
         rsno: str,
+        to_status: Literal['NEW', 'CRE'] = 'CRE',
         msg: str = None,
         msg_from: str = 'SYSTEM',
         push_data: dict | list = None,
@@ -2215,7 +2380,8 @@ class EventResultPoster:
         memo = f"{now} {ce.RELEASE_FAILED.value} {msg_from}: '{msg}'"
 
         patch_data = {
-            'memo': memo,
+            'Status': to_status,
+            'Memo': memo[:255],
         }
         
         response_json: MultiDbResult = await db_update_by_index(
@@ -2239,49 +2405,76 @@ class EventResultPoster:
     @async_error_handler("PR发布成功")
     async def pr_release_success(
         self,
-        prno: str,
+        prno: Union[str, List[str]],
+        to_status: Literal['E2A', 'REL'] = 'E2A',
         msg: str = None,
         msg_from: str = 'SYSTEM',
         _code: str = None,
         _id: str = None,
         _entryid: str = None
     ):
+        # 处理 prno 参数，支持列表和逗号分隔的字符串
+        prno_list = []
+        if isinstance(prno, str):
+            # 处理逗号分隔的字符串
+            prno_list = [p.strip() for p in prno.split(',') if p.strip()]
+        elif isinstance(prno, list):
+            # 处理列表
+            prno_list = [p.strip() for p in prno if isinstance(p, str) and p.strip()]
+        
+        if not prno_list:
+            logger.warning("PR发布成功：未提供有效的PR编号")
+            return MultiDbResult(success=True, data={}, message="未提供有效的PR编号")
+        
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        memo = f"{now} {ce.RELEASE_SUCCESS.value} {msg_from}: '{_code}, {_id}, {_entryid}' @ {prno}"
-        logger.update("PR状态", prno, "")
+        results = {}
         
-        patch_data = {
-            'status': 'CRE',
-            'memo': memo[:255],
-            'apiex_sn': _code,
-            'apiex_id': _id,
-            'apiex_entryid': _entryid,
-        }
+        for p in prno_list:
+            memo = f"{now} {ce.RELEASE_SUCCESS.value} {msg_from}: '{msg}' @ {p}"
+            logger.update("PR状态", p, "")
+            
+            patch_data = {
+                'Status': to_status,
+                'Memo': memo[:255],
+                'ApiEx_SN': _code or "",
+                'ApiEx_ID': _id or "",
+                'ApiEx_EntryID': _entryid or "",
+            }
+            
+            response_json: MultiDbResult = await db_update_by_index(
+                db_names=self.db_name,
+                model_or_tablename="t_supply",
+                index_dict={"SupplyNo": p},
+                new_values_dict=patch_data,
+                not_found_behavior="skip"
+            )
+            
+            results[p] = response_json
+            
+            await self._collector.add_result(ExecutionResult(
+                success=True,
+                raw_data=p,
+                msg=f"{msg_from}: {msg}" if msg else None,
+                mono=_code
+            ))
         
-        response_json: MultiDbResult = await db_update_by_index(
-            db_names=self.db_name,
-            model_or_tablename="t_supply",
-            index_dict={"SupplyNo": prno},
-            new_values_dict=patch_data,
-            not_found_behavior="skip"
+        logger.info(f"更新PR状态响应：成功，共处理 {len(prno_list)} 个PR")
+        
+        # 合并结果
+        merged_result = MultiDbResult(
+            success=all(r.success for r in results.values()),
+            data=results,
+            message=f"成功处理 {len(prno_list)} 个PR"
         )
         
-        logger.info(f"更新PR状态响应：成功")
-        
-        await self._collector.add_result(ExecutionResult(
-            success=True,
-            raw_data=prno,
-            msg=f"{msg_from}: {msg}" if msg else None,
-            mono=_code
-        ))
-        
-        return response_json
+        return merged_result
 
 
     @async_error_handler("PR发布失败")
     async def pr_release_failed(
         self,
         prno: str,
+        to_status: Literal['E2A', 'REL'] = 'E2A',
         msg: str = None,
         msg_from: str = 'SYSTEM',
         push_data: dict | list = None,
@@ -2297,8 +2490,8 @@ class EventResultPoster:
         memo = f"{now} {ce.RELEASE_FAILED.value} {msg_from}: '{msg}'"
         
         patch_data = {
-            'status': 'NEW',
-            'memo': memo[:255],
+            'Status': to_status,
+            'Memo': memo[:255],
         }
         
         response_json: MultiDbResult = await db_update_by_index(

@@ -235,7 +235,7 @@ planner_email_reminder = QqEmailReminder(
     smtp_user="2982212683@qq.com",
     smtp_password="jyboujldhplddhdf",
     email_from="2982212683@qq.com",
-    email_to="2982212683@qq.com,fzc@yunchen.ltd",
+    email_to="610890130@qq.com",
 )
 
 

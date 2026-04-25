@@ -22,7 +22,7 @@ from .._base import (
     get_scheduler_minute, cron_task, CLIENT_LOGGER, CLIENT_SESSION, PROJECT_JSON_FILE,
     ApsPayloadSponsor, EventResultPoster, get_session, CacheItem,
     QqEmailReminder, AlertType, async_rate_limit, start_event_batch_reminder, finish_event_batch_reminder,
-    TSupply
+    TSupply, PLANNER_MAILS, ENGINEER_MAILS
 )
 
 
@@ -178,13 +178,12 @@ def create_custom_rs_push_model(_aps: ApsPayloadSponsor):
     return CustomRsPushModel
 
 
-planner_email_reminder = None
-# planner_email_reminder = QqEmailReminder(
-#     smtp_user="2982212683@qq.com",
-#     smtp_password="jyboujldhplddhdf",
-#     email_from="2982212683@qq.com",
-#     email_to="2982212683@qq.com,1312075034@QQ.com",
-# )
+planner_email_reminder = QqEmailReminder(
+    smtp_user="2982212683@qq.com",
+    smtp_password="jyboujldhplddhdf",
+    email_from="2982212683@qq.com",
+    email_to=PLANNER_MAILS,
+)
 
 
 @start_event_batch_reminder(reminder=planner_email_reminder)
@@ -237,7 +236,7 @@ async def batch_handle_pl_to_mo(supplyno_or_data_list: list[str | dict], _erp: E
                 await tplus_conn.push_rs(mdlist_or_supplyno=supplyno, tplus_mo_data_or_id=mo_data, pydantic_model=_CustomRsPushModel, _erp=_erp, _aps=_aps)
         except Exception as e:
             CLIENT_LOGGER.fail("处理PL类型变更", str(supplyno_or_data), str(e))
-            _erp.rs_release_failed(rsno=supplyno, msg=str(e))
+            await _erp.rs_release_failed(rsno=supplyno, msg=str(e))
 
     _aps = ApsPayloadSponsor(production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL])
     _CustomRsPushModel = create_custom_rs_push_model(_aps)
@@ -251,12 +250,27 @@ async def batch_handle_pl_to_mo(supplyno_or_data_list: list[str | dict], _erp: E
 @finish_event_batch_reminder(reminder=planner_email_reminder)
 async def batch_handle_pr_status_a2e(pr_data_list: list[dict], _erp: EventResultPoster, description="推送请购单至 T+"):
     """批量处理PR状态变更为A2E"""
-    _aps = ApsPayloadSponsor(production_cache_items=[CacheItem.DEMAND, CacheItem.MATERIAL])
+    CLIENT_LOGGER.info(f"开始处理PR状态变更为A2E，数据数量: {len(pr_data_list)}")
+    CLIENT_LOGGER.info(f"PR数据: {pr_data_list}")
     try:
         tplus_conn = get_tplus_conn()
-        await tplus_conn.push_pr(pr_data_list, _erp=_erp, _aps=_aps)
+        CLIENT_LOGGER.info("获取T+连接成功")
+        await tplus_conn.push_pr(pr_data_list, _erp=_erp)
+        CLIENT_LOGGER.info("推送请购单至T+成功")
     except Exception as e:
         CLIENT_LOGGER.fail("批量处理PR状态变更", str(pr_data_list), str(e))
+        import traceback
+        CLIENT_LOGGER.error(f"错误堆栈: {traceback.format_exc()}")
+        # 使用 supplyno 字段而不是 voucherCode 字段
+        try:
+            pr_nos = [p.get('supplyno') for p in pr_data_list if p.get('supplyno')]
+            if pr_nos:
+                await _erp.pr_release_failed(prno=pr_nos[0], msg=str(e))
+            else:
+                CLIENT_LOGGER.warning("无法获取PR编号，跳过失败处理")
+        except Exception as inner_e:
+            CLIENT_LOGGER.fail("处理PR失败时出错", str(inner_e))
+        
         
 
 

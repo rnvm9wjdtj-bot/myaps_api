@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 
 # from tortoise import Tortoise
-from core.settings import MAX_EVENTS_PER_SECOND, SCHEDULER_MINUTE
+from core.settings import MAX_EVENTS_PER_SECOND, SCHEDULER_MINUTE, PLANNER_MAILS, ENGINEER_MAILS
 from globalobjects.globalconst import OrderStatusEnum
 
 
@@ -248,7 +248,7 @@ def start_event_batch_reminder(reminder: Reminder = None, error_handler: Union[c
             elif 'event_data' in kwargs:
                 event_data = kwargs['event_data']
 
-            if reminder is not None:
+            if reminder is not None and reminder.email_to:
                 if event_data is not None:
                     if isinstance(event_data, list):
                         count = len(event_data)
@@ -395,7 +395,7 @@ def finish_event_batch_reminder(description: str = None, reminder: Reminder = No
                 notification = _erp.format_notification(actual_description)
                 CLIENT_LOGGER.info(f"通知内容: {notification}")
                 
-                if reminder is not None:
+                if reminder is not None and reminder.email_to:
                     await reminder.remind(notification)
             
             return summary

@@ -34,6 +34,29 @@ LOG_RETENTION = int(os.getenv("LOG_RETENTION", 5))
 SQLITE_FILE = os.getenv("SQLITE_FILE", "").replace(".sqlite3", "").strip() or "local_data"
 
 
+PROTOCOL = os.getenv("PROTOCOL", "http://")
+HOST = os.getenv("HOST", "0.0.0.0")
+BASE_PORT = int(os.getenv("PORT", 8000))
+START_MODE = os.getenv("START_MODE", "")
+
+if START_MODE == "direct":
+    PORT = BASE_PORT + 2
+else:
+    PORT = BASE_PORT
+
+# 使用127.0.0.1代替localhost，避免DNS解析问题，提高连接稳定性
+THIS_BASE_URL = PROTOCOL + "127.0.0.1:" + str(PORT)
+
+
+PLANNER_MAILS = os.getenv("PLANNER_MAILS", "")
+ENGINEER_MAILS = os.getenv("ENGINEER_MAILS", "")
+
+
+# 事件流量控制
+MAX_EVENTS_BATCH_SIZE = max(1, int(os.getenv("MAX_EVENTS_BATCH_SIZE") or 1))
+MAX_EVENTS_PER_SECOND = max(1, int(os.getenv("MAX_EVENTS_PER_SECOND") or 1))
+
+
 # 监控阈值配置
 MONITOR_THRESHOLDS = {
     # 资源监控阈值
@@ -68,21 +91,6 @@ RESOURCE_CLEANUP_CONFIG = {
     "interval": 300,  # 资源清理间隔（秒）
     "memory_threshold": 600.0,  # 触发清理的内存阈值（MB）
 }
-
-PROTOCOL = os.getenv("PROTOCOL", "http://")
-HOST = os.getenv("HOST", "0.0.0.0")
-BASE_PORT = int(os.getenv("PORT", 8000))
-START_MODE = os.getenv("START_MODE", "")
-
-if START_MODE == "direct":
-    PORT = BASE_PORT + 2
-else:
-    PORT = BASE_PORT
-
-# 使用127.0.0.1代替localhost，避免DNS解析问题，提高连接稳定性
-THIS_BASE_URL = PROTOCOL + "127.0.0.1:" + str(PORT)
-
-
 
 
 
@@ -125,6 +133,3 @@ REDIS_PORT = int(os.getenv("REDIS_PORT") or json_env_config.get("REDIS_PORT") or
 REDIS_DB = int(os.getenv("REDIS_DB") or json_env_config.get("REDIS_DB") or 0)
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD") or json_env_config.get("REDIS_PASSWORD") or ""
 
-# 事件流量控制
-MAX_EVENTS_BATCH_SIZE = max(1, int(os.getenv("MAX_EVENTS_BATCH_SIZE") or 1))
-MAX_EVENTS_PER_SECOND = max(1, int(os.getenv("MAX_EVENTS_PER_SECOND") or 1))

@@ -982,7 +982,6 @@ class TplusConnection(BaseConnection):
     async def push_pr(
         self,
         data_list: list[dict],
-        _aps: ApsPayloadSponsor,
         _erp: EventResultPoster,
         pydantic_model:PydanticModel=PrPushModel):
         """
@@ -993,8 +992,8 @@ class TplusConnection(BaseConnection):
             endpoint = PrApproveInterface.endpoint
             # payload = {"param": {'voucherID': tplus_pr_id}}
             payload = {"param": {'voucherCode': tplus_pr_code}}
-            response = await self._post(endpoint=endpoint, data=payload)
-            response_json = response.json()
+            response_json = await self._post(endpoint=endpoint, data=payload)
+            # response_json = response.json()
             if str(response_json['code']) == '0':
                 logger.success("审批请购单", tplus_pr_code)
             else:
@@ -1006,25 +1005,29 @@ class TplusConnection(BaseConnection):
         #     if not data_list:
         #         logger.debug("没有新的请购单数据")
         #         return
-
-        agg_data_list = await _aps.aggregate_pr_data(pr_data_list=data_list)
-        tplus_pr_data = pydantic_model(data=agg_data_list).model_dump(exclude_none=True)
-        payload = {"dto": tplus_pr_data}
-        # logger.debug(f"向 T+ 推送请购单，发送数据：{json.dumps(payload, ensure_ascii=False)}")
-        endpoint = PrCreateInterface.endpoint
-        response = await self._post(endpoint=endpoint, data=payload)
-        pr_push_response_json = response.json()
-        if str(pr_push_response_json['code']) == '0':
-            tplus_pr_id = pr_push_response_json['data'].get('ID')
-            tplus_pr_code = pr_push_response_json['data'].get('Code')
-            for _ in data_list:
-                await _erp.pr_release_success(prno=_['supplyno'], msg=pr_push_response_json['message'], msg_from='T+', _code=tplus_pr_code, _id=tplus_pr_id)
+        try:
+            # 转换为 T+ 格式
+            agg_data_list = await ApsPayloadSponsor.aggregate_pr_data(pr_data_list=data_list)
+            tplus_pr_data = pydantic_model(data=agg_data_list).model_dump(exclude_none=True)
+            payload = {"dto": tplus_pr_data}
+            endpoint = PrCreateInterface.endpoint
+            pr_push_response_json = await self._post(endpoint=endpoint, data=payload)
+            # pr_push_response_json = response.json()
+            if str(pr_push_response_json['code']) == '0':
+                tplus_pr_id = pr_push_response_json['data'].get('ID')
+                tplus_pr_code = pr_push_response_json['data'].get('Code')
+                for _ in data_list:
+                    await _erp.pr_release_success(prno=_['supplyno'], msg=pr_push_response_json['message'], msg_from='T+', _code=tplus_pr_code, _id=tplus_pr_id)
+                
+                # 审批请购单
+                await approve_pr(tplus_pr_code=tplus_pr_code)
             
-            # 审批请购单
-            await approve_pr(tplus_pr_code=tplus_pr_code)
-        
-        else:
-            tasks = [_erp.pr_release_failed(prno=item['supplyno'], msg=pr_push_response_json['message'], msg_from='T+') for item in data_list]
+            else:
+                tasks = [_erp.pr_release_failed(prno=item['supplyno'], msg=pr_push_response_json['message'], msg_from='T+') for item in data_list]
+                await asyncio.gather(*tasks)
+        except Exception as e:
+            logger.fail("推送请购单", str(e))
+            tasks = [asyncio.create_task(_erp.pr_release_failed(prno=item['supplyno'], msg=str(e), msg_from='T+')) for item in data_list]
             await asyncio.gather(*tasks)
 
 
@@ -1035,8 +1038,8 @@ class TplusConnection(BaseConnection):
         """
         endpoint = PrDeleteInterface.endpoint
         payload = {"param": {'voucherCode': tplus_pr_code}}
-        response = await self._post(endpoint=endpoint, data=payload)
-        response_json = await response.json()
+        response_json = await self._post(endpoint=endpoint, data=payload)
+        # response_json = await response.json()
         if str(response_json['code']) == '0':
             logger.success("删除请购单", tplus_pr_code)
         else:

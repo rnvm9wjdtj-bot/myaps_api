@@ -90,24 +90,13 @@ if __name__ == "__main__":
     import traceback
     
     try:
-        # 配置uvicorn日志格式，与我们的日志系统格式一致
         from uvicorn.config import LOGGING_CONFIG
-        LOGGING_CONFIG['formatters']['default']['fmt'] = '%(asctime)s - %(levelname)s - %(message)s'
-        # 精简访问日志格式，只包含必要信息
-        LOGGING_CONFIG['formatters']['access']['fmt'] = '%(asctime)s - %(levelname)s - %(client_addr)s - "%(request_line)s" %(status_code)s'
-        
-        # 启用访问日志处理器
-        # 恢复默认的访问日志处理器
-        if 'access' not in LOGGING_CONFIG['handlers']:
-            LOGGING_CONFIG['handlers']['access'] = {
-                'class': 'logging.StreamHandler',
-                'formatter': 'access',
-                'stream': 'ext://sys.stdout',
-            }
-        LOGGING_CONFIG['loggers']['uvicorn.access'] = {
-            'handlers': ['access'],
-            'level': 'INFO',
-            'propagate': False,
+        # 清空所有处理器，禁用uvicorn默认日志
+        LOGGING_CONFIG['handlers'] = {}
+        LOGGING_CONFIG['loggers'] = {
+            'uvicorn': {'handlers': [], 'level': 'CRITICAL', 'propagate': False},
+            'uvicorn.access': {'handlers': [], 'level': 'CRITICAL', 'propagate': False},
+            'uvicorn.error': {'handlers': [], 'level': 'CRITICAL', 'propagate': False},
         }
         
         print("Starting application...")
