@@ -8,6 +8,7 @@ from socket import MsgFlag
 from typing import Literal, List, Dict, Any, Optional, Union
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
+from pydantic import BaseModel as PydanticModel
 
 # from tortoise import Tortoise
 from core.settings import MAX_EVENTS_PER_SECOND, SCHEDULER_MINUTE, PLANNER_MAILS, ENGINEER_MAILS
@@ -200,76 +201,160 @@ def sync_rate_limit(rate: int = None):
 
 
 #################################################################################
-# 公共装饰器
+# 公共装饰器 及 相关逻辑
 #################################################################################
+# def aaaaa(event_data_list: List[Dict], cache_items: List[CacheItem] = None, single_event_data_handler: callable = None, pydantic_model_factory: callable = None):
+#     async def when_start_handle_pl_status_a2e():
+#         """当PL状态变为A2E时，执行处理函数"""
+#         supplynos = [item["supplyno"] for item in event_data_list]
+#         TSupply.objects.filter(supplyno__in=supplynos).update(memo=" 📤 正在推送至 T+ ...")
 
-def start_event_batch_reminder(reminder: Reminder = None, error_handler: Union[callable, str] = None, final_handler: callable = None):
+        
+#         _aps = ApsPayloadSponsor(production_cache_items=cache_items)
+#         cache = await _aps.establish_production_cache(supplynos=supplynos)
+#         pydantic_model = pydantic_model_factory(_aps)
+#         tasks = [single_event_data_handler(item, _aps, pydantic_model) for item in event_data_list]
+#         results = await asyncio.gather(*tasks, return_exceptions=True)
+
+
+#     return when_start_handle_pl_status_a2e
+
+
+
+async def _execute_handler(handler: Union[callable, str], handler_name, event_data_list: List[Dict], _erp: EventResultPoster, *args, **kwargs):
+    """执行回调处理器
+    
+    Args:
+        handler: 回调处理器（可调用对象或字符串）
+        handler_name: 处理器名称（用于日志）
+        event_data_list: 事件数据列表
+        _erp: EventResultPoster 实例
+        *args, **kwargs: 额外参数
     """
-    异步函数执行提示装饰器
+    if isinstance(handler, str):
+        # 从 _erp 中查找方法
+        if hasattr(_erp, handler):
+            method = getattr(_erp, handler, None)
+            if not method:
+                CLIENT_LOGGER.warning_msg(f"_erp 中 {handler} 方法不存在")
+                return
+            if not callable(method):
+                CLIENT_LOGGER.warning_msg(f"{handler} 不是可调用对象")
+                return
+            try:
+                if inspect.iscoroutinefunction(method):
+                    await method(event_data_list, *args, **{k: v for k, v in kwargs.items() if k != '_erp'})
+                else:
+                    method(event_data_list, *args, **{k: v for k, v in kwargs.items() if k != '_erp'})
+                CLIENT_LOGGER.info(f"已执行 _erp.{handler}")
+            except Exception as e:
+                CLIENT_LOGGER.fail(f"执行 _erp.{handler} 失败", str(e))
+        else:
+            CLIENT_LOGGER.warning_msg(f"_erp 中不存在 {handler} 方法")
+    elif callable(handler):
+        try:
+            if inspect.iscoroutinefunction(handler):
+                await handler(event_data_list, *args, **{k: v for k, v in kwargs.items() if k != '_erp'})
+            else:
+                handler(event_data_list, *args, **{k: v for k, v in kwargs.items() if k != '_erp'})
+            CLIENT_LOGGER.info(f"已执行 {handler.__name__}")
+        except Exception as e:
+            CLIENT_LOGGER.fail(f"执行 {handler.__name__} 失败", str(e))
+    else:
+        CLIENT_LOGGER.warning_msg(f"{handler} 不是可调用对象")
 
+
+def event_batch_handler(
+    reminder: Reminder = None,
+    start_handler: callable = None,
+    final_handler: callable = None,
+    error_handler: Union[callable, str] = None,
+    description: str = None
+):
+    """
+    事件批处理装饰器（整合开始通知、结果收集、结束通知）
+    
     用法:
-        @event_batch_start_reminder()
-        async def batch_handle_pl_status_a2e(event_data: List[Dict]):
-            ...
-
-        @event_batch_start_reminder(reminder=qq_email_reminder)
-        async def batch_handle_pl_status_a2e(event_data: List[Dict]):
-            ...
-
-    参数:
-        reminder: Reminder 实例，函数开始运行时将调用其 remind 方法发送通知
-        error_handler: 可选的错误处理函数或方法名
-                      - 如果是字符串，如 "some_error_method"，将调用对应方法
-                      - 如果是可调用对象，签名应为 func(exception, *args, **kwargs)
-                      用于处理被装饰函数中未被捕获的异常
-        final_handler: 可选的最终回调函数，在函数执行完成后调用
-                      签名应为 func(result, *args, **kwargs) 或 async func(result, *args, **kwargs)
+        @event_batch_handler(reminder=planner_email_reminder, final_handler=my_final_handler, start_handler=my_start_handler)
+        async def batch_handle_pl_status_a2e(event_data: List[Dict], description="PL 单据下达", _erp=None):
+            @async_rate_limit()
+            async def handle_pl_status_a2e(item):
+                try:
+                    # 业务逻辑
+                    await _erp.pl_release_success(...)
+                except Exception as e:
+                    await _erp.pl_release_failed(...)
+            
+            tasks = [handle_pl_status_a2e(item) for item in event_data]
+            await asyncio.gather(*tasks, return_exceptions=True)
+    
+    参数说明:
+        reminder: 通知发送器，用于发送开始/结束通知
+        error_handler: 异常处理回调，签名: func(exception, *args, **kwargs)；若为字符串，则从 _erp 中查找同名方法
+        final_handler: 最终回调，签名: func(event_data_list, *args, **kwargs)  # 第一个参数是事件数据列表；若为字符串，则从 _erp 中查找同名方法
+        start_handler: 开始回调，签名: func(event_data_list, *args, **kwargs)  # 第一个参数是事件数据列表；若为字符串，则从 _erp 中查找同名方法
+        description: 任务描述，用于通知内容
     """
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, **kwargs):
             start_time = time.time()
-            event_data = None
-            description = kwargs.get('description', None)
-            if description is None:
-                try:
-                    sig = inspect.signature(func)
-                    # 使用 bind_partial 绑定参数，避免缺少参数导致绑定失败
-                    bound_args = sig.bind_partial(*args, **kwargs)
-                    bound_args.apply_defaults()
-                    description = bound_args.arguments.get('description')
-                except:
-                    pass
-            if description is None:
-                description = func.__name__
-
-            if args and len(args) > 0:
-                event_data = args[0]
-            elif 'event_data' in kwargs:
-                event_data = kwargs['event_data']
-
-            if reminder is not None and reminder.email_to:
-                if event_data is not None:
-                    if isinstance(event_data, list):
-                        count = len(event_data)
-                        require_time_sec = 30 + count * 2 / MAX_EVENTS_PER_SECOND    # 预计耗时，单位秒，这个公式没什么道理
-                        require_time_min = f"{int(require_time_sec / 60)} 分 {int(require_time_sec % 60)} 秒"
-                        content = f"开始【{description}】，将处理【{count}】条数据，预计耗时【{require_time_min}】"
-                    else:
-                        content = f"开始【{description}】，处理数据：{str(event_data)[:1024]}"
-                else:
-                    content = f"开始【{description}】"
-
-                content += f"\n 🚩 在收到完成提示前请耐心等待，⚠️ 请勿进行其他操作"
-                await reminder.remind(content)
-
+            event_data_list = None
             pending_exception = None
             result = None
+            
+            # 1. 提取 description
+            actual_description = description
+            if not actual_description:
+                actual_description = kwargs.get('description')
+                if actual_description is None:
+                    try:
+                        sig = inspect.signature(func)
+                        bound_args = sig.bind_partial(*args, **kwargs)
+                        bound_args.apply_defaults()
+                        actual_description = bound_args.arguments.get('description')
+                    except:
+                        pass
+                if actual_description is None:
+                    actual_description = func.__name__
+            
+            # 2. 提取 event_data_list
+            if args and len(args) > 0:
+                event_data_list = args[0]
+            elif 'event_data' in kwargs:
+                event_data_list = kwargs['event_data']
+            
+            # 3. 创建并注入 _erp
+            _erp = EventResultPoster()
+            kwargs['_erp'] = _erp
+            
+            # 4. 执行 start_handler
+            if start_handler is not None:
+                # 从 kwargs 中移除 _erp，避免参数重复
+                execute_kwargs = {k: v for k, v in kwargs.items() if k != '_erp'}
+                await _execute_handler(start_handler, "start_handler", event_data_list, _erp, *args, **execute_kwargs)
+            
+            # 5. 发送开始通知
+            if reminder is not None and reminder.email_to:
+                if event_data_list is not None:
+                    if isinstance(event_data_list, list):
+                        count = len(event_data_list)
+                        require_time_sec = 30 + count * 2 / MAX_EVENTS_PER_SECOND
+                        require_time_min = f"{int(require_time_sec / 60)} 分 {int(require_time_sec % 60)} 秒"
+                        content = f"开始【{actual_description}】，将处理【{count}】条数据，预计耗时【{require_time_min}】"
+                    else:
+                        content = f"开始【{actual_description}】，处理数据：{str(event_data_list)[:1024]}"
+                else:
+                    content = f"开始【{actual_description}】"
+                
+                content += f"\n 🚩 在收到完成提示前请耐心等待，⚠️ 请勿进行其他操作"
+                await reminder.remind(content)
+            
+            # 6. 执行被装饰函数
             try:
                 result = await func(*args, **kwargs)
-                return result
             except Exception as e:
-                CLIENT_LOGGER.error(f"{description} 执行出错: {str(e)}")
+                CLIENT_LOGGER.error(f"{actual_description} 执行出错: {str(e)}")
                 if error_handler is not None:
                     CLIENT_LOGGER.info(f"尝试使用 {error_handler} 进行错误捕获处理。。。")
                     if isinstance(error_handler, str):
@@ -286,9 +371,9 @@ def start_event_batch_reminder(reminder: Reminder = None, error_handler: Union[c
                         else:
                             try:
                                 if inspect.iscoroutinefunction(error_method):
-                                    await error_method(msg=str(e), msg_from="API")
+                                    await error_method(msg=str(e))
                                 else:
-                                    error_method(msg=str(e), msg_from="API")
+                                    error_method(msg=str(e))
                                 CLIENT_LOGGER.info(f"已使用 {error_handler} 完成捕获处理")
                             except Exception as inner_e:
                                 CLIENT_LOGGER.fail(f"使用 {error_handler} 处理异常", str(inner_e))
@@ -310,95 +395,31 @@ def start_event_batch_reminder(reminder: Reminder = None, error_handler: Union[c
                 else:
                     pending_exception = e
             finally:
-                end_time = time.time()
-                execution_time = end_time - start_time
-                log_message = f"{description} 执行完成，耗时: {execution_time:.2f} 秒"
-                CLIENT_LOGGER.debug(log_message)
+                # 6. 汇总结果
+                summary = _erp.get_summary()
+                execution_time = time.time() - start_time
+                # 确保 summary 是可序列化的字典
+                summary_dict = summary.to_dict() if hasattr(summary, 'to_dict') else summary
+                CLIENT_LOGGER.info(f"{actual_description} 执行完成，耗时: {execution_time:.2f} 秒，汇总结果: {json.dumps(summary_dict, ensure_ascii=False)}")
                 
-                # 调用最终回调函数
+                # 7. 发送结束通知
+                if reminder is not None and reminder.email_to:
+                    notification = _erp.format_notification(actual_description)
+                    CLIENT_LOGGER.info(f"通知内容: {notification}")
+                    await reminder.remind(notification)
+                
+                # 8. 执行 final_handler
                 if final_handler is not None:
-                    if callable(final_handler):
-                        try:
-                            if inspect.iscoroutinefunction(final_handler):
-                                await final_handler(result, *args, **kwargs)
-                            else:
-                                final_handler(result, *args, **kwargs)
-                            CLIENT_LOGGER.info(f"已使用 {final_handler.__name__} 完成最终回调")
-                        except Exception as inner_e:
-                            CLIENT_LOGGER.fail(f"使用 {final_handler.__name__} 执行最终回调", str(inner_e))
-                    else:
-                        CLIENT_LOGGER.warning_msg(f"{final_handler} 为不可调用对象")
-
+                    # 从 kwargs 中移除 _erp，避免参数重复
+                    execute_kwargs = {k: v for k, v in kwargs.items() if k != '_erp'}
+                    await _execute_handler(final_handler, "final_handler", event_data_list, _erp, *args, **execute_kwargs)
+            
+            # 9. 重新抛出未处理的异常
             if pending_exception is not None:
                 raise pending_exception
-
-        return wrapper
-    return decorator
-
-
-def finish_event_batch_reminder(description: str = None, reminder: Reminder = None):
-    """
-    带结果收集的装饰器，用于结果汇总
-
-    用法:
-        @event_batch_finish_reminder(reminder=qq_email_reminder)
-        async def batch_handle_pl_status_a2e(event_data: List[Dict], description="PL 单据下达", _erp=None):
-            @async_rate_limit()
-            async def handle_pl_status_a2e(item):
-                try:
-                    # ... 业务逻辑
-                    pass
-                except Exception as e:
-                    # 直接调用 _erp 方法记录错误
-                    await _erp.pl_release_failed_async(msg=str(e), msg_from="API")
-                    return
-
-            tasks = [handle_pl_status_a2e(item) for item in event_data]
-            await asyncio.gather(*tasks, return_exceptions=True)
-
-    参数:
-        description: 任务描述，用于日志和通知。如果为 None，则从被装饰函数的 description 参数提取
-        reminder: 可选的 Reminder 实例，执行完成时将发送通知
-
-    注意:
-        被装饰的函数需要接受 _erp 参数
-    """
-    def decorator(func):
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            # 先获取 description
-            actual_description = description
-            if not actual_description:
-                actual_description = kwargs.get('description', None)
-                if actual_description is None:
-                    try:
-                        sig = inspect.signature(func)
-                        # 使用 bind_partial 绑定原始参数，避免缺少 _erp 参数导致绑定失败
-                        bound_args = sig.bind_partial(*args, **kwargs)
-                        bound_args.apply_defaults()
-                        actual_description = bound_args.arguments.get('description')
-                    except:
-                        pass
-                if actual_description is None:
-                    actual_description = func.__name__
-            
-            # 然后创建并注入 _erp
-            _erp = EventResultPoster()
-            kwargs['_erp'] = _erp
-            
-            try:
-                result = await func(*args, **kwargs)
-            finally:
-                # 使用之前获取的 actual_description
-                summary = _erp.get_summary()     
-                CLIENT_LOGGER.info(f"{actual_description} 执行完成，汇总结果: {json.dumps(summary, ensure_ascii=False)}")
-                notification = _erp.format_notification(actual_description)
-                CLIENT_LOGGER.info(f"通知内容: {notification}")
-                
-                if reminder is not None and reminder.email_to:
-                    await reminder.remind(notification)
             
             return summary
+        
         return wrapper
     return decorator
 

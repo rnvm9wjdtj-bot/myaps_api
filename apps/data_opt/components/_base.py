@@ -2085,7 +2085,37 @@ class ApsPayloadSponsor:
 
 
 @dataclass
+class BatchSummary:
+    """批处理执行结果汇总"""
+    batch_id: str
+    total: int
+    success: int
+    failed: int
+    total_time_sec: float
+    avg_time_per_item_sec: float
+    details: List[Dict[str, Any]]
+    failed_details: List[Dict[str, Any]]
+    failed_by_msg: Dict[str, int]
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            "batch_id": self.batch_id,
+            "total": self.total,
+            "success": self.success,
+            "failed": self.failed,
+            "total_time_sec": self.total_time_sec,
+            "avg_time_per_item_sec": self.avg_time_per_item_sec,
+            "details": self.details,
+            "failed_details": self.failed_details,
+            "failed_by_msg": self.failed_by_msg
+        }
+
+
+
+@dataclass
 class ExecutionResult:
+    """执行结果"""
     success: bool
     raw_data: Any = None
     msg: str = None
@@ -2110,7 +2140,7 @@ class _ResultCollector:
             self.results.append(result)
     
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> BatchSummary:
         success_count = sum(1 for r in self.results if r.success)
         total_time = time.time() - self.start_time
         failed_results = [r for r in self.results if not r.success]
@@ -2153,23 +2183,23 @@ class _ResultCollector:
         # 按错误信息升序排序
         failed_by_msg = dict(sorted(failed_by_msg.items(), key=lambda x: x[0]))
         
-        return {
-            "batch_id": self.batch_id,
-            "total": len(self.results),
-            "success": success_count,
-            "failed": len(self.results) - success_count,
-            "total_time_sec": round(total_time, 2),
-            "avg_time_per_item_sec": round(total_time / len(self.results), 2) if self.results else 0,
-            "details": details,
-            "failed_details": failed_details,
-            "failed_by_msg": failed_by_msg
-        }
+        return BatchSummary(
+            batch_id=self.batch_id,
+            total=len(self.results),
+            success=success_count,
+            failed=len(self.results) - success_count,
+            total_time_sec=round(total_time, 2),
+            avg_time_per_item_sec=round(total_time / len(self.results), 2) if self.results else 0,
+            details=details,
+            failed_details=failed_details,
+            failed_by_msg=failed_by_msg
+        )
     
     def format_notification(self, description: str = "任务") -> str:
         summary = self.get_summary()
         
         # 转换总耗时为友好格式
-        total_seconds = summary['total_time_sec']
+        total_seconds = summary.total_time_sec
         if total_seconds < 60:
             time_str = f"{total_seconds:.1f} 秒"
         elif total_seconds < 3600:
@@ -2181,18 +2211,18 @@ class _ResultCollector:
         
         notification = (
             f"【{description}】执行完成！\n"
-            f"批次ID: {summary['batch_id']}\n"
-            f"总计处理: {summary['total']} 条\n"
-            f"\t✅ 成功: {summary['success']} 条\n"
-            f"\t🚫 失败: {summary['failed']} 条\n"
+            f"批次ID: {summary.batch_id}\n"
+            f"总计处理: {summary.total} 条\n"
+            f"\t✅ 成功: {summary.success} 条\n"
+            f"\t🚫 失败: {summary.failed} 条\n"
             f"总耗时: {time_str}\n"
-            f"平均每条: {summary['avg_time_per_item_sec']} 秒"
+            f"平均每条: {summary.avg_time_per_item_sec} 秒"
         )
         
-        if summary.get('failed_by_msg'):
+        if summary.failed_by_msg:
             notification += "\n\n📊失败原因汇总\n"
-            for error_msg, count in summary['failed_by_msg'].items():
-                notification += f"\t🔴 {error_msg}: 【{count}】 条\n"
+            for error_msg, count in summary.failed_by_msg.items():
+                notification += f"\t{error_msg}: {count} 条\n"
         
         return notification
 

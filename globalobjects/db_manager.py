@@ -292,6 +292,37 @@ class DbManager:
         self.batch_size_history = []
         self.batch_size_adjustment_interval = 10  # 每10次操作调整一次
 
+    async def _get_valid_connection(self):
+        """
+        获取并检查数据库连接的有效性
+        
+        Returns:
+            有效的数据库连接对象
+            
+        Raises:
+            DbConnectionError: 如果连接无效
+        """
+        # 获取数据库连接
+        conn = Tortoise.get_connection(self.connection_name)
+        
+        # 检查连接是否有效
+        if conn is None:
+            raise DbConnectionError("获取数据库连接失败：连接对象为None")
+        
+        # 检查连接是否已关闭
+        if hasattr(conn, 'closed') and conn.closed:
+            raise DbConnectionError("获取数据库连接失败：连接已关闭")
+        
+        # 检查连接是否有execute_query方法
+        if not hasattr(conn, 'execute_query'):
+            raise DbConnectionError("获取数据库连接失败：连接对象不支持execute_query方法")
+        
+        # 检查连接是否有_execute_command方法（避免NoneType错误）
+        if hasattr(conn, '_execute_command') and conn._execute_command is None:
+            raise DbConnectionError("获取数据库连接失败：连接对象的_execute_command为None")
+        
+        return conn
+
 
     @asynccontextmanager
     async def get_connection(self):
@@ -362,7 +393,7 @@ class DbManager:
         start_time = datetime.now()
         
         # 优化：在获取连接前先检查连接池状态
-        conn = Tortoise.get_connection(self.connection_name)
+        conn = await self._get_valid_connection()
         affect_count = 0
         results = []
         
@@ -418,7 +449,7 @@ class DbManager:
         
         # 使用Tortoise的连接池机制，不需要手动关闭连接
         # Tortoise会自动管理连接的获取和释放
-        conn = Tortoise.get_connection(self.connection_name)
+        conn = await self._get_valid_connection()
         
         # 构建WHERE和ORDER子句
         where = f" WHERE {filter_string}" if filter_string else ''
@@ -502,7 +533,7 @@ class DbManager:
         
         # 使用Tortoise的连接池机制，不需要手动关闭连接
         # Tortoise会自动管理连接的获取和释放
-        conn = Tortoise.get_connection(self.connection_name)
+        conn = await self._get_valid_connection()
         
         # 构建WHERE子句
         where = f" WHERE {filter_string}" if filter_string else ''
@@ -534,7 +565,7 @@ class DbManager:
     
 
     @handle_db_errors(max_retries=3)
-    async def _execute_native_sql(self, sql: str, params: List[Any], description: str = "") -> int:
+    async def _execute_native_sql(self, sql: str, params: List[Any], description: str = "") -> tuple:
         """
         执行原生 SQL 查询
         
@@ -552,19 +583,7 @@ class DbManager:
         start_time = datetime.now()
         # 使用Tortoise的连接池机制，不需要手动关闭连接
         # Tortoise会自动管理连接的获取和释放
-        conn = Tortoise.get_connection(self.connection_name)
-        
-        # 检查连接是否有效
-        if conn is None:
-            raise Exception("获取数据库连接失败：连接对象为None")
-        
-        # 检查连接是否已关闭
-        if hasattr(conn, 'closed') and conn.closed:
-            raise Exception("获取数据库连接失败：连接已关闭")
-        
-        # 检查连接是否有execute_query方法
-        if not hasattr(conn, 'execute_query'):
-            raise Exception("获取数据库连接失败：连接对象不支持execute_query方法")
+        conn = await self._get_valid_connection()
         
         count, data_list = await conn.execute_query(sql, params)
         if data_list:
@@ -744,7 +763,7 @@ class DbManager:
         """        
         # 获取冲突字段
         # 获取数据库连接对象
-        db = Tortoise.get_connection(self.connection_name)
+        db = await self._get_valid_connection()
         conflict_fields = conflict_fields if conflict_fields is not None else self._get_conflict_fields(model_class)
         
         # 获取模型的主键字段
@@ -981,7 +1000,7 @@ class DbManager:
         query_conditions = {field: data[field] for field in conflict_fields}
         
         # 查询是否存在记录
-        conn = Tortoise.get_connection(self.connection_name)
+        conn = await self._get_valid_connection()
         conflict_check_sql = f"""
         SELECT COUNT(*) as count FROM `{model_class._meta.db_table}`
         WHERE {' AND '.join([f'`{field}` = %s' for field in conflict_fields])}
@@ -999,7 +1018,7 @@ class DbManager:
         update_fields = tuple(set(data.keys()) - set(conflict_fields))
         
         # 根据记录是否存在，决定执行INSERT还是UPDATE
-        conn = Tortoise.get_connection(self.connection_name)
+        conn = await self._get_valid_connection()
         
         if count == 0:
             # 执行INSERT操作
@@ -1674,7 +1693,7 @@ class DbManager:
             await self.refresh_connection(fast_mode=True)
         
         table_name = model_class._meta.db_table
-        conn = Tortoise.get_connection(self.connection_name)
+        conn = await self._get_valid_connection()
         
         # 构建 WHERE 子句（使用旧值）
         where_parts = []

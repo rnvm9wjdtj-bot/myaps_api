@@ -13,9 +13,9 @@ from dateutil.relativedelta import relativedelta
 from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
 from .._base import (
     get_scheduler_minute, async_rate_limit, CacheItem,
-    ApsPayloadSponsor, EventResultPoster, CLIENT_LOGGER, standard_response, get_session, start_event_batch_reminder,
+    ApsPayloadSponsor, EventResultPoster, CLIENT_LOGGER, standard_response, get_session, event_batch_handler,
     cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, PROJECT_JSON_FILE, pdv,
-    AlertType, QqEmailReminder, Reminder, finish_event_batch_reminder
+    AlertType, QqEmailReminder, Reminder
 )
 
 
@@ -231,37 +231,38 @@ async def task_push_seasonpr_to_srm():
 # ⬇️APS事件
 #################################################################################
 
+from core.settings import PLANNER_MAILS
+
 planner_email_reminder = QqEmailReminder(
     smtp_user="2982212683@qq.com",
     smtp_password="jyboujldhplddhdf",
     email_from="2982212683@qq.com",
-    email_to="610890130@qq.com",
+    email_to=PLANNER_MAILS,
 )
 
 
 
-@start_event_batch_reminder(reminder=planner_email_reminder)
-@finish_event_batch_reminder(reminder=planner_email_reminder)
-async def batch_handle_pl_status_a2e(event_data: List[Dict], _erp: EventResultPoster, description="PL 单据下达"):
+@event_batch_handler(reminder=planner_email_reminder, start_handler=_final, final_handler=_final)
+async def batch_handle_pl_status_a2e(event_data_list: List[Dict], _erp: EventResultPoster, description="PL 单据下达"):
     """
     Args:
-        event_data: 事件数据，由数据库事件触发时注入
+        event_data_list: 事件数据，由数据库事件触发时注入
         _erp: EventResultPoster 实例，用于变更APS数据，由装饰器注入
-        description: 事件描述，会被两个装饰器捕获，邮件头文字
+        description: 事件描述，会被装饰器捕获，邮件头文字
     """
     @async_rate_limit()
-    async def handle_pl_status_a2e(supplyno_or_data: Union[str, dict], _aps: ApsPayloadSponsor):
+    async def handle_pl_status_a2e(event_data: Dict, _aps: ApsPayloadSponsor):
         """
         处理单个PL状态变为A2E事件
         Args:
-            supplyno_or_data: supplyno 或包含 supplyno 的字典，由主函数注入
+            event_data: 事件数据，由主函数注入
             _aps: ApsPayloadStorage 实例，用于获取APS数据或缓存，由主函数注入
         """
 
-        if isinstance(supplyno_or_data, str):
-            supplyno = supplyno_or_data
+        if isinstance(event_data, str):
+            supplyno = event_data
         else:
-            supplyno = supplyno_or_data['supplyno']
+            supplyno = event_data['supplyno']
 
         # 使用异步版本的函数，避免阻塞事件循环
         supplymo_detaildata = await _aps.get_supplymo_detaildata(supplyno=supplyno)
@@ -318,14 +319,14 @@ async def batch_handle_pl_status_a2e(event_data: List[Dict], _erp: EventResultPo
 
     from apps.io_api.models import TSupply
     
-    if not event_data:
+    if not event_data_list:
         return
         
-    supply_nos = [_['supplyno'] for _ in event_data]
+    supply_nos = [_['supplyno'] for _ in event_data_list]
     supply_list = await TSupply.filter(supplyno__in=supply_nos).update(memo=" 正在推送。。。")
     _aps = ApsPayloadSponsor(production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.ORDER_WC])
     cache = await _aps.establish_production_cache(supplynos=supply_nos)
-    tasks = [handle_pl_status_a2e(supplyno_or_data=item, _aps=_aps) for item in event_data]
+    tasks = [handle_pl_status_a2e(event_data=item, _aps=_aps) for item in event_data_list]
     await asyncio.gather(*tasks, return_exceptions=True)
 
 

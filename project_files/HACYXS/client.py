@@ -21,7 +21,7 @@ from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_
 from .._base import (
     get_scheduler_minute, cron_task, CLIENT_LOGGER, CLIENT_SESSION, PROJECT_JSON_FILE,
     ApsPayloadSponsor, EventResultPoster, get_session, CacheItem,
-    QqEmailReminder, AlertType, async_rate_limit, start_event_batch_reminder, finish_event_batch_reminder,
+    QqEmailReminder, AlertType, async_rate_limit, event_batch_handler,
     TSupply, PLANNER_MAILS, ENGINEER_MAILS
 )
 
@@ -186,17 +186,16 @@ planner_email_reminder = QqEmailReminder(
 )
 
 
-@start_event_batch_reminder(reminder=planner_email_reminder)
-@finish_event_batch_reminder(reminder=planner_email_reminder)
-async def batch_handle_pl_status_a2e(supplyno_or_data_list: list[str | dict], _erp: EventResultPoster, description="下达生产加工单至 T+"):
+@event_batch_handler(reminder=planner_email_reminder)
+async def batch_handle_pl_status_a2e(event_data_list: list[dict], _erp: EventResultPoster, description="下达生产加工单至 T+"):
     @async_rate_limit()
-    async def handle_pl_status_a2e(supplyno_or_data: Union[str, dict], _aps: ApsPayloadSponsor):
+    async def handle_pl_status_a2e(event_data: dict, _aps: ApsPayloadSponsor):
         """处理PL状态变更为A2E"""
         try:
-            if isinstance(supplyno_or_data, str):
-                supplyno = supplyno_or_data
-            elif isinstance(supplyno_or_data, dict):
-                supplyno = supplyno_or_data['supplyno']
+            if isinstance(event_data, str):
+                supplyno = event_data
+            elif isinstance(event_data, dict):
+                supplyno = event_data['supplyno']
             tplus_conn = get_tplus_conn()
             await tplus_conn.create_mo(
                 supplyno=supplyno,
@@ -205,57 +204,55 @@ async def batch_handle_pl_status_a2e(supplyno_or_data_list: list[str | dict], _e
                 _erp=_erp, _aps=_aps
             )
         except Exception as e:
-            CLIENT_LOGGER.fail("处理PL状态变更", str(supplyno_or_data), str(e))
+            CLIENT_LOGGER.fail("处理PL状态变更", str(event_data), str(e))
             await _erp.mo_release_failed(supplyno, msg=str(e))
 
-    _aps = ApsPayloadSponsor(production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL])
-    _CustomMoPushModel = create_custom_mo_push_model(_aps)
-
-    supply_nos = [s['supplyno'] for s in supplyno_or_data_list]
+    supply_nos = [s['supplyno'] for s in event_data_list]
     TSupply.objects.filter(supplyno__in=supply_nos).update(memo=" 📤 正在推送至 T+ ...")
-    cache = await _aps.establish_production_cache(supplynos=supply_nos)
-    tasks = [handle_pl_status_a2e(item, _aps) for item in supplyno_or_data_list]
+
+    aps_payload_sponsor = ApsPayloadSponsor(production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL])
+    cache = await aps_payload_sponsor.establish_production_cache(supplynos=supply_nos)
+    _CustomMoPushModel = create_custom_mo_push_model(aps_payload_sponsor)
+    tasks = [handle_pl_status_a2e(event_data=item, _aps=aps_payload_sponsor) for item in event_data_list]
     await asyncio.gather(*tasks, return_exceptions=True)
 
 
-@start_event_batch_reminder(reminder=planner_email_reminder)
-@finish_event_batch_reminder(reminder=planner_email_reminder)
-async def batch_handle_pl_to_mo(supplyno_or_data_list: list[str | dict], _erp: EventResultPoster, description="推送领料申请至 T+)"):
+@event_batch_handler(reminder=planner_email_reminder)
+async def batch_handle_pl_to_mo(event_data_list: list[dict], _erp: EventResultPoster, description="推送领料申请至 T+"):
     
     @async_rate_limit()
-    async def handle_pl_to_mo(supplyno_or_data: Union[str, dict], _aps: ApsPayloadSponsor):
+    async def handle_pl_to_mo(event_data: dict, _aps: ApsPayloadSponsor):
         """处理PL类型变更：转为MO"""
         try:
-            if isinstance(supplyno_or_data, str):
-                supplyno = supplyno_or_data
-            elif isinstance(supplyno_or_data, dict):
-                supplyno = supplyno_or_data['supplyno']
+            if isinstance(event_data, str):
+                supplyno = event_data
+            elif isinstance(event_data, dict):
+                supplyno = event_data['supplyno']
             tplus_conn = get_tplus_conn()
             mo_data = await tplus_conn.query_mo(index_value=supplyno, filter_field='voucherCode')
             if mo_data:
                 await tplus_conn.push_rs(mdlist_or_supplyno=supplyno, tplus_mo_data_or_id=mo_data, pydantic_model=_CustomRsPushModel, _erp=_erp, _aps=_aps)
         except Exception as e:
-            CLIENT_LOGGER.fail("处理PL类型变更", str(supplyno_or_data), str(e))
+            CLIENT_LOGGER.fail("处理PL类型变更", str(event_data), str(e))
             await _erp.rs_release_failed(rsno=supplyno, msg=str(e))
 
-    _aps = ApsPayloadSponsor(production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL])
-    _CustomRsPushModel = create_custom_rs_push_model(_aps)
-    supply_nos = [s['supplyno'] for s in supplyno_or_data_list]
-    cache = await _aps.establish_production_cache(supplynos=supply_nos)
-    tasks = [handle_pl_to_mo(item, _aps) for item in supplyno_or_data_list]
+    supply_nos = [s['supplyno'] for s in event_data_list]
+    aps_payload_sponsor = ApsPayloadSponsor(production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL])
+    cache = await aps_payload_sponsor.establish_production_cache(supplynos=supply_nos)
+    _CustomRsPushModel = create_custom_rs_push_model(aps_payload_sponsor)
+    tasks = [handle_pl_to_mo(item, aps_payload_sponsor) for item in event_data_list]
     await asyncio.gather(*tasks, return_exceptions=True)
 
 
-@start_event_batch_reminder(reminder=planner_email_reminder)
-@finish_event_batch_reminder(reminder=planner_email_reminder)
+@event_batch_handler(reminder=planner_email_reminder)
+@async_rate_limit()
 async def batch_handle_pr_status_a2e(pr_data_list: list[dict], _erp: EventResultPoster, description="推送请购单至 T+"):
-    """批量处理PR状态变更为A2E"""
     try:
         tplus_conn = get_tplus_conn()
         await tplus_conn.push_pr(pr_data_list, _erp=_erp)
     except Exception as e:
         pr_nos = [p.get('supplyno') for p in pr_data_list if p.get('supplyno')]
-        await _erp.pr_release_failed(prno=pr_nos[0], msg=str(e))
+        await _erp.pr_release_failed(prno=pr_nos[0] if pr_nos else None, msg=str(e))
         
         
 
