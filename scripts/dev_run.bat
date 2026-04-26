@@ -12,12 +12,17 @@ set "PORT=8000"
 set "PROJECT_DIR="
 
 :: 从 .env 文件读取 HOST 和 PORT 配置
+echo Before reading .env: HOST=%HOST%, PORT=%PORT%
 if exist "%ENV_FILE%" (
-    for /f "tokens=1,2 delims==" %%a in ('findstr /i "^HOST=" "%ENV_FILE%"') do set "HOST=%%b"
-    for /f "tokens=1,2 delims==" %%a in ('findstr /i "^PORT=" "%ENV_FILE%"') do set "PORT=%%b"
-    for /f "tokens=1,2 delims==" %%a in ('findstr /i "^PROJECT_DIR=" "%ENV_FILE%"') do set "PROJECT_DIR=%%b"
-    for /f "tokens=1,2 delims==" %%a in ('findstr /i "^PROJECT_JSON=" "%ENV_FILE%"') do set "PROJECT_JSON=%%b"
+    echo Reading from .env file: %ENV_FILE%
+    for /f "usebackq tokens=1,2 delims==" %%a in ("%ENV_FILE%") do (
+        if /i "%%a"=="HOST" set "HOST=%%b"
+        if /i "%%a"=="PORT" set "PORT=%%b"
+        if /i "%%a"=="PROJECT_DIR" set "PROJECT_DIR=%%b"
+        if /i "%%a"=="PROJECT_JSON" set "PROJECT_JSON=%%b"
+    )
 )
+echo After reading .env: HOST=%HOST%, PORT=%PORT%
 
 :: 显示启动信息
 echo =========================================

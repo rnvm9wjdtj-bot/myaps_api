@@ -303,8 +303,7 @@ class DbManager:
             DbConnectionError: 如果连接无效
         """
         import asyncio
-        from tortoise.connection import connections
-        
+
         # 尝试获取连接，最多尝试3次
         for attempt in range(3):
             try:
@@ -314,10 +313,6 @@ class DbManager:
                     from core.database import TORTOISE_ORM_CONFIG
                     await Tortoise.init(config=TORTOISE_ORM_CONFIG)
                     logger.info(f"Tortoise重新初始化成功")
-                
-                # 检查连接池是否存在
-                if self.connection_name not in connections._connections:
-                    logger.warning(f"连接池不存在，尝试创建: {self.connection_name}")
                 
                 # 获取数据库连接
                 conn = Tortoise.get_connection(self.connection_name)
