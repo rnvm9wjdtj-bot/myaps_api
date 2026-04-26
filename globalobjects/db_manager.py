@@ -617,6 +617,10 @@ class DbManager:
         # Tortoise会自动管理连接的获取和释放
         conn = await self._get_valid_connection()
         
+        # 检查SQL语句是否为空
+        if not sql.strip():
+            raise DbQueryError("SQL语句为空")
+        
         count, data_list = await conn.execute_query(sql, params)
         if data_list:
             data_list = [dict_to_lower_keys(row) for row in data_list]
@@ -692,8 +696,8 @@ class DbManager:
         total_updated = 0
         
         # 分批处理
-        for i in range(0, len(data_list), self.batch_size):
-            batch = data_list[i:i + self.batch_size]
+        for i in range(0, len(data_list), batch_size):
+            batch = data_list[i:i + batch_size]
             
             # 构建 VALUES 占位符和参数
             placeholders = []
@@ -733,35 +737,45 @@ class DbManager:
                 sql = f"INSERT IGNORE INTO `{table_name}` ({fields_str}) VALUES {', '.join(placeholders)}"
             
             # 执行 SQL
-            affected, data_list = await self._execute_native_sql(
-                sql, 
-                values,
-                description=f"批量 upsert 批次 {i//self.batch_size + 1}"
-            )
-            
-            # 计算新增和更新数量
-            if update_fields:
-                # 对于 INSERT INTO ... ON DUPLICATE KEY UPDATE:
-                # - 新增行：影响行数 = 1
-                # - 更新行：影响行数 = 2
-                # - 未改变：影响行数 = 0
-                # 使用实际处理的数据行数（len(batch)）代替batch_size，因为可能有重复数据
-                actual_size = len(batch)
-                updated = max(0, affected - actual_size)
-                inserted = affected - 2 * updated
-                # 确保插入数量为非负数
-                inserted = max(0, inserted)
-            else:
-                # 对于 INSERT IGNORE:
-                # - 成功插入：影响行数 = 1
-                # - 忽略冲突：影响行数 = 0
-                inserted = affected
-                updated = 0
-            
-            total_inserted += inserted
-            total_updated += updated
-            
-            self.stats['batches_executed'] += 1
+            try:
+                affected, data_list = await self._execute_native_sql(
+                    sql, 
+                    values,
+                    description=f"批量 upsert 批次 {i//batch_size + 1}"
+                )
+                
+                # 计算新增和更新数量
+                if update_fields:
+                    # 对于 INSERT INTO ... ON DUPLICATE KEY UPDATE:
+                    # - 新增行：影响行数 = 1
+                    # - 更新行：影响行数 = 2
+                    # - 未改变：影响行数 = 0
+                    # 使用实际处理的数据行数（len(batch)）代替batch_size，因为可能有重复数据
+                    actual_size = len(batch)
+                    updated = max(0, affected - actual_size)
+                    inserted = affected - 2 * updated
+                    # 确保插入数量为非负数
+                    inserted = max(0, inserted)
+                else:
+                    # 对于 INSERT IGNORE:
+                    # - 成功插入：影响行数 = 1
+                    # - 忽略冲突：影响行数 = 0
+                    inserted = affected
+                    updated = 0
+                
+                total_inserted += inserted
+                total_updated += updated
+                
+                self.stats['batches_executed'] += 1
+                
+                # 每处理完一个批次，短暂休眠，避免过度占用数据库资源
+                await asyncio.sleep(0.1)
+            except Exception as e:
+                # 记录错误并继续处理下一批次
+                logger.error(f"执行批量upsert批次失败: {e}")
+                logger.error(f"SQL语句: {sql}")
+                # 跳过当前批次，继续处理下一批次
+                continue
         
         return {
             'inserted': total_inserted,

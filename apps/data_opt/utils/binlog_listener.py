@@ -63,100 +63,63 @@ from pymysqlreplication.row_event import (
 )
 
 from core.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_BINLOG_LISTENER, ENABLE_BINLOG_POSITION_MANAGER, MYAPS_ROOT_PASSWORD
-from core.database import TORTOISE_ORM_CONFIG
-from tortoise import Tortoise
 from globalobjects import logger as log_config
 from apps.common.utils.thread_pool_manager import global_pool_manager
-from apps.common.monitor.models import BinlogPosition, ProcessedEvent
 import os
 import asyncio
-
-async def ensure_tortoise_init():
-    """确保 Tortoise ORM 已初始化"""
-    if not hasattr(Tortoise, '_inited') or not Tortoise._inited:
-        try:
-            await Tortoise.init(config=TORTOISE_ORM_CONFIG)
-            logger.info("✅ Tortoise ORM 已初始化")
-        except Exception as e:
-            logger.warning(f"⚠️ 初始化 Tortoise ORM 时出错: {e}")
 
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 logger = log_config.get_logger(__name__, level=LOG_LEVEL)
 
 
 class BinlogPositionManager:
-    """Binlog 位置管理器 - 负责持久化和恢复 binlog 位置（基于数据库存储）"""
+    """Binlog 位置管理器 - 负责持久化和恢复 binlog 位置（基于文件存储）"""
     
     def __init__(self):
         self._lock = threading.RLock()
         self._last_save_time = 0
         self._save_interval = 5  # 最少5秒保存一次，避免频繁写入
         self._server_id = "default"  # 默认服务器标识
+        self._position_file = os.path.join(os.path.dirname(__file__), "..", "..", "..", "storage", "binlog_position.json")
+        self._processed_events_file = os.path.join(os.path.dirname(__file__), "..", "..", "..", "storage", "processed_events.json")
+        # 确保数据目录存在
+        os.makedirs(os.path.dirname(self._position_file), exist_ok=True)
     
-    async def _get_or_create_position(self):
-        """获取或创建位置记录"""
-        await ensure_tortoise_init()
-        position = await BinlogPosition.filter(server_id=self._server_id).first()
-        if not position:
-            position = await BinlogPosition.create(
-                server_id=self._server_id,
-                log_file="",
-                log_pos=0
-            )
-        return position
+    def _read_json_file(self, file_path):
+        """读取 JSON 文件"""
+        if not os.path.exists(file_path):
+            return {}
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.warning(f"⚠️ 读取文件 {file_path} 失败: {e}")
+            return {}
+    
+    def _write_json_file(self, file_path, data):
+        """写入 JSON 文件"""
+        try:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception as e:
+            logger.error(f"❌ 写入文件 {file_path} 失败: {e}")
+            return False
     
     def load_position(self) -> Optional[Dict[str, Any]]:
         """加载保存的 binlog 位置"""
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # 如果已经在事件循环中，创建任务
-                import concurrent.futures
-                def _load():
-                    try:
-                        loop_inner = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop_inner)
-                        try:
-                            position = loop_inner.run_until_complete(self._get_or_create_position())
-                            if position and position.log_file:
-                                return {
-                                    'log_file': position.log_file,
-                                    'log_pos': position.log_pos,
-                                    'timestamp': position.updated_at.timestamp() if position.updated_at else time.time()
-                                }
-                        finally:
-                            loop_inner.close()
-                    except Exception as e:
-                        logger.warning(f"⚠️ 加载 binlog 位置失败: {e}")
-                        return None
-                
-                executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-                future = executor.submit(_load)
-                return future.result(timeout=5)
-            else:
-                # 如果不在事件循环中，直接运行
-                return asyncio.run(self._load_position_async())
-        except Exception as e:
-            logger.warning(f"⚠️ 加载 binlog 位置失败: {e}")
-        return None
-    
-    async def _load_position_async(self) -> Optional[Dict[str, Any]]:
-        """异步加载 binlog 位置"""
-        try:
-            position = await self._get_or_create_position()
-            if position and position.log_file:
-                logger.info(f"📂 已加载 binlog 位置: {position.log_file}:{position.log_pos}")
-                return {
-                    'log_file': position.log_file,
-                    'log_pos': position.log_pos,
-                    'timestamp': position.updated_at.timestamp() if position.updated_at else time.time()
-                }
+            data = self._read_json_file(self._position_file)
+            position = data.get(self._server_id)
+            if position and position.get('log_file'):
+                logger.info(f"📂 已加载 binlog 位置: {position['log_file']}:{position['log_pos']}")
+                return position
         except Exception as e:
             logger.warning(f"⚠️ 加载 binlog 位置失败: {e}")
         return None
     
     def save_position(self, log_file: str, log_pos: int, timestamp: Optional[float] = None):
-        """保存 binlog 位置到数据库"""
+        """保存 binlog 位置到文件"""
         current_time = time.time()
         
         # 限制保存频率
@@ -164,107 +127,34 @@ class BinlogPositionManager:
             return
         
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # 如果已经在事件循环中，创建任务
-                import concurrent.futures
-                def _save():
-                    try:
-                        loop_inner = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop_inner)
-                        try:
-                            return loop_inner.run_until_complete(self._save_position_async(log_file, log_pos))
-                        finally:
-                            loop_inner.close()
-                    except Exception as e:
-                        logger.error(f"❌ 保存 binlog 位置失败: {e}")
-                
-                executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-                executor.submit(_save)
-            else:
-                # 如果不在事件循环中，直接运行
-                asyncio.run(self._save_position_async(log_file, log_pos))
-            
-            self._last_save_time = current_time
-            logger.debug(f"💾 Binlog 位置已保存: {log_file}:{log_pos}")
-        except Exception as e:
-            logger.error(f"❌ 保存 binlog 位置失败: {e}")
-    
-    async def _save_position_async(self, log_file: str, log_pos: int):
-        """异步保存 binlog 位置"""
-        try:
-            position = await self._get_or_create_position()
-            position.log_file = log_file
-            position.log_pos = log_pos
-            await position.save()
+            data = self._read_json_file(self._position_file)
+            data[self._server_id] = {
+                'log_file': log_file,
+                'log_pos': log_pos,
+                'timestamp': timestamp or current_time
+            }
+            if self._write_json_file(self._position_file, data):
+                self._last_save_time = current_time
+                logger.debug(f"💾 Binlog 位置已保存: {log_file}:{log_pos}")
         except Exception as e:
             logger.error(f"❌ 保存 binlog 位置失败: {e}")
     
     def clear_position(self):
         """清除保存的位置（通常在手动重置时使用）"""
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import concurrent.futures
-                def _clear():
-                    try:
-                        loop_inner = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop_inner)
-                        try:
-                            loop_inner.run_until_complete(self._clear_position_async())
-                        finally:
-                            loop_inner.close()
-                    except Exception as e:
-                        logger.warning(f"⚠️ 清除 binlog 位置失败: {e}")
-                
-                executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-                executor.submit(_clear)
-            else:
-                asyncio.run(self._clear_position_async())
-        except Exception as e:
-            logger.warning(f"⚠️ 清除 binlog 位置失败: {e}")
-    
-    async def _clear_position_async(self):
-        """异步清除 binlog 位置"""
-        try:
-            await ensure_tortoise_init()
-            await BinlogPosition.filter(server_id=self._server_id).delete()
-            logger.info("🗑️ Binlog 位置已清除")
+            data = self._read_json_file(self._position_file)
+            if self._server_id in data:
+                del data[self._server_id]
+                self._write_json_file(self._position_file, data)
+                logger.info("🗑️ Binlog 位置已清除")
         except Exception as e:
             logger.warning(f"⚠️ 清除 binlog 位置失败: {e}")
     
     def is_event_processed(self, event_id: str) -> bool:
         """检查事件是否已处理"""
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import concurrent.futures
-                def _check():
-                    try:
-                        loop_inner = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop_inner)
-                        try:
-                            return loop_inner.run_until_complete(self._is_event_processed_async(event_id))
-                        finally:
-                            loop_inner.close()
-                    except Exception as e:
-                        logger.warning(f"⚠️ 检查 binlog监听 事件是否已处理失败: {e}")
-                        return False
-                
-                executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-                future = executor.submit(_check)
-                return future.result(timeout=5)
-            else:
-                return asyncio.run(self._is_event_processed_async(event_id))
-        except Exception as e:
-            logger.warning(f"⚠️ 检查 binlog监听 事件是否已处理失败: {e}")
-            return False
-    
-    async def _is_event_processed_async(self, event_id: str) -> bool:
-        """异步检查事件是否已处理"""
-        try:
-            await ensure_tortoise_init()
-            return await ProcessedEvent.filter(event_id=event_id).exists()
+            data = self._read_json_file(self._processed_events_file)
+            return event_id in data
         except Exception as e:
             logger.warning(f"⚠️ 检查 binlog监听 事件是否已处理失败: {e}")
             return False
@@ -272,82 +162,44 @@ class BinlogPositionManager:
     def mark_event_processed(self, event_id: str, log_file: str, log_pos: int, event_type: str, table_name: str, database_name: str):
         """标记事件为已处理"""
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import concurrent.futures
-                def _mark():
-                    try:
-                        loop_inner = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop_inner)
-                        try:
-                            loop_inner.run_until_complete(self._mark_event_processed_async(
-                                event_id, log_file, log_pos, event_type, table_name, database_name
-                            ))
-                        finally:
-                            loop_inner.close()
-                    except Exception as e:
-                        logger.warning(f"⚠️ 标记 binlog监听 事件为已处理失败: {e}")
-                
-                executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-                executor.submit(_mark)
-            else:
-                asyncio.run(self._mark_event_processed_async(
-                    event_id, log_file, log_pos, event_type, table_name, database_name
-                ))
-        except Exception as e:
-            logger.warning(f"⚠️ 标记 binlog监听 事件为已处理失败: {e}")
-    
-    async def _mark_event_processed_async(self, event_id: str, log_file: str, log_pos: int, event_type: str, table_name: str, database_name: str):
-        """异步标记 binlog监听 事件为已处理"""
-        try:
-            await ensure_tortoise_init()
-            await ProcessedEvent.get_or_create(
-                event_id=event_id,
-                defaults={
-                    "log_file": log_file,
-                    "log_pos": log_pos,
-                    "event_type": event_type,
-                    "table_name": table_name,
-                    "database_name": database_name,
-                }
-            )
+            data = self._read_json_file(self._processed_events_file)
+            data[event_id] = {
+                "log_file": log_file,
+                "log_pos": log_pos,
+                "event_type": event_type,
+                "table_name": table_name,
+                "database_name": database_name,
+                "processed_at": datetime.now().isoformat()
+            }
+            self._write_json_file(self._processed_events_file, data)
         except Exception as e:
             logger.warning(f"⚠️ 标记 binlog监听 事件为已处理失败: {e}")
     
     def cleanup_old_events(self, days: int = 7):
         """清理旧的已处理事件记录"""
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import concurrent.futures
-                def _cleanup():
+            data = self._read_json_file(self._processed_events_file)
+            cutoff = datetime.now() - timedelta(days=days)
+            to_delete = []
+            
+            for event_id, event_data in data.items():
+                processed_at = event_data.get('processed_at')
+                if processed_at:
                     try:
-                        loop_inner = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop_inner)
-                        try:
-                            loop_inner.run_until_complete(self._cleanup_old_events_async(days))
-                        finally:
-                            loop_inner.close()
-                    except Exception as e:
-                        logger.warning(f"⚠️ 清理旧的已处理 binlog监听 事件记录失败: {e}")
-                
-                executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-                executor.submit(_cleanup)
-            else:
-                asyncio.run(self._cleanup_old_events_async(days))
+                        processed_time = datetime.fromisoformat(processed_at)
+                        if processed_time < cutoff:
+                            to_delete.append(event_id)
+                    except:
+                        pass
+            
+            for event_id in to_delete:
+                del data[event_id]
+            
+            if to_delete:
+                self._write_json_file(self._processed_events_file, data)
+                logger.info(f"🗑️ 已清理 {len(to_delete)} 条旧的已处理事件记录")
         except Exception as e:
             logger.warning(f"⚠️ 清理旧的已处理 binlog监听 事件记录失败: {e}")
-    
-    async def _cleanup_old_events_async(self, days: int = 7):
-        """异步清理旧的已处理 binlog监听 事件记录"""
-        try:
-            await ensure_tortoise_init()
-            from datetime import timezone as tz
-            cutoff = datetime.now(tz.utc) - timedelta(days=days)
-            deleted_count = await ProcessedEvent.filter(processed_at__lt=cutoff).delete()
-            logger.info(f"🗑️ 已清理 {deleted_count} 条旧的已处理事件记录")
-        except Exception as e:
-            logger.warning(f"⚠️ 清理旧的已处理事件记录失败: {e}")
 
 
 class ConnectionHealthChecker:

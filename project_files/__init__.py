@@ -20,7 +20,7 @@ from globalobjects.globalconst import OrderStatusEnum
 from apps.io_api.utils.common import dict_to_lower_keys
 from globalobjects import logger as log_config
 from apps.data_opt.utils.scheduler import cron_task
-from apps.data_opt.components._base import ApsPayloadSponsor
+from apps.data_opt.components import ApsPayloadSponsor
 from apps.data_opt.utils.common import get_optimized_session
 from apps.common.utils.redis_pool_manager import get_redis_pool_manager
 
@@ -193,7 +193,7 @@ def handle_update_supply(database: str, table: str, data: dict, data_diff: dict)
 # def handle_insert_supply(database: str, table: str, data: dict):
 #     """处理t_supply表的插入事件"""
 #     try:
-#         from apps.data_opt.components._base import ApsHelper
+#         from apps.data_opt.components import ApsHelper
 
 #         new_data = dict_to_lower_keys(data['new'])
 #         type_ = new_data['type']
@@ -209,7 +209,7 @@ def handle_update_supply(database: str, table: str, data: dict, data_diff: dict)
 # @binlog_listener.on_delete_for_table("t_supply", database=MYAPS_MAIN_DB)
 # def handle_delete_supply(database: str, table: str, data: dict):
 #     """处理t_supply表的删除事件"""
-#     from apps.data_opt.components._base import ApsHelpers
+#     from apps.data_opt.components import ApsHelpers
 
 #     deleted_data = dict_to_lower_keys(data)
 #     type_ = deleted_data['type']

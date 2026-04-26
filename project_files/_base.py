@@ -24,7 +24,7 @@ from apps.io_api.models import TSupply
 from apps.data_opt.utils.scheduler import cron_task
 from apps.data_opt.utils.common import add_basic_auth_requests, get_session
 from apps.data_opt.utils.data_processor import DataProcessor
-from apps.data_opt.components._base import ApsPayloadSponsor, EventResultPoster, CacheItem
+from apps.data_opt.components import ApsPayloadSponsor, EventResultPoster, CacheItem
 from apps.data_opt.components.simple_hap import HapConnection
 
 
