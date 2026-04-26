@@ -302,26 +302,63 @@ class DbManager:
         Raises:
             DbConnectionError: 如果连接无效
         """
-        # 获取数据库连接
-        conn = Tortoise.get_connection(self.connection_name)
+        import asyncio
+        from tortoise.connection import connections
         
-        # 检查连接是否有效
-        if conn is None:
-            raise DbConnectionError("获取数据库连接失败：连接对象为None")
-        
-        # 检查连接是否已关闭
-        if hasattr(conn, 'closed') and conn.closed:
-            raise DbConnectionError("获取数据库连接失败：连接已关闭")
-        
-        # 检查连接是否有execute_query方法
-        if not hasattr(conn, 'execute_query'):
-            raise DbConnectionError("获取数据库连接失败：连接对象不支持execute_query方法")
-        
-        # 检查连接是否有_execute_command方法（避免NoneType错误）
-        if hasattr(conn, '_execute_command') and conn._execute_command is None:
-            raise DbConnectionError("获取数据库连接失败：连接对象的_execute_command为None")
-        
-        return conn
+        # 尝试获取连接，最多尝试3次
+        for attempt in range(3):
+            try:
+                # 检查Tortoise是否已初始化
+                if not hasattr(Tortoise, '_inited') or not Tortoise._inited:
+                    logger.warning(f"Tortoise未初始化，尝试重新初始化: {self.connection_name}")
+                    from core.database import TORTOISE_ORM_CONFIG
+                    await Tortoise.init(config=TORTOISE_ORM_CONFIG)
+                    logger.info(f"Tortoise重新初始化成功")
+                
+                # 检查连接池是否存在
+                if self.connection_name not in connections._connections:
+                    logger.warning(f"连接池不存在，尝试创建: {self.connection_name}")
+                
+                # 获取数据库连接
+                conn = Tortoise.get_connection(self.connection_name)
+                
+                # 检查连接是否有效
+                if conn is None:
+                    logger.warning(f"连接为None，尝试刷新连接: {self.connection_name}")
+                    await self.refresh_connection(fast_mode=True)
+                    continue
+                
+                # 检查连接是否已关闭
+                if hasattr(conn, 'closed') and conn.closed:
+                    logger.warning(f"连接已关闭，尝试刷新连接: {self.connection_name}")
+                    await self.refresh_connection(fast_mode=True)
+                    continue
+                
+                # 检查连接是否有execute_query方法
+                if not hasattr(conn, 'execute_query'):
+                    logger.warning(f"连接不支持execute_query，尝试刷新连接: {self.connection_name}")
+                    await self.refresh_connection(fast_mode=True)
+                    continue
+                
+                # 检查连接是否有_execute_command方法（避免NoneType错误）
+                if hasattr(conn, '_execute_command') and conn._execute_command is None:
+                    logger.warning(f"连接的_execute_command为None，尝试刷新连接: {self.connection_name}")
+                    await self.refresh_connection(fast_mode=True)
+                    continue
+                
+                # 验证连接是否可以正常执行查询
+                await conn.execute_query("SELECT 1")
+                return conn
+                
+            except Exception as e:
+                logger.warning(f"获取连接时出错 (尝试 {attempt+1}/3): {e}")
+                if attempt < 2:
+                    # 等待一段时间后重试
+                    await asyncio.sleep(1)
+                    # 尝试刷新连接
+                    await self.refresh_connection(fast_mode=True)
+                else:
+                    raise DbConnectionError(f"获取数据库连接失败：{str(e)}")
 
 
     @asynccontextmanager
@@ -682,17 +719,20 @@ class DbManager:
                 # 只更新在当前批次中实际存在的字段
                 batch_update_fields = [field for field in update_fields if field in batch_fields_set]
                 
-                # 构建 ON DUPLICATE KEY UPDATE 部分
-                update_parts = [f"`{field}` = VALUES(`{field}`)" for field in batch_update_fields]
-                conflict_fields_str = ', '.join([f"`{field}`" for field in conflict_fields])
-                update_str = ', '.join(update_parts)
-                
-                sql = f"""
-                INSERT INTO `{table_name}` ({fields_str}) 
-                VALUES {', '.join(placeholders)}
-                ON DUPLICATE KEY UPDATE
-                {update_str}
-                """
+                if batch_update_fields:
+                    # 构建 ON DUPLICATE KEY UPDATE 部分
+                    update_parts = [f"`{field}` = VALUES(`{field}`)" for field in batch_update_fields]
+                    update_str = ', '.join(update_parts)
+                    
+                    sql = f"""
+                    INSERT INTO `{table_name}` ({fields_str}) 
+                    VALUES {', '.join(placeholders)}
+                    ON DUPLICATE KEY UPDATE
+                    {update_str}
+                    """
+                else:
+                    # 如果当前批次中没有需要更新的字段，使用INSERT IGNORE
+                    sql = f"INSERT IGNORE INTO `{table_name}` ({fields_str}) VALUES {', '.join(placeholders)}"
             else:
                 # 如果没有update_fields，只执行INSERT IGNORE
                 sql = f"INSERT IGNORE INTO `{table_name}` ({fields_str}) VALUES {', '.join(placeholders)}"

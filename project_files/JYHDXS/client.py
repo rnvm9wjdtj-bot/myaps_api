@@ -242,7 +242,7 @@ planner_email_reminder = QqEmailReminder(
 
 
 
-@event_batch_handler(reminder=planner_email_reminder, start_handler=_final, final_handler=_final)
+@event_batch_handler(reminder=planner_email_reminder)
 async def batch_handle_pl_status_a2e(event_data_list: List[Dict], _erp: EventResultPoster, description="PL 单据下达"):
     """
     Args:
