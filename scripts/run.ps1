@@ -377,11 +377,41 @@ try {
 
     # Start server
     if ($Mode -eq "service") {
-        # Service mode: run directly
+        # Service mode: use Uvicorn on Windows, Gunicorn on Unix
         try {
-            & $Python $uvicornArgs
+            # Check if running on Windows
+            if ($env:OS -eq "Windows_NT") {
+                # On Windows, use Uvicorn directly
+                Write-Log "Running on Windows, using Uvicorn single process..."
+                if ($Mode -eq "dev") {
+                    Write-Host "Running on Windows, using Uvicorn single process..." -ForegroundColor Cyan
+                }
+                & $Python $uvicornArgs
+            } else {
+                # On Unix/Linux, check if Gunicorn is installed
+                $gunicornCheck = & $Python -m pip show gunicorn 2>$null
+                if ($gunicornCheck) {
+                    # Use Gunicorn with multi-process
+                    Write-Log "Starting Gunicorn server with multiple processes..."
+                    if ($Mode -eq "dev") {
+                        Write-Host "Starting Gunicorn server with multiple processes..." -ForegroundColor Cyan
+                    }
+                    $gunicornConfig = "$ProjectRoot\scripts\deploy\gunicorn_multiprocess.conf.py"
+                    & $Python -m gunicorn -c $gunicornConfig main:app
+                } else {
+                    # Fallback to Uvicorn single process
+                    Write-Log "Gunicorn not found, using Uvicorn single process..."
+                    if ($Mode -eq "dev") {
+                        Write-Host "Gunicorn not found, using Uvicorn single process..." -ForegroundColor Yellow
+                    }
+                    & $Python $uvicornArgs
+                }
+            }
         } catch {
             Write-Log "Failed to start server: $_"
+            if ($Mode -eq "dev") {
+                Write-Host "[ERROR] Failed to start server: $_" -ForegroundColor Red
+            }
             exit 1
         }
     } else {

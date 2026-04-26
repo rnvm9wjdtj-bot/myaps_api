@@ -695,6 +695,10 @@ class DbManager:
         total_inserted = 0
         total_updated = 0
         
+        # 动态调整批量大小，避免锁等待超时
+        # 对于批量upsert操作，使用较小的批量大小
+        batch_size = min(self.batch_size, 500)  # 减小批量大小，降低锁竞争
+        
         # 分批处理
         for i in range(0, len(data_list), batch_size):
             batch = data_list[i:i + batch_size]
@@ -707,6 +711,11 @@ class DbManager:
                 row_values = [data.get(field) for field in all_fields]
                 placeholders.append('(' + ', '.join(['%s'] * len(all_fields)) + ')')
                 values.extend(row_values)
+            
+            # 检查是否有数据要插入
+            if not placeholders:
+                logger.warning(f"批次 {i//batch_size + 1} 没有数据要插入，跳过执行")
+                continue
             
             # 构建 SQL
             if update_fields:
@@ -738,7 +747,7 @@ class DbManager:
             
             # 执行 SQL
             try:
-                affected, data_list = await self._execute_native_sql(
+                affected, result_data = await self._execute_native_sql(
                     sql, 
                     values,
                     description=f"批量 upsert 批次 {i//batch_size + 1}"

@@ -62,7 +62,7 @@ from pymysqlreplication.row_event import (
     DeleteRowsEvent,
 )
 
-from core.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_BINLOG_LISTENER, ENABLE_BINLOG_POSITION_MANAGER, MYAPS_ROOT_PASSWORD
+from core.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_BINLOG_LISTENER, ENABLE_BINLOG_POSITION, MYAPS_ROOT_PASSWORD
 from globalobjects import logger as log_config
 from apps.common.utils.thread_pool_manager import global_pool_manager
 import os
@@ -382,7 +382,7 @@ class MySQLBinlogListener:
         self._loop_thread = None
         
         # 初始化 binlog 位置管理器
-        if ENABLE_BINLOG_POSITION_MANAGER:
+        if ENABLE_BINLOG_POSITION:
             self._position_manager = BinlogPositionManager()
             logger.info("✅ Binlog 位置管理器已启用")
         else:
@@ -543,7 +543,7 @@ class MySQLBinlogListener:
     
     def _validate_binlog_position(self):
         """验证 binlog 位置是否有效"""
-        if not ENABLE_BINLOG_POSITION_MANAGER or not self._position_manager:
+        if not ENABLE_BINLOG_POSITION or not self._position_manager:
             return
         
         saved_position = self._position_manager.load_position()
@@ -795,7 +795,7 @@ class MySQLBinlogListener:
 
     def reset_position(self):
         """重置 binlog 位置（下次启动时从头开始）"""
-        if ENABLE_BINLOG_POSITION_MANAGER and self._position_manager:
+        if ENABLE_BINLOG_POSITION and self._position_manager:
             self._position_manager.clear_position()
             logger.info("🔄 Binlog 位置已重置，下次启动将从最新位置开始")
         else:
@@ -956,7 +956,7 @@ class MySQLBinlogListener:
         }
         
         # 尝试恢复上次的位置
-        if ENABLE_BINLOG_POSITION_MANAGER and self._position_manager:
+        if ENABLE_BINLOG_POSITION and self._position_manager:
             saved_position = self._position_manager.load_position()
             if saved_position:
                 stream_config["log_file"] = saved_position.get("log_file")
@@ -988,7 +988,7 @@ class MySQLBinlogListener:
                 # 定期保存 binlog 位置
                 event_count += 1
                 current_time = time.time()
-                if ENABLE_BINLOG_POSITION_MANAGER and self._position_manager and current_time - last_position_save >= 5:  # 每5秒保存一次位置
+                if ENABLE_BINLOG_POSITION and self._position_manager and current_time - last_position_save >= 5:  # 每5秒保存一次位置
                     try:
                         # 获取当前位置
                         log_file = stream.log_file
@@ -1006,7 +1006,7 @@ class MySQLBinlogListener:
 
         except Exception as e:
             # 异常前尝试保存当前位置
-            if stream and ENABLE_BINLOG_POSITION_MANAGER and self._position_manager:
+            if stream and ENABLE_BINLOG_POSITION and self._position_manager:
                 try:
                     self._position_manager.save_position(stream.log_file, stream.log_pos)
                     logger.info(f"💾 异常前保存位置: {stream.log_file}:{stream.log_pos}")
@@ -1017,7 +1017,7 @@ class MySQLBinlogListener:
         finally:
             if stream:
                 # 关闭前保存最终位置
-                if ENABLE_BINLOG_POSITION_MANAGER and self._position_manager:
+                if ENABLE_BINLOG_POSITION and self._position_manager:
                     try:
                         self._position_manager.save_position(stream.log_file, stream.log_pos)
                         logger.info(f"💾 最终位置已保存: {stream.log_file}:{stream.log_pos}")

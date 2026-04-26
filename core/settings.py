@@ -19,7 +19,7 @@ load_dotenv(os.getenv('ENV_FILE', os.path.join(BASE_DIR, '.env')))
 # 数据库监控开关，默认关闭
 TURNON_BINLOG_LISTENER = os.getenv("TURNON_BINLOG_LISTENER", "False").lower().strip() == "true"
 # Binlog 位置管理器开关，默认关闭
-ENABLE_BINLOG_POSITION_MANAGER = os.getenv("ENABLE_BINLOG_POSITION_MANAGER", "False").lower().strip() == "true"
+ENABLE_BINLOG_POSITION = os.getenv("ENABLE_BINLOG_POSITION", "False").lower().strip() == "true"
 # 定时任务开关，默认关闭
 TRUNON_SCHEDULER = os.getenv("TRUNON_SCHEDULER", "False").lower().strip() == "true"
 # 定时任务执行时间

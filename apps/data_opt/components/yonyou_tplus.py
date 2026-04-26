@@ -15,7 +15,7 @@ from ._base import (
     PydanticModel, JSONManager,
     logger,
     DataProcessor, globalconst, PROJECT_JSON_FILE, pdv,
-    BaseConnection, ApsPayloadSponsor, EventResultPoster, convert_timeunit, clean_value,
+    BaseConnection, convert_timeunit, clean_value,
     model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold, AcceptSupply, AcceptConfirm,
@@ -491,6 +491,8 @@ class TplusConfig:
 
 
 class TplusConnection(BaseConnection):
+    
+    from . import ApsPayloadSponsor, EventResultPoster
     
     def __init__(self, config: TplusConfig=TplusConfig()):
         """
