@@ -495,7 +495,7 @@ class ExternalBaseConnection(ABC):
         """
         认证连接
         """
-        pass
+        raise NotImplementedError("auth method not implemented")
 
 
     # @abstractmethod
@@ -527,9 +527,10 @@ class ExternalBaseConnection(ABC):
     #     pass
 
 
-    def register_source(self, source: 'BaseSource' | list['BaseSource']):
+    def register_source(self, source):
         """
         注册数据源
+        source: 数据源对象或数据源实例对象列表
         """
         if not isinstance(source, list):
             source = [source]
@@ -550,33 +551,13 @@ class BaseSource:
     _CONNECTION: ExternalBaseConnection = None   # 连接对象，通过 ExternalBaseConnection 实例的 register_objects 方法注入
     _QUERY_ENDPOINT : str = None   # 查询接口路径
     _QUERY_BATCH_ENDPOINT : str = None   # 查询批量接口路径
-    _PULL_PYDANTIC_MODEL : type[BaseModel] = None   # 拉取数据的Pydantic模型
+    _PULL_PYDANTIC_MODEL : type[PydanticModel] = None   # 拉取数据的Pydantic模型
     _FIELD_HINTS : dict[str, str] = None   # 字段注解，涉及select字段的，根据此参数的key取
     _DOCUMENTATION_URL : str = None   # 技术文档URL，无逻辑意义
 
 
-    def __init__(self, data: dict = None):
-        """
-        初始化数据对象
-        
-        Args:
-            data: 初始数据
-        """
-        self.data = data or {}
-    
-
-    def __call__(self, **kwargs):
-        """
-        支持 tplus.material(**{}).query() 风格调用
-        
-        Args:
-            **kwargs: 数据参数
-            
-        Returns:
-            self: 返回自身，支持链式调用
-        """
-        self.data.update(kwargs)
-        return self
+    def __init__(self):
+        self.data = None
     
 
     async def query(self):
@@ -599,47 +580,10 @@ class BaseSource:
         raise NotImplementedError("子类必须实现query_batch方法")
     
 
-    def get_documentation(self):
-        """
-        获取文档信息
-        
-        Returns:
-            dict: 文档信息
-        """
-        return {
-            'url': self.documentation_url,
-            'object_type': self.__class__.__name__
-        }
+    @property
+    def documentation_url(self):
+        return self._DOCUMENTATION_URL
     
-
-    def __getattr__(self, name):
-        """
-        支持属性访问，如：material.filter = {}
-        
-        Args:
-            name: 属性名
-            
-        Returns:
-            Any: 属性值
-        """
-        if name in self.data:
-            return self.data[name]
-        raise AttributeError(f"{self.__class__.__name__} 对象没有属性 '{name}'")
-    
-
-    def __setattr__(self, name, value):
-        """
-        支持属性设置，如：material.filter = {}
-        
-        Args:
-            name: 属性名
-            value: 属性值
-        """
-        # 保留对实例变量的正常设置
-        if name in ['connection', 'data', 'documentation_url']:
-            super().__setattr__(name, value)
-        else:
-            self.data[name] = value
 
 
 
@@ -733,6 +677,17 @@ class ExternalData:
         else:
             self.data_list = data
         
+
+    def is_empty(self):
+        """
+        检查数据是否为空
+        
+        Returns:
+            True: 数据为空
+            False: 否则
+        """
+        return not self.data_list
+
 
     async def loads(self, pydantic_model: PydanticModel = None):
         """

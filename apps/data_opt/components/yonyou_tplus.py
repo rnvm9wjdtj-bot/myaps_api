@@ -22,6 +22,7 @@ from ._base import (
     db_query, TSupply, TDemand
 )
 
+from . import ApsPayloadSponsor
 
 
 """
@@ -492,7 +493,7 @@ class TplusConfig:
 
 class TplusConnection(ExternalBaseConnection):
     
-    from . import ApsPayloadSponsor, EventResultPoster
+    from . import EventResultPoster
     
     def __init__(self, config: TplusConfig=TplusConfig()):
         """
@@ -990,6 +991,7 @@ class TplusConnection(ExternalBaseConnection):
         异步推送采购申请
         :param data_list: APS 中的 PR 数据
         """
+   
         async def approve_pr(tplus_pr_code: str):
             endpoint = PrApproveInterface.endpoint
             # payload = {"param": {'voucherID': tplus_pr_id}}

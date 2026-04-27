@@ -392,24 +392,11 @@ BomPullInterface = PullInterface(
     },
 )
 
-StockPullInterface = PullInterface(
-    endpoint="/tplus/api/v2/currentStock/Query",
-    field_map={"InventoryCode": "存货编码", "ExistingQuantity": "现存量", "TS": "时间戳"},
-    base_filter={"IsIncludeZero": True},
-    remark="现存量查询 https://open.chanjet.com/docs/file/apiFile/tcloud/tjqt/xcl?id=30875，以 现存量字段 为库存数导入",
-)
-
 SingleMoQueryInterface = PullInterface(
     endpoint="/tplus/api/v2/ManufactureOrderOpenApi/GetVoucherDTO",
     field_map={"ID": "ID", "Code": "编码", "ExternalCode": "外部编码"},
 )
 
-
-# NewPoPullInterface = TplusPullInterface(
-#     endpoint="/tplus/api/v2/PurchaseOrderOpenApi/FindVoucherList",
-#     field_map={"ID": "ID", "Code": "编码", "ExternalCode": "外部编码"},
-#     base_filter={"Status": "NEW"},
-# )
 
 
 class PushInterface(NamedTuple):
@@ -690,8 +677,6 @@ class YonyouTplusConnection2(ExternalBaseConnection):
             params["Ts"] = ts_value
             data_list.extend([{v: row.get(k) for k, v in field_hints.items()} for row in raw_data])
             
-        if pydantic_model:
-            data_list = [pydantic_model(**item).model_dump(exclude_none=True) for item in data_list]
         return data_list
 
 
@@ -1104,7 +1089,7 @@ class TplusMaterial(BaseSource):
         查询批量物料数据
         """
         assert self._CONNECTION, "未获得连接对象，请先注册"
-        
+        await self._CONNECTION.auth()
         endpoint = self._QUERY_BATCH_ENDPOINT
         filter = {
             "Disabled": disabled,
@@ -1132,7 +1117,7 @@ class TplusWorkcenter(BaseSource):
         查询批量工作中心数据
         """
         assert self._CONNECTION, "未获得连接对象，请先注册"
-        
+        await self._CONNECTION.auth()
         endpoint = self._QUERY_BATCH_ENDPOINT
         data = await self._CONNECTION._pull_simple_data(
             endpoint=endpoint,
@@ -1148,66 +1133,99 @@ class TplusStock(BaseSource):
     _QUERY_BATCH_ENDPOINT = "/tplus/api/v2/currentStock/Query"
     _PULL_PYDANTIC_MODEL = StockPullModel
     _FIELD_HINTS = {"InventoryCode": "存货编码", "ExistingQuantity": "现存量", "TS": "时间戳"}
-    
-#     """
-#     库存对象
-#     """
-    
-#     def __init__(self, connection, data=None):
-#         """
-#         初始化库存对象
-        
-#         Args:
-#             connection: 连接对象
-#             data: 初始数据
-#         """
-#         super().__init__(connection, data)
-#         self.documentation_url = "https://open.chanjet.com/docs/..."
-    
-#     async def query(self):
-#         """
-#         查询库存数据
-#         """
-#         filter = self.data.get('filter')
-#         pull_interface = self.data.get('pull_interface', StockPullInterface)
-#         pydantic_model = self.data.get('pydantic_model', StockPullModel)
-        
-#         return await self._CONNECTION.pull_stock(
-#             filter=filter,
-#             pull_interface=pull_interface,
-#             pydantic_model=pydantic_model
-#         )
 
 
-# class RoutingObject(BaseSource):
-#     """
-#     工艺路线对象
-#     """
+    async def query_batch(self, is_include_zero: bool = False):
+        """
+        查询批量库存数据
+        """
+        assert self._CONNECTION, "未获得连接对象，请先注册"
+        await self._CONNECTION.auth()
+        endpoint = self._QUERY_BATCH_ENDPOINT
+        data = await self._CONNECTION._pull_simple_data(
+            endpoint=endpoint,
+            field_hints=self._FIELD_HINTS,
+            filter={"IsIncludeZero": is_include_zero}
+        )
+
+        return ExternalData(data=data, pydantic_model=self._PULL_PYDANTIC_MODEL)
+
     
-#     def __init__(self, connection, data=None):
-#         """
-#         初始化工艺路线对象
+    async def pull(self, is_include_zero: bool = False, pydantic_model: PydanticModel = None):
+        """
+        查询批量库存数据
+        """
+        stock_data = await self.query_batch(is_include_zero)
+        if stock_data.is_empty():
+            return []
+        else:
+            pydantic_model = pydantic_model or self._PULL_PYDANTIC_MODEL
+            stock_data = stock_data.loads(pydantic_model=pydantic_model)
+            timestamp = datetime.now().strftime('%m%d-%H%M')
+            df = pd.DataFrame(stock_data)
+            # 按materialno分组，avail_qty求和，其他字段取first
+            sum_cols = ['avail_qty']
+            first_cols = [col for col in df.columns if col not in ['materialno'] + sum_cols]
+            agg_dict = {col: 'first' for col in first_cols}
+            agg_dict.update({col: 'sum' for col in sum_cols})
+
+            aggregated_stock = df.groupby('materialno').agg(agg_dict).reset_index()
+            # 替换缺失值为None
+            aggregated_stock = aggregated_stock.replace({pd.NA: None, pd.NaT: None, float('nan'): None})
+            # 生成supplyno字段为materialno@timestamp
+            aggregated_stock['supplyno'] = aggregated_stock['materialno'] + '@' + timestamp
+            return aggregated_stock.to_dict(orient='records')
         
-#         Args:
-#             connection: 连接对象
-#             data: 初始数据
-#         """
-#         super().__init__(connection, data)
-#         self.documentation_url = "https://open.chanjet.com/docs/..."
-    
-#     async def query(self):
-#         """
-#         查询工艺路线数据
-#         """
-#         only_today = self.data.get('only_today', False)
-#         pull_interface = self.data.get('pull_interface', RoutingPullInterface)
-#         pydantic_model = self.data.get('pydantic_model', RoutePullModel)
         
-#         return await self._CONNECTION.pull_routing(
-#             only_today=only_today,
-#             pull_interface=pull_interface,
-#             pydantic_model=pydantic_model
-#         )
+        
+class TplusRouting(BaseSource):
+
+    _QUERY_ENDPOINT = "/tplus/api/v2/bom/Query"
+    _PULL_PYDANTIC_MODEL = RoutePullModel
+    _FIELD_HINTS = {
+        "ID": "ID", "Inventory / Code": "父件编码", "Inventory / Name": "父件名称", "BOMProcessDTOs / SequenceNumber": "加工顺序",
+        "BOMProcessDTOs / Process / Code": "工序编码", "BOMProcessDTOs / Process / Name": "工序名称", "BOMProcessDTOs / Process / KeyProcess": "是否关键工序",
+        "BOMProcessDTOs / Process / Workshop": "生产车间", "BOMProcessDTOs / Process / WorkCenter": "工作中心",
+        "BOMProcessDTOs / Process / Equipment": "生产设备", "BOMProcessDTOs / Process / StandardWorkingHours": "标准工时",
+    }
+
+
+    async def query(self, only_today: bool = False):
+        """
+        查询批量工艺路线数据
+        """
+        assert self._CONNECTION, "未获得连接对象，请先注册"
+        assert self._CONNECTION._BOM_CODES, "请先拉取BOM数据，获取BOM CODES"
+        await self._CONNECTION.auth()
+
+        endpoint = self._QUERY_ENDPOINT
+        params = {
+            "PageIndex": 1,
+            "PageSize": self._CONNECTION.config.max_page_size,
+            "SelectFields": ",".join(self._FIELD_HINTS.keys()),
+        } 
+        if only_today:
+            today = datetime.now().strftime("%Y-%m-%d")
+            params.update({"UpdateDateBegin": f"{today} 00:00:00", "UpdateDateEnd": f"{today} 23:59:59"})
+ 
+        
+
+        
+
+
+
+
+
+
+        return ExternalData(data=data, pydantic_model=self._PULL_PYDANTIC_MODEL)
+
+
+    async def pull(self):
+        """
+        查询批量工艺路线数据
+        """
+        return await self.query()
+        
 
 
 # class BomObject(BaseSource):
