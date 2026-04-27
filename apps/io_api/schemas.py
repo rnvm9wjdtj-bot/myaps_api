@@ -266,14 +266,29 @@ class AcceptMatWc(BaseModel):
             values["basesec"] = float(values["basesec"])
         except:
             values["basesec"] = None
+        try:
+            values["offsetsec"] = int(float(values["offsetsec"]))
+        except:
+            if values.get("offsetsec") in gc.NONE_AND_EMPTY:
+                values["offsetsec"] = 0
+            else:
+                values["offsetsec"] = None
+        try:
+            values["fixqty"] = int(values["fixqty"])
+        except:
+            if values.get("fixqty") in gc.NONE_AND_EMPTY:
+                values["fixqty"] = 0
+            else:
+                values["fixqty"] = None
+        try:
+            values["fixsec"] = int(values["fixsec"])
+        except:
+            if values.get("fixsec") in gc.NONE_AND_EMPTY:
+                values["fixsec"] = 0
+            else:
+                values["fixsec"] = None
         if values.get("sf") in gc.NONE_AND_EMPTY:
             values["sf"] = "F"
-        if values.get("offsetsec") in gc.NONE_AND_EMPTY:
-            values["offsetsec"] = 0
-        if values.get("fixqty") in gc.NONE_AND_EMPTY:
-            values["fixqty"] = 0
-        if values.get("fixsec") in gc.NONE_AND_EMPTY:
-            values["fixsec"] = 0
         return values
 
     @model_validator(mode="after")

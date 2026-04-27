@@ -490,41 +490,11 @@ class ExternalBaseConnection(ABC):
             self._async_session = None
 
 
-    # @abstractmethod
     def auth(self, *args, **kwargs):
         """
         认证连接
         """
         raise NotImplementedError("auth method not implemented")
-
-
-    # @abstractmethod
-    # def pull_from_source(self, *args, **kwargs):
-    #     """
-    #     从目标系统获取数据
-    #     """
-    #     pass
-
-    # @abstractmethod
-    # async def pull_from_source_async(self, *args, **kwargs):
-    #     """
-    #     异步从目标系统获取数据
-    #     """
-    #     pass
-
-    # @abstractmethod
-    # def push_into_target(self, *args, **kwargs):
-    #     """
-    #     推送数据到目标系统
-    #     """
-    #     pass
-
-    # @abstractmethod
-    # async def push_into_target_async(self, *args, **kwargs):
-    #     """
-    #     异步推送数据到目标系统
-    #     """
-    #     pass
 
 
     def register_source(self, source):
@@ -552,12 +522,14 @@ class BaseSource:
     _QUERY_ENDPOINT : str = None   # 查询接口路径
     _QUERY_BATCH_ENDPOINT : str = None   # 查询批量接口路径
     _PULL_PYDANTIC_MODEL : type[PydanticModel] = None   # 拉取数据的Pydantic模型
-    _FIELD_HINTS : dict[str, str] = None   # 字段注解，涉及select字段的，根据此参数的key取
+    _FIELD_HINTS : dict[str, str] = None   # 字段注解
     _DOCUMENTATION_URL : str = None   # 技术文档URL，无逻辑意义
 
 
-    def __init__(self):
-        self.data = None
+    def __init__(self, raw_data: dict):
+        self.raw_data = raw_data
+        self.external_data = None
+        self.internal_data = None
     
 
     async def query(self):
@@ -596,12 +568,27 @@ class BaseVoucher(BaseSource):
     """
     from . import ApsPayloadSponsor, EventResultPoster
     
-    _CREATE_ENDPOINT = None   # 创建接口路径
-    _UPDATE_ENDPOINT = None   # 更新接口路径
-    _DELETE_ENDPOINT = None   # 删除接口路径
-    _PUSH_PYDANTIC_MODEL = None   # 推送数据的Pydantic模型
+    _CREATE_ENDPOINT: str = None   # 创建接口路径
+    _UPDATE_ENDPOINT: str = None   # 更新接口路径
+    _DELETE_ENDPOINT: str = None   # 删除接口路径
+    _APPROVE_ENDPOINT: str = None   # 审批接口路径
+    _PUSH_PYDANTIC_MODEL: Type[PydanticModel] = None   # 推送数据的Pydantic模型
     
-    async def create(self, _erp: EventResultPoster):
+    def __init__(self, raw_data: dict, *args, **kwargs):
+        self.raw_data = raw_data
+        self.internal_data = None
+        self.external_data = None
+    
+
+    async def create(
+        self,
+        _aps: ApsPayloadSponsor,
+        _erp: EventResultPoster,
+        pydantic_model: Type[PydanticModel] = None,
+
+        *args,
+        **kwargs,
+    ):
         """
         创建凭证
         
@@ -630,22 +617,71 @@ class BaseVoucher(BaseSource):
         """
         raise NotImplementedError("子类必须实现delete方法")
 
+    
+    async def approve(self, _erp: EventResultPoster):
+        """
+        审批凭证
+        
+        Raises:
+            NotImplementedError: 子类必须实现approve方法
+        """
+        raise NotImplementedError("子类必须实现approve方法")
+
 
 
 class InternalData:
+    """内部APS数据包装器"""
 
-    def __init__(self, data: dict | List[dict], pydantic_model: PydanticModel = None):
+    def __init__(self, data: dict | List[dict], pydantic_model: Type[PydanticModel] = None):
         self._pydantic_model = pydantic_model
         self.data = data
         if isinstance(data, dict):
             self.data_list = [data]
         else:
             self.data_list = data
+
+
+    def is_empty(self):
+        """
+        检查数据是否为空
+        
+        Returns:
+            True: 数据为空
+            False: 否则
+        """
+        return not self.data_list
+
+    
+    # def get(self, key: str, default=None):
+    #     """
+    #     获取数据列表第一条指定键的值
+    #     """
+    #     return self.data_list[0].get(key, default)
+
+
+    # def gets(self, key: str, default=None):
+    #     return [data.get(key, default) for data in self.data_list]
         
 
-    async def dumps(self, pydantic_model: PydanticModel = None):
+    async def dump(self, pydantic_model: Type[PydanticModel] = None) -> dict:
         """
-        转换为外部数据格式
+        转换为外部数据格式，只转化数据列表第一条
+        
+        Args:
+            pydantic_model: 转换模型
+        """
+        assert self._pydantic_model or pydantic_model, "未设置转换模型pydantic_model"
+        if pydantic_model is None:
+            pydantic_model = self._pydantic_model
+        else:
+            self._pydantic_model = pydantic_model
+
+        return pydantic_model.model_dump(self.data_list[0])
+
+
+    async def dumps(self, pydantic_model: Type[PydanticModel] = None) -> List[dict]:
+        """
+        转换为外部数据格式，转化数据列表所有数据
         
         Args:
             pydantic_model: 转换模型
@@ -662,8 +698,9 @@ class InternalData:
 
 
 class ExternalData:
+    """外部ERP数据包装器"""
 
-    def __init__(self, data: dict | List[dict], pydantic_model: PydanticModel = None):
+    def __init__(self, data: dict | List[dict], pydantic_model: Type[PydanticModel] = None):
         """
         初始化数据对象
         
@@ -689,12 +726,46 @@ class ExternalData:
         return not self.data_list
 
 
-    async def loads(self, pydantic_model: PydanticModel = None):
+    def first(self):
         """
-        从外部加载数据
+        获取数据列表第一条数据
+        
+        Returns:
+            dict: 第一条数据
+        """
+        return self.data_list[0]
+
+    # def get(self, key: str, default=None):
+    #     """
+    #     获取数据列表第一条指定键的值
+    #     """
+    #     return self.data_list[0].get(key, default)
+
+
+    # def gets(self, key: str, default=None):
+    #     return [data.get(key, default) for data in self.data_list]
+
+
+    async def load(self, pydantic_model: Type[PydanticModel] = None) -> dict:
+        """
+        转化为 APS 内部数据格式, 只转化数据列表第一条
+        """
+        assert self._pydantic_model or pydantic_model, "未设置转换模型pydantic_model"
+        if pydantic_model is None:
+            pydantic_model = self._pydantic_model
+        else:
+            self._pydantic_model = pydantic_model
+        internal_data = pydantic_model.model_dump(self.data_list[0])
+        return pydantic_model.model_validate(internal_data)
+
+
+
+    async def loads(self, pydantic_model: Type[PydanticModel] = None) -> List[dict]:
+        """
+        转化为 APS 内部数据格式, 转化数据列表所有数据
         
         Args:
-            pydantic_model: 外部数据
+            pydantic_model: 外部数据模型
         """
         assert self._pydantic_model or pydantic_model, "未设置转换模型pydantic_model"
         if pydantic_model is None:

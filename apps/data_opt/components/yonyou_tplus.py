@@ -938,18 +938,18 @@ class TplusConnection(ExternalBaseConnection):
         """
         endpoint = RsCreateInterface.endpoint
         if isinstance(mdlist_or_supplyno, str):
-            rs_data = await _aps.get_demand_datalist(demandno=mdlist_or_supplyno)     # 查询 指定工单号所需物料
-            demandno = mdlist_or_supplyno
+            rs_data_list = await _aps.get_demand_datalist(demandno=mdlist_or_supplyno)     # 查询 指定工单号所需物料
+            rs_no = mdlist_or_supplyno
         else:
-            rs_data = mdlist_or_supplyno
-            demandno = rs_data[0]['demandno']
+            rs_data_list = mdlist_or_supplyno
+            rs_no = rs_data_list[0]['demandno']
 
         if isinstance(tplus_mo_data_or_id, dict):
             mo_data = tplus_mo_data_or_id
         else:
             mo_data = await _aps.query_mo_async(index_value=tplus_mo_data_or_id)
 
-        processed_rsdata = DataProcessor.merge_common_fields(data=rs_data, merge_with=["demandno", "type", "status", "create_date"], entries_key=MERGE_ENTRIY_KEY)
+        processed_rsdata = DataProcessor.merge_common_fields(data=rs_data_list, merge_with=["demandno", "type", "status", "create_date"], entries_key=MERGE_ENTRIY_KEY)
 
         mo_id = mo_data['ID']
         mo_code = mo_data['Code']
@@ -975,11 +975,11 @@ class TplusConnection(ExternalBaseConnection):
                 response = await response
             rs_push_response_json = response
             if str(rs_push_response_json['code']) == '0': # 创建成功
-                await _erp.rs_release_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
+                await _erp.rs_release_success(rsno=rs_no, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
             else:
-                await _erp.rs_release_failed(rsno=demandno, msg=rs_push_response_json['message'], push_data=processed_rsdata, msg_from='T+')
+                await _erp.rs_release_failed(rsno=rs_no, msg=rs_push_response_json['message'], push_data=processed_rsdata, msg_from='T+')
         else:
-            await _erp.rs_release_success(rsno=demandno, msg="无领料申请详情", msg_from='APS')
+            await _erp.rs_release_success(rsno=rs_no, msg="无领料申请详情", msg_from='APS')
 
 
     async def push_pr(
