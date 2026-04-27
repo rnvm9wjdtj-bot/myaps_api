@@ -186,62 +186,49 @@ planner_email_reminder = QqEmailReminder(
 
 @event_batch_handler(reminder=planner_email_reminder)
 async def batch_handle_pl_status_a2e(event_data_list: list[dict], _erp: EventResultPoster, description="下达生产加工单至 T+"):
-    @async_rate_limit()
-    async def handle_pl_status_a2e(event_data: dict, _aps: ApsPayloadSponsor):
-        """处理PL状态变更为A2E"""
-        try:
-            await TplusMo(event_data).create(
-                _aps=_aps,
-                _erp=_erp,
-                pydantic_model=_CustomMoPushModel,
-                remain_native_supplyno=REMAIN_NATIVE_SUPPLYNO
-            )
-        except Exception as e:
-            CLIENT_LOGGER.fail("处理PL状态变更", str(event_data), str(e))
-            await _erp.mo_release_failed(supplyno, msg=str(e))
-
     supply_nos = [s['supplyno'] for s in event_data_list]
     await TSupply.filter(supplyno__in=supply_nos).update(memo=" 📤 正在推送至 T+ ...")
 
     aps_payload_sponsor = ApsPayloadSponsor(production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL])
     await aps_payload_sponsor.establish_production_cache(supplynos=supply_nos)
     _CustomMoPushModel = create_custom_mo_push_model(aps_payload_sponsor)
-    tasks = [handle_pl_status_a2e(event_data=item, _aps=aps_payload_sponsor) for item in event_data_list]
+    tasks = [
+        TplusMo(event_data).create(
+                _aps=aps_payload_sponsor,
+                _erp=_erp,
+                pydantic_model=_CustomMoPushModel,
+                remain_native_supplyno=REMAIN_NATIVE_SUPPLYNO
+        ) 
+        for event_data in event_data_list
+    ]
     await asyncio.gather(*tasks, return_exceptions=True)
 
 
 @event_batch_handler(reminder=planner_email_reminder)
 async def batch_handle_pl_to_mo(event_data_list: list[dict], _erp: EventResultPoster, description="推送领料申请至 T+"):
-    
-    @async_rate_limit()
-    async def handle_pl_to_mo(event_data: dict, _aps: ApsPayloadSponsor):
-        """处理PL类型变更：转为MO"""
-        try:
-            await TplusRs(event_data).create(
-                _aps=_aps,
-                _erp=_erp,
-                pydantic_model=_CustomRsPushModel,
-            )
-        except Exception as e:
-            CLIENT_LOGGER.fail("处理PL类型变更", str(event_data), str(e))
-            await _erp.rs_release_failed(rsno=supplyno, msg=str(e))
-
     supply_nos = [s['supplyno'] for s in event_data_list]
     aps_payload_sponsor = ApsPayloadSponsor(production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL])
-    cache = await aps_payload_sponsor.establish_production_cache(supplynos=supply_nos)
+    await aps_payload_sponsor.establish_production_cache(supplynos=supply_nos)
     _CustomRsPushModel = create_custom_rs_push_model(aps_payload_sponsor)
-    tasks = [handle_pl_to_mo(item, aps_payload_sponsor) for item in event_data_list]
+    tasks = [
+        TplusRs(event_data).create(
+            _aps=aps_payload_sponsor,
+            _erp=_erp,
+            pydantic_model=_CustomRsPushModel,
+        )
+        for event_data in event_data_list
+    ]
     await asyncio.gather(*tasks, return_exceptions=True)
 
 
 @event_batch_handler(reminder=planner_email_reminder)
-@async_rate_limit()
 async def batch_handle_pr_status_a2e(pr_data_list: list[dict], _erp: EventResultPoster, description="推送请购单至 T+"):
-    try:
+    # try:
         await TplusPr(pr_data_list).create(_erp=_erp)
-    except Exception as e:
-        pr_nos = [p.get('supplyno') for p in pr_data_list if p.get('supplyno')]
-        await _erp.pr_release_failed(prno=pr_nos[0] if pr_nos else None, msg=str(e))
+    # except Exception as e:
+    #     CLIENT_LOGGER.warning_msg(f"{description}失败", str(e))
+    #     pr_nos = [p.get('supplyno') for p in pr_data_list if p.get('supplyno')]
+    #     await _erp.pr_release_failed(prno=pr_nos[0] if pr_nos else None, msg=str(e))
         
         
 

@@ -23,6 +23,7 @@ from ._base import (
     db_query, TSupply, TDemand, ExternalBaseConnection, BaseSource, BaseVoucher, InternalData, ExternalData,
 )
 
+from project_files._base import async_rate_limit
 
 
 MERGE_ENTRIY_KEY = '_entries_'
@@ -896,6 +897,7 @@ class TplusMo(BaseVoucher):
     #     self.data = data or {}
         
     
+    @async_rate_limit()
     async def create(
         self,
         _aps: ApsPayloadSponsor,
@@ -903,51 +905,55 @@ class TplusMo(BaseVoucher):
         pydantic_model: Type[PydanticModel] = None,
         remain_native_supplyno: bool = True
     ):
-        assert self._CONNECTION, "未获得连接对象，请先注册"
-        await self._CONNECTION.auth()
+        try:
+            assert self._CONNECTION, "未获得连接对象，请先注册"
+            await self._CONNECTION.auth()
 
-        endpoint = self._CREATE_ENDPOINT
-        supplyno = self.raw_data.get('supplyno')
-        demand_list = await _aps.get_demand_datalist(demandno=supplyno)
-        supplymo_detaildata = await _aps.get_supplymo_detaildata(supplyno=supplyno, get_next_mo=True, get_origin_so=True)   
-        supplymo_detaildata['demand_list'] = demand_list
+            endpoint = self._CREATE_ENDPOINT
+            supplyno = self.raw_data.get('supplyno')
+            demand_list = await _aps.get_demand_datalist(demandno=supplyno)
+            supplymo_detaildata = await _aps.get_supplymo_detaildata(supplyno=supplyno, get_next_mo=True, get_origin_so=True)   
+            supplymo_detaildata['demand_list'] = demand_list
 
-        pydantic_model = pydantic_model or self._PUSH_PYDANTIC_MODEL
-        # dto = InternalData(data=supplymo_detaildata).dump(pydantic_model=pydantic_model)
-        dto = pydantic_model(**supplymo_detaildata).model_dump(exclude_none=True)
+            pydantic_model = pydantic_model or self._PUSH_PYDANTIC_MODEL
+            # dto = InternalData(data=supplymo_detaildata).dump(pydantic_model=pydantic_model)
+            dto = pydantic_model(**supplymo_detaildata).model_dump(exclude_none=True)
 
-        if remain_native_supplyno:
-            dto['Code'] = supplyno
-        payload = {"dto": dto}
-        
-        mo_create_response_json = await self._CONNECTION._post(endpoint=endpoint, data=payload)
-        if str(mo_create_response_json['code']) == '0': # 响应错误码为0，MO 创建成功
-            response_data = mo_create_response_json['data']
-            tplus_mo_id = response_data['ID']
-            tplus_mo_code = supplyno if remain_native_supplyno else response_data['Code']
-            # 审批 MO ，要在领料申请前批准
-            _x_a = await self.approve(tplus_moid=tplus_mo_id)
-            # 查询推送成功的 MO 在 T+ 中的详情
-            tplus_mo_data = (await TplusMo.query(index_value=tplus_mo_id)).first()
-            # 从 T+ 中提取 MO 详情中的第一个详情记录的 ID 作为 _entryid
-            tplus_mo_entryid = tplus_mo_data['ManufactureOrderDetails'][0]['ID']
-            # 调用存储过程更改工单信息，❗一定放在最后一步，否则工单号变更太早，前面若有用原生供应号查询都会失败
-            _x_b = await _erp.mo_release_success(
-                native_plno=supplyno,
-                msg=mo_create_response_json['message'],
-                msg_from='T+',
-                mono=tplus_mo_code,
-                _id=tplus_mo_id,
-                _entryid=tplus_mo_entryid
-            )
-        else:
-            _x_c = await _erp.mo_release_failed(
-                native_plno=supplyno,
-                msg=mo_create_response_json['message'],
-                push_data=payload,
-                msg_from='T+'
-            )
-        return self
+            if remain_native_supplyno:
+                dto['Code'] = supplyno
+            payload = {"dto": dto}
+            
+            mo_create_response_json = await self._CONNECTION._post(endpoint=endpoint, data=payload)
+            if str(mo_create_response_json['code']) == '0': # 响应错误码为0，MO 创建成功
+                response_data = mo_create_response_json['data']
+                tplus_mo_id = response_data['ID']
+                tplus_mo_code = supplyno if remain_native_supplyno else response_data['Code']
+                # 审批 MO ，要在领料申请前批准
+                _x_a = await self.approve(tplus_moid=tplus_mo_id)
+                # 查询推送成功的 MO 在 T+ 中的详情
+                tplus_mo_data = (await TplusMo.query(index_value=tplus_mo_id)).first()
+                # 从 T+ 中提取 MO 详情中的第一个详情记录的 ID 作为 _entryid
+                tplus_mo_entryid = tplus_mo_data['ManufactureOrderDetails'][0]['ID']
+                # 调用存储过程更改工单信息，❗一定放在最后一步，否则工单号变更太早，前面若有用原生供应号查询都会失败
+                _x_b = await _erp.mo_release_success(
+                    native_plno=supplyno,
+                    msg=mo_create_response_json['message'],
+                    msg_from='T+',
+                    mono=tplus_mo_code,
+                    _id=tplus_mo_id,
+                    _entryid=tplus_mo_entryid
+                )
+            else:
+                _x_c = await _erp.mo_release_failed(
+                    native_plno=supplyno,
+                    msg=mo_create_response_json['message'],
+                    push_data=payload,
+                    msg_from='T+'
+                )
+            return self
+        except Exception as e:
+            logger.warning("创建生产加工单失败", str(e))
+            _erp.mo_release_failed(native_plno=supplyno, msg=str(e))
 
 
     @classmethod
@@ -998,53 +1004,58 @@ class TplusRs(BaseVoucher):
         super().__init__(supplymo_data)
 
 
+    @async_rate_limit()
     async def create(self,
         _aps: ApsPayloadSponsor,
         _erp: EventResultPoster,
         pydantic_model: Type[PydanticModel] = None
     ):
-        assert self._CONNECTION, "未获得连接对象，请先注册"
-        await self._CONNECTION.auth()
-        endpoint = self._CREATE_ENDPOINT
-        pydantic_model = pydantic_model or self._PUSH_PYDANTIC_MODEL
+        try:
+            assert self._CONNECTION, "未获得连接对象，请先注册"
+            await self._CONNECTION.auth()
+            endpoint = self._CREATE_ENDPOINT
+            pydantic_model = pydantic_model or self._PUSH_PYDANTIC_MODEL
 
-        rs_no = self.raw_data.get('supplyno')
-        tplus_mo_id = self.raw_data.get('apiex_id')
-        rs_data_list = await _aps.get_demand_datalist(demandno=rs_no)
-        tplus_mo_data = (await TplusMo.query(index_value=tplus_mo_id)).first()
+            rs_no = self.raw_data.get('supplyno')
+            tplus_mo_id = self.raw_data.get('apiex_id')
+            rs_data_list = await _aps.get_demand_datalist(demandno=rs_no)
+            tplus_mo_data = (await TplusMo.query(index_value=tplus_mo_id)).first()
 
-        processed_rsdata = DataProcessor.merge_common_fields(
-            data=rs_data_list,
-            merge_with=["demandno", "type", "status", "create_date"],
-            entries_key=MERGE_ENTRIY_KEY
-        )
+            processed_rsdata = DataProcessor.merge_common_fields(
+                data=rs_data_list,
+                merge_with=["demandno", "type", "status", "create_date"],
+                entries_key=MERGE_ENTRIY_KEY
+            )
 
-        mo_id = tplus_mo_data['ID']
-        # mo_code = tplus_mo_data['Code']
-        # mo_depart_code = tplus_mo_data.get('Department', {}).get('Code', '')
-        tplus_mo_entryid = tplus_mo_data['ManufactureOrderDetails'][0]['ID']
-        mo_material_details = tplus_mo_data['ManufactureOrderDetails'][0]['ManufactureOrderMaterialDetails']
-        # mo_material_details_id = mo_material_details[0]['ID']
+            mo_id = tplus_mo_data['ID']
+            # mo_code = tplus_mo_data['Code']
+            # mo_depart_code = tplus_mo_data.get('Department', {}).get('Code', '')
+            tplus_mo_entryid = tplus_mo_data['ManufactureOrderDetails'][0]['ID']
+            mo_material_details = tplus_mo_data['ManufactureOrderDetails'][0]['ManufactureOrderMaterialDetails']
+            # mo_material_details_id = mo_material_details[0]['ID']
 
-        processed_rsdata['tplus_mo_id'] = mo_id
-        processed_rsdata['tplus_mo_entryid'] = tplus_mo_entryid
-        processed_rsdata['tplus_mo_data'] = tplus_mo_data
-        
-        # processed_rsdata['mo_material_details_id'] = mo_material_details_id
-        processed_rsdata['mo_material_details'] = mo_material_details
+            processed_rsdata['tplus_mo_id'] = mo_id
+            processed_rsdata['tplus_mo_entryid'] = tplus_mo_entryid
+            processed_rsdata['tplus_mo_data'] = tplus_mo_data
+            
+            # processed_rsdata['mo_material_details_id'] = mo_material_details_id
+            processed_rsdata['mo_material_details'] = mo_material_details
 
-        dto = pydantic_model(**processed_rsdata).model_dump()
-        if dto["MaterialRequestDetails"]:   # 有领料申请详情
-            payload = {"dto": dto}
-            logger.debug(f"向 T+ 推送领料申请，发送数据：{json.dumps(payload, ensure_ascii=False)}")
-            rs_push_response_json = await self._CONNECTION._post(endpoint=endpoint, data=payload)
+            dto = pydantic_model(**processed_rsdata).model_dump()
+            if dto["MaterialRequestDetails"]:   # 有领料申请详情
+                payload = {"dto": dto}
+                logger.debug(f"向 T+ 推送领料申请，发送数据：{json.dumps(payload, ensure_ascii=False)}")
+                rs_push_response_json = await self._CONNECTION._post(endpoint=endpoint, data=payload)
 
-            if str(rs_push_response_json['code']) == '0': # 创建成功
-                await _erp.rs_release_success(rsno=rs_no, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
+                if str(rs_push_response_json['code']) == '0': # 创建成功
+                    await _erp.rs_release_success(rsno=rs_no, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
+                else:
+                    await _erp.rs_release_failed(rsno=rs_no, msg=rs_push_response_json['message'], push_data=processed_rsdata, msg_from='T+')
             else:
-                await _erp.rs_release_failed(rsno=rs_no, msg=rs_push_response_json['message'], push_data=processed_rsdata, msg_from='T+')
-        else:
-            await _erp.rs_release_success(rsno=rs_no, msg="无领料申请详情", msg_from='APS')
+                await _erp.rs_release_success(rsno=rs_no, msg="无领料申请详情", msg_from='APS')
+        except Exception as e:
+            logger.warning_msg(f"创建领料申请单失败", str(e))
+            await _erp.rs_release_failed(rsno=rs_no, msg=str(e))
 
 
 
@@ -1068,17 +1079,18 @@ class TplusPr(BaseVoucher):
         self.raw_data = event_data_list
 
 
+    @async_rate_limit()
     async def create(self,
         # _aps: ApsPayloadSponsor,
         _erp: EventResultPoster,
         pydantic_model: Type[PydanticModel] = None
     ):
-        assert self._CONNECTION, "未获得连接对象，请先注册"
-        await self._CONNECTION.auth()
-        endpoint = self._CREATE_ENDPOINT
-        pydantic_model = pydantic_model or self._PUSH_PYDANTIC_MODEL
-
         try:
+            assert self._CONNECTION, "未获得连接对象，请先注册"
+            await self._CONNECTION.auth()
+            endpoint = self._CREATE_ENDPOINT
+            pydantic_model = pydantic_model or self._PUSH_PYDANTIC_MODEL
+
             # 转换为 T+ 格式
             agg_data_list = await ApsPayloadSponsor.aggregate_pr_data(pr_data_list=self.raw_data)
             tplus_pr_data = pydantic_model(data=agg_data_list).model_dump(exclude_none=True)
