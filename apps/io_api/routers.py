@@ -532,7 +532,7 @@ async def post_mat_wc_mold(
 #     filter_string = f"`SupplyNo`='{supplyno}'"
 
 #     supply_query_result = await db_query(db_name=db_name, model_or_tablename="v_supply", filter_string=filter_string)
-#     supply_data = supply_query_result['data']
+#     supply_data = supply_query_result.data
 
 #     return standard_response(data=supply_data)
 
@@ -619,8 +619,8 @@ async def post_supply(
 # ):
 #     db_name = db_name.replace(" ", "")
 #     query_result = await db_query(db_name=db_name, model_or_tablename="t_supply", filter_string=f"`SupplyNo`='{supplyno}'")
-
-#     query_data = query_result['data']
+#
+#     query_data = query_result.data
 #     if not query_data[0]["type"] == "PL":
 #         return standard_response(
 #             status_code=status.HTTP_400_BAD_REQUEST,
@@ -763,14 +763,14 @@ async def delete_supply(
 #     # type_: str = Path(..., enum=["DM", "RS"], description="需求类型"),
 # ):
 #     query_result_demand = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{demandno}'")
-#     if query_result_demand["success"] == 0:
+#     if query_result_demand.success == 0:
 #         return query_result_demand
 #     query_result_supply = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=f"`SupplyNo`='{demandno}'")
-#     if query_result_supply["success"] == 0:
+#     if query_result_supply.success == 0:
 #         return query_result_demand
-#     if query_result_supply["data"]:
+#     if query_result_supply.data:
 #         # 合并需求和供应数据
-#         query_result_demand["meta"]["mo"] = query_result_supply["data"][0]
+#         query_result_demand.meta["mo"] = query_result_supply.data[0]
 #     return query_result_demand
 
 
@@ -1063,113 +1063,20 @@ async def get_matdailyqtyreport(
     groupdates: 分组日期，逗号分隔，默认空。
     materialno: 料号，多个料号用逗号分隔，默认空。
     """
-    start_date: datetime.date = datetime.now().date()
-
+    from apps.data_opt.components import ApsPayloadSponsor
+    
     try:
-        period = int(period)
-        end_date = start_date + timedelta(days=period)
-    except ValueError:
-        try:
-            end_date = datetime.strptime(period, '%Y-%m-%d').date()
-        except ValueError:
-            return standard_response(status_code=status.HTTP_400_BAD_REQUEST, success=0, message="Invalid date format for period. Use YYYY-MM-DD.")
-
-    db_name = db_name.replace(" ", "")
-    request_result = []
-    if groupdates and groupdates != 'None':
-        dates = [_.strip() for _ in groupdates.split(',')]
-    else:
-        dates = [(start_date + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(period)]
-    filter_string = f"`DateStr` >= '{start_date}' AND `DateStr` <= '{end_date}'"
-    order_string = "`MaterialNo`, `DateStr`"
-    if materialno:
-        sql_matno = ','.join([f"'{matno.strip()}'" for matno in materialno.split(',')])
-        filter_string += f" AND `MaterialNo` IN ({sql_matno})"
-    query_result = await db_query(db_name=db_name, model_or_tablename="v_matdailyqtyreport", filter_string=filter_string, order_string=order_string)
-    if data := query_result.get('data'):
-        request_result.extend(data)
-
-    if not request_result:
-        return standard_response(status_code=status.HTTP_204_NO_CONTENT, message="No data available", meta={'total': 0}, data=request_result)
-
-    # 转换为DataFrame并过滤
-    df = pd.DataFrame(request_result)
-    df = df.sort_values(by=['materialno', 'datestr'], ascending=[True, True])
-    # df = df[df['type'] == 'F'].sort_values(by=['materialno', 'datestr'], ascending=[True, True])
-
-    df['original_datestr'] = df['datestr']
-    # 日期映射
-    if dates:
-        sorted_dates = sorted([datetime.strptime(d, '%Y-%m-%d').date() for d in dates])
-        # 为每个原始日期找到对应的分组区间，并使用区间左端点作为要求交期
-        def get_group_start_date(x):
-            x_date = x
-            # 遍历排序后的分组日期
-            for i in range(len(sorted_dates)):
-                # 对于最后一个分组，所有大于等于它的日期都属于这个分组
-                if i == len(sorted_dates) - 1:
-                    if x_date >= sorted_dates[i]:
-                        return str(sorted_dates[i])
-                # 对于其他分组，判断日期是否在当前分组和下一个分组之间
-                else:
-                    if sorted_dates[i] <= x_date < sorted_dates[i+1]:
-                        return str(sorted_dates[i])
-            # 如果日期小于第一个分组日期，返回第一个分组日期
-            return str(sorted_dates[0])
-        
-        df['datestr'] = pd.to_datetime(df['datestr']).dt.date.apply(get_group_start_date)
+        result = await ApsPayloadSponsor.get_date_grouped_mat_daily_qty(
+            db_name=db_name,
+            period=period,
+            groupdates=groupdates,
+            materialno=materialno
+        )
+    except ValueError as e:
+        return standard_response(status_code=status.HTTP_400_BAD_REQUEST, success=0, message=str(e))
     
-    # 分组汇总
-    group_fields = ['materialno', 'datestr']
-    sum_fields = ['totaldemand', 'totalsupply', 'dailybalance']
-
-    # 动态生成聚合字典
-    agg_dict = {
-        **{col: 'last' for col in df.columns if col not in group_fields + sum_fields + ['original_datestr']},
-        **{f: 'sum' for f in sum_fields},
-        # 'original_datestr': lambda x: ','.join(sorted(set(dt.strftime('%Y-%m-%d') for dt in x))),
-        'original_datestr': lambda x: ','.join(sorted(set(str(dt) for dt in x))),
-    }
-    
-    df_grouped = (df.groupby(group_fields).agg(agg_dict).reset_index()
-                    .rename(columns={
-                            "original_datestr": "期间",
-                            "totaldemand": "期间合计需求",
-                            "totalsupply": "期间合计供应",
-                            "dailybalance": "期间盈余",
-                            "cumulativebalance": "累计盈余",
-                            "stockqty": "首期库存",
-                            "datestr": "要求交期",
-                            "name": "物料来源"
-                            })
-    )
-    
-    # 计算期初盈余和期末盈余
-    result = []
-    material_balances = {}
-    
-    for record in df_grouped.to_dict('records'):
-        mat_no = record["materialno"]
-        if mat_no not in material_balances:
-            # 首个日期组
-            opening_balance = record["首期库存"]
-            closing_balance = opening_balance + record["期间合计需求"]
-            record["期间要货数"] = abs(min(0, record["期间合计供应"] + record["期间合计需求"]))
-        else:
-            # 后续日期组
-            opening_balance = material_balances[mat_no]
-            closing_balance = opening_balance + record["期间合计需求"] + record["期间合计供应"]
-            record["期间要货数"] = abs(min(max(0, opening_balance) + record["期间合计供应"] + record["期间合计需求"], 0))
-        
-        date_range = record["期间"].split(',')
-        # 更新记录
-        record.update({
-            "期初盈余": opening_balance,
-            "期末盈余": closing_balance,
-            "期间": f"{date_range[0]},{date_range[-1]}",
-        })
-        material_balances[mat_no] = closing_balance
-        result.append(record)
+    if not result:
+        return standard_response(status_code=status.HTTP_204_NO_CONTENT, message="No data available", meta={'total': 0}, data=result)
     
     return standard_response(status_code=status.HTTP_200_OK, meta={'total': len(result)}, data=result)
 

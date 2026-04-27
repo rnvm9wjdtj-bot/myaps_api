@@ -78,9 +78,13 @@ class SfEnum(str, Enum):
     F = "F"
 
 
-class ConstEnum(Enum):
+class OtherEnum(Enum):
     RELEASE_SUCCESS = "✅"
     RELEASE_FAILED = "🚫"
+    ASSERT_CONNECTION = "未获得连接对象，请先注册"
+    MERGE_ENTRIY_KEY = "_entries_"
+
+
 
 # LOT_SIZE = {
 #     "EX": "一对一",

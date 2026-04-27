@@ -926,52 +926,52 @@ if __name__ == '__main__':
     run_example()
 
 
-def run_example_from_erp():
-    """运行BOMChecker的完整示例"""
-    from apps.data_opt.components.yonyou_tplus1 import TplusConnection, TplusConfig
-    from apps.data_opt.components.simple_hap import HapConnection, get_maindata_worksheetinfo, WorksheetProperty
+# def run_example_from_erp():
+#     """运行BOMChecker的完整示例"""
+#     from apps.data_opt.components.yonyou_tplus1 import TplusConnection, TplusConfig
+#     from apps.data_opt.components.simple_hap import HapConnection, get_maindata_worksheetinfo, WorksheetProperty
 
 
-    hap_conn = HapConnection(
-        app_key='601ae007d84ca95a',
-        sign='ODVlMzNjYzA1ZTg1Yzg3YjI0NmQ5NTFmZGQ3OTk1MWYzMjE4M2JiMzYyNDEzMGU3NTY5YzI0YzEzYTYyYTExZA=='
-    )
+#     hap_conn = HapConnection(
+#         app_key='601ae007d84ca95a',
+#         sign='ODVlMzNjYzA1ZTg1Yzg3YjI0NmQ5NTFmZGQ3OTk1MWYzMjE4M2JiMzYyNDEzMGU3NTY5YzI0YzEzYTYyYTExZA=='
+#     )
 
-    hap_conn.regist_worksheet(get_maindata_worksheetinfo())
+#     hap_conn.regist_worksheet(get_maindata_worksheetinfo())
 
-    hap_conn.regist_worksheet(
-            [
-                WorksheetProperty(worksheet_id='bom_check_summary'),
-                WorksheetProperty(worksheet_id='transit_bom_structure'),
-                WorksheetProperty(worksheet_id='material_units_map'),
-            ]
-        )
+#     hap_conn.regist_worksheet(
+#             [
+#                 WorksheetProperty(worksheet_id='bom_check_summary'),
+#                 WorksheetProperty(worksheet_id='transit_bom_structure'),
+#                 WorksheetProperty(worksheet_id='material_units_map'),
+#             ]
+#         )
 
-    # 创建TplusConnection实例并调用auth方法
-    tp = TplusConnection()
+#     # 创建TplusConnection实例并调用auth方法
+#     tp = TplusConnection()
 
-    bom = tp.pull_from_source(source_name='bom')
+#     bom = tp.pull_from_source(source_name='bom')
 
-    from apps.data_opt.utils import bomchecker
+#     from apps.data_opt.utils import bomchecker
 
-    checker = bomchecker.BOMChecker(
-        mainfield_mapper={
-            "pn": "productno",# 与 class TplusMatWcBom(AcceptMatWcBom) 输出保持一致
-            "cn": "materialno",
-            "pu": 'pu',
-            "cu": "cu",
-            "n": "qty",
-            "d": "denominator"
-        },
-        dtofield_mapper={
-            "productno": "productno",
-            "materialno": "materialno",
-            "scrap": "scrap",
-            "qty": "qty",
-            "matver": "matver",
-        },
-    )
+#     checker = bomchecker.BOMChecker(
+#         mainfield_mapper={
+#             "pn": "productno",# 与 class TplusMatWcBom(AcceptMatWcBom) 输出保持一致
+#             "cn": "materialno",
+#             "pu": 'pu',
+#             "cu": "cu",
+#             "n": "qty",
+#             "d": "denominator"
+#         },
+#         dtofield_mapper={
+#             "productno": "productno",
+#             "materialno": "materialno",
+#             "scrap": "scrap",
+#             "qty": "qty",
+#             "matver": "matver",
+#         },
+#     )
 
-    checker.start_check(bom)
+#     checker.start_check(bom)
 
-    checker.output_results_to_hap(hap_conn)
+#     checker.output_results_to_hap(hap_conn)

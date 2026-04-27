@@ -8,6 +8,7 @@ import threading
 import asyncio
 import inspect
 from pathlib import Path
+from functools import wraps
 
 from enum import Enum
 from typing import List, Dict, Optional, Literal, Callable, Union, Any, Type
@@ -20,7 +21,7 @@ import uuid
 from dataclasses import dataclass, field
 
 
-from core.settings import THIS_BASE_URL, MYAPS_MAIN_DB, MYAPS_DB_SET
+from core.settings import THIS_BASE_URL, MYAPS_MAIN_DB, MYAPS_DB_SET, MAX_EVENTS_PER_SECOND
 from apps.data_opt.utils.common import get_session, get_async_session, convert_timeunit, clean_value
 from apps.data_opt.utils.data_processor import DataProcessor
 from apps.io_api.utils.db_operation import db_exec_sql, DbResult, MultiDbResult
@@ -32,7 +33,7 @@ from apps.io_api.schemas import (
 from apps.io_api.models import TSupply, TDemand
 from apps.io_api.utils.db_operation import db_query, db_update_by_index, db_query, db_delete, db_bupsert, call_dbprocdure
 from apps.io_api.utils.common import standard_response
-from globalobjects import globalconst, logger as log_config, PROJECT_JSON_FILE, ProjectDefaultValues as pdv, ConstEnum as ce
+from globalobjects import globalconst, logger as log_config, PROJECT_JSON_FILE, ProjectDefaultValues as pdv, OtherEnum as ce
 from globalobjects.json_manager import JSONManager
 
 
@@ -630,7 +631,7 @@ class BaseVoucher(BaseSource):
 
 
 
-class InternalData:
+class InternalDataSet:
     """内部APS数据包装器"""
 
     def __init__(self, data: dict | List[dict], pydantic_model: Type[PydanticModel] = None):
@@ -651,17 +652,6 @@ class InternalData:
             False: 否则
         """
         return not self.data_list
-
-    
-    # def get(self, key: str, default=None):
-    #     """
-    #     获取数据列表第一条指定键的值
-    #     """
-    #     return self.data_list[0].get(key, default)
-
-
-    # def gets(self, key: str, default=None):
-    #     return [data.get(key, default) for data in self.data_list]
         
 
     async def dump(self, pydantic_model: Type[PydanticModel] = None) -> dict:
@@ -693,12 +683,12 @@ class InternalData:
         else:
             self._pydantic_model = pydantic_model
         external_data_list = [pydantic_model(**data).model_dump() for data in self.data_list]
-        self.external_data_list = ExternalData(external_data_list, pydantic_model)
+        self.external_data_list = ExternalDataSet(external_data_list, pydantic_model)
         return self.external_data_list
 
 
 
-class ExternalData:
+class ExternalDataSet:
     """外部ERP数据包装器"""
 
     def __init__(self, data: dict | List[dict], pydantic_model: Type[PydanticModel] = None):
@@ -717,13 +707,7 @@ class ExternalData:
         
 
     def is_empty(self):
-        """
-        检查数据是否为空
-        
-        Returns:
-            True: 数据为空
-            False: 否则
-        """
+
         return not self.data_list
 
 
@@ -736,15 +720,6 @@ class ExternalData:
         """
         return self.data_list[0]
 
-    # def get(self, key: str, default=None):
-    #     """
-    #     获取数据列表第一条指定键的值
-    #     """
-    #     return self.data_list[0].get(key, default)
-
-
-    # def gets(self, key: str, default=None):
-    #     return [data.get(key, default) for data in self.data_list]
 
 
     async def load(self, pydantic_model: Type[PydanticModel] = None) -> dict:
@@ -774,7 +749,153 @@ class ExternalData:
         else:
             self._pydantic_model = pydantic_model
         internal_data_list = [pydantic_model(**data).model_dump() for data in self.data_list]
-        self.internal_data_list = InternalData(internal_data_list, pydantic_model)
+        self.internal_data_list = InternalDataSet(internal_data_list, pydantic_model)
         return self.internal_data_list
         
-        
+
+#################################################################################
+# 令牌桶限流器
+#################################################################################
+class AsyncTokenBucket:
+    """轻量异步令牌桶限流器"""
+    def __init__(self, rate: int, per: float = 1.0):
+        self.rate = rate
+        self.interval = 1.0 / rate if rate > 0 else 0
+        self.tokens = float(rate)
+        self.last_update = time.time()
+        self._lock = asyncio.Lock()
+        self._semaphore = asyncio.Semaphore(0)
+        self._task = None
+
+    async def _refill(self):
+        while True:
+            await asyncio.sleep(self.interval)
+            async with self._lock:
+                self.tokens = min(self.rate, self.tokens + 1)
+                if self._semaphore._value == 0 and self.tokens >= 1:
+                    self._semaphore.release()
+
+    def start(self):
+        if self._task is None:
+            self._task = asyncio.create_task(self._refill())
+
+    async def acquire(self, tokens: int = 1):
+        async with self._lock:
+            now = time.time()
+            elapsed = now - self.last_update
+            self.tokens = min(self.rate, self.tokens + elapsed / self.interval if self.interval > 0 else self.rate)
+            self.last_update = now
+            if self.tokens >= tokens:
+                self.tokens -= tokens
+                return
+        for _ in range(tokens):
+            await self._semaphore.acquire()
+
+    async def acquire_immediately(self, tokens: int = 1) -> bool:
+        async with self._lock:
+            now = time.time()
+            elapsed = now - self.last_update
+            self.tokens = min(self.rate, self.tokens + elapsed / self.interval if self.interval > 0 else self.rate)
+            self.last_update = now
+            if self.tokens >= tokens:
+                self.tokens -= tokens
+                return True
+        return False
+
+
+class SyncTokenBucket:
+    """轻量同步令牌桶限流器"""
+    def __init__(self, rate: int, per: float = 1.0):
+        self.rate = rate
+        self.interval = 1.0 / rate if rate > 0 else 0
+        self.tokens = float(rate)
+        self.last_update = time.time()
+        self._lock = Lock()
+
+    def acquire(self, tokens: int = 1):
+        with self._lock:
+            now = time.time()
+            elapsed = now - self.last_update
+            self.tokens = min(self.rate, self.tokens + elapsed / self.interval if self.interval > 0 else self.rate)
+            self.last_update = now
+            if self.tokens >= tokens:
+                self.tokens -= tokens
+                return True
+            wait_time = (tokens - self.tokens) * self.interval
+            time.sleep(wait_time)
+            self.tokens -= tokens
+            return True
+
+    def acquire_immediately(self, tokens: int = 1) -> bool:
+        with self._lock:
+            now = time.time()
+            elapsed = now - self.last_update
+            self.tokens = min(self.rate, self.tokens + elapsed / self.interval if self.interval > 0 else self.rate)
+            self.last_update = now
+            if self.tokens >= tokens:
+                self.tokens -= tokens
+                return True
+            return False
+
+
+# 全局共享令牌桶实例（所有装饰的函数共享同一个限流器）
+db_event_async_bucket = None
+db_event_sync_bucket = None
+
+
+def async_rate_limit(rate: int = None):
+    """
+    异步函数限流装饰器 - 所有装饰的函数共享同一个令牌桶
+    
+    用法:
+        @async_rate_limit(MAX_EVENTS_PER_SECOND)
+        async def handle_pl_status_a2e(supplyno_or_data):
+            ...
+    
+    限流维度: 基于被装饰函数的 event_count 参数指定的事件数量进行限流
+    """
+    global db_event_async_bucket
+    if rate is None:
+        rate = MAX_EVENTS_PER_SECOND
+    
+    if db_event_async_bucket is None:
+        db_event_async_bucket = AsyncTokenBucket(rate)
+        db_event_async_bucket.start()
+    
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            event_count = kwargs.pop('event_count', 1)
+            await db_event_async_bucket.acquire(event_count)
+            return await func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+def sync_rate_limit(rate: int = None):
+    """
+    同步函数限流装饰器 - 所有装饰的函数共享同一个令牌桶
+    
+    用法:
+        @sync_rate_limit(MAX_EVENTS_PER_SECOND)
+        def handle_pl_status_a2e(supplyno_or_data):
+            ...
+    
+    限流维度: 基于被装饰函数的 event_count 参数指定的事件数量进行限流
+    """
+    global db_event_sync_bucket
+    if rate is None:
+        rate = MAX_EVENTS_PER_SECOND
+    
+    if db_event_sync_bucket is None:
+        db_event_sync_bucket = SyncTokenBucket(rate)
+    
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            event_count = kwargs.pop('event_count', 1)
+            db_event_sync_bucket.acquire(event_count)
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
+

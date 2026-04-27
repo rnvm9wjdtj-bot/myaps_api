@@ -20,13 +20,13 @@ from ._base import (
     model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold, AcceptSupply, AcceptConfirm,
-    db_query, TSupply, TDemand, ExternalBaseConnection, BaseSource, BaseVoucher, InternalData, ExternalData,
+    db_query, TSupply, TDemand, ExternalBaseConnection, BaseSource, BaseVoucher, InternalDataSet, ExternalDataSet,
+    async_rate_limit
 )
 
-from project_files._base import async_rate_limit
 
 
-MERGE_ENTRIY_KEY = '_entries_'
+# MERGE_ENTRIY_KEY = '_entries_'
 CACHE_ERP = PROJECT_JSON_FILE.get("erp", {})
 
 
@@ -293,10 +293,10 @@ class RsPushModel(PydanticModel):
         cleaned_values = {}
         cleaned_values['ExternalCode'] = values['demandno']
         cleaned_values['VoucherType'] = {"Code": "ST1039"}
-        cleaned_values['VoucherDate'] = values[MERGE_ENTRIY_KEY][0]['req_date']
+        cleaned_values['VoucherDate'] = values[globalconst.OtherEnum.MERGE_ENTRIY_KEY.value][0]['req_date']
         cleaned_values['BusiType'] = {"Code": "MR01"}
         cleaned_values['Department'] = {"Code": values.get('tplus_mo_data', {}).get('Department', {}).get('Code', "")}
-        aps_demand_qty = {_['materialno']: _ for _ in values[MERGE_ENTRIY_KEY]}
+        aps_demand_qty = {_['materialno']: _ for _ in values[globalconst.OtherEnum.MERGE_ENTRIY_KEY.value]}
         tplus_material_details = values["mo_material_details"]
         mr_details = []
 
@@ -644,7 +644,7 @@ class TplusMaterial(BaseSource):
         """
         查询批量物料数据
         """
-        assert cls._CONNECTION, "未获得连接对象，请先注册"
+        assert cls._CONNECTION, globalconst.OtherEnum.ASSERT_CONNECTION.value
         await cls._CONNECTION.auth()
         endpoint = cls._QUERY_BATCH_ENDPOINT
         filter = {
@@ -658,7 +658,7 @@ class TplusMaterial(BaseSource):
             filter=filter
         )
 
-        return ExternalData(data=data, pydantic_model=cls._PULL_PYDANTIC_MODEL)
+        return ExternalDataSet(data=data, pydantic_model=cls._PULL_PYDANTIC_MODEL)
 
 
 
@@ -673,7 +673,7 @@ class TplusWorkcenter(BaseSource):
         """
         查询批量工作中心数据
         """
-        assert cls._CONNECTION, "未获得连接对象，请先注册"
+        assert cls._CONNECTION, globalconst.OtherEnum.ASSERT_CONNECTION.value
         await cls._CONNECTION.auth()
         endpoint = cls._QUERY_BATCH_ENDPOINT
         data = await cls._CONNECTION._pull_simple_data(
@@ -681,7 +681,7 @@ class TplusWorkcenter(BaseSource):
             field_hints=cls._FIELD_HINTS,
         )
 
-        return ExternalData(data=data, pydantic_model=cls._PULL_PYDANTIC_MODEL)
+        return ExternalDataSet(data=data, pydantic_model=cls._PULL_PYDANTIC_MODEL)
 
 
 
@@ -697,7 +697,7 @@ class TplusStock(BaseSource):
         """
         查询批量库存数据
         """
-        assert cls._CONNECTION, "未获得连接对象，请先注册"
+        assert cls._CONNECTION, globalconst.OtherEnum.ASSERT_CONNECTION.value
         await cls._CONNECTION.auth()
         endpoint = cls._QUERY_BATCH_ENDPOINT
         data = await cls._CONNECTION._pull_simple_data(
@@ -706,7 +706,7 @@ class TplusStock(BaseSource):
             filter={"IsIncludeZero": is_include_zero}
         )
 
-        return ExternalData(data=data, pydantic_model=cls._PULL_PYDANTIC_MODEL)
+        return ExternalDataSet(data=data, pydantic_model=cls._PULL_PYDANTIC_MODEL)
 
     
     @classmethod
@@ -714,7 +714,7 @@ class TplusStock(BaseSource):
         """
         查询批量库存数据
         """
-        stock_data: ExternalData = await cls.query_batch(is_include_zero)
+        stock_data: ExternalDataSet = await cls.query_batch(is_include_zero)
         if stock_data.is_empty():
             return []
         else:
@@ -779,7 +779,7 @@ class TplusRouting(BaseSource):
                 logger.fail("BOM处理", bom_code, str(e))
                 return []
 
-        assert cls._CONNECTION, "未获得连接对象，请先注册"
+        assert cls._CONNECTION, globalconst.OtherEnum.ASSERT_CONNECTION.value
         assert cls._CONNECTION._BOM_CODES, "请先拉取BOM数据，获取BOM CODES"
         await cls._CONNECTION.auth()
 
@@ -807,7 +807,7 @@ class TplusRouting(BaseSource):
         
         cls._CONNECTION._BOM_CODES = None
 
-        return ExternalData(data=data_list, pydantic_model=cls._PULL_PYDANTIC_MODEL)
+        return ExternalDataSet(data=data_list, pydantic_model=cls._PULL_PYDANTIC_MODEL)
 
     @classmethod
     async def pull(cls, only_today: bool = False, pydantic_model: PydanticModel=None, filter: dict = None):
@@ -815,7 +815,7 @@ class TplusRouting(BaseSource):
         查询批量工艺路线数据
         """
         pydantic_model = pydantic_model or cls._PULL_PYDANTIC_MODEL
-        routing_data: ExternalData = await cls.query_batch(only_today=only_today, filter=filter)
+        routing_data: ExternalDataSet = await cls.query_batch(only_today=only_today, filter=filter)
         if routing_data.is_empty():
             return []
         else:
@@ -848,7 +848,7 @@ class TplusBom(BaseSource):
                     processed_data.append({v: row.get(k) for k, v in field_map.items()})
             return processed_data
 
-        assert cls._CONNECTION, "未获得连接对象，请先注册"
+        assert cls._CONNECTION, globalconst.OtherEnum.ASSERT_CONNECTION.value
         await cls._CONNECTION.auth()
 
         params = {
@@ -876,7 +876,7 @@ class TplusBom(BaseSource):
             params["PageIndex"] += 1
             data_list.extend(await process_bomdata_async(raw_data, field_map=cls._FIELD_HINTS))
 
-        return ExternalData(data=data_list, pydantic_model=cls._PULL_PYDANTIC_MODEL)
+        return ExternalDataSet(data=data_list, pydantic_model=cls._PULL_PYDANTIC_MODEL)
 
 
 
@@ -906,7 +906,7 @@ class TplusMo(BaseVoucher):
         remain_native_supplyno: bool = True
     ):
         try:
-            assert self._CONNECTION, "未获得连接对象，请先注册"
+            assert self._CONNECTION, globalconst.OtherEnum.ASSERT_CONNECTION.value
             await self._CONNECTION.auth()
 
             endpoint = self._CREATE_ENDPOINT
@@ -958,7 +958,7 @@ class TplusMo(BaseVoucher):
 
     @classmethod
     async def approve(cls, tplus_moid: str):
-        assert cls._CONNECTION, "未获得连接对象，请先注册"
+        assert cls._CONNECTION, globalconst.OtherEnum.ASSERT_CONNECTION.value
         await cls._CONNECTION.auth()
 
         endpoint = cls._APPROVE_ENDPOINT
@@ -976,13 +976,13 @@ class TplusMo(BaseVoucher):
         index_value: str | int,
         filter_field: Literal['voucherID', 'voucherCode', 'externalCode']='voucherID'
     ):
-        assert cls._CONNECTION, "未获得连接对象，请先注册"
+        assert cls._CONNECTION, globalconst.OtherEnum.ASSERT_CONNECTION.value
         await cls._CONNECTION.auth()
 
         payload = {"param": {filter_field: index_value}}
         resp_json = await cls._CONNECTION._post(endpoint=cls._QUERY_ENDPOINT, data=payload)
 
-        return ExternalData(data=resp_json['data'], pydantic_model=cls._PULL_PYDANTIC_MODEL)
+        return ExternalDataSet(data=resp_json['data'], pydantic_model=cls._PULL_PYDANTIC_MODEL)
 
 
 
@@ -1011,7 +1011,7 @@ class TplusRs(BaseVoucher):
         pydantic_model: Type[PydanticModel] = None
     ):
         try:
-            assert self._CONNECTION, "未获得连接对象，请先注册"
+            assert self._CONNECTION, globalconst.OtherEnum.ASSERT_CONNECTION.value
             await self._CONNECTION.auth()
             endpoint = self._CREATE_ENDPOINT
             pydantic_model = pydantic_model or self._PUSH_PYDANTIC_MODEL
@@ -1024,7 +1024,7 @@ class TplusRs(BaseVoucher):
             processed_rsdata = DataProcessor.merge_common_fields(
                 data=rs_data_list,
                 merge_with=["demandno", "type", "status", "create_date"],
-                entries_key=MERGE_ENTRIY_KEY
+                entries_key=globalconst.OtherEnum.MERGE_ENTRIY_KEY.value
             )
 
             mo_id = tplus_mo_data['ID']
@@ -1086,7 +1086,7 @@ class TplusPr(BaseVoucher):
         pydantic_model: Type[PydanticModel] = None
     ):
         try:
-            assert self._CONNECTION, "未获得连接对象，请先注册"
+            assert self._CONNECTION, globalconst.OtherEnum.ASSERT_CONNECTION.value
             await self._CONNECTION.auth()
             endpoint = self._CREATE_ENDPOINT
             pydantic_model = pydantic_model or self._PUSH_PYDANTIC_MODEL
@@ -1118,7 +1118,7 @@ class TplusPr(BaseVoucher):
 
     @classmethod
     async def approve(cls, tplus_pr_code: str):
-        assert cls._CONNECTION, "未获得连接对象，请先注册"
+        assert cls._CONNECTION, globalconst.OtherEnum.ASSERT_CONNECTION.value
         await cls._CONNECTION.auth()
 
         endpoint = cls._APPROVE_ENDPOINT

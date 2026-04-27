@@ -9,7 +9,6 @@ from typing import List, Dict, Union
 from fastapi import status
 from dateutil.relativedelta import relativedelta
 
-
 from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
 from .._base import (
     get_scheduler_minute, async_rate_limit, CacheItem,
@@ -250,6 +249,7 @@ async def batch_handle_pl_status_a2e(event_data_list: List[Dict], _erp: EventRes
         _erp: EventResultPoster 实例，用于变更APS数据，由装饰器注入
         description: 事件描述，会被装饰器捕获，邮件头文字
     """
+
     @async_rate_limit()
     async def handle_pl_status_a2e(event_data: Dict, _aps: ApsPayloadSponsor):
         """

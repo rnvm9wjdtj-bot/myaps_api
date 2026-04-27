@@ -13,14 +13,14 @@ from typing import List, Dict, Optional, Literal, Callable, Union, Any, Type
 from collections import defaultdict
 
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pydantic import BaseModel as PydanticModel
 import uuid
 from dataclasses import dataclass, field
 from core.settings import THIS_BASE_URL, MYAPS_MAIN_DB, MYAPS_DB_SET
 from apps.io_api.utils.db_operation import db_exec_sql, DbResult, MultiDbResult
 from apps.io_api.utils.db_operation import db_query, db_update_by_index, db_query, db_delete, db_bupsert, call_dbprocdure
-from globalobjects import logger as log_config, ProjectDefaultValues as pdv, ConstEnum as ce
+from globalobjects import logger as log_config, ProjectDefaultValues as pdv, OtherEnum as ce
 
 
 
@@ -1174,6 +1174,15 @@ class ApsPayloadSponsor:
             raise e
 
 
+
+    @classmethod
+    async def refresh_stock(cls, stock_data:Union[List[Dict[str, Any]], pd.DataFrame], dbs:str=MYAPS_DB_SET):
+        pass
+
+
+
+
+
     @classmethod
     async def refresh_supply(cls, supply_data:Union[List[Dict[str, Any]], pd.DataFrame], type_:Literal['ST', 'PO']='ST', dbs:str=MYAPS_DB_SET):
         try:
@@ -1356,7 +1365,7 @@ class ApsPayloadSponsor:
                 select="MaterialNo, Free1, Free2, Free3",
                 filter_string=filter_string
             )
-            api_data = response_json.get('data', [])
+            api_data = response_json.data
             
             # 补充缓存
             for item in api_data:
@@ -1458,16 +1467,16 @@ class ApsPayloadSponsor:
             return mo_data
         else:
             supply_response_json = await self.get_mo_by_supplyno(supplyno, db_name=MYAPS_MAIN_DB, prev_mo=get_prev_mo, next_mo=get_next_mo, origin_so=get_origin_so)
-            if supply_response_json.get('success') != 0 and supply_response_json.get('data'):
-                mo_data = supply_response_json['data'][0]
+            if supply_response_json.success != 0 and supply_response_json.data:
+                mo_data = supply_response_json.data[0]
                 self._production_cache._cache[CacheItem.SUPPLY_MO.value][supplyno] = mo_data
                 return mo_data
             else:
-                logger.fail("获取工单计划单详情", supplyno, f"API返回错误: {supply_response_json.get('message', '未知错误')}")
+                logger.fail("获取工单计划单详情", supplyno, f"API返回错误: {supply_response_json.message}")
 
 
     @classmethod
-    async def get_mo_by_supplyno(cls, supplyno: str, db_name: str=MYAPS_MAIN_DB, prev_mo:bool=False, next_mo:bool=False, origin_so:bool=False) -> List[Dict]:
+    async def get_mo_by_supplyno(cls, supplyno: str, db_name: str=MYAPS_MAIN_DB, prev_mo:bool=False, next_mo:bool=False, origin_so:bool=False) -> DbResult:
         """
         异步获取工单的工序详情、及MTO销售订单信息
         Args:
@@ -1591,6 +1600,122 @@ class ApsPayloadSponsor:
         
         return api_data
 
+
+    @classmethod
+    @async_aps_error_handler("获取按日期分组的库存动态报表")
+    async def get_date_grouped_mat_daily_qty(
+        cls,
+        db_name: str,
+        period: int | str = 30,
+        groupdates: Optional[str] = None,
+        materialno: Optional[str] = None
+    ):
+        """
+        获取按日期分组的库存动态报表，用于指导采购决策。
+        
+        Args:
+            db_name: 账套名称
+            period: 查询时间范围（天）或截止日期字符串，默认30天
+            groupdates: 分组日期，逗号分隔，默认空
+            materialno: 料号，多个料号用逗号分隔，默认空
+            
+        Returns:
+            处理后的库存动态报表数据
+        """
+        start_date: datetime.date = datetime.now().date()
+
+        try:
+            period = int(period)
+            end_date = start_date + timedelta(days=period)
+        except ValueError:
+            try:
+                end_date = datetime.strptime(period, '%Y-%m-%d').date()
+            except ValueError:
+                raise ValueError("Invalid date format for period. Use YYYY-MM-DD.")
+
+        db_name = db_name.replace(" ", "")
+        request_result = []
+        if groupdates and groupdates != 'None':
+            dates = [_.strip() for _ in groupdates.split(',')]
+        else:
+            dates = [(start_date + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(period)]
+        filter_string = f"`DateStr` >= '{start_date}' AND `DateStr` <= '{end_date}'"
+        order_string = "`MaterialNo`, `DateStr`"
+        if materialno:
+            sql_matno = ','.join([f"'{matno.strip()}'" for matno in materialno.split(',')])
+            filter_string += f" AND `MaterialNo` IN ({sql_matno})"
+        query_result = await db_query(db_name=db_name, model_or_tablename="v_matdailyqtyreport", filter_string=filter_string, order_string=order_string)
+        if data := query_result.data:
+            request_result.extend(data)
+
+        if not request_result:
+            return []
+
+        df = pd.DataFrame(request_result)
+        df = df.sort_values(by=['materialno', 'datestr'], ascending=[True, True])
+
+        df['original_datestr'] = df['datestr']
+        if dates:
+            sorted_dates = sorted([datetime.strptime(d, '%Y-%m-%d').date() for d in dates])
+            def get_group_start_date(x):
+                x_date = x
+                for i in range(len(sorted_dates)):
+                    if i == len(sorted_dates) - 1:
+                        if x_date >= sorted_dates[i]:
+                            return str(sorted_dates[i])
+                    else:
+                        if sorted_dates[i] <= x_date < sorted_dates[i+1]:
+                            return str(sorted_dates[i])
+                return str(sorted_dates[0])
+            
+            df['datestr'] = pd.to_datetime(df['datestr']).dt.date.apply(get_group_start_date)
+        
+        group_fields = ['materialno', 'datestr']
+        sum_fields = ['totaldemand', 'totalsupply', 'dailybalance']
+
+        agg_dict = {
+            **{col: 'last' for col in df.columns if col not in group_fields + sum_fields + ['original_datestr']},
+            **{f: 'sum' for f in sum_fields},
+            'original_datestr': lambda x: ','.join(sorted(set(str(dt) for dt in x))),
+        }
+        
+        df_grouped = (df.groupby(group_fields).agg(agg_dict).reset_index()
+                        .rename(columns={
+                                "original_datestr": "期间",
+                                "totaldemand": "期间合计需求",
+                                "totalsupply": "期间合计供应",
+                                "dailybalance": "期间盈余",
+                                "cumulativebalance": "累计盈余",
+                                "stockqty": "首期库存",
+                                "datestr": "要求交期",
+                                "name": "物料来源"
+                                })
+        )
+        
+        result = []
+        material_balances = {}
+        
+        for record in df_grouped.to_dict('records'):
+            mat_no = record["materialno"]
+            if mat_no not in material_balances:
+                opening_balance = record["首期库存"]
+                closing_balance = opening_balance + record["期间合计需求"]
+                record["期间要货数"] = abs(min(0, record["期间合计供应"] + record["期间合计需求"]))
+            else:
+                opening_balance = material_balances[mat_no]
+                closing_balance = opening_balance + record["期间合计需求"] + record["期间合计供应"]
+                record["期间要货数"] = abs(min(max(0, opening_balance) + record["期间合计供应"] + record["期间合计需求"], 0))
+            
+            date_range = record["期间"].split(',')
+            record.update({
+                "期初盈余": opening_balance,
+                "期末盈余": closing_balance,
+                "期间": f"{date_range[0]},{date_range[-1]}",
+            })
+            material_balances[mat_no] = closing_balance
+            result.append(record)
+        
+        return result
 
 
 @dataclass

@@ -4,6 +4,7 @@
 
 # import threading
 import os, asyncio, logging, json, requests, pandas as pd, threading, inspect
+from functools import wraps
 from socket import MsgFlag
 from typing import Literal, List, Dict, Any, Optional, Union
 from abc import ABC, abstractmethod
@@ -25,6 +26,7 @@ from apps.data_opt.utils.scheduler import cron_task
 from apps.data_opt.utils.common import add_basic_auth_requests, get_session
 from apps.data_opt.utils.data_processor import DataProcessor
 from apps.data_opt.components import ApsPayloadSponsor, EventResultPoster, CacheItem
+from apps.data_opt.components._base import async_rate_limit, sync_rate_limit
 from apps.data_opt.components.simple_hap import HapConnection
 
 
@@ -51,174 +53,12 @@ from collections import namedtuple
 from threading import Lock
 
 # 定义任务执行结果的具名元组
-TaskResult = namedtuple('TaskResult', ['status', 'error'])
-
-#################################################################################
-# 令牌桶限流器
-#################################################################################
-class AsyncTokenBucket:
-    """轻量异步令牌桶限流器"""
-    def __init__(self, rate: int, per: float = 1.0):
-        self.rate = rate
-        self.interval = 1.0 / rate if rate > 0 else 0
-        self.tokens = float(rate)
-        self.last_update = time.time()
-        self._lock = asyncio.Lock()
-        self._semaphore = asyncio.Semaphore(0)
-        self._task = None
-
-    async def _refill(self):
-        while True:
-            await asyncio.sleep(self.interval)
-            async with self._lock:
-                self.tokens = min(self.rate, self.tokens + 1)
-                if self._semaphore._value == 0 and self.tokens >= 1:
-                    self._semaphore.release()
-
-    def start(self):
-        if self._task is None:
-            self._task = asyncio.create_task(self._refill())
-
-    async def acquire(self, tokens: int = 1):
-        async with self._lock:
-            now = time.time()
-            elapsed = now - self.last_update
-            self.tokens = min(self.rate, self.tokens + elapsed / self.interval if self.interval > 0 else self.rate)
-            self.last_update = now
-            if self.tokens >= tokens:
-                self.tokens -= tokens
-                return
-        for _ in range(tokens):
-            await self._semaphore.acquire()
-
-    async def acquire_immediately(self, tokens: int = 1) -> bool:
-        async with self._lock:
-            now = time.time()
-            elapsed = now - self.last_update
-            self.tokens = min(self.rate, self.tokens + elapsed / self.interval if self.interval > 0 else self.rate)
-            self.last_update = now
-            if self.tokens >= tokens:
-                self.tokens -= tokens
-                return True
-        return False
-
-
-class SyncTokenBucket:
-    """轻量同步令牌桶限流器"""
-    def __init__(self, rate: int, per: float = 1.0):
-        self.rate = rate
-        self.interval = 1.0 / rate if rate > 0 else 0
-        self.tokens = float(rate)
-        self.last_update = time.time()
-        self._lock = Lock()
-
-    def acquire(self, tokens: int = 1):
-        with self._lock:
-            now = time.time()
-            elapsed = now - self.last_update
-            self.tokens = min(self.rate, self.tokens + elapsed / self.interval if self.interval > 0 else self.rate)
-            self.last_update = now
-            if self.tokens >= tokens:
-                self.tokens -= tokens
-                return True
-            wait_time = (tokens - self.tokens) * self.interval
-            time.sleep(wait_time)
-            self.tokens -= tokens
-            return True
-
-    def acquire_immediately(self, tokens: int = 1) -> bool:
-        with self._lock:
-            now = time.time()
-            elapsed = now - self.last_update
-            self.tokens = min(self.rate, self.tokens + elapsed / self.interval if self.interval > 0 else self.rate)
-            self.last_update = now
-            if self.tokens >= tokens:
-                self.tokens -= tokens
-                return True
-            return False
-
-
-# 全局共享令牌桶实例（所有装饰的函数共享同一个限流器）
-db_event_async_bucket = None
-db_event_sync_bucket = None
-
-
-def async_rate_limit(rate: int = None):
-    """
-    异步函数限流装饰器 - 所有装饰的函数共享同一个令牌桶
-    
-    用法:
-        @async_rate_limit(MAX_EVENTS_PER_SECOND)
-        async def handle_pl_status_a2e(supplyno_or_data):
-            ...
-    
-    限流维度: 基于被装饰函数的 event_count 参数指定的事件数量进行限流
-    """
-    global db_event_async_bucket
-    if rate is None:
-        rate = MAX_EVENTS_PER_SECOND
-    
-    if db_event_async_bucket is None:
-        db_event_async_bucket = AsyncTokenBucket(rate)
-        db_event_async_bucket.start()
-    
-    def decorator(func):
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            event_count = kwargs.pop('event_count', 1)
-            await db_event_async_bucket.acquire(event_count)
-            return await func(*args, **kwargs)
-        return wrapper
-    return decorator
-
-
-def sync_rate_limit(rate: int = None):
-    """
-    同步函数限流装饰器 - 所有装饰的函数共享同一个令牌桶
-    
-    用法:
-        @sync_rate_limit(MAX_EVENTS_PER_SECOND)
-        def handle_pl_status_a2e(supplyno_or_data):
-            ...
-    
-    限流维度: 基于被装饰函数的 event_count 参数指定的事件数量进行限流
-    """
-    global db_event_sync_bucket
-    if rate is None:
-        rate = MAX_EVENTS_PER_SECOND
-    
-    if db_event_sync_bucket is None:
-        db_event_sync_bucket = SyncTokenBucket(rate)
-    
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            event_count = kwargs.pop('event_count', 1)
-            db_event_sync_bucket.acquire(event_count)
-            return func(*args, **kwargs)
-        return wrapper
-    return decorator
+# TaskResult = namedtuple('TaskResult', ['status', 'error'])
 
 
 #################################################################################
 # 公共装饰器 及 相关逻辑
 #################################################################################
-# def aaaaa(event_data_list: List[Dict], cache_items: List[CacheItem] = None, single_event_data_handler: callable = None, pydantic_model_factory: callable = None):
-#     async def when_start_handle_pl_status_a2e():
-#         """当PL状态变为A2E时，执行处理函数"""
-#         supplynos = [item["supplyno"] for item in event_data_list]
-#         TSupply.objects.filter(supplyno__in=supplynos).update(memo=" 📤 正在推送至 T+ ...")
-
-        
-#         _aps = ApsPayloadSponsor(production_cache_items=cache_items)
-#         cache = await _aps.establish_production_cache(supplynos=supplynos)
-#         pydantic_model = pydantic_model_factory(_aps)
-#         tasks = [single_event_data_handler(item, _aps, pydantic_model) for item in event_data_list]
-#         results = await asyncio.gather(*tasks, return_exceptions=True)
-
-
-#     return when_start_handle_pl_status_a2e
-
 
 
 async def _execute_handler(handler: Union[callable, str], handler_name, event_data_list: List[Dict], _erp: EventResultPoster, *args, **kwargs):
@@ -277,7 +117,7 @@ def event_batch_handler(
     用法:
         @event_batch_handler(reminder=planner_email_reminder, final_handler=my_final_handler, start_handler=my_start_handler)
         async def batch_handle_pl_status_a2e(event_data: List[Dict], description="PL 单据下达", _erp=None):
-            @async_rate_limit()
+
             async def handle_pl_status_a2e(item):
                 try:
                     # 业务逻辑
