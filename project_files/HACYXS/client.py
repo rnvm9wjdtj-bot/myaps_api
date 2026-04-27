@@ -27,7 +27,7 @@ from .._base import (
 
 
 from apps.data_opt.components.yonyou_tplus import (
-    YonyouTplusConnection2, TplusStock, TplusMo, TplusRs, TplusPr,
+    YonyouTplusConnection, TplusStock, TplusMo, TplusRs, TplusPr,
     RsPushModel, MoPushModel, model_validator
 )
 from typing import Dict, Any, Union
@@ -45,7 +45,7 @@ def get_tplus_conn():
     """获取TplusConnection实例（延迟初始化）"""
     global hacyxs_tplus_conn
     if hacyxs_tplus_conn is None:
-        hacyxs_tplus_conn = YonyouTplusConnection2()
+        hacyxs_tplus_conn = YonyouTplusConnection()
         hacyxs_tplus_conn.register_source([TplusStock, TplusMo, TplusRs, TplusPr])
     return hacyxs_tplus_conn
 

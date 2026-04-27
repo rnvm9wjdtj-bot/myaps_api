@@ -402,7 +402,7 @@ class TplusConfig:
         self.max_page_size = min(cache_erp.get("max_page_size", 1000), 1000)    
 
 
-class YonyouTplusConnection2(ExternalBaseConnection):
+class YonyouTplusConnection(ExternalBaseConnection):
     """
     用友T+连接类（新版本）
     
@@ -426,12 +426,13 @@ class YonyouTplusConnection2(ExternalBaseConnection):
         cache_erp = self.cache_file.get("erp", {})
         for key in self.credential_keys:
             setattr(self, key, cache_erp.get(key, ""))
+        self._auth_lock = asyncio.Lock()
         self._BOM_CODES = None  # 缓存已处理的BOM编码，用于取工艺路线（因为 T+ 的工艺路线是抽象的，具体到物料的工艺路线是在 BOM 中定义的，而只有通过具体BOM编号查询BOM时，才会展示工艺路线详情 
 
 
-    async def auth(self):
+    async def auth(self, max_retries: int = 5):
         """
-        异步认证连接
+        异步认证连接，支持重试机制
         """
         assert self.access_token and self.refresh_token, "畅捷通token缺失"
         if self._auth_at_:
@@ -440,76 +441,76 @@ class YonyouTplusConnection2(ExternalBaseConnection):
                 logger.debug(f"畅捷通token有效，有效期至：{expire_time.strftime('%Y-%m-%d %H:%M:%S')}")
                 return self.access_token
 
-        # 获取新的异步会话
-        async_session = None
-        try:
-            logger.debug("开始获取异步会话...")  # 临时日志，日后可删除
-            async_session = await self._get_async_session()
-            logger.debug(f"成功获取异步会话: {type(async_session).__name__}")  # 临时日志，日后可删除
-            
-            logger.debug(f"开始发送认证请求到: {self.base_url}/auth/v2/refreshToken")  # 临时日志，日后可删除
-            try:
-                auth_response = await async_session.get(
-                    url=f"{self.base_url}/auth/v2/refreshToken",
-                    params={
-                        "grantType": "refresh_token",
-                        "refreshToken": self.refresh_token,
-                    },
-                    headers={
-                        "appKey": self.app_key,
-                        "appSecret": self.app_secret,
-                        "Content-Type": "application/json",
-                    },
-                    timeout=60.0  # 明确指定60秒超时
-                )
-                logger.debug(f"请求发送成功，状态码: {getattr(auth_response, 'status_code', '未知')}")  # 临时日志，日后可删除
-            except Exception as request_error:
-                logger.fail(f"认证请求失败: {type(request_error).__name__}: {str(request_error)}")
-                import traceback
-                logger.debug(f"请求失败详细错误：{traceback.format_exc()}")
-                raise
-            
-            # 解析响应JSON
-            if hasattr(auth_response, 'json'):
-                if inspect.iscoroutinefunction(auth_response.json):
-                    auth_response = await auth_response.json()
-                else:
-                    auth_response = auth_response.json()
-            logger.debug(f"响应解析完成: {type(auth_response).__name__}")  # 临时日志，日后可删除
-            
-            auth_result = auth_response.get("result")
-            if int(auth_response.get("code", 0)) == 200 and auth_result:
-                # 更新认证时间
-                self._auth_at_ = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                self.access_token = auth_result["access_token"]
-                self.refresh_token = auth_result["refresh_token"]
-                # 保存更新后的认证信息到缓存文件
-                self.cache_file.update("erp", {
-                    "_auth_at_": self._auth_at_,
-                    "access_token": self.access_token,
-                    "refresh_token": self.refresh_token})
-                self.cache_file.save()
-                logger.debug(f"畅捷通token刷新为：{self.access_token}")
-                return self.access_token
-            else:
-                logger.fail("获取畅捷通token", auth_response, )
-                raise Exception(auth_response.get("message", ""))
-        except Exception as e:
-            logger.fail("畅捷通认证失败", str(e))  # 临时日志，日后可删除
-            import traceback
-            logger.debug(f"认证失败详细错误：{traceback.format_exc()}")  # 临时日志，日后可删除
-            raise
-        finally:
-            # 关闭异步会话
-            if async_session:
+        async with self._auth_lock:
+            if self._auth_at_:
+                expire_time = datetime.strptime(self._auth_at_, "%Y-%m-%d %H:%M:%S") + timedelta(seconds=self.config.token_expire_seconds)
+                if datetime.now() < expire_time:
+                    logger.debug(f"畅捷通token有效（锁后复检），有效期至：{expire_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                    return self.access_token
+
+            retry_count = 0
+            last_error = None
+            async_session = None
+            while retry_count < max_retries:
                 try:
-                    if hasattr(async_session, 'aclose'):
-                        await async_session.aclose()
-                    elif hasattr(async_session, 'close'):
-                        async_session.close()
-                    logger.debug("异步会话已关闭")  # 临时日志，日后可删除
-                except Exception as close_error:
-                    logger.warning(f"关闭异步会话时出错: {close_error}")  # 临时日志，日后可删除
+                    async_session = await self._get_async_session()
+                    try:
+                        auth_response = await async_session.get(
+                            url=f"{self.base_url}/auth/v2/refreshToken",
+                            params={
+                                "grantType": "refresh_token",
+                                "refreshToken": self.refresh_token,
+                            },
+                            headers={
+                                "appKey": self.app_key,
+                                "appSecret": self.app_secret,
+                                "Content-Type": "application/json",
+                            },
+                            timeout=60.0
+                        )
+                    except Exception as request_error:
+                        logger.fail(f"认证请求失败: {type(request_error).__name__}: {str(request_error)}")
+                        raise
+
+                    if hasattr(auth_response, 'json'):
+                        if inspect.iscoroutinefunction(auth_response.json):
+                            auth_response = await auth_response.json()
+                        else:
+                            auth_response = auth_response.json()
+
+                    auth_result = auth_response.get("result")
+                    if int(auth_response.get("code", 0)) == 200 and auth_result:
+                        self._auth_at_ = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        self.access_token = auth_result["access_token"]
+                        self.refresh_token = auth_result["refresh_token"]
+                        self.cache_file.update("erp", {
+                            "_auth_at_": self._auth_at_,
+                            "access_token": self.access_token,
+                            "refresh_token": self.refresh_token})
+                        self.cache_file.save()
+                        logger.debug(f"畅捷通token刷新为：{self.access_token}")
+                        if async_session:
+                            if hasattr(async_session, 'aclose'):
+                                await async_session.aclose()
+                            elif hasattr(async_session, 'close'):
+                                async_session.close()
+                        return self.access_token
+                    else:
+                        raise Exception(auth_response.get("message", ""))
+                except Exception as e:
+                    last_error = e
+                    retry_count += 1
+                    logger.warning(f"畅捷通认证失败（第{retry_count}/{max_retries}次）: {str(e)}")
+                    if async_session:
+                        if hasattr(async_session, 'aclose'):
+                            await async_session.aclose()
+                        elif hasattr(async_session, 'close'):
+                            async_session.close()
+                    if retry_count >= max_retries:
+                        break
+                    await asyncio.sleep(2 ** retry_count)
+            logger.fail("畅捷通认证", str(last_error))
+            raise last_error
 
 
     async def _get(self, endpoint: str, params: dict=None):

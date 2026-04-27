@@ -1,0 +1,3250 @@
+{
+  "name": "金蝶云 / ⭐[5ee22c576266]批量数据至MDY",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Const').item.json.K3CLOUD_ORIGIN_URL }}/K3Cloud/Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.ExecuteBillQuery.common.kdsvc",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Cookie",
+              "value": "={{ $json.Cookie }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n    \"FormId\": \"PUR_PurchaseOrder\", \n    \"data\": {\n        \"FormId\": \"PUR_PurchaseOrder\",\n        \"FieldKeys\": \"FBillNo,FDate,FPurchaseOrgId.FName,FSupplierId.FName,FMaterialId.FNumber,FMaterialId.FName,FMaterialId.FSPECIFICATION,FQty,FTaxPrice,FUnitId.FNAME,FPOOrderEntry_FEntryID,FDELIVERYDATE,,FDOCUMENTSTATUS,FMRPTERMINATESTATUS,FMRPCLOSESTATUS,FCREATEDATE\",\n        \"FilterString\": \"\",\n        \"OrderString\": \"\",\n        \"TopRowCount\": 0,\n        \"StartRow\": 0,\n        \"Limit\": 10000,\n        \"SubSystemId\": \"\"\n    }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -800,
+        1184
+      ],
+      "id": "d8a06ae7-ea3a-4d41-b00e-0d788c4e5159",
+      "name": "采购订单接口"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Const').item.json.K3CLOUD_ORIGIN_URL }}/K3Cloud/Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.ExecuteBillQuery.common.kdsvc",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "=Cookie",
+              "value": "={{ $json.Cookie }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n    \"data\": {\n        \"FormId\": \"STK_Inventory\",\n        \"FieldKeys\": \"FStockID.FNumber,FStockID.FName,FMaterialId.FNumber,FMaterialId.FName,FMaterialId.FSPECIFICATION,FBaseQty,FBaseUnitId.FNAME,FStockOrgId.FName,FLOT.FNumber,FID\",\n        \"FilterString\": \"\",\n        \"OrderString\": \"\",\n        \"TopRowCount\": 0,\n        \"StartRow\": 0,\n        \"Limit\": 2000,\n        \"SubSystemId\": \"\"\n    }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -96,
+        2000
+      ],
+      "id": "9bff866f-cca3-46f2-98f9-a4b73fce0b16",
+      "name": "库存接口"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f38c667a-cf8b-4728-b423-2b965071853f",
+              "leftValue": "={{ $('获取金蝶云cookie').item.json.Cookie }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -320,
+        768
+      ],
+      "id": "4bbeb03f-757b-4021-90ac-e4fbfbe8a66a",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Function 节点代码\n// 解析原始数据中的 data 字符串为结构化数组\nconst rawData = $input.all()[0].json.data;\nconst parsedArray = JSON.parse(rawData);\n\n// 将数组转换为对象数组，按字段命名\nconst structuredData = parsedArray.map(item => {\n  return {\n    order_id: item[0],               // 订单编号，如 \"CGDD000001\"\n    order_date: item[1],             // 订单日期，如 \"2018-01-09T00:00:00\"\n    buyer: item[2],                  // 采购方，如 \"金蝶蓝海实业集团\"\n    supplier: item[3],               // 供应商，如 \"金蝶美华公司\"\n    product_code: item[4],           // 产品编码，如 \"2.1110009\"\n    product_name: item[5],           // 产品名称，如 \"磨砂保护壳（多单位）\"\n    product_spec: item[6],           // 产品规格（可能为空），如 \" \"\n    quantity: parseFloat(item[7]),   // 数量（转为浮点数），如 10.0\n    unit_price: parseFloat(item[8]), // 单价（转为浮点数），如 15.0\n    unit: item[9],                    // 单位，如 \"件\"\n    id: item[10],                    // 明细内码\n    DELIVERYDATE: item[11],                    // 交货日期\n    DOCUMENTSTATUS:item[12],\n    MRPTERMINATESTATUS:item[13],\n    MRPCLOSESTATUS:item[14],\n    // 添加时间戳或版本标记\n    last_updated: new Date().toISOString()\n  };\n});\n\n// 返回结构化数据（n8n 会自动处理数组的批量传递）\nreturn structuredData;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -576,
+        1184
+      ],
+      "id": "1dd21b86-6f67-4f1c-9532-33bb078fbb3b",
+      "name": "解析JSON数据_PO"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Function节点代码\nconst parsedData = JSON.parse($input.all()[0].json.data);\nreturn parsedData.map(item => ({\n  // 按你的MySQL表字段映射（以下是示例字段，需根据实际表结构调整）\n  warehouse_code: item[0],       // 例如 \"CK003\"\n  warehouse_name: item[1],       // 例如 \"手机成品仓\"\n  Item_code: item[2],        // 例如 \"S1.06\"\n  product_name: item[3],         // 例如 \"智能手机-6S\"\n  quantity: item[5],             // 例如 1.0\n  unit: item[6],                 // 例如 \"Pcs\"\n  department: item[7],            // 例如 \"金蝶手机事业部\"\n  lot: item[8],\n  id: item[9], \n  // 添加时间戳或版本标记\n  last_updated: new Date().toISOString()\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        96,
+        2000
+      ],
+      "id": "471244f3-f487-47b8-9901-0c4a7cb8b918",
+      "name": "解析JSON数据_Inv"
+    },
+    {
+      "parameters": {
+        "jsCode": "const sliceStart = $('5ee22c576266').first().json.body.sliceStart || null;\nconst sliceEnd = $('5ee22c576266').first().json.body.sliceEnd || null;\nlet filterString = new String();\n\nconsole.log(sliceStart)\nconsole.log(sliceEnd)\n\nif(sliceStart && sliceEnd){\n  filterString = `(( FCREATEDATE >= '${sliceStart}' AND FCREATEDATE < '${sliceEnd}' ) OR ( FMODIFYDATE >= '${sliceStart}' AND FMODIFYDATE < '${sliceEnd}'))`;\n}else{\n  filterString = ' 1=1 ';\n}\n\nreturn {\n  \"MDY_API_ROOT\": \"https://api.mingdao.com\",\n  \"MDY_APP_KEY\": \"01df82fb00ba82d1\",\n  \"MDY_SIGN\": \"NjBhNDA3OTc1ZTYyNjI4ODMzN2I0Mjk3NTVjNDJjMWFmZjAxMWFkZTA2YzViYjk5ODk5YTM1MWY4NTRmN2EyOQ==\",\n  \"MDY_DATA_RECEIVE_PATH\": \"/workflow/hooks/Njg5ZmNiZjg0YTE0ZGE3M2QzNmE0OGY4\",    /*[0OGY4]*/\n  \"K3CLOUD_FILTER_STRING\": filterString,\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -576,
+        768
+      ],
+      "id": "a7caee8f-3cf8-4a0d-8370-1b66cefc9ed3",
+      "name": "Const"
+    },
+    {
+      "parameters": {
+        "jsCode": "// SELECT * FROM T_ENG_WORKCENTER\n// GZZX工作中心\n\nreturn {\n  fields: [\n    [\"fNumber\", \"编码\", \"workCenterNo\", \"*编号\"],\n    [\"fName\", \"名称\", \"workCenterDesc\", \"名称\"],\n    [\"fDeptId.fName\", \"所属部门\", \"location\", \"车间\"],\n    [\"fId\", \"🔑\", \"id\", \"ERP系统数据ID\"],\n  ],\n  enumDecoder: {},\n  formId: \"ENG_WORKCENTER\",// 金蝶云单据名（一般是对应的数据库表去掉前缀T_）\n  mdyWorksheetId: \"WorkCenter\",\n  mdyRowUpdateFlag: \"id\"\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        464
+      ],
+      "id": "620f42c9-92c5-47fc-84ab-a8de51e871d4",
+      "name": "工作中心相关参数"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 数据库表 T_BD_MATERIAL\n\nreturn {fields: [\n    [\"fNumber\", \"编码\", \"materialNo\", \"*料号\"],\n    [\"fName\", \"名称\", \"materialDesc\", \"*物料名称\"],\n    [\"fWorkShopId.fName\", \"生产车间\", \"plant\", \"工厂\"],\n    [\"fFixLeadTime\", \"固定提前期\", \"fixLeadTime\", \"固定提前期\"],\n    [\"fFixLeadTimeType.fCaption\", \"固定提前期单位\", \"fixLeadTimeType\", \"固定提前期单位\"],\n    [\"fReOrderGood\", \"再订货点\", \"lotPoint\", \"重订货点\"],\n    [\"fErpClsId.fCaption\", \"物料属性\", \"erpCls\", \"物料属性\"],\n    [\"fCategoryId.fName\", \"存货类别\", \"planItem\", \"产品组\"],\n    [\"fProduceUnitId.fName\", \"生产单位\", \"unit\", \"单位\"],\n    [\"fSpecification\", \"规格型号\", \"size\", \"规格\"],\n    [\"fExpPeriod\", \"保质期\", \"expPeriod\", \"保质期\"],\n    [\"fExpUnit.fCaption\", \"保质期单位\", \"expUnit\", \"质保期单位\"],\n    [\"fMaxPoQty\", \"最大订货量\", \"lotMax\", \"最大批\"],\n    [\"fMinPoQty\", \"最小订货量\", \"lotMin\", \"最小批\"],\n    [\"fCheckLeadTime\", \"检验提前期\", \"checkLeadTime\", \"检验提前期\"],\n    [\"fCheckLeadTimeType.fCaption\", \"检验提前期单位\", \"checkLeadTimeType\", \"检验提前期单位\"],\n    [\"fPlanerId.fName\", \"计划员\", \"planner\", \"计划员\"],\n    [\"fRefCost\", \"参考成本\", \"price\", \"单价\"],\n    [\"fPlanIntervalsDays\", \"批量拆分间隔天数\", \"dayGap\", \"MTO拆分天数\"],\n    [\"fCanDelayDays\", \"允许延后天数\", \"canDelay\", \"可否延迟\"],\n    [\"fMaxStock\", \"最大库存\", \"lotTop\", \"最大库存\"],\n    [\"fEOQ\", \"固定/经济批量\", \"lotFix\", \"固定批\"],\n    [\"fPlanSafeStockQty\", \"安全库存\", \"lotSS\", \"安全库存\"],\n    // [\"FMaterialGroup.FName\", \"物料分组\", null, null],\n    // [\"FCreateDate\", \"创建日期\", null, null],\n    [\"fMaterialId\", \"🔑\", \"id\", \"ERP数据ID\"],\n  ],\n  enumDecoder: {},\n  mdyWorksheetId: \"Material\",\n  mdyRowUpdateFlag: \"id\"\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        192
+      ],
+      "id": "d74dd5af-e413-4a50-bdb5-b046a4dbe92d",
+      "name": "物料相关参数"
+    },
+    {
+      "parameters": {
+        "jsCode": "// SELECT * FROM T_ENG_PROCESS\n//\n\nreturn {\n  formId: \"ENG_PROCESS\",// 金蝶云单据名（一般是对应的数据库表去掉前缀T_）\n  fields: [\n    [\"fId\", \"🔑\", \"id\", \"ERP数据ID\"],\n    [\"fNumber\", \"编码\", \"processNo\", \"编号\"],\n    [\"fName\", \"名称\", \"processDesc\", \"名称\"],\n    [\"fWorkCenterId.fNumber\", \"\", \"workCenterNo\", \"工作中心编号\"],\n    [\"fWorkCenterId.fName\", \"\", \"workCenterDesc\", \"工作中心名称\"],\n  ],\n  enumDecoder: {},\n  mdyWorksheetId: \"Process\",\n  mdyRowUpdateFlag: \"processNo\"\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        656
+      ],
+      "id": "2cc91814-a145-4877-8a3c-f98989dae0f4",
+      "name": "Process相关参数"
+    },
+    {
+      "parameters": {
+        "jsCode": "// SELECT * FROM T_ENG_EQUIPMENT\n//\n\nreturn {\n  formId: \"ENG_EQUIPMENT\",// 金蝶云单据名（一般是对应的数据库表去掉前缀T_）\n  fields: [\n    [\"fId\", \"🔑\", \"id\", \"ERP数据ID\"],\n    [\"fNumber\", \"\", \"deviceNo\", \"编号\"],\n    [\"fName\", \"\", \"deviceDesc\", \"名称\"],\n    [\"fCurrentStatus.fCaption\", \"当前状态\", \"currentStatus\", \"当前状态\"],\n    \n  ],\n  enumDecoder: {},\n  mdyWorksheetId: \"Device\",\n  mdyRowUpdateFlag: \"id\"\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1264,
+        464
+      ],
+      "id": "ff2a32d7-4127-4d6d-83a2-dd0eec3e4265",
+      "name": "Device相关参数"
+    },
+    {
+      "parameters": {
+        "jsCode": "// SELECT * FROM T_ENG_BOM\n//\n\nreturn {\n  formId: \"ENG_BOM\",// 金蝶云单据名（一般是对应的数据库表去掉前缀T_）\n  fields: [\n    [\"fId\", \"🔑\", \"id\", \"ERP系统数据ID\"],\n    [\"fDocumentStatus.fCaption\", \"\", \"docStatus\", \"单据状态\"],\n    [\"fNumber\", \"\", \"bomMasterNo\", \"编号\"],\n    [\"fMaterialId.fNumber\", \"\", \"productNo\", \"产品料号\"],\n    [\"fMaterialId.fName\", \"\", \"productDesc\", \"产品名称\"],\n    [\"fUnitId.fName\", \"\", \"unit\", \"单位\"],\n    [\"fQty\", \"\", \"qty\", \"数量\"],\n    [\"fBaseUnitId.fName\", \"\", null, null],\n  ],\n  enumDecoder: {\n    // \"docStatus\": {A:\"创建\", B:\"审核中\", C:\"已审核\", D:\"重新审核\", Z:\"暂存\"}\n  },\n  mdyWorksheetId: \"BomMaster\",\n  mdyRowUpdateFlag: \"id\"\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1296,
+        192
+      ],
+      "id": "fa6c8cef-8ae1-40e3-934f-978b274bd8ae",
+      "name": "BomMaster相关参数"
+    },
+    {
+      "parameters": {
+        "jsCode": "// SELECT * FROM T_ENG_BOMCHILD\n// \n\nreturn {\n  formId: \"ENG_BOM\",    /*依然用的是ENG_BOM\n  因为ENG_BOMCHILD是内联单据，无法通过API直接查询\n  字段名称通过WEBUI查询 物料清单列表 ，打开F12控制台，看网页源码查找\n  */\n  fields: [\n    [\"fTreeEntity_fEntryId\", \"\", \"id\", \"\"],\n    [\"fID\", null, \"masterId\", \"BomMaster\"],\n    [\"fReplaceGroup\", \"项次\", \"sortOrder\", \"项次\"],\n    [\"fMaterialIdChild.fNumber\", \"子项物料编码\", \"materialNo\", \"子项物料编号\"],\n    [\"fChildItemName\", \"子项物料名称\", \"materialDesc\", \"子项物料名称\"],\n    [\"fChildUnitId.fName\", \"子项单位\", \"unit\", \"单位\"],\n    [\"fNumerator\", \"用量:分子\", \"numerator\", \"用量（分子）\"],\n    [\"fDenominator\", \"用量:分母\", \"denominator\", \"用量（分母）\"],\n\n    [\"fProcessId.fNumber\", null, \"processNo\", \"作业项编号\"],\n    [\"fProcessId.fName\", null, \"processDesc\", \"作业名称\"],\n    \n    \n    [\"fNumber\", \"BOM版本\", null, null],\n    [\"fChildItemModel\", \"子项规格型号\", null, null],\n    [\"fSupplyType\", \"供应类型\", null, null],\n  ],\n  enumDecoder: {},\n  mdyWorksheetId: \"BomDetail\",\n  mdyRowUpdateFlag: \"id\"\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1728,
+        192
+      ],
+      "id": "26dacaff-e117-4314-a119-b3fb3e71b877",
+      "name": "BomDetail相关参数"
+    },
+    {
+      "parameters": {
+        "jsCode": "// SELECT * FROM T_ENG_ROUTE\n//\n\nreturn {\n  formId: \"ENG_ROUTE\",// 金蝶云单据名（一般是对应的数据库表去掉前缀T_）\n  fields: [\n    [\"fId\", \"🔑\", \"id\", \"ERP数据ID\"],\n    [\"fProduceType.fCaption\", \"生产类型\", \"produceType\", \"生产类型\"],\n    [\"fNumber\", \"编码\", \"routeMasterNo\", \"编码\"],\n    [\"fName\", \"名称\", \"routeMasterDesc\", \"名称\"],\n    [\"fMaterialId.fNumber\", \"\", \"materialNo\", \"料号\"],\n    [\"fMaterialId.fName\", \"\", \"materialDesc\", \"物料名称\"],\n    [\"fApproveDate\", \"\", \"approveDate\", \"启用日期\"],\n    [\"fForbidDate\", \"\", \"forbiddenDate\", \"禁用日期\"],\n    [\"fUnitId.fName\", \"\", null, null],\n    [\"fRouteGroupId.fName\", \"\", null, null],\n  ],\n  enumDecoder: {},\n  mdyWorksheetId: \"RouteMaster\",\n  mdyRowUpdateFlag: \"id\"\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1264,
+        656
+      ],
+      "id": "820b3ff2-29a6-4cdc-ab7a-fd77f810f507",
+      "name": "RouteMaster相关参数"
+    },
+    {
+      "parameters": {
+        "content": "## 子流程节点名称是根据金蝶云WEBUI搜索列表功能项确定的：\n### 例如 K3_基础资料_WLLB ，则在金蝶云界面搜索框输入 WLLB 或其对应的中文 物料列表 可跳转至数据源页",
+        "height": 128,
+        "width": 864
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        0,
+        0
+      ],
+      "typeVersion": 1,
+      "id": "5b37d69e-50f6-4163-a8fe-af3c9b58ef49",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "QmswihfZ5hJUjTGi",
+          "mode": "list",
+          "cachedResultName": "金蝶云 / sub 批量拉取数据"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Cookie": "={{ $('获取金蝶云cookie').item.json.Cookie }}",
+            "K3cloudOriginUrl": "={{ $('获取金蝶云cookie').item.json.K3CLOUD_ORIGIN_URL }}",
+            "FieldsArray": "={{ $('SoDetail相关参数').item.json.fields }}",
+            "MdyAppKey": "={{ $('Const').item.json.MDY_APP_KEY }}",
+            "MdyAppSign": "={{ $('Const').item.json.MDY_SIGN }}",
+            "MdyDataRecevieUrl": "={{ $('Const').item.json.MDY_API_ROOT }}{{ $('Const').item.json.MDY_DATA_RECEIVE_PATH }}",
+            "LoopIndex": 0,
+            "FormId": "={{ $('SoDetail相关参数').item.json.formId }}",
+            "MdyWorksheetId": "={{ $json.mdyWorksheetId }}",
+            "FilterString": "={{ $('Const').item.json.K3CLOUD_FILTER_STRING }}",
+            "EnumDecoder": "={{ $json.enumDecoder }}",
+            "PageSize": 20,
+            "MdyRowUpdateFlag": "={{ $json.mdyRowUpdateFlag }}"
+          },
+          "matchingColumns": [
+            "K3CLOUD_ORIGIN_URL",
+            "Cookie",
+            "k3Fields",
+            "myapsFields_firstItem"
+          ],
+          "schema": [
+            {
+              "id": "K3cloudOriginUrl",
+              "displayName": "K3cloudOriginUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "Cookie",
+              "displayName": "Cookie",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FieldsArray",
+              "displayName": "FieldsArray",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "array",
+              "removed": false
+            },
+            {
+              "id": "FormId",
+              "displayName": "FormId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FilterString",
+              "displayName": "FilterString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyDataRecevieUrl",
+              "displayName": "MdyDataRecevieUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppKey",
+              "displayName": "MdyAppKey",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppSign",
+              "displayName": "MdyAppSign",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyRowUpdateFlag",
+              "displayName": "MdyRowUpdateFlag",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "OrderString",
+              "displayName": "OrderString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "PageSize",
+              "displayName": "PageSize",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "LoopIndex",
+              "displayName": "LoopIndex",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "EnumDecoder",
+              "displayName": "EnumDecoder",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object",
+              "removed": false
+            },
+            {
+              "id": "MdyWorksheetId",
+              "displayName": "MdyWorksheetId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1056,
+        864
+      ],
+      "name": "K3_供应链_XSDDLB",
+      "id": "62f9e7a1-8e96-4f46-a716-c512834dbcc2",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "QmswihfZ5hJUjTGi",
+          "mode": "list",
+          "cachedResultName": "金蝶云 / sub 批量拉取数据"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Cookie": "={{ $('获取金蝶云cookie').item.json.Cookie }}",
+            "K3cloudOriginUrl": "={{ $('获取金蝶云cookie').item.json.K3CLOUD_ORIGIN_URL }}",
+            "FieldsArray": "={{ $('MoDetail相关参数').item.json.fields }}",
+            "MdyAppKey": "={{ $('Const').item.json.MDY_APP_KEY }}",
+            "MdyAppSign": "={{ $('Const').item.json.MDY_SIGN }}",
+            "MdyDataRecevieUrl": "={{ $('Const').item.json.MDY_API_ROOT }}{{ $('Const').item.json.MDY_DATA_RECEIVE_PATH }}",
+            "LoopIndex": 0,
+            "FormId": "={{ $('MoDetail相关参数').item.json.formId }}",
+            "MdyWorksheetId": "={{ $json.mdyWorksheetId }}",
+            "FilterString": "={{ $('Const').item.json.K3CLOUD_FILTER_STRING }}",
+            "EnumDecoder": "={{ $json.enumDecoder }}",
+            "PageSize": 20,
+            "MdyRowUpdateFlag": "={{ $json.mdyRowUpdateFlag }}"
+          },
+          "matchingColumns": [
+            "K3CLOUD_ORIGIN_URL",
+            "Cookie",
+            "k3Fields",
+            "myapsFields_firstItem"
+          ],
+          "schema": [
+            {
+              "id": "K3cloudOriginUrl",
+              "displayName": "K3cloudOriginUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "Cookie",
+              "displayName": "Cookie",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FieldsArray",
+              "displayName": "FieldsArray",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "array",
+              "removed": false
+            },
+            {
+              "id": "FormId",
+              "displayName": "FormId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FilterString",
+              "displayName": "FilterString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyDataRecevieUrl",
+              "displayName": "MdyDataRecevieUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppKey",
+              "displayName": "MdyAppKey",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppSign",
+              "displayName": "MdyAppSign",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyRowUpdateFlag",
+              "displayName": "MdyRowUpdateFlag",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "OrderString",
+              "displayName": "OrderString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "PageSize",
+              "displayName": "PageSize",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "LoopIndex",
+              "displayName": "LoopIndex",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "EnumDecoder",
+              "displayName": "EnumDecoder",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object",
+              "removed": false
+            },
+            {
+              "id": "MdyWorksheetId",
+              "displayName": "MdyWorksheetId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1504,
+        1088
+      ],
+      "name": "K3_生产管理_SCDDLB",
+      "id": "345e39d2-568d-4ac6-8be9-0335580196a8",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "QmswihfZ5hJUjTGi",
+          "mode": "list",
+          "cachedResultName": "金蝶云 / sub 批量拉取数据"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Cookie": "={{ $('获取金蝶云cookie').item.json.Cookie }}",
+            "K3cloudOriginUrl": "={{ $('获取金蝶云cookie').item.json.K3CLOUD_ORIGIN_URL }}",
+            "FieldsArray": "={{ $('物料相关参数').item.json.fields }}",
+            "FormId": "BD_MATERIAL",
+            "FilterString": "=FUSEORGID=1 AND {{ $('Const').item.json.K3CLOUD_FILTER_STRING }}",
+            "MdyAppKey": "={{ $('Const').item.json.MDY_APP_KEY }}",
+            "MdyAppSign": "={{ $('Const').item.json.MDY_SIGN }}",
+            "MdyDataRecevieUrl": "={{ $('Const').item.json.MDY_API_ROOT }}{{ $('Const').item.json.MDY_DATA_RECEIVE_PATH }}",
+            "PageSize": 20,
+            "LoopIndex": 0,
+            "OrderString": "FNumber asc",
+            "MdyWorksheetId": "={{ $('物料相关参数').item.json.mdyWorksheetId }}",
+            "EnumDecoder": "={{ $json.enumDecoder }}",
+            "MdyRowUpdateFlag": "={{ $json.mdyRowUpdateFlag }}"
+          },
+          "matchingColumns": [
+            "K3CLOUD_ORIGIN_URL",
+            "Cookie",
+            "k3Fields",
+            "myapsFields_firstItem"
+          ],
+          "schema": [
+            {
+              "id": "K3cloudOriginUrl",
+              "displayName": "K3cloudOriginUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "Cookie",
+              "displayName": "Cookie",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FieldsArray",
+              "displayName": "FieldsArray",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "array",
+              "removed": false
+            },
+            {
+              "id": "FormId",
+              "displayName": "FormId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FilterString",
+              "displayName": "FilterString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyDataRecevieUrl",
+              "displayName": "MdyDataRecevieUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppKey",
+              "displayName": "MdyAppKey",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppSign",
+              "displayName": "MdyAppSign",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyRowUpdateFlag",
+              "displayName": "MdyRowUpdateFlag",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "OrderString",
+              "displayName": "OrderString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "PageSize",
+              "displayName": "PageSize",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "LoopIndex",
+              "displayName": "LoopIndex",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "EnumDecoder",
+              "displayName": "EnumDecoder",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object",
+              "removed": false
+            },
+            {
+              "id": "MdyWorksheetId",
+              "displayName": "MdyWorksheetId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1056,
+        192
+      ],
+      "name": "K3_基础资料_WLLB",
+      "id": "3a1093c8-2fc1-4f1a-bb5f-07f25ffcd517",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "QmswihfZ5hJUjTGi",
+          "mode": "list",
+          "cachedResultName": "金蝶云 / sub 批量拉取数据"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Cookie": "={{ $('获取金蝶云cookie').item.json.Cookie }}",
+            "K3cloudOriginUrl": "={{ $('获取金蝶云cookie').item.json.K3CLOUD_ORIGIN_URL }}",
+            "FieldsArray": "={{ $('BomMaster相关参数').item.json.fields }}",
+            "MdyAppKey": "={{ $('Const').item.json.MDY_APP_KEY }}",
+            "MdyAppSign": "={{ $('Const').item.json.MDY_SIGN }}",
+            "MdyDataRecevieUrl": "={{ $('Const').item.json.MDY_API_ROOT }}{{ $('Const').item.json.MDY_DATA_RECEIVE_PATH }}",
+            "LoopIndex": 0,
+            "FormId": "={{ $('BomMaster相关参数').item.json.formId }}",
+            "MdyWorksheetId": "={{ $json.mdyWorksheetId }}",
+            "FilterString": "={{ $('Const').item.json.K3CLOUD_FILTER_STRING }}",
+            "EnumDecoder": "={{ $json.enumDecoder }}",
+            "PageSize": 20,
+            "MdyRowUpdateFlag": "={{ $json.mdyRowUpdateFlag }}"
+          },
+          "matchingColumns": [
+            "K3CLOUD_ORIGIN_URL",
+            "Cookie",
+            "k3Fields",
+            "myapsFields_firstItem"
+          ],
+          "schema": [
+            {
+              "id": "K3cloudOriginUrl",
+              "displayName": "K3cloudOriginUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "Cookie",
+              "displayName": "Cookie",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FieldsArray",
+              "displayName": "FieldsArray",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "array",
+              "removed": false
+            },
+            {
+              "id": "FormId",
+              "displayName": "FormId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FilterString",
+              "displayName": "FilterString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyDataRecevieUrl",
+              "displayName": "MdyDataRecevieUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppKey",
+              "displayName": "MdyAppKey",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppSign",
+              "displayName": "MdyAppSign",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyRowUpdateFlag",
+              "displayName": "MdyRowUpdateFlag",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "OrderString",
+              "displayName": "OrderString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "PageSize",
+              "displayName": "PageSize",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "LoopIndex",
+              "displayName": "LoopIndex",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "EnumDecoder",
+              "displayName": "EnumDecoder",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object",
+              "removed": false
+            },
+            {
+              "id": "MdyWorksheetId",
+              "displayName": "MdyWorksheetId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1520,
+        192
+      ],
+      "name": "K3_工程数据管理_WLQD",
+      "id": "6b50e1e2-1f39-4f68-aca2-b31239ff0f0a",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "QmswihfZ5hJUjTGi",
+          "mode": "list",
+          "cachedResultName": "金蝶云 / sub 批量拉取数据"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Cookie": "={{ $('获取金蝶云cookie').item.json.Cookie }}",
+            "K3cloudOriginUrl": "={{ $('获取金蝶云cookie').item.json.K3CLOUD_ORIGIN_URL }}",
+            "FieldsArray": "={{ $('BomDetail相关参数').item.json.fields }}",
+            "MdyAppKey": "={{ $('Const').item.json.MDY_APP_KEY }}",
+            "MdyAppSign": "={{ $('Const').item.json.MDY_SIGN }}",
+            "MdyDataRecevieUrl": "={{ $('Const').item.json.MDY_API_ROOT }}{{ $('Const').item.json.MDY_DATA_RECEIVE_PATH }}",
+            "PageSize": 20,
+            "LoopIndex": 0,
+            "FormId": "={{ $('BomDetail相关参数').item.json.formId }}",
+            "MdyWorksheetId": "={{ $json.mdyWorksheetId }}",
+            "FilterString": "={{ $('Const').item.json.K3CLOUD_FILTER_STRING }}",
+            "MdyRowUpdateFlag": "={{ $json.mdyRowUpdateFlag }}",
+            "EnumDecoder": "={{ $json.enumDecoder }}"
+          },
+          "matchingColumns": [
+            "K3CLOUD_ORIGIN_URL",
+            "Cookie",
+            "k3Fields",
+            "myapsFields_firstItem"
+          ],
+          "schema": [
+            {
+              "id": "K3cloudOriginUrl",
+              "displayName": "K3cloudOriginUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "Cookie",
+              "displayName": "Cookie",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FieldsArray",
+              "displayName": "FieldsArray",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "array",
+              "removed": false
+            },
+            {
+              "id": "FormId",
+              "displayName": "FormId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FilterString",
+              "displayName": "FilterString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyDataRecevieUrl",
+              "displayName": "MdyDataRecevieUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppKey",
+              "displayName": "MdyAppKey",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppSign",
+              "displayName": "MdyAppSign",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyRowUpdateFlag",
+              "displayName": "MdyRowUpdateFlag",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "OrderString",
+              "displayName": "OrderString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "PageSize",
+              "displayName": "PageSize",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "LoopIndex",
+              "displayName": "LoopIndex",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "EnumDecoder",
+              "displayName": "EnumDecoder",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object",
+              "removed": false
+            },
+            {
+              "id": "MdyWorksheetId",
+              "displayName": "MdyWorksheetId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1952,
+        192
+      ],
+      "name": "K3_工程数据管理_WLQDLB",
+      "id": "13589716-6eb3-48cf-9c06-be6fbf6b760d",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "QmswihfZ5hJUjTGi",
+          "mode": "list",
+          "cachedResultName": "金蝶云 / sub 批量拉取数据"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Cookie": "={{ $('获取金蝶云cookie').item.json.Cookie }}",
+            "K3cloudOriginUrl": "={{ $('获取金蝶云cookie').item.json.K3CLOUD_ORIGIN_URL }}",
+            "FieldsArray": "={{ $('工作中心相关参数').item.json.fields }}",
+            "MdyAppKey": "={{ $('Const').item.json.MDY_APP_KEY }}",
+            "MdyAppSign": "={{ $('Const').item.json.MDY_SIGN }}",
+            "MdyDataRecevieUrl": "={{ $('Const').item.json.MDY_API_ROOT }}{{ $('Const').item.json.MDY_DATA_RECEIVE_PATH }}",
+            "PageSize": 20,
+            "LoopIndex": 0,
+            "FormId": "={{ $('工作中心相关参数').item.json.formId }}",
+            "MdyWorksheetId": "={{ $json.mdyWorksheetId }}",
+            "FilterString": "={{ $('Const').item.json.K3CLOUD_FILTER_STRING }}",
+            "MdyRowUpdateFlag": "={{ $json.mdyRowUpdateFlag }}"
+          },
+          "matchingColumns": [
+            "K3CLOUD_ORIGIN_URL",
+            "Cookie",
+            "k3Fields",
+            "myapsFields_firstItem"
+          ],
+          "schema": [
+            {
+              "id": "K3cloudOriginUrl",
+              "displayName": "K3cloudOriginUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "Cookie",
+              "displayName": "Cookie",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FieldsArray",
+              "displayName": "FieldsArray",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "array",
+              "removed": false
+            },
+            {
+              "id": "FormId",
+              "displayName": "FormId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FilterString",
+              "displayName": "FilterString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyDataRecevieUrl",
+              "displayName": "MdyDataRecevieUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppKey",
+              "displayName": "MdyAppKey",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppSign",
+              "displayName": "MdyAppSign",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyRowUpdateFlag",
+              "displayName": "MdyRowUpdateFlag",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "OrderString",
+              "displayName": "OrderString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "PageSize",
+              "displayName": "PageSize",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "LoopIndex",
+              "displayName": "LoopIndex",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "EnumDecoder",
+              "displayName": "EnumDecoder",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object",
+              "removed": false
+            },
+            {
+              "id": "MdyWorksheetId",
+              "displayName": "MdyWorksheetId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1056,
+        464
+      ],
+      "name": "K3_车间管理_GZZXLB",
+      "id": "bbf3b036-6846-4a69-a0fb-2b105266e548",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "QmswihfZ5hJUjTGi",
+          "mode": "list",
+          "cachedResultName": "金蝶云 / sub 批量拉取数据"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Cookie": "={{ $('获取金蝶云cookie').item.json.Cookie }}",
+            "K3cloudOriginUrl": "={{ $('获取金蝶云cookie').item.json.K3CLOUD_ORIGIN_URL }}",
+            "FieldsArray": "={{ $('Device相关参数').item.json.fields }}",
+            "MdyAppKey": "={{ $('Const').item.json.MDY_APP_KEY }}",
+            "MdyAppSign": "={{ $('Const').item.json.MDY_SIGN }}",
+            "MdyDataRecevieUrl": "={{ $('Const').item.json.MDY_API_ROOT }}{{ $('Const').item.json.MDY_DATA_RECEIVE_PATH }}",
+            "LoopIndex": 0,
+            "FormId": "={{ $('Device相关参数').item.json.formId }}",
+            "MdyWorksheetId": "={{ $json.mdyWorksheetId }}",
+            "FilterString": "={{ $('Const').item.json.K3CLOUD_FILTER_STRING }}",
+            "PageSize": 20,
+            "MdyRowUpdateFlag": "={{ $json.mdyRowUpdateFlag }}",
+            "EnumDecoder": "={{ $json.enumDecoder }}"
+          },
+          "matchingColumns": [
+            "K3CLOUD_ORIGIN_URL",
+            "Cookie",
+            "k3Fields",
+            "myapsFields_firstItem"
+          ],
+          "schema": [
+            {
+              "id": "K3cloudOriginUrl",
+              "displayName": "K3cloudOriginUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "Cookie",
+              "displayName": "Cookie",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FieldsArray",
+              "displayName": "FieldsArray",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "array",
+              "removed": false
+            },
+            {
+              "id": "FormId",
+              "displayName": "FormId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FilterString",
+              "displayName": "FilterString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyDataRecevieUrl",
+              "displayName": "MdyDataRecevieUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppKey",
+              "displayName": "MdyAppKey",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppSign",
+              "displayName": "MdyAppSign",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyRowUpdateFlag",
+              "displayName": "MdyRowUpdateFlag",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "OrderString",
+              "displayName": "OrderString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "PageSize",
+              "displayName": "PageSize",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "LoopIndex",
+              "displayName": "LoopIndex",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "EnumDecoder",
+              "displayName": "EnumDecoder",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object",
+              "removed": false
+            },
+            {
+              "id": "MdyWorksheetId",
+              "displayName": "MdyWorksheetId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1488,
+        464
+      ],
+      "name": "K3_车间管理_SBLB",
+      "id": "7f6fd38f-b847-4381-98ae-8d63df71220c",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "QmswihfZ5hJUjTGi",
+          "mode": "list",
+          "cachedResultName": "金蝶云 / sub 批量拉取数据"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Cookie": "={{ $('获取金蝶云cookie').item.json.Cookie }}",
+            "K3cloudOriginUrl": "={{ $('获取金蝶云cookie').item.json.K3CLOUD_ORIGIN_URL }}",
+            "FieldsArray": "={{ $('Process相关参数').item.json.fields }}",
+            "MdyAppKey": "={{ $('Const').item.json.MDY_APP_KEY }}",
+            "MdyAppSign": "={{ $('Const').item.json.MDY_SIGN }}",
+            "MdyDataRecevieUrl": "={{ $('Const').item.json.MDY_API_ROOT }}{{ $('Const').item.json.MDY_DATA_RECEIVE_PATH }}",
+            "PageSize": 20,
+            "LoopIndex": 0,
+            "FormId": "={{ $('Process相关参数').item.json.formId }}",
+            "MdyWorksheetId": "={{ $json.mdyWorksheetId }}",
+            "FilterString": "={{ $('Const').item.json.K3CLOUD_FILTER_STRING }}",
+            "MdyRowUpdateFlag": "={{ $json.mdyRowUpdateFlag }}",
+            "EnumDecoder": "={{ $json.enumDecoder }}"
+          },
+          "matchingColumns": [
+            "K3CLOUD_ORIGIN_URL",
+            "Cookie",
+            "k3Fields",
+            "myapsFields_firstItem"
+          ],
+          "schema": [
+            {
+              "id": "K3cloudOriginUrl",
+              "displayName": "K3cloudOriginUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "Cookie",
+              "displayName": "Cookie",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FieldsArray",
+              "displayName": "FieldsArray",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "array",
+              "removed": false
+            },
+            {
+              "id": "FormId",
+              "displayName": "FormId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FilterString",
+              "displayName": "FilterString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyDataRecevieUrl",
+              "displayName": "MdyDataRecevieUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppKey",
+              "displayName": "MdyAppKey",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppSign",
+              "displayName": "MdyAppSign",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyRowUpdateFlag",
+              "displayName": "MdyRowUpdateFlag",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "OrderString",
+              "displayName": "OrderString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "PageSize",
+              "displayName": "PageSize",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "LoopIndex",
+              "displayName": "LoopIndex",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "EnumDecoder",
+              "displayName": "EnumDecoder",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object",
+              "removed": false
+            },
+            {
+              "id": "MdyWorksheetId",
+              "displayName": "MdyWorksheetId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1056,
+        656
+      ],
+      "name": "K3_车间管理_作业列表",
+      "id": "2cfd0541-8a52-40bb-8c7d-6249d0266356",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "QmswihfZ5hJUjTGi",
+          "mode": "list",
+          "cachedResultName": "金蝶云 / sub 批量拉取数据"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Cookie": "={{ $('获取金蝶云cookie').item.json.Cookie }}",
+            "K3cloudOriginUrl": "={{ $('获取金蝶云cookie').item.json.K3CLOUD_ORIGIN_URL }}",
+            "FieldsArray": "={{ $('RouteMaster相关参数').item.json.fields }}",
+            "MdyAppKey": "={{ $('Const').item.json.MDY_APP_KEY }}",
+            "MdyAppSign": "={{ $('Const').item.json.MDY_SIGN }}",
+            "MdyDataRecevieUrl": "={{ $('Const').item.json.MDY_API_ROOT }}{{ $('Const').item.json.MDY_DATA_RECEIVE_PATH }}",
+            "PageSize": 20,
+            "LoopIndex": 0,
+            "FormId": "={{ $('RouteMaster相关参数').item.json.formId }}",
+            "MdyWorksheetId": "={{ $json.mdyWorksheetId }}",
+            "FilterString": "={{ $('Const').item.json.K3CLOUD_FILTER_STRING }}",
+            "MdyRowUpdateFlag": "={{ $json.mdyRowUpdateFlag }}",
+            "EnumDecoder": "={{ $json.enumDecoder }}"
+          },
+          "matchingColumns": [
+            "K3CLOUD_ORIGIN_URL",
+            "Cookie",
+            "k3Fields",
+            "myapsFields_firstItem"
+          ],
+          "schema": [
+            {
+              "id": "K3cloudOriginUrl",
+              "displayName": "K3cloudOriginUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "Cookie",
+              "displayName": "Cookie",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FieldsArray",
+              "displayName": "FieldsArray",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "array",
+              "removed": false
+            },
+            {
+              "id": "FormId",
+              "displayName": "FormId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FilterString",
+              "displayName": "FilterString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyDataRecevieUrl",
+              "displayName": "MdyDataRecevieUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppKey",
+              "displayName": "MdyAppKey",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppSign",
+              "displayName": "MdyAppSign",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyRowUpdateFlag",
+              "displayName": "MdyRowUpdateFlag",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "OrderString",
+              "displayName": "OrderString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "PageSize",
+              "displayName": "PageSize",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "LoopIndex",
+              "displayName": "LoopIndex",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "EnumDecoder",
+              "displayName": "EnumDecoder",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object",
+              "removed": false
+            },
+            {
+              "id": "MdyWorksheetId",
+              "displayName": "MdyWorksheetId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1488,
+        656
+      ],
+      "name": "K3_车间管理_工艺路线列表",
+      "id": "cae0d31e-d079-4110-8585-c1e33553ac1f",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Const').item.json.K3CLOUD_ORIGIN_URL }}/K3Cloud/Kingdee.BOS.WebApi.ServicesStub.DynamicForm.DynamicFormService.Call.common.kdsvc",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "=Cookie",
+              "value": "={{ $json.Cookie }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"data\": {\n        \"FormId\": \"SAL_saleORDER\",\n            \"CreateOrgId\": 0,\n    \"Number\": \"XSDD000031\",\n    \"Id\": \"\",\n    \"IsSortBySeq\": \"false\"\n    }\n} ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        1296
+      ],
+      "id": "820703df-6f5e-405b-ad85-ada3e0e8eeaf",
+      "name": "单据详情"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('获取金蝶云cookie').item.json.K3CLOUD_ORIGIN_URL }}/K3Cloud/Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.ExecuteBillQuery.common.kdsvc",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "=Cookie",
+              "value": "={{ $('获取金蝶云cookie').item.json.Cookie }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "=\n{\"data\": {\n        \"FormId\": \"{{ $json.formId }}\",\n        \"FieldKeys\": \"{{ $json.k3Fields }}\",\n        \"FilterString\": \"FBILLNO='MO000015'\",\n        \"OrderString\": \"\",\n        \"TopRowCount\": 0,\n        \"StartRow\": 0,\n        \"Limit\": 2000,\n        \"SubSystemId\": \"\"\n    }\n} ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        1680
+      ],
+      "id": "5ea10742-35b6-4040-808d-370811afef53",
+      "name": "⭐元数据⭐`F${EntryName}_${EntryPkFieldName}`取内联（子表）ID"
+    },
+    {
+      "parameters": {
+        "content": "## ⭐元数据⭐\n## 取分录（子表）ID\n# `{Key}_{EntryPkFieldName}`\n## 或\n# `F{EntryName}_{EntryPkFieldName}`\n",
+        "height": 336,
+        "width": 704
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -544,
+        256
+      ],
+      "typeVersion": 1,
+      "id": "7ac83a8b-faa2-4835-95df-14393b44ac79",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// SELECT * FROM V_ENG_ROUTEF8\n//\n\nreturn {\n  formId: \"ENG_ROUTE\",// 金蝶云单据名（一般是对应的数据库表去掉前缀T_）\n  fields: [\n    [\"fSubEntity_fDetailId\", null, \"id\", \"ERP数据ID\"],\n    [\"fId\", null, \"masterId\", \"RouterMasterID\"],\n    // [\"fSubEntity_fDetailId\", null, \"MasterId\", \"RouterMasterID\"],\n    [\"fProduceType.fCaption\", \"生产类型\", \"produceType\", \"生产类型\"],\n    [\"fWorkCenterId.fNumber\", null, \"workCenterNo\", \"工作中心编号\"],\n    [\"fWorkCenterId.fName\", null, \"workCenterDesc\", \"工作中心名称\"],\n    [\"fNumber\", \"\", \"routeMasterNo\", \"RouteMasterNo\"],\n    [\"fName\", null, \"routeMasterDesc\", \"RouteMaster名称\"],\n    [\"fOperNumber\", \"\", \"sortOrder\", \"序号\"],\n    [\"fMaterialId.fNumber\", \"\", \"materialNo\", \"产品料号\"],\n    [\"fMaterialId.fName\", \"\", \"materialDesc\", \"产品名称\"],\n    [\"fProcessId.fNumber\", \"\", \"processNo\", \"作业项\"],\n    [\"fProcessId.fName\", \"\", \"processDesc\", \"名称\"],\n  ],\n  enumDecoder: {},\n  mdyWorksheetId: \"RouteDetail\",\n  mdyRowUpdateFlag: \"id\"\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1696,
+        656
+      ],
+      "id": "39850581-1e19-4a30-9e49-c3c7342a0341",
+      "name": "RouteDetail相关参数"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "QmswihfZ5hJUjTGi",
+          "mode": "list",
+          "cachedResultName": "金蝶云 / sub 批量拉取数据"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Cookie": "={{ $('获取金蝶云cookie').item.json.Cookie }}",
+            "K3cloudOriginUrl": "={{ $('获取金蝶云cookie').item.json.K3CLOUD_ORIGIN_URL }}",
+            "FieldsArray": "={{ $('RouteDetail相关参数').item.json.fields }}",
+            "MdyAppKey": "={{ $('Const').item.json.MDY_APP_KEY }}",
+            "MdyAppSign": "={{ $('Const').item.json.MDY_SIGN }}",
+            "MdyDataRecevieUrl": "={{ $('Const').item.json.MDY_API_ROOT }}{{ $('Const').item.json.MDY_DATA_RECEIVE_PATH }}",
+            "PageSize": 20,
+            "LoopIndex": 0,
+            "FormId": "={{ $('RouteDetail相关参数').item.json.formId }}",
+            "MdyWorksheetId": "={{ $json.mdyWorksheetId }}",
+            "FilterString": "={{ $('Const').item.json.K3CLOUD_FILTER_STRING }}",
+            "MdyRowUpdateFlag": "={{ $json.mdyRowUpdateFlag }}",
+            "EnumDecoder": "={{ $json.enumDecoder }}"
+          },
+          "matchingColumns": [
+            "K3CLOUD_ORIGIN_URL",
+            "Cookie",
+            "k3Fields",
+            "myapsFields_firstItem"
+          ],
+          "schema": [
+            {
+              "id": "K3cloudOriginUrl",
+              "displayName": "K3cloudOriginUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "Cookie",
+              "displayName": "Cookie",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FieldsArray",
+              "displayName": "FieldsArray",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "array",
+              "removed": false
+            },
+            {
+              "id": "FormId",
+              "displayName": "FormId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FilterString",
+              "displayName": "FilterString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyDataRecevieUrl",
+              "displayName": "MdyDataRecevieUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppKey",
+              "displayName": "MdyAppKey",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppSign",
+              "displayName": "MdyAppSign",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyRowUpdateFlag",
+              "displayName": "MdyRowUpdateFlag",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "OrderString",
+              "displayName": "OrderString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "PageSize",
+              "displayName": "PageSize",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "LoopIndex",
+              "displayName": "LoopIndex",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "EnumDecoder",
+              "displayName": "EnumDecoder",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object",
+              "removed": false
+            },
+            {
+              "id": "MdyWorksheetId",
+              "displayName": "MdyWorksheetId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1920,
+        656
+      ],
+      "name": "K3_T_ENG_ROUTEOPERDETAIL",
+      "id": "f6406f0d-20b8-42f8-9a24-ee74df4181ab",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "QmswihfZ5hJUjTGi",
+          "mode": "list",
+          "cachedResultName": "金蝶云 / sub 批量拉取数据"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Cookie": "={{ $('获取金蝶云cookie').item.json.Cookie }}",
+            "K3cloudOriginUrl": "={{ $('获取金蝶云cookie').item.json.K3CLOUD_ORIGIN_URL }}",
+            "FieldsArray": "={{ $('工序汇报详情相关参数').item.json.fields }}",
+            "MdyAppKey": "={{ $('Const').item.json.MDY_APP_KEY }}",
+            "MdyAppSign": "={{ $('Const').item.json.MDY_SIGN }}",
+            "MdyDataRecevieUrl": "={{ $('Const').item.json.MDY_API_ROOT }}{{ $('Const').item.json.MDY_DATA_RECEIVE_PATH }}",
+            "LoopIndex": 0,
+            "FormId": "={{ $('工序汇报详情相关参数').item.json.formId }}",
+            "MdyWorksheetId": "={{ $json.mdyWorksheetId }}",
+            "FilterString": "={{ $('Const').item.json.K3CLOUD_FILTER_STRING }}",
+            "EnumDecoder": "={{ $json.enumDecoder }}",
+            "PageSize": 20,
+            "MdyRowUpdateFlag": "={{ $json.mdyRowUpdateFlag }}"
+          },
+          "matchingColumns": [
+            "K3CLOUD_ORIGIN_URL",
+            "Cookie",
+            "k3Fields",
+            "myapsFields_firstItem"
+          ],
+          "schema": [
+            {
+              "id": "K3cloudOriginUrl",
+              "displayName": "K3cloudOriginUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "Cookie",
+              "displayName": "Cookie",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FieldsArray",
+              "displayName": "FieldsArray",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "array",
+              "removed": false
+            },
+            {
+              "id": "FormId",
+              "displayName": "FormId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FilterString",
+              "displayName": "FilterString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyDataRecevieUrl",
+              "displayName": "MdyDataRecevieUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppKey",
+              "displayName": "MdyAppKey",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppSign",
+              "displayName": "MdyAppSign",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyRowUpdateFlag",
+              "displayName": "MdyRowUpdateFlag",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "OrderString",
+              "displayName": "OrderString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "PageSize",
+              "displayName": "PageSize",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "LoopIndex",
+              "displayName": "LoopIndex",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "EnumDecoder",
+              "displayName": "EnumDecoder",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object",
+              "removed": false
+            },
+            {
+              "id": "MdyWorksheetId",
+              "displayName": "MdyWorksheetId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1040,
+        1504
+      ],
+      "name": "K3_工序执行_工序汇报列表",
+      "id": "0440db04-3a07-4eba-ba4b-d0a281fdeb63",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// SELECT * FROM T_PRD_MO\n//\n\nreturn {\n  formId: \"PRD_MO\",// 金蝶云单据名（一般是对应的数据库表去掉前缀T_）\n  fields: [\n    [\"fTreeEntity_fEntryId\", null, \"id\", \"ERP数据id\"],\n    [\"fBillNo\", \"单据号\", \"moNo\", \"编号\"],\n    [\"fTreeEntity_fSeq\", \"序号\", \"seq\", \"序号\"],\n    [\"fDate\", \"\", \"docDate\", \"单据日期\"],\n    [\"fDocumentStatus.fCaption\", \"\", \"docStatus\", \"单据状态\"],\n    [\"fMaterialId.fNumber\", \"\", \"materialNo\", \"料号\"],\n    [\"fMaterialId.fName\", \"\", \"materialDesc\", \"物料名称\"],\n    [\"fQty\", \"\", \"qty\", \"数量\"],\n    [\"fWorkshopId.fName\", \"\", \"workshopDescription\", \"生产车间\"],\n    [\"fPlanStartDate\", \"计划开工时间\", \"planStartDate\", \"计划开工时间\"],\n    [\"fPlanFinishDate\", \"计划完工时间\", \"planFinishDate\", \"计划完工时间\"],\n    [\"fScheduleStartTime\", \"排程开工时间\", \"scheduleStartTime\", \"排程开工时间\"],\n    [\"fScheduleFinishTime\", \"排程完工时间\", \"scheduleFinishTime\", \"排程完工时间\"],\n    [\"fCancelDate\", \"作废日期\", \"cancelDate\", \"作废日期\"],\n    [\"fStatus.fCaption\", \"\", \"status\", \"业务状态\"],\n    [\"fPickMtrlStatus.fCaption\", \"\", \"pickStatus\", \"领料状态\"],\n    [\"fReqSrc.fCaption\", \"需求来源\", \"reqSrc\", \"需求来源\"],\n    [\"fSaleOrderId\", \"销售订单ID\", \"soId\", \"销售订单ID\"],\n    [\"fSaleOrderEntryId\", \"销售订单分录内码\", \"soDetailId\", \"销售订单明细ID\"],\n    [\"fSaleOrderNo\", \"需求单据\", \"soNo\", \"销售订单编号\"],\n    [\"fMemoItem\", \"备注\", \"memo\", \"备注\"],\n    [\"fBillType.fName\", \"单据类型\", \"billType\", \"单据类型\"],\n    \n  ],\n  enumDecoder: {},\n  mdyWorksheetId: \"MoDetail\",\n  mdyRowUpdateFlag: \"id\"\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        1088
+      ],
+      "id": "1ac36512-688a-45b6-b7c4-067cc9173fe1",
+      "name": "MoDetail相关参数"
+    },
+    {
+      "parameters": {
+        "jsCode": "// SELECT * FROM T_SAL_ORDER\n//\n\nreturn {\n  formId: \"SAL_SALEORDER\",// 金蝶云单据名（一般是对应的数据库表去掉前缀T_）\n  fields: [\n    // [\"fId\", null, \"id\", \"ERP数据ID\"],\n    [\"fSaleOrderEntry_fEntryId\", \"🔑\", \"id\", \"ERP数据ID\"],\n    [\"fSaleOrderEntry_fSeq\", \"序号\", \"seq\", \"序号\"],\n    [\"fBillNo\", \"\", \"soNo\", \"编号\"],\n    [\"fDate\", \"\", \"docDate\", \"单据日期\"],\n    [\"fDeliveryDate\", \"要货日期\", \"demandDate\", \"要货日期\"],\n    [\"fMaterialId.fNumber\", \"物料编码\", \"materialNo\", \"物料编号\"],\n    [\"fMaterialId.fName\", \"物料名称\", \"materialDescription\", \"物料名称\"],\n    [\"fQty\", \"销售数量\", \"qty\", \"销售数量\"],\n    [\"fUnitID.fName\", \"销售单位\", \"unit\", \"销售单位\"],\n    [\"fModifyDate\", \"\", \"modifyDate\", \"修改时间\"],\n    [\"fCloseStatus.fCaption\", \"关闭状态\", \"closeStatus\", \"关闭状态\"],\n    [\"fMrpCloseStatus.fCaption\", \"业务关闭\", \"mrpCloseStatus\", \"业务关闭\"],    \n    [\"fDocumentStatus.fCaption\", \"单据状态\", \"docStatus\", \"单据状态\"],\n  ],\n  enumDecoder: {\n    //\"docStatus\": {\"A\":\"创建\", \"B\":\"审核中\", \"C\":\"已审核\", \"D\":\"重新审核\", \"Z\":\"暂存\"}\n  },\n  mdyWorksheetId: \"SoDetail\",\n  mdyRowUpdateFlag: \"id\"\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        864
+      ],
+      "id": "f28d1ab9-40bd-4079-87a9-c2c490b83e9a",
+      "name": "SoDetail相关参数"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "QmswihfZ5hJUjTGi",
+          "mode": "list",
+          "cachedResultName": "金蝶云 / sub 批量拉取数据"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Cookie": "={{ $('获取金蝶云cookie').item.json.Cookie }}",
+            "K3cloudOriginUrl": "={{ $('获取金蝶云cookie').item.json.K3CLOUD_ORIGIN_URL }}",
+            "FieldsArray": "={{ $('MoMaster相关参数').item.json.fields }}",
+            "MdyAppKey": "={{ $('Const').item.json.MDY_APP_KEY }}",
+            "MdyAppSign": "={{ $('Const').item.json.MDY_SIGN }}",
+            "MdyDataRecevieUrl": "={{ $('Const').item.json.MDY_API_ROOT }}{{ $('Const').item.json.MDY_DATA_RECEIVE_PATH }}",
+            "LoopIndex": 0,
+            "FormId": "={{ $('MoMaster相关参数').item.json.formId }}",
+            "MdyWorksheetId": "={{ $json.mdyWorksheetId }}",
+            "FilterString": "={{ $('Const').item.json.K3CLOUD_FILTER_STRING }}",
+            "EnumDecoder": "={{ $json.enumDecoder }}",
+            "PageSize": 20,
+            "MdyRowUpdateFlag": "={{ $json.mdyRowUpdateFlag }}"
+          },
+          "matchingColumns": [
+            "K3CLOUD_ORIGIN_URL",
+            "Cookie",
+            "k3Fields",
+            "myapsFields_firstItem"
+          ],
+          "schema": [
+            {
+              "id": "K3cloudOriginUrl",
+              "displayName": "K3cloudOriginUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "Cookie",
+              "displayName": "Cookie",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FieldsArray",
+              "displayName": "FieldsArray",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "array",
+              "removed": false
+            },
+            {
+              "id": "FormId",
+              "displayName": "FormId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FilterString",
+              "displayName": "FilterString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyDataRecevieUrl",
+              "displayName": "MdyDataRecevieUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppKey",
+              "displayName": "MdyAppKey",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppSign",
+              "displayName": "MdyAppSign",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyRowUpdateFlag",
+              "displayName": "MdyRowUpdateFlag",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "OrderString",
+              "displayName": "OrderString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "PageSize",
+              "displayName": "PageSize",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "LoopIndex",
+              "displayName": "LoopIndex",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "EnumDecoder",
+              "displayName": "EnumDecoder",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object",
+              "removed": false
+            },
+            {
+              "id": "MdyWorksheetId",
+              "displayName": "MdyWorksheetId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1040,
+        1088
+      ],
+      "name": "K3_生产管理_SCDDLB1",
+      "id": "4b084954-fd31-4d31-ad63-225e53b59bfa",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// SELECT * FROM T_PRD_MO\n//\n\nreturn {\n  formId: \"PRD_MO\",// 金蝶云单据名（一般是对应的数据库表去掉前缀T_）\n  fields: [\n    [\"fId\", null, \"id\", \"ERP数据ID\"],\n    [\"fBillNo\", \"单据编号\", \"moNo\", \"编号\"],\n    [\"fDocumentStatus.fCaption\", \"单据状态\", \"docStatus\", \"单据状态\"],\n    [\"fDate\", \"单据日期\", \"docDate\", \"单据日期\"],\n    \n  ],\n  enumDecoder: {},\n  mdyWorksheetId: \"MoMaster\",\n  mdyRowUpdateFlag: \"id\"\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        1088
+      ],
+      "id": "c5b7b918-e01d-4225-be4a-3eee9492d1d3",
+      "name": "MoMaster相关参数"
+    },
+    {
+      "parameters": {
+        "jsCode": "// SELECT * FROM \n//\n\nreturn {\n  formId: \"SFC_OperationReport\",\n  fields: [\n    [\"fId\", null, \"masterId\", \"OrMasterId\"],\n    [\"fEntity_fEntryId\", null, \"id\", \"ERP数据ID\"],\n    [\"fBillNo\", \"单据编号\", \"orNo\", \"工序汇报单编号\"],\n    [\"fMoNumber\", \"生产订单编号\", \"moNo\", \"SO编号\"],\n    [\"fMoEntryId\", \"生产订单分录内码\", \"moDetailId\", \"MO详情ID\"],\n    [\"fOptPlanId\", \"工序计划内码\", \"opDetailId\", \"OperationPlanDetailID\"],\n    [\"fMaterialId.fNumber\", null, \"materialNo\", \"产品料号\"],\n    [\"fMaterialId.fName\", null, \"materialDesc\", \"物料名称\"],\n    [\"fOperNumber\", \"工序号\", \"sortOrder\", \"工序号\"],\n    [\"fProcessId.fNumber\", null, \"processNo\", \"作业编号\"],\n    [\"fProcessId.fName\", null, \"processDesc\", \"作业名称\"],\n    [\"fFinishQty\", \"完工数量\", \"finishQty\", \"完工数量\"],\n    [\"fQuaQty\", \"合格数量\", \"quaQty\", \"合格数量\"],\n    [\"fProcessStartTime\", \"加工开始时间\", \"processStartTime\", \"作业开始时间\"],\n    [\"fProcessEndTime\", \"加工完成时间\", \"processEndTime\", \"作业完成时间\"],\n    [\"fSeqNumber\", \"工序序列\", null, null],\n  ],\n  enumDecoder: {},\n  mdyWorksheetId: \"OperationReportDetail\",\n  mdyRowUpdateFlag: \"id\"\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        1504
+      ],
+      "id": "9ce3fa47-c271-4b55-b0ac-4ce62aa277dc",
+      "name": "工序汇报详情相关参数"
+    },
+    {
+      "parameters": {
+        "jsCode": "let formId = 'PRD_MO';\nlet mdyWorksheetId = '';\nlet mdyRowUpdateFlag = 'id'\n// @ts-ignore\nlet fields = [\n  [\"fTreeEntity_fEntryId\", null, \"id\", \"ERP数据id\"],\n    // [\"fBillNo\", \"\", \"moNo\", \"编号\"],\n    // [\"fTreeEntity_fSeq\", \"序号\", \"seq\", \"序号\"],\n    // [\"fDate\", \"\", \"docDate\", \"单据日期\"],\n    // [\"fDocumentStatus.fCaption\", \"\", \"docStatus\", \"单据状态\"],\n    // [\"fMaterialId.fNumber\", \"\", \"materialNo\", \"料号\"],\n    // [\"fMaterialId.fName\", \"\", \"materialDesc\", \"物料名称\"],\n    // [\"fQty\", \"\", \"qty\", \"数量\"],\n    [\"fDescription\", \"备注\", \"\", \"\"],\n    [\"fMemoItem\", \"备注\", \"\", \"\"],\n  \n    [\"fScheduleStartTime\", \"排程开工时间\", \"scheduleStartTime\", \"排程开工时间\"],\n    [\"fScheduleFinishTime\", \"排程完工时间\", \"scheduleFinishTime\", \"排程完工时间\"],\n    // [\"fStatus.fCaption\", \"\", \"status\", \"业务状态\"],\n    // [\"fPickMtrlStatus.fCaption\", \"\", \"pickStatus\", \"领料状态\"],\n    // [\"fReqSrc.fCaption\", \"需求来源\", \"reqSrc\", \"需求来源\"],\n    // [\"fSaleOrderId\", \"销售订单ID\", \"soId\", \"销售订单ID\"],\n    // [\"fSaleOrderEntryId\", \"销售订单分录内码\", \"soDetailId\", \"销售订单明细ID\"],\n    // [\"fSaleOrderNo\", \"需求单据\", \"soNo\", \"销售订单编号\"],\n  // [\"\", \"\", \"\", \"\"],\n];\n\n\nreturn {\n  // @ts-ignore\n  k3Fields: fields.map(item => {return item[0]}),\n  formId: formId,\n  mdyWorksheetId: mdyWorksheetId,\n  mdyRowUpdateFlag: mdyRowUpdateFlag\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        48,
+        1680
+      ],
+      "id": "ceb5b6ad-f41b-4897-9e3b-779beb4d43e7",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "jsCode": "// SELECT * FROM \n//\n\nreturn {\n  formId: \"SFC_OperationPlanning\",\n  mdyWorksheetId: \"OperationPlanDetail\",\n  mdyRowUpdateFlag: \"id\",\n  fields: [\n    [\"fId\", null, \"masterId\", \"工序计划单ID\"],\n    [\"fSubEntity_fDetailId\", null, \"id\", \"ERP数据ID\"],\n    [\"fBillNo\", \"单据编号\", \"opNo\", \"编号\"],\n    [\"fMoNumber\", \"生产订单编号\", \"moNo\", \"MO编号\"],\n    [\"fMoEntryId\", \"生产订单分录内码\", \"moDetailId\", \"MO详情ID\"],\n    [\"fDocumentStatus.fCaption\", \"单据状态\", \"docStatus\", \"单据状态\"],\n    [\"fProductId.fNumber\", \"产品编码\", \"materialNo\", \"产品料号\"],\n    [\"fProductId.fName\", \"产品名称\", \"materialDesc\", \"物料名称\"],\n    [\"fPlanType.fCaption\", \"计划类型\", \"planType\", \"计划类型\"],\n    [\"fOperNumber\", \"工序号\", \"sortNo\", \"工序号\"],\n    [\"fOperQty\", \"工序数量\", \"operQty\", \"工序数量\"],\n    [\"fQualifiedQty\", \"合格数量\", \"qualifiedQty\", \"合格数量\"],\n    [\"fUnqualifiedQty\", \"废品数量\", \"unqualifiedQty\", \"废品数量\"],\n    [\"fWastageQty\", \"损耗数量\", \"wastageQty\", \"损耗数量\"],\n    [\"fProcessId.fNumber\", null, \"processNo\", \"作业编号\"],\n    [\"fProcessId.fName\", null, \"processDesc\", \"作业名称\"],\n    [\"fOperStatus.fCaption\", \"状态\", \"operStatus\", \"工序状态\"],\n    [\"fPlanStartTime\", \"计划开工时间\", \"planStartTime\", \"计划开工时间\"],\n    [\"fPlanFinishTime\", \"计划完工时间\", \"planFinishTime\", \"计划完工时间\"],\n    [\"fRealProcessStartTime\", \"实际加工开始时间\", \"realProcessStartTime\", \"实际开工时间\"],\n    [\"fRealProcessFinishTime\", \"实际加工完成时间\", \"realProcessFinishTime\", \"实际完工时间\"]],\n  enumDecoder: {}\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        1280
+      ],
+      "id": "fcc09045-51ff-4332-8a00-9b56fb0d5468",
+      "name": "工序计划详情相关参数"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "QmswihfZ5hJUjTGi",
+          "mode": "list",
+          "cachedResultName": "金蝶云 / sub 批量拉取数据"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Cookie": "={{ $('获取金蝶云cookie').item.json.Cookie }}",
+            "K3cloudOriginUrl": "={{ $('获取金蝶云cookie').item.json.K3CLOUD_ORIGIN_URL }}",
+            "FieldsArray": "={{ $('工序计划详情相关参数').item.json.fields }}",
+            "MdyAppKey": "={{ $('Const').item.json.MDY_APP_KEY }}",
+            "MdyAppSign": "={{ $('Const').item.json.MDY_SIGN }}",
+            "MdyDataRecevieUrl": "={{ $('Const').item.json.MDY_API_ROOT }}{{ $('Const').item.json.MDY_DATA_RECEIVE_PATH }}",
+            "LoopIndex": 0,
+            "FormId": "={{ $('工序计划详情相关参数').item.json.formId }}",
+            "MdyWorksheetId": "={{ $json.mdyWorksheetId }}",
+            "FilterString": "={{ $('Const').item.json.K3CLOUD_FILTER_STRING }}",
+            "EnumDecoder": "={{ $json.enumDecoder }}",
+            "PageSize": 20,
+            "MdyRowUpdateFlag": "={{ $json.mdyRowUpdateFlag }}"
+          },
+          "matchingColumns": [
+            "K3CLOUD_ORIGIN_URL",
+            "Cookie",
+            "k3Fields",
+            "myapsFields_firstItem"
+          ],
+          "schema": [
+            {
+              "id": "K3cloudOriginUrl",
+              "displayName": "K3cloudOriginUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "Cookie",
+              "displayName": "Cookie",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FieldsArray",
+              "displayName": "FieldsArray",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "array",
+              "removed": false
+            },
+            {
+              "id": "FormId",
+              "displayName": "FormId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "FilterString",
+              "displayName": "FilterString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyDataRecevieUrl",
+              "displayName": "MdyDataRecevieUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppKey",
+              "displayName": "MdyAppKey",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyAppSign",
+              "displayName": "MdyAppSign",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "MdyRowUpdateFlag",
+              "displayName": "MdyRowUpdateFlag",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "OrderString",
+              "displayName": "OrderString",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "PageSize",
+              "displayName": "PageSize",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "LoopIndex",
+              "displayName": "LoopIndex",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "EnumDecoder",
+              "displayName": "EnumDecoder",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object",
+              "removed": false
+            },
+            {
+              "id": "MdyWorksheetId",
+              "displayName": "MdyWorksheetId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1056,
+        1280
+      ],
+      "name": "K3_车间作业计划_工序计划列表",
+      "id": "5aa7de14-39dd-4966-bdab-253f31166c1b",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "28569247-1185-428c-be8b-5ee22c576266",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1088,
+        768
+      ],
+      "id": "dbb26a5e-0355-4405-8e15-8a70261cc8e4",
+      "name": "5ee22c576266",
+      "webhookId": "28569247-1185-428c-be8b-5ee22c576266"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "jpIXslRBsylJpc6d",
+          "mode": "list",
+          "cachedResultName": "金蝶云 / 登录获取cookie"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        -832,
+        768
+      ],
+      "id": "bb24e037-0f99-43d0-a2ac-6b6b214d0e91",
+      "name": "获取金蝶云cookie"
+    }
+  ],
+  "pinData": {
+    "5ee22c576266": [
+      {
+        "json": {
+          "headers": {
+            "accept": "application/json;charset=UTF-8",
+            "content-length": "250",
+            "content-type": "multipart/form-data; boundary=J1altvqE5yvHK7vAhaS3xzDOFuIWev",
+            "host": "129.211.172.205:5678",
+            "connection": "Keep-Alive",
+            "user-agent": "Apache-HttpClient/4.5.14 (Java/17.0.4.1)",
+            "accept-encoding": "gzip,deflate"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "sliceStart": "",
+            "sliceEnd": ""
+          },
+          "webhookUrl": "http://localhost:5678/webhook-test/28569247-1185-428c-be8b-5ee22c576266",
+          "executionMode": "test"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "采购订单接口": {
+      "main": [
+        [
+          {
+            "node": "解析JSON数据_PO",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "库存接口": {
+      "main": [
+        [
+          {
+            "node": "解析JSON数据_Inv",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "物料相关参数",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "工作中心相关参数",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Process相关参数",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "SoDetail相关参数",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "MoMaster相关参数",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "工序汇报详情相关参数",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "工序计划详情相关参数",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Const": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "工作中心相关参数": {
+      "main": [
+        [
+          {
+            "node": "K3_车间管理_GZZXLB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "物料相关参数": {
+      "main": [
+        [
+          {
+            "node": "K3_基础资料_WLLB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process相关参数": {
+      "main": [
+        [
+          {
+            "node": "K3_车间管理_作业列表",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Device相关参数": {
+      "main": [
+        [
+          {
+            "node": "K3_车间管理_SBLB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BomMaster相关参数": {
+      "main": [
+        [
+          {
+            "node": "K3_工程数据管理_WLQD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BomDetail相关参数": {
+      "main": [
+        [
+          {
+            "node": "K3_工程数据管理_WLQDLB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RouteMaster相关参数": {
+      "main": [
+        [
+          {
+            "node": "K3_车间管理_工艺路线列表",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "K3_基础资料_WLLB": {
+      "main": [
+        [
+          {
+            "node": "BomMaster相关参数",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "K3_工程数据管理_WLQD": {
+      "main": [
+        [
+          {
+            "node": "BomDetail相关参数",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "K3_车间管理_GZZXLB": {
+      "main": [
+        [
+          {
+            "node": "Device相关参数",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "K3_车间管理_作业列表": {
+      "main": [
+        [
+          {
+            "node": "RouteMaster相关参数",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "K3_车间管理_工艺路线列表": {
+      "main": [
+        [
+          {
+            "node": "RouteDetail相关参数",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RouteDetail相关参数": {
+      "main": [
+        [
+          {
+            "node": "K3_T_ENG_ROUTEOPERDETAIL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MoDetail相关参数": {
+      "main": [
+        [
+          {
+            "node": "K3_生产管理_SCDDLB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SoDetail相关参数": {
+      "main": [
+        [
+          {
+            "node": "K3_供应链_XSDDLB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MoMaster相关参数": {
+      "main": [
+        [
+          {
+            "node": "K3_生产管理_SCDDLB1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "K3_生产管理_SCDDLB1": {
+      "main": [
+        [
+          {
+            "node": "MoDetail相关参数",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "工序汇报详情相关参数": {
+      "main": [
+        [
+          {
+            "node": "K3_工序执行_工序汇报列表",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "⭐元数据⭐`F${EntryName}_${EntryPkFieldName}`取内联（子表）ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "工序计划详情相关参数": {
+      "main": [
+        [
+          {
+            "node": "K3_车间作业计划_工序计划列表",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5ee22c576266": {
+      "main": [
+        [
+          {
+            "node": "获取金蝶云cookie",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "获取金蝶云cookie": {
+      "main": [
+        [
+          {
+            "node": "Const",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "6aced0e3-8195-48df-b538-af8636e0ced4",
+  "meta": {
+    "instanceId": "7772e7998b95a6877d4a03ca9e5500dae4f3e3bc74af353f9a02c534b1ff71e7"
+  },
+  "id": "F3lXiVbol5RMDlXW",
+  "tags": [
+    {
+      "createdAt": "2025-09-08T12:32:11.028Z",
+      "updatedAt": "2025-09-08T12:32:11.028Z",
+      "id": "TwdLRgIFF09ZXAib",
+      "name": "dev"
+    }
+  ]
+}
