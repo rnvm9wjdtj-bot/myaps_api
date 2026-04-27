@@ -26,10 +26,7 @@ from .._base import (
 )
 
 
-from apps.data_opt.components.yonyou_tplus import (
-    YonyouTplusConnection2, TplusStock, TplusMo, TplusRs, TplusPr,
-    RsPushModel, MoPushModel, model_validator
-)
+from apps.data_opt.components.yonyou_tplus1 import TplusConnection, RsPushModel, MoPushModel, model_validator
 from typing import Dict, Any, Union
 
 #################################################################################
@@ -37,24 +34,30 @@ from typing import Dict, Any, Union
 #################################################################################
 REMAIN_NATIVE_SUPPLYNO = True   # 本项目需要推送 MO 前后关系，所以必须保留原生供应号，否则会导致关系断开
 
-
-hacyxs_tplus_conn = None
-
+# 延迟初始化TplusConnection，避免在模块导入时立即连接
+_tplus_conn = None
 
 def get_tplus_conn():
     """获取TplusConnection实例（延迟初始化）"""
-    global hacyxs_tplus_conn
-    if hacyxs_tplus_conn is None:
-        hacyxs_tplus_conn = YonyouTplusConnection2()
-        hacyxs_tplus_conn.register_source([TplusStock, TplusMo, TplusRs, TplusPr])
-    return hacyxs_tplus_conn
+    global _tplus_conn
+    if _tplus_conn is None:
+        _tplus_conn = TplusConnection()
+    return _tplus_conn
 
-hacyxs_tplus_conn = get_tplus_conn()
 #################################################################################
 # ⬇️ 项目可复用逻辑
 #################################################################################
 
-
+async def refresh_stock(dbs: str=MYAPS_DB_SET):
+    """刷新库存数据"""
+    try:
+        tplus_conn = get_tplus_conn()
+        stock_data = await tplus_conn.pull_stock()
+        if stock_data:
+            await ApsPayloadSponsor.refresh_supply(stock_data, dbs=dbs)
+    except Exception as e:
+        CLIENT_LOGGER.fail("刷新库存数据", "", str(e))
+        raise
 
 
 #################################################################################
@@ -64,15 +67,14 @@ hacyxs_tplus_conn = get_tplus_conn()
 async def task_refresh_stock():
     """定时任务：刷新库存数据"""
     try:
-        stock_data = await TplusStock.pull()
-        await ApsPayloadSponsor.refresh_supply(stock_data, dbs=MYAPS_DB_SET)
+        await refresh_stock()
         CLIENT_LOGGER.success("定时任务执行", "刷新库存数据", "任务完成")
     except Exception as e:
         CLIENT_LOGGER.fail("定时任务执行", "刷新库存数据", f"任务失败: {str(e)}")
         # 不抛出异常，避免影响其他任务
 
 
-@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1), description="确认报工")
+# @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1), description="确认报工")
 async def task_confirm_workreport():
     """定时任务：确认报工"""
     try:
@@ -190,21 +192,26 @@ async def batch_handle_pl_status_a2e(event_data_list: list[dict], _erp: EventRes
     async def handle_pl_status_a2e(event_data: dict, _aps: ApsPayloadSponsor):
         """处理PL状态变更为A2E"""
         try:
-            await TplusMo(event_data).create(
-                _aps=_aps,
-                _erp=_erp,
+            if isinstance(event_data, str):
+                supplyno = event_data
+            elif isinstance(event_data, dict):
+                supplyno = event_data['supplyno']
+            tplus_conn = get_tplus_conn()
+            await tplus_conn.create_mo(
+                supplyno=supplyno,
+                remain_native_supplyno=REMAIN_NATIVE_SUPPLYNO,
                 pydantic_model=_CustomMoPushModel,
-                remain_native_supplyno=REMAIN_NATIVE_SUPPLYNO
+                _erp=_erp, _aps=_aps
             )
         except Exception as e:
             CLIENT_LOGGER.fail("处理PL状态变更", str(event_data), str(e))
             await _erp.mo_release_failed(supplyno, msg=str(e))
 
     supply_nos = [s['supplyno'] for s in event_data_list]
-    await TSupply.filter(supplyno__in=supply_nos).update(memo=" 📤 正在推送至 T+ ...")
+    TSupply.filter(supplyno__in=supply_nos).update(memo=" 📤 正在推送至 T+ ...")
 
     aps_payload_sponsor = ApsPayloadSponsor(production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL])
-    await aps_payload_sponsor.establish_production_cache(supplynos=supply_nos)
+    cache = await aps_payload_sponsor.establish_production_cache(supplynos=supply_nos)
     _CustomMoPushModel = create_custom_mo_push_model(aps_payload_sponsor)
     tasks = [handle_pl_status_a2e(event_data=item, _aps=aps_payload_sponsor) for item in event_data_list]
     await asyncio.gather(*tasks, return_exceptions=True)
@@ -217,11 +224,14 @@ async def batch_handle_pl_to_mo(event_data_list: list[dict], _erp: EventResultPo
     async def handle_pl_to_mo(event_data: dict, _aps: ApsPayloadSponsor):
         """处理PL类型变更：转为MO"""
         try:
-            await TplusRs(event_data).create(
-                _aps=_aps,
-                _erp=_erp,
-                pydantic_model=_CustomRsPushModel,
-            )
+            if isinstance(event_data, str):
+                supplyno = event_data
+            elif isinstance(event_data, dict):
+                supplyno = event_data['supplyno']
+            tplus_conn = get_tplus_conn()
+            mo_data = await tplus_conn.query_mo(index_value=supplyno, filter_field='voucherCode')
+            if mo_data:
+                await tplus_conn.push_rs(mdlist_or_supplyno=supplyno, tplus_mo_data_or_id=mo_data, pydantic_model=_CustomRsPushModel, _erp=_erp, _aps=_aps)
         except Exception as e:
             CLIENT_LOGGER.fail("处理PL类型变更", str(event_data), str(e))
             await _erp.rs_release_failed(rsno=supplyno, msg=str(e))
@@ -238,7 +248,8 @@ async def batch_handle_pl_to_mo(event_data_list: list[dict], _erp: EventResultPo
 @async_rate_limit()
 async def batch_handle_pr_status_a2e(pr_data_list: list[dict], _erp: EventResultPoster, description="推送请购单至 T+"):
     try:
-        await TplusPr(pr_data_list).create(_erp=_erp)
+        tplus_conn = get_tplus_conn()
+        await tplus_conn.push_pr(pr_data_list, _erp=_erp)
     except Exception as e:
         pr_nos = [p.get('supplyno') for p in pr_data_list if p.get('supplyno')]
         await _erp.pr_release_failed(prno=pr_nos[0] if pr_nos else None, msg=str(e))
@@ -246,7 +257,7 @@ async def batch_handle_pr_status_a2e(pr_data_list: list[dict], _erp: EventResult
         
 
 
-# if __name__ == '__main__':
-#     from .._base import HapConnection
+if __name__ == '__main__':
+    from .._base import HapConnection
     
-#     hap_conn = HapConnection()
+    hap_conn = HapConnection()

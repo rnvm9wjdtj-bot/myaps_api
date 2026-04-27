@@ -114,6 +114,31 @@ class AcceptMaterial(BaseModel):
         if values.get("phantommin", "") == "":
             values["phantommin"] = 0
         _cache_raw_input_data(cls, values)
+        
+        # 转换整数字段
+        int_fields = ["fifo", "leadday", "expday", "grday", "phantommin", "firmday", "daygap", "preday", "subday"]
+        for field in int_fields:
+            if field in values:
+                try:
+                    values[field] = int(values[field])
+                except:
+                    if values.get(field) in gc.NONE_AND_EMPTY:
+                        pass  # 保持空值，后续会填充默认值
+                    else:
+                        values[field] = None
+        
+        # 转换浮点数字段
+        float_fields = ["lotfix", "lotmin", "lotmax", "lotround", "lotss", "lotpoint", "lottop"]
+        for field in float_fields:
+            if field in values:
+                try:
+                    values[field] = float(values[field])
+                except:
+                    if values.get(field) in gc.NONE_AND_EMPTY:
+                        pass  # 保持空值，后续会填充默认值
+                    else:
+                        values[field] = None
+        
         if "fifo" not in pdv.no_fill_defaults and values.get("fifo", "") == "":
             values["fifo"] = pdv.MAT_FIFO
         if "expday" not in pdv.no_fill_defaults and values.get("expday", "") == "":
@@ -196,6 +221,29 @@ class AcceptWorkcenter(BaseModel):
     @classmethod
     def model_valid(cls, values: Dict[str, Any]):
         _cache_raw_input_data(cls, values)
+        
+        # 转换整数字段
+        int_fields = ["pri_wc", "capnum", "capmax"]
+        for field in int_fields:
+            if field in values:
+                try:
+                    values[field] = int(values[field])
+                except:
+                    if values.get(field) in gc.NONE_AND_EMPTY:
+                        pass  # 保持空值，后续会填充默认值
+                    else:
+                        values[field] = None
+        
+        # 转换浮点数字段
+        if "worker" in values:
+            try:
+                values["worker"] = float(values["worker"])
+            except:
+                if values.get("worker") in gc.NONE_AND_EMPTY:
+                    pass  # 保持空值，后续会填充默认值
+                else:
+                    values["worker"] = None
+        
         if values.get("sortno") is None:
             values["sortno"] = ""
         if values.get("bottleneck") in gc.NONE_AND_EMPTY:
@@ -327,6 +375,19 @@ class AcceptMatVer(BaseModel):
     @classmethod
     def model_valid(cls, values):
         _cache_raw_input_data(cls, values)
+        
+        # 转换整数字段
+        int_fields = ["lotfrom", "lotto", "priority"]
+        for field in int_fields:
+            if field in values:
+                try:
+                    values[field] = int(values[field])
+                except:
+                    if values.get(field) in gc.NONE_AND_EMPTY:
+                        pass  # 保持空值，后续会填充默认值
+                    else:
+                        values[field] = None
+        
         if values.get("lotfrom") in gc.NONE_AND_EMPTY:
             values["lotfrom"] = pdv.MATVER_LOTFROM
         if values.get("lotto") in gc.NONE_AND_EMPTY:
@@ -429,6 +490,16 @@ class AcceptMold(BaseModel):
     @classmethod
     def model_valid(cls, values):
         _cache_raw_input_data(cls, values)
+        
+        # 转换整数字段
+        int_fields = ["moldnum", "qty"]
+        for field in int_fields:
+            if field in values:
+                try:
+                    values[field] = int(values[field])
+                except:
+                    values[field] = None
+        
         return values
 
     @model_validator(mode="after")
@@ -476,6 +547,10 @@ class AcceptMatWcMold(BaseModel):
             values["basesec"] = int(values["basesec"])  # 数据库该字段为整形
         except:
             values["basesec"] = None
+        try:
+            values["priority"] = int(values["priority"])  # 数据库该字段为整形
+        except:
+            values["priority"] = None
         if values.get("moldno") is None:
             values["moldno"] = ''
         return values
@@ -542,6 +617,24 @@ class AcceptSupply(BaseModel):
         if values.get("apiex_id") not in gc.NONE_AND_EMPTY and values.get("apiex_entryid") in gc.NONE_AND_EMPTY:
             values["apiex_entryid"] = values["apiex_id"]
         _cache_raw_input_data(cls, values)
+        
+        # 转换整数字段
+        if "priority" in values:
+            try:
+                values["priority"] = int(values["priority"])
+            except:
+                if values.get("priority") in gc.NONE_AND_EMPTY:
+                    values["priority"] = 0
+                else:
+                    values["priority"] = None
+        
+        # 转换浮点数字段
+        if "avail_qty" in values:
+            try:
+                values["avail_qty"] = float(values["avail_qty"])
+            except:
+                values["avail_qty"] = None
+        
         if values.get('itemno') in gc.NONE_AND_EMPTY:
             values['itemno'] = pdv.ITEMNO
         if values.get("status") not in gc.OrderStatusEnum.__members__:
@@ -668,12 +761,28 @@ class AcceptDemand(BaseModel):
         if values.get("apiex_id") not in gc.NONE_AND_EMPTY and values.get("apiex_entryid") in gc.NONE_AND_EMPTY:
             values["apiex_entryid"] = values["apiex_id"]
         _cache_raw_input_data(cls, values)
+        
+        # 转换整数字段
+        if "priority" in values:
+            try:
+                values["priority"] = int(values["priority"])
+            except:
+                values["priority"] = None
+        
+        # 转换浮点数字段
         try:
             req_qty = float(values.get("req_qty"))
             if req_qty > 0:
                 values["req_qty"] = -1 * req_qty
         except ValueError:
             req_qty = None
+        
+        if "ori_qty" in values:
+            try:
+                values["ori_qty"] = float(values["ori_qty"])
+            except:
+                values["ori_qty"] = None
+        
         if  values.get("category") == gc.ProductCategoryEnum.MTO and values.get("refno") in gc.NONE_AND_EMPTY:
             raise ValueError("MTO订单号refno不能为空")
         # if values.get("status") in gc.NONE_AND_EMPTY:

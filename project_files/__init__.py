@@ -76,7 +76,15 @@ _shared_executor = ThreadPoolExecutor(max_workers=10)
 
 class ApsEvent:
 
-    def __init__(self, event_type: DbEventType, description: str, batch_size: int=10000, flush_interval: int=5, error_handler: Optional[Callable]=None, error_handler_kwargs: Optional[Dict[str, Any]]=None):
+    def __init__(
+        self,
+        event_type: DbEventType,
+        description: str,
+        batch_size: int=10000,
+        flush_interval: int=15,
+        error_handler: Optional[Callable]=None,
+        error_handler_kwargs: Optional[Dict[str, Any]]=None
+    ):
         self.event_type = event_type
         self.description = description
         self.error_handler = error_handler  # 错误处理函数
@@ -142,20 +150,15 @@ class ApsEvent:
 
 # 只在第一次导入时注册事件
 if not _events_registered:
-
-    aps_pl_status_a2e_event = ApsEvent(event_type=DbEventType.PL_STATUS_A2E, description="PL 单据 下达", flush_interval=15)
-
-    aps_pr_status_a2e_event = ApsEvent(event_type=DbEventType.PR_STATUS_A2E, description="PR 单据 下达", flush_interval=15)
-
-    aps_pl_typeto_mo_event = ApsEvent(event_type=DbEventType.PL_TYPETO_MO, description="PL 变更为 MO", flush_interval=120)
-
+    aps_pl_status_a2e_event = ApsEvent(event_type=DbEventType.PL_STATUS_A2E, description="PL 单据 下达")
+    aps_pr_status_a2e_event = ApsEvent(event_type=DbEventType.PR_STATUS_A2E, description="PR 单据 下达")
+    aps_pl_typeto_mo_event = ApsEvent(event_type=DbEventType.PL_TYPETO_MO, description="PL 变更为 MO")
     aps_pr_deleted_event = ApsEvent(event_type=DbEventType.PR_DELETED, description="PR 单据 删除")
 
     _events_registered = True
     logger.success("数据库事件注册", "", "所有事件已成功注册")
 else:
     logger.debug("数据库事件注册", "", "事件已经注册，跳过重复注册")
-
 
 
 #################################################################################

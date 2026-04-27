@@ -500,7 +500,7 @@ class ExternalBaseConnection(ABC):
     def register_source(self, source):
         """
         注册数据源
-        source: 数据源对象或数据源实例对象列表
+        source: 数据源对象或数据源 class 列表
         """
         if not isinstance(source, list):
             source = [source]
@@ -530,6 +530,7 @@ class BaseSource:
         self.raw_data = raw_data
         self.external_data = None
         self.internal_data = None
+        # self._CONNECTION = self.__class__._CONNECTION
     
 
     async def query(self):
@@ -691,7 +692,7 @@ class InternalData:
             pydantic_model = self._pydantic_model
         else:
             self._pydantic_model = pydantic_model
-        external_data_list = [pydantic_model.model_dump(data) for data in self.data_list]
+        external_data_list = [pydantic_model(**data).model_dump() for data in self.data_list]
         self.external_data_list = ExternalData(external_data_list, pydantic_model)
         return self.external_data_list
 
@@ -772,7 +773,7 @@ class ExternalData:
             pydantic_model = self._pydantic_model
         else:
             self._pydantic_model = pydantic_model
-        internal_data_list = [pydantic_model.model_dump(data) for data in self.data_list]
+        internal_data_list = [pydantic_model(**data).model_dump() for data in self.data_list]
         self.internal_data_list = InternalData(internal_data_list, pydantic_model)
         return self.internal_data_list
         

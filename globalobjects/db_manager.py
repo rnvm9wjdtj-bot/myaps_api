@@ -1335,7 +1335,12 @@ class DbManager:
             new_batch_size = max(self.min_batch_size, min(self.max_batch_size, new_batch_size))
             
             if new_batch_size != self.batch_size:
-                logger.info(f"调整批量大小: {self.batch_size} -> {new_batch_size}, 性能提升: {((best_performance / current_performance) - 1) * 100:.1f}%")
+                # 避免除以零的错误
+                if current_performance > 0:
+                    performance_improvement = ((best_performance / current_performance) - 1) * 100
+                    logger.info(f"调整批量大小: {self.batch_size} -> {new_batch_size}, 性能提升: {performance_improvement:.1f}%")
+                else:
+                    logger.info(f"调整批量大小: {self.batch_size} -> {new_batch_size}")
                 self.batch_size = new_batch_size
                 self.optimal_batch_size = new_batch_size
     
