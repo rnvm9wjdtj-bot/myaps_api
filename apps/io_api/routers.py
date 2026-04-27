@@ -653,7 +653,7 @@ async def replace_supply(
 ):
     wrong_type_count = 0
     for item in data:
-        if item.get('type') != type_:
+        if item.type != type_:
             wrong_type_count += 1
     if wrong_type_count > 0:
         return standard_response(

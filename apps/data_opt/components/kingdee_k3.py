@@ -11,7 +11,7 @@ from globalobjects import logger as log_config
 import os
 
 from ._base import (
-    BaseConnection, convert_timeunit, clean_value, #reset_default_values,
+    ExternalBaseConnection, convert_timeunit, clean_value, #reset_default_values,
     BaseModel as PydanticModel, model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold,
@@ -194,7 +194,7 @@ class K3Config:
     }
 
 
-class K3Connection(BaseConnection):
+class K3Connection(ExternalBaseConnection):
 
     def __init__(self, config: K3Config=K3Config):
         self.base_url = config.BASE_URL

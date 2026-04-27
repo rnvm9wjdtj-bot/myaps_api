@@ -382,7 +382,7 @@ class AdaptiveAsyncTokenBucket:
         await self._adjust_qps()
 
 
-class BaseConnection(ABC):
+class ExternalBaseConnection(ABC):
     this_base_url = THIS_BASE_URL
     main_db = MYAPS_MAIN_DB
 
@@ -477,6 +477,7 @@ class BaseConnection(ABC):
         self._async_session = await get_async_session()
         return self._async_session
 
+
     async def _close_async_session(self):
         """
         关闭异步会话
@@ -498,30 +499,255 @@ class BaseConnection(ABC):
 
 
     # @abstractmethod
-    def pull_from_source(self, *args, **kwargs):
-        """
-        从目标系统获取数据
-        """
-        pass
+    # def pull_from_source(self, *args, **kwargs):
+    #     """
+    #     从目标系统获取数据
+    #     """
+    #     pass
 
     # @abstractmethod
-    async def pull_from_source_async(self, *args, **kwargs):
-        """
-        异步从目标系统获取数据
-        """
-        pass
+    # async def pull_from_source_async(self, *args, **kwargs):
+    #     """
+    #     异步从目标系统获取数据
+    #     """
+    #     pass
 
     # @abstractmethod
-    def push_into_target(self, *args, **kwargs):
-        """
-        推送数据到目标系统
-        """
-        pass
+    # def push_into_target(self, *args, **kwargs):
+    #     """
+    #     推送数据到目标系统
+    #     """
+    #     pass
 
     # @abstractmethod
-    async def push_into_target_async(self, *args, **kwargs):
-        """
-        异步推送数据到目标系统
-        """
-        pass
+    # async def push_into_target_async(self, *args, **kwargs):
+    #     """
+    #     异步推送数据到目标系统
+    #     """
+    #     pass
 
+
+    def register_source(self, source: 'BaseSource' | list['BaseSource']):
+        """
+        注册数据源
+        """
+        if not isinstance(source, list):
+            source = [source]
+        for s in source:
+            s._CONNECTION = self
+        return self
+
+
+
+class BaseSource:
+    """
+    数据对象基类
+    
+    用于处理从ERP拉取的基础数据，如物料、工作中心、BOM等
+    支持链式调用，如：tplus.material().query()
+    """
+
+    _CONNECTION: ExternalBaseConnection = None   # 连接对象，通过 ExternalBaseConnection 实例的 register_objects 方法注入
+    _QUERY_ENDPOINT : str = None   # 查询接口路径
+    _QUERY_BATCH_ENDPOINT : str = None   # 查询批量接口路径
+    _PULL_PYDANTIC_MODEL : type[BaseModel] = None   # 拉取数据的Pydantic模型
+    _FIELD_HINTS : dict[str, str] = None   # 字段注解，涉及select字段的，根据此参数的key取
+    _DOCUMENTATION_URL : str = None   # 技术文档URL，无逻辑意义
+
+
+    def __init__(self, data: dict = None):
+        """
+        初始化数据对象
+        
+        Args:
+            data: 初始数据
+        """
+        self.data = data or {}
+    
+
+    def __call__(self, **kwargs):
+        """
+        支持 tplus.material(**{}).query() 风格调用
+        
+        Args:
+            **kwargs: 数据参数
+            
+        Returns:
+            self: 返回自身，支持链式调用
+        """
+        self.data.update(kwargs)
+        return self
+    
+
+    async def query(self):
+        """
+        查询数据
+        
+        Raises:
+            NotImplementedError: 子类必须实现query方法
+        """
+        raise NotImplementedError("子类必须实现query方法")
+
+    
+    async def query_batch(self):
+        """
+        异步查询数据
+        
+        Raises:
+            NotImplementedError: 子类必须实现query_batch方法
+        """
+        raise NotImplementedError("子类必须实现query_batch方法")
+    
+
+    def get_documentation(self):
+        """
+        获取文档信息
+        
+        Returns:
+            dict: 文档信息
+        """
+        return {
+            'url': self.documentation_url,
+            'object_type': self.__class__.__name__
+        }
+    
+
+    def __getattr__(self, name):
+        """
+        支持属性访问，如：material.filter = {}
+        
+        Args:
+            name: 属性名
+            
+        Returns:
+            Any: 属性值
+        """
+        if name in self.data:
+            return self.data[name]
+        raise AttributeError(f"{self.__class__.__name__} 对象没有属性 '{name}'")
+    
+
+    def __setattr__(self, name, value):
+        """
+        支持属性设置，如：material.filter = {}
+        
+        Args:
+            name: 属性名
+            value: 属性值
+        """
+        # 保留对实例变量的正常设置
+        if name in ['connection', 'data', 'documentation_url']:
+            super().__setattr__(name, value)
+        else:
+            self.data[name] = value
+
+
+
+class BaseVoucher(BaseSource):
+    """
+    凭证基类
+    
+    用于处理需要创建、更新的ERP凭证，如生产加工单、领料申请、请购单等
+    支持链式调用，如：tplus.mo(**{}).create()
+    """
+    from . import ApsPayloadSponsor, EventResultPoster
+    
+    _CREATE_ENDPOINT = None   # 创建接口路径
+    _UPDATE_ENDPOINT = None   # 更新接口路径
+    _DELETE_ENDPOINT = None   # 删除接口路径
+    _PUSH_PYDANTIC_MODEL = None   # 推送数据的Pydantic模型
+    
+    async def create(self, _erp: EventResultPoster):
+        """
+        创建凭证
+        
+        Raises:
+            NotImplementedError: 子类必须实现create方法
+        """
+        raise NotImplementedError("子类必须实现create方法")
+    
+
+    async def update(self, _erp: EventResultPoster):
+        """
+        更新凭证
+        
+        Raises:
+            NotImplementedError: 子类必须实现update方法
+        """
+        raise NotImplementedError("子类必须实现update方法")
+    
+
+    async def delete(self, _erp: EventResultPoster):
+        """
+        删除凭证
+        
+        Raises:
+            NotImplementedError: 子类必须实现delete方法
+        """
+        raise NotImplementedError("子类必须实现delete方法")
+
+
+
+class InternalData:
+
+    def __init__(self, data: dict | List[dict], pydantic_model: PydanticModel = None):
+        self._pydantic_model = pydantic_model
+        self.data = data
+        if isinstance(data, dict):
+            self.data_list = [data]
+        else:
+            self.data_list = data
+        
+
+    async def dumps(self, pydantic_model: PydanticModel = None):
+        """
+        转换为外部数据格式
+        
+        Args:
+            pydantic_model: 转换模型
+        """
+        assert self._pydantic_model or pydantic_model, "未设置转换模型pydantic_model"
+        if pydantic_model is None:
+            pydantic_model = self._pydantic_model
+        else:
+            self._pydantic_model = pydantic_model
+        external_data_list = [pydantic_model.model_dump(data) for data in self.data_list]
+        self.external_data_list = ExternalData(external_data_list, pydantic_model)
+        return self.external_data_list
+
+
+
+class ExternalData:
+
+    def __init__(self, data: dict | List[dict], pydantic_model: PydanticModel = None):
+        """
+        初始化数据对象
+        
+        Args:
+            data: 初始数据
+        """
+        self._pydantic_model = pydantic_model
+        self.data = data
+        if isinstance(data, dict):
+            self.data_list = [data]
+        else:
+            self.data_list = data
+        
+
+    async def loads(self, pydantic_model: PydanticModel = None):
+        """
+        从外部加载数据
+        
+        Args:
+            pydantic_model: 外部数据
+        """
+        assert self._pydantic_model or pydantic_model, "未设置转换模型pydantic_model"
+        if pydantic_model is None:
+            pydantic_model = self._pydantic_model
+        else:
+            self._pydantic_model = pydantic_model
+        internal_data_list = [pydantic_model.model_dump(data) for data in self.data_list]
+        self.internal_data_list = InternalData(internal_data_list, pydantic_model)
+        return self.internal_data_list
+        
+        

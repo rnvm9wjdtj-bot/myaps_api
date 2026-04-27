@@ -1,27 +1,25 @@
 """
-用友T+ 接口组件
+用友T+ 接口组件（新版本）
+
+支持链式调用，如：tplus.mo(**{}).create()
 """
 import json, time, inspect, asyncio
 from typing import Dict, Any, Literal, Optional, NamedTuple
 from datetime import datetime, timedelta, date
 import pandas as pd
 
-# from pydantic import InstanceOf
-
 from core.settings import MYAPS_MAIN_DB
 
-
 from ._base import (
-    PydanticModel, JSONManager,
+    PydanticModel, JSONManager, 
     logger,
     DataProcessor, globalconst, PROJECT_JSON_FILE, pdv,
-    ExternalBaseConnection, convert_timeunit, clean_value,
+    convert_timeunit, clean_value,
     model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold, AcceptSupply, AcceptConfirm,
-    db_query, TSupply, TDemand
+    db_query, TSupply, TDemand, ExternalBaseConnection, BaseSource, BaseVoucher, InternalData, ExternalData,
 )
-
 
 
 """
@@ -374,23 +372,6 @@ class PullInterface(NamedTuple):
     remark: Optional[str] = ''
 
 
-MaterialPullInterface = PullInterface(
-    endpoint="/tplus/api/v2/inventory/Query",
-    field_map={
-        "ID": "ID", "Disabled": "是否停用", "Code": "编码", "Name": "名称", "Specification": "规格型号",
-        "InventoryClassCode": "存货分类Code", "InventoryClassName": "存货分类Name",
-        "UnitName": "单位Name", "BaseUnitName": "主计量单位Name", "UnitByManufactureName": "生产常用单位Name",
-        "IsMaterial": "是否物料", "IsPurchase": "是否采购", "IsMadeSelf": "是否自制", "IsMadeRequest": "是否委外",
-        "IsSuite": "是否套件", "IsPhantom": "是否虚拟件", "AvagCost": "平均成本", "Expired": "保质期", "ExpiredUnitName": "保质期单位",
-        "IsNeedQualityInspection": "是否需要检验", "Ts": "时间戳",
-    },
-    base_filter={"Disabled": False, "IsMaterial": True, "Ts": None}
-)
-
-WorkcenterPullInterface = PullInterface(
-    endpoint="/tplus/api/v2/WorkCenter/QueryPage",
-    field_map={"ID": "ID", "Code": "编码", "Name": "名称", "Disabled": "是否停用"},
-)
 
 RoutingPullInterface = PullInterface(
     endpoint="/tplus/api/v2/bom/Query",  # 不用 "/tplus/api/v2/routing/Query", 因为 T+ 的工艺路线是抽象的，具体到物料的工艺路线是在 BOM 中定义的
@@ -490,13 +471,22 @@ class TplusConfig:
         self.max_page_size = min(cache_erp.get("max_page_size", 1000), 1000)    
 
 
-class TplusConnection(ExternalBaseConnection):
+
+class YonyouTplusConnection2(ExternalBaseConnection):
+    """
+    用友T+连接类（新版本）
     
+    支持链式调用，如：tplus.mo(**{}).create()
+    """
     from . import ApsPayloadSponsor, EventResultPoster
-    
+
+
     def __init__(self, config: TplusConfig=TplusConfig()):
         """
         初始化畅捷通连接
+        
+        Args:
+            config: TplusConfig实例
         """
         super().__init__()
         self.config = config
@@ -675,16 +665,13 @@ class TplusConnection(ExternalBaseConnection):
         raise last_error
 
 
-    async def _pull_simple_data(self, pull_interface: PullInterface, filter: dict=None, pydantic_model: PydanticModel=None):
+    async def _pull_simple_data(self, endpoint: str, field_hints: dict[str, str], filter: dict=None):
         await self.auth()
-        endpoint = pull_interface.endpoint
-        field_map = pull_interface.field_map
-        base_filter = pull_interface.base_filter
         params = {
             "PageIndex": 1,
             "PageSize": self.config.max_page_size,
-            "SelectFields": ",".join(field_map.keys()),
-            **base_filter,
+            "SelectFields": ",".join(field_hints.keys()),
+            **filter,
         }
         if filter:
             params.update(filter)
@@ -701,7 +688,7 @@ class TplusConnection(ExternalBaseConnection):
             params["PageIndex"] += 1
             ts_value = raw_data[-1].get("Ts") or raw_data[-1].get("TS")
             params["Ts"] = ts_value
-            data_list.extend([{v: row.get(k) for k, v in field_map.items()} for row in raw_data])
+            data_list.extend([{v: row.get(k) for k, v in field_hints.items()} for row in raw_data])
             
         if pydantic_model:
             data_list = [pydantic_model(**item).model_dump(exclude_none=True) for item in data_list]
@@ -959,91 +946,396 @@ class TplusConnection(ExternalBaseConnection):
 
         processed_rsdata['tplus_mo_id'] = mo_id
         processed_rsdata['tplus_mo_entryid'] = tplus_mo_entryid
+        processed_rsdata['mo_material_details'] = mo_material_details
         processed_rsdata['tplus_mo_data'] = mo_data
 
-        # processed_rsdata['mo_material_details_id'] = mo_material_details_id
-        processed_rsdata['mo_material_details'] = mo_material_details
+        dto = pydantic_model(**processed_rsdata).model_dump(exclude_none=True)
+        payload = {"dto": dto}
 
-        dto = pydantic_model(**processed_rsdata).model_dump()
-        if dto["MaterialRequestDetails"]:   # 有领料申请详情
-            payload = {"dto": dto}
-            logger.debug(f"向 T+ 推送领料申请，发送数据：{json.dumps(payload, ensure_ascii=False)}")
-            response = await self._post(endpoint=endpoint, data=payload)
-            # 修复：检查 response 是否为可等待对象
-            if inspect.iscoroutine(response):
-                response = await response
-            rs_push_response_json = response
-            if str(rs_push_response_json['code']) == '0': # 创建成功
-                await _erp.rs_release_success(rsno=demandno, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
-            else:
-                await _erp.rs_release_failed(rsno=demandno, msg=rs_push_response_json['message'], push_data=processed_rsdata, msg_from='T+')
+        rs_create_response = await self._post(endpoint=endpoint, data=payload)
+        if inspect.iscoroutine(rs_create_response):
+            rs_create_response = await rs_create_response
+
+        rs_create_response_json = rs_create_response
+        if str(rs_create_response_json['code']) == '0': # 响应错误码为0，RS 创建成功
+            # 从响应中提取 data
+            response_data = rs_create_response_json['data']
+            tplus_rs_id = response_data['ID']
+            tplus_rs_code = response_data['Code']
+            await _erp.rs_release_success(native_plno=demandno, msg=rs_create_response_json['message'], msg_from='T+', rsno=tplus_rs_code, _id=tplus_rs_id)
         else:
-            await _erp.rs_release_success(rsno=demandno, msg="无领料申请详情", msg_from='APS')
+            await _erp.rs_release_failed(rsno=demandno, msg=rs_create_response_json['message'], push_data=payload, msg_from='T+')
 
+    async def push_pr(self, pr_data_list: list[dict], _erp: EventResultPoster):
+        """
+        异步创建请购单
+        """
+        endpoint = PrCreateInterface.endpoint
+        prdto = PrPushModel(**pr_data_list)
+        payload = {"dto": prdto.model_dump(exclude_none=True)}
+        pr_create_response = await self._post(endpoint=endpoint, data=payload)
+        if inspect.iscoroutine(pr_create_response):
+            pr_create_response = await pr_create_response
 
-    async def push_pr(
-        self,
-        data_list: list[dict],
-        _erp: EventResultPoster,
-        pydantic_model:PydanticModel=PrPushModel):
+        pr_create_response_json = pr_create_response
+        if str(pr_create_response_json['code']) == '0': # 响应错误码为0，PR 创建成功
+            # 从响应中提取 data
+            response_data = pr_create_response_json['data']
+            tplus_pr_id = response_data['ID']
+            tplus_pr_code = response_data['Code']
+            await _erp.pr_release_success(prno=tplus_pr_code, msg=pr_create_response_json['message'], msg_from='T+', _id=tplus_pr_id)
+        else:
+            pr_nos = [p.get('supplyno') for p in pr_data_list if p.get('supplyno')]
+            await _erp.pr_release_failed(prno=pr_nos[0] if pr_nos else None, msg=pr_create_response_json['message'], push_data=payload, msg_from='T+')
+
+    def mo(self, **kwargs):
         """
-        异步推送采购申请
-        :param data_list: APS 中的 PR 数据
-        """
-        async def approve_pr(tplus_pr_code: str):
-            endpoint = PrApproveInterface.endpoint
-            # payload = {"param": {'voucherID': tplus_pr_id}}
-            payload = {"param": {'voucherCode': tplus_pr_code}}
-            response_json = await self._post(endpoint=endpoint, data=payload)
-            # response_json = response.json()
-            if str(response_json['code']) == '0':
-                logger.success("审批请购单", tplus_pr_code)
-            else:
-                logger.fail("审批请购单", tplus_pr_code, response_json['message'])
-            return response_json
+        生产加工单对象工厂
         
-        # if not data_list:
-        #     data_list = await _aps.get_new_pr_data()
-        #     if not data_list:
-        #         logger.debug("没有新的请购单数据")
-        #         return
-        try:
-            # 转换为 T+ 格式
-            agg_data_list = await ApsPayloadSponsor.aggregate_pr_data(pr_data_list=data_list)
-            tplus_pr_data = pydantic_model(data=agg_data_list).model_dump(exclude_none=True)
-            payload = {"dto": tplus_pr_data}
-            endpoint = PrCreateInterface.endpoint
-            pr_push_response_json = await self._post(endpoint=endpoint, data=payload)
-            # pr_push_response_json = response.json()
-            if str(pr_push_response_json['code']) == '0':
-                tplus_pr_id = pr_push_response_json['data'].get('ID')
-                tplus_pr_code = pr_push_response_json['data'].get('Code')
-                for _ in data_list:
-                    await _erp.pr_release_success(prno=_['supplyno'], msg=pr_push_response_json['message'], msg_from='T+', _code=tplus_pr_code, _id=tplus_pr_id)
-                
-                # 审批请购单
-                await approve_pr(tplus_pr_code=tplus_pr_code)
+        Args:
+            **kwargs: 初始化参数
             
-            else:
-                tasks = [_erp.pr_release_failed(prno=item['supplyno'], msg=pr_push_response_json['message'], msg_from='T+') for item in data_list]
-                await asyncio.gather(*tasks)
-        except Exception as e:
-            logger.fail("推送请购单", str(e))
-            tasks = [asyncio.create_task(_erp.pr_release_failed(prno=item['supplyno'], msg=str(e), msg_from='T+')) for item in data_list]
-            await asyncio.gather(*tasks)
+        Returns:
+            MoObject: 生产加工单对象
+        """
+        return MoObject(self, kwargs)
+    
+    def rs(self, **kwargs):
+        """
+        领料申请对象工厂
+        
+        Args:
+            **kwargs: 初始化参数
+            
+        Returns:
+            RsObject: 领料申请对象
+        """
+        return RsObject(self, kwargs)
+    
+    def pr(self, **kwargs):
+        """
+        请购单对象工厂
+        
+        Args:
+            **kwargs: 初始化参数
+            
+        Returns:
+            PrObject: 请购单对象
+        """
+        return PrObject(self, kwargs)
+    
+    def material(self, **kwargs):
+        """
+        物料对象工厂
+        
+        Args:
+            **kwargs: 初始化参数
+            
+        Returns:
+            MaterialObject: 物料对象
+        """
+        return TplusMaterial(self, kwargs)
+    
+    def workcenter(self, **kwargs):
+        """
+        工作中心对象工厂
+        
+        Args:
+            **kwargs: 初始化参数
+            
+        Returns:
+            WorkcenterObject: 工作中心对象
+        """
+        return WorkcenterObject(self, kwargs)
+    
+    def stock(self, **kwargs):
+        """
+        库存对象工厂
+        
+        Args:
+            **kwargs: 初始化参数
+            
+        Returns:
+            StockObject: 库存对象
+        """
+        return StockObject(self, kwargs)
+    
+    def routing(self, **kwargs):
+        """
+        工艺路线对象工厂
+        
+        Args:
+            **kwargs: 初始化参数
+            
+        Returns:
+            RoutingObject: 工艺路线对象
+        """
+        return RoutingObject(self, kwargs)
+    
+    def bom(self, **kwargs):
+        """
+        BOM对象工厂
+        
+        Args:
+            **kwargs: 初始化参数
+            
+        Returns:
+            BomObject: BOM对象
+        """
+        return BomObject(self, kwargs)
 
 
-    async def delete_pr(self, tplus_pr_code: str):
+
+class TplusMaterial(BaseSource):
+
+    _QUERY_BATCH_ENDPOINT = "/tplus/api/v2/inventory/Query"
+    _PULL_PYDANTIC_MODEL = MaterialPullModel
+    _FIELD_HINTS = {
+        "ID": "ID", "Disabled": "是否停用", "Code": "编码", "Name": "名称", "Specification": "规格型号",
+        "InventoryClassCode": "存货分类Code", "InventoryClassName": "存货分类Name",
+        "UnitName": "单位Name", "BaseUnitName": "主计量单位Name", "UnitByManufactureName": "生产常用单位Name",
+        "IsMaterial": "是否物料", "IsPurchase": "是否采购", "IsMadeSelf": "是否自制", "IsMadeRequest": "是否委外",
+        "IsSuite": "是否套件", "IsPhantom": "是否虚拟件", "AvagCost": "平均成本", "Expired": "保质期", "ExpiredUnitName": "保质期单位",
+        "IsNeedQualityInspection": "是否需要检验", "Ts": "时间戳",
+    }
+
+    async def query_batch(self, disabled: bool = False, is_material: bool = False, ts: str = None):
         """
-        删除采购申请（仅能删除未审核的）
-        :param tplus_pr_code: T+ 采购申请编号
+        查询批量物料数据
         """
-        endpoint = PrDeleteInterface.endpoint
-        payload = {"param": {'voucherCode': tplus_pr_code}}
-        response_json = await self._post(endpoint=endpoint, data=payload)
-        # response_json = await response.json()
-        if str(response_json['code']) == '0':
-            logger.success("删除请购单", tplus_pr_code)
-        else:
-            logger.fail("删除请购单", tplus_pr_code, response_json['message'])
-       
+        assert self._CONNECTION, "未获得连接对象，请先注册"
+        
+        endpoint = self._QUERY_BATCH_ENDPOINT
+        filter = {
+            "Disabled": disabled,
+            "IsMaterial": is_material,
+            "Ts": ts,
+        }
+        data = await self._CONNECTION._pull_simple_data(
+            endpoint=endpoint,
+            field_hints=self._FIELD_HINTS,
+            filter=filter
+        )
+
+        return ExternalData(data=data, pydantic_model=self._PULL_PYDANTIC_MODEL)
+
+
+
+class TplusWorkcenter(BaseSource):
+
+    _QUERY_BATCH_ENDPOINT = "/tplus/api/v2/WorkCenter/QueryPage"
+    _PULL_PYDANTIC_MODEL = WorkcenterPullModel
+    _FIELD_HINTS = {"ID": "ID", "Code": "编码", "Name": "名称", "Disabled": "是否停用"}
+
+    async def query_batch(self):
+        """
+        查询批量工作中心数据
+        """
+        assert self._CONNECTION, "未获得连接对象，请先注册"
+        
+        endpoint = self._QUERY_BATCH_ENDPOINT
+        data = await self._CONNECTION._pull_simple_data(
+            endpoint=endpoint,
+            field_hints=self._FIELD_HINTS,
+        )
+
+        return ExternalData(data=data, pydantic_model=self._PULL_PYDANTIC_MODEL)
+
+
+
+class TplusStock(BaseSource):
+
+    _QUERY_BATCH_ENDPOINT = "/tplus/api/v2/currentStock/Query"
+    _PULL_PYDANTIC_MODEL = StockPullModel
+    _FIELD_HINTS = {"InventoryCode": "存货编码", "ExistingQuantity": "现存量", "TS": "时间戳"}
+    
+#     """
+#     库存对象
+#     """
+    
+#     def __init__(self, connection, data=None):
+#         """
+#         初始化库存对象
+        
+#         Args:
+#             connection: 连接对象
+#             data: 初始数据
+#         """
+#         super().__init__(connection, data)
+#         self.documentation_url = "https://open.chanjet.com/docs/..."
+    
+#     async def query(self):
+#         """
+#         查询库存数据
+#         """
+#         filter = self.data.get('filter')
+#         pull_interface = self.data.get('pull_interface', StockPullInterface)
+#         pydantic_model = self.data.get('pydantic_model', StockPullModel)
+        
+#         return await self._CONNECTION.pull_stock(
+#             filter=filter,
+#             pull_interface=pull_interface,
+#             pydantic_model=pydantic_model
+#         )
+
+
+# class RoutingObject(BaseSource):
+#     """
+#     工艺路线对象
+#     """
+    
+#     def __init__(self, connection, data=None):
+#         """
+#         初始化工艺路线对象
+        
+#         Args:
+#             connection: 连接对象
+#             data: 初始数据
+#         """
+#         super().__init__(connection, data)
+#         self.documentation_url = "https://open.chanjet.com/docs/..."
+    
+#     async def query(self):
+#         """
+#         查询工艺路线数据
+#         """
+#         only_today = self.data.get('only_today', False)
+#         pull_interface = self.data.get('pull_interface', RoutingPullInterface)
+#         pydantic_model = self.data.get('pydantic_model', RoutePullModel)
+        
+#         return await self._CONNECTION.pull_routing(
+#             only_today=only_today,
+#             pull_interface=pull_interface,
+#             pydantic_model=pydantic_model
+#         )
+
+
+# class BomObject(BaseSource):
+#     """
+#     BOM对象
+#     """
+    
+#     def __init__(self, connection, data=None):
+#         """
+#         初始化BOM对象
+        
+#         Args:
+#             connection: 连接对象
+#             data: 初始数据
+#         """
+#         super().__init__(connection, data)
+#         self.documentation_url = "https://open.chanjet.com/docs/..."
+    
+#     async def query(self):
+#         """
+#         查询BOM数据
+#         """
+#         only_today = self.data.get('only_today', False)
+#         filter = self.data.get('filter')
+#         pull_interface = self.data.get('pull_interface', BomPullInterface)
+#         pydantic_model = self.data.get('pydantic_model', BomPullModel)
+        
+#         return await self._CONNECTION.pull_bom(
+#             only_today=only_today,
+#             filter=filter,
+#             pull_interface=pull_interface,
+#             pydantic_model=pydantic_model
+#         )
+
+
+class MoObject(BaseVoucher):
+    """
+    生产加工单对象
+    """
+    
+    def __init__(self, connection, data=None):
+        """
+        初始化生产加工单对象
+        
+        Args:
+            connection: 连接对象
+            data: 初始数据
+        """
+        super().__init__(connection, data)
+        self.documentation_url = "https://open.chanjet.com/docs/..."
+    
+    async def create(self):
+        """
+        创建生产加工单
+        """
+        supplyno = self.data.get('supplyno')
+        _aps = self.data.get('_aps')
+        _erp = self.data.get('_erp')
+        remain_native_supplyno = self.data.get('remain_native_supplyno', True)
+        pydantic_model = self.data.get('pydantic_model', MoPushModel)
+        
+        await self._CONNECTION.create_mo(
+            supplyno=supplyno,
+            _aps=_aps,
+            _erp=_erp,
+            remain_native_supplyno=remain_native_supplyno,
+            pydantic_model=pydantic_model
+        )
+
+
+class RsObject(BaseVoucher):
+    """
+    领料申请对象
+    """
+    
+    def __init__(self, connection, data=None):
+        """
+        初始化领料申请对象
+        
+        Args:
+            connection: 连接对象
+            data: 初始数据
+        """
+        super().__init__(connection, data)
+        self.documentation_url = "https://open.chanjet.com/docs/..."
+    
+    async def create(self):
+        """
+        创建领料申请
+        """
+        mdlist_or_supplyno = self.data.get('mdlist_or_supplyno')
+        tplus_mo_data_or_id = self.data.get('tplus_mo_data_or_id')
+        _aps = self.data.get('_aps')
+        _erp = self.data.get('_erp')
+        pydantic_model = self.data.get('pydantic_model', RsPushModel)
+        
+        await self._CONNECTION.push_rs(
+            mdlist_or_supplyno=mdlist_or_supplyno,
+            tplus_mo_data_or_id=tplus_mo_data_or_id,
+            _aps=_aps,
+            _erp=_erp,
+            pydantic_model=pydantic_model
+        )
+
+
+class PrObject(BaseVoucher):
+    """
+    请购单对象
+    """
+    
+    def __init__(self, connection, data=None):
+        """
+        初始化请购单对象
+        
+        Args:
+            connection: 连接对象
+            data: 初始数据
+        """
+        super().__init__(connection, data)
+        self.documentation_url = "https://open.chanjet.com/docs/..."
+    
+    async def create(self):
+        """
+        创建请购单
+        """
+        pr_data_list = self.data.get('pr_data_list')
+        _erp = self.data.get('_erp')
+        
+        await self._CONNECTION.push_pr(pr_data_list, _erp=_erp)
+
+
