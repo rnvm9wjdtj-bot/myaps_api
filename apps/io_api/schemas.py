@@ -115,12 +115,13 @@ class AcceptMaterial(BaseModel):
             values["phantommin"] = 0
         _cache_raw_input_data(cls, values)
         
-        # 转换整数字段
+        # 转换整数字段 - 支持字符串形式的浮点数（如 "30.00000000000000"）
         int_fields = ["fifo", "leadday", "expday", "grday", "phantommin", "firmday", "daygap", "preday", "subday"]
         for field in int_fields:
             if field in values:
                 try:
-                    values[field] = int(values[field])
+                    # 先转换为 float 再转换为 int，支持字符串形式的浮点数
+                    values[field] = int(float(values[field]))
                 except:
                     if values.get(field) in gc.NONE_AND_EMPTY:
                         pass  # 保持空值，后续会填充默认值
@@ -222,12 +223,13 @@ class AcceptWorkcenter(BaseModel):
     def model_valid(cls, values: Dict[str, Any]):
         _cache_raw_input_data(cls, values)
         
-        # 转换整数字段
+        # 转换整数字段 - 支持字符串形式的浮点数（如 "30.00000000000000"）
         int_fields = ["pri_wc", "capnum", "capmax"]
         for field in int_fields:
             if field in values:
                 try:
-                    values[field] = int(values[field])
+                    # 先转换为 float 再转换为 int，支持字符串形式的浮点数
+                    values[field] = int(float(values[field]))
                 except:
                     if values.get(field) in gc.NONE_AND_EMPTY:
                         pass  # 保持空值，后续会填充默认值
@@ -305,7 +307,8 @@ class AcceptMatWc(BaseModel):
     def model_valid(cls, values):
         _cache_raw_input_data(cls, values)
         try:
-            values["sortno"] = int(values["sortno"])
+            # 先转换为 float 再转换为 int，支持字符串形式的浮点数（如 "30.00000000000000"）
+            values["sortno"] = int(float(values["sortno"]))
         except:
             values["sortno"] = None
         if values.get("itemno") in gc.NONE_AND_EMPTY and values["sortno"]:
@@ -315,6 +318,7 @@ class AcceptMatWc(BaseModel):
         except:
             values["basesec"] = None
         try:
+            # 先转换为 float 再转换为 int，支持字符串形式的浮点数（如 "30.00000000000000"）
             values["offsetsec"] = int(float(values["offsetsec"]))
         except:
             if values.get("offsetsec") in gc.NONE_AND_EMPTY:
@@ -322,14 +326,16 @@ class AcceptMatWc(BaseModel):
             else:
                 values["offsetsec"] = None
         try:
-            values["fixqty"] = int(values["fixqty"])
+            # 先转换为 float 再转换为 int，支持字符串形式的浮点数（如 "30.00000000000000"）
+            values["fixqty"] = int(float(values["fixqty"]))
         except:
             if values.get("fixqty") in gc.NONE_AND_EMPTY:
                 values["fixqty"] = 0
             else:
                 values["fixqty"] = None
         try:
-            values["fixsec"] = int(values["fixsec"])
+            # 先转换为 float 再转换为 int，支持字符串形式的浮点数（如 "30.00000000000000"）
+            values["fixsec"] = int(float(values["fixsec"]))
         except:
             if values.get("fixsec") in gc.NONE_AND_EMPTY:
                 values["fixsec"] = 0
@@ -376,12 +382,13 @@ class AcceptMatVer(BaseModel):
     def model_valid(cls, values):
         _cache_raw_input_data(cls, values)
         
-        # 转换整数字段
+        # 转换整数字段 - 支持字符串形式的浮点数（如 "30.00000000000000"）
         int_fields = ["lotfrom", "lotto", "priority"]
         for field in int_fields:
             if field in values:
                 try:
-                    values[field] = int(values[field])
+                    # 先转换为 float 再转换为 int，支持字符串形式的浮点数
+                    values[field] = int(float(values[field]))
                 except:
                     if values.get(field) in gc.NONE_AND_EMPTY:
                         pass  # 保持空值，后续会填充默认值
@@ -443,6 +450,20 @@ class AcceptMatWcBom(BaseModel):
     @classmethod
     def model_valid(cls, values):
         _cache_raw_input_data(cls, values)
+        
+        # 转换整数字段 - 支持字符串形式的浮点数（如 "30.00000000000000"）
+        int_fields = ["offsethour", "treeno"]
+        for field in int_fields:
+            if field in values:
+                try:
+                    # 先转换为 float 再转换为 int，支持字符串形式的浮点数
+                    values[field] = int(float(values[field]))
+                except:
+                    if values.get(field) in gc.NONE_AND_EMPTY:
+                        pass  # 保持空值，后续会填充默认值
+                    else:
+                        values[field] = None
+        
         if values.get("itemno", "") == "":
             values["itemno"] = pdv.ITEMNO
         denominator = values.get("denominator")
@@ -491,12 +512,13 @@ class AcceptMold(BaseModel):
     def model_valid(cls, values):
         _cache_raw_input_data(cls, values)
         
-        # 转换整数字段
+        # 转换整数字段 - 支持字符串形式的浮点数（如 "30.00000000000000"）
         int_fields = ["moldnum", "qty"]
         for field in int_fields:
             if field in values:
                 try:
-                    values[field] = int(values[field])
+                    # 先转换为 float 再转换为 int，支持字符串形式的浮点数
+                    values[field] = int(float(values[field]))
                 except:
                     values[field] = None
         
@@ -540,15 +562,18 @@ class AcceptMatWcMold(BaseModel):
     def model_valid(cls, values):
         _cache_raw_input_data(cls, values)
         try:
-            values["fixsec"] = int(values["fixsec"])  # 数据库该字段为整形
+            # 先转换为 float 再转换为 int，支持字符串形式的浮点数（如 "30.00000000000000"）
+            values["fixsec"] = int(float(values["fixsec"]))  # 数据库该字段为整形
         except:
             values["fixsec"] = 0
         try:
-            values["basesec"] = int(values["basesec"])  # 数据库该字段为整形
+            # 先转换为 float 再转换为 int，支持字符串形式的浮点数（如 "30.00000000000000"）
+            values["basesec"] = int(float(values["basesec"]))  # 数据库该字段为整形
         except:
             values["basesec"] = None
         try:
-            values["priority"] = int(values["priority"])  # 数据库该字段为整形
+            # 先转换为 float 再转换为 int，支持字符串形式的浮点数（如 "30.00000000000000"）
+            values["priority"] = int(float(values["priority"]))  # 数据库该字段为整形
         except:
             values["priority"] = None
         if values.get("moldno") is None:
@@ -618,10 +643,11 @@ class AcceptSupply(BaseModel):
             values["apiex_entryid"] = values["apiex_id"]
         _cache_raw_input_data(cls, values)
         
-        # 转换整数字段
+        # 转换整数字段 - 支持字符串形式的浮点数（如 "30.00000000000000"）
         if "priority" in values:
             try:
-                values["priority"] = int(values["priority"])
+                # 先转换为 float 再转换为 int，支持字符串形式的浮点数
+                values["priority"] = int(float(values["priority"]))
             except:
                 if values.get("priority") in gc.NONE_AND_EMPTY:
                     values["priority"] = 0
@@ -762,10 +788,11 @@ class AcceptDemand(BaseModel):
             values["apiex_entryid"] = values["apiex_id"]
         _cache_raw_input_data(cls, values)
         
-        # 转换整数字段
+        # 转换整数字段 - 支持字符串形式的浮点数（如 "30.00000000000000"）
         if "priority" in values:
             try:
-                values["priority"] = int(values["priority"])
+                # 先转换为 float 再转换为 int，支持字符串形式的浮点数
+                values["priority"] = int(float(values["priority"]))
             except:
                 values["priority"] = None
         

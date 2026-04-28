@@ -22,7 +22,7 @@ from .._base import (
     get_scheduler_minute, cron_task, CLIENT_LOGGER, CLIENT_SESSION, PROJECT_JSON_FILE,
     ApsPayloadSponsor, EventResultPoster, get_session, CacheItem,
     QqEmailReminder, AlertType, async_rate_limit, event_batch_handler,
-    TSupply, PLANNER_MAILS, ENGINEER_MAILS
+    TSupply, PLANNER_MAILS, ENGINEER_MAILS, async_service_operation, batch_service_operation
 )
 
 
@@ -46,6 +46,9 @@ def get_tplus_conn():
     global hacyxs_tplus_conn
     if hacyxs_tplus_conn is None:
         hacyxs_tplus_conn = YonyouTplusConnection()
+        # 异步预热连接池（使用 create_task 避免阻塞）
+        import asyncio
+        asyncio.create_task(hacyxs_tplus_conn._warm_up_connection(connection_count=5))
         hacyxs_tplus_conn.register_source([TplusStock, TplusMo, TplusRs, TplusPr])
     return hacyxs_tplus_conn
 
@@ -61,26 +64,18 @@ hacyxs_tplus_conn = get_tplus_conn()
 # ⬇️ 定时任务
 #################################################################################
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(), description="刷新库存数据")
+@async_service_operation(module="定时任务", operation="刷新库存数据")
 async def task_refresh_stock():
     """定时任务：刷新库存数据"""
-    try:
-        stock_data = await TplusStock.pull()
-        await ApsPayloadSponsor.refresh_supply(stock_data, dbs=MYAPS_DB_SET)
-        CLIENT_LOGGER.success("定时任务执行", "刷新库存数据", "任务完成")
-    except Exception as e:
-        CLIENT_LOGGER.fail("定时任务执行", "刷新库存数据", f"任务失败: {str(e)}")
-        # 不抛出异常，避免影响其他任务
+    stock_data = await TplusStock.pull()
+    await ApsPayloadSponsor.refresh_supply(stock_data, dbs=MYAPS_DB_SET)
 
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1), description="确认报工")
+@async_service_operation(module="定时任务", operation="确认报工")
 async def task_confirm_workreport():
     """定时任务：确认报工"""
-    try:
-        await ApsPayloadSponsor.confirm_workreport()
-        CLIENT_LOGGER.success("定时任务执行", "确认报工", "任务完成")
-    except Exception as e:
-        CLIENT_LOGGER.fail("定时任务执行", "确认报工", f"任务失败: {str(e)}")
-        # 不抛出异常，避免影响其他任务
+    await ApsPayloadSponsor.confirm_workreport()
 
 #################################################################################
 # ⬇️ 数据库事件
@@ -185,6 +180,7 @@ planner_email_reminder = QqEmailReminder(
 
 
 @event_batch_handler(reminder=planner_email_reminder)
+@batch_service_operation(module="事件处理", operation="下达生产加工单")
 async def batch_handle_pl_status_a2e(event_data_list: list[dict], _erp: EventResultPoster, description="下达生产加工单至 T+"):
     await TplusMo.create_batch(
         event_data_list=event_data_list,
@@ -196,6 +192,7 @@ async def batch_handle_pl_status_a2e(event_data_list: list[dict], _erp: EventRes
 
 
 @event_batch_handler(reminder=planner_email_reminder)
+@batch_service_operation(module="事件处理", operation="推送领料申请")
 async def batch_handle_pl_to_mo(event_data_list: list[dict], _erp: EventResultPoster, description="推送领料申请至 T+"):
     await TplusRs.create_batch(
         event_data_list=event_data_list,
@@ -206,14 +203,10 @@ async def batch_handle_pl_to_mo(event_data_list: list[dict], _erp: EventResultPo
 
 
 @event_batch_handler(reminder=planner_email_reminder)
+@batch_service_operation(module="事件处理", operation="推送请购单")
 async def batch_handle_pr_status_a2e(pr_data_list: list[dict], _erp: EventResultPoster, description="推送请购单至 T+"):
-    # try:
-        await TplusPr.create(
-            event_data_list=pr_data_list,
-            _erp=_erp,
-        )
-    # except Exception as e:
-    #     CLIENT_LOGGER.warning_msg(f"{description}失败", str(e))
-    #     pr_nos = [p.get('supplyno') for p in pr_data_list if p.get('supplyno')]
-    #     await _erp.pr_release_failed(prno=pr_nos[0] if pr_nos else None, msg=str(e))
+    await TplusPr.create(
+        event_data_list=pr_data_list,
+        _erp=_erp,
+    )
         

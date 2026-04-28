@@ -22,6 +22,25 @@ from dataclasses import dataclass, field
 
 
 from core.settings import THIS_BASE_URL, MYAPS_MAIN_DB, MYAPS_DB_SET, MAX_EVENTS_PER_SECOND
+
+
+# 控制 T+ API 并发请求的信号量（根据 MAX_EVENTS_PER_SECOND 动态调整）
+def _get_concurrency_limit() -> int:
+    """获取并发限制数，建议不超过每秒事件数的一半，最小为1"""
+    return max(1, MAX_EVENTS_PER_SECOND // 2)
+
+
+# 全局信号量，限制同时进行的 API 请求数
+_db_event_semaphore = None
+
+def get_db_event_semaphore():
+    """获取全局信号量实例（懒加载）"""
+    global _db_event_semaphore
+    if _db_event_semaphore is None:
+        _db_event_semaphore = asyncio.Semaphore(_get_concurrency_limit())
+    return _db_event_semaphore
+
+    
 from apps.data_opt.utils.common import get_session, get_async_session, convert_timeunit, clean_value
 from apps.data_opt.utils.data_processor import DataProcessor
 from apps.io_api.utils.db_operation import db_exec_sql, DbResult, MultiDbResult
@@ -491,6 +510,141 @@ class ExternalBaseConnection(ABC):
             self._async_session = None
 
 
+    # ============ 连接池预热机制 ============
+    
+    # 类级别预热状态
+    _warm_up_completed: bool = False
+    _warm_up_time: datetime = None
+    _warm_up_lock: asyncio.Lock = None
+    _warm_up_count: int = 3
+    
+    def _get_warm_up_lock(self):
+        """获取预热锁（延迟初始化）"""
+        if self._warm_up_lock is None:
+            self._warm_up_lock = asyncio.Lock()
+        return self._warm_up_lock
+    
+    def _check_warm_up_status(self) -> bool:
+        """检查预热状态"""
+        return self._warm_up_completed
+    
+    def _mark_warm_up_completed(self):
+        """标记预热完成"""
+        self._warm_up_completed = True
+        self._warm_up_time = datetime.now()
+        logger.info(f"连接池预热完成，时间: {self._warm_up_time}")
+    
+    def _reset_warm_up_status(self):
+        """重置预热状态（用于重新预热）"""
+        self._warm_up_completed = False
+        self._warm_up_time = None
+        logger.info("连接池预热状态已重置")
+    
+    async def _warm_up_connection(self, connection_count: int = None) -> bool:
+        """
+        通用连接预热方法（异步）
+        
+        Args:
+            connection_count: 预建立的连接数，默认使用类变量 _warm_up_count
+        
+        Returns:
+            True: 预热成功
+            False: 预热失败（但不阻塞业务）
+        """
+        if self._check_warm_up_status():
+            return True
+        
+        if connection_count is None:
+            connection_count = self._warm_up_count
+        
+        async with self._get_warm_up_lock():
+            if self._check_warm_up_status():
+                return True
+            
+            try:
+                logger.info(f"开始预热连接池，目标连接数: {connection_count}")
+                
+                # 预热异步会话
+                for i in range(connection_count):
+                    session = await self._get_async_session()
+                    # 可选：发送轻量级请求验证
+                    ping_success = await self._ping_connection(session)
+                    if not ping_success:
+                        logger.warning(f"异步连接 #{i+1} 验证失败")
+                
+                # 预热同步会话
+                for i in range(connection_count):
+                    session = self._get_sync_session()
+                    ping_success = self._ping_connection_sync(session)
+                    if not ping_success:
+                        logger.warning(f"同步连接 #{i+1} 验证失败")
+                
+                self._mark_warm_up_completed()
+                return True
+                
+            except Exception as e:
+                logger.warning(f"连接池预热失败: {str(e)}")
+                return False
+    
+    async def _ping_connection(self, session) -> bool:
+        """
+        验证连接是否有效（异步）
+        子类可重写此方法实现特定的ping逻辑
+        
+        Returns:
+            True: 连接有效
+            False: 连接无效或验证失败
+        """
+        if hasattr(self, '_ping_endpoint') and self._ping_endpoint:
+            try:
+                response = await session.get(self._ping_endpoint, timeout=10)
+                if hasattr(response, 'status_code'):
+                    return response.status_code == 200
+                elif hasattr(response, 'status'):
+                    return response.status == 200
+                return True
+            except Exception as e:
+                logger.debug(f"异步连接验证失败: {str(e)}")
+                return False
+        return True
+    
+    def _ping_connection_sync(self, session) -> bool:
+        """
+        验证连接是否有效（同步）
+        子类可重写此方法实现特定的ping逻辑
+        
+        Returns:
+            True: 连接有效
+            False: 连接无效或验证失败
+        """
+        if hasattr(self, '_ping_endpoint') and self._ping_endpoint:
+            try:
+                response = session.get(self._ping_endpoint, timeout=10)
+                if hasattr(response, 'status_code'):
+                    return response.status_code == 200
+                elif hasattr(response, 'status'):
+                    return response.status == 200
+                return True
+            except Exception as e:
+                logger.debug(f"同步连接验证失败: {str(e)}")
+                return False
+        return True
+    
+    async def ensure_connection_warm(self) -> bool:
+        """
+        确保连接已预热（异步）
+        
+        如果连接未预热，则自动执行预热
+        
+        Returns:
+            True: 已预热或预热成功
+            False: 预热失败
+        """
+        if self._check_warm_up_status():
+            return True
+        return await self._warm_up_connection()
+
+
     def auth(self, *args, **kwargs):
         """
         认证连接
@@ -643,12 +797,12 @@ class MoVoucher(BaseVoucher):
         """
         from . import ApsPayloadSponsor, CacheItem
         
-        if production_cache_items is None:
-            production_cache_items = [CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL]
 
         assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
         await cls._CONNECTION.auth()
 
+        if production_cache_items is None:
+            production_cache_items = [CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL]
         supply_nos = [s['supplyno'] for s in event_data_list]
         await TSupply.filter(supplyno__in=supply_nos).update(memo=" 📤 正在推送...")
         _aps = ApsPayloadSponsor(production_cache_items=production_cache_items)
@@ -673,8 +827,18 @@ class MoVoucher(BaseVoucher):
             )
             for _ in event_data_list
         ]
-        await asyncio.gather(*tasks)
-    
+        await asyncio.gather(*tasks, return_exceptions=True)
+        # 最后兜底，更新所有状态为 A2E 的生产加工单为 CRE
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        unknown_failed = await TSupply.filter(status='A2E', supplyno__in=supply_nos).only(['supplyno']).all()
+        if unknown_failed:
+            tasks = [
+                _erp.mo_release_failed(native_plno=_.supplyno, msg=f"{now} 🚫 推送失败，请重试")
+                for _ in unknown_failed
+            ]
+            await asyncio.gather(*tasks, return_exceptions=True)
+
 
 
 class RsVoucher(BaseVoucher):
@@ -699,12 +863,12 @@ class RsVoucher(BaseVoucher):
         """
         from . import ApsPayloadSponsor, CacheItem
         
-        if production_cache_items is None:
-            production_cache_items = [CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL]
 
         assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
         await cls._CONNECTION.auth()
 
+        if production_cache_items is None:
+            production_cache_items = [CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL]
         supply_nos = [s['supplyno'] for s in event_data_list]
         _aps = ApsPayloadSponsor(production_cache_items=production_cache_items)
         await _aps.establish_production_cache(supplynos=supply_nos)
@@ -729,8 +893,6 @@ class RsVoucher(BaseVoucher):
         ]
         await asyncio.gather(*tasks, return_exceptions=True)
     
-
-
 
 class ExternalData:
     """外部ERP数据包装器"""
@@ -891,6 +1053,10 @@ def async_rate_limit(rate: int = None):
     """
     异步函数限流装饰器 - 所有装饰的函数共享同一个令牌桶
     
+    整合了令牌桶限流和信号量并发控制：
+    - 令牌桶：控制每秒请求数
+    - 信号量：控制最大并发数（避免瞬时并发过高）
+    
     用法:
         @async_rate_limit(MAX_EVENTS_PER_SECOND)
         async def handle_pl_status_a2e(supplyno_or_data):
@@ -911,7 +1077,9 @@ def async_rate_limit(rate: int = None):
         async def wrapper(*args, **kwargs):
             event_count = kwargs.pop('event_count', 1)
             await db_event_async_bucket.acquire(event_count)
-            return await func(*args, **kwargs)
+            semaphore = get_db_event_semaphore()
+            async with semaphore:
+                return await func(*args, **kwargs)
         return wrapper
     return decorator
 
@@ -919,6 +1087,10 @@ def async_rate_limit(rate: int = None):
 def sync_rate_limit(rate: int = None):
     """
     同步函数限流装饰器 - 所有装饰的函数共享同一个令牌桶
+    
+    整合了令牌桶限流和信号量并发控制：
+    - 令牌桶：控制每秒请求数
+    - 信号量：控制最大并发数（避免瞬时并发过高）
     
     用法:
         @sync_rate_limit(MAX_EVENTS_PER_SECOND)
@@ -939,7 +1111,251 @@ def sync_rate_limit(rate: int = None):
         def wrapper(*args, **kwargs):
             event_count = kwargs.pop('event_count', 1)
             db_event_sync_bucket.acquire(event_count)
-            return func(*args, **kwargs)
+            semaphore = get_db_event_semaphore()
+            with semaphore:
+                return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+#################################################################################
+# 异常处理和日志记录装饰器
+#################################################################################
+
+def generate_request_id() -> str:
+    """生成唯一请求追踪ID"""
+    return str(uuid.uuid4())
+
+
+class ProjectLogger:
+    """项目统一日志封装"""
+    
+    @staticmethod
+    def success(module: str, operation: str, message: str, **kwargs):
+        """记录成功日志"""
+        logger.info(
+            f"[SUCCESS] {module} - {operation}: {message}",
+            extra=kwargs
+        )
+    
+    @staticmethod
+    def fail(module: str, operation: str, message: str, **kwargs):
+        """记录失败日志"""
+        logger.error(
+            f"[FAIL] {module} - {operation}: {message}",
+            extra=kwargs
+        )
+    
+    @staticmethod
+    def warning(module: str, operation: str, message: str, **kwargs):
+        """记录警告日志"""
+        logger.warning(
+            f"[WARNING] {module} - {operation}: {message}",
+            extra=kwargs
+        )
+    
+    @staticmethod
+    def debug(module: str, operation: str, message: str, **kwargs):
+        """记录调试日志"""
+        logger.debug(
+            f"[DEBUG] {module} - {operation}: {message}",
+            extra=kwargs
+        )
+
+
+def service_operation(module: str, operation: str, **default_context):
+    """
+    统一日志和异常处理装饰器（同步版本）
+    
+    Args:
+        module: 模块名称
+        operation: 操作名称
+        **default_context: 默认上下文参数
+    
+    用法:
+        @service_operation(module="MO推送", operation="创建生产加工单")
+        def create_mo(event_data, _aps, _erp):
+            # 业务逻辑...
+    
+    自动记录:
+        - 请求ID追踪
+        - 操作开始/成功/失败日志
+        - 异常类型和堆栈信息
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            request_id = generate_request_id()
+            context = {"request_id": request_id, **default_context}
+            
+            # 提取关键字段作为上下文
+            event_data = kwargs.get('event_data') or (args[1] if len(args) > 1 else None)
+            if isinstance(event_data, dict):
+                if 'supplyno' in event_data:
+                    context['supplyno'] = event_data['supplyno']
+                if 'demandno' in event_data:
+                    context['demandno'] = event_data['demandno']
+            
+            ProjectLogger.debug(module, operation, "开始执行", **context)
+            
+            try:
+                result = func(*args, **kwargs)
+                ProjectLogger.success(module, operation, "执行成功", **context)
+                return result
+                
+            except Exception as e:
+                error_context = {
+                    **context,
+                    'error_type': type(e).__name__,
+                    'error_message': str(e),
+                    'traceback': inspect.trace()
+                }
+                ProjectLogger.fail(module, operation, str(e), **error_context)
+                raise
+        
+        return wrapper
+    return decorator
+
+
+def async_service_operation(module: str, operation: str, **default_context):
+    """
+    统一日志和异常处理装饰器（异步版本）
+    
+    Args:
+        module: 模块名称
+        operation: 操作名称
+        **default_context: 默认上下文参数
+    
+    用法:
+        @async_service_operation(module="MO推送", operation="创建生产加工单")
+        async def create_mo(event_data, _aps, _erp):
+            # 业务逻辑...
+    
+    自动记录:
+        - 请求ID追踪
+        - 操作开始/成功/失败日志
+        - 异常类型和堆栈信息
+    """
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            request_id = generate_request_id()
+            context = {"request_id": request_id, **default_context}
+            
+            # 提取关键字段作为上下文
+            event_data = kwargs.get('event_data') or (args[1] if len(args) > 1 else None)
+            if isinstance(event_data, dict):
+                if 'supplyno' in event_data:
+                    context['supplyno'] = event_data['supplyno']
+                if 'demandno' in event_data:
+                    context['demandno'] = event_data['demandno']
+            
+            ProjectLogger.debug(module, operation, "开始执行", **context)
+            
+            try:
+                result = await func(*args, **kwargs)
+                ProjectLogger.success(module, operation, "执行成功", **context)
+                return result
+                
+            except Exception as e:
+                error_context = {
+                    **context,
+                    'error_type': type(e).__name__,
+                    'error_message': str(e),
+                    'traceback': inspect.trace()
+                }
+                ProjectLogger.fail(module, operation, str(e), **error_context)
+                raise
+        
+        return wrapper
+    return decorator
+
+
+def batch_service_operation(module: str, operation: str, **default_context):
+    """
+    批量操作专用日志和异常处理装饰器（异步版本）
+    
+    适用于批量处理事件的场景，提供汇总统计日志。
+    特别处理 asyncio.gather(return_exceptions=True) 返回的异常列表。
+    
+    Args:
+        module: 模块名称
+        operation: 操作名称
+        **default_context: 默认上下文参数
+    
+    用法:
+        @batch_service_operation(module="MO推送", operation="批量创建生产加工单")
+        async def batch_create_mo(event_data_list, _erp):
+            # 批量业务逻辑...
+    
+    自动记录:
+        - 请求ID追踪
+        - 批量大小统计
+        - 操作开始/成功/失败日志
+        - 异常汇总信息（支持 return_exceptions=True 的场景）
+    """
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            request_id = generate_request_id()
+            
+            # 提取批量数据列表
+            event_data_list = kwargs.get('event_data_list') or kwargs.get('pr_data_list') or (args[1] if len(args) > 1 else None)
+            batch_size = len(event_data_list) if isinstance(event_data_list, list) else 0
+            
+            context = {
+                "request_id": request_id,
+                "batch_size": batch_size,
+                **default_context
+            }
+            
+            if batch_size > 0 and isinstance(event_data_list, list) and event_data_list:
+                first_item = event_data_list[0]
+                if isinstance(first_item, dict):
+                    if 'supplyno' in first_item:
+                        context['first_supplyno'] = first_item['supplyno']
+            
+            ProjectLogger.debug(module, operation, f"开始批量执行，共 {batch_size} 条", **context)
+            
+            try:
+                result = await func(*args, **kwargs)
+                
+                # 检查返回值中是否包含异常（处理 return_exceptions=True 的情况）
+                if isinstance(result, list):
+                    exceptions = [item for item in result if isinstance(item, Exception)]
+                    if exceptions:
+                        error_count = len(exceptions)
+                        success_count = batch_size - error_count
+                        error_context = {
+                            **context,
+                            'error_count': error_count,
+                            'success_count': success_count,
+                            'sample_errors': [str(e) for e in exceptions[:5]]  # 最多记录5个错误示例
+                        }
+                        
+                        if error_count == batch_size:
+                            ProjectLogger.fail(module, operation, f"全部 {error_count} 条记录执行失败", **error_context)
+                        elif success_count == 0:
+                            ProjectLogger.fail(module, operation, f"批量执行失败，无成功记录", **error_context)
+                        else:
+                            ProjectLogger.warning(module, operation, f"部分执行失败，成功 {success_count} 条，失败 {error_count} 条", **error_context)
+                    else:
+                        ProjectLogger.success(module, operation, f"批量执行完成，共 {batch_size} 条", **context)
+                else:
+                    ProjectLogger.success(module, operation, f"批量执行完成，共 {batch_size} 条", **context)
+                
+                return result
+                
+            except Exception as e:
+                error_context = {
+                    **context,
+                    'error_type': type(e).__name__,
+                    'error_message': str(e),
+                    'traceback': inspect.trace()
+                }
+                ProjectLogger.fail(module, operation, f"批量执行失败: {str(e)}", **error_context)
+                raise
+        
         return wrapper
     return decorator
 

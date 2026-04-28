@@ -81,19 +81,25 @@ class ApsEvent:
         event_type: DbEventType,
         description: str,
         batch_size: int=10000,
-        flush_interval: int=15,
+        quiet_window: float=10,
         error_handler: Optional[Callable]=None,
         error_handler_kwargs: Optional[Dict[str, Any]]=None
     ):
         self.event_type = event_type
         self.description = description
-        self.error_handler = error_handler  # 错误处理函数
-        self.error_handler_kwargs = error_handler_kwargs or {}  # 错误处理函数参数
+        self.error_handler = error_handler
+        self.error_handler_kwargs = error_handler_kwargs or {}
         self.warning_msg = ""
         self._session = get_optimized_session(retries=0)
         self._event_lock = Lock()
         self._last_request_time = 0.0
-        EVENT_AGGREGATOR.register(event_type=self.event_type, handler=self.db_event_distributor, batch_size=batch_size, flush_interval=flush_interval, description=self.description)
+        EVENT_AGGREGATOR.register(
+            event_type=self.event_type,
+            handler=self.db_event_distributor,
+            batch_size=batch_size,
+            quiet_window=quiet_window,
+            description=self.description
+        )
 
 
     def _send_request_with_control(self, event_type: DbEventType, event_data: List[Dict]):

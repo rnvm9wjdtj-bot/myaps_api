@@ -15,7 +15,8 @@ from ._base import (
     BaseModel as PydanticModel, model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold,
-    PROJECT_JSON_FILE
+    PROJECT_JSON_FILE,
+    sync_rate_limit  # 添加同步限流装饰器
 )
 
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
@@ -274,6 +275,7 @@ class K3Connection(ExternalBaseConnection):
         return self._cookie
 
 
+    @sync_rate_limit()
     async def pull_from_source(self, source_name: str, filter_string: str=None, only_today: bool=False, pydantic_model: PydanticModel=None):
         self.auth()
         base_filterstring = self.config.PULL_SOURCE[source_name].get('base_filter') or "1=1"

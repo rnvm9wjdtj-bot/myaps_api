@@ -19,12 +19,10 @@ from ._base import (
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold, AcceptSupply, AcceptConfirm,
     db_query, TSupply, TDemand, ExternalBaseConnection, BaseSource, BaseVoucher, MoVoucher, RsVoucher, ExternalData, ExternalDataSet,
-    async_rate_limit
+    async_rate_limit, async_service_operation, batch_service_operation
 )
 
 
-
-# MERGE_ENTRIY_KEY = '_entries_'
 CACHE_ERP = PROJECT_JSON_FILE.get("erp", {})
 
 
@@ -890,6 +888,7 @@ class TplusMo(MoVoucher):
     
     @classmethod
     @async_rate_limit()
+    @async_service_operation(module="T+接口", operation="创建生产加工单")
     async def create(
         cls,
         event_data: dict,
@@ -999,6 +998,7 @@ class TplusRs(RsVoucher):
 
     @classmethod
     @async_rate_limit()
+    @async_service_operation(module="T+接口", operation="创建领料申请")
     async def create(
         cls,
         event_data: dict,
@@ -1068,6 +1068,7 @@ class TplusPr(BaseVoucher):
 
     @classmethod
     @async_rate_limit()
+    @batch_service_operation(module="T+接口", operation="推送请购单")
     async def create(
         cls,
         event_data_list: list[dict],

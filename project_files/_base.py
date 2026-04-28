@@ -26,7 +26,7 @@ from apps.data_opt.utils.scheduler import cron_task
 from apps.data_opt.utils.common import add_basic_auth_requests, get_session
 from apps.data_opt.utils.data_processor import DataProcessor
 from apps.data_opt.components import ApsPayloadSponsor, EventResultPoster, CacheItem
-from apps.data_opt.components._base import async_rate_limit, sync_rate_limit
+from apps.data_opt.components._base import async_rate_limit, sync_rate_limit, async_service_operation, batch_service_operation
 from apps.data_opt.components.simple_hap import HapConnection
 
 

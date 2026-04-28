@@ -392,6 +392,7 @@ class EventAggregator:
                  group_key: Callable[[Any], str] = None,
                  dedup_key: Callable[[Any], str] = None,
                  batch_size: int = 10000,
+                 quiet_window: float = 10.0,
                  flush_interval: float = 5.0,
                  name: str = "unnamed"):
         """
@@ -402,18 +403,19 @@ class EventAggregator:
             group_key: 分组函数，返回分组键，用于将事件分组处理
             dedup_key: 去重函数，返回去重键，相同键的事件会被去重
             batch_size: 批量处理的最大事件数
-            flush_interval: 定时刷新间隔（秒）
+            quiet_window: 安静窗口（秒），连续无新事件达到此时间后触发批量处理
+            flush_interval: 定时刷新间隔（秒），仅在缓冲区为空时生效
             name: 聚合器名称，用于日志和调试
         """
         self.handler = handler
         self.group_key = group_key
         self.dedup_key = dedup_key
         self.batch_size = batch_size
+        self.quiet_window = quiet_window
         self.flush_interval = flush_interval
         self.name = name
 
-        # 批次间最小时间间隔（秒），避免下游处理压力过大
-        self.min_batch_interval = 5.0
+        self._last_event_time = 0.0
         self._last_flush_time = 0
 
         # 缓冲区：{group_key: {dedup_key: event}}
@@ -447,6 +449,9 @@ class EventAggregator:
                 self.stats['first_received_time'] = now
             self.stats['last_activity_time'] = now
             
+            # 重置安静窗口计时器
+            self._last_event_time = now
+            
             # 计算分组键
             g_key = self.group_key(event) if self.group_key else "__default__"
             
@@ -462,8 +467,10 @@ class EventAggregator:
             # 检查是否达到批量大小
             total_count = sum(len(events) for events in self._buffer.values())
             if total_count >= self.batch_size:
-                # 达到批量大小，通知条件变量线程
-                self._condition.notify()
+                # 达到批量大小，立即刷新
+                self._flush()
+                self._last_flush_time = now
+                self._last_event_time = now
 
     
     def add_batch(self, events: List[Any]):
@@ -582,28 +589,23 @@ class EventAggregator:
             }
     
     def _condition_thread_func(self):
-        """条件变量线程函数"""
+        """条件变量线程函数 - 惰性刷新：连续 quiet_window 无新事件时触发批量处理"""
         while self._running:
             with self._lock:
-                # 等待直到有事件通知或超时
-                # 计算当前缓冲区大小
                 total_count = sum(len(events) for events in self._buffer.values())
 
                 if total_count == 0:
-                    # 缓冲区为空，等待指定的刷新间隔
+                    # 缓冲区为空，等待 flush_interval
                     self._condition.wait(timeout=self.flush_interval)
                 else:
-                    # 缓冲区有数据，检查是否达到批次间最小时间间隔
-                    elapsed = time.time() - self._last_flush_time
-                    if elapsed < self.min_batch_interval:
-                        # 未达到最小间隔，等待剩余时间
-                        wait_time = self.min_batch_interval - elapsed
-                        self._condition.wait(timeout=wait_time)
+                    # 缓冲区有数据，等待安静窗口
+                    wait_time = self.quiet_window
+                    self._condition.wait(timeout=wait_time)
 
-                # 检查是否需要刷新：缓冲区不为空且达到最小时间间隔
+                # 检查是否需要刷新：缓冲区不为空且连续 quiet_window 无新事件
                 if self._buffer:
-                    elapsed = time.time() - self._last_flush_time
-                    if elapsed >= self.min_batch_interval:
+                    elapsed_since_last_event = time.time() - self._last_event_time
+                    if elapsed_since_last_event >= self.quiet_window:
                         self._last_flush_time = time.time()
                         self._flush()
     
@@ -656,6 +658,7 @@ class MultiEventAggregator:
                  group_key: Callable[[Any], str] = None,
                  dedup_key: Callable[[Any], str] = None,
                  batch_size: int = 10000,
+                 quiet_window: float = 15.0,
                  flush_interval: float = 5.0,
                  description: str = None) -> 'MultiEventAggregator':
         """
@@ -667,7 +670,8 @@ class MultiEventAggregator:
             group_key: 分组函数
             dedup_key: 去重函数
             batch_size: 批量大小
-            flush_interval: 刷新间隔（秒）
+            quiet_window: 安静窗口（秒），连续无新事件达到此时间后触发批量处理
+            flush_interval: 刷新间隔（秒），仅在缓冲区为空时生效
             description: 事件类型描述
         
         Returns:
@@ -685,6 +689,7 @@ class MultiEventAggregator:
                 group_key=group_key,
                 dedup_key=dedup_key,
                 batch_size=batch_size,
+                quiet_window=quiet_window,
                 flush_interval=flush_interval,
                 name=event_type
             )
