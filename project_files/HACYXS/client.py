@@ -186,54 +186,34 @@ planner_email_reminder = QqEmailReminder(
 
 @event_batch_handler(reminder=planner_email_reminder)
 async def batch_handle_pl_status_a2e(event_data_list: list[dict], _erp: EventResultPoster, description="下达生产加工单至 T+"):
-    supply_nos = [s['supplyno'] for s in event_data_list]
-    await TSupply.filter(supplyno__in=supply_nos).update(memo=" 📤 正在推送至 T+ ...")
-
-    aps_payload_sponsor = ApsPayloadSponsor(production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL])
-    await aps_payload_sponsor.establish_production_cache(supplynos=supply_nos)
-    _CustomMoPushModel = create_custom_mo_push_model(aps_payload_sponsor)
-    tasks = [
-        TplusMo(event_data).create(
-                _aps=aps_payload_sponsor,
-                _erp=_erp,
-                pydantic_model=_CustomMoPushModel,
-                remain_native_supplyno=REMAIN_NATIVE_SUPPLYNO
-        ) 
-        for event_data in event_data_list
-    ]
-    await asyncio.gather(*tasks, return_exceptions=True)
+    await TplusMo.create_batch(
+        event_data_list=event_data_list,
+        _erp=_erp,
+        production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL],
+        pydantic_model=create_custom_mo_push_model,
+        remain_native_supplyno=REMAIN_NATIVE_SUPPLYNO
+    )
 
 
 @event_batch_handler(reminder=planner_email_reminder)
 async def batch_handle_pl_to_mo(event_data_list: list[dict], _erp: EventResultPoster, description="推送领料申请至 T+"):
-    supply_nos = [s['supplyno'] for s in event_data_list]
-    aps_payload_sponsor = ApsPayloadSponsor(production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL])
-    await aps_payload_sponsor.establish_production_cache(supplynos=supply_nos)
-    _CustomRsPushModel = create_custom_rs_push_model(aps_payload_sponsor)
-    tasks = [
-        TplusRs(event_data).create(
-            _aps=aps_payload_sponsor,
-            _erp=_erp,
-            pydantic_model=_CustomRsPushModel,
-        )
-        for event_data in event_data_list
-    ]
-    await asyncio.gather(*tasks, return_exceptions=True)
+    await TplusRs.create_batch(
+        event_data_list=event_data_list,
+        _erp=_erp,
+        production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL],
+        pydantic_model=create_custom_rs_push_model,
+    )
 
 
 @event_batch_handler(reminder=planner_email_reminder)
 async def batch_handle_pr_status_a2e(pr_data_list: list[dict], _erp: EventResultPoster, description="推送请购单至 T+"):
     # try:
-        await TplusPr(pr_data_list).create(_erp=_erp)
+        await TplusPr.create(
+            event_data_list=pr_data_list,
+            _erp=_erp,
+        )
     # except Exception as e:
     #     CLIENT_LOGGER.warning_msg(f"{description}失败", str(e))
     #     pr_nos = [p.get('supplyno') for p in pr_data_list if p.get('supplyno')]
     #     await _erp.pr_release_failed(prno=pr_nos[0] if pr_nos else None, msg=str(e))
         
-        
-
-
-# if __name__ == '__main__':
-#     from .._base import HapConnection
-    
-#     hap_conn = HapConnection()

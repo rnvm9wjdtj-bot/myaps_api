@@ -1,6 +1,8 @@
 import json
 # 兼容旧版本 NumPy
 import numpy as np
+
+from apps.data_opt.components._base import ExternalDataSet
 istitle = np.char.istitle
 import pandas as pd
 import time
@@ -20,7 +22,7 @@ from dataclasses import dataclass, field
 from core.settings import THIS_BASE_URL, MYAPS_MAIN_DB, MYAPS_DB_SET
 from apps.io_api.utils.db_operation import db_exec_sql, DbResult, MultiDbResult
 from apps.io_api.utils.db_operation import db_query, db_update_by_index, db_query, db_delete, db_bupsert, call_dbprocdure
-from globalobjects import logger as log_config, ProjectDefaultValues as pdv, OtherEnum as ce
+from globalobjects import logger as log_config, ProjectDefaultValues as pdv, StaticString as ce
 
 
 
@@ -1176,7 +1178,7 @@ class ApsPayloadSponsor:
 
 
     @classmethod
-    async def refresh_stock(cls, stock_data:Union[List[Dict[str, Any]], pd.DataFrame], dbs:str=MYAPS_DB_SET):
+    async def refresh_stock(cls, stock_data:ExternalDataSet, dbs:str=MYAPS_DB_SET):
         pass
 
 

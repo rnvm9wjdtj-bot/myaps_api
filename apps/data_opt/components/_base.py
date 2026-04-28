@@ -33,7 +33,7 @@ from apps.io_api.schemas import (
 from apps.io_api.models import TSupply, TDemand
 from apps.io_api.utils.db_operation import db_query, db_update_by_index, db_query, db_delete, db_bupsert, call_dbprocdure
 from apps.io_api.utils.common import standard_response
-from globalobjects import globalconst, logger as log_config, PROJECT_JSON_FILE, ProjectDefaultValues as pdv, OtherEnum as ce
+from globalobjects import globalconst, logger as log_config, PROJECT_JSON_FILE, ProjectDefaultValues as pdv, StaticString as ce
 from globalobjects.json_manager import JSONManager
 
 
@@ -560,37 +560,22 @@ class BaseSource:
     
 
 
-
 class BaseVoucher(BaseSource):
     """
     凭证基类
     
     用于处理需要创建、更新的ERP凭证，如生产加工单、领料申请、请购单等
-    支持链式调用，如：tplus.mo(**{}).create()
     """
-    from . import ApsPayloadSponsor, EventResultPoster
-    
+
     _CREATE_ENDPOINT: str = None   # 创建接口路径
     _UPDATE_ENDPOINT: str = None   # 更新接口路径
     _DELETE_ENDPOINT: str = None   # 删除接口路径
     _APPROVE_ENDPOINT: str = None   # 审批接口路径
     _PUSH_PYDANTIC_MODEL: Type[PydanticModel] = None   # 推送数据的Pydantic模型
-    
-    def __init__(self, raw_data: dict, *args, **kwargs):
-        self.raw_data = raw_data
-        self.internal_data = None
-        self.external_data = None
-    
 
-    async def create(
-        self,
-        _aps: ApsPayloadSponsor,
-        _erp: EventResultPoster,
-        pydantic_model: Type[PydanticModel] = None,
 
-        *args,
-        **kwargs,
-    ):
+    @classmethod
+    async def create(cls, event_data: dict, _aps, _erp, pydantic_model: Type[PydanticModel] = None):
         """
         创建凭证
         
@@ -598,9 +583,10 @@ class BaseVoucher(BaseSource):
             NotImplementedError: 子类必须实现create方法
         """
         raise NotImplementedError("子类必须实现create方法")
-    
 
-    async def update(self, _erp: EventResultPoster):
+
+    @classmethod
+    async def update(cls, event_data: dict, _erp):
         """
         更新凭证
         
@@ -610,7 +596,8 @@ class BaseVoucher(BaseSource):
         raise NotImplementedError("子类必须实现update方法")
     
 
-    async def delete(self, _erp: EventResultPoster):
+    @classmethod
+    async def delete(cls, event_data: dict, _erp):
         """
         删除凭证
         
@@ -619,8 +606,9 @@ class BaseVoucher(BaseSource):
         """
         raise NotImplementedError("子类必须实现delete方法")
 
-    
-    async def approve(self, _erp: EventResultPoster):
+
+    @classmethod
+    async def approve(cls, event_data: dict, _erp):
         """
         审批凭证
         
@@ -631,128 +619,184 @@ class BaseVoucher(BaseSource):
 
 
 
-class InternalDataSet:
-    """内部APS数据包装器"""
+class MoVoucher(BaseVoucher):
 
-    def __init__(self, data: dict | List[dict], pydantic_model: Type[PydanticModel] = None):
-        self._pydantic_model = pydantic_model
-        self.data = data
-        if isinstance(data, dict):
-            self.data_list = [data]
-        else:
-            self.data_list = data
-
-
-    def is_empty(self):
+    @classmethod
+    async def create_batch(
+        cls,
+        event_data_list: list[dict],
+        _erp,
+        production_cache_items=None,
+        pydantic_model: Type[PydanticModel] | Callable = None,
+        remain_native_supplyno: bool = True,
+    ):
         """
-        检查数据是否为空
-        
+        批量创建生产加工单
+        Args:
+            event_data_list: 生产加工单数据列表
+            _aps: ApsPayloadSponsor 实例
+            pydantic_model: 生产加工单数据模型 或 能返回生产加工单数据模型的工厂函数，默认使用 cls._PUSH_PYDANTIC_MODEL
+            production_cache_items: 生产缓存项
+            remain_native_supplyno: 是否保留原生供应号
         Returns:
-            True: 数据为空
-            False: 否则
+            None
         """
-        return not self.data_list
+        from . import ApsPayloadSponsor, CacheItem
         
+        if production_cache_items is None:
+            production_cache_items = [CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL]
 
-    async def dump(self, pydantic_model: Type[PydanticModel] = None) -> dict:
-        """
-        转换为外部数据格式，只转化数据列表第一条
-        
-        Args:
-            pydantic_model: 转换模型
-        """
-        assert self._pydantic_model or pydantic_model, "未设置转换模型pydantic_model"
-        if pydantic_model is None:
-            pydantic_model = self._pydantic_model
+        assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
+        await cls._CONNECTION.auth()
+
+        supply_nos = [s['supplyno'] for s in event_data_list]
+        await TSupply.filter(supplyno__in=supply_nos).update(memo=" 📤 正在推送...")
+        _aps = ApsPayloadSponsor(production_cache_items=production_cache_items)
+        await _aps.establish_production_cache(supplynos=supply_nos)
+
+        if pydantic_model:
+            if callable(pydantic_model):
+                try:
+                    pydantic_model = pydantic_model(_aps)
+                except Exception as e:
+                    pydantic_model = pydantic_model()
         else:
-            self._pydantic_model = pydantic_model
+            pydantic_model = cls._PUSH_PYDANTIC_MODEL
 
-        return pydantic_model.model_dump(self.data_list[0])
+        tasks = [
+            cls.create(
+                event_data=_,
+                _aps=_aps,
+                _erp=_erp,
+                pydantic_model=pydantic_model,
+                remain_native_supplyno=remain_native_supplyno
+            )
+            for _ in event_data_list
+        ]
+        await asyncio.gather(*tasks)
+    
 
 
-    async def dumps(self, pydantic_model: Type[PydanticModel] = None) -> List[dict]:
+class RsVoucher(BaseVoucher):
+    
+    @classmethod
+    async def create_batch(
+        cls,
+        event_data_list: list[dict],
+        _erp,
+        production_cache_items=None,
+        pydantic_model: Type[PydanticModel] | Callable = None,
+    ):
         """
-        转换为外部数据格式，转化数据列表所有数据
-        
+        批量创建领料申请
         Args:
-            pydantic_model: 转换模型
+            event_data_list: 领料申请数据列表
+            _aps: ApsPayloadSponsor 实例
+            production_cache_items: 生产缓存项
+            pydantic_model: 领料申请数据模型 或 能返回领料申请数据模型的工厂函数，默认使用 cls._PUSH_PYDANTIC_MODEL
+        Returns:
+            None
         """
-        assert self._pydantic_model or pydantic_model, "未设置转换模型pydantic_model"
-        if pydantic_model is None:
-            pydantic_model = self._pydantic_model
+        from . import ApsPayloadSponsor, CacheItem
+        
+        if production_cache_items is None:
+            production_cache_items = [CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL]
+
+        assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
+        await cls._CONNECTION.auth()
+
+        supply_nos = [s['supplyno'] for s in event_data_list]
+        _aps = ApsPayloadSponsor(production_cache_items=production_cache_items)
+        await _aps.establish_production_cache(supplynos=supply_nos)
+
+        if pydantic_model:
+            if callable(pydantic_model):
+                try:
+                    pydantic_model = pydantic_model(_aps)
+                except Exception as e:
+                    pydantic_model = pydantic_model()
         else:
-            self._pydantic_model = pydantic_model
-        external_data_list = [pydantic_model(**data).model_dump() for data in self.data_list]
-        self.external_data_list = ExternalDataSet(external_data_list, pydantic_model)
-        return self.external_data_list
+            pydantic_model = cls._PUSH_PYDANTIC_MODEL
+
+        tasks = [
+            cls.create(
+                event_data=event_data,
+                _aps=_aps,
+                _erp=_erp,
+                pydantic_model=pydantic_model,
+            )
+            for event_data in event_data_list
+        ]
+        await asyncio.gather(*tasks, return_exceptions=True)
+    
+
+
+
+class ExternalData:
+    """外部ERP数据包装器"""
+    def __init__(self, raw_data: dict, pydantic_model: Type[PydanticModel] = None):
+        self.raw_data = raw_data
+        self._pydantic_model = pydantic_model
+        self._dumped_data = None
+
+
+    @property
+    def is_empty(self):
+        return not self.raw_data
+
+
+    def dumps(self, pydantic_model: Type[PydanticModel] = None) -> dict:
+        assert self._pydantic_model or pydantic_model, "未设置转换模型pydantic_model"
+
+        if pydantic_model:
+            if self._dumped_data is None or pydantic_model is not self._pydantic_model:
+                self._pydantic_model = pydantic_model
+                self._dumped_data = pydantic_model.model_dump(self.raw_data)
+        else:
+            if self._dumped_data is None:
+                self._dumped_data = self._pydantic_model.model_dump(self.raw_data)
+        return self._dumped_data
 
 
 
 class ExternalDataSet:
-    """外部ERP数据包装器"""
+    """外部ERP数据列表包装器"""
 
-    def __init__(self, data: dict | List[dict], pydantic_model: Type[PydanticModel] = None):
+    def __init__(self, raw_data: List[dict], pydantic_model: Type[PydanticModel] = None):
         """
         初始化数据对象
         
         Args:
-            data: 初始数据
+            raw_data: 初始数据
         """
         self._pydantic_model = pydantic_model
-        self.data = data
-        if isinstance(data, dict):
-            self.data_list = [data]
-        else:
-            self.data_list = data
+        self.raw_data = raw_data
+        self._set = [ExternalData(raw_data=data, pydantic_model=pydantic_model) for data in self.raw_data]
+        self._dumped_data = None
         
 
+    def __getitem__(self, index: int):
+        return self._set[index]
+
+
+    @property
     def is_empty(self):
-
-        return not self.data_list
-
-
-    def first(self):
-        """
-        获取数据列表第一条数据
-        
-        Returns:
-            dict: 第一条数据
-        """
-        return self.data_list[0]
+        return not self.raw_data
 
 
-
-    async def load(self, pydantic_model: Type[PydanticModel] = None) -> dict:
-        """
-        转化为 APS 内部数据格式, 只转化数据列表第一条
-        """
+    async def dumps(self, pydantic_model: Type[PydanticModel] = None) -> List[dict]:
         assert self._pydantic_model or pydantic_model, "未设置转换模型pydantic_model"
-        if pydantic_model is None:
-            pydantic_model = self._pydantic_model
+
+        if pydantic_model:
+            if self._dumped_data is None or pydantic_model is not self._pydantic_model:
+                self._pydantic_model = pydantic_model
+                self._dumped_data = [pydantic_model(**_).model_dump() for _ in self.raw_data]
         else:
-            self._pydantic_model = pydantic_model
-        internal_data = pydantic_model.model_dump(self.data_list[0])
-        return pydantic_model.model_validate(internal_data)
+            if self._dumped_data is None:
+                self._dumped_data = [self._pydantic_model(**_).model_dump() for _ in self.raw_data]
+        return self._dumped_data
 
-
-
-    async def loads(self, pydantic_model: Type[PydanticModel] = None) -> List[dict]:
-        """
-        转化为 APS 内部数据格式, 转化数据列表所有数据
         
-        Args:
-            pydantic_model: 外部数据模型
-        """
-        assert self._pydantic_model or pydantic_model, "未设置转换模型pydantic_model"
-        if pydantic_model is None:
-            pydantic_model = self._pydantic_model
-        else:
-            self._pydantic_model = pydantic_model
-        internal_data_list = [pydantic_model(**data).model_dump() for data in self.data_list]
-        self.internal_data_list = InternalDataSet(internal_data_list, pydantic_model)
-        return self.internal_data_list
-        
-
 #################################################################################
 # 令牌桶限流器
 #################################################################################
