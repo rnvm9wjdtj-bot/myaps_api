@@ -12,7 +12,7 @@ from pydantic import BaseModel as PydanticSchema
 from tortoise.models import Model as TortoiseBaseModel
 
 from apps.common.monitor.models import FailedOperation
-from core.settings import LOG_LEVEL, MYAPS_DB_SET
+from core.settings import LOG_LEVEL, MYAPS_DB_SET, MYAPS_DBSET_LIST
 from globalobjects import AlertType, alert_manager
 from globalobjects import logger as log_config
 from globalobjects.db_manager import DbManager, get_db_managers
@@ -465,8 +465,11 @@ def validate_databases(db_name: str) -> List[str]:
     Returns:
         有效的账套名称列表
     """
+    if isinstance(db_name, list):
+        return [db for db in db_name if db in MYAPS_DBSET_LIST]
+    
     db_names = [name.strip() for name in db_name.split(",") if name.strip()]
-    valid_dbs = [db for db in db_names if db in MYAPS_DB_SET]
+    valid_dbs = [db for db in db_names if db in MYAPS_DBSET_LIST]
     return valid_dbs
 
 

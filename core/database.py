@@ -25,24 +25,9 @@ db_count = len(MYAPS_DBSET_LIST)
 maxsize_per_db = min(20, max(5, 50 // max(db_count, 1)))
 minsize_per_db = min(5, maxsize_per_db // 2)
 
-# 数据库配置
-connections = {
-    SQLITE_FILE: {
-        "engine": "tortoise.backends.sqlite",
-        "credentials": {
-            "file_path": BASE_DIR / "storage" / f"{SQLITE_FILE}.sqlite3",  # 统一管理数据文件
-            "journal_mode": "WAL",  # 写前日志，提升并发性能
-            "synchronous": "NORMAL",  # 性能与安全的平衡
-            "cache_size": -100000,  # 100MB 内存缓存
-            "foreign_keys": True,  # 启用外键约束
-            "timeout": 30,  # 连接超时时间
-            "check_same_thread": False,
-        },
-        "maxsize": 5,  # 最大连接数
-        "minsize": 1,  # 最小连接数
-    }
-}
 
+# 数据库配置
+connections = {}
 # 为每个账套创建MySQL连接配置
 for db in MYAPS_DBSET_LIST:
     connections[db] = {
@@ -62,6 +47,22 @@ for db in MYAPS_DBSET_LIST:
         "minsize": minsize_per_db,  # 最小连接数
         "pool_recycle": 3600,  # 连接回收时间（秒）
     }
+
+# 添加SQLite数据库连接配置
+connections[SQLITE_FILE] = {
+    "engine": "tortoise.backends.sqlite",
+    "credentials": {
+        "file_path": BASE_DIR / "storage" / f"{SQLITE_FILE}.sqlite3",  # 统一管理数据文件
+        "journal_mode": "WAL",  # 写前日志，提升并发性能
+        "synchronous": "NORMAL",  # 性能与安全的平衡
+        "cache_size": -100000,  # 100MB 内存缓存
+        "foreign_keys": True,  # 启用外键约束
+        "timeout": 30,  # 连接超时时间
+        "check_same_thread": False,
+    },
+    "maxsize": 5,  # 最大连接数
+    "minsize": 1,  # 最小连接数
+}
 
 TORTOISE_ORM_CONFIG = {
     "connections": connections,

@@ -829,12 +829,10 @@ class MoVoucher(BaseVoucher):
         ]
         await asyncio.gather(*tasks, return_exceptions=True)
         # 最后兜底，更新所有状态为 A2E 的生产加工单为 CRE
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        unknown_failed = await TSupply.filter(status='A2E', supplyno__in=supply_nos).only(['supplyno']).all()
+        unknown_failed = await TSupply.filter(status='A2E', supplyno__in=supply_nos).values('supplyno')
         if unknown_failed:
             tasks = [
-                _erp.mo_release_failed(native_plno=_.supplyno, msg=f"{now} 🚫 推送失败，请重试")
+                _erp.mo_release_failed(native_plno=_["supplyno"], msg="推送失败，请重试")
                 for _ in unknown_failed
             ]
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -870,6 +868,8 @@ class RsVoucher(BaseVoucher):
         if production_cache_items is None:
             production_cache_items = [CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL]
         supply_nos = [s['supplyno'] for s in event_data_list]
+        await TDemand.filter(demandno__in=supply_nos).update(status='A2E', memo=" 📤 正在推送...")
+
         _aps = ApsPayloadSponsor(production_cache_items=production_cache_items)
         await _aps.establish_production_cache(supplynos=supply_nos)
 
@@ -892,6 +892,14 @@ class RsVoucher(BaseVoucher):
             for event_data in event_data_list
         ]
         await asyncio.gather(*tasks, return_exceptions=True)
+
+        unknown_failed = await TDemand.filter(status='A2E', demandno__in=supply_nos).values('demandno')
+        if unknown_failed:
+            tasks = [
+                _erp.rs_release_failed(rsno=_["demandno"], msg="推送失败，请重试")
+                for _ in unknown_failed
+            ]
+            await asyncio.gather(*tasks, return_exceptions=True)
     
 
 class ExternalData:
