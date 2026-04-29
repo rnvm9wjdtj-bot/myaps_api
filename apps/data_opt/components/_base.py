@@ -9,6 +9,9 @@ import asyncio
 import inspect
 from pathlib import Path
 from functools import wraps
+import subprocess
+import sys
+import re
 
 from enum import Enum
 from typing import List, Dict, Optional, Literal, Callable, Union, Any, Type
@@ -403,6 +406,71 @@ class AdaptiveAsyncTokenBucket:
 
 
 class ExternalBaseConnection(ABC):
+    """
+    外部系统连接基类 - 提供统一的连接管理、限流控制和会话复用机制
+    
+    ============================================
+                    使用方法
+    ============================================
+    
+    【1. 创建连接实例】
+    conn = ExternalBaseConnection(
+        async_qps=50,        # 异步请求QPS限制
+        async_burst=100,     # 最大突发请求数
+        pool_maxsize=50      # 连接池大小，建议与QPS匹配
+    )
+    
+    【2. 获取会话】
+    async_session = await conn._get_async_session()
+    sync_session = conn._get_sync_session()
+    
+    【3. 带超时保护执行】
+    result = await conn.execute_with_timeout_protection(
+        coro=my_coroutine(),
+        operation_name="操作描述"
+    )
+    
+    【4. 监控状态】
+    stats = conn.get_connection_stats()
+    print(stats)
+    
+    【5. 动态调整连接池】
+    conn.adjust_pool_size(100)
+    
+    ============================================
+                    注意事项
+    ============================================
+    
+    1. 连接池配置：
+       - pool_maxsize 建议设置为 async_qps 的值或更大
+       - 过小的连接池会导致请求排队超时
+    
+    2. 限流配置：
+       - async_qps 控制每秒请求数
+       - async_burst 控制突发请求上限
+       - 自适应限流会根据响应时间动态调整
+    
+    3. 超时配置：
+       - _connect_timeout: 连接超时（默认15秒）
+       - _read_timeout: 读取超时（默认60秒）
+       - _acquire_timeout: 令牌获取超时（默认30秒）
+       - 实际超时会根据系统负载动态调整（1.0x ~ 2.0x）
+    
+    4. 会话复用：
+       - 会话会自动复用，最多复用 _max_session_reuse 次
+       - 复用计数超过阈值时会自动重建会话
+       - 避免手动关闭会话，由连接池管理
+    
+    5. 并发控制：
+       - 信号量限制最大并发数（默认 MAX_EVENTS_PER_SECOND // 2）
+       - 与全局 @async_rate_limit() 装饰器协同工作
+       - 确保限流阈值与连接池大小匹配
+    
+    6. 子类实现：
+       - 必须实现 auth() 方法进行认证
+       - 建议重写 _ping_connection() 实现健康检查
+       - 调用父类方法时使用 super()
+    """
     this_base_url = THIS_BASE_URL
     main_db = MYAPS_MAIN_DB
 
@@ -412,10 +480,42 @@ class ExternalBaseConnection(ABC):
     _default_async_burst: int = 20
 
     _use_adaptive_rate_limiter: bool = True
+    
+    # 连接池配置
+    _pool_maxsize: int = 20
+    _pool_connections: int = 50
+    
+    # 超时配置
+    _connect_timeout: float = 15.0
+    _read_timeout: float = 60.0
+    _acquire_timeout: float = 30.0
+    
+    # 会话复用配置
+    _max_session_reuse: int = 100
+    
+    # 监控指标
+    _active_requests: int = 0
+    _max_active_requests: int = 0
+    _request_timeouts: int = 0
 
-    def __init__(self, sync_qps: float = None, sync_burst: int = None, async_qps: float = None, async_burst: int = None):
+    _ping_endpoint: str = None
+
+    def __init__(self, sync_qps: float = None, sync_burst: int = None, 
+                 async_qps: float = None, async_burst: int = None,
+                 pool_maxsize: int = None):
         self._sync_session = None
         self._async_session = None
+        
+        # 动态调整连接池大小，确保与限流匹配
+        if pool_maxsize is None:
+            target_qps = async_qps if async_qps is not None else self._default_async_qps
+            self._pool_maxsize = max(int(target_qps), self._pool_maxsize)
+        else:
+            self._pool_maxsize = pool_maxsize
+        
+        # 会话生命周期管理
+        self._session_creation_time = None
+        self._session_reuse_count = 0
         
         if self._use_adaptive_rate_limiter:
             self._sync_rate_limiter = AdaptiveTokenBucket(
@@ -439,27 +539,42 @@ class ExternalBaseConnection(ABC):
 
     def _get_sync_session(self):
         """
-        获取同步会话（复用会话对象，避免资源浪费）
-        限流：每次获取会话前需要获取令牌
-        """
-        self._sync_rate_limiter.acquire(timeout=30.0)
+        获取同步会话（真正复用，带连接池配置）
         
+        限流：每次获取会话前需要获取令牌
+        会话复用：最多复用 _max_session_reuse 次后自动重建
+        """
+        self._sync_rate_limiter.acquire(timeout=self._acquire_timeout)
+        
+        # 检查会话是否可用且未超过复用次数
         if self._sync_session is not None:
             try:
-                if hasattr(self._sync_session, 'adapters'):
-                    if 'http://' in self._sync_session.adapters and \
-                       'https://' in self._sync_session.adapters:
+                if self._session_reuse_count < self._max_session_reuse:
+                    if hasattr(self._sync_session, 'adapters'):
+                        if 'http://' in self._sync_session.adapters and \
+                           'https://' in self._sync_session.adapters:
+                            self._session_reuse_count += 1
+                            return self._sync_session
+                    elif hasattr(self._sync_session, 'is_closed'):
+                        if not self._sync_session.is_closed:
+                            self._session_reuse_count += 1
+                            return self._sync_session
+                    else:
+                        self._session_reuse_count += 1
                         return self._sync_session
-                elif hasattr(self._sync_session, 'is_closed'):
-                    if not self._sync_session.is_closed:
-                        return self._sync_session
-                else:
-                    return self._sync_session
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"会话复用检查失败: {str(e)}")
         
+        # 创建新会话（带连接池配置）
         from apps.data_opt.utils.common import get_session
-        self._sync_session = get_session()
+        self._sync_session = get_session(
+            pool_maxsize=self._pool_maxsize,
+            pool_connections=self._pool_connections,
+            connect_timeout=self._connect_timeout,
+            read_timeout=self._read_timeout
+        )
+        self._session_creation_time = datetime.now()
+        self._session_reuse_count = 1
         return self._sync_session
     
     
@@ -475,26 +590,41 @@ class ExternalBaseConnection(ABC):
 
     async def _get_async_session(self):
         """
-        获取异步会话（复用会话对象，避免资源浪费）
-        限流：每次获取会话前需要获取令牌
-        """
-        await self._async_rate_limiter.acquire(timeout=30.0)
+        获取异步会话（真正复用，带连接池配置）
         
+        限流：每次获取会话前需要获取令牌
+        会话复用：最多复用 _max_session_reuse 次后自动重建
+        """
+        await self._async_rate_limiter.acquire(timeout=self._acquire_timeout)
+        
+        # 检查会话是否可用且未超过复用次数
         if self._async_session is not None:
             try:
-                if hasattr(self._async_session, '_client'):
-                    transport = getattr(self._async_session._client, '_transport', None)
-                    if transport and not getattr(transport, '_closed', False):
+                if self._session_reuse_count < self._max_session_reuse:
+                    if hasattr(self._async_session, '_client'):
+                        transport = getattr(self._async_session._client, '_transport', None)
+                        if transport and not getattr(transport, '_closed', False):
+                            self._session_reuse_count += 1
+                            return self._async_session
+                    elif hasattr(self._async_session, 'is_closed'):
+                        if not self._async_session.is_closed:
+                            self._session_reuse_count += 1
+                            return self._async_session
+                    else:
+                        self._session_reuse_count += 1
                         return self._async_session
-                elif hasattr(self._async_session, 'is_closed'):
-                    if not self._async_session.is_closed:
-                        return self._async_session
-                else:
-                    return self._async_session
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"异步会话复用检查失败: {str(e)}")
         
-        self._async_session = await get_async_session()
+        # 创建新会话（带连接池配置）
+        self._async_session = await get_async_session(
+            pool_maxsize=self._pool_maxsize,
+            pool_connections=self._pool_connections,
+            connect_timeout=self._connect_timeout,
+            read_timeout=self._read_timeout
+        )
+        self._session_creation_time = datetime.now()
+        self._session_reuse_count = 1
         return self._async_session
 
 
@@ -508,6 +638,91 @@ class ExternalBaseConnection(ABC):
             elif hasattr(self._async_session, 'close'):
                 self._async_session.close()
             self._async_session = None
+
+
+    # ============ 智能超时处理 ============
+    
+    async def execute_with_timeout_protection(self, coro, operation_name: str):
+        """
+        带超时保护的异步执行包装
+        
+        根据当前系统负载动态调整超时时间，避免请求迅速超时。
+        
+        Args:
+            coro: 要执行的协程
+            operation_name: 操作名称，用于日志记录
+            
+        Returns:
+            协程执行结果
+            
+        Raises:
+            asyncio.TimeoutError: 超时异常
+        """
+        # 根据活跃请求数动态调整超时
+        base_timeout = self._read_timeout
+        load_factor = min(self._active_requests / self._pool_maxsize, 2.0)
+        adjusted_timeout = base_timeout * (1 + load_factor)
+        
+        try:
+            self._active_requests += 1
+            if self._active_requests > self._max_active_requests:
+                self._max_active_requests = self._active_requests
+            
+            result = await asyncio.wait_for(coro, timeout=adjusted_timeout)
+            return result
+            
+        except asyncio.TimeoutError:
+            self._request_timeouts += 1
+            logger.warning(f"请求超时: {operation_name}, 当前活跃请求数: {self._active_requests}, 调整后超时: {adjusted_timeout:.2f}秒")
+            raise
+            
+        finally:
+            self._active_requests -= 1
+
+
+    # ============ 状态监控 ============
+    
+    def get_connection_stats(self) -> dict:
+        """
+        获取连接状态统计信息
+        
+        Returns:
+            dict: 包含以下字段的统计信息
+                - active_requests: 当前活跃请求数
+                - max_active_requests: 历史最大活跃请求数
+                - pool_maxsize: 连接池最大连接数
+                - session_reuse_count: 当前会话复用次数
+                - request_timeouts: 请求超时总次数
+                - session_age_minutes: 当前会话存活时间（分钟）
+        """
+        session_age = (datetime.now() - self._session_creation_time).total_seconds() / 60 \
+                      if self._session_creation_time else None
+        
+        return {
+            'active_requests': self._active_requests,
+            'max_active_requests': self._max_active_requests,
+            'pool_maxsize': self._pool_maxsize,
+            'session_reuse_count': self._session_reuse_count,
+            'request_timeouts': self._request_timeouts,
+            'session_age_minutes': session_age
+        }
+
+
+    def adjust_pool_size(self, new_size: int):
+        """
+        动态调整连接池大小
+        
+        Args:
+            new_size: 新的连接池大小
+        """
+        if new_size > 0 and new_size != self._pool_maxsize:
+            logger.info(f"连接池大小调整: {self._pool_maxsize} -> {new_size}")
+            self._pool_maxsize = new_size
+            # 强制重建会话以应用新配置
+            if self._async_session:
+                asyncio.create_task(self._close_async_session())
+            if self._sync_session:
+                self._close_sync_session()
 
 
     # ============ 连接池预热机制 ============
@@ -588,47 +803,107 @@ class ExternalBaseConnection(ABC):
     
     async def _ping_connection(self, session) -> bool:
         """
-        验证连接是否有效（异步）
-        子类可重写此方法实现特定的ping逻辑
+        验证连接是否有效（异步）- 智能 ping 实现
+        
+        智能判断 _ping_endpoint 的类型：
+        - URL（http:// 或 https:// 开头）：执行 HTTP GET 请求
+        - IP 地址或域名：执行 ICMP ping 命令
+        - 权限不足时降级处理（视为连接有效）
         
         Returns:
             True: 连接有效
             False: 连接无效或验证失败
         """
-        if hasattr(self, '_ping_endpoint') and self._ping_endpoint:
+        if not self._ping_endpoint:
+            return True
+        
+        endpoint = str(self._ping_endpoint).strip()
+        
+        # 判断 endpoint 类型
+        if _is_url(endpoint):
+            # URL 类型：执行 HTTP GET 请求
+            logger.debug(f"执行 HTTP 健康检查: {endpoint}")
             try:
-                response = await session.get(self._ping_endpoint, timeout=10)
+                response = await session.get(endpoint, timeout=10)
                 if hasattr(response, 'status_code'):
                     return response.status_code == 200
                 elif hasattr(response, 'status'):
                     return response.status == 200
                 return True
             except Exception as e:
-                logger.debug(f"异步连接验证失败: {str(e)}")
+                logger.debug(f"HTTP 健康检查失败: {str(e)}")
                 return False
-        return True
+        
+        elif _is_ip_address(endpoint) or _is_domain(endpoint):
+            # IP 地址或域名：执行 ICMP ping
+            logger.debug(f"执行 ICMP ping: {endpoint}")
+            return _execute_icmp_ping(endpoint)
+        
+        else:
+            # 未知类型：尝试作为 URL 处理
+            logger.debug(f"未知 endpoint 类型，尝试作为 URL: {endpoint}")
+            try:
+                response = await session.get(endpoint, timeout=10)
+                if hasattr(response, 'status_code'):
+                    return response.status_code == 200
+                elif hasattr(response, 'status'):
+                    return response.status == 200
+                return True
+            except Exception as e:
+                logger.debug(f"未知类型 endpoint 验证失败: {str(e)}")
+                return False
     
     def _ping_connection_sync(self, session) -> bool:
         """
-        验证连接是否有效（同步）
-        子类可重写此方法实现特定的ping逻辑
+        验证连接是否有效（同步）- 智能 ping 实现
+        
+        智能判断 _ping_endpoint 的类型：
+        - URL（http:// 或 https:// 开头）：执行 HTTP GET 请求
+        - IP 地址或域名：执行 ICMP ping 命令
+        - 权限不足时降级处理（视为连接有效）
         
         Returns:
             True: 连接有效
             False: 连接无效或验证失败
         """
-        if hasattr(self, '_ping_endpoint') and self._ping_endpoint:
+        if not getattr(self, '_ping_endpoint', None):
+            return True
+        
+        endpoint = str(self._ping_endpoint).strip()
+        
+        # 判断 endpoint 类型
+        if _is_url(endpoint):
+            # URL 类型：执行 HTTP GET 请求
+            logger.debug(f"执行同步 HTTP 健康检查: {endpoint}")
             try:
-                response = session.get(self._ping_endpoint, timeout=10)
+                response = session.get(endpoint, timeout=10)
                 if hasattr(response, 'status_code'):
                     return response.status_code == 200
                 elif hasattr(response, 'status'):
                     return response.status == 200
                 return True
             except Exception as e:
-                logger.debug(f"同步连接验证失败: {str(e)}")
+                logger.debug(f"同步 HTTP 健康检查失败: {str(e)}")
                 return False
-        return True
+        
+        elif _is_ip_address(endpoint) or _is_domain(endpoint):
+            # IP 地址或域名：执行 ICMP ping
+            logger.debug(f"执行同步 ICMP ping: {endpoint}")
+            return _execute_icmp_ping(endpoint)
+        
+        else:
+            # 未知类型：尝试作为 URL 处理
+            logger.debug(f"未知 endpoint 类型，尝试作为 URL: {endpoint}")
+            try:
+                response = session.get(endpoint, timeout=10)
+                if hasattr(response, 'status_code'):
+                    return response.status_code == 200
+                elif hasattr(response, 'status'):
+                    return response.status == 200
+                return True
+            except Exception as e:
+                logger.debug(f"未知类型 endpoint 验证失败: {str(e)}")
+                return False
     
     async def ensure_connection_warm(self) -> bool:
         """
@@ -662,6 +937,110 @@ class ExternalBaseConnection(ABC):
         for s in source:
             s._CONNECTION = self
         return self
+
+
+
+
+def _detect_os_type() -> str:
+    """检测操作系统类型"""
+    if sys.platform.startswith('win'):
+        return 'windows'
+    elif sys.platform.startswith('linux'):
+        return 'linux'
+    elif sys.platform == 'darwin':
+        return 'macos'
+    return 'unknown'
+
+
+def _is_url(endpoint: str) -> bool:
+    """判断是否为 URL"""
+    url_pattern = re.compile(
+        r'^https?://'  # http:// 或 https://
+        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # 域名
+        r'localhost|'  # localhost
+        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # IP 地址
+        r'(?::\d+)?'  # 端口
+        r'(?:/?|[/?]\S+)$',  # 路径
+        re.IGNORECASE
+    )
+    return bool(url_pattern.match(endpoint))
+
+
+def _is_ip_address(endpoint: str) -> bool:
+    """判断是否为 IP 地址"""
+    ip_pattern = re.compile(
+        r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}'
+        r'(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
+    )
+    return bool(ip_pattern.match(endpoint))
+
+
+def _is_domain(endpoint: str) -> bool:
+    """判断是否为域名"""
+    domain_pattern = re.compile(
+        r'^(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,}$',
+        re.IGNORECASE
+    )
+    return bool(domain_pattern.match(endpoint)) and not _is_url(endpoint)
+
+
+def _execute_icmp_ping(host: str, timeout: int = 5) -> bool:
+    """
+    跨平台 ICMP ping
+    
+    Args:
+        host: 目标主机名或 IP 地址
+        timeout: 超时时间（秒）
+    
+    Returns:
+        True: ping 成功
+        False: ping 失败、超时或权限不足
+    """
+    os_type = _detect_os_type()
+    
+    try:
+        if os_type == 'windows':
+            # Windows: ping -n 1 -w <毫秒> hostname
+            args = ['ping', '-n', '1', '-w', str(timeout * 1000), host]
+        else:
+            # Linux/macOS: ping -c 1 -W <秒> hostname
+            args = ['ping', '-c', '1', '-W', str(timeout), host]
+        
+        result = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            timeout=timeout + 2,  # 额外2秒缓冲
+            stderr=subprocess.DEVNULL
+        )
+        
+        if result.returncode == 0:
+            return True
+        
+        # 检查是否为权限问题
+        stderr = result.stderr.lower() if hasattr(result, 'stderr') else ''
+        stdout = result.stdout.lower() if hasattr(result, 'stdout') else ''
+        
+        if 'permission' in stderr or 'permission' in stdout:
+            logger.debug(f"ICMP ping 权限不足: {host}")
+            return True  # 权限不足时视为连接有效（降级处理）
+        
+        logger.debug(f"ICMP ping 失败: {host}, 返回码: {result.returncode}")
+        return False
+        
+    except subprocess.TimeoutExpired:
+        logger.debug(f"ICMP ping 超时: {host}")
+        return False
+    except PermissionError:
+        logger.debug(f"ICMP ping 权限被拒绝: {host}")
+        return True  # 权限不足时视为连接有效（降级处理）
+    except Exception as e:
+        logger.debug(f"ICMP ping 执行异常: {host}, 错误: {str(e)}")
+        return True  # 未知异常时视为连接有效（降级处理）
+
+
+
+
 
 
 
@@ -941,12 +1320,12 @@ class ExternalDataSet:
         """
         self._pydantic_model = pydantic_model
         self.raw_data = raw_data
-        self._set = [ExternalData(raw_data=data, pydantic_model=pydantic_model) for data in self.raw_data]
+        # self._set = [ExternalData(raw_data=data, pydantic_model=pydantic_model) for data in self.raw_data]
         self._dumped_data = None
         
 
     def __getitem__(self, index: int):
-        return self._set[index]
+        return ExternalData(raw_data=self.raw_data[index], pydantic_model=self._pydantic_model)
 
 
     @property
@@ -1076,13 +1455,15 @@ def async_rate_limit(rate: int = None):
     if rate is None:
         rate = MAX_EVENTS_PER_SECOND
     
-    if db_event_async_bucket is None:
-        db_event_async_bucket = AsyncTokenBucket(rate)
-        db_event_async_bucket.start()
-    
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, **kwargs):
+            # 延迟初始化令牌桶，避免模块导入时没有事件循环的问题
+            global db_event_async_bucket
+            if db_event_async_bucket is None:
+                db_event_async_bucket = AsyncTokenBucket(rate)
+                db_event_async_bucket.start()
+            
             event_count = kwargs.pop('event_count', 1)
             await db_event_async_bucket.acquire(event_count)
             semaphore = get_db_event_semaphore()

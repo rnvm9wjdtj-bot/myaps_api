@@ -903,8 +903,24 @@ async def get_mo_by_supplyno(
     origin_so: bool = Query(False, description="是否查询销售订单SO"),
     # x_api_key: str = Header(None, description="API密钥")
 ):
-    return await ApsPayloadSponsor.get_mo_by_supplyno(db_name=db_name, supplyno=supplyno, prev_mo=prev_mo, next_mo=next_mo, origin_so=origin_so)
-
+    try:
+        result = await ApsPayloadSponsor.get_mo_by_supplyno(db_name=db_name, supplyno=supplyno, prev_mo=prev_mo, next_mo=next_mo, origin_so=origin_so)
+        return standard_response(
+            status_code=200,
+            success=result.success,
+            message=result.message,
+            data=result.data,
+            meta=result.meta
+        )
+    except Exception as e:
+        logger.error(f"获取工单报表失败: {str(e)}")
+        return standard_response(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            success=0,
+            message=f"操作失败：{str(e)}",
+            data=[],
+            meta={}
+        )
 
 # @rt.get(
 #     "/v_supply_complete",

@@ -223,6 +223,19 @@ class MoPushModel(PydanticModel):
         cleaned_values = {}
 
         demand_list = values.get('demand_list')
+        orderwc_list = values.get('orderwc')
+        mopd = []
+        if orderwc_list:
+            for orderwc in orderwc_list:
+                mopd.append({
+                    'Inventory': {'Code': orderwc['materialno']},
+                    # 'Unit': {'Name': orderwc.get('unit', "")},
+                    'Unit': {'Name': values.get('unit', "")},
+                    'Quantity': orderwc['orderqty'],
+                    'ProcessingType': {"Code": ""},
+                    'Process': {"Code": orderwc['itemno']},
+                })
+
         momd = []
         if demand_list:
             for demand in demand_list:
@@ -250,6 +263,7 @@ class MoPushModel(PydanticModel):
             'PreStartDate': values['dt_ordstart'],
             'PreFinishDate': values['dt_ordend'],
             'ManufactureOrderMaterialDetails': momd,
+            'ManufactureOrderProcessDetails': mopd
         }
 
         so = values.get('so')
@@ -399,6 +413,16 @@ class TplusConfig:
 
 
 class YonyouTplusConnection(ExternalBaseConnection):
+    """
+    畅捷通 T+ 系统连接类 - 继承自 ExternalBaseConnection
+    
+    使用父类提供的限流、连接池和超时保护机制，
+    实现畅捷通 T+ API 的认证和请求处理。
+    
+    配置建议：
+        - async_qps: 根据 T+ 服务器性能调整，建议不超过50
+        - pool_maxsize: 建议与 async_qps 相等或更大
+    """
 
     def __init__(self, config: TplusConfig=TplusConfig()):
         """
@@ -406,8 +430,17 @@ class YonyouTplusConnection(ExternalBaseConnection):
         
         Args:
             config: TplusConfig实例
+            
+        使用示例：
+            config = TplusConfig(max_qps=50)
+            conn = YonyouTplusConnection(config)
         """
-        super().__init__()
+        # 调用父类初始化，传递限流和连接池参数
+        super().__init__(
+            async_qps=getattr(config, 'max_qps', None),
+            async_burst=getattr(config, 'max_burst', None),
+            pool_maxsize=getattr(config, 'max_qps', None)  # 连接池大小与QPS匹配
+        )
         self.config = config
         self.base_url = self.config.base_url
         self.cache_file = self.config.cache_file
@@ -504,40 +537,46 @@ class YonyouTplusConnection(ExternalBaseConnection):
 
 
     async def _get(self, endpoint: str, params: dict=None):
+
         await self.auth()
         async_session = await self._get_async_session()
         
-        try:
-            headers = {
-                "appKey": self.app_key,
-                "appSecret": self.app_secret,
-                "openToken": self.access_token,
-                "Content-Type": "application/json",
-            }
-            response = await async_session.get(f"{self.base_url}{endpoint}", headers=headers, params=params)
-            if hasattr(response, 'json'):
-                if inspect.iscoroutinefunction(response.json):
-                    response = await response.json()
-                else:
-                    response = response.json()
-            return response
-        finally:
-            if async_session:
-                if hasattr(async_session, 'aclose'):
-                    await async_session.aclose()
-                elif hasattr(async_session, 'close'):
-                    async_session.close()
+        headers = {
+            "appKey": self.app_key,
+            "appSecret": self.app_secret,
+            "openToken": self.access_token,
+            "Content-Type": "application/json",
+        }
+        response = await async_session.get(
+            f"{self.base_url}{endpoint}", 
+            headers=headers, 
+            params=params,
+            timeout=self._read_timeout
+        )
+        if hasattr(response, 'json'):
+            if inspect.iscoroutinefunction(response.json):
+                response = await response.json()
+            else:
+                response = response.json()
+        return response
 
 
     async def _post(self, endpoint: str, data: dict, max_retries: int = 5):
         """
-        异步发送POST请求到畅捷通API，支持重试机制
+        异步发送POST请求到畅捷通API（优化版）
+        
+        使用父类的会话复用机制和超时保护功能，支持重试机制。
+        
         Args:
             endpoint: API端点路径
             data: 请求体数据
             max_retries: 最大重试次数，默认5次
+            
         Returns:
             响应JSON数据
+            
+        Raises:
+            Exception: 所有重试失败后抛出最后一个错误
         """
         retry_count = 0
         last_error = None
@@ -547,34 +586,55 @@ class YonyouTplusConnection(ExternalBaseConnection):
                 await self.auth()
                 async_session = await self._get_async_session()
                 
-                try:
+                # 使用超时保护包装请求
+                async def make_request():
                     headers = {
                         "appKey": self.app_key,
                         "appSecret": self.app_secret,
                         "openToken": self.access_token,
                         "Content-Type": "application/json",
                     }
-                    response = await async_session.post(f"{self.base_url}{endpoint}", headers=headers, json=data)
-                    if hasattr(response, 'status_code') and response.status_code >= 400 and response.status_code <= 500:
-                        raise Exception(f"HTTP 错误: {response.status_code}")
-                    if hasattr(response, 'json'):
-                        if inspect.iscoroutinefunction(response.json):
-                            response = await response.json()
-                        else:
-                            response = response.json()
+                    response = await async_session.post(
+                        f"{self.base_url}{endpoint}", 
+                        headers=headers, 
+                        json=data,
+                        timeout=self._read_timeout
+                    )
                     return response
-                finally:
-                    if async_session:
-                        if hasattr(async_session, 'aclose'):
-                            await async_session.aclose()
-                        elif hasattr(async_session, 'close'):
-                            async_session.close()
+                
+                response = await self.execute_with_timeout_protection(
+                    make_request(),
+                    f"POST {endpoint}"
+                )
+                
+                if hasattr(response, 'status_code'):
+                    if response.status_code >= 400 and response.status_code < 500:
+                        # 客户端错误，不重试
+                        raise Exception(f"HTTP 客户端错误: {response.status_code}")
+                    elif response.status_code >= 500:
+                        # 服务器错误，允许重试
+                        raise Exception(f"HTTP 服务器错误: {response.status_code}")
+                
+                if hasattr(response, 'json'):
+                    if inspect.iscoroutinefunction(response.json):
+                        response = await response.json()
+                    else:
+                        response = response.json()
+                return response
+                
+            except asyncio.TimeoutError:
+                # 超时错误，立即重试
+                retry_count += 1
+                last_error = Exception("请求超时")
+                logger.warning(f"请求超时，第{retry_count}/{max_retries}次重试: {endpoint}")
+                
             except Exception as e:
                 retry_count += 1
                 last_error = e
                 if retry_count < max_retries:
-                    wait_time = 2 * retry_count  # 递增等待时间
-                    logger.warning_msg(f"API请求失败，{wait_time}秒后重试", endpoint, f"第{retry_count}/{max_retries}次重试: {str(e)}")
+                    wait_time = 2 ** retry_count  # 指数退避
+                    logger.warning_msg(f"API请求失败，{wait_time}秒后重试", 
+                                      endpoint, f"第{retry_count}/{max_retries}次重试: {str(e)}")
                     await asyncio.sleep(wait_time)
                 else:
                     logger.fail(f"API请求失败，已达最大重试次数", endpoint, str(e))
