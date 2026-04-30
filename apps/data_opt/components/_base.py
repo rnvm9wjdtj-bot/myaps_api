@@ -454,19 +454,33 @@ class ExternalBaseConnection(ABC):
        - _connect_timeout: 连接超时（默认15秒）
        - _read_timeout: 读取超时（默认60秒）
        - _acquire_timeout: 令牌获取超时（默认30秒）
-       - 实际超时会根据系统负载动态调整（1.0x ~ 2.0x）
-    
-    4. 会话复用：
+       - 实际超时会根据系统负载和网络质量动态调整
+
+    4. 自适应超时（增强）：
+       - 基于网络质量自动调整超时时间
+       - 网络好时收紧超时（加快失败检测）
+       - 网络差时放宽超时（提高容错性）
+       - 可通过类属性自定义阈值和系数
+       - 相关配置：_adaptive_success_threshold, _adaptive_failure_threshold 等
+
+    5. 会话复用：
        - 会话会自动复用，最多复用 _max_session_reuse 次
        - 复用计数超过阈值时会自动重建会话
        - 避免手动关闭会话，由连接池管理
-    
-    5. 并发控制：
+
+    6. 并发控制：
        - 信号量限制最大并发数（默认 MAX_EVENTS_PER_SECOND // 2）
        - 与全局 @async_rate_limit() 装饰器协同工作
        - 确保限流阈值与连接池大小匹配
-    
-    6. 子类实现：
+
+    7. 增强重试策略：
+       - 自动重试失败的请求（指数退避 + 抖动）
+       - 重试条件：429(限流)、5xx(服务端错误)、超时、连接错误
+       - 默认最多重试3次，延迟 1s → 2s → 4s
+       - 可通过类属性自定义：_retry_max_attempts, _retry_base_delay 等
+       - 零配置自动激活，可通过 _retry_enabled = False 禁用
+
+    8. 子类实现：
        - 必须实现 auth() 方法进行认证
        - 建议重写 _ping_connection() 实现健康检查
        - 调用父类方法时使用 super()
@@ -499,6 +513,32 @@ class ExternalBaseConnection(ABC):
     _request_timeouts: int = 0
 
     _ping_endpoint: str = None
+
+    # ============================================
+    # 自适应超时配置参数
+    # ============================================
+    # 连续成功/失败次数阈值
+    _adaptive_success_threshold: int = 10
+    _adaptive_failure_threshold: int = 3
+    # 超时调整系数（收紧/放宽倍数）
+    _adaptive_scale_down_min: float = 0.8
+    _adaptive_scale_up_max: float = 1.5
+    # 超时值边界
+    _adaptive_min_timeout: float = 30.0
+    _adaptive_max_timeout: float = 180.0
+    # 平滑调整系数（避免突变）
+    _adaptive_smooth_factor: float = 0.3
+
+    # ============================================
+    # 增强重试策略配置参数
+    # ============================================
+    _retry_enabled: bool = True
+    _retry_max_attempts: int = 3
+    _retry_base_delay: float = 1.0
+    _retry_max_delay: float = 30.0
+    _retry_exponential_base: float = 2.0
+    _retry_jitter_ratio: float = 0.1
+    _retry_on_codes: tuple = (429, 500, 502, 503, 504)
 
     def __init__(self, sync_qps: float = None, sync_burst: int = None, 
                  async_qps: float = None, async_burst: int = None,
@@ -536,6 +576,25 @@ class ExternalBaseConnection(ABC):
                 burst=async_burst if async_burst is not None else self._default_async_burst
             )
 
+        # 初始化自适应超时状态
+        self._adaptive_state = {
+            'success_count': 0,
+            'failure_count': 0,
+            'current_timeout': float(self._read_timeout),
+            'network_quality': 'normal',
+            'recent_response_times': [],
+            'total_requests': 0,
+            'total_successes': 0,
+            'total_failures': 0,
+        }
+
+        # 初始化重试状态
+        self._retry_state = {
+            'total_retries': 0,
+            'total_retry_successes': 0,
+            'total_retry_failures': 0,
+            'retry_by_code': {},
+        }
 
     def _get_sync_session(self):
         """
@@ -640,52 +699,372 @@ class ExternalBaseConnection(ABC):
             self._async_session = None
 
 
+    # ============ 增强重试策略 ============
+
+    def _should_retry(self, attempt: int, exception: Exception = None, status_code: int = None) -> bool:
+        """
+        判断是否应该重试
+
+        Args:
+            attempt: 当前尝试次数（从1开始）
+            exception: 异常对象
+            status_code: HTTP 状态码
+
+        Returns:
+            bool: 是否应该重试
+        """
+        if not self._retry_enabled:
+            return False
+
+        if attempt >= self._retry_max_attempts:
+            return False
+
+        if status_code and status_code in self._retry_on_codes:
+            return True
+
+        if exception:
+            retryable_exceptions = (
+                ConnectionError,
+                TimeoutError,
+                asyncio.TimeoutError,
+                ConnectionResetError,
+                ConnectionAbortedError,
+            )
+            if isinstance(exception, retryable_exceptions):
+                return True
+
+        return False
+
+    def _get_retry_delay(self, attempt: int, response_time: float = None) -> float:
+        """
+        计算重试延迟（指数退避 + 抖动）
+
+        Args:
+            attempt: 当前尝试次数（从1开始）
+            response_time: 上次响应时间（可选，用于自适应调整）
+
+        Returns:
+            float: 延迟时间（秒）
+        """
+        import random
+
+        base_delay = self._retry_base_delay
+        if response_time and response_time > 0:
+            base_delay = min(response_time * 2, self._retry_max_delay)
+
+        delay = min(
+            base_delay * (self._retry_exponential_base ** attempt),
+            self._retry_max_delay
+        )
+
+        jitter_range = delay * self._retry_jitter_ratio
+        delay = delay + random.uniform(-jitter_range, jitter_range)
+
+        return max(0.1, delay)
+
+    async def _execute_with_retry(self, coro_factory, operation_name: str):
+        """
+        带重试的异步执行
+
+        Args:
+            coro_factory: 协程工厂函数（每次重试时调用以获取新协程）
+            operation_name: 操作名称
+
+        Returns:
+            协程执行结果
+
+        Raises:
+            最后一次尝试的异常
+        """
+        last_exception = None
+        attempt = 0
+
+        while attempt < self._retry_max_attempts:
+            attempt += 1
+            try:
+                result = await coro_factory()
+                if attempt > 1:
+                    self._retry_state['total_retry_successes'] += 1
+                    logger.info(
+                        f"重试成功: {operation_name}, "
+                        f"尝试次数: {attempt}, "
+                        f"网络状态: {self.get_network_quality()}"
+                    )
+                return result
+
+            except asyncio.TimeoutError as e:
+                last_exception = e
+                self._record_retry_failure(status_code=408)
+
+                if not self._should_retry(attempt, exception=e, status_code=408):
+                    raise
+
+                delay = self._get_retry_delay(attempt)
+                logger.warning(
+                    f"请求超时准备重试: {operation_name}, "
+                    f"尝试 {attempt}/{self._retry_max_attempts}, "
+                    f"等待 {delay:.2f}s"
+                )
+                await asyncio.sleep(delay)
+
+            except Exception as e:
+                last_exception = e
+                status_code = getattr(e, 'status_code', None) or getattr(e, 'status', None)
+
+                self._record_retry_failure(status_code=status_code)
+
+                if not self._should_retry(attempt, exception=e, status_code=status_code):
+                    raise
+
+                delay = self._get_retry_delay(attempt)
+                logger.warning(
+                    f"请求失败准备重试: {operation_name}, "
+                    f"状态码: {status_code}, "
+                    f"尝试 {attempt}/{self._retry_max_attempts}, "
+                    f"等待 {delay:.2f}s"
+                )
+                await asyncio.sleep(delay)
+
+        self._retry_state['total_retry_failures'] += 1
+        raise last_exception
+
+    def _record_retry_failure(self, status_code: int = None):
+        """
+        记录重试失败
+
+        Args:
+            status_code: HTTP 状态码
+        """
+        self._retry_state['total_retries'] += 1
+
+        if status_code:
+            code_str = str(status_code)
+            if code_str not in self._retry_state['retry_by_code']:
+                self._retry_state['retry_by_code'][code_str] = 0
+            self._retry_state['retry_by_code'][code_str] += 1
+
     # ============ 智能超时处理 ============
-    
+
+    def _adjust_timeout_on_success(self, response_time: float):
+        """
+        成功响应后调整超时（网络变好时收紧超时）
+
+        策略：连续成功N次后，如果当前响应时间远低于超时值，则逐步收紧超时
+        """
+        state = self._adaptive_state
+        state['success_count'] += 1
+        state['failure_count'] = 0
+        state['total_successes'] += 1
+        state['total_requests'] += 1
+
+        # 记录响应时间用于分析
+        state['recent_response_times'].append(response_time)
+        if len(state['recent_response_times']) > 20:
+            state['recent_response_times'].pop(0)
+
+        if state['success_count'] >= self._adaptive_success_threshold:
+            # 计算平均响应时间
+            avg_response_time = sum(state['recent_response_times']) / len(state['recent_response_times'])
+            current_timeout = state['current_timeout']
+
+            # 如果平均响应时间远低于当前超时（说明网络好），则收紧
+            if avg_response_time < current_timeout * 0.6:
+                # 收紧超时：乘以平滑系数，但不低于最小值
+                new_timeout = max(
+                    self._adaptive_min_timeout,
+                    current_timeout * self._adaptive_scale_down_min
+                )
+                state['current_timeout'] = new_timeout
+                state['network_quality'] = 'good'
+                logger.debug(
+                    f"网络质量改善: 超时 {current_timeout:.2f}s → {new_timeout:.2f}s, "
+                    f"平均响应: {avg_response_time:.3f}s"
+                )
+            else:
+                state['network_quality'] = 'normal'
+
+            state['success_count'] = 0
+
+    def _adjust_timeout_on_failure(self, timeout_occurred: bool = False):
+        """
+        失败响应后调整超时（网络变差时放宽超时）
+
+        策略：连续失败N次后，逐步放宽超时限制
+
+        Args:
+            timeout_occurred: 是否发生了超时
+        """
+        state = self._adaptive_state
+        state['failure_count'] += 1
+        state['success_count'] = 0
+        state['total_failures'] += 1
+        state['total_requests'] += 1
+
+        if timeout_occurred:
+            state['failure_count'] += 2  # 超时算2次失败
+
+        if state['failure_count'] >= self._adaptive_failure_threshold:
+            current_timeout = state['current_timeout']
+
+            # 放宽超时：乘以向上系数，但不超过最大值
+            new_timeout = min(
+                self._adaptive_max_timeout,
+                current_timeout * self._adaptive_scale_up_max
+            )
+
+            if new_timeout != current_timeout:
+                state['current_timeout'] = new_timeout
+                state['network_quality'] = 'poor'
+                logger.warning(
+                    f"网络质量下降: 超时 {current_timeout:.2f}s → {new_timeout:.2f}s, "
+                    f"连续失败: {state['failure_count']}次"
+                )
+
+            state['failure_count'] = 0
+
+    def get_adaptive_timeout(self) -> float:
+        """
+        获取当前自适应超时值
+
+        Returns:
+            float: 当前计算的超时时间（秒）
+        """
+        return self._adaptive_state['current_timeout']
+
+    def get_network_quality(self) -> str:
+        """
+        获取网络质量状态
+
+        Returns:
+            str: 网络质量状态 ('good', 'normal', 'poor')
+        """
+        return self._adaptive_state['network_quality']
+
     async def execute_with_timeout_protection(self, coro, operation_name: str):
         """
         带超时保护的异步执行包装
-        
-        根据当前系统负载动态调整超时时间，避免请求迅速超时。
-        
+
+        综合考虑系统负载和网络质量两个因素动态调整超时时间
+        支持自动重试（指数退避 + 抖动）
+
         Args:
             coro: 要执行的协程
             operation_name: 操作名称，用于日志记录
-            
+
         Returns:
             协程执行结果
-            
+
         Raises:
             asyncio.TimeoutError: 超时异常
         """
-        # 根据活跃请求数动态调整超时
-        base_timeout = self._read_timeout
-        load_factor = min(self._active_requests / self._pool_maxsize, 2.0)
-        adjusted_timeout = base_timeout * (1 + load_factor)
-        
-        try:
+        import time
+
+        async def run_with_timeout():
+            # 因素1：系统负载（基于活跃请求数）
+            load_factor = min(self._active_requests / self._pool_maxsize, 2.0)
+            load_timeout = self._read_timeout * (1 + load_factor)
+
+            # 因素2：网络质量（基于历史成功/失败率）
+            network_timeout = self.get_adaptive_timeout()
+
+            # 综合策略：取两者中更宽松的（保守策略），确保不会过快超时
+            adjusted_timeout = max(load_timeout, network_timeout)
+
             self._active_requests += 1
             if self._active_requests > self._max_active_requests:
                 self._max_active_requests = self._active_requests
-            
-            result = await asyncio.wait_for(coro, timeout=adjusted_timeout)
-            return result
-            
-        except asyncio.TimeoutError:
-            self._request_timeouts += 1
-            logger.warning(f"请求超时: {operation_name}, 当前活跃请求数: {self._active_requests}, 调整后超时: {adjusted_timeout:.2f}秒")
-            raise
-            
-        finally:
-            self._active_requests -= 1
 
+            try:
+                start_time = time.time()
+                result = await asyncio.wait_for(coro, timeout=adjusted_timeout)
+                response_time = time.time() - start_time
+
+                # 成功：自动调整超时（网络好时收紧）
+                self._adjust_timeout_on_success(response_time)
+
+                return result, response_time
+
+            except asyncio.TimeoutError:
+                self._request_timeouts += 1
+                # 失败：自动放宽超时（网络差时容忍）
+                self._adjust_timeout_on_failure(timeout_occurred=True)
+                logger.warning(
+                    f"请求超时: {operation_name}, "
+                    f"活跃请求: {self._active_requests}, "
+                    f"网络状态: {self.get_network_quality()}, "
+                    f"超时: {adjusted_timeout:.2f}s"
+                )
+                raise
+
+            except Exception as e:
+                # 其他异常也记录失败
+                self._adjust_timeout_on_failure(timeout_occurred=False)
+                raise
+
+            finally:
+                self._active_requests -= 1
+
+        last_exception = None
+        attempt = 0
+        last_result = None
+
+        while attempt < self._retry_max_attempts:
+            attempt += 1
+            try:
+                result, response_time = await run_with_timeout()
+                last_result = result
+                if attempt > 1:
+                    self._retry_state['total_retry_successes'] += 1
+                    logger.info(
+                        f"重试成功: {operation_name}, "
+                        f"尝试次数: {attempt}, "
+                        f"网络状态: {self.get_network_quality()}"
+                    )
+                return result
+
+            except asyncio.TimeoutError as e:
+                last_exception = e
+                status_code = 408
+                self._record_retry_failure(status_code=status_code)
+
+                if not self._should_retry(attempt, exception=e, status_code=status_code):
+                    raise
+
+                delay = self._get_retry_delay(attempt)
+                logger.warning(
+                    f"请求超时准备重试: {operation_name}, "
+                    f"尝试 {attempt}/{self._retry_max_attempts}, "
+                    f"等待 {delay:.2f}s"
+                )
+                await asyncio.sleep(delay)
+
+            except Exception as e:
+                last_exception = e
+                status_code = getattr(e, 'status_code', None) or getattr(e, 'status', None)
+
+                self._record_retry_failure(status_code=status_code)
+
+                if not self._should_retry(attempt, exception=e, status_code=status_code):
+                    raise
+
+                delay = self._get_retry_delay(attempt)
+                logger.warning(
+                    f"请求失败准备重试: {operation_name}, "
+                    f"状态码: {status_code}, "
+                    f"尝试 {attempt}/{self._retry_max_attempts}, "
+                    f"等待 {delay:.2f}s"
+                )
+                await asyncio.sleep(delay)
+
+        self._retry_state['total_retry_failures'] += 1
+        raise last_exception
 
     # ============ 状态监控 ============
-    
+
     def get_connection_stats(self) -> dict:
         """
         获取连接状态统计信息
-        
+
         Returns:
             dict: 包含以下字段的统计信息
                 - active_requests: 当前活跃请求数
@@ -694,17 +1073,44 @@ class ExternalBaseConnection(ABC):
                 - session_reuse_count: 当前会话复用次数
                 - request_timeouts: 请求超时总次数
                 - session_age_minutes: 当前会话存活时间（分钟）
+                - network_quality: 网络质量状态 ('good', 'normal', 'poor')
+                - adaptive_timeout: 当前自适应超时值（秒）
+                - success_rate: 请求成功率
+                - total_retries: 总重试次数
+                - total_retry_successes: 重试成功次数
+                - total_retry_failures: 重试失败次数
+                - retry_rate: 重试率（%）
+                - retry_by_code: 按状态码分布的重试次数
         """
         session_age = (datetime.now() - self._session_creation_time).total_seconds() / 60 \
                       if self._session_creation_time else None
-        
+
+        state = self._adaptive_state
+        total = state['total_requests']
+        success_rate = (state['total_successes'] / total * 100) if total > 0 else 0
+
+        retry_state = self._retry_state
+        total_retries = retry_state['total_retries']
+        retry_rate = (total_retries / total * 100) if total > 0 else 0
+
         return {
             'active_requests': self._active_requests,
             'max_active_requests': self._max_active_requests,
             'pool_maxsize': self._pool_maxsize,
             'session_reuse_count': self._session_reuse_count,
             'request_timeouts': self._request_timeouts,
-            'session_age_minutes': session_age
+            'session_age_minutes': session_age,
+            'network_quality': state['network_quality'],
+            'adaptive_timeout': round(state['current_timeout'], 2),
+            'success_rate': round(success_rate, 2),
+            'total_requests': total,
+            'total_successes': state['total_successes'],
+            'total_failures': state['total_failures'],
+            'total_retries': total_retries,
+            'total_retry_successes': retry_state['total_retry_successes'],
+            'total_retry_failures': retry_state['total_retry_failures'],
+            'retry_rate': round(retry_rate, 2),
+            'retry_by_code': retry_state['retry_by_code'],
         }
 
 

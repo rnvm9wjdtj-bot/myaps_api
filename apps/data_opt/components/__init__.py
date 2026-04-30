@@ -1895,7 +1895,7 @@ class EventResultPoster:
         return self._collector.format_notification(description)
 
 
-    @async_error_handler("MO发布成功")
+    # @async_error_handler("MO发布成功")
     async def mo_release_success(
         self,
         native_plno: str,
@@ -1940,7 +1940,7 @@ class EventResultPoster:
         return response_json
 
 
-    @async_error_handler("MO发布失败")
+    # @async_error_handler("MO发布失败")
     async def mo_release_failed(
         self,
         native_plno: str,
@@ -1983,7 +1983,7 @@ class EventResultPoster:
         return response_json
 
 
-    @async_error_handler("RS发布成功")
+    # @async_error_handler("RS发布成功")
     async def rs_release_success(
         self,
         rsno: str,
@@ -2027,7 +2027,7 @@ class EventResultPoster:
         return response_json
 
 
-    @async_error_handler("RS发布失败")
+    # @async_error_handler("RS发布失败")
     async def rs_release_failed(
         self,
         rsno: str,
@@ -2069,7 +2069,7 @@ class EventResultPoster:
         return response_json
 
 
-    @async_error_handler("PR发布成功")
+    # @async_error_handler("PR发布成功")
     async def pr_release_success(
         self,
         prno: Union[str, List[str]],
@@ -2137,7 +2137,7 @@ class EventResultPoster:
         return merged_result
 
 
-    @async_error_handler("PR发布失败")
+    # @async_error_handler("PR发布失败")
     async def pr_release_failed(
         self,
         prno: str,

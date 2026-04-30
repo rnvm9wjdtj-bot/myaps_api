@@ -561,88 +561,57 @@ class YonyouTplusConnection(ExternalBaseConnection):
         return response
 
 
-    async def _post(self, endpoint: str, data: dict, max_retries: int = 5):
+    async def _post(self, endpoint: str, data: dict):
         """
-        异步发送POST请求到畅捷通API（优化版）
+        异步发送POST请求到畅捷通API
         
-        使用父类的会话复用机制和超时保护功能，支持重试机制。
+        使用父类的会话复用、自适应超时和增强重试机制。
         
         Args:
             endpoint: API端点路径
             data: 请求体数据
-            max_retries: 最大重试次数，默认5次
             
         Returns:
             响应JSON数据
             
         Raises:
-            Exception: 所有重试失败后抛出最后一个错误
+            Exception: 请求失败时抛出异常
         """
-        retry_count = 0
-        last_error = None
+        await self.auth()
+        async_session = await self._get_async_session()
         
-        while retry_count < max_retries:
-            try:
-                await self.auth()
-                async_session = await self._get_async_session()
-                
-                # 使用超时保护包装请求
-                async def make_request():
-                    headers = {
-                        "appKey": self.app_key,
-                        "appSecret": self.app_secret,
-                        "openToken": self.access_token,
-                        "Content-Type": "application/json",
-                    }
-                    response = await async_session.post(
-                        f"{self.base_url}{endpoint}", 
-                        headers=headers, 
-                        json=data,
-                        timeout=self._read_timeout
-                    )
-                    return response
-                
-                response = await self.execute_with_timeout_protection(
-                    make_request(),
-                    f"POST {endpoint}"
-                )
-                
-                if hasattr(response, 'status_code'):
-                    if response.status_code >= 400 and response.status_code < 500:
-                        # 客户端错误，不重试
-                        raise Exception(f"HTTP 客户端错误: {response.status_code}")
-                    elif response.status_code >= 500:
-                        # 服务器错误，允许重试
-                        raise Exception(f"HTTP 服务器错误: {response.status_code}")
-                
-                if hasattr(response, 'json'):
-                    if inspect.iscoroutinefunction(response.json):
-                        response = await response.json()
-                    else:
-                        response = response.json()
-                return response
-                
-            except asyncio.TimeoutError:
-                # 超时错误，立即重试
-                retry_count += 1
-                last_error = Exception("请求超时")
-                logger.warning(f"请求超时，第{retry_count}/{max_retries}次重试: {endpoint}")
-                
-            except Exception as e:
-                retry_count += 1
-                last_error = e
-                if retry_count < max_retries:
-                    wait_time = 2 ** retry_count  # 指数退避
-                    logger.warning_msg(f"API请求失败，{wait_time}秒后重试", 
-                                      endpoint, f"第{retry_count}/{max_retries}次重试: {str(e)}")
-                    await asyncio.sleep(wait_time)
-                else:
-                    logger.fail(f"API请求失败，已达最大重试次数", endpoint, str(e))
+        async def make_request():
+            headers = {
+                "appKey": self.app_key,
+                "appSecret": self.app_secret,
+                "openToken": self.access_token,
+                "Content-Type": "application/json",
+            }
+            response = await async_session.post(
+                f"{self.base_url}{endpoint}", 
+                headers=headers, 
+                json=data,
+                timeout=self._read_timeout
+            )
+            return response
         
-        # 所有重试都失败，抛出最后一个错误
-        if last_error is None:
-            raise Exception(f"API请求失败，已达最大重试次数，但未捕获到具体错误")
-        raise last_error
+        response = await self.execute_with_timeout_protection(
+            make_request(),
+            f"POST {endpoint}"
+        )
+        
+        if hasattr(response, 'status_code'):
+            if response.status_code >= 400 and response.status_code < 500:
+                raise Exception(f"HTTP 客户端错误: {response.status_code}")
+            elif response.status_code >= 500:
+                raise Exception(f"HTTP 服务器错误: {response.status_code}")
+        
+        if hasattr(response, 'json'):
+            if inspect.iscoroutinefunction(response.json):
+                response = await response.json()
+            else:
+                response = response.json()
+        return response
 
 
     async def _pull_simple_data(self, endpoint: str, field_hints: dict[str, str], filter: dict=None):
@@ -948,7 +917,7 @@ class TplusMo(MoVoucher):
     
     @classmethod
     @async_rate_limit()
-    @async_service_operation(module="T+接口", operation="创建生产加工单")
+    # @async_service_operation(module="T+接口", operation="创建生产加工单")
     async def create(
         cls,
         event_data: dict,
@@ -960,8 +929,13 @@ class TplusMo(MoVoucher):
         try:
             endpoint = cls._CREATE_ENDPOINT
             supplyno = event_data.get('supplyno')
-            demand_list = await _aps.get_demand_datalist(demandno=supplyno)
-            supplymo_detaildata = await _aps.get_supplymo_detaildata(supplyno=supplyno, get_next_mo=True, get_origin_so=True)   
+            task1 = _aps.get_demand_datalist(demandno=supplyno)
+            task2 = _aps.get_supplymo_detaildata(supplyno=supplyno, get_next_mo=True, get_origin_so=True)
+            demand_list, supplymo_detaildata = await asyncio.gather(task1, task2, return_exceptions=True)
+            if isinstance(demand_list, Exception):
+                raise demand_list
+            if isinstance(supplymo_detaildata, Exception):
+                raise supplymo_detaildata
             supplymo_detaildata['demand_list'] = demand_list
 
             pydantic_model = pydantic_model or cls._PUSH_PYDANTIC_MODEL
@@ -1013,11 +987,12 @@ class TplusMo(MoVoucher):
 
         endpoint = cls._APPROVE_ENDPOINT
         payload = {"param": {"VoucherID": tplus_moid}}
-        resp_json = await cls._CONNECTION._post(endpoint=endpoint, data=payload)
-        if str(resp_json['code']) == '0': # 响应错误码为0，MO 审批成功
-            return True
-        else:
-            return False
+        asyncio.create_task(cls._CONNECTION._post(endpoint=endpoint, data=payload))
+        # resp_json = await cls._CONNECTION._post(endpoint=endpoint, data=payload)
+        # if str(resp_json['code']) == '0': # 响应错误码为0，MO 审批成功
+        #     return True
+        # else:
+        #     return False
 
 
     @classmethod
@@ -1058,7 +1033,7 @@ class TplusRs(RsVoucher):
 
     @classmethod
     @async_rate_limit()
-    @async_service_operation(module="T+接口", operation="创建领料申请")
+    # @async_service_operation(module="T+接口", operation="创建领料申请")
     async def create(
         cls,
         event_data: dict,
@@ -1169,12 +1144,12 @@ class TplusPr(BaseVoucher):
     @classmethod
     async def approve(cls, tplus_pr_code: str):
         assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
-        await cls._CONNECTION.auth()
 
         endpoint = cls._APPROVE_ENDPOINT
         payload = {"param": {'voucherCode': tplus_pr_code}}
-        response_json = await cls._CONNECTION._post(endpoint=endpoint, data=payload)
-        if str(response_json['code']) == '0': # 审批成功
-            logger.success("请购单审批", tplus_pr_code)
-        else:
-            logger.warning_msg(f"请购单{tplus_pr_code}审批失败" , response_json['message'])
+        asyncio.create_task(cls._CONNECTION._post(endpoint=endpoint, data=payload))
+        # response_json = await cls._CONNECTION._post(endpoint=endpoint, data=payload)
+        # if str(response_json['code']) == '0': # 审批成功
+        #     logger.success("请购单审批", tplus_pr_code)
+        # else:
+        #     logger.warning_msg(f"请购单{tplus_pr_code}审批失败" , response_json['message'])
