@@ -67,8 +67,8 @@ hacyxs_tplus_conn = get_tplus_conn()
 @async_service_operation(module="定时任务", operation="刷新库存数据")
 async def task_refresh_stock():
     """定时任务：刷新库存数据"""
-    stock_data = await TplusStock.pull()
-    await ApsPayloadSponsor.refresh_supply(stock_data, dbs=MYAPS_DB_SET)
+    stock_data = await TplusStock.query_batch()
+    await ApsPayloadSponsor.refresh_stock(stock_data, dbs=MYAPS_DB_SET)
 
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1), description="确认报工")

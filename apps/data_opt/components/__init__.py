@@ -1178,10 +1178,21 @@ class ApsPayloadSponsor:
 
 
     @classmethod
-    async def refresh_stock(cls, stock_data:ExternalDataSet, dbs:str=MYAPS_DB_SET):
-        pass
-
-
+    async def refresh_stock(cls, stock_data:ExternalDataSet, group_by:list=['materialno'], dbs:str=MYAPS_DB_SET):
+        stock_data = await stock_data.dumps()
+        timestamp = datetime.now().strftime('%m%d-%H%M')
+        df = pd.DataFrame(stock_data)
+        # 按materialno分组，avail_qty求和，其他字段取first
+        sum_cols = ['avail_qty']
+        first_cols = [col for col in df.columns if col not in group_by + sum_cols]
+        agg_dict = {col: 'first' for col in first_cols}
+        agg_dict.update({col: 'sum' for col in sum_cols})
+        aggregated_stock = df.groupby(group_by).agg(agg_dict).reset_index()
+        # 替换缺失值为None
+        aggregated_stock = aggregated_stock.replace({pd.NA: None, pd.NaT: None, float('nan'): None})
+        # 生成supplyno字段为materialno@timestamp
+        aggregated_stock['supplyno'] = aggregated_stock[group_by].apply(lambda x: '-'.join(x.astype(str)), axis=1) + '@' + timestamp
+        await cls.refresh_supply(aggregated_stock.to_dict(orient='records'), type_='ST', dbs=dbs)
 
 
 

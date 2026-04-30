@@ -729,31 +729,31 @@ class TplusStock(BaseSource):
         return ExternalDataSet(raw_data=data, pydantic_model=cls._PULL_PYDANTIC_MODEL)
 
     
-    @classmethod
-    async def pull(cls, is_include_zero: bool = False, pydantic_model: PydanticModel = None):
-        """
-        查询批量库存数据
-        """
-        stock_data: ExternalDataSet = await cls.query_batch(is_include_zero)
-        # if stock_data.is_empty:
-        #     return []
-        # else:
-        pydantic_model = pydantic_model or cls._PULL_PYDANTIC_MODEL
-        stock_data = await stock_data.dumps(pydantic_model=pydantic_model)
-        timestamp = datetime.now().strftime('%m%d-%H%M')
-        df = pd.DataFrame(stock_data)
-        # 按materialno分组，avail_qty求和，其他字段取first
-        sum_cols = ['avail_qty']
-        first_cols = [col for col in df.columns if col not in ['materialno'] + sum_cols]
-        agg_dict = {col: 'first' for col in first_cols}
-        agg_dict.update({col: 'sum' for col in sum_cols})
+    # @classmethod
+    # async def pull(cls, is_include_zero: bool = False, pydantic_model: PydanticModel = None):
+    #     """
+    #     查询批量库存数据
+    #     """
+    #     stock_data: ExternalDataSet = await cls.query_batch(is_include_zero)
+    #     # if stock_data.is_empty:
+    #     #     return []
+    #     # else:
+    #     pydantic_model = pydantic_model or cls._PULL_PYDANTIC_MODEL
+    #     stock_data = await stock_data.dumps(pydantic_model=pydantic_model)
+    #     timestamp = datetime.now().strftime('%m%d-%H%M')
+    #     df = pd.DataFrame(stock_data)
+    #     # 按materialno分组，avail_qty求和，其他字段取first
+    #     sum_cols = ['avail_qty']
+    #     first_cols = [col for col in df.columns if col not in ['materialno'] + sum_cols]
+    #     agg_dict = {col: 'first' for col in first_cols}
+    #     agg_dict.update({col: 'sum' for col in sum_cols})
 
-        aggregated_stock = df.groupby('materialno').agg(agg_dict).reset_index()
-        # 替换缺失值为None
-        aggregated_stock = aggregated_stock.replace({pd.NA: None, pd.NaT: None, float('nan'): None})
-        # 生成supplyno字段为materialno@timestamp
-        aggregated_stock['supplyno'] = aggregated_stock['materialno'] + '@' + timestamp
-        return aggregated_stock.to_dict(orient='records')
+    #     aggregated_stock = df.groupby('materialno').agg(agg_dict).reset_index()
+    #     # 替换缺失值为None
+    #     aggregated_stock = aggregated_stock.replace({pd.NA: None, pd.NaT: None, float('nan'): None})
+    #     # 生成supplyno字段为materialno@timestamp
+    #     aggregated_stock['supplyno'] = aggregated_stock['materialno'] + '@' + timestamp
+    #     return aggregated_stock.to_dict(orient='records')
         
         
         
@@ -1126,14 +1126,25 @@ class TplusPr(BaseVoucher):
             if str(pr_push_response_json['code']) == '0':
                 tplus_pr_id = pr_push_response_json['data'].get('ID')
                 tplus_pr_code = pr_push_response_json['data'].get('Code')
-                for _ in event_data_list:
-                    await _erp.pr_release_success(prno=_['supplyno'], msg=pr_push_response_json['message'], msg_from='T+', _code=tplus_pr_code, _id=tplus_pr_id)
-                
+                tasks = [
+                    _erp.pr_release_success(
+                        prno=_['supplyno'],
+                        msg=pr_push_response_json['message'],
+                        msg_from='T+',
+                        _code=tplus_pr_code,
+                        _id=tplus_pr_id
+                    ) for _ in event_data_list]
+                await asyncio.gather(*tasks)
                 # 审批请购单
                 cls.approve(tplus_pr_code=tplus_pr_code)
             
             else:
-                tasks = [_erp.pr_release_failed(prno=item['supplyno'], msg=pr_push_response_json['message'], msg_from='T+') for item in event_data_list]
+                tasks = [
+                    _erp.pr_release_failed(
+                        prno=item['supplyno'],
+                        msg=pr_push_response_json['message'],
+                        msg_from='T+'
+                    ) for item in event_data_list]
                 await asyncio.gather(*tasks)
         except Exception as e:
             logger.fail("推送请购单", str(e))
