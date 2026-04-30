@@ -2052,8 +2052,8 @@ def initialize_logging() -> None:
     logging.getLogger('httpx').setLevel(logging.WARNING)
     logging.getLogger('httpcore').setLevel(logging.WARNING)
     logging.getLogger('uvicorn').setLevel(logging.INFO)
-    logging.getLogger('uvicorn.access').setLevel(logging.CRITICAL)
-    
+    logging.getLogger('uvicorn.access').setLevel(logging.ERROR)
+    logging.getLogger('pymysqlreplication').setLevel(logging.WARNING)
     # 启动文件日志监听器
     start_all_listeners()
     

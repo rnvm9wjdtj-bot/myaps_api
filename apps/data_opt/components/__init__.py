@@ -1867,6 +1867,7 @@ class _ResultCollector:
         )
         
         if summary.failed_by_msg:
+            notification = f"⚠️ {notification}"
             notification += "\n\n📊失败原因汇总\n"
             for error_msg, count in summary.failed_by_msg.items():
                 notification += f"🔴\t{error_msg}  {count}条\n"

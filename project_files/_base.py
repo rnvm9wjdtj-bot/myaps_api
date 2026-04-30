@@ -114,6 +114,7 @@ async def _execute_handler(handler: Union[callable, str], handler_name, event_da
 
 def event_batch_handler(
     reminder: Reminder = None,
+    remind_start: bool = True,
     start_handler: callable = None,
     final_handler: callable = None,
     error_handler: Union[callable, str] = None,
@@ -138,6 +139,7 @@ def event_batch_handler(
     
     参数说明:
         reminder: 通知发送器，用于发送开始/结束通知
+        remind_start: 是否在任务开始时发送通知（默认True）
         error_handler: 异常处理回调，签名: func(exception, *args, **kwargs)；若为字符串，则从 _erp 中查找同名方法
         final_handler: 最终回调，签名: func(event_data_list, *args, **kwargs)  # 第一个参数是事件数据列表；若为字符串，则从 _erp 中查找同名方法
         start_handler: 开始回调，签名: func(event_data_list, *args, **kwargs)  # 第一个参数是事件数据列表；若为字符串，则从 _erp 中查找同名方法
@@ -183,7 +185,7 @@ def event_batch_handler(
                 await _execute_handler(start_handler, "start_handler", event_data_list, _erp, *args, **execute_kwargs)
             
             # 5. 发送开始通知
-            if reminder is not None and reminder.email_to:
+            if remind_start and reminder is not None and reminder.email_to:
                 if event_data_list is not None:
                     if isinstance(event_data_list, list):
                         count = len(event_data_list)
@@ -195,7 +197,7 @@ def event_batch_handler(
                 else:
                     content = f"开始【{actual_description}】"
                 
-                content += f"\n 🚩 在收到完成提示前请耐心等待，⚠️ 请勿进行其他操作"
+                content += f"\n 🚩 在收到完成提示前请耐心等待\n ⚠️ 请勿进行其他操作"
                 await reminder.remind(content)
             
             # 6. 执行被装饰函数

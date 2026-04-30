@@ -189,7 +189,7 @@ async def batch_handle_pl_status_a2e(event_data_list: list[dict], _erp: EventRes
     )
 
 
-@event_batch_handler(reminder=planner_email_reminder)
+@event_batch_handler(reminder=planner_email_reminder, remind_start=False)
 @batch_service_operation(module="事件处理")
 async def batch_handle_pl_to_mo(event_data_list: list[dict], _erp: EventResultPoster, description="推送领料申请至 T+"):
     await TplusRs.create_batch(

@@ -3269,6 +3269,9 @@ async function fetchOutboundRequests() {
         // 调试：打印过滤后的数据
         console.log('过滤后的发送请求数据:', filteredRequests);
         
+        // 按时间戳倒序排序，最新的排在前面
+        filteredRequests.sort((a, b) => b.timestamp - a.timestamp);
+        
         updateOutboundRequestsTable(filteredRequests);
         
         // 如果需要标记为已读，则将所有400+请求标记为已读
