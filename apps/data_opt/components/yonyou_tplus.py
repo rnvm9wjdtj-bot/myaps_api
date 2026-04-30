@@ -1103,7 +1103,7 @@ class TplusPr(BaseVoucher):
 
     @classmethod
     @async_rate_limit()
-    @batch_service_operation(module="T+接口", operation="推送请购单")
+    # @batch_service_operation(module="T+接口", operation="推送请购单")
     async def create(
         cls,
         event_data_list: list[dict],
@@ -1130,7 +1130,7 @@ class TplusPr(BaseVoucher):
                     await _erp.pr_release_success(prno=_['supplyno'], msg=pr_push_response_json['message'], msg_from='T+', _code=tplus_pr_code, _id=tplus_pr_id)
                 
                 # 审批请购单
-                await cls.approve(tplus_pr_code=tplus_pr_code)
+                cls.approve(tplus_pr_code=tplus_pr_code)
             
             else:
                 tasks = [_erp.pr_release_failed(prno=item['supplyno'], msg=pr_push_response_json['message'], msg_from='T+') for item in event_data_list]
