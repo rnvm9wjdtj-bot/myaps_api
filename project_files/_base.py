@@ -36,13 +36,21 @@ CLIENT_LOGGER = log_config.get_logger(__name__)
 
 CLIENT_SESSION = get_session()
 
-def get_scheduler_minute(offset: int=0):
-
-    minutes = []
+def get_scheduler_minute(offset: int = 0):
+    result = set()
     for m in SCHEDULER_MINUTE.split(','):
-        minute = int(m) + offset
-        minutes.append(str(minute % 60))
-    return ','.join(minutes)
+        m = m.strip()
+        if m == '*':
+            for v in range(60):
+                result.add((v + offset) % 60)
+        elif m.startswith('*/'):
+            step = int(m[2:])
+            if step > 0:
+                for v in range(0, 60, step):
+                    result.add((v + offset) % 60)
+        else:
+            result.add((int(m) + offset) % 60)
+    return ','.join(str(v) for v in sorted(result))
 
 
 

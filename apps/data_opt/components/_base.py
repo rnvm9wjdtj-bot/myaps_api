@@ -1958,17 +1958,82 @@ class ProjectLogger:
         )
 
 
-def service_operation(module: str, operation: str, **default_context):
+def _get_operation_name(operation: Optional[str], func: Callable) -> str:
+    """
+    获取操作名称，优先级从高到低：
+    1. 显式传入的 operation 参数
+    2. 函数的 description 属性
+    3. 函数的 description 参数默认值
+    4. 模块名.类名.函数名（如果有类）或模块名.函数名
+
+    Args:
+        operation: 显式传入的操作名称
+        func: 被装饰的函数
+
+    Returns:
+        操作名称字符串
+    """
+    if operation is not None:
+        return operation
+
+    # 尝试获取函数的 description 属性
+    if hasattr(func, 'description') and func.description:
+        return func.description
+
+    # 尝试获取函数的 description 参数默认值
+    try:
+        sig = inspect.signature(func)
+        if 'description' in sig.parameters:
+            param = sig.parameters['description']
+            if param.default is not inspect.Parameter.empty and param.default:
+                return param.default
+    except (ValueError, TypeError):
+        pass
+
+    # 构建兜底的操作名称
+    parts = []
+
+    # 添加模块名（只取最后一部分）
+    if func.__module__:
+        module_name = func.__module__.split('.')[-1]
+        parts.append(module_name)
+
+    # 解析 qualname 获取类名和函数名
+    qualname_parts = func.__qualname__.split('.')
+    if len(qualname_parts) > 1:
+        # 有类名
+        class_name = qualname_parts[-2]
+        func_name = qualname_parts[-1]
+        parts.append(class_name)
+        parts.append(func_name)
+    else:
+        # 没有类名，只有函数名
+        parts.append(qualname_parts[0])
+
+    return '.'.join(parts)
+
+
+def service_operation(module: str, operation: Optional[str] = None, **default_context):
     """
     统一日志和异常处理装饰器（同步版本）
     
     Args:
         module: 模块名称
-        operation: 操作名称
+        operation: 操作名称（可选，为None时自动推导）
         **default_context: 默认上下文参数
+    
+    operation 参数自动推导规则：
+        1. 显式传入的 operation 参数
+        2. 函数的 description 属性
+        3. 模块名.类名.函数名（如果有类）或模块名.函数名
     
     用法:
         @service_operation(module="MO推送", operation="创建生产加工单")
+        def create_mo(event_data, _aps, _erp):
+            # 业务逻辑...
+        
+        # 或自动推导操作名称
+        @service_operation(module="MO推送")
         def create_mo(event_data, _aps, _erp):
             # 业务逻辑...
     
@@ -1978,6 +2043,9 @@ def service_operation(module: str, operation: str, **default_context):
         - 异常类型和堆栈信息
     """
     def decorator(func):
+        # 在装饰时确定 operation 值，避免每次调用都计算
+        resolved_operation = _get_operation_name(operation, func)
+        
         @wraps(func)
         def wrapper(*args, **kwargs):
             request_id = generate_request_id()
@@ -1991,11 +2059,11 @@ def service_operation(module: str, operation: str, **default_context):
                 if 'demandno' in event_data:
                     context['demandno'] = event_data['demandno']
             
-            ProjectLogger.debug(module, operation, "开始执行", **context)
+            ProjectLogger.debug(module, resolved_operation, "开始执行", **context)
             
             try:
                 result = func(*args, **kwargs)
-                ProjectLogger.success(module, operation, "执行成功", **context)
+                ProjectLogger.success(module, resolved_operation, "执行成功", **context)
                 return result
                 
             except Exception as e:
@@ -2005,24 +2073,34 @@ def service_operation(module: str, operation: str, **default_context):
                     'error_message': str(e),
                     'traceback': inspect.trace()
                 }
-                ProjectLogger.fail(module, operation, str(e), **error_context)
+                ProjectLogger.fail(module, resolved_operation, str(e), **error_context)
                 raise
         
         return wrapper
     return decorator
 
 
-def async_service_operation(module: str, operation: str, **default_context):
+def async_service_operation(module: str, operation: Optional[str] = None, **default_context):
     """
     统一日志和异常处理装饰器（异步版本）
     
     Args:
         module: 模块名称
-        operation: 操作名称
+        operation: 操作名称（可选，为None时自动推导）
         **default_context: 默认上下文参数
+    
+    operation 参数自动推导规则：
+        1. 显式传入的 operation 参数
+        2. 函数的 description 属性
+        3. 模块名.类名.函数名（如果有类）或模块名.函数名
     
     用法:
         @async_service_operation(module="MO推送", operation="创建生产加工单")
+        async def create_mo(event_data, _aps, _erp):
+            # 业务逻辑...
+        
+        # 或自动推导操作名称
+        @async_service_operation(module="MO推送")
         async def create_mo(event_data, _aps, _erp):
             # 业务逻辑...
     
@@ -2032,6 +2110,9 @@ def async_service_operation(module: str, operation: str, **default_context):
         - 异常类型和堆栈信息
     """
     def decorator(func):
+        # 在装饰时确定 operation 值，避免每次调用都计算
+        resolved_operation = _get_operation_name(operation, func)
+        
         @wraps(func)
         async def wrapper(*args, **kwargs):
             request_id = generate_request_id()
@@ -2045,11 +2126,11 @@ def async_service_operation(module: str, operation: str, **default_context):
                 if 'demandno' in event_data:
                     context['demandno'] = event_data['demandno']
             
-            ProjectLogger.debug(module, operation, "开始执行", **context)
+            ProjectLogger.debug(module, resolved_operation, "开始执行", **context)
             
             try:
                 result = await func(*args, **kwargs)
-                ProjectLogger.success(module, operation, "执行成功", **context)
+                ProjectLogger.success(module, resolved_operation, "执行成功", **context)
                 return result
                 
             except Exception as e:
@@ -2059,14 +2140,14 @@ def async_service_operation(module: str, operation: str, **default_context):
                     'error_message': str(e),
                     'traceback': inspect.trace()
                 }
-                ProjectLogger.fail(module, operation, str(e), **error_context)
+                ProjectLogger.fail(module, resolved_operation, str(e), **error_context)
                 raise
         
         return wrapper
     return decorator
 
 
-def batch_service_operation(module: str, operation: str, **default_context):
+def batch_service_operation(module: str, operation: Optional[str] = None, **default_context):
     """
     批量操作专用日志和异常处理装饰器（异步版本）
     
@@ -2075,8 +2156,13 @@ def batch_service_operation(module: str, operation: str, **default_context):
     
     Args:
         module: 模块名称
-        operation: 操作名称
+        operation: 操作名称（可选，为None时自动推导）
         **default_context: 默认上下文参数
+    
+    operation 参数自动推导规则：
+        1. 显式传入的 operation 参数
+        2. 函数的 description 属性
+        3. 模块名.类名.函数名（如果有类）或模块名.函数名
     
     用法:
         @batch_service_operation(module="MO推送", operation="批量创建生产加工单")
@@ -2090,6 +2176,9 @@ def batch_service_operation(module: str, operation: str, **default_context):
         - 异常汇总信息（支持 return_exceptions=True 的场景）
     """
     def decorator(func):
+        # 在装饰时确定 operation 值，避免每次调用都计算
+        resolved_operation = _get_operation_name(operation, func)
+        
         @wraps(func)
         async def wrapper(*args, **kwargs):
             request_id = generate_request_id()
@@ -2110,7 +2199,7 @@ def batch_service_operation(module: str, operation: str, **default_context):
                     if 'supplyno' in first_item:
                         context['first_supplyno'] = first_item['supplyno']
             
-            ProjectLogger.debug(module, operation, f"开始批量执行，共 {batch_size} 条", **context)
+            ProjectLogger.debug(module, resolved_operation, f"开始批量执行，共 {batch_size} 条", **context)
             
             try:
                 result = await func(*args, **kwargs)
@@ -2129,15 +2218,15 @@ def batch_service_operation(module: str, operation: str, **default_context):
                         }
                         
                         if error_count == batch_size:
-                            ProjectLogger.fail(module, operation, f"全部 {error_count} 条记录执行失败", **error_context)
+                            ProjectLogger.fail(module, resolved_operation, f"全部 {error_count} 条记录执行失败", **error_context)
                         elif success_count == 0:
-                            ProjectLogger.fail(module, operation, f"批量执行失败，无成功记录", **error_context)
+                            ProjectLogger.fail(module, resolved_operation, f"批量执行失败，无成功记录", **error_context)
                         else:
-                            ProjectLogger.warning(module, operation, f"部分执行失败，成功 {success_count} 条，失败 {error_count} 条", **error_context)
+                            ProjectLogger.warning(module, resolved_operation, f"部分执行失败，成功 {success_count} 条，失败 {error_count} 条", **error_context)
                     else:
-                        ProjectLogger.success(module, operation, f"批量执行完成，共 {batch_size} 条", **context)
+                        ProjectLogger.success(module, resolved_operation, f"批量执行完成，共 {batch_size} 条", **context)
                 else:
-                    ProjectLogger.success(module, operation, f"批量执行完成，共 {batch_size} 条", **context)
+                    ProjectLogger.success(module, resolved_operation, f"批量执行完成，共 {batch_size} 条", **context)
                 
                 return result
                 
@@ -2148,7 +2237,7 @@ def batch_service_operation(module: str, operation: str, **default_context):
                     'error_message': str(e),
                     'traceback': inspect.trace()
                 }
-                ProjectLogger.fail(module, operation, f"批量执行失败: {str(e)}", **error_context)
+                ProjectLogger.fail(module, resolved_operation, f"批量执行失败: {str(e)}", **error_context)
                 raise
         
         return wrapper

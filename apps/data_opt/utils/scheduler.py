@@ -25,6 +25,68 @@ class TaskRegistry:
     def __init__(self):
         self.tasks: List[Dict[str, Any]] = []
     
+    def _get_description(self, description: Optional[str], func: Callable) -> str:
+        """
+        获取任务描述，优先级从高到低：
+        1. 显式传入的 description 参数
+        2. 函数的 description 属性
+        3. 函数的 description 参数默认值
+        4. 函数的 docstring
+        5. 模块名.类名.函数名（如果有类）或模块名.函数名
+
+        Args:
+            description: 显式传入的描述
+            func: 被注册的函数
+
+        Returns:
+            描述字符串
+        """
+        if description is not None:
+            return description
+
+        # 尝试获取函数的 description 属性
+        if hasattr(func, 'description') and func.description:
+            return func.description
+
+        # 尝试获取函数的 description 参数默认值
+        try:
+            sig = inspect.signature(func)
+            if 'description' in sig.parameters:
+                param = sig.parameters['description']
+                if param.default is not inspect.Parameter.empty and param.default:
+                    return param.default
+        except (ValueError, TypeError):
+            pass
+
+        # 尝试获取函数的 docstring
+        if func.__doc__:
+            first_line = func.__doc__.strip().split('\n')[0]
+            if first_line:
+                return first_line
+
+        # 构建兜底的描述
+        parts = []
+
+        # 添加模块名（只取最后一部分）
+        module = inspect.getmodule(func)
+        if module and module.__name__:
+            module_name = module.__name__.split('.')[-1]
+            parts.append(module_name)
+
+        # 解析 qualname 获取类名和函数名
+        qualname_parts = func.__qualname__.split('.')
+        if len(qualname_parts) > 1:
+            # 有类名
+            class_name = qualname_parts[-2]
+            func_name = qualname_parts[-1]
+            parts.append(class_name)
+            parts.append(func_name)
+        else:
+            # 没有类名，只有函数名
+            parts.append(qualname_parts[0])
+
+        return '.'.join(parts)
+    
     def register(self, func: Callable, trigger: str, **trigger_args):
         """注册定时任务"""
         # 从trigger_args中提取description参数
@@ -32,16 +94,19 @@ class TaskRegistry:
         # 移除可能存在的extra参数，避免传递给CronTrigger
         trigger_args.pop('extra', None)
         
+        # 智能推导 description
+        resolved_description = self._get_description(description, func)
+        
         task_info = {
             'func': func,
             'trigger': trigger,
             'trigger_args': trigger_args,
             'module': inspect.getmodule(func).__name__,
             'func_name': func.__name__,
-            'description': description
+            'description': resolved_description
         }
         self.tasks.append(task_info)
-        logger.success("定时任务注册", f"{task_info['module']}.{task_info['func_name']}", f"描述: {description}")
+        logger.success("定时任务注册", f"{task_info['module']}.{task_info['func_name']}", f"描述: {resolved_description}")
         return func
 
 # 全局任务注册表

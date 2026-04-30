@@ -63,18 +63,16 @@ hacyxs_tplus_conn = get_tplus_conn()
 #################################################################################
 # ⬇️ 定时任务
 #################################################################################
-@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(), description="刷新库存数据")
-@async_service_operation(module="定时任务", operation="刷新库存数据")
-async def task_refresh_stock():
-    """定时任务：刷新库存数据"""
+@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute())
+@async_service_operation(module="定时任务")
+async def task_refresh_stock(description="刷新库存数据"):
     stock_data = await TplusStock.query_batch()
     await ApsPayloadSponsor.refresh_stock(stock_data, dbs=MYAPS_DB_SET)
 
 
-@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1), description="确认报工")
-@async_service_operation(module="定时任务", operation="确认报工")
-async def task_confirm_workreport():
-    """定时任务：确认报工"""
+@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1))
+@async_service_operation(module="定时任务")
+async def task_confirm_workreport(description="确认报工"):
     await ApsPayloadSponsor.confirm_workreport()
 
 #################################################################################
@@ -180,7 +178,7 @@ planner_email_reminder = QqEmailReminder(
 
 
 @event_batch_handler(reminder=planner_email_reminder)
-@batch_service_operation(module="事件处理", operation="下达生产加工单")
+@batch_service_operation(module="事件处理")
 async def batch_handle_pl_status_a2e(event_data_list: list[dict], _erp: EventResultPoster, description="下达生产加工单至 T+"):
     await TplusMo.create_batch(
         event_data_list=event_data_list,
@@ -192,7 +190,7 @@ async def batch_handle_pl_status_a2e(event_data_list: list[dict], _erp: EventRes
 
 
 @event_batch_handler(reminder=planner_email_reminder)
-@batch_service_operation(module="事件处理", operation="推送领料申请")
+@batch_service_operation(module="事件处理")
 async def batch_handle_pl_to_mo(event_data_list: list[dict], _erp: EventResultPoster, description="推送领料申请至 T+"):
     await TplusRs.create_batch(
         event_data_list=event_data_list,
@@ -203,7 +201,7 @@ async def batch_handle_pl_to_mo(event_data_list: list[dict], _erp: EventResultPo
 
 
 @event_batch_handler(reminder=planner_email_reminder)
-@batch_service_operation(module="事件处理", operation="推送请购单")
+@batch_service_operation(module="事件处理")
 async def batch_handle_pr_status_a2e(pr_data_list: list[dict], _erp: EventResultPoster, description="推送请购单至 T+"):
     await TplusPr.create(
         event_data_list=pr_data_list,
