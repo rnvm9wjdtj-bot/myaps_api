@@ -1309,10 +1309,11 @@ class SmartLogger(logging.Logger):
         将日志发送到日志流处理器
         """
         try:
-            if not _log_stream_handlers:
+            from apps.common.monitor.log_stream_service import _log_stream_manager
+            handlers = _log_stream_manager.get_handlers()
+            if not handlers:
                 return
-            
-            # 创建模拟的 LogRecord
+
             record = logging.LogRecord(
                 name=self.name,
                 level=level,
@@ -1324,10 +1325,8 @@ class SmartLogger(logging.Logger):
                 func=''
             )
             record.module = self.name
-            
-            # 发送到所有注册的日志流处理器
-            for handler in _log_stream_handlers:
-                handler.emit(record)
+
+            _log_stream_manager.emit_to_handlers(record)
         except Exception:
             pass
 
@@ -2141,13 +2140,13 @@ def _send_to_log_stream(level: str, msg: Any, *args: Any):
     将日志发送到所有注册的日志流处理器
     """
     try:
-        if not _log_stream_handlers:
+        from apps.common.monitor.log_stream_service import _log_stream_manager
+        handlers = _log_stream_manager.get_handlers()
+        if not handlers:
             return
-            
-        # 构建日志消息
+
         formatted_msg = msg % args if args else str(msg)
-        
-        # 获取调用者信息
+
         import inspect
         frame = inspect.currentframe()
         try:
@@ -2164,7 +2163,6 @@ def _send_to_log_stream(level: str, msg: Any, *args: Any):
             if frame:
                 del frame
 
-        # 创建模拟的 LogRecord
         record = logging.LogRecord(
             name=module,
             level=getattr(logging, level, logging.INFO),
@@ -2176,10 +2174,8 @@ def _send_to_log_stream(level: str, msg: Any, *args: Any):
             func=func_name
         )
         record.module = module
-        
-        # 发送到所有注册的日志流处理器
-        for handler in _log_stream_handlers:
-            handler.emit(record)
+
+        _log_stream_manager.emit_to_handlers(record)
     except Exception:
         pass
 

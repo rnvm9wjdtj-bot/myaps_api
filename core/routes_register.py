@@ -20,6 +20,11 @@ def register_routes(app):
         with open("static/monitor/index.html", "r", encoding="utf-8") as f:
             return f.read()
 
+    @app.get("/monitor/live-logs", response_class=HTMLResponse, include_in_schema=False)
+    async def live_logs_page():
+        with open("static/monitor/live-logs.html", "r", encoding="utf-8") as f:
+            return f.read()
+
     @app.get("/", include_in_schema=False)
     async def read_root():
         return {

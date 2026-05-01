@@ -10,6 +10,45 @@ from collections import deque
 from typing import Set, List, Dict, Optional
 
 
+class LogStreamManager:
+    """全局日志流管理器 - 单例模式，确保所有模块使用同一个实例"""
+    _instance = None
+    _lock = asyncio.Lock()
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._handlers: List[logging.Handler] = []
+            cls._instance._initialized = True
+        return cls._instance
+
+    def add_handler(self, handler: logging.Handler):
+        """添加日志流处理器"""
+        if handler not in self._handlers:
+            self._handlers.append(handler)
+
+    def remove_handler(self, handler: logging.Handler):
+        """移除日志流处理器"""
+        if handler in self._handlers:
+            self._handlers.remove(handler)
+
+    def emit_to_handlers(self, record: logging.LogRecord):
+        """将日志发送到所有注册的处理器"""
+        for handler in self._handlers:
+            try:
+                handler.emit(record)
+            except Exception:
+                pass
+
+    def get_handlers(self) -> List[logging.Handler]:
+        """获取所有注册的处理器"""
+        return self._handlers.copy()
+
+
+# 全局日志流管理器实例
+_log_stream_manager = LogStreamManager()
+
+
 class LogStreamService:
     """独立的日志流服务"""
 
@@ -24,11 +63,15 @@ class LogStreamService:
 
     async def start(self):
         """启动日志流服务"""
+        import sys
+        print("[日志流] start() 被调用", flush=True)
         self._is_running = True
         self._broadcast_task = asyncio.create_task(self._broadcast_logs())
         # 添加日志处理器（不影响现有日志）
         self._add_log_handler()
-        logging.info("[日志流] 服务已启动")
+        # 使用 print 避免递归调用 logging
+        print("[日志流] 服务已启动", flush=True)
+        sys.stdout.flush()
 
     async def stop(self):
         """停止日志流服务"""
@@ -48,45 +91,27 @@ class LogStreamService:
             self._handler = _LogStreamHandler(self)
             # 设置 handler 的级别为 DEBUG，确保能捕获所有级别
             self._handler.setLevel(logging.DEBUG)
-            
-            # 将处理器注册到 logger 模块的全局列表中
-            try:
-                from globalobjects import logger as log_module
-                if hasattr(log_module, '_log_stream_handlers'):
-                    if self._handler not in log_module._log_stream_handlers:
-                        log_module._log_stream_handlers.append(self._handler)
-                        logging.info(f"[日志流] 已注册处理器到日志模块")
-            except Exception as e:
-                logging.error(f"[日志流] 注册处理器失败: {e}", exc_info=True)
-            
-            logging.info("[日志流] 日志处理器已注册")
+
+            # 注意：不添加到 root logger，避免影响现有日志系统
+            # 日志收集依赖 SmartLogger 的 _send_to_log_stream 方法
+
+            # 使用全局日志流管理器替代模块级变量
+            global _log_stream_manager
+            _log_stream_manager.add_handler(self._handler)
+
+            # 使用 print 避免递归调用 logging
+            print("[日志流] 日志处理器已注册", flush=True)
 
     def _remove_log_handler(self):
         """移除日志处理器"""
         if self._handler:
-            # 从 root logger 移除
-            root_logger = logging.getLogger()
-            root_logger.removeHandler(self._handler)
-            
-            # 从日志模块的 logger 实例移除
-            for logger in self._registered_loggers:
-                try:
-                    logger.removeHandler(self._handler)
-                except Exception:
-                    pass
-            
-            # 移除钩子
-            try:
-                from globalobjects import logger as log_module
-                if hasattr(log_module, '_log_stream_handlers'):
-                    if self._handler in log_module._log_stream_handlers:
-                        log_module._log_stream_handlers.remove(self._handler)
-            except Exception:
-                pass
-            
+            # 使用全局日志流管理器
+            global _log_stream_manager
+            _log_stream_manager.remove_handler(self._handler)
+
             self._registered_loggers.clear()
             self._handler = None
-            logging.info("[日志流] 日志处理器已移除")
+            print("[日志流] 日志处理器已移除", flush=True)
 
     def enqueue_log(self, record: logging.LogRecord):
         """将日志加入队列"""
@@ -123,13 +148,16 @@ class LogStreamService:
 
     def get_recent_logs(self, count: int = 50) -> List[dict]:
         """获取最近的日志"""
-        return list(self._log_queue)[-count:]
+        logs = list(self._log_queue)[-count:]
+        return [log for log in logs if log is not None]
 
     async def _broadcast_logs(self):
         """广播日志到所有订阅者"""
         while self._is_running:
             if self._log_queue:
                 log_data = self._log_queue.popleft()
+                if log_data is None:
+                    continue
                 async with self._lock:
                     queues = list(self._active_connections)
                 for queue in queues:
@@ -161,8 +189,12 @@ log_stream_service = LogStreamService()
 
 # 启动/停止函数
 async def start_log_stream():
+    """启动日志流服务"""
+    print("[日志流] start_log_stream 函数被调用")
     await log_stream_service.start()
 
 
 async def stop_log_stream():
+    """停止日志流服务"""
+    print("[日志流] stop_log_stream 函数被调用")
     await log_stream_service.stop()

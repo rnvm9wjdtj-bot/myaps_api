@@ -350,10 +350,11 @@ async def get_live_logs_status():
     """
     获取日志流服务状态（调试用）
     """
+    from apps.common.monitor.log_stream_service import _log_stream_manager
     return {
         "is_running": log_stream_service._is_running,
         "queue_size": len(log_stream_service._log_queue),
-        "registered_loggers": len(log_stream_service._registered_loggers),
+        "handler_count": len(_log_stream_manager.get_handlers()),
         "active_connections": len(log_stream_service._active_connections),
         "handler": log_stream_service._handler is not None,
     }
