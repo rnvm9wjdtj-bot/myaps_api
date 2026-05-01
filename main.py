@@ -75,8 +75,8 @@ register_exception_handlers(app)
 register_routes(app)
 
 # 注册WebSocket路由
-app.websocket("/{path:path}")(websocket_endpoint)
 app.websocket("/")(websocket_root)
+app.websocket("/ws/{path:path}")(websocket_endpoint)
 
 # 注册数据库
 register_database(app)

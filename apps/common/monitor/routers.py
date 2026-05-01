@@ -5,10 +5,13 @@
 """
 
 import time
+import json
+import asyncio
 from fastapi import APIRouter, HTTPException, WebSocket
-from fastapi.responses import JSONResponse
-from typing import Dict, Any, List
+from fastapi.responses import JSONResponse, StreamingResponse
+from typing import Dict, Any, List, Optional
 from .service import monitor_service
+from .log_stream_service import log_stream_service
 from globalobjects import logger as log_config
 
 logger = log_config.get_logger(__name__)
@@ -285,6 +288,94 @@ async def get_recent_logs(limit: int = 50, level: str = None):
         日志列表
     """
     return {"logs": monitor_service.get_recent_logs(limit, level)}
+
+
+# ========== 实时日志流端点 ==========
+
+
+@router.get("/live-logs/stream")
+async def live_logs_stream(level: Optional[str] = None):
+    """
+    SSE 实时日志流端点（独立于现有日志功能）
+
+    Args:
+        level: 日志级别过滤（DEBUG/INFO/WARNING/ERROR/CRITICAL）
+
+    Returns:
+        StreamingResponse: SSE 流
+    """
+    async def event_generator():
+        queue = await log_stream_service.subscribe()
+        try:
+            while True:
+                log_data = await queue.get()
+                if log_data is None:
+                    break
+
+                # 级别过滤（前端请求级别的过滤）
+                if level and log_data["level"] != level:
+                    continue
+
+                # 格式化 SSE 消息
+                yield f'data: {json.dumps(log_data)}\n\n'
+        finally:
+            await log_stream_service.unsubscribe(queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream"
+    )
+
+
+@router.get("/live-logs/recent")
+async def get_live_logs_recent(limit: int = 50, level: Optional[str] = None):
+    """
+    获取最近的实时日志（用于初始加载）
+
+    Args:
+        limit: 返回数量限制
+        level: 日志级别过滤
+
+    Returns:
+        日志列表
+    """
+    logs = log_stream_service.get_recent_logs(limit)
+    if level:
+        logs = [log for log in logs if log["level"] == level]
+    return {"logs": logs, "count": len(logs)}
+
+
+@router.get("/live-logs/status")
+async def get_live_logs_status():
+    """
+    获取日志流服务状态（调试用）
+    """
+    return {
+        "is_running": log_stream_service._is_running,
+        "queue_size": len(log_stream_service._log_queue),
+        "registered_loggers": len(log_stream_service._registered_loggers),
+        "active_connections": len(log_stream_service._active_connections),
+        "handler": log_stream_service._handler is not None,
+    }
+
+
+@router.get("/live-logs/test")
+async def test_live_logs():
+    """
+    测试日志流（调试用）
+    """
+    from globalobjects.logger import debug, info, warning, error
+    info("测试 INFO 日志")
+    warning("测试 WARNING 日志")
+    error("测试 ERROR 日志")
+    debug("测试 DEBUG 日志")
+
+    await asyncio.sleep(0.1)
+
+    return {
+        "message": "日志已触发",
+        "queue_size": len(log_stream_service._log_queue),
+    }
 
 
 @router.get("/database/pool-leak-detection")

@@ -247,6 +247,9 @@ function handleInactivityTimeout() {
     // 断开 WebSocket 连接
     closeWebSocket();
     
+    // 断开实时日志流连接
+    disconnectLiveLogStream();
+    
     // 停止自动刷新
     if (refreshInterval) {
         clearInterval(refreshInterval);
@@ -293,6 +296,9 @@ function resumeMonitoring() {
     // 重新建立 WebSocket 连接
     initWebSocket();
     
+    // 重新建立实时日志流连接
+    connectLiveLogStream();
+    
     // 重新启动自动刷新
     startAutoRefresh();
     
@@ -319,7 +325,7 @@ function initWebSocket() {
     
     // 构建 WebSocket URL
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/monitor/ws`;
+    const wsUrl = `${protocol}//${window.location.host}/ws/monitor/ws`;
     
     // 关闭现有连接
     if (ws) {
@@ -1804,6 +1810,8 @@ function switchPage(pageName) {
         fetchDeadLetterStats();
     } else if (pageName === 'logs') {
         fetchLogsPage();
+    } else if (pageName === 'live-logs') {
+        initLiveLogPage();
     }
 }
 
@@ -4440,4 +4448,161 @@ function formatFileSize(bytes) {
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
     if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
     return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+}
+
+// ========== 实时日志流功能（完全独立）==========
+let liveLogEventSource = null;
+let isLiveLogPaused = false;
+let liveLogFilterLevel = 'ALL';
+let liveLogSearchText = '';
+let liveLogContainer = null;
+let livePendingLogs = [];
+
+// 初始化实时日志页面
+function initLiveLogPage() {
+    liveLogContainer = document.getElementById('live-log-container');
+    if (liveLogContainer) {
+        if (!isInactive) {
+            connectLiveLogStream();
+        }
+    }
+}
+
+// 连接实时日志流
+function connectLiveLogStream() {
+    if (isInactive) {
+        console.log('用户不活动，跳过实时日志流连接');
+        return;
+    }
+
+    if (liveLogEventSource) {
+        liveLogEventSource.close();
+    }
+
+    const levelParam = liveLogFilterLevel !== 'ALL' ? `?level=${liveLogFilterLevel}` : '';
+    liveLogEventSource = new EventSource(`${API_BASE}/live-logs/stream${levelParam}`);
+
+    liveLogEventSource.onmessage = function(event) {
+        const logData = JSON.parse(event.data);
+        handleLiveLog(logData);
+    };
+
+    liveLogEventSource.onerror = function(error) {
+        console.error('实时日志流连接错误:', error);
+        if (isInactive && liveLogEventSource) {
+            liveLogEventSource.close();
+            liveLogEventSource = null;
+        }
+    };
+
+    console.log('实时日志流已连接');
+}
+
+// 断开实时日志流
+function disconnectLiveLogStream() {
+    if (liveLogEventSource) {
+        liveLogEventSource.close();
+        liveLogEventSource = null;
+        console.log('实时日志流已断开');
+    }
+}
+
+// 处理实时日志
+function handleLiveLog(logData) {
+    if (isInactive) return;
+
+    if (isLiveLogPaused) {
+        livePendingLogs.push(logData);
+        return;
+    }
+
+    if (liveLogFilterLevel !== 'ALL' && logData.level !== liveLogFilterLevel) {
+        return;
+    }
+
+    if (liveLogSearchText && !logData.message.includes(liveLogSearchText)) {
+        return;
+    }
+
+    renderLiveLog(logData);
+}
+
+// 渲染实时日志条目
+function renderLiveLog(logData) {
+    if (!liveLogContainer) {
+        liveLogContainer = document.getElementById('live-log-container');
+    }
+
+    const logElement = document.createElement('div');
+    logElement.className = `live-log-entry live-log-${logData.level.toLowerCase()}`;
+
+    const timestamp = new Date(logData.timestamp * 1000).toLocaleTimeString('zh-CN');
+
+    logElement.innerHTML = `
+        <span class="live-log-timestamp">${timestamp}</span>
+        <span class="live-log-level">${logData.level}</span>
+        <span class="live-log-module">[${logData.module}:${logData.line}]</span>
+        <span class="live-log-message">${escapeHtml(logData.message)}</span>
+    `;
+
+    liveLogContainer.appendChild(logElement);
+    liveLogContainer.scrollTop = liveLogContainer.scrollHeight;
+
+    // 限制日志数量
+    const maxLogs = 1000;
+    while (liveLogContainer.children.length > maxLogs) {
+        liveLogContainer.removeChild(liveLogContainer.firstChild);
+    }
+}
+
+// 过滤实时日志
+function filterLiveLogs() {
+    liveLogFilterLevel = document.getElementById('live-log-level-filter').value;
+    liveLogSearchText = document.getElementById('live-log-search').value;
+    connectLiveLogStream();
+
+    const entries = liveLogContainer.getElementsByClassName('live-log-entry');
+    for (const entry of entries) {
+        const level = entry.querySelector('.live-log-level').textContent;
+        const message = entry.querySelector('.live-log-message').textContent;
+
+        let show = true;
+        if (liveLogFilterLevel !== 'ALL' && level !== liveLogFilterLevel) {
+            show = false;
+        }
+        if (liveLogSearchText && !message.includes(liveLogSearchText)) {
+            show = false;
+        }
+
+        entry.style.display = show ? '' : 'none';
+    }
+}
+
+// 暂停/恢复实时日志
+function toggleLiveLogPause() {
+    isLiveLogPaused = !isLiveLogPaused;
+    const btn = document.getElementById('live-log-pause-btn');
+    btn.textContent = isLiveLogPaused ? '恢复' : '暂停';
+
+    if (!isLiveLogPaused) {
+        for (const log of livePendingLogs) {
+            handleLiveLog(log);
+        }
+        livePendingLogs = [];
+    }
+}
+
+// 清空实时日志
+function clearLiveLogs() {
+    if (liveLogContainer) {
+        liveLogContainer.innerHTML = '';
+    }
+    livePendingLogs = [];
+}
+
+// HTML 转义
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }

@@ -13,6 +13,7 @@ from apps.common.monitor import (
     start_db_health_checker, stop_db_health_checker,
     start_failed_operation_recovery, stop_failed_operation_recovery
 )
+from apps.common.monitor.log_stream_service import start_log_stream, stop_log_stream
 from globalobjects import EVENT_AGGREGATOR
 from core.settings import TURNON_BINLOG_LISTENER, TRUNON_SCHEDULER, MAX_EVENTS_BATCH_SIZE
 from core.database import check_db_connections, warmup_connections, start_pool_monitoring
@@ -79,6 +80,9 @@ async def lifespan(app):
 
     # 启动失败操作恢复管理器（后台自动重试失败的数据库操作）
     await start_failed_operation_recovery()
+
+    # 启动实时日志流服务
+    await start_log_stream()
 
     # 启动 Redis 健康检查任务
     async def schedule_redis_checks():
@@ -413,3 +417,6 @@ async def lifespan(app):
 
     # 12. 关闭统一日志系统
     log_config.shutdown_logging()
+
+    # 13. 停止实时日志流服务
+    await stop_log_stream()

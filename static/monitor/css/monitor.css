@@ -2612,3 +2612,85 @@ td {
         grid-template-columns: 1fr;
     }
 }
+
+/* ========== 实时日志流样式 ========== */
+
+/* 实时日志容器 */
+.live-log-container {
+    height: 400px;
+    overflow-y: auto;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.4;
+    background: #0d1117;
+    border-radius: 4px;
+    padding: 10px;
+}
+
+/* 实时日志条目 */
+.live-log-entry {
+    padding: 4px 8px;
+    border-bottom: 1px solid #1a1a2e;
+    transition: background-color 0.2s;
+}
+
+.live-log-entry:last-child {
+    border-bottom: none;
+}
+
+.live-log-entry:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+/* 级别样式 */
+.live-log-debug { border-left: 3px solid #3b82f6; }
+.live-log-info { border-left: 3px solid #22c55e; }
+.live-log-warning { border-left: 3px solid #eab308; }
+.live-log-error { border-left: 3px solid #ef4444; }
+.live-log-critical { border-left: 3px solid #dc2626; }
+
+/* 日志组件 */
+.live-log-timestamp {
+    color: #6b7280;
+    margin-right: 12px;
+    font-size: 11px;
+}
+
+.live-log-level {
+    display: inline-block;
+    width: 60px;
+    text-align: center;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin-right: 10px;
+}
+
+.live-log-level.DEBUG { background: #3b82f6; color: white; }
+.live-log-level.INFO { background: #22c55e; color: white; }
+.live-log-level.WARNING { background: #eab308; color: black; }
+.live-log-level.ERROR { background: #ef4444; color: white; }
+.live-log-level.CRITICAL { background: #dc2626; color: white; }
+
+.live-log-module {
+    color: #9ca3af;
+    margin-right: 10px;
+    font-size: 11px;
+}
+
+.live-log-message {
+    color: #e5e7eb;
+}
+
+/* 实时日志搜索和过滤 */
+#live-log-search, #live-log-level-filter {
+    padding: 4px 8px;
+    border: 1px solid #374151;
+    border-radius: 4px;
+    background: #1f2937;
+    color: #fff;
+    font-size: 12px;
+    margin-right: 8px;
+}

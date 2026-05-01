@@ -5,8 +5,11 @@ import time
 import sys
 import platform
 import threading
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from logging.handlers import TimedRotatingFileHandler, QueueHandler, QueueListener
+
+# 日志流处理器列表 - 用于存储外部注册的日志流处理器
+_log_stream_handlers: List[logging.Handler] = []
 
 
 class EmojiManager:
@@ -993,7 +996,14 @@ def setup_file_logging(log_name: str, log_filename='app.log') -> logging.Logger:
 
     # 创建队列和 QueueListener
     log_queue = queue.Queue(-1)
-    listener = QueueListener(log_queue, timed_handler, respect_handler_level=True)
+    
+    # 获取日志流处理器（如果存在）
+    stream_handlers = []
+    if hasattr(__import__(__name__), '_log_stream_handlers'):
+        stream_handlers = getattr(__import__(__name__), '_log_stream_handlers', [])
+    
+    # 创建 QueueListener，包含文件处理器和日志流处理器
+    listener = QueueListener(log_queue, timed_handler, *stream_handlers, respect_handler_level=True)
     
     # 存储listener
     listeners[logger_key] = listener
@@ -1293,7 +1303,34 @@ class SmartLogger(logging.Logger):
             else:
                 # 普通级别使用默认方式
                 self._file_logger.log(level, msg)
-    
+
+    def _send_to_log_stream(self, level: int, msg: str):
+        """
+        将日志发送到日志流处理器
+        """
+        try:
+            if not _log_stream_handlers:
+                return
+            
+            # 创建模拟的 LogRecord
+            record = logging.LogRecord(
+                name=self.name,
+                level=level,
+                pathname='',
+                lineno=0,
+                msg=msg,
+                args=(),
+                exc_info=None,
+                func=''
+            )
+            record.module = self.name
+            
+            # 发送到所有注册的日志流处理器
+            for handler in _log_stream_handlers:
+                handler.emit(record)
+        except Exception:
+            pass
+
     def debug(self, msg, *args, **kwargs):
         """记录 DEBUG 级别的日志"""
         # 检查当前日志器的级别
@@ -1326,6 +1363,8 @@ class SmartLogger(logging.Logger):
                     
                     # 使用ANSI颜色代码
                     print(f"{ANSI_COLORS['DEBUG']}{timestamp} - DEBUG - {formatted_msg}{ANSI_COLORS['RESET']}")
+                    # 发送到日志流
+                    self._send_to_log_stream(logging.DEBUG, formatted_msg)
                 except Exception:
                     # 如果出错，使用原始方法
                     super().debug(msg, *args, **kwargs)
@@ -1345,6 +1384,8 @@ class SmartLogger(logging.Logger):
                     
                     # 恢复原始颜色
                     ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
+                    # 发送到日志流
+                    self._send_to_log_stream(logging.DEBUG, formatted_msg)
                 except Exception:
                     # 如果出错，使用原始方法
                     super().debug(msg, *args, **kwargs)
@@ -1391,6 +1432,8 @@ class SmartLogger(logging.Logger):
                     
                     # 使用ANSI颜色代码
                     print(f"{ANSI_COLORS['INFO']}{timestamp} - INFO - {formatted_msg}{ANSI_COLORS['RESET']}")
+                    # 发送到日志流
+                    self._send_to_log_stream(logging.INFO, formatted_msg)
                 except Exception:
                     # 如果出错，使用原始方法
                     super().info(msg, *args, **kwargs)
@@ -1417,6 +1460,8 @@ class SmartLogger(logging.Logger):
                     
                     # 恢复原始颜色
                     ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
+                    # 发送到日志流
+                    self._send_to_log_stream(logging.INFO, formatted_msg)
                 except Exception:
                     # 如果出错，使用原始方法
                     super().info(msg, *args, **kwargs)
@@ -1463,6 +1508,8 @@ class SmartLogger(logging.Logger):
                     
                     # 使用ANSI颜色代码
                     print(f"{ANSI_COLORS['WARNING']}{timestamp} - WARNING - {formatted_msg}{ANSI_COLORS['RESET']}")
+                    # 发送到日志流
+                    self._send_to_log_stream(logging.WARNING, formatted_msg)
                 except Exception:
                     # 如果出错，使用原始方法
                     super().warning(msg, *args, **kwargs)
@@ -1489,6 +1536,8 @@ class SmartLogger(logging.Logger):
                     
                     # 恢复原始颜色
                     ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
+                    # 发送到日志流
+                    self._send_to_log_stream(logging.WARNING, formatted_msg)
                 except Exception:
                     # 如果出错，使用原始方法
                     super().warning(msg, *args, **kwargs)
@@ -1547,6 +1596,8 @@ class SmartLogger(logging.Logger):
                     
                     # 使用ANSI颜色代码
                     print(f"{ANSI_COLORS['ERROR']}{timestamp} - ERROR - {formatted_msg}{ANSI_COLORS['RESET']}")
+                    # 发送到日志流
+                    self._send_to_log_stream(logging.ERROR, formatted_msg)
                 except Exception:
                     # 如果出错，使用原始方法
                     super().error(msg, *args, **kwargs)
@@ -1573,6 +1624,8 @@ class SmartLogger(logging.Logger):
                     
                     # 恢复原始颜色
                     ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
+                    # 发送到日志流
+                    self._send_to_log_stream(logging.ERROR, formatted_msg)
                 except Exception:
                     # 如果出错，使用原始方法
                     super().error(msg, *args, **kwargs)
@@ -1619,6 +1672,8 @@ class SmartLogger(logging.Logger):
                     
                     # 使用ANSI颜色代码
                     print(f"{ANSI_COLORS['CRITICAL']}{timestamp} - CRITICAL - {formatted_msg}{ANSI_COLORS['RESET']}")
+                    # 发送到日志流
+                    self._send_to_log_stream(logging.CRITICAL, formatted_msg)
                 except Exception:
                     # 如果出错，使用原始方法
                     super().critical(msg, *args, **kwargs)
@@ -1645,6 +1700,8 @@ class SmartLogger(logging.Logger):
                     
                     # 恢复原始颜色
                     ctypes.windll.kernel32.SetConsoleTextAttribute(hConsole, original_color)
+                    # 发送到日志流
+                    self._send_to_log_stream(logging.CRITICAL, formatted_msg)
                 except Exception:
                     # 如果出错，使用原始方法
                     super().critical(msg, *args, **kwargs)
@@ -2078,6 +2135,55 @@ def shutdown_logging() -> None:
 
 
 # 便捷函数
+
+def _send_to_log_stream(level: str, msg: Any, *args: Any):
+    """
+    将日志发送到所有注册的日志流处理器
+    """
+    try:
+        if not _log_stream_handlers:
+            return
+            
+        # 构建日志消息
+        formatted_msg = msg % args if args else str(msg)
+        
+        # 获取调用者信息
+        import inspect
+        frame = inspect.currentframe()
+        try:
+            if frame and frame.f_back and frame.f_back.f_back:
+                caller_frame = frame.f_back.f_back
+                module = caller_frame.f_globals.get('__name__', 'unknown')
+                func_name = caller_frame.f_code.co_name
+                line_no = caller_frame.f_lineno
+            else:
+                module = 'unknown'
+                func_name = 'unknown'
+                line_no = 0
+        finally:
+            if frame:
+                del frame
+
+        # 创建模拟的 LogRecord
+        record = logging.LogRecord(
+            name=module,
+            level=getattr(logging, level, logging.INFO),
+            pathname='',
+            lineno=line_no,
+            msg=formatted_msg,
+            args=(),
+            exc_info=None,
+            func=func_name
+        )
+        record.module = module
+        
+        # 发送到所有注册的日志流处理器
+        for handler in _log_stream_handlers:
+            handler.emit(record)
+    except Exception:
+        pass
+
+
 def debug(msg: Any, *args: Any, **kwargs: Any) -> None:
     """
     记录 DEBUG 级别的日志
@@ -2086,6 +2192,9 @@ def debug(msg: Any, *args: Any, **kwargs: Any) -> None:
     logger = get_logger()
     if not logger.isEnabledFor(logging.DEBUG):
         return
+    
+    # 发送到日志流
+    _send_to_log_stream('DEBUG', msg, *args)
     
     if TERMINAL_SUPPORTS_ANSI:
         try:
@@ -2128,6 +2237,9 @@ def info(msg: Any, *args: Any, **kwargs: Any) -> None:
     """
     记录 INFO 级别的日志
     """
+    # 发送到日志流
+    _send_to_log_stream('INFO', msg, *args)
+
     if TERMINAL_SUPPORTS_ANSI:
         try:
             # 获取当前时间
@@ -2169,6 +2281,9 @@ def warning(msg: Any, *args: Any, **kwargs: Any) -> None:
     """
     记录 WARNING 级别的日志
     """
+    # 发送到日志流
+    _send_to_log_stream('WARNING', msg, *args)
+    
     if TERMINAL_SUPPORTS_ANSI:
         try:
             # 获取当前时间
@@ -2210,6 +2325,9 @@ def error(msg: Any, *args: Any, **kwargs: Any) -> None:
     """
     记录 ERROR 级别的日志
     """
+    # 发送到日志流
+    _send_to_log_stream('ERROR', msg, *args)
+    
     if TERMINAL_SUPPORTS_ANSI:
         try:
             # 获取当前时间
@@ -2251,6 +2369,8 @@ def critical(msg: Any, *args: Any, **kwargs: Any) -> None:
     """
     记录 CRITICAL 级别的日志
     """
+    # 发送到日志流
+    _send_to_log_stream('CRITICAL', msg, *args)
     if TERMINAL_SUPPORTS_ANSI:
         try:
             # 获取当前时间
