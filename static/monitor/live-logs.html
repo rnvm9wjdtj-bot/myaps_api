@@ -14,7 +14,7 @@
             padding: 20px;
         }
         .live-logs-container {
-            max-width: 1400px;
+            max-width: 100%;
             margin: 0 auto;
             background: #fff;
             border-radius: 8px;
@@ -24,20 +24,28 @@
         .live-logs-header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 20px 30px;
+            padding: 15px 30px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        .live-logs-header-left {
+            display: flex;
+            align-items: center;
+            gap: 20px;
         }
         .live-logs-header h1 {
             margin: 0;
-            font-size: 20px;
+            font-size: 18px;
             font-weight: 500;
         }
         .connection-status {
             display: flex;
             align-items: center;
             gap: 10px;
+            font-size: 13px;
         }
         .status-dot {
             width: 10px;
@@ -56,74 +64,86 @@
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
         }
-        .controls {
-            padding: 15px 30px;
-            background: #f8f9fa;
-            border-bottom: 1px solid #e9ecef;
+        .header-controls {
             display: flex;
+            align-items: center;
+            gap: 12px;
             flex-wrap: wrap;
-            gap: 15px;
-            align-items: center;
         }
-        .control-group {
+        .header-control-group {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
         }
-        .control-group label {
-            font-size: 13px;
-            color: #666;
+        .header-control-group label {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.8);
         }
-        .control-group select, .control-group input {
-            padding: 6px 12px;
-            border: 1px solid #ddd;
+        .header-control-group select, 
+        .header-control-group input {
+            padding: 5px 10px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
             border-radius: 4px;
-            font-size: 13px;
+            font-size: 12px;
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
         }
-        .btn {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 13px;
-            transition: all 0.2s;
+        .header-control-group input::placeholder {
+            color: rgba(255, 255, 255, 0.6);
         }
-        .btn-primary {
+        .header-control-group select option {
             background: #667eea;
             color: white;
         }
+        .header-control-group input[type="checkbox"] {
+            width: 14px;
+            height: 14px;
+        }
+        .btn {
+            padding: 6px 14px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
         .btn-primary:hover {
-            background: #5568d3;
+            background: rgba(255, 255, 255, 0.3);
         }
         .btn-secondary {
-            background: #6c757d;
+            background: rgba(255, 255, 255, 0.15);
             color: white;
         }
         .btn-secondary:hover {
-            background: #5a6268;
+            background: rgba(255, 255, 255, 0.25);
         }
         .btn-danger {
-            background: #dc3545;
+            background: rgba(220, 53, 69, 0.8);
             color: white;
         }
         .btn-danger:hover {
-            background: #c82333;
+            background: rgba(220, 53, 69, 1);
         }
         .logs-container {
-            height: calc(100vh - 250px);
+            height: calc(100vh - 180px);
             min-height: 400px;
             overflow-y: auto;
             padding: 15px 30px;
             background: #1e1e1e;
             font-family: 'Consolas', 'Monaco', monospace;
-            font-size: 13px;
-            line-height: 1.6;
+            font-size: 15px;
+            line-height: 1.7;
         }
         .log-entry {
-            padding: 4px 0;
+            padding: 6px 0;
             border-bottom: 1px solid #2d2d2d;
             display: flex;
-            gap: 10px;
+            gap: 15px;
         }
         .log-entry:last-child {
             border-bottom: none;
@@ -131,33 +151,48 @@
         .log-time {
             color: #888;
             white-space: nowrap;
+            width: 85px;
+            flex-shrink: 0;
         }
         .log-level {
             font-weight: 600;
-            min-width: 60px;
+            width: 70px;
             text-align: center;
+            flex-shrink: 0;
         }
-        .log-level.DEBUG { color: #888; }
+        .log-level.DEBUG { color: #9e9e9e; }
         .log-level.INFO { color: #4fc3f7; }
         .log-level.WARNING { color: #ffb74d; }
         .log-level.ERROR { color: #ef5350; }
-        .log-level.CRITICAL { color: #e57373; background: #3e2723; padding: 0 4px; border-radius: 2px; }
+        .log-level.CRITICAL { color: #e57373; background: #3e2723; padding: 0 6px; border-radius: 3px; }
         .log-module {
             color: #9e9e9e;
-            min-width: 150px;
-            max-width: 200px;
+            width: 250px;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+            flex-shrink: 0;
         }
         .log-message {
             color: #e0e0e0;
             flex: 1;
             word-break: break-all;
         }
-        .log-entry.ERROR .log-message,
-        .log-entry.CRITICAL .log-message {
+        .log-entry.DEBUG .log-message {
+            color: #a0a0a0;
+        }
+        .log-entry.INFO .log-message {
+            color: #4fc3f7;
+        }
+        .log-entry.WARNING .log-message {
+            color: #ffb74d;
+        }
+        .log-entry.ERROR .log-message {
             color: #ef5350;
+        }
+        .log-entry.CRITICAL .log-message {
+            color: #e57373;
+            font-weight: 500;
         }
         .no-logs {
             text-align: center;
@@ -206,45 +241,46 @@
 <body>
     <div class="live-logs-container">
         <div class="live-logs-header">
-            <h1>📊 实时日志流</h1>
-            <div class="connection-status">
-                <div class="status-dot connecting" id="statusDot"></div>
-                <span id="statusText">连接中...</span>
-            </div>
-        </div>
-        
-        <div class="controls">
-            <div class="control-group">
-                <label>日志级别:</label>
-                <select id="levelFilter" onchange="applyFilters()">
-                    <option value="">全部</option>
-                    <option value="DEBUG">DEBUG</option>
-                    <option value="INFO">INFO</option>
-                    <option value="WARNING">WARNING</option>
-                    <option value="ERROR">ERROR</option>
-                    <option value="CRITICAL">CRITICAL</option>
-                </select>
+            <div class="live-logs-header-left">
+                <h1>📊 实时日志流</h1>
+                <div class="connection-status">
+                    <div class="status-dot connecting" id="statusDot"></div>
+                    <span id="statusText">连接中...</span>
+                </div>
             </div>
             
-            <div class="control-group">
-                <label>搜索:</label>
-                <input type="text" id="searchInput" placeholder="搜索日志内容..." onkeyup="handleSearch(event)">
+            <div class="header-controls">
+                <div class="header-control-group">
+                    <label>级别:</label>
+                    <select id="levelFilter" onchange="applyFilters()">
+                        <option value="">全部</option>
+                        <option value="DEBUG">DEBUG</option>
+                        <option value="INFO">INFO</option>
+                        <option value="WARNING">WARNING</option>
+                        <option value="ERROR">ERROR</option>
+                        <option value="CRITICAL">CRITICAL</option>
+                    </select>
+                </div>
+                
+                <div class="header-control-group">
+                    <input type="text" id="searchInput" placeholder="搜索日志..." onkeyup="handleSearch(event)">
+                </div>
+                
+                <div class="header-control-group">
+                    <label>
+                        <input type="checkbox" id="autoScroll" checked onchange="toggleAutoScroll()">
+                        自动滚动
+                    </label>
+                </div>
+                
+                <button class="btn btn-secondary" onclick="togglePause()">
+                    <span id="pauseBtnText">暂停</span>
+                </button>
+                
+                <button class="btn btn-danger" onclick="clearLogs()">清空</button>
+                
+                <button class="btn btn-primary" onclick="openInNewWindow()">新窗口</button>
             </div>
-            
-            <div class="control-group">
-                <label>
-                    <input type="checkbox" id="autoScroll" checked onchange="toggleAutoScroll()">
-                    自动滚动
-                </label>
-            </div>
-            
-            <button class="btn btn-secondary" onclick="togglePause()">
-                <span id="pauseBtnText">暂停</span>
-            </button>
-            
-            <button class="btn btn-secondary" onclick="clearLogs()">清空</button>
-            
-            <button class="btn btn-primary" onclick="openInNewWindow()">新窗口</button>
         </div>
         
         <div class="log-stats">
@@ -270,6 +306,7 @@
     <script>
         let eventSource = null;
         let logs = [];
+        const MAX_LOGS = 2000;  // 前端日志数量上限
         let isPaused = false;
         let autoScroll = true;
         let searchTerm = '';
@@ -278,6 +315,8 @@
         let lastActivity = Date.now();
         const INACTIVITY_TIMEOUT = 30 * 60 * 1000;
         let isDomReady = false;
+        let isRendering = false;  // 防止渲染冲突
+        let pendingRerender = false;  // 标记是否有待处理的重渲染
         
         function checkDomReady() {
             const container = document.getElementById('logsContainer');
@@ -368,18 +407,46 @@
         
         function addLog(logData) {
             logs.push(logData);
-            if (logs.length > 5000) {
-                logs.shift();
+            
+            // 限制前端日志数量，防止内存泄漏
+            if (logs.length > MAX_LOGS) {
+                const removeCount = logs.length - MAX_LOGS;
+                // 同步更新统计
+                for (let i = 0; i < removeCount; i++) {
+                    const removedLog = logs[i];
+                    if (stats[removedLog.level] > 0) {
+                        stats[removedLog.level]--;
+                    }
+                }
+                logs.splice(0, removeCount);
             }
             
             stats[logData.level] = (stats[logData.level] || 0) + 1;
             
-            console.log('addLog - isDomReady:', isDomReady, 'logs count:', logs.length);
-            
             if (isDomReady) {
                 updateStats();
-                renderLogs();
+                scheduleRender();  // 使用调度渲染代替直接渲染
             }
+        }
+        
+        function scheduleRender() {
+            // 如果正在渲染，标记待处理
+            if (isRendering) {
+                pendingRerender = true;
+                return;
+            }
+            
+            requestAnimationFrame(() => {
+                isRendering = true;
+                renderLogs();
+                isRendering = false;
+                
+                // 如果有新的待处理渲染请求
+                if (pendingRerender) {
+                    pendingRerender = false;
+                    scheduleRender();
+                }
+            });
         }
         
         function updateStats() {
@@ -414,8 +481,10 @@
                 return;
             }
             
+            const levelPriority = { DEBUG: 10, INFO: 20, WARNING: 30, ERROR: 40, CRITICAL: 50 };
+            
             const filteredLogs = logs.filter(log => {
-                if (levelFilter && log.level !== levelFilter) return false;
+                if (levelFilter && levelPriority[log.level] < levelPriority[levelFilter]) return false;
                 if (searchTerm && !log.message.toLowerCase().includes(searchTerm.toLowerCase())) return false;
                 return true;
             });
@@ -425,30 +494,44 @@
                 return;
             }
             
-            const html = filteredLogs.map(log => {
-                const time = new Date(log.timestamp * 1000).toLocaleTimeString('zh-CN');
-                const levelClass = log.level;
-                return `
-                    <div class="log-entry ${levelClass}">
-                        <span class="log-time">${time}</span>
-                        <span class="log-level ${levelClass}">${log.level}</span>
-                        <span class="log-module" title="${log.module}">${log.module}</span>
-                        <span class="log-message">${escapeHtml(log.message)}</span>
-                    </div>
-                `;
-            }).join('');
+            // 使用 DocumentFragment 提高 DOM 操作效率
+            const fragment = document.createDocumentFragment();
             
-            container.innerHTML = html;
+            for (const log of filteredLogs) {
+                const logEntry = document.createElement('div');
+                logEntry.className = `log-entry ${log.level}`;
+                
+                const timeSpan = document.createElement('span');
+                timeSpan.className = 'log-time';
+                timeSpan.textContent = new Date(log.timestamp * 1000).toLocaleTimeString('zh-CN');
+                
+                const levelSpan = document.createElement('span');
+                levelSpan.className = `log-level ${log.level}`;
+                levelSpan.textContent = log.level;
+                
+                const moduleSpan = document.createElement('span');
+                moduleSpan.className = 'log-module';
+                moduleSpan.textContent = log.module;
+                moduleSpan.title = log.module;
+                
+                const messageSpan = document.createElement('span');
+                messageSpan.className = 'log-message';
+                messageSpan.textContent = log.message;
+                
+                logEntry.appendChild(timeSpan);
+                logEntry.appendChild(levelSpan);
+                logEntry.appendChild(moduleSpan);
+                logEntry.appendChild(messageSpan);
+                
+                fragment.appendChild(logEntry);
+            }
+            
+            container.innerHTML = '';
+            container.appendChild(fragment);
             
             if (autoScroll && !isPaused) {
                 container.scrollTop = container.scrollHeight;
             }
-        }
-        
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
         }
         
         function applyFilters() {
@@ -461,7 +544,7 @@
             if (searchInputEl) {
                 searchTerm = searchInputEl.value;
             }
-            renderLogs();
+            scheduleRender();
         }
         
         function handleSearch(event) {

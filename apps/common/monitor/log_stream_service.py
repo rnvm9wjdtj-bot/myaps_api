@@ -54,6 +54,7 @@ class LogStreamService:
 
     def __init__(self, max_queue_size: int = 1000):
         self._log_queue = deque(maxlen=max_queue_size)
+        self._history_logs = deque(maxlen=max_queue_size)  # 独立的历史日志存储
         self._active_connections: Set[asyncio.Queue] = set()
         self._lock = asyncio.Lock()
         self._is_running = False
@@ -125,6 +126,7 @@ class LogStreamService:
             "logger_name": record.name
         }
         self._log_queue.append(log_data)
+        self._history_logs.append(log_data)  # 同时保存到历史日志
 
     def enqueue_log_dict(self, log_data: dict):
         """直接将日志字典加入队列"""
@@ -148,7 +150,7 @@ class LogStreamService:
 
     def get_recent_logs(self, count: int = 50) -> List[dict]:
         """获取最近的日志"""
-        logs = list(self._log_queue)[-count:]
+        logs = list(self._history_logs)[-count:]
         return [log for log in logs if log is not None]
 
     async def _broadcast_logs(self):

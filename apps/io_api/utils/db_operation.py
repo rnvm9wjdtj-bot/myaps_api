@@ -511,8 +511,11 @@ async def db_exec_sql(db_name: str, sql: str, params: Optional[List[Any]] = None
     Returns:
         DbResult: 统一格式的返回值
     """
-    valid_db = validate_databases(db_name)[0]
-    assert valid_db, "未指定账套或账套不存在"
+    valid_dbs = validate_databases(db_name)
+    if not valid_dbs:
+        logger.fail("数据库验证", f"{db_name}", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
+        raise ValueError(f"操作失败：未找到有效账套，input_db_name: {db_name}, available_dbs: {MYAPS_DB_SET}")
+    valid_db = valid_dbs[0]
 
     db_manager = get_db_manager(valid_db)
 
@@ -560,12 +563,15 @@ async def db_query(
     Returns:
         DbResult: 统一格式的返回值
     """
-    _, table_name = process_model_or_tablename(model_or_tablename)
-    valid_db = validate_databases(db_name)[0]
-    assert valid_db, "未指定账套或账套不存在"
+    valid_dbs = validate_databases(db_name)
+    if not valid_dbs:
+        logger.fail("数据库验证", f"{db_name}", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
+        raise ValueError(f"操作失败：未找到有效账套，input_db_name: {db_name}, available_dbs: {MYAPS_DB_SET}")
+    valid_db = valid_dbs[0]
 
     db_manager = get_db_manager(valid_db)
-    
+    _, table_name = process_model_or_tablename(model_or_tablename)
+
     query_result = await db_manager.query_data(
         table_name=table_name,
         select_fields=select,
@@ -1001,7 +1007,9 @@ async def db_delete(
     """
     _, table_name = process_model_or_tablename(model_or_tablename)
     valid_dbs = validate_databases(db_names)
-    assert valid_dbs, "未指定账套或账套不存在"
+    if not valid_dbs:
+        logger.fail("数据库验证", f"{db_names}", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
+        raise ValueError(f"操作失败：未找到有效账套，input_db_name: {db_names}, available_dbs: {MYAPS_DB_SET}")
 
     total_count = 0
     is_truncate = filter_string is None
@@ -1071,6 +1079,7 @@ async def call_dbprocdure(
     """
     valid_dbs = validate_databases(db_names)
     if not valid_dbs:
+        logger.fail("数据库验证", f"{db_names}", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
         raise ValueError(f"操作失败：未找到有效账套，input_db_name: {db_names}, available_dbs: {MYAPS_DB_SET}")
 
     async def single_db_operation(db_manager: DbManager) -> Dict[str, Any]:

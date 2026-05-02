@@ -1314,18 +1314,41 @@ class SmartLogger(logging.Logger):
             if not handlers:
                 return
 
+            import inspect
+            import os
+            
+            # 获取调用信息
+            stack = inspect.stack()
+            caller_frame = None
+            # 查找不是 SmartLogger 类的调用者
+            for i, frame_info in enumerate(stack[1:]):
+                frame = frame_info.frame
+                class_name = None
+                if 'self' in frame.f_locals:
+                    try:
+                        class_name = frame.f_locals['self'].__class__.__name__
+                    except Exception:
+                        pass
+                if class_name != 'SmartLogger':
+                    caller_frame = frame_info
+                    break
+            
+            if not caller_frame and len(stack) > 1:
+                caller_frame = stack[-1]
+            
+            # 创建 LogRecord
             record = logging.LogRecord(
                 name=self.name,
                 level=level,
-                pathname='',
-                lineno=0,
+                pathname=caller_frame.filename if caller_frame else __file__,
+                lineno=caller_frame.lineno if caller_frame else 0,
                 msg=msg,
                 args=(),
                 exc_info=None,
-                func=''
+                func=caller_frame.function if caller_frame else ''
             )
             record.module = self.name
-
+            
             _log_stream_manager.emit_to_handlers(record)
         except Exception:
             pass
