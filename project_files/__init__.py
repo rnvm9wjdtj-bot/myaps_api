@@ -234,19 +234,19 @@ def handle_update_supply(database: str, table: str, data: dict, data_diff: dict)
 # 项目事件处理发送
 #################################################################################
 
-async def handle_event(event_type: str, event_data: Optional[List[Dict]]):
-    if not event_data:
-        return
+# async def handle_event(event_type: str, event_data: Optional[List[Dict]]):
+#     if not event_data:
+#         return
 
-    async def process_event():
-        try:
-            event_handler_name = f"batch_handle_{event_type}"
-            event_handler = getattr(project_client, event_handler_name)
-            if event_handler:
-                await event_handler(event_data)
-        except Exception as e:
-            logger.warning(f"{project_client.__name__} 未能处理 {event_type} 事件: {str(e)}")
+#     async def process_event():
+#         try:
+#             event_handler_name = f"batch_handle_{event_type}"
+#             event_handler = getattr(project_client, event_handler_name)
+#             if event_handler:
+#                 await event_handler(event_data)
+#         except Exception as e:
+#             logger.warning(f"{project_client.__name__} 未能处理 {event_type} 事件: {str(e)}")
 
-    import asyncio
-    asyncio.create_task(process_event())
-    return {"status": "success"}
+#     import asyncio
+#     asyncio.create_task(process_event())
+#     return {"status": "success"}

@@ -5,15 +5,32 @@
 """
 
 import time
+import importlib
 from typing import Dict, Any
 from globalobjects import logger as log_config
 from globalobjects.event_aggregator import get_global_handler_aggregator
+from core.settings import PROJECT_DIR
 
 
 logger = log_config.get_logger(__name__)
 
 
-
+def _event_has_handler(event_type) -> bool:
+    """检查指定事件类型是否有对应的处理函数"""
+    # 将枚举类型转换为字符串值
+    if hasattr(event_type, 'value'):
+        event_type_str = event_type.value
+    else:
+        event_type_str = str(event_type)
+    
+    handler_name = f"batch_handle_{event_type_str}"
+    try:
+        project_module = importlib.import_module(f'project_files.{PROJECT_DIR}.client')
+        handler = getattr(project_module, handler_name, None)
+        return handler is not None
+    except Exception as e:
+        logger.warning(f"检查事件处理函数失败 {event_type}: {e}")
+        return False
 
 
 class EventCollector:
@@ -46,6 +63,9 @@ class EventCollector:
             active_event_types = 0
 
             for event_type in event_types:
+                if not _event_has_handler(event_type):
+                    continue
+
                 stats = all_stats.get(event_type, {})
                 description = self._aggregator.get_event_description(event_type)
 
