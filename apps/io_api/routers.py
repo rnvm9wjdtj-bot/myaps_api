@@ -649,6 +649,7 @@ async def replace_supply(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     type_: str = Path(..., enum=['PL', 'MO', 'PR', 'PO', 'ST'], description="供应类型"),
     data: List[AcceptSupply] = Body(..., description="替换为这些供应记录"),
+    return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥")
 ):
     wrong_type_count = 0
@@ -670,7 +671,7 @@ async def replace_supply(
                 status_code=200,
                 success=create_result.success,
                 message=create_result.message,
-                data=create_result.data,
+                data=create_result.data if return_data else None,
                 meta=create_result.meta
             )
         else:
@@ -678,7 +679,7 @@ async def replace_supply(
                 status_code=200,
                 success=delete_result.success,
                 message=delete_result.message,
-                data=delete_result.data,
+                data=delete_result.data if return_data else None,
                 meta=delete_result.meta
             )
     except Exception as e:
@@ -687,7 +688,7 @@ async def replace_supply(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
-            data=[],
+            data=None,
             meta={}
         )
 

@@ -22,7 +22,7 @@ const RECONNECT_DELAY = 3000;
 // 超时机制
 let lastActivityTime = Date.now();
 let inactivityTimeout = null;
-const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 当连续不活动 30分钟时，触发超时
+const INACTIVITY_TIMEOUT_MS = 180 * 60 * 1000; // 当连续不活动 180分钟时，触发超时
 let isInactive = false;
 
 // 数据缓存机制
@@ -2279,34 +2279,20 @@ function showRequestDetail(index) {
     `;
     
     // 更新请求体
-    if (req.request_body) {
-        try {
-            // 尝试格式化 JSON
-            const parsedBody = JSON.parse(req.request_body);
-            const formattedBody = JSON.stringify(parsedBody, null, 2);
-            requestBodyEl.textContent = formattedBody;
-        } catch (e) {
-            // 如果不是 JSON，直接显示
-            requestBodyEl.textContent = req.request_body;
-        }
-    } else {
-        requestBodyEl.textContent = '无请求体';
-    }
+    const requestBodyContent = formatBodyForDisplay(req.request_body);
+    requestBodyEl.textContent = requestBodyContent.display;
+    // 只存储请求ID，用于复制时查找原始数据
+    requestBodyEl.dataset.requestIndex = String(index);
     
     // 更新响应体
-    if (req.response_body) {
-        try {
-            // 尝试格式化 JSON
-            const parsedBody = JSON.parse(req.response_body);
-            const formattedBody = JSON.stringify(parsedBody, null, 2);
-            responseBodyEl.textContent = formattedBody;
-        } catch (e) {
-            // 如果不是 JSON，直接显示
-            responseBodyEl.textContent = req.response_body;
-        }
-    } else {
-        responseBodyEl.textContent = '无响应体';
-    }
+    const responseBodyContent = formatBodyForDisplay(req.response_body);
+    responseBodyEl.textContent = responseBodyContent.display;
+    // 只存储请求ID，用于复制时查找原始数据
+    responseBodyEl.dataset.requestIndex = String(index);
+    
+    // 更新数据量警告
+    updateBodySizeWarning('request', requestBodyContent.length);
+    updateBodySizeWarning('response', responseBodyContent.length);
     
     // 重置高亮按钮状态
     document.querySelectorAll('.section-actions button').forEach(btn => {
@@ -2387,61 +2373,127 @@ function highlightResponseBody() {
 }
 
 // 复制请求体到剪贴板
+// 通用复制到剪贴板函数（支持降级方案）
+function copyToClipboard(text) {
+    // 优先使用现代 Clipboard API
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text);
+    }
+    
+    // 降级方案：使用 textarea + execCommand
+    return new Promise((resolve, reject) => {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        
+        // 选择文本
+        textarea.select();
+        textarea.setSelectionRange(0, textarea.value.length);  // 兼容移动设备
+        
+        try {
+            const successful = document.execCommand('copy');
+            if (successful) {
+                resolve();
+            } else {
+                reject(new Error('复制失败'));
+            }
+        } catch (err) {
+            reject(err);
+        } finally {
+            document.body.removeChild(textarea);
+        }
+    });
+}
+
+// 复制请求体到剪贴板
 function copyRequestBody() {
     const requestBodyEl = document.getElementById('api-detail-request-body');
-    if (requestBodyEl) {
-        // 获取原始内容，无论是否高亮
-        let content = requestBodyEl.textContent;
-        // 如果高亮后textContent为空，尝试获取innerText
-        if (!content || content.trim() === '') {
-            content = requestBodyEl.innerText;
-        }
-        navigator.clipboard.writeText(content)
-            .then(() => {
-                // 显示复制成功提示
-                const sectionActions = requestBodyEl.closest('.api-detail-section').querySelector('.section-actions');
-                const btn = sectionActions ? sectionActions.querySelector('button:nth-child(2)') : null;
-                if (btn) {
-                    const originalText = btn.textContent;
-                    btn.textContent = '已复制';
-                    setTimeout(() => {
-                        btn.textContent = originalText;
-                    }, 2000);
-                }
-            })
-            .catch(err => {
-                console.error('复制失败:', err);
-            });
+    if (!requestBodyEl) return;
+    
+    // 从原始数据源获取完整内容
+    const requestIndex = parseInt(requestBodyEl.dataset.requestIndex);
+    let content = '';
+    
+    if (!isNaN(requestIndex) && window.apiRequestsData && window.apiRequestsData.recent_requests && window.apiRequestsData.recent_requests[requestIndex]) {
+        // 从原始数据获取完整内容
+        content = formatBody(window.apiRequestsData.recent_requests[requestIndex].request_body);
     }
+    
+    // 如果无法从原始数据获取，使用显示的内容作为降级方案
+    if (!content || content.trim() === '') {
+        content = requestBodyEl.textContent;
+    }
+    
+    // 如果高亮后textContent为空，尝试获取innerText
+    if (!content || content.trim() === '') {
+        content = requestBodyEl.innerText;
+    }
+    
+    copyToClipboard(content)
+        .then(() => {
+            // 显示复制成功提示
+            const sectionActions = requestBodyEl.closest('.api-detail-section').querySelector('.section-actions');
+            const btn = sectionActions ? sectionActions.querySelector('button:nth-child(2)') : null;
+            if (btn) {
+                const originalText = btn.textContent;
+                btn.textContent = '已复制';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                }, 2000);
+            }
+        })
+        .catch(err => {
+            console.error('复制失败:', err);
+            // 显示复制失败提示
+            alert('复制失败，请手动复制');
+        });
 }
 
 // 复制响应体到剪贴板
 function copyResponseBody() {
     const responseBodyEl = document.getElementById('api-detail-response-body');
-    if (responseBodyEl) {
-        // 获取原始内容，无论是否高亮
-        let content = responseBodyEl.textContent;
-        // 如果高亮后textContent为空，尝试获取innerText
-        if (!content || content.trim() === '') {
-            content = responseBodyEl.innerText;
-        }
-        navigator.clipboard.writeText(content)
-            .then(() => {
-                // 显示复制成功提示
-                const sectionActions = responseBodyEl.closest('.api-detail-section').querySelector('.section-actions');
-                const btn = sectionActions ? sectionActions.querySelector('button:nth-child(2)') : null;
-                if (btn) {
-                    const originalText = btn.textContent;
-                    btn.textContent = '已复制';
-                    setTimeout(() => {
-                        btn.textContent = originalText;
-                    }, 2000);
-                }
-            })
-            .catch(err => {
-                console.error('复制失败:', err);
-            });
+    if (!responseBodyEl) return;
+    
+    // 从原始数据源获取完整内容
+    const requestIndex = parseInt(responseBodyEl.dataset.requestIndex);
+    let content = '';
+    
+    if (!isNaN(requestIndex) && window.apiRequestsData && window.apiRequestsData.recent_requests && window.apiRequestsData.recent_requests[requestIndex]) {
+        // 从原始数据获取完整内容
+        content = formatBody(window.apiRequestsData.recent_requests[requestIndex].response_body);
     }
+    
+    // 如果无法从原始数据获取，使用显示的内容作为降级方案
+    if (!content || content.trim() === '') {
+        content = responseBodyEl.textContent;
+    }
+    
+    // 如果高亮后textContent为空，尝试获取innerText
+    if (!content || content.trim() === '') {
+        content = responseBodyEl.innerText;
+    }
+    
+    copyToClipboard(content)
+        .then(() => {
+            // 显示复制成功提示
+            const sectionActions = responseBodyEl.closest('.api-detail-section').querySelector('.section-actions');
+            const btn = sectionActions ? sectionActions.querySelector('button:nth-child(2)') : null;
+            if (btn) {
+                const originalText = btn.textContent;
+                btn.textContent = '已复制';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                }, 2000);
+            }
+        })
+        .catch(err => {
+            console.error('复制失败:', err);
+            // 显示复制失败提示
+            alert('复制失败，请手动复制');
+        });
 }
 
 function refreshAPIRequests() {
@@ -3414,19 +3466,35 @@ function formatOutboundRequestRow(request, index) {
     `;
 }
 
-// 显示发送请求详情
+// 显示发送请求详情 - 优化版本
+// 常量定义
+const MAX_CONTENT_LENGTH = 10000;
+const WARNING_THRESHOLD = 5000;
+// 单例模态框容器
+let outboundRequestModal = null;
+let logDetailModal = null;
+
 function showOutboundRequestDetail(index) {
     const request = outboundRequestsData[index];
-    // 调试：打印请求数据
-    console.log('显示请求详情，索引:', index);
-    console.log('请求数据:', request);
-    console.log('响应体:', request.response_body);
-    console.log('响应体类型:', typeof request.response_body);
-    console.log('响应体是否为undefined:', request.response_body === undefined);
-    console.log('响应体是否为null:', request.response_body === null);
-    console.log('响应体条件判断结果:', request.response_body !== undefined && request.response_body !== null);
-    const modal = document.createElement('div');
-    modal.className = 'modal';
+    if (!request) {
+        console.error('请求数据不存在');
+        return;
+    }
+
+    // 清理之前的模态框（单例模式）
+    if (outboundRequestModal) {
+        try {
+            document.body.removeChild(outboundRequestModal);
+        } catch (e) {
+            console.warn('移除旧模态框失败:', e);
+        }
+        outboundRequestModal = null;
+    }
+
+    // 创建新模态框
+    outboundRequestModal = document.createElement('div');
+    outboundRequestModal.className = 'modal';
+    outboundRequestModal.id = 'outbound-request-detail-modal';
     
     // 解析可能的JSON字符串字段
     let parsedRequestHeaders = request.request_headers;
@@ -3449,16 +3517,16 @@ function showOutboundRequestDetail(index) {
     
     // 构建HTML内容
     let htmlContent = `
-        <div class="modal-overlay"></div>
+        <div class="modal-overlay" onclick="hideOutboundRequestDetail()"></div>
         <div class="modal-content">
             <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 15px;">
                 <h3 style="margin: 0; font-size: 18px;">发送请求详情</h3>
                 <div class="modal-actions" style="display: flex; align-items: center;">
                     <button class="export-btn" onclick="exportOutboundRequestDetail(${index})" style="padding: 8px 16px; border: none; border-radius: 8px; background-color: #4CAF50; color: white; font-weight: bold; cursor: pointer; font-size: 14px; transition: all 0.3s ease;">导出</button>
-                    <button class="close-btn" onclick="this.closest('.modal').remove()" style="padding: 8px 16px; border: none; border-radius: 8px; background-color: #f44336; color: white; cursor: pointer; font-size: 14px; margin-left: 10px;">&times;</button>
+                    <button class="close-btn" onclick="hideOutboundRequestDetail()" style="padding: 8px 16px; border: none; border-radius: 8px; background-color: #f44336; color: white; cursor: pointer; font-size: 14px; margin-left: 10px;">&times;</button>
                 </div>
             </div>
-            <div class="modal-body">
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
                 <div class="detail-section">
                     <h4>基本信息</h4>
                     <table class="detail-table">
@@ -3493,7 +3561,7 @@ function showOutboundRequestDetail(index) {
         htmlContent += `
         <tr>
             <td class="detail-label">错误信息:</td>
-            <td class="detail-value error">${request.error_message}</td>
+            <td class="detail-value error">${escapeHtml(request.error_message)}</td>
         </tr>`;
     }
     
@@ -3504,89 +3572,180 @@ function showOutboundRequestDetail(index) {
     
     // 请求头部分
     if (parsedRequestHeaders) {
-        htmlContent += `
-        <div class="detail-section">
-            <h4>请求头</h4>
-            <pre><code class="language-json">${JSON.stringify(parsedRequestHeaders, null, 2)}</code></pre>
-        </div>`;
+        const headersStr = JSON.stringify(parsedRequestHeaders, null, 2);
+        htmlContent += createSectionWithTruncation('请求头', headersStr, headersStr.length);
     }
     
     // 请求体部分
     if (request.request_body) {
-        let formattedRequestBody = request.request_body;
-        if (typeof request.request_body === 'string') {
-            try {
-                formattedRequestBody = JSON.stringify(JSON.parse(request.request_body), null, 2);
-            } catch (e) {
-                formattedRequestBody = request.request_body;
-            }
-        } else {
-            formattedRequestBody = JSON.stringify(request.request_body, null, 2);
-        }
-        htmlContent += `
-        <div class="detail-section">
-            <h4>请求体</h4>
-            <pre><code class="language-json">${formattedRequestBody}</code></pre>
-        </div>`;
+        const formattedBody = formatBody(request.request_body);
+        htmlContent += createSectionWithTruncation('请求体', formattedBody, formattedBody.length);
     }
     
     // 响应头部分
     if (parsedResponseHeaders) {
-        htmlContent += `
-        <div class="detail-section">
-            <h4>响应头</h4>
-            <pre><code class="language-json">${JSON.stringify(parsedResponseHeaders, null, 2)}</code></pre>
-        </div>`;
+        const headersStr = JSON.stringify(parsedResponseHeaders, null, 2);
+        htmlContent += createSectionWithTruncation('响应头', headersStr, headersStr.length);
     }
     
-    // 响应体部分 - 关键修复：显示所有情况的响应体
-    console.log('准备添加响应体部分...');
-    console.log('响应体原始值:', request.response_body);
-    console.log('响应体类型:', typeof request.response_body);
-    console.log('响应体长度:', request.response_body ? request.response_body.length : 0);
-    
-    // 始终添加响应体部分
+    // 响应体部分
     let responseBodyContent = '无响应体数据';
+    let responseBodyLength = 0;
     
     if (request.response_body !== undefined && request.response_body !== null) {
-        console.log('响应体不为空，准备渲染...');
         try {
-            if (typeof request.response_body === 'string') {
-                try {
-                    // 尝试解析JSON
-                    const parsed = JSON.parse(request.response_body);
-                    responseBodyContent = JSON.stringify(parsed, null, 2);
-                } catch (e) {
-                    console.log('JSON解析失败，使用原始响应体:', e);
-                    responseBodyContent = request.response_body;
-                }
-            } else {
-                responseBodyContent = JSON.stringify(request.response_body, null, 2);
-            }
-            console.log('格式化后的响应体:', responseBodyContent);
-            console.log('格式化后响应体长度:', responseBodyContent.length);
+            responseBodyContent = formatBody(request.response_body);
+            responseBodyLength = responseBodyContent.length;
         } catch (e) {
-            console.log('响应体处理失败:', e);
             responseBodyContent = '响应体处理失败: ' + e.message;
         }
-    } else {
-        console.log('响应体为空或未定义');
     }
     
-    // 强制添加响应体部分
-    htmlContent += `
-    <div class="detail-section">
-        <h4>响应体</h4>
-        <pre><code class="language-json">${responseBodyContent}</code></pre>
-    </div>`;
-    
+    htmlContent += createSectionWithTruncation('响应体', responseBodyContent, responseBodyLength);
+
     htmlContent += `
             </div>
         </div>`;
     
-    modal.innerHTML = htmlContent;
-    document.body.appendChild(modal);
-    Prism.highlightAll();
+    outboundRequestModal.innerHTML = htmlContent;
+    document.body.appendChild(outboundRequestModal);
+    
+    // 阻止背景滚动
+    document.body.style.overflow = 'hidden';
+
+    // 使用局部语法高亮代替全局高亮
+    highlightCodeBlocks(outboundRequestModal);
+}
+
+// 安全解析JSON
+function parseJsonSafely(str) {
+    if (!str) return null;
+    if (typeof str !== 'string') return str;
+    try {
+        return JSON.parse(str);
+    } catch (e) {
+        console.log('解析JSON失败', e);
+        return str;
+    }
+}
+
+// 格式化时间戳
+function formatTimestamp(timestamp) {
+    if (typeof timestamp === 'string') return timestamp;
+    return new Date(timestamp * 1000).toLocaleString('zh-CN');
+}
+
+// 格式化请求体/响应体
+function formatBody(body) {
+    if (typeof body === 'string') {
+        try {
+            const parsed = JSON.parse(body);
+            return JSON.stringify(parsed, null, 2);
+        } catch (e) {
+            return body;
+        }
+    }
+    return JSON.stringify(body, null, 2);
+}
+
+// 创建带截断功能的内容区域
+function createSectionWithTruncation(title, content, length) {
+    const isLarge = length > WARNING_THRESHOLD;
+    const isTruncated = length > MAX_CONTENT_LENGTH;
+    const displayContent = isTruncated ? content.substring(0, MAX_CONTENT_LENGTH) + '...\n\n[内容已截断，完整内容请导出查看]' : content;
+    const warningHtml = isLarge ? `<div style="color: #ff9800; margin-bottom: 8px; font-size: 12px; display: flex; align-items: center;">⚠️ 数据量较大(${length.toLocaleString()}字符)，可能影响显示性能</div>` : '';
+    
+    return `
+        <div class="detail-section" style="margin-top: 15px;">
+            <h4 style="margin: 0;">${title}</h4>
+            ${warningHtml}
+            <pre style="max-height: 300px; overflow-y: auto; word-wrap: break-word; white-space: pre-wrap;"><code class="language-json">${escapeHtml(displayContent)}</code></pre>
+            ${isTruncated ? `<div style="text-align: right; margin-top: 4px; font-size: 12px; color: #666;">仅显示前${MAX_CONTENT_LENGTH.toLocaleString()}字符</div>` : ''}
+        </div>`;
+}
+
+// 局部语法高亮
+function highlightCodeBlocks(container) {
+    if (typeof Prism === 'undefined') return;
+    
+    const codeBlocks = container.querySelectorAll('code.language-json');
+    codeBlocks.forEach(block => {
+        try {
+            Prism.highlightElement(block);
+        } catch (e) {
+            console.warn('语法高亮失败:', e);
+        }
+    });
+}
+
+// HTML转义
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&#39;');
+}
+
+// 隐藏发送请求详情
+function hideOutboundRequestDetail() {
+    if (outboundRequestModal) {
+        try {
+            // 清理语法高亮产生的额外元素
+            const codeBlocks = outboundRequestModal.querySelectorAll('code');
+            codeBlocks.forEach(block => {
+                block.innerHTML = block.textContent;
+            });
+            
+            document.body.removeChild(outboundRequestModal);
+            outboundRequestModal = null;
+        } catch (e) {
+            console.warn('移除模态框失败:', e);
+            outboundRequestModal = null;
+        }
+    }
+    
+    // 恢复背景滚动
+    document.body.style.overflow = '';
+}
+
+// 格式化请求体/响应体用于显示（带截断）
+function formatBodyForDisplay(body) {
+    if (!body) {
+        return { display: '无数据', length: 0 };
+    }
+    
+    let formattedBody = body;
+    if (typeof body === 'string') {
+        try {
+            const parsed = JSON.parse(body);
+            formattedBody = JSON.stringify(parsed, null, 2);
+        } catch (e) {
+            // 不是JSON，保持原样
+        }
+    } else {
+        formattedBody = JSON.stringify(body, null, 2);
+    }
+    
+    const length = formattedBody.length;
+    const isTruncated = length > MAX_CONTENT_LENGTH;
+    const displayContent = isTruncated ? formattedBody.substring(0, MAX_CONTENT_LENGTH) + '...\n\n[内容已截断，完整内容请复制查看]' : formattedBody;
+    
+    return { display: displayContent, length: length, truncated: isTruncated };
+}
+
+// 更新数据量警告
+function updateBodySizeWarning(type, length) {
+    const warningEl = document.getElementById(`api-detail-${type}-body-warning`);
+    if (!warningEl) return;
+    
+    if (length > WARNING_THRESHOLD) {
+        warningEl.textContent = `⚠️ 数据量较大(${length.toLocaleString()}字符)`;
+        warningEl.style.display = 'block';
+    } else {
+        warningEl.style.display = 'none';
+    }
 }
 
 // 导出发送请求详情
@@ -4092,7 +4251,7 @@ window.addEventListener('beforeunload', function() {
     }
 });
 
-// 显示日志详细信息
+// 显示日志详细信息 - 优化版本
 async function showLogDetail(index) {
     // 如果用户不活动，不发送请求
     if (isInactive) {
@@ -4102,6 +4261,16 @@ async function showLogDetail(index) {
     
     const logs = window.logsData || [];
     if (!logs[index]) return;
+    
+    // 清理之前的模态框（单例模式）
+    if (logDetailModal) {
+        try {
+            document.body.removeChild(logDetailModal);
+        } catch (e) {
+            console.warn('移除旧日志详情模态框失败:', e);
+        }
+        logDetailModal = null;
+    }
     
     // 获取完整的日志数据（包含所有级别，包括DEBUG）
     let allLogs = [];
@@ -4129,10 +4298,10 @@ async function showLogDetail(index) {
     const surroundingLogs = allLogs.slice(startIndex, endIndex + 1);
     
     // 创建模态框
-    const modal = document.createElement('div');
-    modal.className = 'modal';
-    modal.innerHTML = `
-        <div class="modal-overlay"></div>
+    logDetailModal = document.createElement('div');
+    logDetailModal.className = 'modal';
+    logDetailModal.innerHTML = `
+        <div class="modal-overlay" onclick="hideLogDetail()"></div>
         <div class="modal-content">
             <div class="modal-header">
                 <h3>日志详细信息</h3>
@@ -4144,10 +4313,10 @@ async function showLogDetail(index) {
                         <option value="info">信息日志</option>
                         <option value="debug">调试日志</option>
                     </select>
-                    <button class="close-btn" onclick="this.closest('.modal').remove()">&times;</button>
+                    <button class="close-btn" onclick="hideLogDetail()">&times;</button>
                 </div>
             </div>
-            <div class="modal-body">
+            <div class="modal-body" style="max-height: 75vh; overflow-y: auto;">
                 <div class="log-detail-section">
                     <h4>选中日志</h4>
                     <div class="log-detail-item selected">
@@ -4172,20 +4341,24 @@ async function showLogDetail(index) {
         </div>
     `;
     
-    document.body.appendChild(modal);
-    Prism.highlightAll();
+    document.body.appendChild(logDetailModal);
+    
+    // 阻止背景滚动
+    document.body.style.overflow = 'hidden';
+    
+    // 使用局部语法高亮
+    highlightCodeBlocks(logDetailModal);
     
     // 保存完整日志数据到模态框元素上
-    modal.dataset.allLogs = JSON.stringify(allLogs);
-    modal.dataset.selectedLogIndex = selectedLogIndex;
+    logDetailModal.dataset.allLogs = JSON.stringify(allLogs);
+    logDetailModal.dataset.selectedLogIndex = selectedLogIndex;
 }
 
-// 筛选模态框中的日志
+// 筛选模态框中的日志 - 优化版本
 function filterModalLogs(level, selectedLogIndex) {
-    const modal = document.querySelector('.modal');
-    if (!modal) return;
+    if (!logDetailModal) return;
     
-    const allLogs = JSON.parse(modal.dataset.allLogs);
+    const allLogs = JSON.parse(logDetailModal.dataset.allLogs);
     
     // 计算前后各10条日志的范围
     const startIndex = Math.max(0, selectedLogIndex - 10);
@@ -4214,8 +4387,31 @@ function filterModalLogs(level, selectedLogIndex) {
             `;
         }).join('');
         
-        Prism.highlightAll();
+        // 使用局部语法高亮
+        highlightCodeBlocks(logDetailModal);
     }
+}
+
+// 隐藏日志详情模态框
+function hideLogDetail() {
+    if (logDetailModal) {
+        try {
+            // 清理语法高亮产生的额外元素
+            const codeBlocks = logDetailModal.querySelectorAll('code');
+            codeBlocks.forEach(block => {
+                block.innerHTML = block.textContent;
+            });
+            
+            document.body.removeChild(logDetailModal);
+            logDetailModal = null;
+        } catch (e) {
+            console.warn('移除日志详情模态框失败:', e);
+            logDetailModal = null;
+        }
+    }
+    
+    // 恢复背景滚动
+    document.body.style.overflow = '';
 }
 
 // HTML转义函数，防止XSS攻击

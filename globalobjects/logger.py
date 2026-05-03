@@ -1080,7 +1080,7 @@ class SmartLogger(logging.Logger):
     _file_logger = None
     _auto_file_enabled = True
     _db_enabled = True
-    _db_min_level = logging.DEBUG  # 记录所有级别的日志到数据库，便于调试
+    _db_min_level = logging.INFO  # 只记录 INFO 级别及以上的日志到数据库
     _db_initialized = False  # 数据库是否已初始化
     
     def set_file_logger(self, file_logger) -> None:

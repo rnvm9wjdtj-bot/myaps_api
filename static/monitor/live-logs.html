@@ -95,9 +95,43 @@
             background: #667eea;
             color: white;
         }
-        .header-control-group input[type="checkbox"] {
-            width: 14px;
-            height: 14px;
+        .toggle-switch {
+            position: relative;
+            width: 44px;
+            height: 24px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.3);
+            transition: 0.3s;
+            border-radius: 24px;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+        .toggle-switch input:checked + .toggle-slider {
+            background-color: #2ecc71;
+        }
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(20px);
         }
         .btn {
             padding: 6px 14px;
@@ -236,6 +270,60 @@
         .auto-scroll-indicator.show {
             display: block;
         }
+        
+        /* 失活超时模态框 */
+        .inactivity-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .inactivity-modal.show {
+            display: flex;
+        }
+        .inactivity-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(3px);
+        }
+        .inactivity-content {
+            position: relative;
+            background: #2d2d2d;
+            border-radius: 12px;
+            padding: 30px;
+            min-width: 400px;
+            max-width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            text-align: center;
+        }
+        .inactivity-content .modal-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+        .inactivity-content h3 {
+            color: #ffb74d;
+            margin: 0 0 10px 0;
+            font-size: 20px;
+        }
+        .inactivity-content p {
+            color: #a0a0a0;
+            margin: 8px 0;
+            font-size: 14px;
+        }
+        .inactivity-content .btn {
+            margin-top: 20px;
+            padding: 10px 30px;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
@@ -255,7 +343,7 @@
                     <select id="levelFilter" onchange="applyFilters()">
                         <option value="">全部</option>
                         <option value="DEBUG">DEBUG</option>
-                        <option value="INFO">INFO</option>
+                        <option value="INFO" selected>INFO</option>
                         <option value="WARNING">WARNING</option>
                         <option value="ERROR">ERROR</option>
                         <option value="CRITICAL">CRITICAL</option>
@@ -267,9 +355,10 @@
                 </div>
                 
                 <div class="header-control-group">
-                    <label>
+                    <label>自动滚动</label>
+                    <label class="toggle-switch">
                         <input type="checkbox" id="autoScroll" checked onchange="toggleAutoScroll()">
-                        自动滚动
+                        <span class="toggle-slider"></span>
                     </label>
                 </div>
                 
@@ -302,6 +391,18 @@
     <div class="auto-scroll-indicator" id="autoScrollIndicator">
         ⬇️ 已暂停自动滚动 - 点击滚动到底部
     </div>
+    
+    <!-- 失活超时模态框 -->
+    <div class="inactivity-modal" id="inactivityModal">
+        <div class="inactivity-overlay"></div>
+        <div class="inactivity-content">
+            <div class="modal-icon">⌛</div>
+            <h3>日志流已暂停</h3>
+            <p>由于长时间未活动，日志流已自动暂停以节省资源。</p>
+            <p>如需继续查看实时日志，请点击下方按钮恢复连接。</p>
+            <button class="btn btn-primary" onclick="resumeLiveLogs()">恢复连接</button>
+        </div>
+    </div>
 
     <script>
         let eventSource = null;
@@ -310,13 +411,14 @@
         let isPaused = false;
         let autoScroll = true;
         let searchTerm = '';
-        let levelFilter = '';
+        let levelFilter = 'INFO';
         let stats = { DEBUG: 0, INFO: 0, WARNING: 0, ERROR: 0, CRITICAL: 0 };
         let lastActivity = Date.now();
-        const INACTIVITY_TIMEOUT = 30 * 60 * 1000;
+        const INACTIVITY_TIMEOUT = 180 * 60 * 1000;  // 180分钟超时
         let isDomReady = false;
         let isRendering = false;  // 防止渲染冲突
         let pendingRerender = false;  // 标记是否有待处理的重渲染
+        const levelPriority = { DEBUG: 10, INFO: 20, WARNING: 30, ERROR: 40, CRITICAL: 50 };  // 全局级别优先级
         
         function checkDomReady() {
             const container = document.getElementById('logsContainer');
@@ -348,7 +450,6 @@
             
             eventSource.onopen = () => {
                 updateStatus('connected');
-                lastActivity = Date.now();
             };
             
             eventSource.onmessage = (event) => {
@@ -365,7 +466,6 @@
                         return;
                     }
                     addLog(logData);
-                    lastActivity = Date.now();
                 } catch (e) {
                     console.error('解析日志数据失败:', e);
                 }
@@ -480,8 +580,6 @@
                 container.innerHTML = '<div class="no-logs" id="noLogs">正在等待日志数据...</div>';
                 return;
             }
-            
-            const levelPriority = { DEBUG: 10, INFO: 20, WARNING: 30, ERROR: 40, CRITICAL: 50 };
             
             const filteredLogs = logs.filter(log => {
                 if (levelFilter && levelPriority[log.level] < levelPriority[levelFilter]) return false;
@@ -621,11 +719,55 @@
             });
         }
         
+        // 每10秒检查一次失活状态
         setInterval(() => {
-            if (Date.now() - lastActivity > INACTIVITY_TIMEOUT && !isPaused) {
-                togglePause();
+            if (Date.now() - lastActivity >= INACTIVITY_TIMEOUT && !isPaused) {
+                handleInactivityTimeout();
             }
-        }, 60000);
+        }, 10000);
+        
+        // 监听用户活动，重置失活计时器
+        window.addEventListener('mousemove', () => { lastActivity = Date.now(); });
+        window.addEventListener('keydown', () => { lastActivity = Date.now(); });
+        window.addEventListener('scroll', () => { lastActivity = Date.now(); });
+        window.addEventListener('click', () => { lastActivity = Date.now(); });
+        
+        // 处理失活超时
+        function handleInactivityTimeout() {
+            togglePause();
+            showInactivityModal();
+        }
+        
+        // 显示失活模态框
+        function showInactivityModal() {
+            const modal = document.getElementById('inactivityModal');
+            if (modal) {
+                modal.classList.add('show');
+            }
+        }
+        
+        // 隐藏失活模态框
+        function hideInactivityModal() {
+            const modal = document.getElementById('inactivityModal');
+            if (modal) {
+                modal.classList.remove('show');
+            }
+        }
+        
+        // 恢复日志流
+        function resumeLiveLogs() {
+            hideInactivityModal();
+            togglePause();
+            lastActivity = Date.now();
+        }
+        
+        // 页面卸载时清理资源，防止内存泄漏
+        window.addEventListener('beforeunload', () => {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+            }
+        });
         
         async function checkServiceStatus() {
             try {

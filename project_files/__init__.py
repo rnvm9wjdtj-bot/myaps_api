@@ -28,13 +28,13 @@ from apps.common.utils.redis_pool_manager import get_redis_pool_manager
 logger = log_config.get_logger(__name__)
 
 # 创建HTTP会话，供本模块使用（使用连接池优化）
-_HTTP_SESSION = get_optimized_session(
-    retries=3,
-    pool_connections=50,
-    pool_maxsize=50,
-    connect_timeout=10.0,
-    read_timeout=30.0
-)
+# _HTTP_SESSION = get_optimized_session(
+#     retries=3,
+#     pool_connections=50,
+#     pool_maxsize=50,
+#     connect_timeout=10.0,
+#     read_timeout=30.0
+# )
 
 
 # 确保环境变量正确设置
