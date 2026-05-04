@@ -21,6 +21,21 @@ if exist "%ENV_FILE%" (
 )
 echo Python virtual environment directory: %PYTHON_VENV_DIR%
 
+rem Read SERVICE_DAEMON_NAME from .env file
+if exist "%ENV_FILE%" (
+    for /f "tokens=1,2 delims==" %%a in ('findstr /C:"SERVICE_DAEMON_NAME" "%ENV_FILE%"') do (
+        set "SERVICE_DAEMON_NAME=%%b"
+        rem Remove spaces
+        set "SERVICE_DAEMON_NAME=!SERVICE_DAEMON_NAME: =!"
+    )
+)
+if "%SERVICE_DAEMON_NAME%"=="" (
+    set "SERVICE_NAME=MyAPS_API"
+) else (
+    set "SERVICE_NAME=%SERVICE_DAEMON_NAME%"
+)
+echo Service name: %SERVICE_NAME%
+
 rem Set Python executable path
 set "PYTHON_EXE=python"
 set "PROJECT_ROOT=%~dp0..\.."
@@ -117,6 +132,8 @@ echo 6. Check service status
 echo 7. Check system environment
 echo 8. Clean log files
 echo 9. View help
+echo A. Health check (HTTP endpoint)
+echo B. Rolling update (graceful restart)
 echo 0. Exit
 echo.
 echo ================================================================================
@@ -152,6 +169,8 @@ if "%choice%"=="6" goto :STATUS
 if "%choice%"=="7" goto :CHECK_ENV
 if "%choice%"=="8" goto :CLEAN_LOGS
 if "%choice%"=="9" goto :HELP
+if /i "%choice%"=="A" goto :HEALTH_CHECK
+if /i "%choice%"=="B" goto :ROLLING_UPDATE
 if "%choice%"=="0" goto :EXIT
 
 echo Invalid choice, please try again!
@@ -214,7 +233,6 @@ rem Install service
 echo Installing service...
 echo.
 
-set "SERVICE_NAME=MyAPS_API"
 set "RUN_PS1=%SCRIPT_DIR%..\run.ps1"
 
 "%NSSM_EXE%" install "%SERVICE_NAME%" powershell.exe
@@ -246,13 +264,12 @@ goto :MENU
 :START
 cls
 echo ================================================================================
-echo                              Start service
+echo                          Start service
 echo ================================================================================
 echo.
 echo Starting service...
 echo.
 
-set "SERVICE_NAME=MyAPS_API"
 "%NSSM_EXE%" start "%SERVICE_NAME%"
 
 if %errorLevel% neq 0 (
@@ -280,13 +297,12 @@ goto :MENU
 :STOP
 cls
 echo ================================================================================
-echo                              Stop service
+echo                          Stop service
 echo ================================================================================
 echo.
 echo Stopping service...
 echo.
 
-set "SERVICE_NAME=MyAPS_API"
 "%NSSM_EXE%" stop "%SERVICE_NAME%"
 
 echo Service stopped!
@@ -297,13 +313,12 @@ goto :MENU
 :RESTART
 cls
 echo ================================================================================
-echo                              Restart service
+echo                          Restart service
 echo ================================================================================
 echo.
 echo Restarting service...
 echo.
 
-set "SERVICE_NAME=MyAPS_API"
 "%NSSM_EXE%" restart "%SERVICE_NAME%"
 
 echo Service restarted successfully!
@@ -314,13 +329,12 @@ goto :MENU
 :UNINSTALL
 cls
 echo ================================================================================
-echo                              Uninstall service
+echo                          Uninstall service
 echo ================================================================================
 echo.
 echo Uninstalling service...
 echo.
 
-set "SERVICE_NAME=MyAPS_API"
 "%NSSM_EXE%" stop "%SERVICE_NAME%" >nul 2>&1
 "%NSSM_EXE%" remove "%SERVICE_NAME%" confirm
 
@@ -332,13 +346,12 @@ goto :MENU
 :STATUS
 cls
 echo ================================================================================
-echo                              Service status
+echo                          Service status
 echo ================================================================================
 echo.
 echo Checking service status...
 echo.
 
-set "SERVICE_NAME=MyAPS_API"
 "%NSSM_EXE%" status "%SERVICE_NAME%"
 echo.
 echo Service configuration:
@@ -440,6 +453,8 @@ echo 6. Check status: Check service running status and configuration
 echo 7. Check environment: Check system environment and dependencies
 echo 8. Clean logs: Clean old log files
 echo 9. View help: Display this help information
+echo A. Health check: Perform HTTP health check on service endpoint
+echo B. Rolling update: Graceful restart to minimize downtime during updates
 echo 0. Exit: Exit the tool
 echo.
 echo Common issues:
@@ -449,6 +464,62 @@ echo - Insufficient permissions: Run this script as administrator
 echo.
 echo Technical support:
 echo - Contact developer for help
+echo.
+pause
+goto :MENU
+
+:HEALTH_CHECK
+cls
+echo ================================================================================
+echo                          Health Check (HTTP Endpoint)
+echo ================================================================================
+echo.
+echo Performing health check on service...
+echo.
+
+set "CHECK_SCRIPT=%SCRIPT_DIR%check_health.bat"
+if not exist "%CHECK_SCRIPT%" (
+    echo [ERROR] check_health.bat not found!
+    echo Please ensure the script exists in the deploy folder.
+    echo.
+    pause
+    goto :MENU
+)
+
+call "%CHECK_SCRIPT%"
+set "HEALTH_RESULT=%errorLevel%"
+
+echo.
+if %HEALTH_RESULT% equ 0 (
+    echo [SUCCESS] Health check passed.
+) else (
+    echo [FAIL] Health check failed or service required restart.
+)
+echo.
+pause
+goto :MENU
+
+:ROLLING_UPDATE
+cls
+echo ================================================================================
+echo                          Rolling Update (Graceful Restart)
+echo ================================================================================
+echo.
+echo Performing rolling update with minimal downtime...
+echo.
+
+set "UPDATE_SCRIPT=%SCRIPT_DIR%rolling_update.bat"
+if not exist "%UPDATE_SCRIPT%" (
+    echo [ERROR] rolling_update.bat not found!
+    echo Please ensure the script exists in the deploy folder.
+    echo.
+    pause
+    goto :MENU
+)
+
+call "%UPDATE_SCRIPT%"
+set "UPDATE_RESULT=%errorLevel%"
+
 echo.
 pause
 goto :MENU

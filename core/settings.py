@@ -16,6 +16,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(os.getenv('ENV_FILE', os.path.join(BASE_DIR, '.env')))
 
 
+
+# 时区，默认东八区
+TIMEZONE = os.getenv("TIMEZONE", "+8")
+
+
 # 数据库监控开关，默认关闭
 TURNON_BINLOG_LISTENER = os.getenv("TURNON_BINLOG_LISTENER", "False").lower().strip() == "true"
 # Binlog 位置管理器开关，默认关闭

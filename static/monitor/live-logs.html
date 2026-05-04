@@ -419,6 +419,8 @@
         let isRendering = false;  // 防止渲染冲突
         let pendingRerender = false;  // 标记是否有待处理的重渲染
         const levelPriority = { DEBUG: 10, INFO: 20, WARNING: 30, ERROR: 40, CRITICAL: 50 };  // 全局级别优先级
+        let inactivityTimer = null;  // 失活检查定时器引用
+        let eventListeners = [];  // 存储事件监听器引用，用于清理
         
         function checkDomReady() {
             const container = document.getElementById('logsContainer');
@@ -662,6 +664,20 @@
             if (autoScrollIndicator) {
                 autoScrollIndicator.classList.toggle('show', isPaused);
             }
+            
+            if (isPaused) {
+                // 暂停时关闭 SSE 连接，节省资源
+                if (eventSource) {
+                    eventSource.close();
+                    eventSource = null;
+                    if (isDomReady) {
+                        updateStatus('disconnected');
+                    }
+                }
+            } else {
+                // 继续时重新建立连接
+                connect();
+            }
         }
         
         function toggleAutoScroll() {
@@ -694,8 +710,14 @@
         const logsContainer = document.getElementById('logsContainer');
         const autoScrollIndicator = document.getElementById('autoScrollIndicator');
         
+        // 添加事件监听器并存储引用（使用唯一名称避免覆盖全局方法）
+        function bindEventListener(el, event, handler) {
+            el.addEventListener(event, handler);
+            eventListeners.push({ el, event, handler });
+        }
+        
         if (logsContainer) {
-            logsContainer.addEventListener('click', () => {
+            bindEventListener(logsContainer, 'click', () => {
                 if (isPaused) {
                     togglePause();
                 }
@@ -703,7 +725,7 @@
         }
         
         if (autoScrollIndicator) {
-            autoScrollIndicator.addEventListener('click', () => {
+            bindEventListener(autoScrollIndicator, 'click', () => {
                 if (isPaused) {
                     togglePause();
                 }
@@ -720,17 +742,18 @@
         }
         
         // 每10秒检查一次失活状态
-        setInterval(() => {
+        inactivityTimer = setInterval(() => {
             if (Date.now() - lastActivity >= INACTIVITY_TIMEOUT && !isPaused) {
                 handleInactivityTimeout();
             }
         }, 10000);
         
         // 监听用户活动，重置失活计时器
-        window.addEventListener('mousemove', () => { lastActivity = Date.now(); });
-        window.addEventListener('keydown', () => { lastActivity = Date.now(); });
-        window.addEventListener('scroll', () => { lastActivity = Date.now(); });
-        window.addEventListener('click', () => { lastActivity = Date.now(); });
+        const activityHandler = () => { lastActivity = Date.now(); };
+        bindEventListener(window, 'mousemove', activityHandler);
+        bindEventListener(window, 'keydown', activityHandler);
+        bindEventListener(window, 'scroll', activityHandler);
+        bindEventListener(window, 'click', activityHandler);
         
         // 处理失活超时
         function handleInactivityTimeout() {
@@ -761,12 +784,30 @@
             lastActivity = Date.now();
         }
         
+        // 清理所有事件监听器
+        function cleanupEventListeners() {
+            eventListeners.forEach(({ el, event, handler }) => {
+                el.removeEventListener(event, handler);
+            });
+            eventListeners = [];
+        }
+        
         // 页面卸载时清理资源，防止内存泄漏
         window.addEventListener('beforeunload', () => {
+            // 关闭 SSE 连接
             if (eventSource) {
                 eventSource.close();
                 eventSource = null;
             }
+            
+            // 清理定时器
+            if (inactivityTimer) {
+                clearInterval(inactivityTimer);
+                inactivityTimer = null;
+            }
+            
+            // 清理事件监听器
+            cleanupEventListeners();
         });
         
         async function checkServiceStatus() {
@@ -782,6 +823,7 @@
         }
         
         document.addEventListener('DOMContentLoaded', async () => {
+            // 延迟 100ms 确保 DOM 完全就绪后再初始化
             setTimeout(() => {
                 if (checkDomReady()) {
                     updateStats();
@@ -790,8 +832,9 @@
                 connect();
             }, 100);
             
-            const isRunning = await checkServiceStatus();
-            console.log('日志流服务是否运行:', isRunning);
+            // 检查服务状态（仅用于日志输出）
+            const serviceStatus = await checkServiceStatus();
+            console.log('日志流服务是否运行:', serviceStatus);
         });
     </script>
 </body>
