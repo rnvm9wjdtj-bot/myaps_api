@@ -208,33 +208,113 @@
         .history-table tr:hover {
             background: #fafafa;
         }
-        .history-table th:nth-child(1),
-        .history-table td:nth-child(1) {
+        /* 系统日志表格列宽 - 6列：序号、时间、级别、模块、消息、操作 */
+        #logs-results-table th:nth-child(1),
+        #logs-results-table td:nth-child(1) {
             width: 45px;
             text-align: center;
         }
-        .history-table th:nth-child(2),
-        .history-table td:nth-child(2) {
-            width: 180px;
+        #logs-results-table th:nth-child(2),
+        #logs-results-table td:nth-child(2) {
+            width: 170px;
         }
-        .history-table th:nth-child(3),
-        .history-table td:nth-child(3) {
-            width: 120px;
+        #logs-results-table th:nth-child(3),
+        #logs-results-table td:nth-child(3) {
+            width: 75px;
+            text-align: center;
         }
-        .history-table th:nth-child(4),
-        .history-table td:nth-child(4) {
-            width: 300px;
+        #logs-results-table th:nth-child(4),
+        #logs-results-table td:nth-child(4) {
+            width: 160px;
         }
-        .history-table th:nth-child(5),
-        .history-table td:nth-child(5) {
-            width: 80px;
+        #logs-results-table th:nth-child(5),
+        #logs-results-table td:nth-child(5) {
+            width: auto;
             white-space: normal;
             word-break: break-all;
-            min-width: 80px;
+            min-width: 200px;
         }
-        .history-table th:nth-child(6),
-        .history-table td:nth-child(6) {
+        #logs-results-table th:nth-child(6),
+        #logs-results-table td:nth-child(6) {
+            width: 60px;
+            text-align: center;
+        }
+        
+        /* 接收请求表格列宽 - 8列：序号、时间、方法、端点、状态码、响应时间、客户端IP、操作 */
+        #http-results-table th:nth-child(1),
+        #http-results-table td:nth-child(1) {
+            width: 45px;
+            text-align: center;
+        }
+        #http-results-table th:nth-child(2),
+        #http-results-table td:nth-child(2) {
+            width: 160px;
+        }
+        #http-results-table th:nth-child(3),
+        #http-results-table td:nth-child(3) {
+            width: 70px;
+            text-align: center;
+        }
+        #http-results-table th:nth-child(4),
+        #http-results-table td:nth-child(4) {
+            width: 250px;
+        }
+        #http-results-table th:nth-child(5),
+        #http-results-table td:nth-child(5) {
+            width: 75px;
+            text-align: center;
+        }
+        #http-results-table th:nth-child(6),
+        #http-results-table td:nth-child(6) {
+            width: 80px;
+            text-align: center;
+        }
+        #http-results-table th:nth-child(7),
+        #http-results-table td:nth-child(7) {
+            width: 110px;
+        }
+        #http-results-table th:nth-child(8),
+        #http-results-table td:nth-child(8) {
+            width: 60px;
+            text-align: center;
+        }
+        
+        /* 发送请求表格列宽 - 8列：序号、时间、方法、URL、状态码、响应时间、模块、操作 */
+        #outbound-results-table th:nth-child(1),
+        #outbound-results-table td:nth-child(1) {
+            width: 45px;
+            text-align: center;
+        }
+        #outbound-results-table th:nth-child(2),
+        #outbound-results-table td:nth-child(2) {
+            width: 160px;
+        }
+        #outbound-results-table th:nth-child(3),
+        #outbound-results-table td:nth-child(3) {
+            width: 70px;
+            text-align: center;
+        }
+        #outbound-results-table th:nth-child(4),
+        #outbound-results-table td:nth-child(4) {
+            width: 300px;
+        }
+        #outbound-results-table th:nth-child(5),
+        #outbound-results-table td:nth-child(5) {
+            width: 75px;
+            text-align: center;
+        }
+        #outbound-results-table th:nth-child(6),
+        #outbound-results-table td:nth-child(6) {
+            width: 80px;
+            text-align: center;
+        }
+        #outbound-results-table th:nth-child(7),
+        #outbound-results-table td:nth-child(7) {
             width: 120px;
+        }
+        #outbound-results-table th:nth-child(8),
+        #outbound-results-table td:nth-child(8) {
+            width: 60px;
             text-align: center;
         }
         .api-method {
