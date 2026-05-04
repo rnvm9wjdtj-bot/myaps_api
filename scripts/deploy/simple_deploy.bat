@@ -1,125 +1,66 @@
 @echo off
+setlocal
 
-rem Enable delayed expansion for variable substitution
-setlocal enabledelayedexpansion
-
-rem Set console codepage to UTF-8
-chcp 65001 >nul
-
-rem Clear screen
+chcp 936 >nul
 cls
 
-rem Read PYTHON_VENV_DIR from .env file
 set "PYTHON_VENV_DIR=venv"
 set "ENV_FILE=%~dp0..\..\.env"
+set "SERVICE_NAME=MyAPS_API"
+
 if exist "%ENV_FILE%" (
     for /f "tokens=1,2 delims==" %%a in ('findstr "PYTHON_VENV_DIR" "%ENV_FILE%"') do (
         set "PYTHON_VENV_DIR=%%b"
-        rem Remove spaces
-        set "PYTHON_VENV_DIR=!PYTHON_VENV_DIR: =!"
+        set "PYTHON_VENV_DIR=%PYTHON_VENV_DIR: =%"
     )
-)
-echo Python virtual environment directory: %PYTHON_VENV_DIR%
-
-rem Read SERVICE_DAEMON_NAME from .env file
-if exist "%ENV_FILE%" (
     for /f "tokens=1,2 delims==" %%a in ('findstr /C:"SERVICE_DAEMON_NAME" "%ENV_FILE%"') do (
-        set "SERVICE_DAEMON_NAME=%%b"
-        rem Remove spaces
-        set "SERVICE_DAEMON_NAME=!SERVICE_DAEMON_NAME: =!"
+        set "SERVICE_NAME=%%b"
+        set "SERVICE_NAME=%SERVICE_NAME: =%"
     )
 )
-if "%SERVICE_DAEMON_NAME%"=="" (
-    set "SERVICE_NAME=MyAPS_API"
-) else (
-    set "SERVICE_NAME=%SERVICE_DAEMON_NAME%"
-)
-echo Service name: %SERVICE_NAME%
 
-rem Set Python executable path
 set "PYTHON_EXE=python"
 set "PROJECT_ROOT=%~dp0..\.."
 set "VENV_DIR=%PROJECT_ROOT%\%PYTHON_VENV_DIR%"
 set "VENV_PYTHON=%VENV_DIR%\Scripts\python.exe"
-echo Project root: %PROJECT_ROOT%
-echo Virtual environment directory: %VENV_DIR%
-echo Virtual environment Python: %VENV_PYTHON%
 
-rem Check if virtual environment exists
 if exist "%VENV_DIR%" (
-    echo Virtual environment directory exists: %VENV_DIR%
     if exist "%VENV_PYTHON%" (
         set PYTHON_EXE=%VENV_PYTHON%
-        echo Using virtual environment Python: !PYTHON_EXE!
-    ) else (
-        echo Virtual environment Python executable not found: %VENV_PYTHON%
-        echo Using system Python: %PYTHON_EXE%
     )
-) else (
-    echo Virtual environment directory not found: %VENV_DIR%
-    echo Using system Python: %PYTHON_EXE%
 )
 
-echo ================================================================================
-echo                          MyAPS_API Service Deployment Tool
-echo ================================================================================
-echo.
-echo This is a user-friendly deployment tool for users without IT background.
-echo Please follow the prompts to select the function you need.
-echo.
-echo ================================================================================
-echo.
-
-rem Set path variables safely
 set "SCRIPT_DIR=%~dp0"
 if "%SCRIPT_DIR%"=="" (
-echo Error: Cannot get script directory!
-pause
-exit /b 1
+    echo Error: Cannot get script directory!
+    pause
+    exit /b 1
 )
-
-echo Script directory: %SCRIPT_DIR%
 
 set "NSSM_EXE=%SCRIPT_DIR%..\nssm.exe"
 if not exist "%NSSM_EXE%" (
-echo Error: NSSM executable not found!
-echo Please make sure nssm.exe is in the scripts directory.
-pause
-exit /b 1
+    echo Error: NSSM executable not found!
+    pause
+    exit /b 1
 )
 
-echo NSSM path: %NSSM_EXE%
-
-set "PROJECT_ROOT=%SCRIPT_DIR%..\.."
-if not exist "%PROJECT_ROOT%" (
-echo Error: Project root directory not found!
-pause
-exit /b 1
-)
-
-echo Project root: %PROJECT_ROOT%
-
-rem Check for administrator privileges
 net session >nul 2>&1
 if %errorLevel% neq 0 (
-echo Error: Please run this script as administrator!
-echo.
-echo Steps:
-echo 1. Right-click this script file
-echo 2. Select "Run as administrator"
-echo.
-pause
-exit /b 1
+    echo Error: Please run this script as administrator!
+    echo.
+    echo Steps:
+    echo 1. Right-click this script file
+    echo 2. Select "Run as administrator"
+    echo.
+    pause
+    exit /b 1
 )
-
-echo Administrator privileges confirmed!
-echo.
 
 :MENU
 cls
-echo ================================================================================
-echo                          MyAPS_API Service Deployment Tool
-echo ================================================================================
+echo ============================================================
+echo                    MyAPS_API Service Deployment Tool
+echo ============================================================
 echo.
 echo Please select an operation:
 echo.
@@ -136,30 +77,20 @@ echo A. Health check (HTTP endpoint)
 echo B. Rolling update (graceful restart)
 echo 0. Exit
 echo.
-echo ================================================================================
+echo ============================================================
 echo.
 
-rem Get user input safely
 set "choice="
-set /p choice=Please enter number to select operation: 
+set /p choice=Please enter option (0-9, A-B): 
 
-rem Check if input is empty
+for /f "tokens=*" %%a in ("%choice%") do set "choice=%%a"
+
 if "%choice%"=="" (
-echo Error: Please enter a valid number!
-pause
-goto :MENU
+    echo Error: Please enter a valid option!
+    pause
+    goto :MENU
 )
 
-rem Check if input is a number
-set "is_number=1"
-for /f "delims=0123456789" %%i in ("%choice%") do set "is_number=0"
-if "%is_number%"=="0" (
-echo Error: Please enter a valid number!
-pause
-goto :MENU
-)
-
-rem Process user choice
 if "%choice%"=="1" goto :INSTALL
 if "%choice%"=="2" goto :START
 if "%choice%"=="3" goto :STOP
@@ -173,65 +104,44 @@ if /i "%choice%"=="A" goto :HEALTH_CHECK
 if /i "%choice%"=="B" goto :ROLLING_UPDATE
 if "%choice%"=="0" goto :EXIT
 
-echo Invalid choice, please try again!
+echo Invalid choice: [%choice%]
+echo Please try again!
 pause
 goto :MENU
 
 :INSTALL
 cls
-echo ================================================================================
-echo                          Install service (multi-process mode)
-echo ================================================================================
-echo.
-echo Checking system environment...
+echo ============================================================
+echo                Install service (multi-process mode)
+echo ============================================================
 echo.
 
-rem Check if Python is installed
 %PYTHON_EXE% --version >nul 2>&1
 if %errorLevel% neq 0 (
-echo Error: Python not found!
-echo.
-echo Please install Python 3.7 or higher first.
-echo Download URL: https://www.python.org/downloads/
-echo.
-pause
-goto :MENU
+    echo Error: Python not found!
+    pause
+    goto :MENU
 )
 
-rem Check if Gunicorn is installed
 %PYTHON_EXE% -m pip show gunicorn >nul 2>&1
 if %errorLevel% neq 0 (
-echo Installing Gunicorn...
-%PYTHON_EXE% -m pip install gunicorn uvicorn[standard]
-if %errorLevel% neq 0 (
-echo Error: Failed to install Gunicorn!
-echo.
-pause
-goto :MENU
-)
-echo Gunicorn installed successfully!
-echo.
+    echo Installing Gunicorn...
+    %PYTHON_EXE% -m pip install gunicorn uvicorn[standard]
+    if %errorLevel% neq 0 (
+        echo Error: Failed to install Gunicorn!
+        pause
+        goto :MENU
+    )
 )
 
-rem Check dependencies
-echo Checking project dependencies...
 if exist "%PROJECT_ROOT%\requirements.txt" (
-%PYTHON_EXE% -m pip install -r "%PROJECT_ROOT%\requirements.txt"
-if %errorLevel% neq 0 (
-echo Warning: Error occurred while installing dependencies, but will continue to install service.
-echo.
-)
+    echo Installing dependencies...
+    %PYTHON_EXE% -m pip install -r "%PROJECT_ROOT%\requirements.txt"
 )
 
-rem Create logs directory
 if not exist "%PROJECT_ROOT%\logs" (
-echo Creating logs directory...
-mkdir "%PROJECT_ROOT%\logs"
+    mkdir "%PROJECT_ROOT%\logs"
 )
-
-rem Install service
-echo Installing service...
-echo.
 
 set "RUN_PS1=%SCRIPT_DIR%..\run.ps1"
 
@@ -241,8 +151,6 @@ set "RUN_PS1=%SCRIPT_DIR%..\run.ps1"
 "%NSSM_EXE%" set "%SERVICE_NAME%" Start SERVICE_AUTO_START
 "%NSSM_EXE%" set "%SERVICE_NAME%" AppStdout "%PROJECT_ROOT%\logs\nssm_stdout.log"
 "%NSSM_EXE%" set "%SERVICE_NAME%" AppStderr "%PROJECT_ROOT%\logs\nssm_stderr.log"
-
-rem Configure auto-restart
 "%NSSM_EXE%" set "%SERVICE_NAME%" AppRestartDelay 60000
 "%NSSM_EXE%" set "%SERVICE_NAME%" AppThrottle 300000
 "%NSSM_EXE%" set "%SERVICE_NAME%" AppExit Default Restart
@@ -251,44 +159,28 @@ rem Configure auto-restart
 
 echo.
 echo Service installed successfully!
-echo.
 echo Service name: %SERVICE_NAME%
-echo Run mode: Multi-process
-echo Log directory: %PROJECT_ROOT%\logs
-echo.
-echo Next step: Start service (select option 2)
 echo.
 pause
 goto :MENU
 
 :START
 cls
-echo ================================================================================
-echo                          Start service
-echo ================================================================================
-echo.
-echo Starting service...
+echo ============================================================
+echo                        Start service
+echo ============================================================
 echo.
 
 "%NSSM_EXE%" start "%SERVICE_NAME%"
 
 if %errorLevel% neq 0 (
-echo Error: Failed to start service!
-echo.
-echo Possible reasons:
-echo 1. Port 8000 is occupied
-echo 2. Python dependencies missing
-echo 3. Configuration file error
-echo.
-echo Please check log files: %PROJECT_ROOT%\logs
-echo.
-pause
-goto :MENU
+    echo Error: Failed to start service!
+    echo Please check log files: %PROJECT_ROOT%\logs
+    pause
+    goto :MENU
 )
 
 echo Service started successfully!
-echo.
-echo Service name: %SERVICE_NAME%
 echo Access address: http://localhost:8000
 echo.
 pause
@@ -296,11 +188,9 @@ goto :MENU
 
 :STOP
 cls
-echo ================================================================================
-echo                          Stop service
-echo ================================================================================
-echo.
-echo Stopping service...
+echo ============================================================
+echo                        Stop service
+echo ============================================================
 echo.
 
 "%NSSM_EXE%" stop "%SERVICE_NAME%"
@@ -312,11 +202,9 @@ goto :MENU
 
 :RESTART
 cls
-echo ================================================================================
-echo                          Restart service
-echo ================================================================================
-echo.
-echo Restarting service...
+echo ============================================================
+echo                      Restart service
+echo ============================================================
 echo.
 
 "%NSSM_EXE%" restart "%SERVICE_NAME%"
@@ -328,11 +216,9 @@ goto :MENU
 
 :UNINSTALL
 cls
-echo ================================================================================
-echo                          Uninstall service
-echo ================================================================================
-echo.
-echo Uninstalling service...
+echo ============================================================
+echo                     Uninstall service
+echo ============================================================
 echo.
 
 "%NSSM_EXE%" stop "%SERVICE_NAME%" >nul 2>&1
@@ -345,11 +231,9 @@ goto :MENU
 
 :STATUS
 cls
-echo ================================================================================
-echo                          Service status
-echo ================================================================================
-echo.
-echo Checking service status...
+echo ============================================================
+echo                      Service status
+echo ============================================================
 echo.
 
 "%NSSM_EXE%" status "%SERVICE_NAME%"
@@ -363,172 +247,156 @@ goto :MENU
 
 :CHECK_ENV
 cls
-echo ================================================================================
-echo                              System environment check
-echo ================================================================================
+echo ============================================================
+echo                  System environment check
+echo ============================================================
 echo.
 
-rem Check operating system
 echo Operating system:
 ver
 echo.
 
-rem Check Python
 echo Python version:
 %PYTHON_EXE% --version
 echo.
 
-rem Check pip
 echo pip version:
 %PYTHON_EXE% -m pip --version
 echo.
 
-rem Check Gunicorn
 echo Gunicorn version:
 %PYTHON_EXE% -m pip show gunicorn | findstr "Version"
 echo.
 
-rem Check Uvicorn
-echo Uvicorn version:
-%PYTHON_EXE% -m pip show uvicorn | findstr "Version"
-echo.
-
-rem Check port
 echo Port 8000 status:
 netstat -ano | findstr :8000
 if %errorLevel% neq 0 (
-echo Port 8000 is available
+    echo Port 8000 is available
 )
 echo.
-
-rem Check project directory
-echo Project directory:
-echo %PROJECT_ROOT%
-echo.
-
-rem Check requirements file
-if exist "%PROJECT_ROOT%\requirements.txt" (
-echo Requirements file: Exists
-) else (
-echo Requirements file: Not exists
-)
-echo.
-
 pause
 goto :MENU
 
 :CLEAN_LOGS
 cls
-echo ================================================================================
-echo                              Clean log files
-echo ================================================================================
-echo.
-echo Cleaning log files...
-echo Keeping logs from the last 10 days...
+echo ============================================================
+echo                      Clean log files
+echo ============================================================
 echo.
 
-rem Execute PowerShell command safely
-powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "$logDir = '%PROJECT_ROOT%\logs'; $daysToKeep = 10; $cutoffDate = (Get-Date).AddDays(-$daysToKeep); if (Test-Path $logDir) { $oldLogs = Get-ChildItem -Path $logDir -Recurse -File | Where-Object { $_.LastWriteTime -lt $cutoffDate }; if ($oldLogs.Count -gt 0) { Write-Host 'Found ' $oldLogs.Count ' old log files:'; $oldLogs | ForEach-Object { Write-Host '- ' $_.Name ' (Last modified: ' $_.LastWriteTime ')' }; try { $oldLogs | Remove-Item -Force; Write-Host 'Successfully deleted ' $oldLogs.Count ' old log files.'; } catch { Write-Host 'Error deleting log files: ' $_ -ForegroundColor Red; } } else { Write-Host 'No old log files found. All logs are within the last ' $daysToKeep ' days.'; } } else { Write-Host 'Log directory does not exist: ' $logDir -ForegroundColor Yellow; }"
+powershell.exe -ExecutionPolicy Bypass -NoProfile -Command "$logDir = '%PROJECT_ROOT%\logs'; $daysToKeep = 10; $cutoffDate = (Get-Date).AddDays(-$daysToKeep); if (Test-Path $logDir) { $oldLogs = Get-ChildItem -Path $logDir -Recurse -File | Where-Object { $_.LastWriteTime -lt $cutoffDate }; if ($oldLogs) { Write-Host 'Cleaning old log files...'; $oldLogs | Remove-Item -Force; Write-Host 'Clean completed.' } else { Write-Host 'No old log files found.' } } else { Write-Host 'Log directory does not exist.' }"
 
-echo.
-echo Log cleaning completed!
 echo.
 pause
 goto :MENU
 
 :HELP
 cls
-echo ================================================================================
-echo                              Help information
-echo ================================================================================
+echo ============================================================
+echo                        Help information
+echo ============================================================
 echo.
-echo MyAPS_API Service Deployment Tool Usage:
-echo.
-echo 1. Install service: Install service as Windows system service, run in multi-process mode
+
+echo 1. Install service: Install service as Windows system service
 echo 2. Start service: Start the installed service
 echo 3. Stop service: Stop the running service
 echo 4. Restart service: Restart the service
 echo 5. Uninstall service: Remove service from system
-echo 6. Check status: Check service running status and configuration
-echo 7. Check environment: Check system environment and dependencies
+echo 6. Check status: Check service running status
+echo 7. Check environment: Check system environment
 echo 8. Clean logs: Clean old log files
-echo 9. View help: Display this help information
-echo A. Health check: Perform HTTP health check on service endpoint
-echo B. Rolling update: Graceful restart to minimize downtime during updates
+echo 9. View help: Display this help
+echo A. Health check: Perform HTTP health check
+echo B. Rolling update: Graceful restart for updates
 echo 0. Exit: Exit the tool
-echo.
-echo Common issues:
-echo - Port occupied: Check if other programs are using port 8000
-echo - Dependencies missing: Make sure all necessary Python packages are installed
-echo - Insufficient permissions: Run this script as administrator
-echo.
-echo Technical support:
-echo - Contact developer for help
 echo.
 pause
 goto :MENU
 
 :HEALTH_CHECK
 cls
-echo ================================================================================
-echo                          Health Check (HTTP Endpoint)
-echo ================================================================================
-echo.
-echo Performing health check on service...
+echo ============================================================
+echo                   Health Check (HTTP Endpoint)
+echo ============================================================
 echo.
 
 set "CHECK_SCRIPT=%SCRIPT_DIR%check_health.bat"
 if not exist "%CHECK_SCRIPT%" (
-    echo [ERROR] check_health.bat not found!
-    echo Please ensure the script exists in the deploy folder.
-    echo.
+    echo Error: check_health.bat not found!
     pause
     goto :MENU
 )
 
 call "%CHECK_SCRIPT%"
-set "HEALTH_RESULT=%errorLevel%"
-
-echo.
-if %HEALTH_RESULT% equ 0 (
-    echo [SUCCESS] Health check passed.
-) else (
-    echo [FAIL] Health check failed or service required restart.
-)
 echo.
 pause
 goto :MENU
 
 :ROLLING_UPDATE
 cls
-echo ================================================================================
-echo                          Rolling Update (Graceful Restart)
-echo ================================================================================
-echo.
-echo Performing rolling update with minimal downtime...
+echo ============================================================
+echo               Rolling Update (Graceful Restart)
+echo ============================================================
 echo.
 
-set "UPDATE_SCRIPT=%SCRIPT_DIR%rolling_update.bat"
-if not exist "%UPDATE_SCRIPT%" (
-    echo [ERROR] rolling_update.bat not found!
-    echo Please ensure the script exists in the deploy folder.
-    echo.
+echo [DEBUG] SCRIPT_DIR: %SCRIPT_DIR%
+echo [DEBUG] NSSM_EXE: %NSSM_EXE%
+echo Using service name: %SERVICE_NAME%
+echo.
+
+if not exist "%NSSM_EXE%" (
+    echo [ERROR] NSSM executable not found at: %NSSM_EXE%
     pause
     goto :MENU
 )
 
-call "%UPDATE_SCRIPT%"
-set "UPDATE_RESULT=%errorLevel%"
+echo Checking service status...
+sc query "%SERVICE_NAME%" >nul 2>&1
+if %errorLevel% neq 0 (
+    echo [ERROR] Service "%SERVICE_NAME%" is not installed!
+    pause
+    goto :MENU
+)
 
+"%NSSM_EXE%" status "%SERVICE_NAME%" | findstr "Running" >nul 2>&1
+if %errorLevel% neq 0 (
+    echo [WARN] Service not running. Starting...
+    "%NSSM_EXE%" start "%SERVICE_NAME%"
+    timeout /t 5 /nobreak >nul
+)
+echo Service is running.
+echo.
+
+set "CONFIRM="
+set /p CONFIRM=Continue with rolling update? (Y/N): 
+if /i not "%CONFIRM%"=="Y" (
+    echo Update cancelled.
+    pause
+    goto :MENU
+)
+echo.
+
+echo Step 1: Sending stop signal...
+"%NSSM_EXE%" stop "%SERVICE_NAME%"
+
+echo Waiting for graceful shutdown...
+timeout /t 10 /nobreak >nul
+
+echo Step 2: Starting service...
+"%NSSM_EXE%" start "%SERVICE_NAME%"
+
+echo Step 3: Service restarted!
+echo.
+echo Rolling update completed.
 echo.
 pause
 goto :MENU
 
 :EXIT
 cls
-echo ================================================================================
-echo                             Exit deployment tool
-echo ================================================================================
+echo ============================================================
+echo                       Exit deployment tool
+echo ============================================================
 echo.
 echo Thank you for using MyAPS_API Service Deployment Tool!
 echo.

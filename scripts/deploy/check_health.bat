@@ -1,7 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
 
-chcp 65001 >nul
+chcp 936 >nul
 
 set "SCRIPT_DIR=%~dp0"
 set "PROJECT_ROOT=%SCRIPT_DIR%..\.."
@@ -135,6 +135,7 @@ if %FAIL_COUNT% equ 0 (
     echo [SUCCESS] All health checks passed!
     echo Service is operating normally.
     echo.
+    pause
     exit /b 0
 ) else (
     if %SUCCESS_COUNT% gtr 0 (
@@ -183,6 +184,7 @@ if %FAIL_COUNT% equ 0 (
             if !errorLevel! equ 0 (
                 echo.
                 echo [OK] Service recovered successfully!
+                pause
                 exit /b 0
             ) else (
                 echo.
