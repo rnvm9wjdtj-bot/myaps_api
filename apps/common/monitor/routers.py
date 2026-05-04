@@ -792,8 +792,8 @@ async def get_history_by_time_range(
     Returns:
         包含接收请求、发送请求和系统日志的查询结果
     """
-    # 获取时区偏移
-    if timezone_offset is None:
+    # 获取时区偏移 - 添加防御性检查
+    if timezone_offset is None or timezone_offset == 0:
         try:
             # 移除可能的符号前缀（如 "+8" 或 "-5"）
             tz_str = str(TIMEZONE).strip()
@@ -842,8 +842,8 @@ async def get_history_by_time_range(
             "error_message": req.error_message,
             "request_body": req.request_body,
             "response_body": req.response_body,
-            "request_headers": req.request_headers,
-            "response_headers": req.response_headers
+            "request_headers": getattr(req, 'request_headers', None),
+            "response_headers": getattr(req, 'response_headers', None)
         } for req in http_requests]
     
     # 查询发送请求

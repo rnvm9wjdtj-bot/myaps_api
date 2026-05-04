@@ -219,22 +219,22 @@
         }
         .history-table th:nth-child(3),
         .history-table td:nth-child(3) {
-            width: 75px;
+            width: 120px;
         }
         .history-table th:nth-child(4),
         .history-table td:nth-child(4) {
-            width: 180px;
+            width: 300px;
         }
         .history-table th:nth-child(5),
         .history-table td:nth-child(5) {
-            width: auto;
+            width: 80px;
             white-space: normal;
             word-break: break-all;
-            min-width: 200px;
+            min-width: 80px;
         }
         .history-table th:nth-child(6),
         .history-table td:nth-child(6) {
-            width: 60px;
+            width: 120px;
             text-align: center;
         }
         .api-method {
@@ -486,7 +486,10 @@
                 return;
             }
             
-            const timezoneOffset = -new Date().getTimezoneOffset();
+            let timezoneOffset = -new Date().getTimezoneOffset();
+            if (isNaN(timezoneOffset)) {
+                timezoneOffset = 480; // 默认 UTC+8
+            }
             
             try {
                 const badge = document.getElementById('history-query-badge');
