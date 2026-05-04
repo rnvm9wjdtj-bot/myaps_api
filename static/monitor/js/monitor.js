@@ -4645,9 +4645,4 @@ function formatFileSize(bytes) {
 }
 
 
-// HTML 转义
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
+// ==================== 日志历史查询已移至 history-logs.html ====================

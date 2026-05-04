@@ -33,6 +33,28 @@ def should_record_to_db(required_level: str) -> bool:
 class RequestStorage:
     """请求数据存储服务"""
 
+    async def get_requests_by_time_range(self, start_time: datetime, end_time: datetime, limit: int = 1000) -> List[APIRequest]:
+        """
+        按时间范围查询请求记录
+        
+        Args:
+            start_time: 开始时间（UTC datetime）
+            end_time: 结束时间（UTC datetime）
+            limit: 返回数量限制
+            
+        Returns:
+            请求记录列表
+        """
+        try:
+            requests = await APIRequest.filter(
+                timestamp__gte=start_time,
+                timestamp__lte=end_time
+            ).limit(limit).order_by('-timestamp').all()
+            return requests
+        except Exception as e:
+            print(f"按时间范围获取请求数据失败: {e}")
+            return []
+
     async def save_request(self, request_data: Dict[str, Any]) -> APIRequest:
         """
         保存单个请求数据
@@ -158,6 +180,28 @@ class RequestStorage:
 class OutboundRequestStorage:
     """对外请求数据存储服务"""
 
+    async def get_requests_by_time_range(self, start_time: datetime, end_time: datetime, limit: int = 1000) -> List[OutboundAPIRequest]:
+        """
+        按时间范围查询对外请求记录
+        
+        Args:
+            start_time: 开始时间（UTC datetime）
+            end_time: 结束时间（UTC datetime）
+            limit: 返回数量限制
+            
+        Returns:
+            对外请求记录列表
+        """
+        try:
+            requests = await OutboundAPIRequest.filter(
+                timestamp__gte=start_time,
+                timestamp__lte=end_time
+            ).limit(limit).order_by('-timestamp').all()
+            return requests
+        except Exception as e:
+            print(f"按时间范围获取对外请求数据失败: {e}")
+            return []
+
     async def save_request(self, request_data: Dict[str, Any]) -> OutboundAPIRequest:
         """
         保存单个对外请求数据
@@ -258,6 +302,34 @@ class OutboundRequestStorage:
 
 class SystemLogStorage:
     """系统日志存储服务"""
+    
+    async def get_logs_by_time_range(self, start_time: datetime, end_time: datetime, level: str = None, limit: int = 1000) -> List[SystemLog]:
+        """
+        按时间范围查询系统日志记录
+        
+        Args:
+            start_time: 开始时间（UTC datetime）
+            end_time: 结束时间（UTC datetime）
+            level: 日志级别过滤（可选）
+            limit: 返回数量限制
+            
+        Returns:
+            系统日志记录列表
+        """
+        try:
+            query = SystemLog.filter(
+                timestamp__gte=start_time,
+                timestamp__lte=end_time
+            )
+            
+            if level:
+                query = query.filter(level=level.upper())
+            
+            logs = await query.limit(limit).order_by('-timestamp').all()
+            return logs
+        except Exception as e:
+            print(f"按时间范围获取系统日志数据失败: {e}")
+            return []
     
     async def clean_old_data(self, days: int = LOG_RETENTION):
         """清理指定天数前的系统日志数据"""

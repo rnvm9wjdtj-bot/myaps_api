@@ -7,11 +7,14 @@
 import time
 import json
 import asyncio
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, WebSocket
 from fastapi.responses import JSONResponse, StreamingResponse
 from typing import Dict, Any, List, Optional
 from .service import monitor_service
 from .log_stream_service import log_stream_service
+from .storage import request_storage, outbound_request_storage, system_log_storage
+from core.settings import TIMEZONE
 from globalobjects import logger as log_config
 
 logger = log_config.get_logger(__name__)
@@ -550,3 +553,331 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.error(f"WebSocket 连接异常: {e}")
     finally:
         monitor_service.unregister_websocket(websocket)
+
+
+# ========== 时间范围查询端点（用于日志联动功能）==========
+
+def local_to_utc(local_time_str: str, timezone_offset_minutes: int) -> datetime:
+    """
+    将本地时间转换为UTC时间
+    
+    Args:
+        local_time_str: 本地时间字符串（ISO格式，如 "2024-01-15T18:30:00"）
+        timezone_offset_minutes: 时区偏移分钟数（UTC+8 = 480分钟）
+    
+    Returns:
+        UTC时间对象
+    """
+    try:
+        # 解析本地时间
+        if 'Z' in local_time_str:
+            # ISO 8601 格式带 Z
+            local_time = datetime.fromisoformat(local_time_str.replace('Z', '+00:00'))
+        elif '+' in local_time_str or '-' in local_time_str[-6:]:
+            # ISO 8601 格式带时区偏移
+            local_time = datetime.fromisoformat(local_time_str)
+        else:
+            # 不带时区的本地时间
+            local_time = datetime.fromisoformat(local_time_str)
+            local_time = local_time.replace(tzinfo=None)
+        
+        # 计算UTC时间：本地时间 - 时区偏移
+        utc_time = local_time - timedelta(minutes=timezone_offset_minutes)
+        
+        # 设置UTC时区
+        return utc_time.replace(tzinfo=timezone.utc)
+    except Exception as e:
+        logger.error(f"时间转换失败: {e}")
+        raise HTTPException(status_code=400, detail=f"无效的时间格式: {local_time_str}")
+
+
+@router.get("/http/by-time-range")
+async def get_http_requests_by_time_range(
+    start_time: str,
+    end_time: str,
+    timezone_offset: int = None,
+    limit: int = 1000
+):
+    """
+    按时间范围查询接收请求记录（用于联动查询）
+    
+    Args:
+        start_time: 开始时间（本地时间，ISO格式，如 "2024-01-15T18:30:00"）
+        end_time: 结束时间（本地时间，ISO格式，如 "2024-01-15T18:35:00"）
+        timezone_offset: 时区偏移分钟数（默认从配置读取，UTC+8 = 480）
+        limit: 返回数量限制
+    
+    Returns:
+        请求记录列表
+    """
+    # 获取时区偏移（优先使用参数，否则使用配置）
+    if timezone_offset is None:
+        # 解析 TIMEZONE 配置，如 "+8" 转换为 480 分钟
+        try:
+            tz_hours = float(TIMEZONE)
+            timezone_offset = int(tz_hours * 60)
+        except ValueError:
+            timezone_offset = 480  # 默认 UTC+8
+    
+    # 转换为UTC时间
+    utc_start = local_to_utc(start_time, timezone_offset)
+    utc_end = local_to_utc(end_time, timezone_offset)
+    
+    # 查询数据库
+    requests = await request_storage.get_requests_by_time_range(utc_start, utc_end, limit)
+    
+    # 转换为响应格式
+    result = [{
+        "id": req.id,
+        "timestamp": req.timestamp.isoformat(),
+        "method": req.method,
+        "path": req.path,
+        "query_params": req.query_params,
+        "status_code": req.status_code,
+        "response_time": req.response_time,
+        "client_ip": req.client_ip,
+        "user_agent": req.user_agent,
+        "is_slow": req.is_slow,
+        "is_error": req.is_error,
+        "error_message": req.error_message
+    } for req in requests]
+    
+    return {
+        "requests": result,
+        "count": len(result),
+        "time_range": {
+            "original": {"start": start_time, "end": end_time},
+            "converted": {"start": utc_start.isoformat(), "end": utc_end.isoformat()}
+        }
+    }
+
+
+@router.get("/outbound-http/by-time-range")
+async def get_outbound_http_requests_by_time_range(
+    start_time: str,
+    end_time: str,
+    timezone_offset: int = None,
+    limit: int = 1000
+):
+    """
+    按时间范围查询发送请求记录（用于联动查询）
+    
+    Args:
+        start_time: 开始时间（本地时间，ISO格式）
+        end_time: 结束时间（本地时间，ISO格式）
+        timezone_offset: 时区偏移分钟数（默认从配置读取）
+        limit: 返回数量限制
+    
+    Returns:
+        发送请求记录列表
+    """
+    # 获取时区偏移
+    if timezone_offset is None:
+        try:
+            tz_hours = float(TIMEZONE)
+            timezone_offset = int(tz_hours * 60)
+        except ValueError:
+            timezone_offset = 480
+    
+    # 转换为UTC时间
+    utc_start = local_to_utc(start_time, timezone_offset)
+    utc_end = local_to_utc(end_time, timezone_offset)
+    
+    # 查询数据库
+    requests = await outbound_request_storage.get_requests_by_time_range(utc_start, utc_end, limit)
+    
+    # 转换为响应格式
+    result = [{
+        "id": req.id,
+        "timestamp": req.timestamp.isoformat(),
+        "method": req.method,
+        "url": req.url,
+        "status_code": req.status_code,
+        "duration": req.duration,
+        "module": req.module,
+        "is_slow": req.is_slow,
+        "is_error": req.is_error,
+        "error_message": req.error_message
+    } for req in requests]
+    
+    return {
+        "requests": result,
+        "count": len(result),
+        "time_range": {
+            "original": {"start": start_time, "end": end_time},
+            "converted": {"start": utc_start.isoformat(), "end": utc_end.isoformat()}
+        }
+    }
+
+
+@router.get("/logs/by-time-range")
+async def get_logs_by_time_range(
+    start_time: str,
+    end_time: str,
+    timezone_offset: int = None,
+    level: str = None,
+    limit: int = 1000
+):
+    """
+    按时间范围查询系统日志（用于联动查询）
+    
+    Args:
+        start_time: 开始时间（本地时间，ISO格式）
+        end_time: 结束时间（本地时间，ISO格式）
+        timezone_offset: 时区偏移分钟数（默认从配置读取）
+        level: 日志级别过滤（DEBUG/INFO/WARNING/ERROR/CRITICAL）
+        limit: 返回数量限制
+    
+    Returns:
+        日志记录列表
+    """
+    # 获取时区偏移
+    if timezone_offset is None:
+        try:
+            tz_hours = float(TIMEZONE)
+            timezone_offset = int(tz_hours * 60)
+        except ValueError:
+            timezone_offset = 480
+    
+    # 转换为UTC时间
+    utc_start = local_to_utc(start_time, timezone_offset)
+    utc_end = local_to_utc(end_time, timezone_offset)
+    
+    # 查询数据库
+    logs = await system_log_storage.get_logs_by_time_range(utc_start, utc_end, level, limit)
+    
+    # 转换为响应格式
+    result = [{
+        "id": log.id,
+        "timestamp": log.timestamp.isoformat(),
+        "level": log.level,
+        "module": log.module,
+        "function": log.function,
+        "line_number": log.line_number,
+        "message": log.message
+    } for log in logs]
+    
+    return {
+        "logs": result,
+        "count": len(result),
+        "time_range": {
+            "original": {"start": start_time, "end": end_time},
+            "converted": {"start": utc_start.isoformat(), "end": utc_end.isoformat()}
+        }
+    }
+
+
+@router.get("/history/query")
+async def get_history_by_time_range(
+    start_time: str,
+    end_time: str,
+    timezone_offset: int = None,
+    level: str = None,
+    type: str = None,
+    limit: int = 1000
+):
+    """
+    统一的历史查询端点（用于日志联动功能）
+    
+    按时间范围查询接收请求、发送请求和系统日志，并支持数据类型过滤
+    
+    Args:
+        start_time: 开始时间（本地时间，ISO格式，如 "2024-01-15T18:30:00"）
+        end_time: 结束时间（本地时间，ISO格式，如 "2024-01-15T18:35:00"）
+        timezone_offset: 时区偏移分钟数（默认从配置读取，UTC+8 = 480）
+        level: 日志级别过滤（DEBUG/INFO/WARNING/ERROR/CRITICAL）
+        type: 数据类型过滤（http/outbound/logs，不传则返回全部）
+        limit: 每种数据类型返回数量限制
+    
+    Returns:
+        包含接收请求、发送请求和系统日志的查询结果
+    """
+    # 获取时区偏移
+    if timezone_offset is None:
+        try:
+            # 移除可能的符号前缀（如 "+8" 或 "-5"）
+            tz_str = str(TIMEZONE).strip()
+            if tz_str.startswith(('+', '-')):
+                tz_hours = float(tz_str)
+            else:
+                tz_hours = float(tz_str)
+            timezone_offset = int(tz_hours * 60)
+        except (ValueError, TypeError):
+            timezone_offset = 480  # 默认 UTC+8
+    
+    # 转换为UTC时间
+    utc_start = local_to_utc(start_time, timezone_offset)
+    utc_end = local_to_utc(end_time, timezone_offset)
+    
+    result = {
+        "http_requests": [],
+        "outbound_requests": [],
+        "logs": [],
+        "time_range": {
+            "original": {"start": start_time, "end": end_time},
+            "converted": {"start": utc_start.isoformat(), "end": utc_end.isoformat()}
+        }
+    }
+    
+    # 根据类型参数决定查询哪些数据
+    should_query_http = type is None or type == 'http' or type == 'all'
+    should_query_outbound = type is None or type == 'outbound' or type == 'all'
+    should_query_logs = type is None or type == 'logs' or type == 'all'
+    
+    # 查询接收请求
+    if should_query_http:
+        http_requests = await request_storage.get_requests_by_time_range(utc_start, utc_end, limit)
+        result["http_requests"] = [{
+            "id": req.id,
+            "timestamp": req.timestamp.isoformat(),
+            "method": req.method,
+            "path": req.path,
+            "query_params": req.query_params,
+            "status_code": req.status_code,
+            "duration": req.response_time,
+            "client_ip": req.client_ip,
+            "user_agent": req.user_agent,
+            "is_slow": req.is_slow,
+            "is_error": req.is_error,
+            "error_message": req.error_message,
+            "request_body": req.request_body,
+            "response_body": req.response_body,
+            "request_headers": req.request_headers,
+            "response_headers": req.response_headers
+        } for req in http_requests]
+    
+    # 查询发送请求
+    if should_query_outbound:
+        outbound_requests = await outbound_request_storage.get_requests_by_time_range(utc_start, utc_end, limit)
+        result["outbound_requests"] = [{
+            "id": req.id,
+            "timestamp": req.timestamp.isoformat(),
+            "method": req.method,
+            "url": req.url,
+            "status_code": req.status_code,
+            "duration": req.duration,
+            "module": req.module,
+            "is_slow": req.is_slow,
+            "is_error": req.is_error,
+            "error_message": req.error_message,
+            "request_body": req.request_body,
+            "response_body": req.response_body,
+            "request_headers": req.request_headers,
+            "response_headers": req.response_headers
+        } for req in outbound_requests]
+    
+    # 查询系统日志
+    if should_query_logs:
+        logs = await system_log_storage.get_logs_by_time_range(utc_start, utc_end, level, limit)
+        result["logs"] = [{
+            "id": log.id,
+            "timestamp": log.timestamp.isoformat(),
+            "level": log.level,
+            "module": log.module,
+            "function": log.function,
+            "line_number": log.line_number,
+            "message": log.message,
+            "stack_trace": log.stack_trace
+        } for log in logs]
+    
+    return result

@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>日志历史查询 - 系统监控</title>
+    <link rel="icon" href="/static/swagger/favicon.png" type="image/png">
+    <link rel="stylesheet" href="/static/monitor/css/monitor.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f5f7fa;
+            margin: 0;
+            padding: 20px;
+        }
+        .history-logs-container {
+            max-width: 100%;
+            margin: 0 auto;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .history-logs-header {
+            background: linear-gradient(135deg, #1890ff 0%, #722ed1 100%);
+            color: white;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        .history-logs-header h1 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 500;
+        }
+        .history-logs-header-left {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        .history-logs-body {
+            padding: 20px;
+        }
+        .query-section {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .time-range-selector {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .time-range-selector label {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+        .datetime-input {
+            padding: 6px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 14px;
+            font-family: var(--mono-font);
+        }
+        .query-filters {
+            display: flex;
+            gap: 12px;
+        }
+        .filter-select {
+            padding: 6px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+        }
+        .query-actions {
+            display: flex;
+            gap: 8px;
+            margin-left: auto;
+        }
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: var(--primary-color);
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #40a9ff;
+        }
+        .btn-secondary {
+            background: #e8e8e8;
+            color: var(--text-primary);
+        }
+        .btn-secondary:hover {
+            background: #d9d9d9;
+        }
+        .query-summary {
+            padding: 12px 16px;
+            background: #fafafa;
+            border-radius: 6px;
+            border-left: 4px solid var(--primary-color);
+            margin-bottom: 16px;
+        }
+        .summary-row {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 8px;
+        }
+        .summary-row:last-child {
+            margin-bottom: 0;
+        }
+        .summary-label.debug {
+            color: #3b82f6;
+            font-weight: 500;
+        }
+        .summary-label.info {
+            color: #22c55e;
+            font-weight: 500;
+        }
+        .summary-label.warning {
+            color: #f59e0b;
+            font-weight: 500;
+        }
+        .summary-label.error {
+            color: #ef4444;
+            font-weight: 500;
+        }
+        .summary-label.critical {
+            color: #dc2626;
+            font-weight: 500;
+        }
+        .summary-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        .summary-value {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+        .result-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 16px;
+            border-bottom: 2px solid var(--border-color);
+        }
+        .tab-btn {
+            padding: 10px 20px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.3s;
+        }
+        .tab-btn:hover {
+            color: var(--primary-color);
+        }
+        .tab-btn.active {
+            color: var(--primary-color);
+            border-bottom-color: var(--primary-color);
+        }
+        .result-tab-content {
+            display: none;
+        }
+        .result-tab-content.active {
+            display: block;
+        }
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            table-layout: fixed;
+        }
+        .history-table th,
+        .history-table td {
+            padding: 6px 8px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .history-table th {
+            background: #fafafa;
+            font-weight: 600;
+            color: var(--text-secondary);
+            padding: 8px 8px;
+        }
+        .history-table tr:hover {
+            background: #fafafa;
+        }
+        .history-table th:nth-child(1),
+        .history-table td:nth-child(1) {
+            width: 45px;
+            text-align: center;
+        }
+        .history-table th:nth-child(2),
+        .history-table td:nth-child(2) {
+            width: 180px;
+        }
+        .history-table th:nth-child(3),
+        .history-table td:nth-child(3) {
+            width: 75px;
+        }
+        .history-table th:nth-child(4),
+        .history-table td:nth-child(4) {
+            width: 180px;
+        }
+        .history-table th:nth-child(5),
+        .history-table td:nth-child(5) {
+            width: auto;
+            white-space: normal;
+            word-break: break-all;
+            min-width: 200px;
+        }
+        .history-table th:nth-child(6),
+        .history-table td:nth-child(6) {
+            width: 60px;
+            text-align: center;
+        }
+        .api-method {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 600;
+            color: white;
+        }
+        .api-method.get { background: #67c23a; }
+        .api-method.post { background: #409eff; }
+        .api-method.put { background: #e6a23c; }
+        .api-method.delete { background: #f56c6c; }
+        .api-method.patch { background: #909399; }
+        .api-status {
+            font-weight: 600;
+        }
+        .api-status.success {
+            color: var(--success-color);
+        }
+        .api-status.error {
+            color: var(--error-color);
+        }
+        .log-level-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .log-level-badge.debug { background: #909399; color: white; }
+        .log-level-badge.info { background: #409eff; color: white; }
+        .log-level-badge.warning { background: #e6a23c; color: white; }
+        .log-level-badge.error { background: #f56c6c; color: white; }
+        .log-level-badge.critical { background: #b31d28; color: white; }
+        .log-message-cell {
+            max-width: 400px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .no-data {
+            text-align: center;
+            color: var(--text-secondary);
+            padding: 40px 0;
+        }
+        .action-btn {
+            padding: 4px 12px;
+            border: 1px solid var(--primary-color);
+            background: transparent;
+            color: var(--primary-color);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.3s;
+        }
+        .action-btn:hover {
+            background: var(--primary-color);
+            color: white;
+        }
+        .badge {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .badge.healthy { background: #d9f7be; color: #52c41a; }
+        .badge.warning { background: #ffe58f; color: #faad14; }
+        .badge.error { background: #ffccc7; color: #f5222d; }
+    </style>
+</head>
+<body>
+    <div class="history-logs-container">
+        <div class="history-logs-header">
+            <div class="history-logs-header-left">
+                <h1>📊 日志历史查询</h1>
+                <span class="badge" id="history-query-badge">联动查询</span>
+            </div>
+        </div>
+        
+        <div class="history-logs-body">
+            <div class="query-section">
+                <div class="time-range-selector">
+                    <label>开始时间：</label>
+                    <input type="datetime-local" id="history-start-time" class="datetime-input">
+                    <label>结束时间：</label>
+                    <input type="datetime-local" id="history-end-time" class="datetime-input">
+                </div>
+                <div class="query-filters">
+                    <select id="history-log-level" class="filter-select">
+                        <option value="">全部级别</option>
+                        <option value="DEBUG">DEBUG</option>
+                        <option value="INFO">INFO</option>
+                        <option value="WARNING">WARNING</option>
+                        <option value="ERROR">ERROR</option>
+                        <option value="CRITICAL">CRITICAL</option>
+                    </select>
+                    <select id="history-query-type" class="filter-select">
+                        <option value="all">全部数据</option>
+                        <option value="http">接收请求</option>
+                        <option value="outbound">发送请求</option>
+                        <option value="logs">系统日志</option>
+                    </select>
+                </div>
+                <div class="query-actions">
+                    <button class="btn btn-primary" id="query-btn" onclick="executeHistoryQuery()">查询</button>
+                    <button class="btn btn-secondary" onclick="resetHistoryQuery()">重置</button>
+                    <button class="btn btn-secondary" onclick="quickTimeRange('1h')">最近1小时</button>
+                    <button class="btn btn-secondary" onclick="quickTimeRange('6h')">最近6小时</button>
+                    <button class="btn btn-secondary" onclick="quickTimeRange('24h')">最近24小时</button>
+                </div>
+            </div>
+            
+            <div class="query-summary" id="query-summary" style="display: none;">
+                <div class="summary-row">
+                    <span class="summary-label">查询时间范围：</span>
+                    <span class="summary-value font-mono" id="query-time-range"></span>
+                </div>
+                <div class="summary-row">
+                    <span class="summary-label">接收请求：</span>
+                    <span class="summary-value font-mono" id="http-count">0</span>
+                    <span class="summary-label">发送请求：</span>
+                    <span class="summary-value font-mono" id="outbound-count">0</span>
+                    <span class="summary-label">系统日志：</span>
+                    <span class="summary-value font-mono" id="logs-count">0</span>
+                    <span class="summary-label logs-levels-label" id="logs-levels-label" style="display: none;">| 级别分布：</span>
+                    <span class="summary-label debug font-mono" id="logs-debug-label" style="display: none;">DEBUG:</span>
+                    <span class="summary-value font-mono" id="logs-debug-count">0</span>
+                    <span class="summary-label info font-mono" id="logs-info-label" style="display: none;">INFO:</span>
+                    <span class="summary-value font-mono" id="logs-info-count">0</span>
+                    <span class="summary-label warning font-mono" id="logs-warning-label" style="display: none;">WARNING:</span>
+                    <span class="summary-value font-mono" id="logs-warning-count">0</span>
+                    <span class="summary-label error font-mono" id="logs-error-label" style="display: none;">ERROR:</span>
+                    <span class="summary-value font-mono" id="logs-error-count">0</span>
+                    <span class="summary-label critical font-mono" id="logs-critical-label" style="display: none;">CRITICAL:</span>
+                    <span class="summary-value font-mono" id="logs-critical-count">0</span>
+                </div>
+            </div>
+            
+            <div class="result-tabs" id="result-tabs" style="display: none;">
+                <button class="tab-btn active" data-tab="logs" onclick="switchResultTab('logs')">系统日志</button>
+                <button class="tab-btn" data-tab="http" onclick="switchResultTab('http')">接收请求</button>
+                <button class="tab-btn" data-tab="outbound" onclick="switchResultTab('outbound')">发送请求</button>
+            </div>
+            
+            <div class="result-tab-content" id="tab-http">
+                <table class="history-table" id="http-results-table">
+                    <thead>
+                        <tr>
+                            <th>序号</th>
+                            <th>时间</th>
+                            <th>方法</th>
+                            <th>端点</th>
+                            <th>状态码</th>
+                            <th>响应时间</th>
+                            <th>客户端IP</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="http-results-body">
+                        <tr><td colspan="8" class="no-data">暂无数据</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="result-tab-content" id="tab-outbound">
+                <table class="history-table" id="outbound-results-table">
+                    <thead>
+                        <tr>
+                            <th>序号</th>
+                            <th>时间</th>
+                            <th>方法</th>
+                            <th>URL</th>
+                            <th>状态码</th>
+                            <th>响应时间</th>
+                            <th>模块</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="outbound-results-body">
+                        <tr><td colspan="8" class="no-data">暂无数据</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="result-tab-content active" id="tab-logs">
+                <table class="history-table" id="logs-results-table">
+                    <thead>
+                        <tr>
+                            <th>序号</th>
+                            <th>时间</th>
+                            <th>级别</th>
+                            <th>模块</th>
+                            <th>消息</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logs-results-body">
+                        <tr><td colspan="6" class="no-data">暂无数据</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/monitor/api';
+        
+        let historyQueryData = {
+            http: [],
+            outbound: [],
+            logs: []
+        };
+        
+        let currentTab = 'logs';
+        
+        function formatDateTime(dateStr) {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            const seconds = String(date.getSeconds()).padStart(2, '0');
+            return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+        }
+
+        async function executeHistoryQuery() {
+            const startTime = document.getElementById('history-start-time').value;
+            const endTime = document.getElementById('history-end-time').value;
+            const logLevel = document.getElementById('history-log-level').value;
+            const queryType = document.getElementById('history-query-type').value;
+            
+            if (!startTime || !endTime) {
+                alert('请选择开始时间和结束时间');
+                return;
+            }
+            
+            const startDate = new Date(startTime);
+            const endDate = new Date(endTime);
+            
+            if (startDate >= endDate) {
+                alert('开始时间不能大于结束时间');
+                return;
+            }
+            
+            const timezoneOffset = -new Date().getTimezoneOffset();
+            
+            try {
+                const badge = document.getElementById('history-query-badge');
+                if (badge) {
+                    badge.textContent = '查询中...';
+                    badge.className = 'badge warning';
+                }
+                
+                const queryBtn = document.getElementById('query-btn');
+                if (queryBtn) {
+                    queryBtn.disabled = true;
+                    queryBtn.textContent = '查询中...';
+                }
+                
+                let url = `${API_BASE}/history/query?start_time=${encodeURIComponent(startTime)}&end_time=${encodeURIComponent(endTime)}&timezone_offset=${timezoneOffset}`;
+                
+                if (logLevel) {
+                    url += `&level=${logLevel}`;
+                }
+                
+                if (queryType && queryType !== 'all') {
+                    url += `&type=${queryType}`;
+                }
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                historyQueryData = {
+                    http: data.http_requests || [],
+                    outbound: data.outbound_requests || [],
+                    logs: data.logs || []
+                };
+                
+                updateQuerySummary(startTime, endTime);
+                
+                document.getElementById('result-tabs').style.display = 'flex';
+                
+                switchResultTab('logs');
+                
+                if (badge) {
+                    badge.textContent = '查询完成';
+                    badge.className = 'badge healthy';
+                }
+                
+                if (queryBtn) {
+                    queryBtn.disabled = false;
+                    queryBtn.textContent = '查询';
+                }
+                
+            } catch (error) {
+                console.error('执行历史查询失败:', error);
+                alert('查询失败，请稍后重试');
+                
+                const badge = document.getElementById('history-query-badge');
+                if (badge) {
+                    badge.textContent = '查询失败';
+                    badge.className = 'badge error';
+                }
+                
+                const queryBtn = document.getElementById('query-btn');
+                if (queryBtn) {
+                    queryBtn.disabled = false;
+                    queryBtn.textContent = '查询';
+                }
+            }
+        }
+
+        function resetHistoryQuery() {
+            document.getElementById('history-start-time').value = '';
+            document.getElementById('history-end-time').value = '';
+            document.getElementById('history-log-level').value = '';
+            document.getElementById('history-query-type').value = 'all';
+            
+            document.getElementById('query-summary').style.display = 'none';
+            document.getElementById('result-tabs').style.display = 'none';
+            
+            document.getElementById('http-results-body').innerHTML = '<tr><td colspan="8" class="no-data">暂无数据</td></tr>';
+            document.getElementById('outbound-results-body').innerHTML = '<tr><td colspan="8" class="no-data">暂无数据</td></tr>';
+            document.getElementById('logs-results-body').innerHTML = '<tr><td colspan="6" class="no-data">暂无数据</td></tr>';
+            
+            historyQueryData = { http: [], outbound: [], logs: [] };
+            
+            const badge = document.getElementById('history-query-badge');
+            if (badge) {
+                badge.textContent = '联动查询';
+                badge.className = '';
+            }
+        }
+
+        function quickTimeRange(hours) {
+            const end = new Date();
+            const start = new Date();
+            start.setHours(start.getHours() - parseInt(hours));
+            
+            const formatDateTime = (date) => {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                return `${year}-${month}-${day}T${hours}:${minutes}`;
+            };
+            
+            document.getElementById('history-start-time').value = formatDateTime(start);
+            document.getElementById('history-end-time').value = formatDateTime(end);
+        }
+
+        function switchResultTab(tab) {
+            currentTab = tab;
+            
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.tab === tab) {
+                    btn.classList.add('active');
+                }
+            });
+            
+            document.querySelectorAll('.result-tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            const tabContent = document.getElementById('tab-' + tab);
+            if (tabContent) {
+                tabContent.classList.add('active');
+            }
+            
+            if (tab === 'http') {
+                renderHttpResults();
+            } else if (tab === 'outbound') {
+                renderOutboundResults();
+            } else if (tab === 'logs') {
+                renderLogsResults();
+            }
+        }
+
+        function updateQuerySummary(startTime, endTime) {
+            const summary = document.getElementById('query-summary');
+            const timeRange = document.getElementById('query-time-range');
+            const httpCount = document.getElementById('http-count');
+            const outboundCount = document.getElementById('outbound-count');
+            const logsCount = document.getElementById('logs-count');
+            const logsLevelsLabel = document.getElementById('logs-levels-label');
+            const debugLabel = document.getElementById('logs-debug-label');
+            const debugCount = document.getElementById('logs-debug-count');
+            const infoLabel = document.getElementById('logs-info-label');
+            const infoCount = document.getElementById('logs-info-count');
+            const warningLabel = document.getElementById('logs-warning-label');
+            const warningCount = document.getElementById('logs-warning-count');
+            const errorLabel = document.getElementById('logs-error-label');
+            const errorCount = document.getElementById('logs-error-count');
+            const criticalLabel = document.getElementById('logs-critical-label');
+            const criticalCount = document.getElementById('logs-critical-count');
+            
+            if (summary) {
+                summary.style.display = 'block';
+            }
+            if (timeRange) {
+                timeRange.textContent = `${startTime} 至 ${endTime}`;
+            }
+            if (httpCount) {
+                httpCount.textContent = historyQueryData.http.length;
+            }
+            if (outboundCount) {
+                outboundCount.textContent = historyQueryData.outbound.length;
+            }
+            if (logsCount) {
+                logsCount.textContent = historyQueryData.logs.length;
+            }
+            
+            // 统计日志级别分布
+            const levelCounts = {
+                DEBUG: 0,
+                INFO: 0,
+                WARNING: 0,
+                ERROR: 0,
+                CRITICAL: 0
+            };
+            
+            historyQueryData.logs.forEach(log => {
+                const level = (log.level || '').toUpperCase();
+                if (levelCounts.hasOwnProperty(level)) {
+                    levelCounts[level]++;
+                }
+            });
+            
+            // 显示级别统计（只有当有日志时才显示）
+            const hasLogs = historyQueryData.logs.length > 0;
+            
+            // 显示/隐藏级别分布标签
+            if (logsLevelsLabel) {
+                logsLevelsLabel.style.display = hasLogs ? 'inline' : 'none';
+            }
+            
+            // 只显示有数据的级别
+            if (debugLabel) {
+                debugLabel.style.display = hasLogs && levelCounts.DEBUG > 0 ? 'inline' : 'none';
+            }
+            if (debugCount) {
+                debugCount.style.display = hasLogs && levelCounts.DEBUG > 0 ? 'inline' : 'none';
+                debugCount.textContent = levelCounts.DEBUG;
+            }
+            
+            if (infoLabel) {
+                infoLabel.style.display = hasLogs && levelCounts.INFO > 0 ? 'inline' : 'none';
+            }
+            if (infoCount) {
+                infoCount.style.display = hasLogs && levelCounts.INFO > 0 ? 'inline' : 'none';
+                infoCount.textContent = levelCounts.INFO;
+            }
+            
+            if (warningLabel) {
+                warningLabel.style.display = hasLogs && levelCounts.WARNING > 0 ? 'inline' : 'none';
+            }
+            if (warningCount) {
+                warningCount.style.display = hasLogs && levelCounts.WARNING > 0 ? 'inline' : 'none';
+                warningCount.textContent = levelCounts.WARNING;
+            }
+            
+            if (errorLabel) {
+                errorLabel.style.display = hasLogs && levelCounts.ERROR > 0 ? 'inline' : 'none';
+            }
+            if (errorCount) {
+                errorCount.style.display = hasLogs && levelCounts.ERROR > 0 ? 'inline' : 'none';
+                errorCount.textContent = levelCounts.ERROR;
+            }
+            
+            if (criticalLabel) {
+                criticalLabel.style.display = hasLogs && levelCounts.CRITICAL > 0 ? 'inline' : 'none';
+            }
+            if (criticalCount) {
+                criticalCount.style.display = hasLogs && levelCounts.CRITICAL > 0 ? 'inline' : 'none';
+                criticalCount.textContent = levelCounts.CRITICAL;
+            }
+        }
+
+        function renderHttpResults() {
+            const tbody = document.getElementById('http-results-body');
+            if (!tbody) return;
+            
+            if (historyQueryData.http.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="no-data">暂无数据</td></tr>';
+                return;
+            }
+            
+            const sortedData = [...historyQueryData.http].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            
+            tbody.innerHTML = sortedData.map((req, index) => {
+                const methodClass = req.method.toLowerCase();
+                const statusClass = req.status_code >= 400 ? 'error' : 'success';
+                const time = formatDateTime(req.timestamp);
+                const duration = req.duration ? req.duration.toFixed(2) + 'ms' : '-';
+                
+                return `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td class="font-mono">${time}</td>
+                        <td><span class="api-method ${methodClass}">${req.method}</span></td>
+                        <td class="font-mono" style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${req.path || '-'}</td>
+                        <td class="api-status ${statusClass}">${req.status_code || '-'}</td>
+                        <td>${duration}</td>
+                        <td>${req.client_ip || '-'}</td>
+                        <td><button class="action-btn" onclick="showHistoryHttpDetail(${sortedData.indexOf(req)})">详情</button></td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function renderOutboundResults() {
+            const tbody = document.getElementById('outbound-results-body');
+            if (!tbody) return;
+            
+            if (historyQueryData.outbound.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="no-data">暂无数据</td></tr>';
+                return;
+            }
+            
+            const sortedData = [...historyQueryData.outbound].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            
+            tbody.innerHTML = sortedData.map((req, index) => {
+                const methodClass = req.method.toLowerCase();
+                const statusClass = req.status_code >= 400 ? 'error' : 'success';
+                const time = formatDateTime(req.timestamp);
+                const duration = req.duration ? req.duration.toFixed(2) + 'ms' : '-';
+                
+                return `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td class="font-mono">${time}</td>
+                        <td><span class="api-method ${methodClass}">${req.method}</span></td>
+                        <td class="font-mono" style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${req.url || '-'}</td>
+                        <td class="api-status ${statusClass}">${req.status_code || '-'}</td>
+                        <td>${duration}</td>
+                        <td>${req.module || '-'}</td>
+                        <td><button class="action-btn" onclick="showHistoryOutboundDetail(${sortedData.indexOf(req)})">详情</button></td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function renderLogsResults() {
+            const tbody = document.getElementById('logs-results-body');
+            if (!tbody) return;
+            
+            if (historyQueryData.logs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="no-data">暂无数据</td></tr>';
+                return;
+            }
+            
+            const sortedData = [...historyQueryData.logs].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            
+            tbody.innerHTML = sortedData.map((log, index) => {
+                const levelClass = log.level ? log.level.toLowerCase() : 'info';
+                const time = formatDateTime(log.timestamp);
+                
+                return `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td class="font-mono">${time}</td>
+                        <td><span class="log-level-badge ${levelClass}">${log.level || '-'}</span></td>
+                        <td>${log.module || '-'}</td>
+                        <td class="log-message-cell" style="white-space: normal; word-break: break-all;">${log.message || '-'}</td>
+                        <td><button class="action-btn" onclick="showHistoryLogDetail(${sortedData.indexOf(log)})">详情</button></td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function showHistoryHttpDetail(index) {
+            const sortedData = [...historyQueryData.http].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            const req = sortedData[index];
+            if (!req) return;
+            
+            const detail = `
+<div style="max-height: 60vh; overflow-y: auto;">
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; width: 120px; color: #8c8c8c;">请求ID</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.id || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">时间戳</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.timestamp || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求方法</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;"><span class="api-method ${(req.method || '').toLowerCase()}">${req.method || '-'}</span></td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求路径</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.path || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">查询参数</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${JSON.stringify(req.query_params) || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">状态码</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="api-status ${(req.status_code || 0) >= 400 ? 'error' : 'success'}">${req.status_code || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">响应时间</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.duration ? req.duration.toFixed(2) + 'ms' : '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">客户端IP</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.client_ip || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">User Agent</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.user_agent || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">是否慢请求</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.is_slow ? '是' : '否'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">是否错误</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.is_error ? '是' : '否'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">错误信息</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #f5222d;">${req.error_message || '-'}</td></tr>
+        <tr><td style="padding: 8px; color: #8c8c8c;">请求体</td><td style="padding: 8px;" class="font-mono">${req.request_body || '-'}</td></tr>
+    </table>
+</div>
+            `;
+            
+            showDetailModal('接收请求详情', detail);
+        }
+
+        function showHistoryOutboundDetail(index) {
+            const sortedData = [...historyQueryData.outbound].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            const req = sortedData[index];
+            if (!req) return;
+            
+            const detail = `
+<div style="max-height: 60vh; overflow-y: auto;">
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; width: 120px; color: #8c8c8c;">请求ID</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.id || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">时间戳</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.timestamp || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求方法</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;"><span class="api-method ${(req.method || '').toLowerCase()}">${req.method || '-'}</span></td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求URL</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.url || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">状态码</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="api-status ${(req.status_code || 0) >= 400 ? 'error' : 'success'}">${req.status_code || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">响应时间</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.duration ? req.duration.toFixed(2) + 'ms' : '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">模块</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.module || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">是否慢请求</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.is_slow ? '是' : '否'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">是否错误</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.is_error ? '是' : '否'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">错误信息</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #f5222d;">${req.error_message || '-'}</td></tr>
+        <tr><td style="padding: 8px; color: #8c8c8c;">请求体</td><td style="padding: 8px;" class="font-mono">${req.request_body || '-'}</td></tr>
+    </table>
+</div>
+            `;
+            
+            showDetailModal('发送请求详情', detail);
+        }
+
+        function showHistoryLogDetail(index) {
+            const sortedData = [...historyQueryData.logs].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            const log = sortedData[index];
+            if (!log) return;
+            
+            const detail = `
+<div style="max-height: 60vh; overflow-y: auto;">
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; width: 120px; color: #8c8c8c;">日志ID</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${log.id || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">时间戳</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${log.timestamp || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">日志级别</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;"><span class="log-level-badge ${(log.level || '').toLowerCase()}">${log.level || '-'}</span></td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">模块</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${log.module || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">函数</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${log.function || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">行号</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${log.line_number || '-'}</td></tr>
+        <tr><td style="padding: 8px; color: #8c8c8c;">消息</td><td style="padding: 8px;" class="font-mono">${log.message || '-'}</td></tr>
+    </table>
+</div>
+            `;
+            
+            showDetailModal('系统日志详情', detail);
+        }
+
+        function showDetailModal(title, content) {
+            const existingModal = document.getElementById('detail-modal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            const modal = document.createElement('div');
+            modal.id = 'detail-modal';
+            modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1000; display: flex; justify-content: center; align-items: center;';
+            
+            const overlay = document.createElement('div');
+            overlay.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(3px);';
+            overlay.onclick = () => modal.remove();
+            
+            const modalContent = document.createElement('div');
+            modalContent.style.cssText = 'position: relative; background: white; border-radius: 8px; padding: 0; max-width: 700px; width: 90%; max-height: 80vh; overflow: hidden; box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);';
+            
+            const header = document.createElement('div');
+            header.style.cssText = 'background: linear-gradient(135deg, #1890ff 0%, #722ed1 100%); color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;';
+            header.innerHTML = `<h3 style="margin: 0; font-size: 16px; font-weight: 500;">${title}</h3><button onclick="document.getElementById('detail-modal').remove()" style="background: none; border: none; color: white; font-size: 24px; cursor: pointer; line-height: 1;">×</button>`;
+            
+            const body = document.createElement('div');
+            body.style.cssText = 'padding: 20px;';
+            body.innerHTML = content;
+            
+            modalContent.appendChild(header);
+            modalContent.appendChild(body);
+            modal.appendChild(overlay);
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
+        }
+
+        window.onload = function() {
+            quickTimeRange('1h');
+        };
+    </script>
+</body>
+</html>

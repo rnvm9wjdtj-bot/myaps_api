@@ -1166,8 +1166,15 @@ class SmartLogger(logging.Logger):
             # 跳过内部方法，找到原始调用位置
             caller_frame = None
             try:
+                # 需要跳过的模块/函数名称
+                skip_modules = {'asyncio', 'asyncio.events', 'globalobjects.logger', 'logging'}
+                skip_functions = {'_run', '_log', '_log_to_file', '_log_to_db', 'info', 'debug', 'warning', 'error', 'critical'}
+                
                 for i, frame_info in enumerate(stack[1:]):
                     frame = frame_info.frame
+                    module_name = frame.f_globals.get('__name__', '')
+                    func_name = frame_info.function
+                    
                     class_name = None
                     if 'self' in frame.f_locals:
                         try:
@@ -1175,11 +1182,27 @@ class SmartLogger(logging.Logger):
                         except Exception:
                             pass
                     
-                    if class_name != 'SmartLogger':
+                    # 跳过 SmartLogger 类内部调用和其他内部模块
+                    is_internal = False
+                    if class_name == 'SmartLogger':
+                        is_internal = True
+                    elif module_name in skip_modules:
+                        is_internal = True
+                    elif func_name in skip_functions:
+                        is_internal = True
+                    elif module_name.startswith('asyncio'):
+                        is_internal = True
+                    elif module_name.startswith('logging'):
+                        is_internal = True
+                    
+                    if not is_internal:
                         caller_frame = frame_info
                         break
                 
-                if not caller_frame and len(stack) > 1:
+                # 如果没有找到合适的调用者，使用倒数第3个栈帧（跳过日志框架和事件循环）
+                if not caller_frame and len(stack) >= 4:
+                    caller_frame = stack[-3]
+                elif not caller_frame and len(stack) > 1:
                     caller_frame = stack[-1]
             except Exception:
                 # 解析调用栈失败，不记录到文件，避免递归
