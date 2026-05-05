@@ -359,7 +359,7 @@ async def clean_all_old_data(days: int = LOG_RETENTION):
     try:
         logger.info("开始清理接收请求记录...")
         await request_storage.clean_old_data(days=days)
-        logger.success("接收请求记录清理完成")
+        logger.success("接收请求记录清理")
     except Exception as e:
         logger.fail("接收请求记录清理", "", str(e))
     
@@ -367,7 +367,7 @@ async def clean_all_old_data(days: int = LOG_RETENTION):
     try:
         logger.info("开始清理发送请求记录...")
         await outbound_request_storage.clean_old_data(days=days)
-        logger.success("发送请求记录清理完成")
+        logger.success("发送请求记录清理")
     except Exception as e:
         logger.fail("发送请求记录清理", "", str(e))
     
@@ -375,7 +375,7 @@ async def clean_all_old_data(days: int = LOG_RETENTION):
     try:
         logger.info("开始清理系统日志记录...")
         await system_log_storage.clean_old_data(days=days)
-        logger.success("系统日志记录清理完成")
+        logger.success("系统日志记录清理")
     except Exception as e:
         logger.fail("系统日志记录清理", "", str(e))
     

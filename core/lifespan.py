@@ -298,7 +298,7 @@ async def lifespan(app):
 
     # 等待一段时间，确保所有服务正常启动
     await asyncio.sleep(1)
-    log_config.info("应用启动完成，开始运行")
+    log_config.info("==================应用启动完成，开始运行==================")
     
     yield  # 应用运行期间
     
@@ -309,7 +309,7 @@ async def lifespan(app):
     if TURNON_BINLOG_LISTENER:
         log_config.info("正在停止 MySQL Binlog 监控...")
         binlog_listener.stop_monitoring()
-        log_config.info("MySQL Binlog监控已停止")
+        log_config.info("==================MySQL Binlog监控已停止==================")
     else:
         log_config.debug("⚠️ MySQL Binlog监控未启动，无需停止")
 
@@ -334,13 +334,13 @@ async def lifespan(app):
 
         flushed = await loop.run_in_executor(executor, flush_buffer)
         log_config.info(f"缓冲刷新完成，成功刷新 {flushed} 个事件")
-    log_config.info("Redis 相关任务已停止")
+    log_config.info("==================Redis 相关任务已停止==================")
 
     # 2.1 关闭事件辅助模块（DeadLetter队列等）
     log_config.info("正在关闭事件辅助模块...")
     from apps.common.utils.event_helpers import shutdown_event_helpers
     shutdown_event_helpers()
-    log_config.info("事件辅助模块已关闭")
+    log_config.info("==================事件辅助模块已关闭==================")
 
     # 3. 等待一段时间，确保所有任务完成
     log_config.info("⏳ 等待所有后台任务完成...")
@@ -350,35 +350,36 @@ async def lifespan(app):
     if TRUNON_SCHEDULER:
         log_config.info("正在关闭调度器...")
         scheduler_manager.shutdown()
-        log_config.info("定时任务管理器已关闭")
+        log_config.info("==================定时任务管理器已关闭==================")
     else:
         log_config.debug("⚠️ 定时任务管理器未启动，无需关闭")
     
     # 5. 停止资源监控
     log_config.info("正在停止资源监控...")
     resource_monitor.stop_monitoring()
-    log_config.info("系统资源监控已停止")
+    log_config.info("==================系统资源监控已停止==================")
     
     # 6. 停止事件聚合器
     log_config.info("正在停止事件聚合器...")
+    log_config.info("==================事件聚合器已停止==================")
     EVENT_AGGREGATOR.stop()
-    log_config.info("事件聚合器已停止")
+    log_config.info("==================事件聚合器已停止==================")
 
     # 6.1 关闭事件线程池管理器
     log_config.info("正在关闭事件线程池...")
     from globalobjects.event_aggregator import get_event_pool_manager
     get_event_pool_manager().shutdown_all()
-    log_config.info("事件线程池已关闭")
+    log_config.info("==================事件线程池已关闭==================")
 
     # 7. 停止数据库健康检查器
     log_config.info("正在停止数据库健康检查器...")
     await stop_db_health_checker()
-    log_config.info("数据库健康检查器已停止")
+    log_config.info("==================数据库健康检查器已停止==================")
 
     # 8. 停止失败操作恢复管理器
     log_config.info("正在停止OperationRecovery管理器...")
     await stop_failed_operation_recovery()
-    log_config.info("OperationRecovery管理器已停止")
+    log_config.info("==================OperationRecovery管理器已停止==================")
 
     # 10. 取消后台任务
     if 'db_check_task' in locals():
@@ -388,7 +389,7 @@ async def lifespan(app):
             await db_check_task
         except asyncio.CancelledError:
             pass
-        log_config.info("数据库连接检查任务已取消")
+        log_config.info("==================数据库连接检查任务已取消==================")
 
     if 'pool_monitor_task' in locals():
         log_config.info("正在取消连接池监控任务...")
@@ -397,7 +398,7 @@ async def lifespan(app):
             await pool_monitor_task
         except asyncio.CancelledError:
             pass
-        log_config.info("连接池监控任务已取消")
+        log_config.info("==================连接池监控任务已取消==================")
 
     # 取消 Redis 健康检查任务
     if 'redis_check_task' in locals():
@@ -407,13 +408,13 @@ async def lifespan(app):
             await redis_check_task
         except asyncio.CancelledError:
             pass
-        log_config.info("Redis 健康检查任务已取消")
+        log_config.info("==================Redis 健康检查任务已取消==================")
 
     # 11. 等待一段时间，确保所有任务真正完成
     log_config.info("⏳ 等待所有任务彻底完成...")
     await asyncio.sleep(3)  # 再等待3秒
 
-    log_config.info("应用关闭完成")
+    log_config.info("==================应用关闭完成==================")
 
     # 12. 关闭统一日志系统
     log_config.shutdown_logging()
