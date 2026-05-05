@@ -1167,8 +1167,8 @@ class SmartLogger(logging.Logger):
             caller_frame = None
             try:
                 # 需要跳过的模块/函数名称
-                skip_modules = {'asyncio', 'asyncio.events', 'globalobjects.logger', 'logging'}
-                skip_functions = {'_run', '_log', '_log_to_file', '_log_to_db', 'info', 'debug', 'warning', 'error', 'critical'}
+                skip_modules = {'asyncio', 'asyncio.events', 'globalobjects.logger', 'logging', 'uvicorn', 'uvicorn.server', 'uvicorn.protocols', 'uvicorn.workers'}
+                skip_functions = {'_run', '_log', '_log_to_file', '_log_to_db', 'info', 'debug', 'warning', 'error', 'critical', 'run', 'serve', 'handle'}
                 
                 for i, frame_info in enumerate(stack[1:]):
                     frame = frame_info.frame
@@ -1194,15 +1194,34 @@ class SmartLogger(logging.Logger):
                         is_internal = True
                     elif module_name.startswith('logging'):
                         is_internal = True
+                    elif module_name.startswith('uvicorn'):
+                        is_internal = True
+                    elif module_name.startswith('starlette'):
+                        is_internal = True
+                    elif module_name.startswith('fastapi'):
+                        is_internal = True
                     
                     if not is_internal:
                         caller_frame = frame_info
                         break
                 
-                # 如果没有找到合适的调用者，使用倒数第3个栈帧（跳过日志框架和事件循环）
-                if not caller_frame and len(stack) >= 4:
-                    caller_frame = stack[-3]
-                elif not caller_frame and len(stack) > 1:
+                # 如果没有找到合适的调用者，尝试从栈中寻找第一个不是内部模块的帧
+                if not caller_frame:
+                    for i in range(1, min(len(stack), 20)):
+                        frame_info = stack[i]
+                        frame = frame_info.frame
+                        module_name = frame.f_globals.get('__name__', '')
+                        if not (module_name.startswith('asyncio') or 
+                                module_name.startswith('logging') or 
+                                module_name.startswith('uvicorn') or
+                                module_name.startswith('starlette') or
+                                module_name.startswith('fastapi') or
+                                module_name == 'globalobjects.logger'):
+                            caller_frame = frame_info
+                            break
+                
+                # 最后的后备方案
+                if not caller_frame and len(stack) > 1:
                     caller_frame = stack[-1]
             except Exception:
                 # 解析调用栈失败，不记录到文件，避免递归
@@ -2194,20 +2213,82 @@ def _send_to_log_stream(level: str, msg: Any, *args: Any):
         formatted_msg = msg % args if args else str(msg)
 
         import inspect
-        frame = inspect.currentframe()
+        module = 'unknown'
+        func_name = 'unknown'
+        line_no = 0
+        
         try:
-            if frame and frame.f_back and frame.f_back.f_back:
-                caller_frame = frame.f_back.f_back
-                module = caller_frame.f_globals.get('__name__', 'unknown')
-                func_name = caller_frame.f_code.co_name
-                line_no = caller_frame.f_lineno
-            else:
-                module = 'unknown'
-                func_name = 'unknown'
-                line_no = 0
-        finally:
-            if frame:
-                del frame
+            stack = inspect.stack()
+            
+            # 需要跳过的模块/函数名称
+            skip_modules = {'asyncio', 'asyncio.events', 'globalobjects.logger', 'logging', 'uvicorn', 'uvicorn.server', 'uvicorn.protocols', 'uvicorn.workers'}
+            skip_functions = {'_run', '_log', '_log_to_file', '_log_to_db', 'info', 'debug', 'warning', 'error', 'critical', 'run', 'serve', 'handle', '_send_to_log_stream'}
+            
+            caller_frame = None
+            
+            for i, frame_info in enumerate(stack[1:]):
+                frame = frame_info.frame
+                module_name = frame.f_globals.get('__name__', '')
+                function = frame_info.function
+                
+                class_name = None
+                if 'self' in frame.f_locals:
+                    try:
+                        class_name = frame.f_locals['self'].__class__.__name__
+                    except Exception:
+                        pass
+                
+                # 跳过内部模块和函数
+                is_internal = False
+                if class_name == 'SmartLogger':
+                    is_internal = True
+                elif module_name in skip_modules:
+                    is_internal = True
+                elif function in skip_functions:
+                    is_internal = True
+                elif module_name.startswith('asyncio'):
+                    is_internal = True
+                elif module_name.startswith('logging'):
+                    is_internal = True
+                elif module_name.startswith('uvicorn'):
+                    is_internal = True
+                elif module_name.startswith('starlette'):
+                    is_internal = True
+                elif module_name.startswith('fastapi'):
+                    is_internal = True
+                
+                if not is_internal:
+                    caller_frame = frame_info
+                    break
+            
+            # 如果没有找到合适的调用者，尝试从栈中寻找
+            if not caller_frame:
+                for i in range(1, min(len(stack), 20)):
+                    frame_info = stack[i]
+                    frame = frame_info.frame
+                    module_name = frame.f_globals.get('__name__', '')
+                    if not (module_name.startswith('asyncio') or 
+                            module_name.startswith('logging') or 
+                            module_name.startswith('uvicorn') or
+                            module_name.startswith('starlette') or
+                            module_name.startswith('fastapi') or
+                            module_name == 'globalobjects.logger'):
+                        caller_frame = frame_info
+                        break
+            
+            if caller_frame:
+                module = caller_frame.frame.f_globals.get('__name__', 'unknown')
+                func_name = caller_frame.function
+                line_no = caller_frame.lineno
+                
+        except Exception:
+            pass
+        
+        # 清理栈帧引用
+        if 'frame' in dir():
+            del frame
+        if 'stack' in dir():
+            del stack
 
         record = logging.LogRecord(
             name=module,
