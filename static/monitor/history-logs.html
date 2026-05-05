@@ -651,6 +651,10 @@
             document.getElementById('logs-results-body').innerHTML = '<tr><td colspan="6" class="no-data">暂无数据</td></tr>';
             
             historyQueryData = { http: [], outbound: [], logs: [] };
+            // 清理缓存的排序数据
+            sortedHttpData = [];
+            sortedOutboundData = [];
+            sortedLogsData = [];
             
             const badge = document.getElementById('history-query-badge');
             if (badge) {
@@ -805,18 +809,24 @@
             }
         }
 
+        // 缓存排序后的数据，避免重复排序
+        let sortedHttpData = [];
+        let sortedOutboundData = [];
+        let sortedLogsData = [];
+        
         function renderHttpResults() {
             const tbody = document.getElementById('http-results-body');
             if (!tbody) return;
             
             if (historyQueryData.http.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="8" class="no-data">暂无数据</td></tr>';
+                sortedHttpData = [];
                 return;
             }
             
-            const sortedData = [...historyQueryData.http].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            sortedHttpData = [...historyQueryData.http].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
             
-            tbody.innerHTML = sortedData.map((req, index) => {
+            tbody.innerHTML = sortedHttpData.map((req, index) => {
                 const methodClass = req.method.toLowerCase();
                 const statusClass = req.status_code >= 400 ? 'error' : 'success';
                 const time = formatDateTime(req.timestamp);
@@ -831,7 +841,7 @@
                         <td class="api-status ${statusClass}">${req.status_code || '-'}</td>
                         <td>${duration}</td>
                         <td>${req.client_ip || '-'}</td>
-                        <td><button class="action-btn" onclick="showHistoryHttpDetail(${sortedData.indexOf(req)})">详情</button></td>
+                        <td><button class="action-btn" onclick="showHistoryHttpDetail(${index})">详情</button></td>
                     </tr>
                 `;
             }).join('');
@@ -843,12 +853,13 @@
             
             if (historyQueryData.outbound.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="8" class="no-data">暂无数据</td></tr>';
+                sortedOutboundData = [];
                 return;
             }
             
-            const sortedData = [...historyQueryData.outbound].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            sortedOutboundData = [...historyQueryData.outbound].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
             
-            tbody.innerHTML = sortedData.map((req, index) => {
+            tbody.innerHTML = sortedOutboundData.map((req, index) => {
                 const methodClass = req.method.toLowerCase();
                 const statusClass = req.status_code >= 400 ? 'error' : 'success';
                 const time = formatDateTime(req.timestamp);
@@ -863,7 +874,7 @@
                         <td class="api-status ${statusClass}">${req.status_code || '-'}</td>
                         <td>${duration}</td>
                         <td>${req.module || '-'}</td>
-                        <td><button class="action-btn" onclick="showHistoryOutboundDetail(${sortedData.indexOf(req)})">详情</button></td>
+                        <td><button class="action-btn" onclick="showHistoryOutboundDetail(${index})">详情</button></td>
                     </tr>
                 `;
             }).join('');
@@ -875,12 +886,13 @@
             
             if (historyQueryData.logs.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="6" class="no-data">暂无数据</td></tr>';
+                sortedLogsData = [];
                 return;
             }
             
-            const sortedData = [...historyQueryData.logs].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            sortedLogsData = [...historyQueryData.logs].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
             
-            tbody.innerHTML = sortedData.map((log, index) => {
+            tbody.innerHTML = sortedLogsData.map((log, index) => {
                 const levelClass = log.level ? log.level.toLowerCase() : 'info';
                 const time = formatDateTime(log.timestamp);
                 
@@ -891,15 +903,14 @@
                         <td><span class="log-level-badge ${levelClass}">${log.level || '-'}</span></td>
                         <td>${log.module || '-'}</td>
                         <td class="log-message-cell" style="white-space: normal; word-break: break-all;">${log.message || '-'}</td>
-                        <td><button class="action-btn" onclick="showHistoryLogDetail(${sortedData.indexOf(log)})">详情</button></td>
+                        <td><button class="action-btn" onclick="showHistoryLogDetail(${index})">详情</button></td>
                     </tr>
                 `;
             }).join('');
         }
 
         function showHistoryHttpDetail(index) {
-            const sortedData = [...historyQueryData.http].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-            const req = sortedData[index];
+            const req = sortedHttpData[index];
             if (!req) return;
             
             const detail = `
@@ -926,8 +937,7 @@
         }
 
         function showHistoryOutboundDetail(index) {
-            const sortedData = [...historyQueryData.outbound].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-            const req = sortedData[index];
+            const req = sortedOutboundData[index];
             if (!req) return;
             
             const detail = `
@@ -952,8 +962,7 @@
         }
 
         function showHistoryLogDetail(index) {
-            const sortedData = [...historyQueryData.logs].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-            const log = sortedData[index];
+            const log = sortedLogsData[index];
             if (!log) return;
             
             const detail = `

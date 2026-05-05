@@ -612,6 +612,8 @@
             }
         }
         
+        let lastRenderIndex = 0;  // 记录上次渲染到的索引
+        
         function addLog(logData) {
             logs.push(logData);
             
@@ -626,6 +628,7 @@
                     }
                 }
                 logs.splice(0, removeCount);
+                lastRenderIndex = Math.max(0, lastRenderIndex - removeCount);
             }
             
             stats[logData.level] = (stats[logData.level] || 0) + 1;
@@ -636,6 +639,8 @@
             }
         }
         
+        let renderDebounceTimer = null;
+        
         function scheduleRender() {
             // 如果正在渲染，标记待处理
             if (isRendering) {
@@ -643,17 +648,21 @@
                 return;
             }
             
-            requestAnimationFrame(() => {
-                isRendering = true;
-                renderLogs();
-                isRendering = false;
-                
-                // 如果有新的待处理渲染请求
-                if (pendingRerender) {
-                    pendingRerender = false;
-                    scheduleRender();
-                }
-            });
+            // 防抖：如果50ms内有新的渲染请求，合并为一次
+            clearTimeout(renderDebounceTimer);
+            renderDebounceTimer = setTimeout(() => {
+                requestAnimationFrame(() => {
+                    isRendering = true;
+                    renderLogs();
+                    isRendering = false;
+                    
+                    // 如果有新的待处理渲染请求
+                    if (pendingRerender) {
+                        pendingRerender = false;
+                        scheduleRender();
+                    }
+                });
+            }, 50);
         }
         
         function updateStats() {
@@ -676,6 +685,35 @@
             criticalCount.textContent = stats.CRITICAL || 0;
         }
         
+        function createLogElement(log) {
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry ${log.level}`;
+            
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'log-time';
+            timeSpan.textContent = new Date(log.timestamp * 1000).toLocaleTimeString('zh-CN');
+            
+            const levelSpan = document.createElement('span');
+            levelSpan.className = `log-level ${log.level}`;
+            levelSpan.textContent = log.level;
+            
+            const moduleSpan = document.createElement('span');
+            moduleSpan.className = 'log-module';
+            moduleSpan.textContent = log.module;
+            moduleSpan.title = log.module;
+            
+            const messageSpan = document.createElement('span');
+            messageSpan.className = 'log-message';
+            messageSpan.textContent = log.message;
+            
+            logEntry.appendChild(timeSpan);
+            logEntry.appendChild(levelSpan);
+            logEntry.appendChild(moduleSpan);
+            logEntry.appendChild(messageSpan);
+            
+            return logEntry;
+        }
+        
         function renderLogs() {
             const container = document.getElementById('logsContainer');
             if (!container) {
@@ -685,57 +723,66 @@
             
             if (logs.length === 0) {
                 container.innerHTML = '<div class="no-logs" id="noLogs">正在等待日志数据...</div>';
+                lastRenderIndex = 0;
                 return;
             }
             
-            const filteredLogs = logs.filter(log => {
-                if (levelFilter && levelPriority[log.level] < levelPriority[levelFilter]) return false;
-                if (searchTerm && !log.message.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-                return true;
-            });
+            const hasFilter = levelFilter || searchTerm;
             
-            if (filteredLogs.length === 0) {
-                container.innerHTML = '<div class="no-logs" id="noLogs">没有匹配的日志</div>';
-                return;
-            }
-            
-            // 使用 DocumentFragment 提高 DOM 操作效率
-            const fragment = document.createDocumentFragment();
-            
-            for (const log of filteredLogs) {
-                const logEntry = document.createElement('div');
-                logEntry.className = `log-entry ${log.level}`;
+            if (hasFilter) {
+                // 有过滤器时，需要全量渲染
+                const filteredLogs = logs.filter(log => {
+                    if (levelFilter && levelPriority[log.level] < levelPriority[levelFilter]) return false;
+                    if (searchTerm && !log.message.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+                    return true;
+                });
                 
-                const timeSpan = document.createElement('span');
-                timeSpan.className = 'log-time';
-                timeSpan.textContent = new Date(log.timestamp * 1000).toLocaleTimeString('zh-CN');
+                if (filteredLogs.length === 0) {
+                    container.innerHTML = '<div class="no-logs" id="noLogs">没有匹配的日志</div>';
+                    lastRenderIndex = 0;
+                    return;
+                }
                 
-                const levelSpan = document.createElement('span');
-                levelSpan.className = `log-level ${log.level}`;
-                levelSpan.textContent = log.level;
+                // 使用 DocumentFragment 提高 DOM 操作效率
+                const fragment = document.createDocumentFragment();
                 
-                const moduleSpan = document.createElement('span');
-                moduleSpan.className = 'log-module';
-                moduleSpan.textContent = log.module;
-                moduleSpan.title = log.module;
+                for (const log of filteredLogs) {
+                    fragment.appendChild(createLogElement(log));
+                }
                 
-                const messageSpan = document.createElement('span');
-                messageSpan.className = 'log-message';
-                messageSpan.textContent = log.message;
+                container.innerHTML = '';
+                container.appendChild(fragment);
+                lastRenderIndex = logs.length;
                 
-                logEntry.appendChild(timeSpan);
-                logEntry.appendChild(levelSpan);
-                logEntry.appendChild(moduleSpan);
-                logEntry.appendChild(messageSpan);
+                if (autoScroll && !isPaused) {
+                    container.scrollTop = container.scrollHeight;
+                }
+            } else {
+                // 无过滤器时，使用增量更新
+                const newLogs = logs.slice(lastRenderIndex);
                 
-                fragment.appendChild(logEntry);
-            }
-            
-            container.innerHTML = '';
-            container.appendChild(fragment);
-            
-            if (autoScroll && !isPaused) {
-                container.scrollTop = container.scrollHeight;
+                if (newLogs.length > 0) {
+                    const fragment = document.createDocumentFragment();
+                    for (const log of newLogs) {
+                        fragment.appendChild(createLogElement(log));
+                    }
+                    container.appendChild(fragment);
+                    lastRenderIndex = logs.length;
+                }
+                
+                // 检查是否需要清理超出显示范围的旧日志（保持DOM节点数量合理）
+                const maxDomEntries = 2000;  // 最多保持2000个DOM节点
+                const childCount = container.children.length;
+                if (childCount > maxDomEntries) {
+                    const removeCount = childCount - maxDomEntries;
+                    for (let i = 0; i < removeCount; i++) {
+                        container.removeChild(container.firstChild);
+                    }
+                }
+                
+                if (autoScroll && !isPaused) {
+                    container.scrollTop = container.scrollHeight;
+                }
             }
         }
         
@@ -805,6 +852,7 @@
         function clearLogs() {
             logs = [];
             stats = { DEBUG: 0, INFO: 0, WARNING: 0, ERROR: 0, CRITICAL: 0 };
+            lastRenderIndex = 0;
             updateStats();
             const logsContainer = document.getElementById('logsContainer');
             if (logsContainer) {
@@ -917,6 +965,12 @@
             
             // 清理心跳检测定时器
             stopHeartbeatCheck();
+            
+            // 清理渲染防抖定时器
+            if (renderDebounceTimer) {
+                clearTimeout(renderDebounceTimer);
+                renderDebounceTimer = null;
+            }
             
             // 清理事件监听器
             cleanupEventListeners();
