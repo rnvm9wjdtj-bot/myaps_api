@@ -137,10 +137,14 @@ class LogStreamService:
         queue = asyncio.Queue(maxsize=100)
         async with self._lock:
             self._active_connections.add(queue)
-        # 发送最近的历史日志
+        # 发送最近的历史日志（批量非阻塞方式）
         recent_logs = self.get_recent_logs(50)
         for log in recent_logs:
-            await queue.put(log)
+            try:
+                queue.put_nowait(log)
+            except asyncio.QueueFull:
+                # 队列满时跳过旧日志，优先保留最新的
+                break
         return queue
 
     async def unsubscribe(self, queue: asyncio.Queue):

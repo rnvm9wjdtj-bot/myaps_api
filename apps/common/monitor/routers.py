@@ -311,16 +311,21 @@ async def live_logs_stream(level: Optional[str] = None):
         queue = await log_stream_service.subscribe()
         try:
             while True:
-                log_data = await queue.get()
-                if log_data is None:
-                    break
+                try:
+                    # 使用超时等待，定期发送心跳
+                    log_data = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    if log_data is None:
+                        break
 
-                # 级别过滤（前端请求级别的过滤）
-                if level and log_data["level"] != level:
-                    continue
+                    # 级别过滤（前端请求级别的过滤）
+                    if level and log_data["level"] != level:
+                        continue
 
-                # 格式化 SSE 消息
-                yield f'data: {json.dumps(log_data)}\n\n'
+                    # 格式化 SSE 消息
+                    yield f'data: {json.dumps(log_data)}\n\n'
+                except asyncio.TimeoutError:
+                    # 发送心跳消息，保持连接活跃
+                    yield 'data: heartbeat\n\n'
         finally:
             await log_stream_service.unsubscribe(queue)
 

@@ -407,7 +407,7 @@
     <script>
         let eventSource = null;
         let logs = [];
-        const MAX_LOGS = 2000;  // 前端日志数量上限
+        const MAX_LOGS = 500;  // 前端日志数量上限，控制内存占用
         let isPaused = false;
         let autoScroll = true;
         let searchTerm = '';
@@ -648,7 +648,7 @@
                 return;
             }
             
-            // 防抖：如果50ms内有新的渲染请求，合并为一次
+            // 防抖：16ms（约1帧）内合并新的渲染请求，平衡性能和响应速度
             clearTimeout(renderDebounceTimer);
             renderDebounceTimer = setTimeout(() => {
                 requestAnimationFrame(() => {
@@ -662,7 +662,7 @@
                         scheduleRender();
                     }
                 });
-            }, 50);
+            }, 16);
         }
         
         function updateStats() {
@@ -771,7 +771,7 @@
                 }
                 
                 // 检查是否需要清理超出显示范围的旧日志（保持DOM节点数量合理）
-                const maxDomEntries = 2000;  // 最多保持2000个DOM节点
+                const maxDomEntries = 500;  // 最多保持500个DOM节点
                 const childCount = container.children.length;
                 if (childCount > maxDomEntries) {
                     const removeCount = childCount - maxDomEntries;
@@ -989,14 +989,13 @@
         }
         
         document.addEventListener('DOMContentLoaded', async () => {
-            // 延迟 100ms 确保 DOM 完全就绪后再初始化
-            setTimeout(() => {
-                if (checkDomReady()) {
-                    updateStats();
-                    renderLogs();
-                }
-                connect();
-            }, 100);
+            // DOMContentLoaded 事件触发时，DOM已经就绪
+            if (checkDomReady()) {
+                updateStats();
+                renderLogs();
+            }
+            // 立即连接，不要延迟
+            connect();
             
             // 检查服务状态（仅用于日志输出）
             const serviceStatus = await checkServiceStatus();
