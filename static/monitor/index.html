@@ -439,7 +439,7 @@
             <!-- 原有日志记录卡片 -->
             <section class="card full-width">
                 <div class="card-header">
-                    <h2>日志记录</h2>
+                    <h2>Warning & Error</h2>
                     <div class="log-page-controls">
                         <button class="btn btn-primary" onclick="window.open('/monitor/live-logs', '_blank')">实时日志</button>
                         <button class="btn btn-primary" onclick="window.open('/monitor/history-logs', '_blank')">历史查询</button>
@@ -546,7 +546,7 @@
                 </div>
             </section>
 
-            <!-- 下半部分：左边是回调跟踪器和事件去重器，右边是死信队列 -->
+            <!-- 下半部分：左边是回调跟踪器和事件去重器，右边是DeadLetter队列 -->
             <div class="event-helpers-layout">
                 <!-- 左边：回调跟踪器和事件去重器 -->
                 <div class="left-column">
@@ -603,7 +603,7 @@
                     </section>
                 </div>
 
-                <!-- 右边：死信队列 -->
+                <!-- 右边：DeadLetter队列 -->
                 <div class="right-column">
                     <section class="card dead-letter-card">
                         <div class="card-header">
@@ -660,7 +660,7 @@
                                         </tr>
                                     </thead>
                                     <tbody id="dead-letter-tbody">
-                                        <!-- 动态生成死信列表 -->
+                                        <!-- 动态生成DeadLetter列表 -->
                                     </tbody>
                                 </table>
                             </div>

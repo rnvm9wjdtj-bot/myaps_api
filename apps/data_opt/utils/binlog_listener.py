@@ -1027,7 +1027,7 @@ class MySQLBinlogListener:
                 logger.success("binlog监听", "", "已关闭")
 
     def _add_to_dead_letter_queue(self, event, error_message):
-        """将失败的事件添加到死信队列（异步写入）"""
+        """将失败的事件添加到DeadLetter队列（异步写入）"""
         try:
             from apps.common.utils.event_helpers import get_dead_letter_queue
 
@@ -1046,9 +1046,9 @@ class MySQLBinlogListener:
 
             dlq = get_dead_letter_queue()
             dlq.add_failed_event(dead_letter_message, error_message, type(event).__name__)
-            logger.info(f"📥 binlog监听事件已添加到死信队列: {dead_letter_message['id']}")
+            logger.info(f"📥 binlog监听事件已添加到DeadLetter队列: {dead_letter_message['id']}")
         except Exception as e:
-            logger.error(f"❌ binlog监听添加到死信队列失败: {e}")
+            logger.error(f"❌ binlog监听添加到DeadLetter队列失败: {e}")
     
     def _get_retry_delay(self, retry: int, base_delay: float = 0.5) -> float:
         """计算带抖动的指数退避延迟，防止重试风暴"""
@@ -1073,7 +1073,7 @@ class MySQLBinlogListener:
                     time.sleep(delay)
                 else:
                     logger.error(f"❌ binlog监听事件处理失败，已达到最大重试次数: {e}")
-                    # 添加到死信队列
+                    # 添加到DeadLetter队列
                     self._add_to_dead_letter_queue(event, str(e))
     
     def _run_handler(self, handler, *args, **kwargs):

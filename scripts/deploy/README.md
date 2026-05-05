@@ -77,10 +77,76 @@ pip install -r requirements.txt
   - 验证服务健康状态
 
 ### 3.6 服务守护脚本
-- `service_daemon.ps1`：PowerShell 服务守护脚本
+- `service_daemon.ps1`：PowerShell 服务守护脚本（位于 `scripts` 目录）
   - 监控 Windows 服务状态
+  - 检查日志文件健康
   - 自动重启异常服务
   - 支持邮件和系统通知
+
+#### 3.6.1 功能说明
+
+| 功能 | 说明 |
+|------|------|
+| 服务状态监控 | 检查服务是否正在运行 |
+| 日志健康检查 | 检查 nssm_stderr.log 中的错误 |
+| 自动重启 | 服务异常时自动尝试重启 |
+| 邮件通知 | SMTP 配置后发送邮件告警 |
+| 系统通知 | Windows 气泡通知提醒 |
+
+#### 3.6.2 配置参数
+
+在 `.env` 文件中配置以下参数：
+
+```ini
+# 服务配置
+SERVICE_DAEMON_NAME=MyAPS_API           # Windows 服务名称
+SERVICE_DAEMON_LOG_DIR=logs              # 日志目录
+
+# 邮件通知配置
+SERVICE_DAEMON_EMAIL_ENABLED=false       # 启用邮件通知
+SERVICE_DAEMON_EMAIL_TO=admin@example.com  # 收件人（多个用逗号分隔）
+SERVICE_DAEMON_EMAIL_FROM=noreply@example.com  # 发件人
+SERVICE_DAEMON_SMTP_SERVER=smtp.example.com   # SMTP 服务器
+SERVICE_DAEMON_SMTP_PORT=587            # SMTP 端口
+SERVICE_DAEMON_SMTP_USER=user           # SMTP 用户名
+SERVICE_DAEMON_SMTP_PASSWORD=password   # SMTP 密码
+
+# 通知配置
+SERVICE_DAEMON_SYSTEM_NOTIFICATION=true # 启用系统通知
+SERVICE_DAEMON_AUTO_RESTART=true        # 自动重启异常服务
+```
+
+#### 3.6.3 使用方法
+
+**方法一：手动运行测试**
+```powershell
+# 进入脚本目录
+cd d:\code\myaps_fastapi\scripts
+
+# 运行守护脚本
+powershell.exe -ExecutionPolicy Bypass -File service_daemon.ps1
+
+# 查看日志
+Get-Content d:\code\myaps_fastapi\logs\service_daemon.log -Tail 20
+```
+
+**方法二：通过任务计划定期执行**
+
+1. 打开"任务计划程序"
+2. 创建基本任务：
+   - 名称：`MyAPS_API_Daemon`
+   - 触发器：每 5 分钟
+3. 操作：启动程序
+   - 程序：`powershell.exe`
+   - 参数：`-ExecutionPolicy Bypass -NoProfile -File "d:\code\myaps_fastapi\scripts\service_daemon.ps1"`
+4. 完成创建
+
+#### 3.6.4 注意事项
+
+- 邮件通知需要正确配置 SMTP 服务器和凭证
+- 系统通知需要在有桌面交互的环境下运行
+- 自动重启功能会在服务失败后尝试重启
+- 建议配合 Windows 任务计划定期执行（建议每 5-10 分钟）
 
 ## 4. 部署流程
 

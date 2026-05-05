@@ -756,7 +756,7 @@ body {
 }
 
 
-/* 三列布局样式 - 用于回调跟踪器、事件去重器、死信队列 */
+/* 三列布局样式 - 用于回调跟踪器、事件去重器、DeadLetter队列 */
 .three-column-layout {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -1215,7 +1215,7 @@ body {
     text-align: right;
 }
 
-/* 事件处理页面布局：左侧是回调跟踪器和事件去重器，右侧是死信队列 */
+/* 事件处理页面布局：左侧是回调跟踪器和事件去重器，右侧是DeadLetter队列 */
 #page-event-helpers .event-helpers-layout {
     display: flex !important;
     gap: 20px !important;
@@ -1235,7 +1235,7 @@ body {
     min-width: 0 !important;
 }
 
-/* 右侧列：死信队列 */
+/* 右侧列：DeadLetter队列 */
 #page-event-helpers .event-helpers-layout .right-column {
     flex: 1 !important;
     min-width: 0 !important;
@@ -1248,7 +1248,7 @@ body {
     box-sizing: border-box !important;
 }
 
-/* 死信队列卡片 */
+/* DeadLetter队列卡片 */
 #page-event-helpers .event-helpers-layout .dead-letter-card {
     height: 100% !important;
     display: flex !important;

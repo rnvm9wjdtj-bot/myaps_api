@@ -283,7 +283,7 @@ class MonitorService:
         return metrics
 
     def get_dead_letter_events(self, limit: int = 50) -> Dict:
-        """获取死信队列事件"""
+        """获取DeadLetter队列事件"""
         try:
             dlq = get_dead_letter_queue()
             events = dlq.get_events(limit)
@@ -295,20 +295,20 @@ class MonitorService:
                 "success": True
             }
         except Exception as e:
-            logger.error(f"获取死信队列事件失败: {e}")
+            logger.error(f"获取DeadLetter队列事件失败: {e}")
             return {
                 "error": str(e),
                 "success": False
             }
 
     def clear_dead_letters(self) -> Dict:
-        """清空死信队列"""
+        """清空DeadLetter队列"""
         try:
             dlq = get_dead_letter_queue()
             dlq.clear()
-            return {"success": True, "message": "死信队列已清空"}
+            return {"success": True, "message": "DeadLetter队列已清空"}
         except Exception as e:
-            logger.error(f"清空死信队列失败: {e}")
+            logger.error(f"清空DeadLetter队列失败: {e}")
             return {"success": False, "error": str(e)}
 
     def flush_events_now(self, event_type: str = None):

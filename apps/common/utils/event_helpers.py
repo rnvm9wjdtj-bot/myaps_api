@@ -1,9 +1,9 @@
 """
-事件处理辅助模块 - 提供回调跟踪、死信队列和去重机制
+事件处理辅助模块 - 提供回调跟踪、DeadLetter队列和去重机制
 
 功能特性：
 1. 回调跟踪与重试机制 - 跟踪异步回调结果，失败时自动重试
-2. 异步死信队列 - 事件处理失败时异步写入死信文件
+2. 异步DeadLetter队列 - 事件处理失败时异步写入DeadLetter文件
 3. 事件去重 - 基于事件键的去重机制
 
 使用示例：
@@ -13,7 +13,7 @@
     tracker = get_callback_tracker()
     tracker.track(future, event_id)
 
-    # 死信队列
+    # DeadLetter队列
     dlq = get_dead_letter_queue()
     dlq.add_failed_event(event, error_msg)
 
@@ -168,7 +168,7 @@ class CallbackTracker:
 
 
 class DeadLetterQueue:
-    """异步死信队列 - 事件处理失败时异步写入死信文件"""
+    """异步DeadLetter队列 - 事件处理失败时异步写入DeadLetter文件"""
 
     _instance = None
     _lock = Lock()
@@ -197,10 +197,10 @@ class DeadLetterQueue:
         try:
             DEAD_LETTER_DIR.mkdir(parents=True, exist_ok=True)
         except Exception as e:
-            logger.warning(f"创建死信目录失败: {e}")
+            logger.warning(f"创建DeadLetter目录失败: {e}")
 
     def start(self):
-        """启动死信队列处理线程"""
+        """启动DeadLetter队列处理线程"""
         if self._running:
             return
 
@@ -211,19 +211,19 @@ class DeadLetterQueue:
             name='dead-letter-writer'
         )
         self._write_thread.start()
-        logger.success("死信队列", "", "已启动")
+        logger.success("DeadLetter队列", "", "已启动")
 
     def stop(self):
-        """停止死信队列并写入所有待处理事件"""
+        """停止DeadLetter队列并写入所有待处理事件"""
         self._running = False
         if self._write_thread:
             self._write_thread.join(timeout=5)
         self._flush_all()
-        logger.info("死信队列已停止")
+        logger.info("DeadLetter队列已停止")
 
     def add_failed_event(self, event: Any, error_msg: str, event_type: str = 'unknown'):
         """
-        添加失败事件到死信队列
+        添加失败事件到DeadLetter队列
 
         Args:
             event: 失败的事件数据
@@ -245,7 +245,7 @@ class DeadLetterQueue:
             self.start()
 
     def _write_loop(self):
-        """死信队列写入循环"""
+        """DeadLetter队列写入循环"""
         while self._running:
             try:
                 batch = []
@@ -258,17 +258,17 @@ class DeadLetterQueue:
 
                 time.sleep(1)
             except Exception as e:
-                logger.error(f"死信队列写入循环出错: {e}")
+                logger.error(f"DeadLetter队列写入循环出错: {e}")
 
     def _write_batch(self, batch):
-        """批量写入死信事件"""
+        """批量写入DeadLetter事件"""
         try:
             with open(DEAD_LETTER_FILE, 'a', encoding='utf-8') as f:
                 for entry in batch:
                     f.write(json.dumps(entry, ensure_ascii=False) + '\n')
-            logger.debug(f"死信队列写入 {len(batch)} 个事件")
+            logger.debug(f"DeadLetter队列写入 {len(batch)} 个事件")
         except Exception as e:
-            logger.error(f"死信队列写入失败: {e}")
+            logger.error(f"DeadLetter队列写入失败: {e}")
 
     def _flush_all(self):
         """写入所有待处理事件"""
@@ -307,13 +307,13 @@ class DeadLetterQueue:
 
     def get_events(self, limit: int = 50) -> list:
         """
-        获取死信事件列表
+        获取DeadLetter事件列表
 
         Args:
             limit: 返回事件数量限制
 
         Returns:
-            死信事件列表
+            DeadLetter事件列表
         """
         events = []
         if DEAD_LETTER_FILE.exists():
@@ -328,12 +328,12 @@ class DeadLetterQueue:
                         except Exception:
                             pass
             except Exception as e:
-                logger.error(f"读取死信文件失败: {e}")
+                logger.error(f"读取DeadLetter文件失败: {e}")
         return events
 
     def clear(self):
         """
-        清空死信队列
+        清空DeadLetter队列
         """
         # 清空内存队列
         with self._write_lock:
@@ -344,9 +344,9 @@ class DeadLetterQueue:
             try:
                 with open(DEAD_LETTER_FILE, 'w', encoding='utf-8') as f:
                     f.write('')
-                logger.info("死信队列已清空")
+                logger.info("DeadLetter队列已清空")
             except Exception as e:
-                logger.error(f"清空死信文件失败: {e}")
+                logger.error(f"清空DeadLetter文件失败: {e}")
 
 
 class EventDeduplicator:
@@ -456,7 +456,7 @@ def get_callback_tracker() -> CallbackTracker:
 
 
 def get_dead_letter_queue() -> DeadLetterQueue:
-    """获取死信队列单例"""
+    """获取DeadLetter队列单例"""
     global _dead_letter_queue
     if _dead_letter_queue is None:
         _dead_letter_queue = DeadLetterQueue()

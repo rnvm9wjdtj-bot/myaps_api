@@ -4457,18 +4457,18 @@ function formatLogDetail(log, index, selectedIndex) {
     `;
 }
 
-// 刷新死信队列统计
+// 刷新DeadLetter队列统计
 async function refreshDeadLetterStats() {
     try {
         const response = await fetch(`${API_BASE}/dead-letter`);
         const data = await response.json();
         updateDeadLetterDisplay(data);
     } catch (error) {
-        console.error('获取死信队列数据失败:', error);
+        console.error('获取DeadLetter队列数据失败:', error);
     }
 }
 
-// 清空死信队列
+// 清空DeadLetter队列
 async function clearDeadLetters() {
     try {
         const response = await fetch(`${API_BASE}/dead-letter/clear`, {
@@ -4477,17 +4477,17 @@ async function clearDeadLetters() {
         const data = await response.json();
         if (data.success) {
             refreshDeadLetterStats();
-            showNotification('死信队列已清空', 'success');
+            showNotification('DeadLetter队列已清空', 'success');
         } else {
-            showNotification('清空死信队列失败', 'error');
+            showNotification('清空DeadLetter队列失败', 'error');
         }
     } catch (error) {
-        console.error('清空死信队列失败:', error);
-        showNotification('清空死信队列失败', 'error');
+        console.error('清空DeadLetter队列失败:', error);
+        showNotification('清空DeadLetter队列失败', 'error');
     }
 }
 
-// 更新死信队列显示
+// 更新DeadLetter队列显示
 function updateDeadLetterDisplay(data) {
     const deadLetters = data.dead_letters || [];
     const total = deadLetters.length;
@@ -4504,7 +4504,7 @@ function updateDeadLetterDisplay(data) {
     const rateEl = document.getElementById('dead-letter-success-rate');
     if (rateEl) rateEl.textContent = successRate.toFixed(2) + '%';
     
-    // 更新死信列表
+    // 更新DeadLetter列表
     const tbody = document.getElementById('dead-letter-tbody');
     if (tbody) {
         if (deadLetters.length === 0) {
@@ -4536,7 +4536,7 @@ function updateDeadLetterDisplay(data) {
     }
 }
 
-// 重新处理死信
+// 重新处理DeadLetter
 async function reprocessDeadLetter(letterId) {
     try {
         const response = await fetch(`${API_BASE}/dead-letter/reprocess/${letterId}`, {
@@ -4545,13 +4545,13 @@ async function reprocessDeadLetter(letterId) {
         const data = await response.json();
         if (data.success) {
             refreshDeadLetterStats();
-            showNotification('死信重新处理成功', 'success');
+            showNotification('DeadLetter重新处理成功', 'success');
         } else {
-            showNotification('死信重新处理失败', 'error');
+            showNotification('DeadLetter重新处理失败', 'error');
         }
     } catch (error) {
-        console.error('重新处理死信失败:', error);
-        showNotification('重新处理死信失败', 'error');
+        console.error('重新处理DeadLetter失败:', error);
+        showNotification('重新处理DeadLetter失败', 'error');
     }
 }
 
@@ -4579,14 +4579,14 @@ function showNotification(message, type) {
     }, 3000);
 }
 
-// 获取死信队列数据
+// 获取DeadLetter队列数据
 async function fetchDeadLetterStats() {
     try {
         const response = await fetch(`${API_BASE}/dead-letter`);
         const data = await response.json();
         updateDeadLetterDisplay(data);
     } catch (error) {
-        console.error('获取死信队列数据失败:', error);
+        console.error('获取DeadLetter队列数据失败:', error);
     }
 }
 
@@ -4607,7 +4607,7 @@ function updateEventHelpersDisplay(data) {
         getElement('callback-pending-retries').textContent = tracker.total_pending_retries || 0;
     }
     
-    // 死信队列
+    // DeadLetter队列
     if (data.dead_letter_queue) {
         const dlq = data.dead_letter_queue;
         getElement('dlq-pending').textContent = dlq.pending_count || 0;
@@ -4615,7 +4615,7 @@ function updateEventHelpersDisplay(data) {
         getElement('dlq-file-size').textContent = formatFileSize(dlq.total_file_size || 0);
         getElement('dlq-running').textContent = dlq.running ? '运行中' : '已停止';
         
-        // 更新死信队列详细信息区域
+        // 更新DeadLetter队列详细信息区域
         const totalEl = document.getElementById('dead-letter-total');
         if (totalEl) totalEl.textContent = dlq.total_event_count || 0;
         

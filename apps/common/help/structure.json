@@ -84,5 +84,23 @@
                 ]
             }
         ]
+    },
+    {
+        "name": "Ｑ ＆ Ａ",
+        "groups": [
+            {
+                "header": "常见问题",
+                "description": "常见问题解答",
+                "children": [
+                    {
+                        "name": "主数据传输问题",
+                        "url": "https://docs.qq.com/aio/DWExCYmpPZE9NZWZ0",
+                        "icon": "❓",
+                        "description": "主数据传输问题解答",
+                        "updateAt": "2026-03-01"
+                    }
+                ]
+            }
+        ]
     }
 ]

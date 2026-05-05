@@ -507,7 +507,7 @@ async def get_event_helpers_metrics():
     """
     获取事件辅助模块监控指标
 
-    返回回调跟踪器、死信队列和事件去重器的监控数据
+    返回回调跟踪器、DeadLetter队列和事件去重器的监控数据
     """
     return monitor_service.get_event_helpers_metrics()
 
@@ -515,13 +515,13 @@ async def get_event_helpers_metrics():
 @router.get("/dead-letter")
 async def get_dead_letter_events(limit: int = 50):
     """
-    获取死信队列事件
+    获取DeadLetter队列事件
 
     Args:
         limit: 返回事件数量限制
 
     Returns:
-        死信事件列表和统计信息
+        DeadLetter事件列表和统计信息
     """
     return monitor_service.get_dead_letter_events(limit)
 
@@ -529,7 +529,7 @@ async def get_dead_letter_events(limit: int = 50):
 @router.post("/dead-letter/clear")
 async def clear_dead_letters():
     """
-    清空死信队列
+    清空DeadLetter队列
 
     Returns:
         操作结果

@@ -336,7 +336,7 @@ async def lifespan(app):
         log_config.info(f"缓冲刷新完成，成功刷新 {flushed} 个事件")
     log_config.info("Redis 相关任务已停止")
 
-    # 2.1 关闭事件辅助模块（死信队列等）
+    # 2.1 关闭事件辅助模块（DeadLetter队列等）
     log_config.info("正在关闭事件辅助模块...")
     from apps.common.utils.event_helpers import shutdown_event_helpers
     shutdown_event_helpers()
