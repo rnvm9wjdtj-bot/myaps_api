@@ -1124,7 +1124,85 @@ class SmartLogger(logging.Logger):
             if isinstance(logger, SmartLogger):
                 logger.set_db_initialized(initialized)
     
-    async def _log_to_database(self, level: int, msg: str, **kwargs) -> None:
+    def _get_caller_info(self):
+        """
+        获取调用者信息（模块名、函数名、行号）
+        在异步任务创建之前调用，确保获取正确的调用栈
+        """
+        try:
+            import inspect
+            
+            stack = inspect.stack()
+            
+            # 需要跳过的模块/函数名称
+            skip_modules = {'asyncio', 'asyncio.events', 'globalobjects.logger', 'logging', 'uvicorn', 'uvicorn.server', 'uvicorn.protocols', 'uvicorn.workers'}
+            skip_functions = {'_run', '_log', '_log_to_file', '_log_to_db', '_get_caller_info', 'info', 'debug', 'warning', 'error', 'critical', 'run', 'serve', 'handle'}
+            
+            caller_frame = None
+            
+            for i, frame_info in enumerate(stack[1:]):
+                frame = frame_info.frame
+                module_name = frame.f_globals.get('__name__', '')
+                func_name = frame_info.function
+                
+                class_name = None
+                if 'self' in frame.f_locals:
+                    try:
+                        class_name = frame.f_locals['self'].__class__.__name__
+                    except Exception:
+                        pass
+                
+                # 跳过内部模块和函数
+                is_internal = False
+                if class_name == 'SmartLogger':
+                    is_internal = True
+                elif module_name in skip_modules:
+                    is_internal = True
+                elif func_name in skip_functions:
+                    is_internal = True
+                elif module_name.startswith('asyncio'):
+                    is_internal = True
+                elif module_name.startswith('logging'):
+                    is_internal = True
+                elif module_name.startswith('uvicorn'):
+                    is_internal = True
+                elif module_name.startswith('starlette'):
+                    is_internal = True
+                elif module_name.startswith('fastapi'):
+                    is_internal = True
+                
+                if not is_internal:
+                    caller_frame = frame_info
+                    break
+            
+            # 如果没有找到合适的调用者，尝试从栈中寻找
+            if not caller_frame:
+                for i in range(1, min(len(stack), 20)):
+                    frame_info = stack[i]
+                    frame = frame_info.frame
+                    module_name = frame.f_globals.get('__name__', '')
+                    if not (module_name.startswith('asyncio') or 
+                            module_name.startswith('logging') or 
+                            module_name.startswith('uvicorn') or
+                            module_name.startswith('starlette') or
+                            module_name.startswith('fastapi') or
+                            module_name == 'globalobjects.logger'):
+                        caller_frame = frame_info
+                        break
+            
+            if caller_frame:
+                return {
+                    'module': caller_frame.frame.f_globals.get('__name__', ''),
+                    'function': caller_frame.function,
+                    'line_number': caller_frame.lineno
+                }
+            
+        except Exception:
+            pass
+        
+        return None
+    
+    async def _log_to_database(self, level: int, msg: str, caller_info=None, **kwargs) -> None:
         """
         异步写入数据库
         
@@ -1241,7 +1319,13 @@ class SmartLogger(logging.Logger):
             module_name = ''
             function_name = ''
             line_no = 0
-            if caller_frame:
+            
+            # 优先使用传入的 caller_info（在同步上下文中获取的）
+            if caller_info:
+                module_name = caller_info.get('module', '')
+                function_name = caller_info.get('function', '')
+                line_no = caller_info.get('line_number', 0)
+            elif caller_frame:
                 try:
                     module_name = caller_frame.frame.f_globals.get('__name__', '')
                     function_name = caller_frame.function
@@ -1399,6 +1483,9 @@ class SmartLogger(logging.Logger):
         """记录 DEBUG 级别的日志"""
         # 检查当前日志器的级别
         if self.isEnabledFor(logging.DEBUG):
+            # 获取调用者信息（在创建异步任务之前获取，确保调用栈正确）
+            caller_info = self._get_caller_info()
+            
             # 异步写入数据库
             try:
                 import asyncio
@@ -1413,7 +1500,7 @@ class SmartLogger(logging.Logger):
                     except (TypeError, ValueError):
                         # 如果格式化失败，将参数拼接到消息后面
                         formatted_msg = f"{msg} {' '.join(map(str, args))}"
-                    asyncio.create_task(self._log_to_database(logging.DEBUG, formatted_msg, **kwargs))
+                    asyncio.create_task(self._log_to_database(logging.DEBUG, formatted_msg, caller_info=caller_info, **kwargs))
             except Exception:
                 pass
             
@@ -1461,6 +1548,9 @@ class SmartLogger(logging.Logger):
         """记录 INFO 级别的日志"""
         # 检查当前日志器的级别
         if self.isEnabledFor(logging.INFO):
+            # 获取调用者信息（在创建异步任务之前获取，确保调用栈正确）
+            caller_info = self._get_caller_info()
+            
             # 异步写入数据库
             try:
                 import asyncio
@@ -1475,7 +1565,7 @@ class SmartLogger(logging.Logger):
                     except (TypeError, ValueError):
                         # 如果格式化失败，将参数拼接到消息后面
                         formatted_msg = f"{msg} {' '.join(map(str, args))}"
-                    asyncio.create_task(self._log_to_database(logging.INFO, formatted_msg, **kwargs))
+                    asyncio.create_task(self._log_to_database(logging.INFO, formatted_msg, caller_info=caller_info, **kwargs))
             except Exception:
                 pass
             
@@ -1537,6 +1627,9 @@ class SmartLogger(logging.Logger):
         """记录 WARNING 级别的日志"""
         # 检查当前日志器的级别
         if self.isEnabledFor(logging.WARNING):
+            # 获取调用者信息（在创建异步任务之前获取，确保调用栈正确）
+            caller_info = self._get_caller_info()
+            
             # 异步写入数据库
             try:
                 import asyncio
@@ -1551,7 +1644,7 @@ class SmartLogger(logging.Logger):
                     except (TypeError, ValueError):
                         # 如果格式化失败，将参数拼接到消息后面
                         formatted_msg = f"{msg} {' '.join(map(str, args))}"
-                    asyncio.create_task(self._log_to_database(logging.WARNING, formatted_msg, **kwargs))
+                    asyncio.create_task(self._log_to_database(logging.WARNING, formatted_msg, caller_info=caller_info, **kwargs))
             except Exception:
                 pass
             
@@ -1613,6 +1706,9 @@ class SmartLogger(logging.Logger):
         """记录 ERROR 级别的日志"""
         # 检查当前日志器的级别
         if self.isEnabledFor(logging.ERROR):
+            # 获取调用者信息（在创建异步任务之前获取，确保调用栈正确）
+            caller_info = self._get_caller_info()
+            
             # 格式化消息，处理格式化失败的情况
             try:
                 if args:
@@ -1629,14 +1725,14 @@ class SmartLogger(logging.Logger):
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
                     # 事件循环已运行，创建异步任务
-                    asyncio.create_task(self._log_to_database(logging.ERROR, formatted_msg, **kwargs))
+                    asyncio.create_task(self._log_to_database(logging.ERROR, formatted_msg, caller_info=caller_info, **kwargs))
                 else:
                     # 事件循环未运行，同步执行
                     # 避免在应用关闭时使用 asyncio.run()，防止事件循环错误
                     try:
                         loop = asyncio.get_event_loop()
                         if not loop.is_closed():
-                            asyncio.create_task(self._log_to_database(logging.ERROR, formatted_msg, **kwargs))
+                            asyncio.create_task(self._log_to_database(logging.ERROR, formatted_msg, caller_info=caller_info, **kwargs))
                     except:
                         # 事件循环已关闭，跳过日志记录
                         pass
@@ -1701,6 +1797,9 @@ class SmartLogger(logging.Logger):
         """记录 CRITICAL 级别的日志"""
         # 检查当前日志器的级别
         if self.isEnabledFor(logging.CRITICAL):
+            # 获取调用者信息（在创建异步任务之前获取，确保调用栈正确）
+            caller_info = self._get_caller_info()
+            
             # 异步写入数据库
             try:
                 import asyncio
@@ -1715,7 +1814,7 @@ class SmartLogger(logging.Logger):
                     except (TypeError, ValueError):
                         # 如果格式化失败，将参数拼接到消息后面
                         formatted_msg = f"{msg} {' '.join(map(str, args))}"
-                    asyncio.create_task(self._log_to_database(logging.CRITICAL, formatted_msg, **kwargs))
+                    asyncio.create_task(self._log_to_database(logging.CRITICAL, formatted_msg, caller_info=caller_info, **kwargs))
             except Exception:
                 pass
             

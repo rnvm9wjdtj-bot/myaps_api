@@ -216,7 +216,7 @@ async def lifespan(app):
                         await loop.run_in_executor(executor, event_handler, event_data)
                 log_config.info(f"事件处理成功: {event_type}")
             else:
-                log_config.warning(f"未找到事件处理器: {event_handler_name}")
+                log_config.debug(f"⚠️ 未找到事件处理器: {event_handler_name}")
         except Exception as e:
             log_config.error(f"处理 Redis 事件 {event_type} 时出错: {e}")
 
