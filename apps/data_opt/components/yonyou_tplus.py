@@ -927,6 +927,7 @@ class TplusMo(MoVoucher):
         remain_native_supplyno: bool = True,
         **kwargs
     ):
+        mo_create_response_json = {}
         try:
             endpoint = cls._CREATE_ENDPOINT
             supplyno = event_data.get('supplyno')
@@ -977,10 +978,10 @@ class TplusMo(MoVoucher):
                     push_data=payload,
                     msg_from='T+'
                 )
-            # return cls
         except Exception as e:
-            logger.warning("创建生产加工单失败", str(e))
-            _erp.mo_release_failed(native_plno=supplyno, msg=str(e))
+            msg = mo_create_response_json.get('message', str(e))
+            logger.warning("创建生产加工单失败", msg)
+            await _erp.mo_release_failed(native_plno=supplyno, msg=msg)
 
 
     @classmethod
@@ -1045,8 +1046,8 @@ class TplusRs(RsVoucher):
         pydantic_model: Type[PydanticModel] = None,
         **kwargs
     ):
+        rs_create_response_json = {}
         try:
-
             endpoint = cls._CREATE_ENDPOINT
             pydantic_model = pydantic_model or cls._PUSH_PYDANTIC_MODEL
 
@@ -1080,17 +1081,18 @@ class TplusRs(RsVoucher):
             if dto["MaterialRequestDetails"]:   # 有领料申请详情
                 payload = {"dto": dto}
                 logger.debug(f"向 T+ 推送领料申请，发送数据：{json.dumps(payload, ensure_ascii=False)}")
-                rs_push_response_json = await cls._CONNECTION._post(endpoint=endpoint, data=payload)
+                rs_create_response_json = await cls._CONNECTION._post(endpoint=endpoint, data=payload)
 
-                if str(rs_push_response_json['code']) == '0': # 创建成功
-                    await _erp.rs_release_success(rsno=rs_no, msg=rs_push_response_json['message'], msg_from='T+', _code=rs_push_response_json['data'].get('Code'), _id=rs_push_response_json['data'].get('ID'))
+                if str(rs_create_response_json['code']) == '0': # 创建成功
+                    await _erp.rs_release_success(rsno=rs_no, msg=rs_create_response_json['message'], msg_from='T+', _code=rs_create_response_json['data'].get('Code'), _id=rs_create_response_json['data'].get('ID'))
                 else:
-                    await _erp.rs_release_failed(rsno=rs_no, msg=rs_push_response_json['message'], push_data=processed_rsdata, msg_from='T+')
+                    await _erp.rs_release_failed(rsno=rs_no, msg=rs_create_response_json['message'], push_data=processed_rsdata, msg_from='T+')
             else:
                 await _erp.rs_release_success(rsno=rs_no, msg="无领料申请详情", msg_from='APS')
         except Exception as e:
-            logger.warning_msg(f"创建领料申请单失败", str(e))
-            await _erp.rs_release_failed(rsno=rs_no, msg=str(e))
+            msg = rs_create_response_json.get('message', str(e))
+            logger.warning_msg(f"创建领料申请单失败", msg)
+            await _erp.rs_release_failed(rsno=rs_no, msg=msg, push_data=processed_rsdata, msg_from='T+')
 
 
 
@@ -1115,6 +1117,7 @@ class TplusPr(BaseVoucher):
         pydantic_model: Type[PydanticModel] = None,
         **kwargs
     ):
+        pr_create_response_json = {}
         try:
             assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
             await cls._CONNECTION.auth()
@@ -1126,15 +1129,15 @@ class TplusPr(BaseVoucher):
             tplus_pr_data = pydantic_model(data=agg_data_list).model_dump(exclude_none=True)
             payload = {"dto": tplus_pr_data}
             endpoint = cls._CREATE_ENDPOINT
-            pr_push_response_json = await cls._CONNECTION._post(endpoint=endpoint, data=payload)
+            pr_create_response_json = await cls._CONNECTION._post(endpoint=endpoint, data=payload)
             # pr_push_response_json = response.json()
-            if str(pr_push_response_json['code']) == '0':
-                tplus_pr_id = pr_push_response_json['data'].get('ID')
-                tplus_pr_code = pr_push_response_json['data'].get('Code')
+            if str(pr_create_response_json['code']) == '0':
+                tplus_pr_id = pr_create_response_json['data'].get('ID')
+                tplus_pr_code = pr_create_response_json['data'].get('Code')
                 tasks = [
                     _erp.pr_release_success(
                         prno=_['supplyno'],
-                        msg=pr_push_response_json['message'],
+                        msg=pr_create_response_json['message'],
                         msg_from='T+',
                         _code=tplus_pr_code,
                         _id=tplus_pr_id
@@ -1148,13 +1151,14 @@ class TplusPr(BaseVoucher):
                 tasks = [
                     _erp.pr_release_failed(
                         prno=item['supplyno'],
-                        msg=pr_push_response_json['message'],
+                        msg=pr_create_response_json['message'],
                         msg_from='T+'
                     ) for item in event_data_list]
                 await asyncio.gather(*tasks)
         except Exception as e:
-            logger.fail("推送请购单", str(e))
-            tasks = [asyncio.create_task(_erp.pr_release_failed(prno=item['supplyno'], msg=str(e), msg_from='T+')) for item in event_data_list]
+            msg = pr_create_response_json.get('message', str(e))
+            logger.fail("推送请购单", msg)
+            tasks = [asyncio.create_task(_erp.pr_release_failed(prno=item['supplyno'], msg=msg, msg_from='T+')) for item in event_data_list]
             await asyncio.gather(*tasks)
 
 

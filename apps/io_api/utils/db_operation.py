@@ -1166,7 +1166,7 @@ async def db_update_by_index(
                 success_db.append(db_name)
                 affect_count_total += result['affected_rows']
                 operation_type = result.get('operation_type')
-                logger.update("索引更新", f"{table_name}@{db_name}", f"操作{operation_type}，影响{result['affected_rows']}条")
+                # logger.update("索引", f"{table_name}@{db_name}", f"操作{operation_type}，影响{result['affected_rows']}条")
         except Exception as e:
             error_info = {"db_name": db_name, "error": str(e), "error_type": e.__class__.__name__}
             errors.append(error_info)
