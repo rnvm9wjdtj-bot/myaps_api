@@ -3128,7 +3128,7 @@ function updateSchedulerDetailDisplay(data) {
                         <td class="scheduler-detail-label">最近执行</td>
                         <td class="scheduler-detail-value execution-history">
                             ${job.execution_history && job.execution_history.length > 0 ? 
-                                job.execution_history.slice().sort((a, b) => new Date(a.time) - new Date(b.time)).map(record => `
+                                job.execution_history.slice().sort((a, b) => new Date(b.time) - new Date(a.time)).map(record => `
                                     <span class="execution-status ${record.error ? 'error' : 'success'}" ${record.error ? `title="${record.error}"` : ''}>
                                         ${formatRecentExecutionTime(record.time)}
                                     </span>

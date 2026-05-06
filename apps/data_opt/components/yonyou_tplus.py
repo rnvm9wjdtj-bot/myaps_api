@@ -603,18 +603,20 @@ class YonyouTplusConnection(ExternalBaseConnection):
         response_json = response.json()
 
         if hasattr(response, 'status_code'):
-            err_msg = response_json.get("message") or response.status_code
-            if response.status_code >= 500 and response.status_code < 600:
+            status_code = response.status_code
+            if status_code >= 500 and status_code < 600:
+                if isinstance(response_json, dict):
+                    err_msg = response_json.get("message") or status_code
+                else:
+                    err_msg = status_code
                 raise Exception(f"HTTP 服务器错误: {err_msg}")
-            # elif response.status_code >= 400:
-            #     raise Exception(f"HTTP 客户端错误: {err_msg}")
 
         return response_json
         
 
 
     async def _pull_simple_data(self, endpoint: str, field_hints: dict[str, str], filter: dict=None):
-        await self.auth()
+        # await self.auth()
         params = {
             "PageIndex": 1,
             "PageSize": self.config.max_page_size,
