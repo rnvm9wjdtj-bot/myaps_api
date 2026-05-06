@@ -121,6 +121,31 @@ async def get_system_info():
     return collector.get_system_info()
 
 
+@router.get("/network")
+async def get_network_metrics():
+    """
+    获取网络 I/O 指标
+
+    返回各网络接口的发送/接收字节数、数据包数等累计指标
+    """
+    from .collectors import ResourceCollector
+    collector = ResourceCollector()
+    return collector.get_network_metrics()
+
+
+@router.get("/network/bandwidth")
+async def get_network_bandwidth():
+    """
+    获取实时网络带宽
+
+    返回各网络接口的上传/下载带宽（字节/秒、数据包/秒）
+    注：首次调用会返回"首次采样，等待下一次"，需要连续调用才能获取实际带宽值
+    """
+    from .collectors import ResourceCollector
+    collector = ResourceCollector()
+    return collector.get_network_bandwidth()
+
+
 @router.get("/http")
 async def get_http_metrics():
     """

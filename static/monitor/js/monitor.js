@@ -869,16 +869,29 @@ function setSystemStatus(status, text) {
 // 获取资源指标
 async function fetchResource() {
     try {
-        const response = await fetch(`${API_BASE}/resource`);
-        const data = await response.json();
-        updateResourceDisplay(data);
+        const [resourceResponse, networkResponse] = await Promise.all([
+            fetch(`${API_BASE}/resource`),
+            fetch(`${API_BASE}/network/bandwidth`)
+        ]);
+        const resourceData = await resourceResponse.json();
+        const networkData = await networkResponse.json();
+        
+        // 计算网络带宽（转换为 KB/s）
+        let networkUpload = 0;
+        let networkDownload = 0;
+        if (networkData.total && !networkData.message) {
+            networkUpload = Math.round(networkData.total.bps_sent / 1024 * 100) / 100;
+            networkDownload = Math.round(networkData.total.bps_recv / 1024 * 100) / 100;
+        }
+        
+        updateResourceDisplay(resourceData, networkUpload, networkDownload);
     } catch (error) {
         console.error('获取资源指标失败:', error);
     }
 }
 
 // 更新资源显示
-function updateResourceDisplay(data) {
+function updateResourceDisplay(data, networkUpload = 0, networkDownload = 0) {
     if (data.error) {
         const resourceBadge = getElement('resource-badge');
         resourceBadge.textContent = '错误';
@@ -908,8 +921,8 @@ function updateResourceDisplay(data) {
     // 运行时间
     getElement('uptime-value').textContent = formatUptime(data.uptime || 0);
 
-    // 更新图表
-    updateResourceChart(cpuValue, memPercent);
+    // 更新图表（包含网络带宽）
+    updateResourceChart(cpuValue, memPercent, networkUpload, networkDownload);
 
     // 更新徽章
     const badge = getElement('resource-badge');
@@ -971,7 +984,8 @@ function initResourceChart() {
                     borderColor: '#1890ff',
                     backgroundColor: 'rgba(24, 144, 255, 0.1)',
                     fill: true,
-                    tension: 0.4
+                    tension: 0.4,
+                    yAxisID: 'y'
                 },
                 {
                     label: '内存 %',
@@ -979,7 +993,26 @@ function initResourceChart() {
                     borderColor: '#52c41a',
                     backgroundColor: 'rgba(82, 196, 26, 0.1)',
                     fill: true,
-                    tension: 0.4
+                    tension: 0.4,
+                    yAxisID: 'y'
+                },
+                {
+                    label: '网络上传 KB/s',
+                    data: [],
+                    borderColor: '#ff6b6b',
+                    backgroundColor: 'rgba(255, 107, 107, 0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    yAxisID: 'y1'
+                },
+                {
+                    label: '网络下载 KB/s',
+                    data: [],
+                    borderColor: '#4ecdc4',
+                    backgroundColor: 'rgba(78, 205, 196, 0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    yAxisID: 'y1'
                 }
             ]
         },
@@ -988,8 +1021,28 @@ function initResourceChart() {
             maintainAspectRatio: false,
             scales: {
                 y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
                     beginAtZero: true,
-                    max: 100
+                    max: 100,
+                    title: {
+                        display: true,
+                        text: 'CPU/内存 %'
+                    }
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: '网络 KB/s'
+                    },
+                    grid: {
+                        drawOnChartArea: false
+                    }
                 }
             },
             plugins: {
@@ -1005,19 +1058,23 @@ function initResourceChart() {
 }
 
 // 更新资源图表
-function updateResourceChart(cpu, memory) {
+function updateResourceChart(cpu, memory, networkUpload = 0, networkDownload = 0) {
     const now = new Date();
     const timeLabel = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
 
     resourceChart.data.labels.push(timeLabel);
     resourceChart.data.datasets[0].data.push(cpu);
     resourceChart.data.datasets[1].data.push(memory);
+    resourceChart.data.datasets[2].data.push(networkUpload);
+    resourceChart.data.datasets[3].data.push(networkDownload);
 
     // 保持最多20个数据点
     if (resourceChart.data.labels.length > 20) {
         resourceChart.data.labels.shift();
         resourceChart.data.datasets[0].data.shift();
         resourceChart.data.datasets[1].data.shift();
+        resourceChart.data.datasets[2].data.shift();
+        resourceChart.data.datasets[3].data.shift();
     }
 
     resourceChart.update('none');

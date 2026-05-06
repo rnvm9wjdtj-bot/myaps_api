@@ -18,6 +18,9 @@ class ResourceCollector:
     def __init__(self):
         self._process = psutil.Process()
         self._cpu_count = psutil.cpu_count()
+        # 网络统计缓存（用于计算带宽）
+        self._last_network_stats = None
+        self._last_network_timestamp = None
 
 
     def get_current_metrics(self) -> Dict[str, Any]:
@@ -157,3 +160,112 @@ class ResourceCollector:
                 alerts.append(f"线程数 ({threads}) 超过阈值 ({check_thresholds['threads']})")
 
         return alerts
+
+    def get_network_metrics(self) -> Dict[str, Any]:
+        """
+        获取网络 I/O 指标
+
+        Returns:
+            Dict: 包含各网络接口的发送/接收字节数、数据包数等指标
+        """
+        try:
+            # 获取所有网络接口的 I/O 统计
+            io_counters = psutil.net_io_counters(pernic=True)
+
+            interfaces = {}
+            for interface, counters in io_counters.items():
+                # 过滤掉虚拟接口和回环接口（Windows）
+                if interface.startswith('Loopback') or interface.startswith('veth'):
+                    continue
+
+                interfaces[interface] = {
+                    "bytes_sent": counters.bytes_sent,
+                    "bytes_recv": counters.bytes_recv,
+                    "packets_sent": counters.packets_sent,
+                    "packets_recv": counters.packets_recv,
+                    "err_in": counters.errin,
+                    "err_out": counters.errout,
+                    "drop_in": counters.dropin,
+                    "drop_out": counters.dropout,
+                }
+
+            return {
+                "timestamp": time.time(),
+                "interfaces": interfaces,
+                "total": {
+                    "bytes_sent": psutil.net_io_counters().bytes_sent,
+                    "bytes_recv": psutil.net_io_counters().bytes_recv,
+                    "packets_sent": psutil.net_io_counters().packets_sent,
+                    "packets_recv": psutil.net_io_counters().packets_recv,
+                    "err_in": psutil.net_io_counters().errin,
+                    "err_out": psutil.net_io_counters().errout,
+                    "drop_in": psutil.net_io_counters().dropin,
+                    "drop_out": psutil.net_io_counters().dropout,
+                }
+            }
+        except Exception as e:
+            logger.error(f"采集网络指标失败: {e}")
+            return {"error": str(e)}
+
+    def get_network_bandwidth(self) -> Dict[str, Any]:
+        """
+        获取实时网络带宽（需要两次调用计算差值）
+
+        Returns:
+            Dict: 包含各网络接口的上传/下载带宽
+        """
+        current_stats = psutil.net_io_counters(pernic=True)
+        current_time = time.time()
+
+        if self._last_network_stats is None:
+            self._last_network_stats = current_stats
+            self._last_network_timestamp = current_time
+            return {"message": "首次采样，等待下一次"}
+
+        # 计算时间差
+        time_diff = current_time - self._last_network_timestamp
+        if time_diff < 0.1:
+            return {"message": "采样间隔过短"}
+
+        bandwidth = {}
+        for interface, counters in current_stats.items():
+            # 过滤掉虚拟接口和回环接口
+            if interface.startswith('Loopback') or interface.startswith('veth'):
+                continue
+
+            if interface not in self._last_network_stats:
+                continue
+
+            last = self._last_network_stats[interface]
+            bandwidth[interface] = {
+                "bps_sent": round((counters.bytes_sent - last.bytes_sent) / time_diff, 2),
+                "bps_recv": round((counters.bytes_recv - last.bytes_recv) / time_diff, 2),
+                "pps_sent": round((counters.packets_sent - last.packets_sent) / time_diff, 2),
+                "pps_recv": round((counters.packets_recv - last.packets_recv) / time_diff, 2),
+            }
+
+        # 计算总带宽
+        total_current = psutil.net_io_counters()
+        total_last = psutil.net_io_counters()
+        for iface, last in self._last_network_stats.items():
+            if not iface.startswith('Loopback') and not iface.startswith('veth'):
+                total_last = last
+                break
+
+        total_bandwidth = {
+            "bps_sent": round((total_current.bytes_sent - total_last.bytes_sent) / time_diff, 2),
+            "bps_recv": round((total_current.bytes_recv - total_last.bytes_recv) / time_diff, 2),
+            "pps_sent": round((total_current.packets_sent - total_last.packets_sent) / time_diff, 2),
+            "pps_recv": round((total_current.packets_recv - total_last.packets_recv) / time_diff, 2),
+        }
+
+        # 更新缓存
+        self._last_network_stats = current_stats
+        self._last_network_timestamp = current_time
+
+        return {
+            "timestamp": current_time,
+            "interval": round(time_diff, 2),
+            "interfaces": bandwidth,
+            "total": total_bandwidth,
+        }
