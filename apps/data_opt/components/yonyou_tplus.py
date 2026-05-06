@@ -553,12 +553,12 @@ class YonyouTplusConnection(ExternalBaseConnection):
             params=params,
             timeout=self._read_timeout
         )
-        if hasattr(response, 'json'):
-            if inspect.iscoroutinefunction(response.json):
-                response = await response.json()
-            else:
-                response = response.json()
-        return response
+        # if hasattr(response, 'json'):
+        #     if inspect.iscoroutinefunction(response.json):
+        #         response = await response.json()
+        #     else:
+        response_json = response.json()
+        return response_json
 
 
     async def _post(self, endpoint: str, data: dict):
@@ -600,18 +600,21 @@ class YonyouTplusConnection(ExternalBaseConnection):
             f"POST {endpoint}"
         )
         
+        # if hasattr(response, 'json'):
+        #     if inspect.iscoroutinefunction(response.json):
+        #         response_json = await response.json()
+        #     else:
+        response_json = response.json()
+
         if hasattr(response, 'status_code'):
-            if response.status_code >= 400 and response.status_code < 500:
-                raise Exception(f"HTTP 客户端错误: {response.status_code}")
-            elif response.status_code >= 500:
-                raise Exception(f"HTTP 服务器错误: {response.status_code}")
+            err_msg = response_json.get("message") or response.status_code
+            if response.status_code >= 500:
+                raise Exception(f"HTTP 服务器错误: {err_msg}")
+            elif response.status_code >= 400:
+                raise Exception(f"HTTP 客户端错误: {err_msg}")
+
+        return response_json
         
-        if hasattr(response, 'json'):
-            if inspect.iscoroutinefunction(response.json):
-                response = await response.json()
-            else:
-                response = response.json()
-        return response
 
 
     async def _pull_simple_data(self, endpoint: str, field_hints: dict[str, str], filter: dict=None):
@@ -927,7 +930,7 @@ class TplusMo(MoVoucher):
         remain_native_supplyno: bool = True,
         **kwargs
     ):
-        mo_create_response_json = {}
+        # mo_create_response_json = {}
         try:
             endpoint = cls._CREATE_ENDPOINT
             supplyno = event_data.get('supplyno')
@@ -979,9 +982,9 @@ class TplusMo(MoVoucher):
                     msg_from='T+'
                 )
         except Exception as e:
-            msg = mo_create_response_json.get('message', str(e))
-            logger.warning("创建生产加工单失败", msg)
-            await _erp.mo_release_failed(native_plno=supplyno, msg=msg)
+            # msg = mo_create_response_json.get('message', str(e))
+            logger.warning("创建生产加工单失败", str(e))
+            await _erp.mo_release_failed(native_plno=supplyno, msg=str(e))
 
 
     @classmethod
@@ -1046,7 +1049,7 @@ class TplusRs(RsVoucher):
         pydantic_model: Type[PydanticModel] = None,
         **kwargs
     ):
-        rs_create_response_json = {}
+        # rs_create_response_json = {}
         try:
             endpoint = cls._CREATE_ENDPOINT
             pydantic_model = pydantic_model or cls._PUSH_PYDANTIC_MODEL
@@ -1090,9 +1093,9 @@ class TplusRs(RsVoucher):
             else:
                 await _erp.rs_release_success(rsno=rs_no, msg="无领料申请详情", msg_from='APS')
         except Exception as e:
-            msg = rs_create_response_json.get('message', str(e))
-            logger.warning_msg(f"创建领料申请单失败", msg)
-            await _erp.rs_release_failed(rsno=rs_no, msg=msg, push_data=processed_rsdata, msg_from='T+')
+            # msg = rs_create_response_json.get('message', str(e))
+            logger.warning_msg(f"创建领料申请单失败", str(e))
+            await _erp.rs_release_failed(rsno=rs_no, msg=str(e), push_data=processed_rsdata, msg_from='T+')
 
 
 
@@ -1117,7 +1120,7 @@ class TplusPr(BaseVoucher):
         pydantic_model: Type[PydanticModel] = None,
         **kwargs
     ):
-        pr_create_response_json = {}
+        # pr_create_response_json = {}
         try:
             assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
             await cls._CONNECTION.auth()
@@ -1156,9 +1159,9 @@ class TplusPr(BaseVoucher):
                     ) for item in event_data_list]
                 await asyncio.gather(*tasks)
         except Exception as e:
-            msg = pr_create_response_json.get('message', str(e))
-            logger.fail("推送请购单", msg)
-            tasks = [asyncio.create_task(_erp.pr_release_failed(prno=item['supplyno'], msg=msg, msg_from='T+')) for item in event_data_list]
+            # msg = pr_create_response_json.get('message', str(e))
+            logger.fail("推送请购单", str(e))
+            tasks = [asyncio.create_task(_erp.pr_release_failed(prno=item['supplyno'], msg=str(e), msg_from='T+')) for item in event_data_list]
             await asyncio.gather(*tasks)
 
 

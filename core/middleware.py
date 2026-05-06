@@ -1,10 +1,111 @@
 import os
 import ipaddress
+import re
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
 IP_WHITELIST = [ip.strip() for ip in os.getenv("IP_WHITELIST", "").split(",") if ip.strip()]
 API_KEY = os.getenv("API_KEY", "")
+
+# 文档相关路径，只能在内网访问
+DOC_PATHS = ["/docs", "/redoc", "/openapi.json"]
+DOC_PREFIXES = ["/static/swagger"]
+
+# 缓存已注册的路由信息，避免每次请求都重新解析
+REGISTERED_ROUTES = []
+
+
+def is_internal_ip(ip_str: str) -> bool:
+    """判断IP地址是否为内部/本地地址
+    
+    判断依据：
+    - 127.0.0.0/8 (127.0.0.0 - 127.255.255.255) - IPv4本地回环
+    - 10.0.0.0/8 - A类私有地址
+    - 172.16.0.0/12 - B类私有地址
+    - 192.168.0.0/16 - C类私有地址
+    - ::1 - IPv6本地回环
+    """
+    if not ip_str:
+        return False
+
+    try:
+        # 处理 IPv4映射的IPv6地址 (如 ::ffff:127.0.0.1)
+        if ip_str.startswith('::ffff:'):
+            ip_str = ip_str[7:]
+
+        ip = ipaddress.ip_address(ip_str)
+
+        # 检查是否为本地回环地址
+        if ip.is_loopback:
+            return True
+
+        # 检查是否为私有地址
+        if ip.is_private:
+            return True
+
+        return False
+    except ValueError:
+        # 如果不是有效的IP地址格式，检查特殊的主机名
+        lower_ip = ip_str.lower()
+        if lower_ip in ('localhost', 'localhost.localdomain'):
+            return True
+        return False
+
+
+def init_registered_routes(app):
+    """
+    初始化已注册路由列表
+    在应用启动后调用此函数来缓存所有路由信息
+    """
+    global REGISTERED_ROUTES
+    REGISTERED_ROUTES = []
+    
+    for route in app.routes:
+        if hasattr(route, 'path') and hasattr(route, 'methods'):
+            REGISTERED_ROUTES.append({
+                'path': route.path,
+                'methods': route.methods
+            })
+
+
+def is_route_exists(request_path: str, request_method: str) -> bool:
+    """
+    检查请求的路径和方法是否匹配已注册的路由
+    
+    FastAPI路由支持路径参数，如 /api/{id}
+    这里实现简单的路径参数匹配
+    """
+    # 去除末尾斜杠以便统一比较
+    request_path = request_path.rstrip('/')
+    
+    for route in REGISTERED_ROUTES:
+        route_path = route['path'].rstrip('/')
+        route_methods = route['methods']
+        
+        # 检查HTTP方法是否匹配
+        if request_method not in route_methods:
+            continue
+        
+        # 精确匹配
+        if request_path == route_path:
+            return True
+        
+        # 处理路径参数，将 {param} 转换为正则表达式
+        # 例如: /api/{id} -> /api/(\w+)
+        pattern = re.escape(route_path).replace(r'\{', '(').replace(r'\}', ')')
+        # 将 (\w+) 替换为更通用的匹配模式 ([^/]+)
+        pattern = pattern.replace(r'\(\w+\)', r'([^/]+)')
+        
+        # 添加开始和结束标记
+        pattern = f"^{pattern}$"
+        
+        try:
+            if re.match(pattern, request_path):
+                return True
+        except re.error:
+            continue
+    
+    return False
 
 
 def _match_ip_wildcard(client_ip: str, pattern: str) -> bool:
@@ -103,13 +204,31 @@ def is_ip_allowed(client_ip: str) -> bool:
 
 def create_security_middleware():
     async def security_middleware(request: Request, call_next):
-        # 对GET和OPTIONS方法直接放行
-        if request.method in ["GET", "OPTIONS"]:
-            return await call_next(request)
-
-        # 允许查阅文档等无需认证的请求
         url_path = request.url.path
-        if url_path in ["/docs", "/redoc", "/openapi.json"] or url_path.startswith("/static/swagger"):
+        request_method = request.method
+        client_ip = request.client.host
+        
+        # 检查是否为文档相关路径（只能在内网访问）
+        is_doc_path = url_path in DOC_PATHS or any(url_path.startswith(prefix) for prefix in DOC_PREFIXES)
+        if is_doc_path:
+            # 文档路径只允许内网访问
+            if not is_internal_ip(client_ip):
+                return JSONResponse(
+                    status_code=403,
+                    content={"status_code": 403, "success": 0, "meta": {}, "message": "Forbidden: Documentation access is restricted to internal network"}
+                )
+            return await call_next(request)
+        
+        # 检查请求的端点是否存在
+        if not is_route_exists(url_path, request_method):
+            # 端点不存在时返回404，不暴露服务器信息
+            return JSONResponse(
+                status_code=404, 
+                content={"status_code": 404, "success": 0, "meta": {}, "message": "Not Found"}
+            )
+        
+        # 对GET和OPTIONS方法直接放行
+        if request_method in ["GET", "OPTIONS"]:
             return await call_next(request)
         
         # 检查IP是否在白名单中

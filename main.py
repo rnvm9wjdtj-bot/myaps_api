@@ -24,7 +24,7 @@ if __name__ == "__main__":
 from core.app import create_app
 from core.lifespan import lifespan
 from core.openapi import setup_custom_openapi
-from core.middleware import create_security_middleware, IP_WHITELIST, API_KEY
+from core.middleware import create_security_middleware, IP_WHITELIST, API_KEY, init_registered_routes
 from core.websocket import websocket_endpoint, websocket_root
 from core.routes_register import register_routes
 from core.database import register_database
@@ -36,13 +36,13 @@ app = create_app(lifespan=lifespan)
 # 设置自定义的OpenAPI schema生成函数
 setup_custom_openapi(app)
 
-# 配置安全中间件
-if IP_WHITELIST or API_KEY:
-    app.middleware("http")(create_security_middleware())
-
-# 配置HTTP监控中间件
+# 配置HTTP监控中间件（先注册，在内层）
 from apps.common.monitor.middleware import HTTPMonitorMiddleware
 app.add_middleware(HTTPMonitorMiddleware)
+
+# 配置安全中间件（后注册，在外层，优先检查端点存在性）
+if IP_WHITELIST or API_KEY:
+    app.middleware("http")(create_security_middleware())
 
 # 配置CORS中间件
 app.add_middleware(
@@ -73,6 +73,9 @@ register_exception_handlers(app)
 
 # 注册路由
 register_routes(app)
+
+# 初始化已注册路由列表（用于端点存在性校验）
+init_registered_routes(app)
 
 # 注册WebSocket路由
 app.websocket("/")(websocket_root)
