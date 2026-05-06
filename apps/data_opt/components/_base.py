@@ -1514,7 +1514,7 @@ class BaseVoucher(BaseSource):
 
 
     @classmethod
-    async def create(cls, event_data: dict, _aps, _erp, pydantic_model: Type[PydanticModel] = None):
+    async def create(cls, event_data: dict, _aps, _erp, pydantic_model: Type[PydanticModel] = None, **kwargs):
         """
         创建凭证
         
@@ -1525,7 +1525,7 @@ class BaseVoucher(BaseSource):
 
 
     @classmethod
-    async def update(cls, event_data: dict, _erp):
+    async def update(cls, event_data: dict, _erp, **kwargs):
         """
         更新凭证
         
@@ -1536,7 +1536,7 @@ class BaseVoucher(BaseSource):
     
 
     @classmethod
-    async def delete(cls, event_data: dict, _erp):
+    async def delete(cls, event_data: dict, _erp, **kwargs):
         """
         删除凭证
         
@@ -1547,7 +1547,7 @@ class BaseVoucher(BaseSource):
 
 
     @classmethod
-    async def approve(cls, event_data: dict, _erp):
+    async def approve(cls, event_data: dict, _erp, **kwargs):
         """
         审批凭证
         
@@ -1568,6 +1568,7 @@ class MoVoucher(BaseVoucher):
         production_cache_items=None,
         pydantic_model: Type[PydanticModel] | Callable = None,
         remain_native_supplyno: bool = True,
+        **kwargs
     ):
         """
         批量创建生产加工单
@@ -1608,7 +1609,8 @@ class MoVoucher(BaseVoucher):
                 _aps=_aps,
                 _erp=_erp,
                 pydantic_model=pydantic_model,
-                remain_native_supplyno=remain_native_supplyno
+                remain_native_supplyno=remain_native_supplyno,
+                **kwargs
             )
             for _ in event_data_list
         ]
@@ -1633,6 +1635,7 @@ class RsVoucher(BaseVoucher):
         _erp,
         production_cache_items=None,
         pydantic_model: Type[PydanticModel] | Callable = None,
+        **kwargs
     ):
         """
         批量创建领料申请
@@ -1673,6 +1676,7 @@ class RsVoucher(BaseVoucher):
                 _aps=_aps,
                 _erp=_erp,
                 pydantic_model=pydantic_model,
+                **kwargs
             )
             for event_data in event_data_list
         ]

@@ -35,7 +35,9 @@ from typing import Dict, Any, Union
 #################################################################################
 # ⬇️ 项目对象及参数
 #################################################################################
-REMAIN_NATIVE_SUPPLYNO = True   # 本项目需要推送 MO 前后关系，所以必须保留原生供应号，否则会导致关系断开
+_REMAIN_NATIVE_SUPPLYNO = True   # 本项目需要推送 MO 前后关系，所以必须保留原生供应号，否则会导致关系断开
+_AUTO_APPROVE_MO = True   # 自动审批 MO
+_AUTO_APPROVE_PR = True   # 自动审批请购单
 
 
 hacyxs_tplus_conn = None
@@ -185,7 +187,8 @@ async def batch_handle_pl_status_a2e(event_data_list: list[dict], _erp: EventRes
         _erp=_erp,
         production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL],
         pydantic_model=create_custom_mo_push_model,
-        remain_native_supplyno=REMAIN_NATIVE_SUPPLYNO
+        remain_native_supplyno=_REMAIN_NATIVE_SUPPLYNO,
+        auto_approve=_AUTO_APPROVE_MO,
     )
 
 
@@ -206,5 +209,6 @@ async def batch_handle_pr_status_a2e(pr_data_list: list[dict], _erp: EventResult
     await TplusPr.create(
         event_data_list=pr_data_list,
         _erp=_erp,
+        auto_approve=_AUTO_APPROVE_PR,
     )
         

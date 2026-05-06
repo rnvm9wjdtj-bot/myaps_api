@@ -698,7 +698,7 @@ async def get_outbound_http_requests_by_time_range(
         "method": req.method,
         "url": req.url,
         "status_code": req.status_code,
-        "duration": req.duration,
+        "duration": req.duration * 1000,  # 转换为毫秒
         "module": req.module,
         "is_slow": req.is_slow,
         "is_error": req.is_error,
@@ -860,7 +860,7 @@ async def get_history_by_time_range(
             "method": req.method,
             "url": req.url,
             "status_code": req.status_code,
-            "duration": req.duration,
+            "duration": req.duration * 1000,  # 转换为毫秒
             "module": req.module,
             "is_slow": req.is_slow,
             "is_error": req.is_error,

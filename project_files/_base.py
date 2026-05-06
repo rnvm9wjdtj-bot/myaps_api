@@ -189,7 +189,7 @@ def event_batch_handler(
                 if event_data_list is not None:
                     if isinstance(event_data_list, list):
                         count = len(event_data_list)
-                        require_time_sec = 30 + count * 2 / MAX_EVENTS_PER_SECOND
+                        require_time_sec = 30 + count * 5 / MAX_EVENTS_PER_SECOND
                         require_time_min = f"{int(require_time_sec / 60)} 分 {int(require_time_sec % 60)} 秒"
                         content = f"开始【{actual_description}】，将处理【{count}】条数据，预计耗时【{require_time_min}】"
                     else:

@@ -1462,13 +1462,40 @@ class SmartLogger(logging.Logger):
             if not caller_frame and len(stack) > 1:
                 caller_frame = stack[-1]
             
+            # 浏览器一定支持 emoji！将降级文本恢复为 emoji
+            stream_msg = msg
+            # 创建一个映射：降级文本 -> emoji
+            emoji_replacement = {
+                '[OK]': '✅',
+                '[FAIL]': '❌',
+                '[ERROR]': '🚫',
+                '[WARN]': '⚠️',
+                '[CRIT]': '💥',
+                '[START]': '⏰',
+                '[STOP]': '🛑',
+                '[INSERT]': '📥',
+                '[UPDATE]': '🔄',
+                '[DELETE]': '🗑️',
+                '[QUERY]': '🔍',
+                '[CONNECT]': '🔗',
+                '[DISCONNECT]': '🔌',
+                '[CACHE]': '💾',
+                '[TIMER]': '⏱️',
+                '[SYNC]': '🔄',
+                '[DEBUG]': '🔍',
+                '[INFO]': 'ℹ️'
+            }
+            # 替换所有降级文本
+            for text, emoji in emoji_replacement.items():
+                stream_msg = stream_msg.replace(text, emoji)
+            
             # 创建 LogRecord
             record = logging.LogRecord(
                 name=self.name,
                 level=level,
                 pathname=caller_frame.filename if caller_frame else __file__,
                 lineno=caller_frame.lineno if caller_frame else 0,
-                msg=msg,
+                msg=stream_msg,
                 args=(),
                 exc_info=None,
                 func=caller_frame.function if caller_frame else ''

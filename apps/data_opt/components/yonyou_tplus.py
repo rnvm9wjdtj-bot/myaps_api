@@ -453,21 +453,21 @@ class YonyouTplusConnection(ExternalBaseConnection):
         self._BOM_CODES = None  # 缓存已处理的BOM编码，用于取工艺路线（因为 T+ 的工艺路线是抽象的，具体到物料的工艺路线是在 BOM 中定义的，而只有通过具体BOM编号查询BOM时，才会展示工艺路线详情 
 
 
-    async def auth(self, max_retries: int = 5):
+    async def auth(self, force: bool = False, max_retries: int = 5):
         """
         异步认证连接，支持重试机制
         """
         assert self.access_token and self.refresh_token, "畅捷通token缺失"
         if self._auth_at_:
             expire_time = datetime.strptime(self._auth_at_, "%Y-%m-%d %H:%M:%S") + timedelta(seconds=self.config.token_expire_seconds)
-            if datetime.now() < expire_time:
+            if datetime.now() < expire_time and not force:
                 logger.debug(f"畅捷通token有效，有效期至：{expire_time.strftime('%Y-%m-%d %H:%M:%S')}")
                 return self.access_token
 
         async with self._auth_lock:
             if self._auth_at_:
                 expire_time = datetime.strptime(self._auth_at_, "%Y-%m-%d %H:%M:%S") + timedelta(seconds=self.config.token_expire_seconds)
-                if datetime.now() < expire_time:
+                if datetime.now() < expire_time and not force:
                     logger.debug(f"畅捷通token有效（锁后复检），有效期至：{expire_time.strftime('%Y-%m-%d %H:%M:%S')}")
                     return self.access_token
 
@@ -924,7 +924,8 @@ class TplusMo(MoVoucher):
         _aps: ApsPayloadSponsor,
         _erp: EventResultPoster,
         pydantic_model: Type[PydanticModel] = None,
-        remain_native_supplyno: bool = True
+        remain_native_supplyno: bool = True,
+        **kwargs
     ):
         try:
             endpoint = cls._CREATE_ENDPOINT
@@ -951,8 +952,10 @@ class TplusMo(MoVoucher):
                 response_data = mo_create_response_json['data']
                 tplus_mo_id = response_data['ID']
                 tplus_mo_code = supplyno if remain_native_supplyno else response_data['Code']
-                # 审批 MO ，要在领料申请前批准
-                _x_a = await cls.approve(tplus_moid=tplus_mo_id)
+                auto_approve = kwargs.get('auto_approve', True)
+                if auto_approve:
+                    # 审批 MO ，要在领料申请前批准
+                    _x_a = await cls.approve(tplus_moid=tplus_mo_id)
                 # 查询推送成功的 MO 在 T+ 中的详情
                 tplus_mo_data = await TplusMo.query(index_value=tplus_mo_id)
                 tplus_mo_data = tplus_mo_data.raw_data
@@ -1039,7 +1042,8 @@ class TplusRs(RsVoucher):
         event_data: dict,
         _aps: ApsPayloadSponsor,
         _erp: EventResultPoster,
-        pydantic_model: Type[PydanticModel] = None
+        pydantic_model: Type[PydanticModel] = None,
+        **kwargs
     ):
         try:
 
@@ -1108,7 +1112,8 @@ class TplusPr(BaseVoucher):
         cls,
         event_data_list: list[dict],
         _erp: EventResultPoster,
-        pydantic_model: Type[PydanticModel] = None
+        pydantic_model: Type[PydanticModel] = None,
+        **kwargs
     ):
         try:
             assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
@@ -1135,9 +1140,10 @@ class TplusPr(BaseVoucher):
                         _id=tplus_pr_id
                     ) for _ in event_data_list]
                 await asyncio.gather(*tasks)
-                # 审批请购单
-                cls.approve(tplus_pr_code=tplus_pr_code)
-            
+                auto_approve = kwargs.get('auto_approve', True)
+                if auto_approve:
+                    # 审批请购单
+                    await cls.approve(tplus_pr_code=tplus_pr_code)
             else:
                 tasks = [
                     _erp.pr_release_failed(

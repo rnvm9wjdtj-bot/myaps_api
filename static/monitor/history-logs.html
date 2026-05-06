@@ -953,7 +953,8 @@
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">是否慢请求</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.is_slow ? '是' : '否'}</td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">是否错误</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.is_error ? '是' : '否'}</td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">错误信息</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #f5222d;">${req.error_message || '-'}</td></tr>
-        <tr><td style="padding: 8px; color: #8c8c8c;">请求体</td><td style="padding: 8px;" class="font-mono">${req.request_body || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求体</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.request_body || '-'}</td></tr>
+        <tr><td style="padding: 8px; color: #8c8c8c;">响应体</td><td style="padding: 8px;" class="font-mono">${req.response_body || '-'}</td></tr>
     </table>
 </div>
             `;
