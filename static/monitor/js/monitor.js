@@ -693,7 +693,8 @@ async function refreshAll() {
                     await Promise.all([
                         fetchEventStats(),
                         fetchEventHelpers(),
-                        fetchDeadLetterStats()
+                        fetchDeadLetterStats(),
+                        fetchBinlogListenerStatus()
                     ]);
                     break;
             }
@@ -1865,6 +1866,7 @@ function switchPage(pageName) {
         fetchEventStats();
         fetchEventHelpers();
         fetchDeadLetterStats();
+        fetchBinlogListenerStatus();
     } else if (pageName === 'logs') {
         fetchLogsPage();
     }
@@ -1886,6 +1888,23 @@ async function fetchEventStats() {
         updateEventStatsDisplay(data);
     } catch (error) {
         console.error('获取事件统计失败:', error);
+    }
+}
+
+// 获取binlog listener状态
+async function fetchBinlogListenerStatus() {
+    // 如果用户不活动，不发送请求
+    if (isInactive) {
+        console.log('用户不活动，跳过binlog listener状态获取');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE}/binlog-listener`);
+        const data = await response.json();
+        updateBinlogListenerDisplay(data);
+    } catch (error) {
+        console.error('获取binlog listener状态失败:', error);
     }
 }
 
@@ -1955,6 +1974,54 @@ function updateEventStatsDisplay(data) {
         </tr>
         `;
     }).join('');
+}
+
+// 更新binlog listener状态显示
+function updateBinlogListenerDisplay(data) {
+    const listener = data.binlog_listener || {};
+    
+    // 显示背压监控信息
+    document.getElementById('backpressure-summary').style.display = 'block';
+    document.getElementById('backpressure-pending').style.display = 'block';
+    document.getElementById('backpressure-percent').style.display = 'block';
+    document.getElementById('event-loop-status').style.display = 'block';
+    
+    const pendingCount = listener.pending_events || 0;
+    const threshold = listener.backpressure_threshold || 10000;
+    const percent = listener.backpressure_percent || 0;
+    
+    document.getElementById('backpressure-pending-count').textContent = pendingCount;
+    document.getElementById('backpressure-usage').textContent = percent.toFixed(1) + '%';
+    
+    // 根据背压状态设置颜色
+    let statusText = '正常';
+    let statusClass = 'healthy';
+    
+    if (percent >= 100) {
+        statusText = '严重';
+        statusClass = 'error';
+    } else if (percent >= 75) {
+        statusText = '警告';
+        statusClass = 'warning';
+    }
+    
+    const statusEl = document.getElementById('backpressure-status');
+    statusEl.textContent = statusText;
+    statusEl.className = 'summary-value ' + statusClass;
+    
+    // 更新事件循环健康状态
+    const eventLoopHealthy = listener.event_loop_healthy;
+    const eventLoopEl = document.getElementById('event-loop-health');
+    if (eventLoopHealthy === true) {
+        eventLoopEl.textContent = '正常';
+        eventLoopEl.className = 'summary-value healthy';
+    } else if (eventLoopHealthy === false) {
+        eventLoopEl.textContent = '异常';
+        eventLoopEl.className = 'summary-value error';
+    } else {
+        eventLoopEl.textContent = '未知';
+        eventLoopEl.className = 'summary-value';
+    }
 }
 
 // 获取事件状态

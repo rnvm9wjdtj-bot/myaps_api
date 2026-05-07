@@ -56,10 +56,22 @@ def get_tplus_conn():
 
 hacyxs_tplus_conn = get_tplus_conn()
 #################################################################################
-# ⬇️ 项目可复用逻辑
+# ⬇️ 通知相关
 #################################################################################
 
+planner_email_reminder = QqEmailReminder(
+    smtp_user="2982212683@qq.com",
+    smtp_password="jyboujldhplddhdf",
+    email_from="2982212683@qq.com",
+    email_to=PLANNER_MAILS,
+)
 
+
+# ⬇️binlog监听告警注册
+from apps.data_opt.utils.binlog_listener import binlog_listener as bl
+
+bl.register_alert_handler(planner_email_reminder)
+CLIENT_LOGGER.info("binlog监听告警提醒器已注册")
 
 
 #################################################################################
@@ -171,14 +183,6 @@ def create_custom_rs_push_model(_aps: ApsPayloadSponsor):
     return CustomRsPushModel
 
 
-planner_email_reminder = QqEmailReminder(
-    smtp_user="2982212683@qq.com",
-    smtp_password="jyboujldhplddhdf",
-    email_from="2982212683@qq.com",
-    email_to=PLANNER_MAILS,
-)
-
-
 @event_batch_handler(reminder=planner_email_reminder)
 @batch_service_operation(module="事件处理")
 async def batch_handle_pl_status_a2e(event_data_list: list[dict], _erp: EventResultPoster, description="下达生产加工单至 T+"):
@@ -211,4 +215,4 @@ async def batch_handle_pr_status_a2e(pr_data_list: list[dict], _erp: EventResult
         _erp=_erp,
         auto_approve=_AUTO_APPROVE_PR,
     )
-        
+

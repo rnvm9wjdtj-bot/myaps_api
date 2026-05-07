@@ -64,7 +64,7 @@ if (Test-Path $EnvFile) {
     $envVariables = Read-EnvFile -EnvFilePath $EnvFile
     
     # Service configuration
-    if ($envVariables.ContainsKey("SERVICE_DAEMON_NAME")) { $ServiceName = $envVariables["SERVICE_DAEMON_NAME"] }
+    if ($envVariables.ContainsKey("SERVICE_NAME")) { $ServiceName = $envVariables["SERVICE_NAME"] }
     if ($envVariables.ContainsKey("SERVICE_DAEMON_LOG_DIR")) { $LogDir = $envVariables["SERVICE_DAEMON_LOG_DIR"] }
     
     # Email configuration

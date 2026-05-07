@@ -2731,6 +2731,62 @@ td {
     color: var(--text-primary);
 }
 
+/* 背压状态和事件循环状态高亮样式 */
+#backpressure-status,
+#event-loop-health {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+#backpressure-status.healthy,
+#event-loop-health.healthy {
+    background-color: rgba(34, 197, 94, 0.15);
+    color: var(--success-color);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+#backpressure-status.warning,
+#event-loop-health.warning {
+    background-color: rgba(251, 191, 36, 0.15);
+    color: var(--warning-color);
+    border: 1px solid rgba(251, 191, 36, 0.3);
+    animation: pulse-warning 2s infinite;
+}
+
+#backpressure-status.error,
+#event-loop-health.error {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: var(--error-color);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    animation: pulse-error 1s infinite;
+}
+
+@keyframes pulse-warning {
+    0%, 100% {
+        opacity: 1;
+        box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.4);
+    }
+    50% {
+        opacity: 0.8;
+        box-shadow: 0 0 0 6px rgba(251, 191, 36, 0);
+    }
+}
+
+@keyframes pulse-error {
+    0%, 100% {
+        opacity: 1;
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+    }
+    50% {
+        opacity: 0.7;
+        box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+    }
+}
+
 /* 执行状态标签样式 */
 .execution-status {
     display: inline-block;

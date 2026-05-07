@@ -58,7 +58,7 @@ pip install -r requirements.txt
 - `.env.example`：环境变量配置示例
   - 复制为 `.env` 并填写实际配置
   - **关键配置项**：
-    - `SERVICE_DAEMON_NAME`：Windows 服务名称
+    - `SERVICE_NAME`：Windows 服务名称
     - `PROTOCOL`：访问协议（http:// 或 https://）
     - `PORT`：服务端口
     - `PYTHON_VENV_DIR`：Python 虚拟环境目录
@@ -99,8 +99,8 @@ pip install -r requirements.txt
 
 ```ini
 # 服务配置
-SERVICE_DAEMON_NAME=MyAPS_API           # Windows 服务名称
-SERVICE_DAEMON_LOG_DIR=logs              # 日志目录
+SERVICE_NAME=MyAPS_API           # Windows 服务名称
+SERVICE_LOG_DIR=logs              # 日志目录
 
 # 邮件通知配置
 SERVICE_DAEMON_EMAIL_ENABLED=false       # 启用邮件通知
@@ -193,7 +193,7 @@ Get-Content d:\code\myaps_fastapi\logs\service_daemon.log -Tail 20
 
 ### 5.4 动态配置
 - **统一配置源**：所有脚本从 `.env` 读取配置
-- **服务名称**：通过 `SERVICE_DAEMON_NAME` 配置
+- **服务名称**：通过 `SERVICE_NAME` 配置
 - **端口协议**：通过 `PROTOCOL` 和 `PORT` 动态拼接健康检查 URL
 
 ## 6. 注意事项

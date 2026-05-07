@@ -13,7 +13,7 @@ if exist "%ENV_FILE%" (
         set "PYTHON_VENV_DIR=%%b"
         set "PYTHON_VENV_DIR=%PYTHON_VENV_DIR: =%"
     )
-    for /f "tokens=1,2 delims==" %%a in ('findstr /C:"SERVICE_DAEMON_NAME" "%ENV_FILE%"') do (
+    for /f "tokens=1,2 delims==" %%a in ('findstr /C:"SERVICE_NAME" "%ENV_FILE%"') do (
         set "SERVICE_NAME=%%b"
         set "SERVICE_NAME=%SERVICE_NAME: =%"
     )

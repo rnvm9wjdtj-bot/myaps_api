@@ -12,7 +12,7 @@ for %%i in ("%SCRIPT_DIR%..") do set "PROJECT_ROOT=%%~fi"
 
 rem Read service name from .env file
 if exist "%PROJECT_ROOT%\.env" (
-    for /f "tokens=1,2 delims==" %%a in ('findstr "^SERVICE_DAEMON_NAME=" "%PROJECT_ROOT%\.env"') do (
+    for /f "tokens=1,2 delims==" %%a in ('findstr "^SERVICE_NAME=" "%PROJECT_ROOT%\.env"') do (
         set "SERVICE_NAME=%%b"
     )
 )

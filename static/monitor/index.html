@@ -520,6 +520,24 @@
                             <span class="summary-label">活跃事件类型</span>
                             <span class="summary-value" id="events-active-types">--</span>
                         </div>
+                        <!-- 背压监控 -->
+                        <div class="summary-item" id="backpressure-summary" style="display: none;">
+                            <span class="summary-label">背压状态</span>
+                            <span class="summary-value" id="backpressure-status">正常</span>
+                        </div>
+                        <div class="summary-item" id="backpressure-pending" style="display: none;">
+                            <span class="summary-label">待处理事件</span>
+                            <span class="summary-value" id="backpressure-pending-count">--</span>
+                        </div>
+                        <div class="summary-item" id="backpressure-percent" style="display: none;">
+                            <span class="summary-label">背压使用率</span>
+                            <span class="summary-value" id="backpressure-usage">--%</span>
+                        </div>
+                        <!-- 事件循环健康状态 -->
+                        <div class="summary-item" id="event-loop-status" style="display: none;">
+                            <span class="summary-label">事件循环状态</span>
+                            <span class="summary-value" id="event-loop-health">正常</span>
+                        </div>
                     </div>
                     <div class="events-table-container">
                         <table class="events-table" id="events-table">

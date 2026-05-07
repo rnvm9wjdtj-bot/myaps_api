@@ -542,6 +542,16 @@ async def get_event_helpers_metrics():
     return monitor_service.get_event_helpers_metrics()
 
 
+@router.get("/binlog-listener")
+async def get_binlog_listener_status():
+    """
+    获取binlog listener状态
+
+    返回binlog listener的运行状态、健康状态、待处理事件数、背压状态等信息
+    """
+    return monitor_service.get_binlog_listener_status()
+
+
 @router.get("/dead-letter")
 async def get_dead_letter_events(limit: int = 50):
     """

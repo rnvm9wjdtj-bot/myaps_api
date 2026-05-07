@@ -8,16 +8,16 @@ set "PROJECT_ROOT=%SCRIPT_DIR%..\.."
 set "ENV_FILE=%PROJECT_ROOT%\.env"
 
 if exist "%ENV_FILE%" (
-    for /f "tokens=1,2 delims==" %%a in ('findstr /C:"SERVICE_DAEMON_NAME" "%ENV_FILE%"') do (
-        set "SERVICE_DAEMON_NAME=%%b"
-        set "SERVICE_DAEMON_NAME=!SERVICE_DAEMON_NAME: =!"
+    for /f "tokens=1,2 delims==" %%a in ('findstr /C:"SERVICE_NAME" "%ENV_FILE%"') do (
+        set "SERVICE_NAME=%%b"
+        set "SERVICE_NAME=!SERVICE_NAME: =!"
     )
 )
 
-if "%SERVICE_DAEMON_NAME%"=="" (
+if "%SERVICE_NAME%"=="" (
     set "SERVICE_NAME=MyAPS_API"
 ) else (
-    set "SERVICE_NAME=%SERVICE_DAEMON_NAME%"
+    set "SERVICE_NAME=%SERVICE_NAME%"
 )
 
 rem Read PROTOCOL and PORT from .env file

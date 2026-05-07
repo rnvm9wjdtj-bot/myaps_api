@@ -261,6 +261,22 @@ class MonitorService:
         self._set_cache_data("event_helpers", metrics)
         return metrics
 
+    def get_binlog_listener_status(self) -> Dict[str, Any]:
+        """获取binlog listener状态"""
+        try:
+            from apps.data_opt.utils.binlog_listener import binlog_listener
+            status = binlog_listener.get_status()
+            return {
+                "timestamp": time.time(),
+                "binlog_listener": status
+            }
+        except Exception as e:
+            logger.error(f"获取binlog listener状态失败: {e}")
+            return {
+                "timestamp": time.time(),
+                "error": str(e)
+            }
+
     def get_redis_metrics(self) -> Dict[str, Any]:
         """获取 Redis 监控指标"""
         # 尝试从缓存获取
