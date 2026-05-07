@@ -21,6 +21,9 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+# 设置标准输出为 UTF-8 编码
+sys.stdout.reconfigure(encoding='utf-8')
+
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
@@ -46,14 +49,16 @@ def backup_database(db_path):
 
 async def get_existing_tables(db):
     """获取数据库中已存在的表"""
-    result = await db.execute_query("SELECT name FROM sqlite_master WHERE type='table';")
-    return {row[0] for row in result}
+    # execute_query 返回 (count, rows) 元组
+    count, rows = await db.execute_query("SELECT name FROM sqlite_master WHERE type='table';")
+    return {row[0] for row in rows} if rows else set()
 
 
 async def get_existing_columns(db, table_name):
     """获取指定表中已存在的字段"""
-    result = await db.execute_query(f"PRAGMA table_info({table_name});")
-    return {row[1] for row in result}
+    # execute_query 返回 (count, rows) 元组
+    count, rows = await db.execute_query(f"PRAGMA table_info({table_name});")
+    return {row[1] for row in rows} if rows else set()
 
 
 async def get_model_fields(model):
@@ -144,7 +149,7 @@ async def add_missing_columns(db, table_name, model):
 
 async def create_table_if_not_exists(db, model):
     """如果表不存在，创建表"""
-    table_name = model._meta.table
+    table_name = model._meta.db_table
     existing_tables = await get_existing_tables(db)
     
     if table_name not in existing_tables:
@@ -186,7 +191,7 @@ async def main():
         sys.exit(1)
     
     try:
-        db = Tortoise.get_connection('default')
+        db = Tortoise.get_connection(SQLITE_FILE)
         
         # Step 3: 获取所有注册的模型
         from apps.common.monitor.models import APIRequest, OutboundAPIRequest, SystemLog
@@ -198,7 +203,7 @@ async def main():
         total_columns_added = 0
         
         for model in models:
-            table_name = model._meta.table
+            table_name = model._meta.db_table
             print(f"\n  处理表: {table_name}")
             
             # 创建表（如果不存在）
