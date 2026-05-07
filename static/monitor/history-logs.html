@@ -184,6 +184,9 @@
         .result-tab-content.active {
             display: block;
         }
+        .font-mono {
+            font-family: 'JetBrains Mono', 'Menlo', 'Source Code Pro', 'Consolas', monospace !important;
+        }
         .history-table {
             width: 100%;
             border-collapse: collapse;
@@ -220,7 +223,7 @@
         }
         #logs-results-table th:nth-child(3),
         #logs-results-table td:nth-child(3) {
-            width: 75px;
+            width: 80px;
             text-align: center;
         }
         #logs-results-table th:nth-child(4),
@@ -263,19 +266,23 @@
         #http-results-table td:nth-child(5) {
             width: 60px;
             text-align: center;
+            border-bottom: 1px solid #e8e8e8 !important;
+            font-family: var(--font-mono);
         }
         #http-results-table th:nth-child(6),
         #http-results-table td:nth-child(6) {
             width: 80px;
             text-align: right;
+            font-family: var(--font-mono);
         }
         #http-results-table th:nth-child(7),
         #http-results-table td:nth-child(7) {
             width: 110px;
+            font-family: var(--font-mono);
         }
         #http-results-table th:nth-child(8),
         #http-results-table td:nth-child(8) {
-            width: 60px;
+            width: 90px;
             text-align: center;
         }
         
@@ -302,19 +309,23 @@
         #outbound-results-table td:nth-child(5) {
             width: 60px;
             text-align: center;
+            border-bottom: 1px solid #e8e8e8 !important;
+            font-family: var(--font-mono);
         }
         #outbound-results-table th:nth-child(6),
         #outbound-results-table td:nth-child(6) {
             width: 60px;
             text-align: center;
+            font-family: var(--font-mono);
         }
         #outbound-results-table th:nth-child(7),
         #outbound-results-table td:nth-child(7) {
             width: 120px;
+            font-family: var(--font-mono);
         }
         #outbound-results-table th:nth-child(8),
         #outbound-results-table td:nth-child(8) {
-            width: 60px;
+            width: 90px;
             text-align: center;
         }
         .api-method {
@@ -334,12 +345,13 @@
         .api-method.patch { background: #909399; }
         .api-status {
             font-weight: 600;
+            font-size: 13px;
         }
         .api-status.success {
-            color: var(--success-color);
+            color: #67c23a;
         }
         .api-status.error {
-            color: var(--error-color);
+            color: #f56c6c;
         }
         .log-level-badge {
             display: inline-flex;
@@ -898,12 +910,12 @@
                         <td class="font-mono">${time}</td>
                         <td><span class="api-method ${methodClass}">${req.method}</span></td>
                         <td class="font-mono" style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${req.path || '-'}</td>
-                        <td class="api-status ${statusClass}">${req.status_code || '-'}</td>
-                        <td>${duration}</td>
-                        <td>${req.client_ip || '-'}</td>
+                        <td class="font-mono"><span class="api-status ${statusClass}">${req.status_code || '-'}</span></td>
+                        <td class="font-mono">${duration}</td>
+                        <td class="font-mono">${req.client_ip || '-'}</td>
                         <td>
                             <button class="action-btn" onclick="showHistoryHttpDetail(${index})">详情</button>
-                            <button class="action-btn precise-btn" onclick="preciseLocate(${index}, 'http')">精确定位</button>
+                            <button class="action-btn precise-btn" onclick="preciseLocate(${index}, 'http')">± 60s</button>
                         </td>
                     </tr>
                 `;
@@ -935,12 +947,12 @@
                         <td class="font-mono">${time}</td>
                         <td><span class="api-method ${methodClass}">${req.method}</span></td>
                         <td class="font-mono" style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${req.url || '-'}</td>
-                        <td class="api-status ${statusClass}">${req.status_code || '-'}</td>
-                        <td>${duration}</td>
-                        <td>${req.module || '-'}</td>
+                        <td class="font-mono"><span class="api-status ${statusClass}">${req.status_code || '-'}</span></td>
+                        <td class="font-mono">${duration}</td>
+                        <td class="font-mono">${req.module || '-'}</td>
                         <td>
                             <button class="action-btn" onclick="showHistoryOutboundDetail(${index})">详情</button>
-                            <button class="action-btn precise-btn" onclick="preciseLocate(${index}, 'outbound')">精确定位</button>
+                            <button class="action-btn precise-btn" onclick="preciseLocate(${index}, 'outbound')">± 60s</button>
                         </td>
                     </tr>
                 `;
@@ -968,16 +980,36 @@
                     <tr data-timestamp="${timestamp}">
                         <td>${index + 1}</td>
                         <td class="font-mono">${time}</td>
-                        <td><span class="log-level-badge ${levelClass}">${log.level || '-'}</span></td>
-                        <td>${log.module || '-'}</td>
+                        <td class="font-mono"><span class="log-level-badge ${levelClass}">${log.level || '-'}</span></td>
+                        <td class="font-mono">${log.module || '-'}</td>
                         <td class="log-message-cell" style="white-space: normal; word-break: break-all;">${log.message || '-'}</td>
                         <td>
                             <button class="action-btn" onclick="showHistoryLogDetail(${index})">详情</button>
-                            <button class="action-btn precise-btn" onclick="preciseLocate(${index}, 'logs')">精确定位</button>
+                            <button class="action-btn precise-btn" onclick="preciseLocate(${index}, 'logs')">± 60s</button>
                         </td>
                     </tr>
                 `;
             }).join('');
+        }
+
+        function formatQueryParams(params) {
+            if (!params) return '-';
+            let parsedParams = params;
+            // 如果是字符串，尝试解析为 JSON
+            if (typeof params === 'string') {
+                try {
+                    parsedParams = JSON.parse(params);
+                } catch (e) {
+                    // 如果解析失败，直接返回原字符串
+                    return params;
+                }
+            }
+            if (typeof parsedParams !== 'object' || Array.isArray(parsedParams)) return '-';
+            const pairs = [];
+            for (const [key, value] of Object.entries(parsedParams)) {
+                pairs.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+            }
+            return pairs.length > 0 ? '?' + pairs.join('&') : '-';
         }
 
         function showHistoryHttpDetail(index) {
@@ -991,14 +1023,14 @@
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">时间戳</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.timestamp || '-'}</td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求方法</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;"><span class="api-method ${(req.method || '').toLowerCase()}">${req.method || '-'}</span></td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求路径</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.path || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">查询参数</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${JSON.stringify(req.query_params) || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">状态码</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="api-status ${(req.status_code || 0) >= 400 ? 'error' : 'success'}">${req.status_code || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">响应时间</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.duration ? req.duration.toFixed(2) + 'ms' : '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">客户端IP</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.client_ip || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">User Agent</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.user_agent || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">查询参数</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${formatQueryParams(req.query_params)}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">状态码</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono api-status ${(req.status_code || 0) >= 400 ? 'error' : 'success'}">${req.status_code || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">响应时间</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.duration ? req.duration.toFixed(2) + 'ms' : '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">客户端IP</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.client_ip || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">User Agent</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.user_agent || '-'}</td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">是否慢请求</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.is_slow ? '是' : '否'}</td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">是否错误</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.is_error ? '是' : '否'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">错误信息</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #f5222d;">${req.error_message || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">错误信息</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #f5222d;" class="font-mono">${req.error_message || '-'}</td></tr>
         <tr><td style="padding: 8px; color: #8c8c8c;">请求体</td><td style="padding: 8px;" class="font-mono">${req.request_body || '-'}</td></tr>
     </table>
 </div>
@@ -1018,12 +1050,12 @@
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">时间戳</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.timestamp || '-'}</td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求方法</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;"><span class="api-method ${(req.method || '').toLowerCase()}">${req.method || '-'}</span></td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求URL</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.url || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">状态码</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="api-status ${(req.status_code || 0) >= 400 ? 'error' : 'success'}">${req.status_code || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">响应时间</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.duration ? req.duration.toFixed(2) + 'ms' : '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">模块</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.module || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">状态码</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono api-status ${(req.status_code || 0) >= 400 ? 'error' : 'success'}">${req.status_code || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">响应时间</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.duration ? req.duration.toFixed(2) + 'ms' : '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">模块</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.module || '-'}</td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">是否慢请求</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.is_slow ? '是' : '否'}</td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">是否错误</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.is_error ? '是' : '否'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">错误信息</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #f5222d;">${req.error_message || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">错误信息</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #f5222d;" class="font-mono">${req.error_message || '-'}</td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求体</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.request_body || '-'}</td></tr>
         <tr><td style="padding: 8px; color: #8c8c8c;">响应体</td><td style="padding: 8px;" class="font-mono">${req.response_body || '-'}</td></tr>
     </table>
@@ -1042,10 +1074,10 @@
     <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; width: 120px; color: #8c8c8c;">日志ID</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${log.id || '-'}</td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">时间戳</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${log.timestamp || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">日志级别</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;"><span class="log-level-badge ${(log.level || '').toLowerCase()}">${log.level || '-'}</span></td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">模块</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${log.module || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">函数</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${log.function || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">行号</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${log.line_number || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">日志级别</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono"><span class="log-level-badge ${(log.level || '').toLowerCase()}">${log.level || '-'}</span></td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">模块</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${log.module || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">函数</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${log.function || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">行号</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${log.line_number || '-'}</td></tr>
         <tr><td style="padding: 8px; color: #8c8c8c;">消息</td><td style="padding: 8px;" class="font-mono">${log.message || '-'}</td></tr>
     </table>
 </div>
@@ -1228,7 +1260,7 @@
             }
             
             if (active) {
-                badge.textContent = '精确定位中 - 点击取消';
+                badge.textContent = '± 60s - 点击取消';
                 container.appendChild(badge);
             } else {
                 if (badge.parentNode === container) {
