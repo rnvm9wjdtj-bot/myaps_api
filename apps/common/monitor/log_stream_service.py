@@ -65,13 +65,13 @@ class LogStreamService:
     async def start(self):
         """启动日志流服务"""
         import sys
-        print("[日志流] start() 被调用", flush=True)
+        # print("[日志流] start() 被调用", flush=True)
         self._is_running = True
         self._broadcast_task = asyncio.create_task(self._broadcast_logs())
         # 添加日志处理器（不影响现有日志）
         self._add_log_handler()
         # 使用 print 避免递归调用 logging
-        print("[日志流] 服务已启动", flush=True)
+        # print("[日志流] 服务已启动", flush=True)
         sys.stdout.flush()
 
     async def stop(self):
@@ -101,7 +101,7 @@ class LogStreamService:
             _log_stream_manager.add_handler(self._handler)
 
             # 使用 print 避免递归调用 logging
-            print("[日志流] 日志处理器已注册", flush=True)
+            # print("[日志流] 日志处理器已注册", flush=True)
 
     def _remove_log_handler(self):
         """移除日志处理器"""
@@ -112,7 +112,7 @@ class LogStreamService:
 
             self._registered_loggers.clear()
             self._handler = None
-            print("[日志流] 日志处理器已移除", flush=True)
+            # print("[日志流] 日志处理器已移除", flush=True)
 
     def enqueue_log(self, record: logging.LogRecord):
         """将日志加入队列"""
@@ -196,11 +196,11 @@ log_stream_service = LogStreamService()
 # 启动/停止函数
 async def start_log_stream():
     """启动日志流服务"""
-    print("[日志流] start_log_stream 函数被调用")
+    # print("[日志流] start_log_stream 函数被调用")
     await log_stream_service.start()
 
 
 async def stop_log_stream():
     """停止日志流服务"""
-    print("[日志流] stop_log_stream 函数被调用")
+    # print("[日志流] stop_log_stream 函数被调用")
     await log_stream_service.stop()

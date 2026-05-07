@@ -25,6 +25,16 @@ from apps.data_opt.components import ApsPayloadSponsor
 
 logger = log_config.get_logger(__name__)
 
+def log_api_request(request: Request):
+    """记录请求日志，动态获取路径和查询参数"""
+    path = request.url.path
+    query = request.url.query
+    if query:
+        logger.info(f"{path}?{query}")
+    else:
+        logger.info(f"{path}")
+
+
 # 健康检查状态缓存
 _db_health_cache = {}
 _cache_timestamp = 0
@@ -54,10 +64,11 @@ rt = APIRouter()
 ########################################################################
 
 @rt.get("/meta", include_in_schema=False, dependencies=[Depends(only_localhost())])
-async def get_meta():
+async def get_meta(request: Request):
     """
     获取元数据信息，包括数据库状态等
     """
+    log_api_request(request)
     try:
         import asyncio
         import time
@@ -167,10 +178,12 @@ async def get_meta():
     dependencies=[Depends(only_localhost())]
 )
 async def get_material_page(
+    request: Request,
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     page_index: int = Query(0, description="页码"),
     page_size: int = Query(1000, description="每页数量"),
 ):
+    log_api_request(request)
     db_name = db_name.replace(" ", "")
     try:
         result = await db_query(db_name=db_name, model_or_tablename="t_material", page_index=page_index, page_size=page_size)
@@ -199,9 +212,11 @@ async def get_material_page(
     description="根据料号获取物料信息",
 )
 async def get_material(
+    request: Request,
     materialnos: str = Path(..., description="料号，多个用逗号隔开"),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套")
 ):
+    log_api_request(request)
     db_name = db_name.replace(" ", "")
     try:
         if materialnos != "...":
@@ -236,11 +251,13 @@ async def get_material(
     description="根据🗝️【料号】新增或修改物料"
 )
 async def post_material(
+    request: Request,
     data: List[AcceptMaterial] = Body(..., description="新增或修改的物料数据"),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥")
     ):
+    log_api_request(request)
     db_name = db_name.replace(" ", "")
 
     if pdv.auto_matver:
@@ -288,11 +305,13 @@ async def post_material(
     description="根据🗝️【工作中心编号】新增或修改工作中心"
 )
 async def post_workcenter(
+    request: Request,
     data: List[AcceptWorkcenter] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥")
     ):
+    log_api_request(request)
     db_name = db_name.replace(" ", "")
     try:
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_workcenter", data_list=data)
@@ -322,12 +341,14 @@ async def post_workcenter(
     description="根据🗝️【料号+产线版本号+工序项目】形成的联合索引新增或修改工序记录"
 )
 async def post_mat_wc(
+    request: Request,
     data: List[AcceptMatWc] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     drop: Literal["all", "matched"] = Query(None, description="丢弃旧数据的方式"),
     return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥")
 ):
+    log_api_request(request)
     db_table = "t_mat_wc"
     db_name = db_name.replace(" ", "")
     try:
@@ -367,11 +388,13 @@ async def post_mat_wc(
     description="根据🗝️【料号+产线版本号】形成的联合索引新增或修改产线版本记录"
 )
 async def post_mat_ver(
+    request: Request,
     data: List[AcceptMatVer] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥")
 ):
+    log_api_request(request)
     db_name = db_name.replace(" ", "")
     try:
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_mat_ver", data_list=data)
@@ -400,12 +423,14 @@ async def post_mat_ver(
     description="根据🗝️【产品料号+子件料号+产线版本号+工序项目】形成的联合索引新增或修改BOM记录"
 )
 async def post_mat_wc_bom(
+    request: Request,
     data: List[AcceptMatWcBom] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     drop: Literal["all", "matched"] = Query(None, description="丢弃旧数据的方式"),
     return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥")
 ):
+    log_api_request(request)
     db_table = "t_mat_wc_bom"
     db_name = db_name.replace(" ", "")
     try:
@@ -445,11 +470,13 @@ async def post_mat_wc_bom(
     description="根据🗝️【模具编号】新增或修改模具"
 )
 async def post_mold(
+    request: Request,
     data: List[AcceptMold] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥")
 ):
+    log_api_request(request)
     db_name = db_name.replace(" ", "")
     try:
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_mold", data_list=data)
@@ -478,12 +505,14 @@ async def post_mold(
     description="根据🗝️【料号+工作中心+工序项目+模具编号】形成的联合索引新增或修改机台模具记录"
 )
 async def post_mat_wc_mold(
+    request: Request,
     data: List[AcceptMatWcMold] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     drop: Literal["all", "matched"] = Query(None, description="丢弃旧数据的方式"),
     return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥")
 ):
+    log_api_request(request)
     db_name = db_name.replace(" ", "")
     db_table = "t_mat_wc_mold"
     try:
@@ -543,11 +572,13 @@ async def post_mat_wc_mold(
     description="根据🗝️【料号+供应号】新增或修改供应记录"
 )
 async def post_supply(
+    request: Request,
     data: List[AcceptSupply] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥")
 ):
+    log_api_request(request)
     db_name = db_name.replace(" ", "")
     try:
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_supply", data_list=data)
@@ -646,12 +677,14 @@ async def post_supply(
     description="根据供应类型删除所有该类型的供应记录，然后新增这些供应记录。可用于库存、PO等单据刷新"
 )
 async def replace_supply(
+    request: Request,
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     type_: str = Path(..., enum=['PL', 'MO', 'PR', 'PO', 'ST'], description="供应类型"),
     data: List[AcceptSupply] = Body(..., description="替换为这些供应记录"),
     return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥")
 ):
+    log_api_request(request)
     wrong_type_count = 0
     for item in data:
         if item.type != type_:
@@ -700,10 +733,12 @@ async def replace_supply(
     description="根据供应号删除对应记录。也可用于完结工单。"
 )
 async def delete_supply(
+    request: Request,
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     supplyno: str = Path(..., description="要删除的供应记录的供应号"),
     x_api_key: str = Header(None, description="API密钥")
 ):
+    log_api_request(request)
     db_name = db_name.replace(" ", "")
     try:
         result = await call_dbprocdure(db_names=db_name, procedure_name="SupplyDeleteAll", params_list=[[supplyno]])
@@ -782,11 +817,13 @@ async def delete_supply(
     description="根据🗝️【料号+需求号+项目号】新增或修改需求记录"
 )
 async def post_demand(
+    request: Request,
     data: List[AcceptDemand] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥")
 ):
+    log_api_request(request)
     db_name = db_name.replace(" ", "")
     try:
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_demand", data_list=data)
@@ -855,6 +892,7 @@ async def post_demand(
     dependencies=[Depends(only_localhost())]
 )
 async def get_mo_page(
+    request: Request,
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     start_time: datetime = Query(None, description="工单开工时间"),
     end_time: datetime = Query(None, description="工单完工时间"),
@@ -862,6 +900,7 @@ async def get_mo_page(
     page_index: int = Query(0, description="页码"),
     # x_api_key: str = Header(None, description="API密钥")
 ):
+    log_api_request(request)
     db_name = db_name.replace(" ", "")
 
     filter = []
@@ -897,6 +936,7 @@ async def get_mo_page(
     description="按供应号获取工单信息。"
 )
 async def get_mo_by_supplyno(
+    request: Request,
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     supplyno: str = Path(..., description="工单（供应）号"),
     prev_mo: bool = Query(False, description="是否查询前 前置 工单"),
@@ -904,6 +944,7 @@ async def get_mo_by_supplyno(
     origin_so: bool = Query(False, description="是否查询销售订单SO"),
     # x_api_key: str = Header(None, description="API密钥")
 ):
+    log_api_request(request)
     try:
         result = await ApsPayloadSponsor.get_mo_by_supplyno(db_name=db_name, supplyno=supplyno, prev_mo=prev_mo, next_mo=next_mo, origin_so=origin_so)
         return standard_response(
@@ -947,6 +988,7 @@ async def get_mo_by_supplyno(
     description="按工序开完工时间获取工序报表，默认开工时间为今日，默认完工时间为一周后。"
 )
 async def get_orderwc_page(
+    request: Request,
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     start_time: datetime = Query(None, description="工序开工时间"),
     end_time: datetime = Query(None, description="工序完工时间"),
@@ -954,6 +996,7 @@ async def get_orderwc_page(
     page_index: int = Query(0, description="页码"),
     # x_api_key: str = Header(None, description="API密钥")
 ):
+    log_api_request(request)
     db_name = db_name.replace(" ", "")
     filter = []
     if start_time:
@@ -988,10 +1031,12 @@ async def get_orderwc_page(
     description="按编号（供应号）获取工序报表"
 )
 async def get_orderwc(
+    request: Request,
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     supplyno: str = Path(..., description="工单（供应）号"),
     # x_api_key: str = Header(None, description="API密钥")
 ):
+    log_api_request(request)
     db_name = db_name.replace(" ", "")
     filter_string = f"`SupplyNo` = '{supplyno}'"
     try:
@@ -1020,10 +1065,12 @@ async def get_orderwc(
     dependencies=[Depends(only_localhost())]
 )
 async def get_peg_page(
+    request: Request,
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     page_size: int = Query(1000, description="每页数量"),
     page_index: int = Query(0, description="页码"),
 ):
+    log_api_request(request)
     db_name = db_name.replace(" ", "")
     try:
         result = await db_query(db_name=db_name, model_or_tablename="v_peg", page_size=page_size, page_index=page_index)
@@ -1069,6 +1116,7 @@ async def get_peg_page(
     description="获取按日期分组的库存动态报表"
 )
 async def get_matdailyqtyreport(
+        request: Request,
         db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
         period: int | str = Query(default=30, description="查询时间范围（天）"),
         groupdates: Optional[str] = Query(default=None, description="分组日期，逗号分隔"),
@@ -1080,6 +1128,7 @@ async def get_matdailyqtyreport(
     groupdates: 分组日期，逗号分隔，默认空。
     materialno: 料号，多个料号用逗号分隔，默认空。
     """
+    log_api_request(request)
     from apps.data_opt.components import ApsPayloadSponsor
     
     try:
@@ -1105,6 +1154,7 @@ async def get_matdailyqtyreport(
     description="新增报工记录"
 )
 async def create_workreport(
+    request: Request,
     data: List[AcceptConfirm] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     return_data: bool = Query(False, description="是否返回数据"),
@@ -1114,6 +1164,7 @@ async def create_workreport(
     新增报工记录
     db_name: str，数据库名称，多个数据库名称用逗号分隔
     """
+    log_api_request(request)
     db_name = db_name.replace(" ", "")
     try:
         # await db_query(db_name=db_name, model_or_tablename="t_orderwc", filter_string=f"`SupplyNo`='{supplyno}' AND `ItemNo`='{itemno}'")
@@ -1144,11 +1195,13 @@ async def create_workreport(
     description="删除报工记录"
 )
 async def delete_workreport(
+    request: Request,
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     supplyno: str = Path(..., description="工单号"),
     itemno: str = Path(..., description="工序项目"),
     x_api_key: str = Header(None, description="API密钥")
 ):
+    log_api_request(request)
     db_name = db_name.replace(" ", "")
     filter_string = f"`SupplyNo`='{supplyno}'"
     if not itemno == "...":

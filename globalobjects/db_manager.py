@@ -66,6 +66,186 @@ class DbDeadlockError(DbManagerError):
     pass
 
 
+class DbCircuitBreakerError(DbManagerError):
+    """数据库熔断错误"""
+    pass
+
+
+class DeadlockCircuitBreaker:
+    """
+    死锁熔断保护类
+    
+    实现基于时间窗口的熔断机制，当单位时间内死锁次数超过阈值时触发熔断，
+    熔断期间所有请求直接失败，避免系统雪崩。
+    
+    状态机：
+    CLOSED（闭合）-> 正常处理请求
+    OPEN（打开）-> 熔断状态，拒绝请求
+    HALF_OPEN（半开）-> 尝试恢复，允许部分请求通过
+    """
+    
+    def __init__(
+        self, 
+        threshold: int = 5, 
+        window_seconds: int = 60, 
+        cooldown_seconds: int = 30,
+        half_open_attempts: int = 2
+    ):
+        """
+        初始化熔断器
+        
+        Args:
+            threshold: 时间窗口内的最大死锁次数（超过此值触发熔断）
+            window_seconds: 时间窗口大小（秒）
+            cooldown_seconds: 熔断持续时间（秒）
+            half_open_attempts: 半开状态下允许的尝试次数
+        """
+        self.threshold = threshold
+        self.window_seconds = window_seconds
+        self.cooldown_seconds = cooldown_seconds
+        self.half_open_attempts = half_open_attempts
+        
+        # 状态常量
+        self.STATE_CLOSED = "closed"
+        self.STATE_OPEN = "open"
+        self.STATE_HALF_OPEN = "half_open"
+        
+        # 当前状态
+        self._state = self.STATE_CLOSED
+        
+        # 死锁计数器
+        self._deadlock_count = 0
+        
+        # 时间戳记录
+        self._window_start_time = time.time()
+        self._open_time = None
+        
+        # 半开状态下的尝试计数
+        self._half_open_success_count = 0
+        self._half_open_failure_count = 0
+    
+    @property
+    def state(self):
+        """获取当前熔断状态"""
+        self._check_state_transition()
+        return self._state
+    
+    def _check_state_transition(self):
+        """检查并执行状态转换"""
+        now = time.time()
+        
+        # 如果是OPEN状态，检查是否需要转换到HALF_OPEN
+        if self._state == self.STATE_OPEN and self._open_time:
+            if now - self._open_time >= self.cooldown_seconds:
+                self._transition_to_half_open()
+        
+        # 如果是CLOSED状态，检查时间窗口是否需要重置
+        if self._state == self.STATE_CLOSED:
+            if now - self._window_start_time >= self.window_seconds:
+                self._reset_window()
+    
+    def _transition_to_open(self):
+        """转换到OPEN状态（熔断）"""
+        self._state = self.STATE_OPEN
+        self._open_time = time.time()
+        self._deadlock_count = 0
+        logger.warning(
+            "CircuitBreaker",
+            "TRIGGERED",
+            f"死锁熔断已触发，将在 {self.cooldown_seconds} 秒后尝试恢复"
+        )
+    
+    def _transition_to_half_open(self):
+        """转换到HALF_OPEN状态（尝试恢复）"""
+        self._state = self.STATE_HALF_OPEN
+        self._half_open_success_count = 0
+        self._half_open_failure_count = 0
+        logger.warning(
+            "CircuitBreaker",
+            "HALF_OPEN",
+            "熔断进入半开状态，开始尝试恢复"
+        )
+    
+    def _transition_to_closed(self):
+        """转换到CLOSED状态（正常）"""
+        self._state = self.STATE_CLOSED
+        self._deadlock_count = 0
+        self._window_start_time = time.time()
+        self._open_time = None
+        logger.info(
+            "CircuitBreaker",
+            "RESET",
+            "熔断已恢复，系统正常运行"
+        )
+    
+    def _reset_window(self):
+        """重置时间窗口"""
+        self._deadlock_count = 0
+        self._window_start_time = time.time()
+    
+    def record_deadlock(self):
+        """记录一次死锁"""
+        self._check_state_transition()
+        
+        if self._state == self.STATE_CLOSED:
+            self._deadlock_count += 1
+            
+            # 检查是否超过阈值
+            if self._deadlock_count >= self.threshold:
+                self._transition_to_open()
+                return True  # 熔断已触发
+        
+        elif self._state == self.STATE_HALF_OPEN:
+            # 半开状态下再次死锁，立即回到OPEN状态
+            self._half_open_failure_count += 1
+            self._transition_to_open()
+            return True
+        
+        return False  # 未触发熔断
+    
+    def record_success(self):
+        """记录一次成功操作"""
+        self._check_state_transition()
+        
+        if self._state == self.STATE_HALF_OPEN:
+            self._half_open_success_count += 1
+            
+            # 检查是否达到恢复条件
+            if self._half_open_success_count >= self.half_open_attempts:
+                self._transition_to_closed()
+    
+    def is_available(self) -> bool:
+        """检查是否可以执行操作"""
+        self._check_state_transition()
+        
+        if self._state == self.STATE_OPEN:
+            return False
+        
+        return True
+    
+    def get_wait_time(self) -> float:
+        """获取距离熔断恢复的剩余时间（秒）"""
+        if self._state != self.STATE_OPEN or not self._open_time:
+            return 0.0
+        
+        elapsed = time.time() - self._open_time
+        remaining = max(0.0, self.cooldown_seconds - elapsed)
+        return remaining
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """获取熔断器统计信息"""
+        self._check_state_transition()
+        return {
+            "state": self._state,
+            "deadlock_count": self._deadlock_count,
+            "threshold": self.threshold,
+            "window_seconds": self.window_seconds,
+            "cooldown_remaining": self.get_wait_time(),
+            "half_open_success_count": self._half_open_success_count,
+            "half_open_failure_count": self._half_open_failure_count
+        }
+
+
 def with_transaction(func):
     """
     事务装饰器，根据实例配置或方法参数决定是否使用事务
@@ -153,7 +333,7 @@ def with_transaction(func):
 
 def handle_db_errors(max_retries: int = 3):
     """
-    带重试机制的数据库错误处理装饰器
+    带重试机制和熔断保护的数据库错误处理装饰器
     
     Args:
         max_retries: 最大重试次数
@@ -168,8 +348,29 @@ def handle_db_errors(max_retries: int = 3):
             last_exception = None
             
             while retry_count <= max_retries:
+                # 检查熔断器状态
+                circuit_breaker = getattr(self, 'circuit_breaker', None)
+                if circuit_breaker and not circuit_breaker.is_available():
+                    wait_time = circuit_breaker.get_wait_time()
+                    logger.warning(
+                        func.__name__,
+                        f"@{self.connection_name}",
+                        f"熔断器已触发，拒绝请求，剩余熔断时间: {wait_time:.1f}秒"
+                    )
+                    raise DbCircuitBreakerError(
+                        f"数据库熔断中，剩余{wait_time:.1f}秒后恢复",
+                        operation=func.__name__,
+                        connection=self.connection_name
+                    )
+                
                 try:
-                    return await func(self, *args, **kwargs)
+                    result = await func(self, *args, **kwargs)
+                    
+                    # 操作成功，通知熔断器（用于半开状态恢复）
+                    if circuit_breaker:
+                        circuit_breaker.record_success()
+                    
+                    return result
                 except Exception as e:
                     error_str = str(e).upper()
                     is_deadlock = 'DEADLOCK' in error_str or '1213' in str(e) or '死锁' in str(e)
@@ -196,6 +397,16 @@ def handle_db_errors(max_retries: int = 3):
                     is_retryable = (is_deadlock or is_operational_connection_error or is_connection_closed or 
                                   is_none_type_error or is_connection_error or is_timeout_error or 
                                   is_network_error or is_pool_error)
+                    
+                    # 死锁时记录到熔断器
+                    if is_deadlock and circuit_breaker:
+                        triggered = circuit_breaker.record_deadlock()
+                        if triggered:
+                            logger.warning(
+                                func.__name__,
+                                f"@{self.connection_name}",
+                                "熔断器已触发，立即拒绝后续请求"
+                            )
                     
                     if is_retryable and retry_count < max_retries:
                         retry_count += 1
@@ -268,6 +479,9 @@ def handle_db_errors(max_retries: int = 3):
 class DbManager:
     """数据库操作管理器"""
     
+    # 类级别的熔断器，每个数据库连接共享一个熔断器
+    _circuit_breakers: Dict[str, DeadlockCircuitBreaker] = {}
+    
     def __init__(self, connection_name: str, batch_size: int = 1000, use_transaction: bool = True):
         """
         初始化管理器
@@ -291,6 +505,24 @@ class DbManager:
         self.optimal_batch_size = batch_size
         self.batch_size_history = []
         self.batch_size_adjustment_interval = 10  # 每10次操作调整一次
+        
+        # 获取或创建熔断器实例（每个连接共享）
+        self._get_or_create_circuit_breaker()
+    
+    def _get_or_create_circuit_breaker(self):
+        """获取或创建熔断器实例"""
+        if self.connection_name not in DbManager._circuit_breakers:
+            DbManager._circuit_breakers[self.connection_name] = DeadlockCircuitBreaker(
+                threshold=5,        # 60秒内超过5次死锁触发熔断
+                window_seconds=60,  # 时间窗口60秒
+                cooldown_seconds=30, # 熔断持续30秒
+                half_open_attempts=2 # 半开状态下成功2次恢复
+            )
+    
+    @property
+    def circuit_breaker(self) -> DeadlockCircuitBreaker:
+        """获取熔断器实例"""
+        return DbManager._circuit_breakers.get(self.connection_name)
 
     async def _get_valid_connection(self):
         """

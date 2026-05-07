@@ -869,7 +869,8 @@ class MonitorService:
                 try:
                     overview = await self.get_overview()
                     
-                    # 收集日志数据
+                    # 收集日志数据 - 广播时强制刷新缓存，确保获取最新日志
+                    self._log_cache = {}  # 清除日志缓存
                     logs = self.get_recent_logs(limit=100)
                     
                     # 收集 API 请求数据

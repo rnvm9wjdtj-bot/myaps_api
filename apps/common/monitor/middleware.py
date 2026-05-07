@@ -6,6 +6,7 @@
 
 import time
 import asyncio
+import uuid
 from typing import Dict, Any, List, Optional, Callable
 from collections import deque, defaultdict
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -60,10 +61,12 @@ class HTTPMetricsCollector:
         request_body: str = None,
         response_body: str = None,
         query_params: str = None,
+        request_id: str = None,
     ):
         """记录请求信息"""
         async with self._get_lock():
             request_info = {
+                "request_id": request_id or str(uuid.uuid4()),
                 "timestamp": time.time(),
                 "method": method,
                 "path": path,
@@ -80,6 +83,9 @@ class HTTPMetricsCollector:
             }
 
             self._requests.append(request_info)
+            
+            # 直接保存到数据库，不再依赖监控面板访问
+            asyncio.create_task(self._save_request_to_db(request_info))
 
             # 更新统计
             self._stats["total_requests"] += 1
@@ -158,6 +164,43 @@ class HTTPMetricsCollector:
             "path_stats": path_stats,
             "recent_requests": recent_requests,
         }
+
+    async def _save_request_to_db(self, request_info: Dict[str, Any]):
+        """将请求保存到数据库"""
+        try:
+            from .storage import request_storage
+            from datetime import datetime, timezone
+            
+            request_data = {
+                "request_id": request_info.get("request_id"),
+                "timestamp": datetime.fromtimestamp(request_info.get("timestamp"), timezone.utc),
+                "method": request_info.get("method"),
+                "path": request_info.get("path"),
+                "query_params": request_info.get("query_params"),
+                "status_code": request_info.get("status_code"),
+                "response_time": request_info.get("duration") * 1000,  # 转换为毫秒
+                "client_ip": request_info.get("client_ip"),
+                "user_agent": request_info.get("user_agent"),
+                "payload_size": len(request_info.get("request_body", "")) if request_info.get("request_body") else None,
+                "response_size": len(request_info.get("response_body", "")) if request_info.get("response_body") else None,
+                "request_body": request_info.get("request_body"),
+                "response_body": request_info.get("response_body"),
+                "is_slow": request_info.get("is_slow", False),
+                "slow_threshold": 1000.0 if request_info.get("is_slow") else None,
+                "is_error": request_info.get("is_error", False),
+                "error_message": request_info.get("error_message"),
+                "is_internal": request_info.get("is_internal", False)
+            }
+            
+            # 检查数据库中是否已存在相同 request_id 的记录
+            existing = await request_storage.get_request_by_request_id(request_info.get("request_id"))
+            if not existing:
+                await request_storage.save_request(request_data)
+                logger.debug(f"请求已保存到数据库: {request_info.get('request_id')}")
+            else:
+                logger.debug(f"请求已存在，跳过保存: {request_info.get('request_id')}")
+        except Exception as e:
+            logger.error(f"保存请求到数据库失败: {e}")
 
     def _calculate_rpm(self) -> int:
         """计算每分钟请求数"""
@@ -336,6 +379,9 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
         finally:
             duration = time.time() - start_time
 
+            # 记录请求到监控收集器
+            request_id = str(uuid.uuid4())
+            
             asyncio.create_task(
                 http_metrics_collector.record_request(
                     method=request.method,
@@ -347,6 +393,7 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
                     request_body=request_body,
                     response_body=response_body,
                     query_params=query_params,
+                    request_id=request_id,
                 )
             )
 

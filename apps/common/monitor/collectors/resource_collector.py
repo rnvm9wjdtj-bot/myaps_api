@@ -14,12 +14,18 @@ logger = log_config.get_logger(__name__)
 
 class ResourceCollector:
     """资源指标采集器"""
+    
+    # 类级别的静态变量，用于网络带宽计算（跨实例共享）
+    _class_last_network_stats = None
+    _class_last_network_total = None
+    _class_last_network_timestamp = None
 
     def __init__(self):
         self._process = psutil.Process()
         self._cpu_count = psutil.cpu_count()
-        # 网络统计缓存（用于计算带宽）
+        # 实例级别变量（CPU/内存等）
         self._last_network_stats = None
+        self._last_network_total = None
         self._last_network_timestamp = None
 
 
@@ -215,28 +221,31 @@ class ResourceCollector:
             Dict: 包含各网络接口的上传/下载带宽
         """
         current_stats = psutil.net_io_counters(pernic=True)
+        current_total = psutil.net_io_counters()
         current_time = time.time()
 
-        if self._last_network_stats is None:
-            self._last_network_stats = current_stats
-            self._last_network_timestamp = current_time
+        # 使用类级别的静态变量（跨请求共享）
+        if ResourceCollector._class_last_network_stats is None or ResourceCollector._class_last_network_total is None:
+            ResourceCollector._class_last_network_stats = current_stats
+            ResourceCollector._class_last_network_total = current_total
+            ResourceCollector._class_last_network_timestamp = current_time
             return {"message": "首次采样，等待下一次"}
 
         # 计算时间差
-        time_diff = current_time - self._last_network_timestamp
+        time_diff = current_time - ResourceCollector._class_last_network_timestamp
         if time_diff < 0.1:
             return {"message": "采样间隔过短"}
 
         bandwidth = {}
         for interface, counters in current_stats.items():
-            # 过滤掉虚拟接口和回环接口
-            if interface.startswith('Loopback') or interface.startswith('veth'):
+            # 过滤掉虚拟接口和回环接口（Windows）
+            if interface.startswith('Loopback') or interface.startswith('veth') or interface.startswith('蓝牙'):
                 continue
 
-            if interface not in self._last_network_stats:
+            if interface not in ResourceCollector._class_last_network_stats:
                 continue
 
-            last = self._last_network_stats[interface]
+            last = ResourceCollector._class_last_network_stats[interface]
             bandwidth[interface] = {
                 "bps_sent": round((counters.bytes_sent - last.bytes_sent) / time_diff, 2),
                 "bps_recv": round((counters.bytes_recv - last.bytes_recv) / time_diff, 2),
@@ -244,24 +253,18 @@ class ResourceCollector:
                 "pps_recv": round((counters.packets_recv - last.packets_recv) / time_diff, 2),
             }
 
-        # 计算总带宽
-        total_current = psutil.net_io_counters()
-        total_last = psutil.net_io_counters()
-        for iface, last in self._last_network_stats.items():
-            if not iface.startswith('Loopback') and not iface.startswith('veth'):
-                total_last = last
-                break
-
+        # 计算总带宽（使用正确的上次总计统计）
         total_bandwidth = {
-            "bps_sent": round((total_current.bytes_sent - total_last.bytes_sent) / time_diff, 2),
-            "bps_recv": round((total_current.bytes_recv - total_last.bytes_recv) / time_diff, 2),
-            "pps_sent": round((total_current.packets_sent - total_last.packets_sent) / time_diff, 2),
-            "pps_recv": round((total_current.packets_recv - total_last.packets_recv) / time_diff, 2),
+            "bps_sent": round((current_total.bytes_sent - ResourceCollector._class_last_network_total.bytes_sent) / time_diff, 2),
+            "bps_recv": round((current_total.bytes_recv - ResourceCollector._class_last_network_total.bytes_recv) / time_diff, 2),
+            "pps_sent": round((current_total.packets_sent - ResourceCollector._class_last_network_total.packets_sent) / time_diff, 2),
+            "pps_recv": round((current_total.packets_recv - ResourceCollector._class_last_network_total.packets_recv) / time_diff, 2),
         }
 
-        # 更新缓存
-        self._last_network_stats = current_stats
-        self._last_network_timestamp = current_time
+        # 更新类级别的缓存
+        ResourceCollector._class_last_network_stats = current_stats
+        ResourceCollector._class_last_network_total = current_total
+        ResourceCollector._class_last_network_timestamp = current_time
 
         return {
             "timestamp": current_time,

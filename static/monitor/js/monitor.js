@@ -979,37 +979,37 @@ function initResourceChart() {
             labels: [],
             datasets: [
                 {
-                    label: 'CPU %',
+                    label: 'CPU',
                     data: [],
-                    borderColor: '#1890ff',
-                    backgroundColor: 'rgba(24, 144, 255, 0.1)',
+                    borderColor: '#d39102ff',
+                    backgroundColor: 'rgba(184, 134, 11, 0.1)',
                     fill: true,
                     tension: 0.4,
                     yAxisID: 'y'
                 },
                 {
-                    label: '内存 %',
+                    label: '内存',
                     data: [],
-                    borderColor: '#52c41a',
-                    backgroundColor: 'rgba(82, 196, 26, 0.1)',
+                    borderColor: '#9932cc',
+                    backgroundColor: 'rgba(153, 50, 204, 0.1)',
                     fill: true,
                     tension: 0.4,
                     yAxisID: 'y'
                 },
                 {
-                    label: '网络上传 KB/s',
+                    label: '上传',
                     data: [],
-                    borderColor: '#ff6b6b',
-                    backgroundColor: 'rgba(255, 107, 107, 0.1)',
+                    borderColor: '#87ceeb',
+                    backgroundColor: 'rgba(135, 206, 235, 0.1)',
                     fill: true,
                     tension: 0.4,
                     yAxisID: 'y1'
                 },
                 {
-                    label: '网络下载 KB/s',
+                    label: '下载',
                     data: [],
-                    borderColor: '#4ecdc4',
-                    backgroundColor: 'rgba(78, 205, 196, 0.1)',
+                    borderColor: '#98fb98',
+                    backgroundColor: 'rgba(152, 251, 152, 0.1)',
                     fill: true,
                     tension: 0.4,
                     yAxisID: 'y1'
@@ -1028,7 +1028,7 @@ function initResourceChart() {
                     max: 100,
                     title: {
                         display: true,
-                        text: 'CPU/内存 %'
+                        text: 'CPU / 内存 (%)'
                     }
                 },
                 y1: {
@@ -1038,7 +1038,7 @@ function initResourceChart() {
                     beginAtZero: true,
                     title: {
                         display: true,
-                        text: '网络 KB/s'
+                        text: '网络上传 / 下载 (KB/s)'
                     },
                     grid: {
                         drawOnChartArea: false

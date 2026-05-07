@@ -58,22 +58,10 @@ class RequestStorage:
     async def save_request(self, request_data: Dict[str, Any]) -> APIRequest:
         """
         保存单个请求数据
-        - 普通请求：INFO 级别
-        - 错误请求/慢请求：WARNING 级别（总是记录）
+        - 所有请求都记录到数据库，不再根据日志级别过滤
         """
-        is_error = request_data.get('is_error', False)
-        is_slow = request_data.get('is_slow', False)
-        
-        # 错误请求和慢请求总是记录
-        if is_error or is_slow:
-            request = await APIRequest.create(**request_data)
-            return request
-        
-        # 普通请求根据 LOG_LEVEL 决定是否记录
-        if should_record_to_db('INFO'):
-            request = await APIRequest.create(**request_data)
-            return request
-        return None
+        request = await APIRequest.create(**request_data)
+        return request
 
     async def save_requests(self, requests_data: List[Dict[str, Any]]) -> List[APIRequest]:
         """批量保存请求数据"""
@@ -107,6 +95,10 @@ class RequestStorage:
             timestamp__lte=timestamp_dt + timedelta(seconds=0.1),
             path=path
         ).first()
+    
+    async def get_request_by_request_id(self, request_id: str) -> APIRequest:
+        """通过 request_id 获取请求记录"""
+        return await APIRequest.filter(request_id=request_id).first()
 
     async def get_requests_by_date(self, date: str, limit: int = 1000) -> List[APIRequest]:
         """按日期获取请求记录"""

@@ -41,18 +41,34 @@ class HTTPCollector:
         logger.debug(f"开始保存请求数据，共 {len(requests)} 个请求")
 
         saved_count = 0
+        saved_ids = set()  # 内存级去重，防止单次处理中的重复
+        
         for req in requests:
             try:
-                # 检查是否已经保存过（通过时间戳和路径判断）
-                existing = await request_storage.get_request_by_timestamp_and_path(
-                    req.get("timestamp"),
-                    req.get("path")
-                )
+                request_id = req.get("request_id")
+                
+                # 内存级去重：同一批处理中跳过已保存的 request_id
+                if request_id and request_id in saved_ids:
+                    logger.debug(f"跳过重复请求（内存去重）: {request_id}")
+                    continue
+                
+                # 数据库级去重：只对有 request_id 的请求进行数据库查询去重
+                existing = None
+                if request_id:
+                    try:
+                        existing = await request_storage.get_request_by_request_id(request_id)
+                        if existing:
+                            logger.debug(f"跳过重复请求（数据库去重）: {request_id}")
+                    except Exception as e:
+                        logger.debug(f"通过 request_id 查询失败: {e}")
+                
+                # 如果没有找到重复记录，保存请求
                 if not existing:
                     client_ip = req.get("client_ip")
                     # 保存请求数据
                     from datetime import datetime, timezone
                     request_data = {
+                        "request_id": request_id,
                         "timestamp": datetime.fromtimestamp(req.get("timestamp"), timezone.utc),
                         "method": req.get("method"),
                         "path": req.get("path"),
@@ -71,8 +87,12 @@ class HTTPCollector:
                         "error_message": req.get("error_message"),
                         "is_internal": is_internal_ip(client_ip) if client_ip else False
                     }
-                    await request_storage.save_request(request_data)
-                    saved_count += 1
+                    result = await request_storage.save_request(request_data)
+                    if result:
+                        if request_id:
+                            saved_ids.add(request_id)
+                        saved_count += 1
+                        logger.debug(f"保存请求成功: {request_id}")
             except Exception as e:
                 logger.error(f"保存请求数据失败: {e}")
 

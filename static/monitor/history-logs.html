@@ -236,7 +236,7 @@
         }
         #logs-results-table th:nth-child(6),
         #logs-results-table td:nth-child(6) {
-            width: 60px;
+            width: 180px;
             text-align: center;
         }
         
@@ -301,12 +301,12 @@
         #outbound-results-table th:nth-child(5),
         #outbound-results-table td:nth-child(5) {
             width: 60px;
-            text-align: right;
+            text-align: center;
         }
         #outbound-results-table th:nth-child(6),
         #outbound-results-table td:nth-child(6) {
             width: 60px;
-            text-align: right;
+            text-align: center;
         }
         #outbound-results-table th:nth-child(7),
         #outbound-results-table td:nth-child(7) {
@@ -388,6 +388,42 @@
         .badge.healthy { background: #d9f7be; color: #52c41a; }
         .badge.warning { background: #ffe58f; color: #faad14; }
         .badge.error { background: #ffccc7; color: #f5222d; }
+        
+        .history-logs-header-right {
+            display: flex;
+            align-items: center;
+        }
+        
+        .precise-mode-btn {
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+            color: white;
+            transition: all 0.3s;
+        }
+        
+        .precise-mode-btn:hover {
+            opacity: 0.9;
+            transform: scale(1.02);
+        }
+        
+        .highlight-row {
+            animation: highlightPulse 1s ease-in-out 3;
+            background: linear-gradient(90deg, transparent, rgba(24, 144, 255, 0.2), transparent);
+        }
+        
+        @keyframes highlightPulse {
+            0%, 100% {
+                background: linear-gradient(90deg, transparent, rgba(24, 144, 255, 0.1), transparent);
+            }
+            50% {
+                background: linear-gradient(90deg, transparent, rgba(24, 144, 255, 0.3), transparent);
+            }
+        }
     </style>
 </head>
 <body>
@@ -397,15 +433,16 @@
                 <h1>📊 日志历史查询</h1>
                 <span class="badge" id="history-query-badge">联动查询</span>
             </div>
+            <div class="history-logs-header-right" id="precise-mode-container"></div>
         </div>
         
         <div class="history-logs-body">
             <div class="query-section">
                 <div class="time-range-selector">
                     <label>开始时间：</label>
-                    <input type="datetime-local" id="history-start-time" class="datetime-input">
+                    <input type="datetime-local" id="history-start-time" class="datetime-input" step="1">
                     <label>结束时间：</label>
-                    <input type="datetime-local" id="history-end-time" class="datetime-input">
+                    <input type="datetime-local" id="history-end-time" class="datetime-input" step="1">
                 </div>
                 <div class="query-filters">
                     <select id="history-log-level" class="filter-select">
@@ -426,6 +463,8 @@
                 <div class="query-actions">
                     <button class="btn btn-primary" id="query-btn" onclick="executeHistoryQuery()">查询</button>
                     <button class="btn btn-secondary" onclick="resetHistoryQuery()">重置</button>
+                    <button class="btn btn-secondary" onclick="quickTimeRange('10m')">最近10分钟</button>
+                    <button class="btn btn-secondary" onclick="quickTimeRange('30m')">最近30分钟</button>
                     <button class="btn btn-secondary" onclick="quickTimeRange('1h')">最近1小时</button>
                     <button class="btn btn-secondary" onclick="quickTimeRange('6h')">最近6小时</button>
                     <button class="btn btn-secondary" onclick="quickTimeRange('24h')">最近24小时</button>
@@ -465,7 +504,7 @@
             </div>
             
             <div class="result-tab-content" id="tab-http">
-                <table class="history-table" id="http-results-table">
+                <table class="history-table" id="http-results-table" data-result-table>
                     <thead>
                         <tr>
                             <th>序号</th>
@@ -485,7 +524,7 @@
             </div>
             
             <div class="result-tab-content" id="tab-outbound">
-                <table class="history-table" id="outbound-results-table">
+                <table class="history-table" id="outbound-results-table" data-result-table>
                     <thead>
                         <tr>
                             <th>序号</th>
@@ -505,7 +544,7 @@
             </div>
             
             <div class="result-tab-content active" id="tab-logs">
-                <table class="history-table" id="logs-results-table">
+                <table class="history-table" id="logs-results-table" data-result-table>
                     <thead>
                         <tr>
                             <th>序号</th>
@@ -663,10 +702,21 @@
             }
         }
 
-        function quickTimeRange(hours) {
+        function quickTimeRange(duration) {
             const end = new Date();
             const start = new Date();
-            start.setHours(start.getHours() - parseInt(hours));
+            
+            // 解析时间单位（支持分钟 m 和小时 h）
+            const unit = duration.slice(-1);
+            const value = parseInt(duration.slice(0, -1));
+            
+            if (unit === 'm') {
+                // 分钟
+                start.setMinutes(start.getMinutes() - value);
+            } else {
+                // 小时（默认）
+                start.setHours(start.getHours() - value);
+            }
             
             const formatDateTime = (date) => {
                 const year = date.getFullYear();
@@ -674,11 +724,15 @@
                 const day = String(date.getDate()).padStart(2, '0');
                 const hours = String(date.getHours()).padStart(2, '0');
                 const minutes = String(date.getMinutes()).padStart(2, '0');
-                return `${year}-${month}-${day}T${hours}:${minutes}`;
+                const seconds = String(date.getSeconds()).padStart(2, '0');
+                return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
             };
             
             document.getElementById('history-start-time').value = formatDateTime(start);
             document.getElementById('history-end-time').value = formatDateTime(end);
+            
+            // 自动触发查询
+            executeHistoryQuery();
         }
 
         function switchResultTab(tab) {
@@ -814,6 +868,11 @@
         let sortedOutboundData = [];
         let sortedLogsData = [];
         
+        // 精确定位状态
+        let preciseMode = false;
+        let preciseTimeStart = 0;
+        let preciseTimeEnd = 0;
+
         function renderHttpResults() {
             const tbody = document.getElementById('http-results-body');
             if (!tbody) return;
@@ -831,9 +890,10 @@
                 const statusClass = req.status_code >= 400 ? 'error' : 'success';
                 const time = formatDateTime(req.timestamp);
                 const duration = req.duration ? req.duration.toFixed(2) + 'ms' : '-';
+                const timestamp = new Date(req.timestamp).getTime();
                 
                 return `
-                    <tr>
+                    <tr data-timestamp="${timestamp}">
                         <td>${index + 1}</td>
                         <td class="font-mono">${time}</td>
                         <td><span class="api-method ${methodClass}">${req.method}</span></td>
@@ -841,7 +901,10 @@
                         <td class="api-status ${statusClass}">${req.status_code || '-'}</td>
                         <td>${duration}</td>
                         <td>${req.client_ip || '-'}</td>
-                        <td><button class="action-btn" onclick="showHistoryHttpDetail(${index})">详情</button></td>
+                        <td>
+                            <button class="action-btn" onclick="showHistoryHttpDetail(${index})">详情</button>
+                            <button class="action-btn precise-btn" onclick="preciseLocate(${index}, 'http')">精确定位</button>
+                        </td>
                     </tr>
                 `;
             }).join('');
@@ -864,9 +927,10 @@
                 const statusClass = req.status_code >= 400 ? 'error' : 'success';
                 const time = formatDateTime(req.timestamp);
                 const duration = req.duration ? req.duration.toFixed(2) + 'ms' : '-';
+                const timestamp = new Date(req.timestamp).getTime();
                 
                 return `
-                    <tr>
+                    <tr data-timestamp="${timestamp}">
                         <td>${index + 1}</td>
                         <td class="font-mono">${time}</td>
                         <td><span class="api-method ${methodClass}">${req.method}</span></td>
@@ -874,7 +938,10 @@
                         <td class="api-status ${statusClass}">${req.status_code || '-'}</td>
                         <td>${duration}</td>
                         <td>${req.module || '-'}</td>
-                        <td><button class="action-btn" onclick="showHistoryOutboundDetail(${index})">详情</button></td>
+                        <td>
+                            <button class="action-btn" onclick="showHistoryOutboundDetail(${index})">详情</button>
+                            <button class="action-btn precise-btn" onclick="preciseLocate(${index}, 'outbound')">精确定位</button>
+                        </td>
                     </tr>
                 `;
             }).join('');
@@ -895,15 +962,19 @@
             tbody.innerHTML = sortedLogsData.map((log, index) => {
                 const levelClass = log.level ? log.level.toLowerCase() : 'info';
                 const time = formatDateTime(log.timestamp);
+                const timestamp = new Date(log.timestamp).getTime();
                 
                 return `
-                    <tr>
+                    <tr data-timestamp="${timestamp}">
                         <td>${index + 1}</td>
                         <td class="font-mono">${time}</td>
                         <td><span class="log-level-badge ${levelClass}">${log.level || '-'}</span></td>
                         <td>${log.module || '-'}</td>
                         <td class="log-message-cell" style="white-space: normal; word-break: break-all;">${log.message || '-'}</td>
-                        <td><button class="action-btn" onclick="showHistoryLogDetail(${index})">详情</button></td>
+                        <td>
+                            <button class="action-btn" onclick="showHistoryLogDetail(${index})">详情</button>
+                            <button class="action-btn precise-btn" onclick="preciseLocate(${index}, 'logs')">精确定位</button>
+                        </td>
                     </tr>
                 `;
             }).join('');
@@ -1013,6 +1084,184 @@
             modal.appendChild(overlay);
             modal.appendChild(modalContent);
             document.body.appendChild(modal);
+        }
+
+        // 精确定位功能
+        function preciseLocate(index, type) {
+            let timestamp;
+            let rowElement;
+            let tableId;
+            
+            // 获取选中记录的时间戳和对应的行元素
+            switch (type) {
+                case 'http':
+                    timestamp = new Date(sortedHttpData[index].timestamp).getTime();
+                    tableId = 'http-results-body';
+                    break;
+                case 'outbound':
+                    timestamp = new Date(sortedOutboundData[index].timestamp).getTime();
+                    tableId = 'outbound-results-body';
+                    break;
+                case 'logs':
+                    timestamp = new Date(sortedLogsData[index].timestamp).getTime();
+                    tableId = 'logs-results-body';
+                    break;
+                default:
+                    return;
+            }
+            
+            // 设置时间范围（前后60秒）
+            preciseTimeStart = timestamp - 60000;
+            preciseTimeEnd = timestamp + 60000;
+            preciseMode = true;
+            
+            // 更新UI状态提示
+            updatePreciseModeUI(true);
+            
+            // 隐藏不在时间范围内的记录（带动画）
+            filterByTimeRangeWithAnimation();
+            
+            // 延迟执行滚动和高亮，等待过滤动画完成
+            setTimeout(() => {
+                // 找到对应的行元素
+                rowElement = document.querySelector(`#${tableId} tr[data-timestamp="${timestamp}"]`);
+                
+                if (rowElement) {
+                    // 平滑滚动到选中的记录
+                    rowElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    
+                    // 添加高亮动画
+                    highlightRow(rowElement);
+                }
+            }, 300);
+        }
+        
+        // 高亮行动画
+        function highlightRow(row) {
+            // 移除之前的高亮
+            document.querySelectorAll('.highlight-row').forEach(r => r.classList.remove('highlight-row'));
+            
+            // 添加高亮类
+            row.classList.add('highlight-row');
+            
+            // 3秒后移除高亮
+            setTimeout(() => {
+                row.classList.remove('highlight-row');
+            }, 3000);
+        }
+        
+        // 根据时间范围过滤记录（无动画）
+        function filterByTimeRange() {
+            if (!preciseMode) {
+                // 取消精确定位，显示所有记录
+                document.querySelectorAll('table[data-result-table] tr').forEach(row => {
+                    row.style.opacity = '1';
+                    row.style.display = '';
+                });
+                return;
+            }
+            
+            // 隐藏不在时间范围内的记录
+            document.querySelectorAll('table[data-result-table] tr').forEach(row => {
+                const rowTimestamp = parseInt(row.getAttribute('data-timestamp'));
+                if (isNaN(rowTimestamp)) {
+                    // 标题行或空数据行
+                    row.style.display = '';
+                } else if (rowTimestamp >= preciseTimeStart && rowTimestamp <= preciseTimeEnd) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+        
+        // 根据时间范围过滤记录（带动画）
+        function filterByTimeRangeWithAnimation() {
+            if (!preciseMode) {
+                // 取消精确定位，显示所有记录
+                document.querySelectorAll('table[data-result-table] tr').forEach(row => {
+                    row.style.transition = 'all 0.3s ease';
+                    row.style.opacity = '1';
+                    row.style.display = '';
+                });
+                return;
+            }
+            
+            // 先隐藏所有数据行（带动画）
+            document.querySelectorAll('table[data-result-table] tr').forEach(row => {
+                const rowTimestamp = parseInt(row.getAttribute('data-timestamp'));
+                if (!isNaN(rowTimestamp)) {
+                    row.style.transition = 'all 0.3s ease';
+                    row.style.opacity = '0';
+                }
+            });
+            
+            // 延迟后显示符合条件的记录
+            setTimeout(() => {
+                document.querySelectorAll('table[data-result-table] tr').forEach(row => {
+                    const rowTimestamp = parseInt(row.getAttribute('data-timestamp'));
+                    if (isNaN(rowTimestamp)) {
+                        // 标题行或空数据行
+                        row.style.display = '';
+                    } else if (rowTimestamp >= preciseTimeStart && rowTimestamp <= preciseTimeEnd) {
+                        row.style.display = '';
+                        row.style.opacity = '1';
+                    } else {
+                        row.style.display = 'none';
+                        row.style.opacity = '1';
+                    }
+                });
+            }, 300);
+        }
+        
+        // 更新精确定位模式UI
+        function updatePreciseModeUI(active) {
+            const container = document.getElementById('precise-mode-container');
+            if (!container) return;
+            
+            let badge = document.getElementById('precise-mode-badge');
+            if (!badge) {
+                badge = document.createElement('button');
+                badge.id = 'precise-mode-badge';
+                badge.className = 'precise-mode-btn';
+                badge.onclick = cancelPreciseLocate;
+            }
+            
+            if (active) {
+                badge.textContent = '精确定位中 - 点击取消';
+                container.appendChild(badge);
+            } else {
+                if (badge.parentNode === container) {
+                    container.removeChild(badge);
+                }
+            }
+        }
+        
+        // 取消精确定位
+        function cancelPreciseLocate() {
+            // 先隐藏当前显示的记录（带动画）
+            document.querySelectorAll('table[data-result-table] tr').forEach(row => {
+                const rowTimestamp = parseInt(row.getAttribute('data-timestamp'));
+                if (!isNaN(rowTimestamp)) {
+                    row.style.transition = 'all 0.3s ease';
+                    row.style.opacity = '0';
+                }
+            });
+            
+            // 延迟后更新状态并显示所有记录
+            setTimeout(() => {
+                preciseMode = false;
+                preciseTimeStart = 0;
+                preciseTimeEnd = 0;
+                updatePreciseModeUI(false);
+                
+                // 显示所有记录并淡入
+                document.querySelectorAll('table[data-result-table] tr').forEach(row => {
+                    row.style.transition = 'all 0.3s ease';
+                    row.style.display = '';
+                    row.style.opacity = '1';
+                });
+            }, 300);
         }
 
         window.onload = function() {

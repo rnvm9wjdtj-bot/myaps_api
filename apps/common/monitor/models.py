@@ -105,6 +105,7 @@ def get_host_from_url(url: str) -> Optional[str]:
 class APIRequest(Model):
     """API 请求记录模型"""
     id = fields.IntField(pk=True, auto_generate=True)
+    request_id = fields.CharField(max_length=36, null=True, description="请求唯一标识（UUID）")
     timestamp = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="请求时间")
     method = fields.CharField(max_length=10, description="HTTP 方法")
     path = fields.CharField(max_length=512, description="请求路径")
@@ -134,6 +135,7 @@ class APIRequest(Model):
             ("is_slow",),
             ("is_error",),
             ("is_internal",),
+            ("request_id",),
         ]
 
 
