@@ -53,10 +53,6 @@ else:
 THIS_BASE_URL = PROTOCOL + "127.0.0.1:" + str(PORT)
 
 
-PLANNER_MAILS = os.getenv("PLANNER_MAILS", "")
-ENGINEER_MAILS = os.getenv("ENGINEER_MAILS", "")
-
-
 # 事件流量控制
 MAX_EVENTS_BATCH_SIZE = max(1, int(os.getenv("MAX_EVENTS_BATCH_SIZE") or 1))
 MAX_EVENTS_PER_SECOND = max(1, int(os.getenv("MAX_EVENTS_PER_SECOND") or 1))

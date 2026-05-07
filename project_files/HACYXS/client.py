@@ -21,8 +21,8 @@ from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_
 from .._base import (
     get_scheduler_minute, cron_task, CLIENT_LOGGER, CLIENT_SESSION, PROJECT_JSON_FILE,
     ApsPayloadSponsor, EventResultPoster, get_session, CacheItem,
-    QqEmailReminder, AlertType, async_rate_limit, event_batch_handler,
-    TSupply, PLANNER_MAILS, ENGINEER_MAILS, async_service_operation, batch_service_operation
+    AlertType, async_rate_limit, event_batch_handler,
+    TSupply, async_service_operation, batch_service_operation
 )
 
 
@@ -59,18 +59,14 @@ hacyxs_tplus_conn = get_tplus_conn()
 # ⬇️ 通知相关
 #################################################################################
 
-planner_email_reminder = QqEmailReminder(
-    smtp_user="2982212683@qq.com",
-    smtp_password="jyboujldhplddhdf",
-    email_from="2982212683@qq.com",
-    email_to=PLANNER_MAILS,
-)
+# 从 send_alert.py 导入业务告警专用提示器
+from .remind import bus_reminder, ops_reminder
 
 
 # ⬇️binlog监听告警注册
 from apps.data_opt.utils.binlog_listener import binlog_listener as bl
 
-bl.register_alert_handler(planner_email_reminder)
+bl.register_alert_handler(ops_reminder)
 CLIENT_LOGGER.info("binlog监听告警提醒器已注册")
 
 
@@ -183,7 +179,7 @@ def create_custom_rs_push_model(_aps: ApsPayloadSponsor):
     return CustomRsPushModel
 
 
-@event_batch_handler(reminder=planner_email_reminder)
+@event_batch_handler(reminder=bus_reminder)
 @batch_service_operation(module="事件处理")
 async def batch_handle_pl_status_a2e(event_data_list: list[dict], _erp: EventResultPoster, description="下达生产加工单至 T+"):
     await TplusMo.create_batch(
@@ -196,7 +192,7 @@ async def batch_handle_pl_status_a2e(event_data_list: list[dict], _erp: EventRes
     )
 
 
-@event_batch_handler(reminder=planner_email_reminder, remind_start=False)
+@event_batch_handler(reminder=bus_reminder, remind_start=False)
 @batch_service_operation(module="事件处理")
 async def batch_handle_pl_to_mo(event_data_list: list[dict], _erp: EventResultPoster, description="推送领料申请至 T+"):
     await TplusRs.create_batch(
@@ -207,7 +203,7 @@ async def batch_handle_pl_to_mo(event_data_list: list[dict], _erp: EventResultPo
     )
 
 
-@event_batch_handler(reminder=planner_email_reminder)
+@event_batch_handler(reminder=bus_reminder)
 @batch_service_operation(module="事件处理")
 async def batch_handle_pr_status_a2e(pr_data_list: list[dict], _erp: EventResultPoster, description="推送请购单至 T+"):
     await TplusPr.create(

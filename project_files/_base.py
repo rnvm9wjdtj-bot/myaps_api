@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel as PydanticModel
 
 # from tortoise import Tortoise
-from core.settings import MAX_EVENTS_PER_SECOND, SCHEDULER_MINUTE, PLANNER_MAILS, ENGINEER_MAILS
+from core.settings import MAX_EVENTS_PER_SECOND, SCHEDULER_MINUTE
 from globalobjects.globalconst import OrderStatusEnum
 
 

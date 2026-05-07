@@ -229,19 +229,11 @@ async def task_push_seasonpr_to_srm():
 #################################################################################
 # ⬇️APS事件
 #################################################################################
-
-from core.settings import PLANNER_MAILS
-
-planner_email_reminder = QqEmailReminder(
-    smtp_user="2982212683@qq.com",
-    smtp_password="jyboujldhplddhdf",
-    email_from="2982212683@qq.com",
-    email_to=PLANNER_MAILS,
-)
+from .remind import ops_reminder, bus_reminder
 
 
 
-@event_batch_handler(reminder=planner_email_reminder)
+@event_batch_handler(reminder=bus_reminder)
 async def batch_handle_pl_status_a2e(event_data_list: List[Dict], _erp: EventResultPoster, description="PL 单据下达"):
     """
     Args:

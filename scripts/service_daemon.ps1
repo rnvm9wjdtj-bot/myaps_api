@@ -1,6 +1,7 @@
 param (
     [string]$ServiceName = "",
     [string]$LogDir = "",
+    [string]$ProjectDir = "",
     [string]$EmailEnabled = "false",
     [string]$EmailTo = "",
     [string]$EmailFrom = "",
@@ -67,6 +68,9 @@ if (Test-Path $EnvFile) {
     if ($envVariables.ContainsKey("SERVICE_NAME")) { $ServiceName = $envVariables["SERVICE_NAME"] }
     if ($envVariables.ContainsKey("SERVICE_DAEMON_LOG_DIR")) { $LogDir = $envVariables["SERVICE_DAEMON_LOG_DIR"] }
     
+    # Project directory (tenant)
+    if ($envVariables.ContainsKey("PROJECT_DIR")) { $ProjectDir = $envVariables["PROJECT_DIR"] }
+    
     # Email configuration
     if ($envVariables.ContainsKey("SERVICE_DAEMON_EMAIL_ENABLED")) { $EmailEnabled = $envVariables["SERVICE_DAEMON_EMAIL_ENABLED"].ToLower() }
     if ($envVariables.ContainsKey("SERVICE_DAEMON_EMAIL_TO")) {
@@ -132,7 +136,8 @@ function Write-Log {
 function Send-EmailNotification {
     param (
         [string]$Subject,
-        [string]$Body
+        [string]$Body,
+        [string]$Level = "error"
     )
     
     if ($EmailEnabled -ne "true") {
@@ -140,6 +145,32 @@ function Send-EmailNotification {
         return
     }
     
+    # 优先使用租户的 remind.py 脚本
+    if (-not [string]::IsNullOrEmpty($ProjectDir)) {
+        $remindScript = Join-Path $projectRoot "project_files\$ProjectDir\remind.py"
+        
+        if (Test-Path $remindScript) {
+            try {
+                $pythonExe = "python"
+                $result = & $pythonExe $remindScript --message $Body --level $Level --subject $Subject 2>&1
+                
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Log "Email notification sent via tenant script: $Subject"
+                    return
+                } else {
+                    Write-Log "Tenant remind.py failed (exit code: $LASTEXITCODE): $result" -Level "WARN"
+                    # 继续尝试使用 PowerShell 发送作为降级方案
+                }
+            } catch {
+                Write-Log "Failed to execute tenant remind.py: $_" -Level "WARN"
+                # 继续尝试使用 PowerShell 发送作为降级方案
+            }
+        } else {
+            Write-Log "Tenant remind.py not found: $remindScript" -Level "WARN"
+        }
+    }
+    
+    # 降级方案：使用 PowerShell Send-MailMessage
     if (([string]::IsNullOrEmpty($EmailTo) -and $EmailTo -isnot [array]) -or [string]::IsNullOrEmpty($EmailFrom) -or [string]::IsNullOrEmpty($SmtpServer)) {
         Write-Log "Email configuration incomplete, skipping email send" -Level "WARN"
         return
@@ -157,7 +188,7 @@ function Send-EmailNotification {
         } else {
             $recipients = $EmailTo
         }
-        Write-Log "Email notification sent successfully to $recipients: $Subject"
+        Write-Log "Email notification sent via PowerShell to $recipients: $Subject"
     } catch {
         Write-Log "Failed to send email notification: $_" -Level "ERROR"
     }
@@ -208,7 +239,7 @@ function Check-ServiceStatus {
             $message = "Service $ServiceName status is abnormal: $($service.Status)"
             Write-Log $message -Level "ERROR"
             
-            Send-EmailNotification -Subject "服务异常：$ServiceName" -Body $message
+            Send-EmailNotification -Subject "服务异常：$ServiceName" -Body $message -Level "error"
             Send-SystemNotification -Title "服务异常" -Message $message
             
             if ($AutoRestart) {
@@ -221,20 +252,20 @@ function Check-ServiceStatus {
                     if ($serviceAfterRestart.Status -eq "Running") {
                         $successMessage = "Service $ServiceName restarted successfully"
                         Write-Log $successMessage
-                        Send-EmailNotification -Subject "服务已重启：$ServiceName" -Body $successMessage
+                        Send-EmailNotification -Subject "服务已重启：$ServiceName" -Body $successMessage -Level "info"
                         Send-SystemNotification -Title "服务已重启" -Message $successMessage
                         return $true
                     } else {
                         $failMessage = "Service $ServiceName restart failed, current status: $($serviceAfterRestart.Status)"
                         Write-Log $failMessage -Level "ERROR"
-                        Send-EmailNotification -Subject "服务重启失败：$ServiceName" -Body $failMessage
+                        Send-EmailNotification -Subject "服务重启失败：$ServiceName" -Body $failMessage -Level "error"
                         Send-SystemNotification -Title "服务重启失败" -Message $failMessage
                         return $false
                     }
                 } catch {
                     $errorMessage = "Failed to restart service $ServiceName: $_"
                     Write-Log $errorMessage -Level "ERROR"
-                    Send-EmailNotification -Subject "服务重启失败：$ServiceName" -Body $errorMessage
+                    Send-EmailNotification -Subject "服务重启失败：$ServiceName" -Body $errorMessage -Level "error"
                     Send-SystemNotification -Title "服务重启失败" -Message $errorMessage
                     return $false
                 }
@@ -245,7 +276,7 @@ function Check-ServiceStatus {
     } catch {
         $errorMessage = "Service $ServiceName not found or access denied: $_"
         Write-Log $errorMessage -Level "ERROR"
-        Send-EmailNotification -Subject "服务不存在：$ServiceName" -Body $errorMessage
+        Send-EmailNotification -Subject "服务不存在：$ServiceName" -Body $errorMessage -Level "error"
         Send-SystemNotification -Title "服务不存在" -Message $errorMessage
         return $false
     }
@@ -272,7 +303,7 @@ function Check-ServiceHealth {
                 if ($errorCount -gt 0) {
                     $message = "Service $ServiceName has recent errors in log file: $errorCount errors in last 5 minutes"
                     Write-Log $message -Level "WARN"
-                    Send-EmailNotification -Subject "服务日志异常：$ServiceName" -Body $message
+                    Send-EmailNotification -Subject "服务日志异常：$ServiceName" -Body $message -Level "warning"
                     Send-SystemNotification -Title "服务日志异常" -Message $message
                     return $false
                 }
@@ -313,7 +344,7 @@ try {
     Main
 } catch {
     Write-Log "Fatal error in service daemon: $_" -Level "ERROR"
-    Send-EmailNotification -Subject "守护脚本错误" -Body "Service daemon script encountered a fatal error: $_"
+    Send-EmailNotification -Subject "守护脚本错误" -Body "Service daemon script encountered a fatal error: $_" -Level "error"
     Send-SystemNotification -Title "守护脚本错误" -Message "Service daemon script encountered a fatal error"
     exit 1
 }
