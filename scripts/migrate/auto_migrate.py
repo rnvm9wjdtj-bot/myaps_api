@@ -154,10 +154,8 @@ async def create_table_if_not_exists(db, model):
     
     if table_name not in existing_tables:
         print(f"  创建表: {table_name}")
-        # 使用 Tortoise 的 schema generator 生成创建表的 SQL
-        from tortoise.backends.sqlite.schema_generator import SqliteSchemaGenerator
-        generator = SqliteSchemaGenerator(Tortoise.get_connection('default'))
-        await generator._create_table(model)
+        # 使用 Tortoise ORM 的 generate_schemas 方法，safe=True 表示只创建不存在的表
+        await Tortoise.generate_schemas(safe=True)
         return True
     return False
 
@@ -194,8 +192,8 @@ async def main():
         db = Tortoise.get_connection(SQLITE_FILE)
         
         # Step 3: 获取所有注册的模型
-        from apps.common.monitor.models import APIRequest, OutboundAPIRequest, SystemLog
-        models = [APIRequest, OutboundAPIRequest, SystemLog]
+        from apps.common.monitor.models import APIRequest, OutboundAPIRequest, SystemLog, FailedOperation, BinlogPosition, ProcessedEvent
+        models = [APIRequest, OutboundAPIRequest, SystemLog, FailedOperation, BinlogPosition, ProcessedEvent]
         
         print("\n[Step 3] 处理表结构...")
         

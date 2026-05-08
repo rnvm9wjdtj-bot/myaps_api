@@ -34,10 +34,61 @@ cd /path/to/myaps_fastapi
 
 ### 2. 打包整个项目
 
+推荐使用 PowerShell 脚本打包，确保排除目录生效：
+
+```powershell
+# 在项目根目录运行
+cd D:\code\myaps_fastapi
+.\scripts\deploy_ubuntu\package_for_deploy.ps1
+```
+
+**打包结果**：
+- 输出文件：`D:\code\myaps_fastapi_YYYYMMDD.tar.gz`（YYYYMMDD 为日期）
+- 自动排除以下目录：
+
+| 目录 | 说明 |
+|------|------|
+| `venv` | Python 虚拟环境（服务器上重新创建） |
+| `offline_packages` | 离线依赖包（太大，需单独拷贝） |
+| `logs` | 日志目录（无需迁移） |
+| `test` | 测试代码（无需部署） |
+| `storage` | 本地存储（无需迁移） |
+| `backups` | 备份目录（无需迁移） |
+| `.git` | Git 仓库 |
+| `__pycache__` / `*.pyc` | Python 编译文件 |
+
+### 手动打包命令（Git Bash）
+
+如果需要手动打包，可使用以下命令：
+
 ```bash
-# 在开发机打包
-cd /path/to/
-tar -czvf myaps_fastapi.tar.gz myaps_fastapi/
+# 进入项目上级目录
+cd /d/code/
+
+# 创建临时目录
+mkdir myaps_fastapi_temp
+
+# 复制文件（排除目录）
+rsync -av --exclude='venv' --exclude='offline_packages' --exclude='logs' \
+      --exclude='test' --exclude='storage' --exclude='backups' --exclude='.git' \
+      --exclude='__pycache__' --exclude='*.pyc' myaps_fastapi/ myaps_fastapi_temp/
+
+# 打包
+tar -czvf myaps_fastapi.tar.gz myaps_fastapi_temp/
+
+# 清理临时目录
+rm -rf myaps_fastapi_temp
+```
+
+### 单独打包离线依赖包
+
+```bash
+# 打包项目代码（不含离线包）
+.\scripts\deploy_ubuntu\package_for_deploy.ps1
+
+# 单独打包离线依赖包
+cd D:\code\
+tar -czvf offline_packages.tar.gz myaps_fastapi/offline_packages/
 ```
 
 ### 3. 传输到离线服务器
@@ -56,13 +107,13 @@ scp myaps_fastapi.tar.gz root@your-server:/opt/
 # 在目标服务器执行
 cd /opt
 tar -xzvf myaps_fastapi.tar.gz
-mv myaps_fastapi myaps
-cd /opt/myaps
+mv myaps_fastapi_temp myaps_api
+cd /opt/myaps_api
 ```
 
 ### 5. 配置 .env
 
-编辑 `/opt/myaps/.env`，确保以下参数正确：
+编辑 `/opt/myaps_api/.env`，确保以下参数正确：
 
 ```ini
 # 项目配置
@@ -74,7 +125,7 @@ WORKERS=4                 # 工作进程数（建议为 CPU 核数）
 GUNICORN_BIND=127.0.0.1:8000
 GUNICORN_TIMEOUT=30
 APP_USER=www-data
-APP_ROOT=/opt/myaps
+APP_ROOT=/opt/myaps_api
 
 # 数据库配置（根据实际环境修改）
 MYAPS_DB_HOST=127.0.0.1
@@ -114,12 +165,31 @@ apt install ./python3.12*.deb ./build-essential*.deb ./libssl-dev*.deb ./libffi-
 #### 6.2 安装 Redis 数据库（离线方式）
 
 ```bash
-# 方法一：使用 deb 包安装（推荐）
-# 在有外网的 Ubuntu 机器上下载 Redis deb 包
-# apt download redis-server redis-tools
+# 方法一：使用 deb 包完整安装（推荐，最可靠）
+# 1. 在有外网的 Ubuntu 机器上下载 Redis 及其所有依赖
+mkdir -p /tmp/redis_packages
+cd /tmp/redis_packages
 
-# 将 deb 包拷贝到离线服务器后执行安装
-# dpkg -i redis-server*.deb redis-tools*.deb
+# 自动获取并下载所有依赖包（最完整的方式）
+apt download $(apt-cache depends redis-server redis-tools | grep -E "Depends|Recommends" | cut -d: -f2 | tr -d '<> ')
+
+# 或者手动下载已知的关键依赖（备选方案）
+# apt download redis-server redis-tools libjemalloc2 libhiredis0.14 liblzf1
+
+# 查看下载的文件
+ls -la *.deb
+
+# 2. 将所有 deb 包拷贝到离线服务器
+# 使用 U 盘/移动硬盘或 scp 命令
+# 拷贝到离线服务器的 /opt/redis_packages/ 目录
+
+# 3. 在离线服务器上安装
+cd /opt/redis_packages
+# 方法 A：使用 dpkg 安装所有包
+apt --fix-broken install -y
+
+# 方法 B：如果有部分依赖问题，使用 apt 本地安装（推荐）
+# apt install ./*.deb
 
 # 方法二：源码编译安装（适用于无 deb 包的情况）
 # 1. 下载 Redis 源码（在有外网的机器上）
@@ -129,16 +199,36 @@ apt install ./python3.12*.deb ./build-essential*.deb ./libssl-dev*.deb ./libffi-
 # tar -xzvf redis-7.4.0.tar.gz
 # cd redis-7.4.0
 
-# 3. 编译安装
+# 3. 编译安装（需要先安装 build-essential）
+# apt install ./build-essential*.deb
 # make
 # make install
 
 # 4. 创建配置文件和服务
 # mkdir -p /etc/redis /var/lib/redis
 # cp redis.conf /etc/redis/
+# useradd -r -s /bin/false redis
 # chown redis:redis /var/lib/redis
 
-# 启动 Redis 服务
+# 5. 创建 systemd 服务文件
+# cat > /etc/systemd/system/redis.service << 'EOF'
+# [Unit]
+# Description=Redis In-Memory Data Store
+# After=network.target
+
+# [Service]
+# User=redis
+# Group=redis
+# ExecStart=/usr/local/bin/redis-server /etc/redis/redis.conf
+# ExecStop=/usr/local/bin/redis-cli shutdown
+# Restart=always
+
+# [Install]
+# WantedBy=multi-user.target
+# EOF
+
+# 启动 Redis 服务（两种方法都需要）
+systemctl daemon-reload
 systemctl start redis-server
 systemctl enable redis-server
 
@@ -147,11 +237,64 @@ redis-cli ping
 # 输出: PONG
 ```
 
+#### 常见问题与解决
+
+**问题：安装时提示缺少依赖包**
+
+解决方法：确保使用了上面的方法一，使用 `apt-cache depends` 自动获取所有依赖。
+
+**问题：dpkg 安装后仍有未配置的包**
+
+解决方法：
+```bash
+# 强制修复配置
+apt-get -f install
+# 或者再次执行 dpkg 配置
+dpkg --configure -a
+```
+
+**问题：如何检查已下载的依赖是否完整**
+
+```bash
+# 在有外网的机器上模拟安装，检查是否还有缺失
+mkdir -p /tmp/test_install
+cd /tmp/test_install
+cp /tmp/redis_packages/*.deb .
+# 使用 apt 模拟安装（不会真正安装）
+apt install --dry-run ./*.deb
+```
+
 ### 7. 执行离线部署
 
 ```bash
-cd /opt/myaps
+cd /opt/myaps_api
+chmod +x ./scripts/deploy_ubuntu/*.sh
+
+# 首次部署（包含数据库迁移）
 ./scripts/deploy_ubuntu/deploy.sh -d
+
+# 增量更新（跳过数据库迁移，避免破坏数据）
+./scripts/deploy_ubuntu/deploy.sh -d -s
+```
+
+**部署选项说明：**
+
+| 选项 | 说明 |
+|------|------|
+| `-d` | 执行部署 |
+| `-s` | 跳过数据库迁移（用于增量更新） |
+| `-t <租户>` | 指定租户（如 CHANGDE、JYHDXS、HACYXS） |
+
+**示例：**
+```bash
+# 首次部署，指定租户
+./scripts/deploy_ubuntu/deploy.sh -d -t CHANGDE
+
+# 增量更新，跳过迁移
+./scripts/deploy_ubuntu/deploy.sh -d -s
+
+# 指定租户且跳过迁移
+./scripts/deploy_ubuntu/deploy.sh -d -t CHANGDE -s
 ```
 
 ### 8. 配置 Nginx（可选）
@@ -200,7 +343,7 @@ sed -i 's/PROJECT_DIR=JYHDXS/PROJECT_DIR=CHANGDE/' .env
 ### 依赖包位置
 
 ```
-/opt/myaps/offline_packages/ubuntu/
+/opt/myaps_api/offline_packages/ubuntu/python_pkg/
 ├── fastapi-0.136.1-py3-none-any.whl
 ├── uvicorn-0.46.0-py3-none-any.whl
 ├── gunicorn-26.0.0-py3-none-any.whl
@@ -238,11 +381,12 @@ sed -i 's/PROJECT_DIR=JYHDXS/PROJECT_DIR=CHANGDE/' .env
 
 ## 📋 部署检查清单
 
-- [ ] 项目代码已拷贝到 `/opt/myaps/`
-- [ ] `.env` 配置文件已正确设置
-- [ ] 离线依赖包存在于 `offline_packages/ubuntu/`
+- [ ] 项目代码已拷贝到 `/opt/myaps_api/`
+- [ ] `.env` 配置文件已正确设置（APP_ROOT=/opt/myaps_api）
+- [ ] 离线依赖包存在于 `offline_packages/ubuntu/python_pkg/`
 - [ ] Python 3.12 已安装
 - [ ] 数据库服务已启动且可连接
 - [ ] Redis 服务已启动且可连接
-- [ ] 执行 `deploy.sh -d` 部署成功
+- [ ] 执行 `deploy.sh -d` 部署成功（首次部署）
+- [ ] 执行 `deploy.sh -d -s` 部署成功（增量更新）
 - [ ] 服务状态正常（`systemctl status MyAPS_API`）

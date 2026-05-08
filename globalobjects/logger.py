@@ -228,51 +228,59 @@ def is_terminal_supports_ansi():
 # 全局变量
 TERMINAL_SUPPORTS_ANSI = is_terminal_supports_ansi()
 
-# 尝试导入ctypes并获取控制台句柄
+# 尝试导入ctypes并获取控制台句柄（仅在Windows系统上）
 import ctypes
-try:
-    # 获取控制台句柄
-    hConsole = ctypes.windll.kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
-    
-    # 定义CONSOLE_SCREEN_BUFFER_INFO结构
-    class CONSOLE_SCREEN_BUFFER_INFO(ctypes.Structure):
-        _fields_ = [
-            ("dwSize", ctypes.c_ulong),
-            ("dwCursorPosition", ctypes.c_ulong * 2),
-            ("wAttributes", ctypes.c_ushort),
-            ("srWindow", ctypes.c_ulong * 4),
-            ("dwMaximumWindowSize", ctypes.c_ulong * 2),
-        ]
-    
-    # 保存当前颜色
-    csbi = CONSOLE_SCREEN_BUFFER_INFO()
-    ctypes.windll.kernel32.GetConsoleScreenBufferInfo(hConsole, ctypes.byref(csbi))
-    original_color = csbi.wAttributes
-    
-    # Windows控制台颜色常量
-    FOREGROUND_BLUE = 0x0001
-    FOREGROUND_GREEN = 0x0002
-    FOREGROUND_RED = 0x0004
-    FOREGROUND_INTENSITY = 0x0008
-    
-    # 颜色映射
-    LEVEL_COLORS = {
-        'DEBUG': FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_INTENSITY,  # 青色
-        'INFO': FOREGROUND_GREEN | FOREGROUND_INTENSITY,  # 绿色
-        'WARNING': FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY,  # 黄色
-        'ERROR': FOREGROUND_RED | FOREGROUND_INTENSITY,  # 红色
-        'CRITICAL': FOREGROUND_RED | FOREGROUND_INTENSITY,  # 红色
-    }
-    
-    # 是否支持Windows API
-    SUPPORT_WINDOWS_API = True
-except Exception as e:
-    # 如果出错，设置为不支持
-    SUPPORT_WINDOWS_API = False
-    hConsole = None
-    original_color = 0
-    LEVEL_COLORS = {}
-    print(f"获取控制台句柄失败: {e}")
+
+# 初始化默认值
+hConsole = None
+original_color = 0
+LEVEL_COLORS = {}
+SUPPORT_WINDOWS_API = False
+
+if platform.system() == 'Windows':
+    try:
+        # 获取控制台句柄
+        hConsole = ctypes.windll.kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+        
+        # 定义CONSOLE_SCREEN_BUFFER_INFO结构
+        class CONSOLE_SCREEN_BUFFER_INFO(ctypes.Structure):
+            _fields_ = [
+                ("dwSize", ctypes.c_ulong),
+                ("dwCursorPosition", ctypes.c_ulong * 2),
+                ("wAttributes", ctypes.c_ushort),
+                ("srWindow", ctypes.c_ulong * 4),
+                ("dwMaximumWindowSize", ctypes.c_ulong * 2),
+            ]
+        
+        # 保存当前颜色
+        csbi = CONSOLE_SCREEN_BUFFER_INFO()
+        ctypes.windll.kernel32.GetConsoleScreenBufferInfo(hConsole, ctypes.byref(csbi))
+        original_color = csbi.wAttributes
+        
+        # Windows控制台颜色常量
+        FOREGROUND_BLUE = 0x0001
+        FOREGROUND_GREEN = 0x0002
+        FOREGROUND_RED = 0x0004
+        FOREGROUND_INTENSITY = 0x0008
+        
+        # 颜色映射
+        LEVEL_COLORS = {
+            'DEBUG': FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_INTENSITY,  # 青色
+            'INFO': FOREGROUND_GREEN | FOREGROUND_INTENSITY,  # 绿色
+            'WARNING': FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY,  # 黄色
+            'ERROR': FOREGROUND_RED | FOREGROUND_INTENSITY,  # 红色
+            'CRITICAL': FOREGROUND_RED | FOREGROUND_INTENSITY,  # 红色
+        }
+        
+        # 是否支持Windows API
+        SUPPORT_WINDOWS_API = True
+    except Exception as e:
+        # 如果出错，设置为不支持
+        SUPPORT_WINDOWS_API = False
+        hConsole = None
+        original_color = 0
+        LEVEL_COLORS = {}
+        print(f"获取控制台句柄失败: {e}")
 
 # ANSI颜色代码
 ANSI_COLORS = {

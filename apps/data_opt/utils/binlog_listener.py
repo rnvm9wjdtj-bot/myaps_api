@@ -69,6 +69,99 @@ from apps.common.utils.thread_pool_manager import global_pool_manager
 import os
 import asyncio
 
+
+class DistributedLock:
+    """基于 Redis 的分布式锁，确保只有一个 worker 能启动 binlog 监听器"""
+    
+    def __init__(self, lock_name: str = "binlog_listener_lock", ttl: int = 30):
+        self.lock_name = lock_name
+        self.ttl = ttl  # 锁的过期时间（秒）
+        self._lock_holder = False
+        self._refresh_thread = None
+        self._stop_event = threading.Event()
+        
+    def _get_redis_client(self):
+        """获取 Redis 客户端"""
+        try:
+            from apps.common.utils.redis_pool_manager import get_redis_pool_manager
+            pool_manager = get_redis_pool_manager()
+            return pool_manager.get_client()
+        except Exception as e:
+            logger.warning(f"⚠️ 获取 Redis 客户端失败: {e}")
+            return None
+    
+    def acquire(self) -> bool:
+        """尝试获取分布式锁"""
+        try:
+            redis_client = self._get_redis_client()
+            if not redis_client:
+                logger.warning("⚠️ Redis 不可用，跳过分布式锁检查")
+                return True  # Redis 不可用时，假设自己能获取锁
+                
+            # 使用 SETNX 尝试获取锁，同时设置过期时间
+            # 锁的唯一值：进程 ID + 时间戳 + 随机数
+            lock_value = f"{os.getpid()}_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+            
+            if redis_client.set(self.lock_name, lock_value, nx=True, ex=self.ttl):
+                logger.info(f"✅ 成功获取分布式锁: {self.lock_name}")
+                self._lock_holder = True
+                self._start_refresh_thread()
+                return True
+            else:
+                logger.info(f"⏳ 分布式锁已被其他 worker 持有: {self.lock_name}")
+                self._lock_holder = False
+                return False
+        except Exception as e:
+            logger.error(f"❌ 获取分布式锁失败: {e}")
+            return True  # 出错时，假设自己能获取锁（降级方案）
+    
+    def _start_refresh_thread(self):
+        """启动锁刷新线程，定期延长锁的过期时间"""
+        if self._refresh_thread is not None:
+            return
+            
+        def refresh_loop():
+            while not self._stop_event.is_set():
+                try:
+                    time.sleep(self.ttl // 2)  # 在锁过期前一半时间刷新
+                    if self._lock_holder:
+                        redis_client = self._get_redis_client()
+                        if redis_client:
+                            redis_client.expire(self.lock_name, self.ttl)
+                            logger.debug(f"🔄 已刷新分布式锁: {self.lock_name}")
+                except Exception as e:
+                    logger.debug(f"刷新分布式锁失败: {e}")
+        
+        self._refresh_thread = threading.Thread(target=refresh_loop, daemon=True)
+        self._refresh_thread.start()
+        logger.info("✅ 分布式锁刷新线程已启动")
+    
+    def release(self):
+        """释放分布式锁"""
+        try:
+            self._stop_event.set()
+            if self._refresh_thread and self._refresh_thread.is_alive():
+                self._refresh_thread.join(timeout=1)
+                
+            if self._lock_holder:
+                redis_client = self._get_redis_client()
+                if redis_client:
+                    redis_client.delete(self.lock_name)
+                    logger.info(f"✅ 已释放分布式锁: {self.lock_name}")
+        except Exception as e:
+            logger.error(f"❌ 释放分布式锁失败: {e}")
+        finally:
+            self._lock_holder = False
+    
+    @property
+    def is_holder(self) -> bool:
+        """当前进程是否是锁的持有者"""
+        return self._lock_holder
+
+
+# 创建全局分布式锁实例
+distributed_lock = DistributedLock()
+
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 logger = log_config.get_logger(__name__, level=LOG_LEVEL)
 
@@ -1016,6 +1109,11 @@ class MySQLBinlogListener:
     def start_monitoring(self):
         """开始监控Binlog"""
         if not self.running:
+            # 首先尝试获取分布式锁
+            if not distributed_lock.acquire():
+                logger.info("⏳ 未获取到分布式锁，不启动 binlog 监听")
+                return
+                
             self.running = True
             # 重新创建线程池
             try:
@@ -1569,6 +1667,13 @@ class MySQLBinlogListener:
         
         logger.info("🛑 开始停止binlog监听...")
         self.running = False
+        
+        # 0. 释放分布式锁
+        try:
+            distributed_lock.release()
+            logger.info("✅ 分布式锁已释放")
+        except Exception as e:
+            logger.warning(f"⚠️ 释放分布式锁失败: {e}")
         
         # 1. 停止健康检查器
         if hasattr(self, '_health_checker'):

@@ -64,6 +64,13 @@ connections[SQLITE_FILE] = {
     "minsize": 1,  # 最小连接数
 }
 
+# 添加 default 连接别名（用于 Aerich 迁移）
+if MYAPS_MAIN_DB and MYAPS_MAIN_DB in connections:
+    connections['default'] = connections[MYAPS_MAIN_DB]
+elif SQLITE_FILE in connections:
+    # 如果主数据库不存在，使用 SQLite 作为 default
+    connections['default'] = connections[SQLITE_FILE]
+
 TORTOISE_ORM_CONFIG = {
     "connections": connections,
     "apps": {

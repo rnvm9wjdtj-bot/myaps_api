@@ -13,7 +13,8 @@ logger = log_config.get_logger(__name__)
 # 加载.env文件中的环境变量
 from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(os.getenv('ENV_FILE', os.path.join(BASE_DIR, '.env')))
+# override=False: 系统环境变量优先于 .env 文件，允许 Systemd 传递的环境变量生效
+load_dotenv(os.getenv('ENV_FILE', os.path.join(BASE_DIR, '.env')), override=False)
 
 
 
