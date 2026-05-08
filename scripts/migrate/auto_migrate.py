@@ -160,22 +160,42 @@ async def create_table_if_not_exists(db, model):
     return False
 
 
-async def main():
+def get_user_choice():
+    """获取用户选择"""
     print("========================================")
     print("  🚀 智能自动迁移脚本")
     print("========================================")
-    print("  正在自动执行数据库迁移...")
     print()
+    print("请选择迁移方式:")
+    print("  1. 不带备份（快速）")
+    print("  2. 带备份（安全，推荐）")
+    print()
+    
+    while True:
+        choice = input("请输入选项 (1 或 2): ").strip()
+        if choice in ["1", "2"]:
+            return choice == "2"  # 返回是否需要备份
+        print("❌ 无效输入，请输入 1 或 2")
+
+
+async def main():
+    # 获取用户选择
+    need_backup = get_user_choice()
     
     # 获取数据库路径
     from core.settings import SQLITE_FILE
     db_path = Path("storage") / f"{SQLITE_FILE}.sqlite3"
     
-    # Step 1: 备份数据库
-    print("[Step 1] 备份数据库...")
-    backup_path = backup_database(db_path)
-    if not backup_path:
-        print("  ⚠️  备份失败，继续执行迁移...")
+    backup_path = None
+    
+    # Step 1: 备份数据库（如果用户选择）
+    if need_backup:
+        print("\n[Step 1] 备份数据库...")
+        backup_path = backup_database(db_path)
+        if not backup_path:
+            print("  ⚠️  备份失败，继续执行迁移...")
+    else:
+        print("\n[Step 1] 跳过备份（用户选择）")
     
     # Step 2: 初始化 Tortoise
     print("\n[Step 2] 连接数据库...")

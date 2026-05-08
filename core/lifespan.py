@@ -32,8 +32,14 @@ async def lifespan(app):
     
     # 预热数据库连接（在启动其他服务之前）
     log_config.info("开始预热数据库连接...")
-    await warmup_connections()
-    log_config.info("数据库连接预热完成")
+    try:
+        # 添加超时保护，避免启动时被阻塞
+        await asyncio.wait_for(warmup_connections(), timeout=60)
+        log_config.info("数据库连接预热完成")
+    except asyncio.TimeoutError:
+        log_config.warning("⚠️ 数据库连接预热超时，继续启动其他服务")
+    except Exception as e:
+        log_config.error(f"❌ 数据库连接预热失败: {e}")
     
     # 启动资源监控
     log_config.info("开始启动资源监控...")
@@ -59,30 +65,67 @@ async def lifespan(app):
     else:
         log_config.warning("⚠️ 定时任务初始化被跳过，因为 TRUNON_SCHEDULER=false")
     
+    log_config.info("🔹 进入数据库连接检查任务设置阶段...")
+    
     # 设置定期检查数据库连接的任务（从原startup_event迁移）
+    log_config.info("🔹 定义 schedule_db_checks 函数...")
     async def schedule_db_checks():
         """定期执行数据库连接检查"""
+        log_config.info("🔍 数据库连接检查任务开始执行")
         while True:
-            await check_db_connections()
+            try:
+                log_config.debug("🔍 开始执行 check_db_connections...")
+                # 添加超时保护
+                await asyncio.wait_for(check_db_connections(), timeout=30)
+                log_config.debug("🔍 check_db_connections 执行完成")
+            except asyncio.TimeoutError:
+                log_config.warning("⚠️ check_db_connections 执行超时")
+            except Exception as e:
+                log_config.error(f"❌ check_db_connections 执行失败: {e}")
             # 每300秒（5分钟）检查一次
             await asyncio.sleep(300)
+
+    log_config.info("🔹 schedule_db_checks 函数定义完成")
     
     # 启动数据库连接检查任务（从原startup_event迁移）
+    log_config.info("启动数据库连接检查任务...")
     db_check_task = asyncio.create_task(schedule_db_checks())
     log_config.info("数据库连接检查任务已启动")
     
     # 启动连接池监控任务
+    log_config.info("启动连接池监控任务...")
     pool_monitor_task = asyncio.create_task(start_pool_monitoring())
     log_config.info("连接池监控任务已启动")
 
     # 启动数据库健康检查器（独立后台任务，不依赖前端访问）
-    await start_db_health_checker()
+    log_config.info("启动数据库健康检查器...")
+    try:
+        await asyncio.wait_for(start_db_health_checker(), timeout=30)
+        log_config.info("数据库健康检查器已启动")
+    except asyncio.TimeoutError:
+        log_config.warning("⚠️ 数据库健康检查器启动超时")
+    except Exception as e:
+        log_config.error(f"❌ 数据库健康检查器启动失败: {e}")
 
     # 启动失败操作恢复管理器（后台自动重试失败的数据库操作）
-    await start_failed_operation_recovery()
+    log_config.info("启动失败操作恢复管理器...")
+    try:
+        await asyncio.wait_for(start_failed_operation_recovery(), timeout=30)
+        log_config.info("失败操作恢复管理器已启动")
+    except asyncio.TimeoutError:
+        log_config.warning("⚠️ 失败操作恢复管理器启动超时")
+    except Exception as e:
+        log_config.error(f"❌ 失败操作恢复管理器启动失败: {e}")
 
     # 启动实时日志流服务
-    await start_log_stream()
+    log_config.info("启动实时日志流服务...")
+    try:
+        await asyncio.wait_for(start_log_stream(), timeout=30)
+        log_config.info("实时日志流服务已启动")
+    except asyncio.TimeoutError:
+        log_config.warning("⚠️ 实时日志流服务启动超时")
+    except Exception as e:
+        log_config.error(f"❌ 实时日志流服务启动失败: {e}")
 
     # 启动 Redis 健康检查任务
     async def schedule_redis_checks():

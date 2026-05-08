@@ -54,7 +54,6 @@ SHOW VARIABLES LIKE 'binlog_format';  -- 推荐ROW模式
 import os, asyncio, time, logging, threading, concurrent.futures, json, pickle, pymysql, uuid, random
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, Callable
-# from functools import wraps
 from pymysqlreplication import BinLogStreamReader
 from pymysqlreplication.row_event import (
     WriteRowsEvent,
@@ -63,11 +62,11 @@ from pymysqlreplication.row_event import (
 )
 
 from core.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_BINLOG_LISTENER, ENABLE_BINLOG_POSITION, MYAPS_ROOT_PASSWORD
+
 from globalobjects import logger as log_config
 from globalobjects.reminder import remind_manager, RemindType
+
 from apps.common.utils.thread_pool_manager import global_pool_manager
-import os
-import asyncio
 
 
 class DistributedLock:
@@ -608,6 +607,7 @@ class MySQLBinlogListener:
         self._last_backpressure_warning = 0  # 上次背压告警时间
         self._backpressure_warning_interval = 60  # 告警间隔（秒）
         
+        # 初始化线程池
         if MYAPS_DBSET_LIST and TURNON_BINLOG_LISTENER:
             # 使用全局线程池管理器
             self._min_workers = 5
@@ -625,6 +625,10 @@ class MySQLBinlogListener:
                 max_workers=1,
                 thread_name_prefix='mysql-monitor-'
             )
+        
+        # 标记初始化完成
+        with self.__class__._lock:
+            self._initialized = True
         
 
     def _validate_config(self):
