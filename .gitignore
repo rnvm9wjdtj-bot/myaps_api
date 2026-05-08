@@ -84,6 +84,7 @@ tests/
 
 # 生产环境配置文件
 project_files/**/prod.json
+project_files/**/remind.py
 
 # Binlog 位置管理器文件
 .binlog_position.json
