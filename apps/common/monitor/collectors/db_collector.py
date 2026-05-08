@@ -7,7 +7,7 @@
 import time
 import asyncio
 from typing import Dict, Any, List
-from globalobjects import logger as log_config, AlertType, alert_manager
+from globalobjects import logger as log_config, RemindType, remind_manager
 from globalobjects.db_manager import get_db_managers
 from core.settings import MYAPS_MAIN_DB
 
@@ -84,11 +84,11 @@ class DatabaseCollector:
                     status["summary"]["total"] += 1
                     status["summary"]["unhealthy"] += 1
             if status["summary"]["unhealthy"] > 0:
-                await alert_manager.trigger_remind(AlertType.DB_CONNECTION, status["summary"]["unhealthy"])
+                await remind_manager.trigger_remind(RemindType.DB_CONNECTION_BREAK, status["summary"]["unhealthy"])
         except Exception as e:
             logger.error(f"获取数据库连接状态失败: {e}")
             status["error"] = str(e)
-            await alert_manager.trigger_remind(AlertType.DB_CONNECTION, status)
+            await remind_manager.trigger_remind(RemindType.DB_CONNECTION_BREAK, status)
 
         return status
 
@@ -123,12 +123,12 @@ class DatabaseCollector:
                         "pool_available": False,
                         "error": str(e),
                     }
-                    await alert_manager.trigger_remind(AlertType.DB_POOL, pool_info)
+                    await remind_manager.trigger_remind(RemindType.DB_POOL_BREAK, pool_info)
         
         except Exception as e:
             logger.error(f"获取连接池状态失败: {e}")
             pool_info["error"] = str(e)
-            await alert_manager.trigger_remind(AlertType.DB_POOL, pool_info)
+            await remind_manager.trigger_remind(RemindType.DB_POOL_BREAK, pool_info)
         
         return pool_info
 

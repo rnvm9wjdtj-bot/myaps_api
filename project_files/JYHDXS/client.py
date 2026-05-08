@@ -14,7 +14,6 @@ from .._base import (
     get_scheduler_minute, async_rate_limit, CacheItem,
     ApsPayloadSponsor, EventResultPoster, CLIENT_LOGGER, standard_response, get_session, event_batch_handler,
     cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, PROJECT_JSON_FILE, pdv,
-    AlertType, QqEmailReminder, Reminder
 )
 
 
@@ -320,5 +319,3 @@ async def batch_handle_pl_status_a2e(event_data_list: List[Dict], _erp: EventRes
     cache = await _aps.establish_production_cache(supplynos=supply_nos)
     tasks = [handle_pl_status_a2e(event_data=item, _aps=_aps) for item in event_data_list]
     await asyncio.gather(*tasks, return_exceptions=True)
-
-

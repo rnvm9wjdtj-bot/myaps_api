@@ -64,6 +64,7 @@ from pymysqlreplication.row_event import (
 
 from core.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_BINLOG_LISTENER, ENABLE_BINLOG_POSITION, MYAPS_ROOT_PASSWORD
 from globalobjects import logger as log_config
+from globalobjects.reminder import remind_manager, RemindType
 from apps.common.utils.thread_pool_manager import global_pool_manager
 import os
 import asyncio
@@ -864,12 +865,13 @@ class MySQLBinlogListener:
                 return parts[0], parts[1]  # database, table
         return None, full_table_name  # 无数据库信息，只有表名
 
-    def _send_alert(self, message: str, level: str = "warning"):
-        """发送告警通知
+    def _send_remind(self, message: str, level: str = "warning"):
+        """发送提示通知
         
-        可通过注册 Reminder 实例来自定义告警方式（邮件、短信等）
+        使用全局 RemindManager 发送提示，支持去重和频率限制
         """
         # 记录到日志
+        remind_type = RemindType.BINLOG_LISTENER_BREAK
         if level == "error":
             logger.error(f"🚨 告警: {message}")
         elif level == "warning":
@@ -877,36 +879,36 @@ class MySQLBinlogListener:
         else:
             logger.info(f"ℹ️ 通知: {message}")
         
-        # 通过 Reminder 发送告警
-        if self._alert_reminder:
-            try:
-                alert_content = {
-                    "level": level,
-                    "message": message,
-                    "timestamp": datetime.now().isoformat(),
-                    "source": "binlog_listener"
-                }
-                # 在事件循环中异步发送告警
-                if self._event_loop and self._event_loop.is_running():
-                    asyncio.run_coroutine_threadsafe(
-                        self._alert_reminder.remind(alert_content),
-                        self._event_loop
-                    )
-                else:
-                    # 如果事件循环未运行，同步执行
-                    import asyncio
-                    asyncio.run(self._alert_reminder.remind(alert_content))
-            except Exception as e:
-                logger.error(f"通过 Reminder 发送告警失败: {e}")
+        # 通过全局 RemindManager 发送提示（带去重和频率限制）
+        remind_content = {
+            "level": level,
+            "message": message,
+            "timestamp": datetime.now().isoformat(),
+            "source": "binlog_listener"
+        }
+        
+        # 在事件循环中异步发送提示
+        if self._event_loop and self._event_loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                remind_manager.trigger_remind(remind_type, remind_content),
+                self._event_loop
+            )
+        else:
+            # 如果事件循环未运行，同步执行
+            asyncio.create_task(remind_manager.trigger_remind(remind_type, remind_content))
 
-    def register_alert_handler(self, reminder):
-        """注册告警提醒器
+    def regist_reminder(self, reminder):
+        """注册提示提醒器到全局 RemindManager
         
         Args:
             reminder: Reminder 实例，需实现 async remind 方法
         """
-        self._alert_reminder = reminder
-        logger.info("✅ 告警提醒器已注册")
+        # 注册到全局 RemindManager，支持所有提示类型
+        remind_manager.register(reminder, [
+            RemindType.BINLOG_LISTENER_RESUME,
+            RemindType.BINLOG_LISTENER_BREAK,
+        ])
+        logger.info("✅ 提示提醒器已注册到全局 RemindManager")
 
     def get_status(self) -> Dict[str, Any]:
         """获取监控状态信息"""

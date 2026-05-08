@@ -8,7 +8,7 @@ import asyncio
 import os
 import time
 from typing import Dict, Any, Optional
-from globalobjects import logger as log_config, AlertType, alert_manager
+from globalobjects import logger as log_config, RemindType, remind_manager
 from .collectors import DatabaseCollector
 
 from .failed_operation_recovery import FailedOperationRecovery
@@ -138,20 +138,20 @@ class DatabaseHealthChecker:
         if unhealthy_count > 0:
             alert_key = f"db_unhealthy_{unhealthy_count}"
             current_time = time.time()
-            last_alert = self._last_alert_time.get(alert_key, 0)
+            last_remind = self._last_remind_time.get(alert_key, 0)
 
-            if current_time - last_alert >= self._alert_cooldown:
-                await alert_manager.trigger_remind(
-                    AlertType.DB_CONNECTION,
+            if current_time - last_remind >= self._remind_cooldown:
+                await remind_manager.trigger_remind(
+                    RemindType.DB_CONNECTION_BREAK,
                     f"数据库连接异常: {unhealthy_count} 个连接不健康"
                 )
-                self._last_alert_time[alert_key] = current_time
-                self._stats["alert_triggered"] += 1
-                logger.warning(f"数据库健康检查触发告警: {unhealthy_count} 个连接不健康")
+                self._last_remind_time[alert_key] = current_time
+                self._stats["remind_triggered"] += 1
+                logger.warning(f"数据库健康检查触发提示: {unhealthy_count} 个连接不健康")
             else:
-                self._stats["alert_blocked"] += 1
-                remaining = int(self._alert_cooldown - (current_time - last_alert))
-                logger.debug(f"数据库健康检查告警被冷却拦截，剩余 {remaining} 秒")
+                self._stats["remind_blocked"] += 1
+                remaining = int(self._remind_cooldown - (current_time - last_remind))
+                logger.debug(f"数据库健康检查提示被冷却拦截，剩余 {remaining} 秒")
 
 
 class FailedOperationRecoveryManager:

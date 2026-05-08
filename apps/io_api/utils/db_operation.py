@@ -13,7 +13,7 @@ from tortoise.models import Model as TortoiseBaseModel
 
 from apps.common.monitor.models import FailedOperation
 from core.settings import LOG_LEVEL, MYAPS_DB_SET, MYAPS_DBSET_LIST
-from globalobjects import AlertType, alert_manager
+from globalobjects import RemindType, remind_manager
 from globalobjects import logger as log_config
 from globalobjects.db_manager import DbManager, get_db_managers
 
@@ -373,8 +373,8 @@ def retry_on_connection_error(max_retries: int = 3, retry_delay: float = 1.0):
 
                             if error_summary_parts:
                                 error_summary = "; ".join(error_summary_parts)
-                                await alert_manager.trigger_remind(
-                                    AlertType.DB_CONNECTION,
+                                await remind_manager.trigger_remind(
+                                    RemindType.DB_CONNECTION_BREAK,
                                     {
                                         "operation_id": operation_id,
                                         "db_names": valid_dbs,

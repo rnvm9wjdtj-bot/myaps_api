@@ -18,7 +18,7 @@ from globalobjects.globalconst import OrderStatusEnum
 
 # ❗❗❗❗❗❗❗❗❗❗❗❗⬇️不要删掉，便于各项目文件引用 ❗❗❗❗❗❗❗❗❗❗❗❗
 from core.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET, PROJECT_JSON
-from globalobjects import logger as log_config, PROJECT_JSON_FILE, ProjectDefaultValues as pdv, AlertType, QqEmailReminder, Reminder
+from globalobjects import logger as log_config, PROJECT_JSON_FILE, ProjectDefaultValues as pdv, RemindType, QqEmailReminder, Reminder
 from apps.io_api.utils.common import standard_response
 from apps.io_api.utils.db_operation import db_delete, db_bupsert, call_dbprocdure, db_query, db_supsert, db_update_by_index
 from apps.io_api.models import TSupply

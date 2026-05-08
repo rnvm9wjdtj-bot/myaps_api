@@ -5,7 +5,7 @@ HTTP 指标采集器
 """
 
 from typing import Dict, Any, List
-from globalobjects import AlertType, alert_manager
+from globalobjects import RemindType, remind_manager
 from ..middleware import http_metrics_collector
 from ..storage import request_storage
 from ..models import is_internal_ip
@@ -136,7 +136,7 @@ class HTTPCollector:
             }
             await request_storage.save_request(request_data)
 
-        await alert_manager.trigger_remind(AlertType.REQUEST_SLOW, slow_requests)
+        await remind_manager.trigger_remind(RemindType.REQUEST_SLOW, slow_requests)
         return slow_requests
 
 
@@ -177,7 +177,7 @@ class HTTPCollector:
             }
             await request_storage.save_request(request_data)
 
-        await alert_manager.trigger_remind(AlertType.REQUEST_ERROR, error_requests)
+        await remind_manager.trigger_remind(RemindType.REQUEST_ERROR, error_requests)
         return error_requests
 
 

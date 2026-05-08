@@ -21,7 +21,7 @@ from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_
 from .._base import (
     get_scheduler_minute, cron_task, CLIENT_LOGGER, CLIENT_SESSION, PROJECT_JSON_FILE,
     ApsPayloadSponsor, EventResultPoster, get_session, CacheItem,
-    AlertType, async_rate_limit, event_batch_handler,
+    RemindType, async_rate_limit, event_batch_handler,
     TSupply, async_service_operation, batch_service_operation
 )
 
@@ -63,11 +63,11 @@ hacyxs_tplus_conn = get_tplus_conn()
 from .remind import bus_reminder, ops_reminder
 
 
-# ⬇️binlog监听告警注册
+# ⬇️binlog监听告警注册（统一使用全局AlertManager）
 from apps.data_opt.utils.binlog_listener import binlog_listener as bl
 
-bl.register_alert_handler(ops_reminder)
-CLIENT_LOGGER.info("binlog监听告警提醒器已注册")
+bl.regist_reminder(ops_reminder)
+CLIENT_LOGGER.info("binlog监听提示提醒器已注册到全局RemindManager")
 
 
 #################################################################################
