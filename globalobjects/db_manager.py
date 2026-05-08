@@ -859,7 +859,7 @@ class DbManager:
         execution_time = (datetime.now() - start_time).total_seconds()
         
         if description:
-            logger.info(f"{description} - 执行时间：{execution_time:.3f}秒")
+            logger.debug(f"{description} - 执行时间：{execution_time:.3f}秒")
         
         return (count if count else 0, data_list)
     

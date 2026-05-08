@@ -464,30 +464,30 @@ class OutboundHTTPCollector:
                     "is_internal": request_info["is_internal"],
                 }
 
-                # 直接使用同步方式保存到数据库，避免事件循环问题
+                # 使用主应用事件循环执行数据库保存操作
+                # 避免创建新的事件循环导致锁绑定错误
                 try:
-                    from tortoise import Tortoise
-                    from core.database import TORTOISE_ORM_CONFIG
+                    from apps.data_opt.utils.scheduler import scheduler_manager
 
-                    # 初始化Tortoise ORM
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-
-                    async def save_to_db():
-                        try:
-                            # 检查Tortoise是否已经初始化
-                            if not Tortoise._inited:
-                                await Tortoise.init(config=TORTOISE_ORM_CONFIG)
+                    # 获取主应用事件循环
+                    main_loop = scheduler_manager.main_loop
+                    if main_loop is not None and main_loop.is_running():
+                        # 使用 run_coroutine_threadsafe 将任务提交到主循环
+                        async def save_to_db():
                             await outbound_request_storage.save_request(request_data)
+                        
+                        future = asyncio.run_coroutine_threadsafe(save_to_db(), main_loop)
+                        # 等待任务完成（最多等待5秒）
+                        try:
+                            future.result(timeout=5)
+                        except asyncio.TimeoutError:
+                            print(f"保存对外请求到数据库超时")
                         except Exception as e:
-                            pass
                             print(f"保存对外请求到数据库失败: {e}")
-                        finally:
-                            # 不要关闭数据库连接，避免影响其他线程
-                            pass
-
-                    # 运行事件循环直到任务完成
-                    loop.run_until_complete(save_to_db())
+                    else:
+                        # 如果主循环不可用，将请求加入批量队列等待后续处理
+                        if len(self._pending_requests) < 5000:
+                            self._pending_requests.append(request_data)
                 except Exception as e:
                     # 记录异常，确保即使发生异常也不会影响主流程
                     print(f"同步保存对外请求到数据库失败: {e}")

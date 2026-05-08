@@ -96,3 +96,6 @@ storage/**/
 
 migrations/
 migrations/**/
+
+offline_packages/
+offline_packages/**/
