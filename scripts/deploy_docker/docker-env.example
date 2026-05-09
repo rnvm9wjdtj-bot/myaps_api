@@ -1,0 +1,24 @@
+# 应用配置
+PORT=8000
+LOG_LEVEL=INFO
+TZ=Asia/Shanghai
+
+# 功能开关
+ENABLE_BINLOG_POSITION=false
+TURNON_BINLOG_LISTENER=false
+TRUNON_SCHEDULER=false
+
+# 项目配置（多租户）
+PROJECT_JSON=dev
+
+# Redis 配置（Docker 内）
+REDIS_HOST=redis
+REDIS_PORT=6379
+
+# 数据库配置（远程 MySQL）
+MYAPS_DB_HOST=your_mysql_host
+MYAPS_DB_PORT=3306
+MYAPS_DB_USER=your_username
+MYAPS_DB_PASSWORD=your_password
+MYAPS_DB_SET=aps1,aps2
+MYAPS_MAIN_DB=aps1

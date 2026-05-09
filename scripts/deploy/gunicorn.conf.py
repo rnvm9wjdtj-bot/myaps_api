@@ -4,7 +4,7 @@ import multiprocessing
 
 # 设置工作目录为项目根目录
 chdir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
+working_dir = '/app'
 # 进程数
 workers = min(multiprocessing.cpu_count(), 4)
 worker_class = "uvicorn.workers.UvicornWorker"

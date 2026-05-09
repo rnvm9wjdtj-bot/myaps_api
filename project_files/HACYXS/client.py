@@ -41,27 +41,29 @@ _AUTO_APPROVE_PR = True   # 自动审批请购单
 
 
 # 延迟初始化，初始为 None
-hacyxs_tplus_conn = None
+# hacyxs_tplus_conn = None
+hacyxs_tplus_conn = YonyouTplusConnection()
+hacyxs_tplus_conn.register_source([TplusStock, TplusMo, TplusRs, TplusPr])
 
-def get_tplus_conn():
-    """获取TplusConnection实例（延迟初始化）"""
-    global hacyxs_tplus_conn
-    if hacyxs_tplus_conn is None:
-        hacyxs_tplus_conn = YonyouTplusConnection()
-        # 异步预热连接池（延迟到事件循环启动后执行）
-        hacyxs_tplus_conn.register_source([TplusStock, TplusMo, TplusRs, TplusPr])
-    return hacyxs_tplus_conn
+# def get_tplus_conn():
+#     """获取TplusConnection实例（延迟初始化）"""
+#     global hacyxs_tplus_conn
+#     if hacyxs_tplus_conn is None:
+#         hacyxs_tplus_conn = YonyouTplusConnection()
+#         # 异步预热连接池（延迟到事件循环启动后执行）
+#         hacyxs_tplus_conn.register_source([TplusStock, TplusMo, TplusRs, TplusPr])
+#     return hacyxs_tplus_conn
 
-def warm_up_tplus_conn():
-    """预热连接池（在事件循环启动后调用）"""
-    import asyncio
-    if hacyxs_tplus_conn is not None:
-        try:
-            loop = asyncio.get_running_loop()
-            asyncio.create_task(hacyxs_tplus_conn._warm_up_connection(connection_count=5))
-        except RuntimeError:
-            # 没有运行的事件循环，跳过预热
-            pass
+# def warm_up_tplus_conn():
+#     """预热连接池（在事件循环启动后调用）"""
+#     import asyncio
+#     if hacyxs_tplus_conn is not None:
+#         try:
+#             loop = asyncio.get_running_loop()
+#             asyncio.create_task(hacyxs_tplus_conn._warm_up_connection(connection_count=5))
+#         except RuntimeError:
+#             # 没有运行的事件循环，跳过预热
+#             pass
 #################################################################################
 # ⬇️ 通知相关
 #################################################################################

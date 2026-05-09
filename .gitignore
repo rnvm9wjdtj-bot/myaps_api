@@ -99,3 +99,6 @@ migrations/**/
 
 offline_packages/
 offline_packages/**/
+
+docker_images/
+docker_images/**/
