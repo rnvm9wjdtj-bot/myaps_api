@@ -75,6 +75,7 @@ echo 8. Clean log files
 echo 9. View help
 echo A. Health check (HTTP endpoint)
 echo B. Rolling update (graceful restart)
+echo C. Install service (offline mode)
 echo 0. Exit
 echo.
 echo ============================================================
@@ -102,6 +103,7 @@ if "%choice%"=="8" goto :CLEAN_LOGS
 if "%choice%"=="9" goto :HELP
 if /i "%choice%"=="A" goto :HEALTH_CHECK
 if /i "%choice%"=="B" goto :ROLLING_UPDATE
+if /i "%choice%"=="C" goto :INSTALL_OFFLINE
 if "%choice%"=="0" goto :EXIT
 
 echo Invalid choice: [%choice%]
@@ -297,7 +299,7 @@ echo                        Help information
 echo ============================================================
 echo.
 
-echo 1. Install service: Install service as Windows system service
+echo 1. Install service: Install service as Windows system service (online)
 echo 2. Start service: Start the installed service
 echo 3. Stop service: Stop the running service
 echo 4. Restart service: Restart the service
@@ -308,6 +310,7 @@ echo 8. Clean logs: Clean old log files
 echo 9. View help: Display this help
 echo A. Health check: Perform HTTP health check
 echo B. Rolling update: Graceful restart for updates
+echo C. Install offline: Install service using local packages (no internet)
 echo 0. Exit: Exit the tool
 echo.
 pause
@@ -388,6 +391,108 @@ echo Step 2: Starting service...
 echo Step 3: Service restarted!
 echo.
 echo Rolling update completed.
+echo.
+pause
+goto :MENU
+
+:INSTALL_OFFLINE
+cls
+echo ============================================================
+echo               Install service (offline mode)
+echo ============================================================
+echo.
+echo Note: This mode uses local packages for offline deployment.
+echo       Ensure offline packages exist in: offline_packages\windows
+echo.
+
+%PYTHON_EXE% --version >nul 2>&1
+if %errorLevel% neq 0 (
+    echo Error: Python not found!
+    pause
+    goto :MENU
+)
+
+set "OFFLINE_PACKAGES_DIR=%PROJECT_ROOT%\offline_packages\windows"
+if not exist "%OFFLINE_PACKAGES_DIR%" (
+    echo Error: Offline packages directory not found!
+    echo Expected: %OFFLINE_PACKAGES_DIR%
+    pause
+    goto :MENU
+)
+
+if not exist "%PROJECT_ROOT%\requirements.txt" (
+    echo Error: requirements.txt not found!
+    pause
+    goto :MENU
+)
+
+echo [1/4] Creating virtual environment...
+if exist "%VENV_DIR%" (
+    echo      Removing existing virtual environment...
+    rmdir /s /q "%VENV_DIR%"
+)
+%PYTHON_EXE% -m venv "%VENV_DIR%"
+if %errorLevel% neq 0 (
+    echo Error: Failed to create virtual environment!
+    pause
+    goto :MENU
+)
+echo      Virtual environment created successfully
+
+echo.
+echo [2/4] Installing dependencies from local packages...
+echo      This may take a few minutes...
+"%VENV_DIR%\Scripts\pip.exe" install --no-index --find-links="%OFFLINE_PACKAGES_DIR%" -r "%PROJECT_ROOT%\requirements.txt"
+if %errorLevel% neq 0 (
+    echo Error: Failed to install dependencies!
+    echo Please check if all required packages exist in offline_packages\windows
+    pause
+    goto :MENU
+)
+echo      Dependencies installed successfully
+
+echo.
+echo [3/4] Installing Gunicorn and Uvicorn...
+"%VENV_DIR%\Scripts\pip.exe" install --no-index --find-links="%OFFLINE_PACKAGES_DIR%" gunicorn uvicorn[standard]
+if %errorLevel% neq 0 (
+    echo Warning: Failed to install Gunicorn/Uvicorn from offline packages!
+    echo Trying online installation...
+    "%VENV_DIR%\Scripts\pip.exe" install gunicorn uvicorn[standard]
+    if %errorLevel% neq 0 (
+        echo Error: Failed to install Gunicorn/Uvicorn!
+        pause
+        goto :MENU
+    )
+)
+echo      Gunicorn and Uvicorn installed successfully
+
+if not exist "%PROJECT_ROOT%\logs" (
+    mkdir "%PROJECT_ROOT%\logs"
+)
+
+echo.
+echo [4/4] Configuring Windows service...
+set "RUN_PS1=%SCRIPT_DIR%..\run.ps1"
+
+"%NSSM_EXE%" install "%SERVICE_NAME%" powershell.exe
+"%NSSM_EXE%" set "%SERVICE_NAME%" AppParameters "-ExecutionPolicy Bypass -NoProfile -File %RUN_PS1% -Mode service"
+"%NSSM_EXE%" set "%SERVICE_NAME%" AppDirectory "%PROJECT_ROOT%"
+"%NSSM_EXE%" set "%SERVICE_NAME%" Start SERVICE_AUTO_START
+"%NSSM_EXE%" set "%SERVICE_NAME%" AppStdout "%PROJECT_ROOT%\logs\nssm_stdout.log"
+"%NSSM_EXE%" set "%SERVICE_NAME%" AppStderr "%PROJECT_ROOT%\logs\nssm_stderr.log"
+"%NSSM_EXE%" set "%SERVICE_NAME%" AppRestartDelay 60000
+"%NSSM_EXE%" set "%SERVICE_NAME%" AppThrottle 300000
+"%NSSM_EXE%" set "%SERVICE_NAME%" AppExit Default Restart
+"%NSSM_EXE%" set "%SERVICE_NAME%" AppExit 1 Restart
+"%NSSM_EXE%" set "%SERVICE_NAME%" AppExit 0 Restart
+
+echo.
+echo Service installed successfully in offline mode!
+echo Service name: %SERVICE_NAME%
+echo.
+echo Note: If you encounter dependency issues, please ensure:
+echo   1. All required .whl packages are in offline_packages\windows
+echo   2. Python version matches (Python 3.12 recommended)
 echo.
 pause
 goto :MENU
