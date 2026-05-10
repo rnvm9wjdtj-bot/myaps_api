@@ -1,0 +1,65 @@
+# MyAPS API Docker Compose 配置
+# 使用方法: docker-compose up -d
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: myaps_redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - myaps_network
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: myaps_api:latest
+    container_name: myaps_api
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    env_file:
+      - .env
+    environment:
+      - REDIS_HOST=redis
+      - GUNICORN_BIND=0.0.0.0:8000
+      - APP_ROOT=/app
+    volumes:
+      - ./logs:/app/logs
+      - ./project_files:/app/project_files
+      - ./static:/app/static
+      - ./storage:/app/storage
+      - ./apps:/app/apps
+      - ./core:/app/core
+      - ./globalobjects:/app/globalobjects
+      - ./scripts:/app/scripts
+      - ./main.py:/app/main.py
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    networks:
+      - myaps_network
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  myaps_network:
+    driver: bridge

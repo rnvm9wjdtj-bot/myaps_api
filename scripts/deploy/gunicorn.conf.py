@@ -2,13 +2,17 @@
 import os
 import multiprocessing
 
-# 设置工作目录为项目根目录
-chdir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-working_dir = '/app'
+# 设置工作目录
+# Docker环境下使用/app，否则基于脚本位置计算
+if os.path.exists('/app/main.py'):
+    chdir = '/app'
+else:
+    chdir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 # 进程数
 workers = min(multiprocessing.cpu_count(), 4)
 worker_class = "uvicorn.workers.UvicornWorker"
-bind = "127.0.0.1:8000"
+bind = os.getenv("GUNICORN_BIND", "127.0.0.1:8000")
 timeout = 30
 
 # 日志配置
