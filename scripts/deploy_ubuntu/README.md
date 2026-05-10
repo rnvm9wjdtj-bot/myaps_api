@@ -394,3 +394,141 @@ sed -i 's/PROJECT_DIR=JYHDXS/PROJECT_DIR=CHANGDE/' .env
 - [ ] 执行 `deploy.sh -d` 部署成功（首次部署）
 - [ ] 执行 `deploy.sh -d -s` 部署成功（增量更新）
 - [ ] 服务状态正常（`systemctl --user status MyAPS_API` 或 `systemctl status MyAPS_API`）
+
+## 🔄 无外网环境代码同步指南
+
+### 首次获取代码：使用 Git Bundle 传输（推荐）
+
+#### 步骤1：在外网机器上打包
+```bash
+# 从远程仓库拉取最新代码
+git clone 远程仓库地址 myaps_api
+cd myaps_api
+
+# 打包成完整的 bundle 文件（包含所有分支和历史）
+git bundle create myaps_api.bundle --all
+```
+
+#### 步骤2：传输到内网机器
+使用 U 盘、移动硬盘或其他物理介质将 `myaps_api.bundle` 传输到内网服务器。
+
+#### 步骤3：在内网机器上从 bundle 创建仓库
+```bash
+# 从 bundle 文件克隆仓库
+git clone myaps_api.bundle myaps_api
+cd myaps_api
+
+# 验证仓库状态
+git log --oneline -10
+```
+
+---
+
+### 更新代码：方法1 - 使用 Git Bundle 增量更新（推荐）
+
+#### 步骤1：在外网机器上准备
+```bash
+# 进入外网仓库目录
+cd myaps_api
+
+# 拉取最新代码
+git pull origin master
+
+# 记录上次同步的 commit（或使用标签）
+# 假设上次同步的 commit 是 abc1234
+git bundle create update.bundle abc1234..HEAD
+
+# 或者打包所有分支
+git bundle create update.bundle --all
+```
+
+#### 步骤2：传输到内网机器
+将 `update.bundle` 传输到内网服务器。
+
+#### 步骤3：在内网机器上更新
+```bash
+cd /opt/myaps_api/myaps_api
+
+# 从 bundle 获取更新
+git fetch /path/to/update.bundle
+
+# 合并到本地分支
+git merge FETCH_HEAD
+
+# 或者直接 pull
+git pull /path/to/update.bundle master
+```
+
+---
+
+### 更新代码：方法2 - 使用补丁文件 (Patch)
+
+适合小范围更新，文件体积小。
+
+#### 步骤1：在外网机器上生成补丁
+```bash
+cd myaps_api
+git pull origin master
+
+# 生成从某个 commit 到最新的补丁
+# 方法A：生成单个补丁文件
+git format-patch start_commit..HEAD --stdout > updates.patch
+
+# 方法B：生成多个独立补丁文件
+git format-patch -n start_commit..HEAD
+```
+
+#### 步骤2：传输补丁文件
+将 `updates.patch` 或多个 `.patch` 文件传输到内网服务器。
+
+#### 步骤3：在内网机器上应用补丁
+```bash
+cd /opt/myaps_api/myaps_api
+
+# 方法A：应用单个补丁文件
+git apply updates.patch
+
+# 方法B：使用 git am 应用（会保留提交信息）
+git am *.patch
+
+# 如果有冲突，解决后继续
+git am --continue
+```
+
+---
+
+### 推荐工作流程
+
+1. **在外网机器**：
+   - 定期从远程仓库拉取代码
+   - 使用 Git Bundle 打包（首次用完整 bundle，后续用增量 bundle）
+
+2. **物理传输**：
+   - 通过 U 盘/移动硬盘传输 bundle 文件到内网
+
+3. **在内网机器**：
+   - 从 bundle 更新本地仓库
+   - 执行增量部署：`./scripts/deploy_ubuntu/deploy.sh -d -s`
+
+---
+
+### 实用技巧
+
+#### 使用标签记录同步点
+```bash
+# 在外网机器：每次打包前打标签
+git tag -a sync_20260510 -m "Sync point 2026-05-10"
+git push origin sync_20260510
+
+# 下次打包时使用标签
+git bundle create update.bundle sync_20260510..HEAD
+```
+
+#### 验证 bundle 完整性
+```bash
+# 验证 bundle 文件是否有效
+git bundle verify myaps_api.bundle
+
+# 查看 bundle 中包含的引用
+git bundle list-heads myaps_api.bundle
+```
