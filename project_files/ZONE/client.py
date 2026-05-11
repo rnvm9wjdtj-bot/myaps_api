@@ -14,11 +14,12 @@ from .._base import (
 #################################################################################
 hap_conn = None
 
-hap_conn = HapConnection(
-    base_url='https://api.mingdao.com',
-    app_key='...',
-    sign='...'
-)
+# 延迟初始化，避免启动时导入错误
+# hap_conn = HapConnection(
+#     base_url='https://api.mingdao.com',
+#     app_key='...',
+#     sign='...'
+# )
 
 #################################################################################
 # ⬇️ 项目可复用逻辑

@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>物料数据清洗管理</title>
+    <!-- Bootstrap CSS (CDN) -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/mds/css/custom.css">
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/mds">数据清洗管理系统</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/mds/material">物料</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/mds/workcenter">工作中心</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/mds/mat-ver">产线版本</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/mds/mat-wc">工艺路线</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/mds/mat-wc-bom">BOM</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/mds/mold">模具</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/mds/mat-wc-mold">机台模具</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <!-- 页面标题 -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h4>物料数据清洗管理</h4>
+            </div>
+        </div>
+
+        <!-- 状态统计卡片 -->
+        <div class="row mb-4">
+            <div class="col-12" id="statusCardContainer"></div>
+        </div>
+
+        <!-- 操作按钮区域 -->
+        <div class="row mb-3">
+            <div class="col-md-6">
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#uploadModal">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                        <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                        <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
+                    </svg>
+                    导入数据
+                </button>
+                <button class="btn btn-success" id="validateBtn">触发校验</button>
+                <button class="btn btn-info" id="syncBtn">同步到正式表</button>
+                <button class="btn btn-outline-secondary" id="validateAllBtn">校验所有表</button>
+                <button class="btn btn-outline-secondary" id="syncAllBtn">同步所有表</button>
+            </div>
+            <div class="col-md-6 text-end">
+                <button class="btn btn-outline-primary" onclick="downloadTemplate('t_material')">下载模板</button>
+            </div>
+        </div>
+
+        <!-- 筛选区域 -->
+        <div class="filter-bar">
+            <div class="row">
+                <div class="col-md-3">
+                    <select class="form-select" id="statusFilter">
+                        <option value="">全部状态</option>
+                        <option value="pending">待处理</option>
+                        <option value="validated">校验通过</option>
+                        <option value="rejected">校验失败</option>
+                        <option value="synced">已同步</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <select class="form-select" id="sourceFilter">
+                        <option value="">全部来源</option>
+                        <option value="ERP">ERP</option>
+                        <option value="MES">MES</option>
+                        <option value="PLM">PLM</option>
+                        <option value="excel">Excel</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <input type="text" class="form-control" id="keywordInput" placeholder="搜索物料号...">
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-primary" id="searchBtn">查询</button>
+                    <button class="btn btn-outline-secondary" id="resetBtn">重置</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 数据列表区域 -->
+        <div class="data-table-container" id="tableContainer"></div>
+    </div>
+
+    <!-- 上传弹窗 -->
+    <div class="modal fade" id="uploadModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">导入Excel数据</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">去重策略</label>
+                        <select class="form-select" id="dedupStrategy">
+                            <option value="skip">跳过重复（推荐）</option>
+                            <option value="overwrite">覆盖重复</option>
+                            <option value="reject">拒绝重复</option>
+                        </select>
+                    </div>
+                    <div class="file-upload-area" id="uploadArea">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" class="text-muted mb-3" viewBox="0 0 16 16">
+                            <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                            <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
+                        </svg>
+                        <p class="mb-0">点击或拖拽文件到此处上传</p>
+                        <small class="text-muted">支持 .xlsx, .xls, .csv 格式</small>
+                        <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display: none;">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" id="uploadBtn">上传</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 详情弹窗 -->
+    <div class="modal fade" id="detailModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="detailTitle">记录详情</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="errorContainer"></div>
+                    <div id="detailContent"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-primary" id="editBtn">编辑</button>
+                    <button type="button" class="btn btn-outline-danger" id="deleteBtn">删除</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑弹窗 -->
+    <div class="modal fade" id="editModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">编辑记录</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="editForm"></form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" id="saveBtn">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS (CDN) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/mds/js/common.js"></script>
+    <script src="/static/mds/js/data-table.js"></script>
+    <script src="/static/mds/js/status-card.js"></script>
+    <script src="/static/mds/js/material.js"></script>
+</body>
+</html>

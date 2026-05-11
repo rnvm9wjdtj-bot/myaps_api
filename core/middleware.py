@@ -11,6 +11,10 @@ API_KEY = os.getenv("API_KEY", "")
 DOC_PATHS = ["/docs", "/redoc", "/openapi.json"]
 DOC_PREFIXES = ["/static/swagger"]
 
+# MDS页面路径（不需要API Key验证）
+MDS_PATHS = ["/mds", "/mds/material", "/mds/workcenter", "/mds/mat-ver", 
+             "/mds/mat-wc", "/mds/mat-wc-bom", "/mds/mold", "/mds/mat-wc-mold"]
+
 # 缓存已注册的路由信息，避免每次请求都重新解析
 REGISTERED_ROUTES = []
 
@@ -207,6 +211,10 @@ def create_security_middleware():
         url_path = request.url.path
         request_method = request.method
         client_ip = request.client.host
+        
+        # MDS页面路径直接放行
+        if url_path in MDS_PATHS:
+            return await call_next(request)
         
         # 检查是否为文档相关路径（只能在内网访问）
         is_doc_path = url_path in DOC_PATHS or any(url_path.startswith(prefix) for prefix in DOC_PREFIXES)

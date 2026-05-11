@@ -21,6 +21,50 @@ load_dotenv(os.getenv('ENV_FILE', os.path.join(BASE_DIR, '.env')), override=Fals
 # 时区，默认东八区
 TIMEZONE = os.getenv("TIMEZONE", "+8")
 
+def get_timezone_name(offset_str):
+    """
+    将时区偏移量字符串（如 +8, -5）转换为时区名称（如 Asia/Shanghai）
+    
+    Args:
+        offset_str: 时区偏移量字符串，格式为 "+8" 或 "-5"
+    
+    Returns:
+        时区名称，如 "Asia/Shanghai"
+    """
+    offset_map = {
+        "-12": "Etc/GMT+12",
+        "-11": "Etc/GMT+11",
+        "-10": "Pacific/Honolulu",
+        "-9": "America/Anchorage",
+        "-8": "America/Los_Angeles",
+        "-7": "America/Denver",
+        "-6": "America/Chicago",
+        "-5": "America/New_York",
+        "-4": "America/Halifax",
+        "-3": "America/Argentina/Buenos_Aires",
+        "-2": "Atlantic/South_Georgia",
+        "-1": "Atlantic/Azores",
+        "+0": "Europe/London",
+        "+1": "Europe/Paris",
+        "+2": "Europe/Helsinki",
+        "+3": "Europe/Moscow",
+        "+4": "Asia/Dubai",
+        "+5": "Asia/Karachi",
+        "+5.5": "Asia/Kolkata",
+        "+6": "Asia/Dhaka",
+        "+7": "Asia/Bangkok",
+        "+8": "Asia/Shanghai",
+        "+9": "Asia/Tokyo",
+        "+9.5": "Australia/Adelaide",
+        "+10": "Australia/Sydney",
+        "+11": "Pacific/Auckland",
+        "+12": "Pacific/Fiji",
+    }
+    
+    return offset_map.get(offset_str, "Asia/Shanghai")
+
+TIMEZONE_NAME = get_timezone_name(TIMEZONE)
+
 
 # 数据库监控开关，默认关闭
 TURNON_BINLOG_LISTENER = os.getenv("TURNON_BINLOG_LISTENER", "False").lower().strip() == "true"

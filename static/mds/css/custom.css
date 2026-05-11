@@ -1,0 +1,169 @@
+/* 自定义样式 */
+
+:root {
+    --primary-color: #0d6efd;
+    --success-color: #198754;
+    --warning-color: #ffc107;
+    --danger-color: #dc3545;
+    --info-color: #0dcaf0;
+}
+
+body {
+    background-color: #f5f5f5;
+}
+
+.navbar-brand {
+    font-weight: bold;
+}
+
+.status-card {
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.status-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.status-card.active {
+    border: 2px solid var(--primary-color);
+}
+
+.status-card .card-body {
+    padding: 1rem;
+}
+
+.status-number {
+    font-size: 2rem;
+    font-weight: bold;
+}
+
+.status-label {
+    font-size: 0.875rem;
+    color: #666;
+}
+
+.table th {
+    background-color: #f8f9fa;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.table td {
+    vertical-align: middle;
+}
+
+.badge-pending {
+    background-color: var(--warning-color);
+    color: #000;
+}
+
+.badge-validated {
+    background-color: var(--success-color);
+}
+
+.badge-rejected {
+    background-color: var(--danger-color);
+}
+
+.badge-synced {
+    background-color: var(--info-color);
+}
+
+.action-btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255,255,255,0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}
+
+.file-upload-area {
+    border: 2px dashed #ccc;
+    border-radius: 8px;
+    padding: 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.file-upload-area:hover {
+    border-color: var(--primary-color);
+    background-color: #f8f9fa;
+}
+
+.file-upload-area.dragover {
+    border-color: var(--primary-color);
+    background-color: #e7f1ff;
+}
+
+.pagination {
+    margin-bottom: 0;
+}
+
+.filter-bar {
+    background-color: #fff;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.data-table-container {
+    background-color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.toast-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 9999;
+}
+
+.modal-body pre {
+    max-height: 300px;
+    overflow-y: auto;
+    background-color: #f8f9fa;
+    padding: 1rem;
+    border-radius: 4px;
+}
+
+.error-detail {
+    background-color: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 4px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.error-detail .error-type {
+    font-weight: bold;
+    color: var(--danger-color);
+}
+
+.error-detail .error-field {
+    color: #666;
+}
+
+.error-detail .error-message {
+    margin-top: 0.5rem;
+}
+
+.error-detail .suggestion {
+    margin-top: 0.5rem;
+    font-style: italic;
+    color: #198754;
+}

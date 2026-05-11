@@ -8,7 +8,8 @@ from tortoise.contrib.fastapi import register_tortoise
 from core.settings import (
     BASE_DIR, SQLITE_FILE,
     MYAPS_MAIN_DB, MYAPS_DBSET_LIST, MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD,
-    THIS_DB_NAME, THIS_DB_HOST, THIS_DB_PORT, THIS_DB_USER, THIS_DB_PASSWORD
+    THIS_DB_NAME, THIS_DB_HOST, THIS_DB_PORT, THIS_DB_USER, THIS_DB_PASSWORD,
+    TIMEZONE_NAME
 )
 from globalobjects import logger as log_config
 
@@ -95,12 +96,13 @@ if THIS_DB_NAME:
             "user": THIS_DB_USER,
             "password": THIS_DB_PASSWORD,
             "database": THIS_DB_NAME,
+            "server_settings": {"TimeZone": TIMEZONE_NAME},
         },
         "min_size": 3,  # 保持最小连接数
         "max_size": 10,  # 最大连接数
     }
     TORTOISE_ORM_CONFIG["apps"]["data_opt_models"] = {
-        "models": ["apps.data_opt.models", "aerich.models"],
+        "models": ["apps.data_opt.staging_models", "aerich.models"],
         "default_connection": THIS_DB_NAME,
     }
 

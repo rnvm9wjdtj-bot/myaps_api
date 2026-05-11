@@ -49,6 +49,99 @@ cd scripts/deploy_docker
 | `GUNICORN_BIND` | `0.0.0.0:8000` | 容器内监听 |
 | `APP_ROOT` | `/app` | 容器工作目录 |
 
+## PostgreSQL 自有数据库安装（可选）
+
+项目支持自有 PostgreSQL 数据库（THIS_DB），以下为手动安装步骤。
+
+### Ubuntu/Debian 安装
+
+```bash
+# 1. 安装 PostgreSQL
+sudo apt update
+sudo apt install -y postgresql postgresql-contrib
+
+# 2. 启动服务
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+
+# 3. 创建数据库和用户
+sudo -u postgres psql
+
+# 在 psql 中执行
+CREATE USER myaps_user WITH PASSWORD 'your_password';
+CREATE DATABASE myaps_db OWNER myaps_user;
+GRANT ALL PRIVILEGES ON DATABASE myaps_db TO myaps_user;
+\q
+
+# 4. 配置远程访问（如需要）
+sudo vim /etc/postgresql/*/main/postgresql.conf
+# 修改: listen_addresses = 'localhost' -> listen_addresses = '*'
+
+sudo vim /etc/postgresql/*/main/pg_hba.conf
+# 添加: host all all 0.0.0.0/0 md5
+
+# 5. 重启服务
+sudo systemctl restart postgresql
+
+# 6. 验证连接
+psql -h localhost -U myaps_user -d myaps_db
+```
+
+### CentOS/RHEL 安装
+
+```bash
+# 1. 安装 PostgreSQL
+sudo yum install -y postgresql-server postgresql-contrib
+sudo postgresql-setup initdb
+
+# 2. 启动服务
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+
+# 3-6. 创建用户和配置（同Ubuntu）
+```
+
+### Docker 方式安装 PostgreSQL
+
+```bash
+# 启动 PostgreSQL 容器
+docker run -d \
+  --name myaps_postgres \
+  -e POSTGRES_USER=myaps_user \
+  -e POSTGRES_PASSWORD=your_password \
+  -e POSTGRES_DB=myaps_db \
+  -p 5432:5432 \
+  -v postgres_data:/var/lib/postgresql/data \
+  postgres:15-alpine
+
+# 查看连接信息
+docker inspect myaps_postgres | grep IPAddress
+```
+
+### 配置应用连接
+
+编辑 `.env` 文件：
+
+```ini
+# 服务自有数据库配置
+THIS_DB_HOST=localhost          # 或容器IP / 远程IP
+THIS_DB_PORT=5432
+THIS_DB_USER=myaps_user
+THIS_DB_PASSWORD=your_password
+THIS_DB_NAME=myaps_db
+```
+
+### 不使用自有数据库
+
+如不需要自有数据库，保持 `.env` 中相关配置为空或注释即可：
+
+```ini
+# THIS_DB_HOST=
+# THIS_DB_NAME=
+```
+
+应用会自动跳过自有数据库初始化。
+
 ## 数据持久化
 
 以下目录已配置持久化挂载：
