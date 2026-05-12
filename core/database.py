@@ -87,7 +87,6 @@ TORTOISE_ORM_CONFIG = {
 }
 
 if THIS_DB_NAME:
-    # 创建PostgreSQL连接配置
     connections[THIS_DB_NAME] = {
         "engine": "tortoise.backends.asyncpg",
         "credentials": {
@@ -98,8 +97,9 @@ if THIS_DB_NAME:
             "database": THIS_DB_NAME,
             "server_settings": {"TimeZone": TIMEZONE_NAME},
         },
-        "min_size": 3,  # 保持最小连接数
-        "max_size": 10,  # 最大连接数
+        "min_size": 3,
+        "max_size": 10,
+        "use_tz": True,
     }
     TORTOISE_ORM_CONFIG["apps"]["data_opt_models"] = {
         "models": ["apps.data_opt.staging_models", "aerich.models"],

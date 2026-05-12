@@ -82,13 +82,25 @@ function createToastContainer() {
 function formatDate(dateStr) {
     if (!dateStr) return '-';
     const date = new Date(dateStr);
-    return date.toLocaleString('zh-CN', {
+    return date.toLocaleDateString('zh-CN', {
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
         hour: '2-digit',
         minute: '2-digit'
     });
+}
+
+function formatDateTime(dateStr) {
+    if (!dateStr) return '-';
+    const date = new Date(dateStr);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hour = String(date.getHours()).padStart(2, '0');
+    const minute = String(date.getMinutes()).padStart(2, '0');
+    const second = String(date.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
 }
 
 function formatStatus(status) {
@@ -112,6 +124,56 @@ function showLoading() {
 function hideLoading() {
     const overlay = document.getElementById('loadingOverlay');
     if (overlay) overlay.remove();
+}
+
+function showProgress(title, total) {
+    let progressOverlay = document.getElementById('progressOverlay');
+    if (!progressOverlay) {
+        progressOverlay = document.createElement('div');
+        progressOverlay.id = 'progressOverlay';
+        progressOverlay.className = 'progress-overlay';
+        progressOverlay.innerHTML = `
+            <div class="progress-container">
+                <div class="progress-title">${title}</div>
+                <div class="progress-bar-wrapper">
+                    <div class="progress-bar" style="width: 0%"></div>
+                </div>
+                <div class="progress-text">0/${total}</div>
+            </div>
+        `;
+        document.body.appendChild(progressOverlay);
+    } else {
+        progressOverlay.querySelector('.progress-title').textContent = title;
+        progressOverlay.querySelector('.progress-text').textContent = `0/${total}`;
+        progressOverlay.querySelector('.progress-bar').style.width = '0%';
+    }
+}
+
+function updateProgress(current, total, text) {
+    const progressOverlay = document.getElementById('progressOverlay');
+    if (progressOverlay) {
+        const percent = Math.min(100, Math.round((current / total) * 100));
+        progressOverlay.querySelector('.progress-bar').style.width = percent + '%';
+        progressOverlay.querySelector('.progress-text').textContent = text || `${current}/${total}`;
+    }
+}
+
+function setProgressIndeterminate(isIndeterminate) {
+    const progressOverlay = document.getElementById('progressOverlay');
+    if (progressOverlay) {
+        const progressBar = progressOverlay.querySelector('.progress-bar');
+        if (isIndeterminate) {
+            progressBar.classList.add('progress-bar-indeterminate');
+            progressBar.style.width = '100%';
+        } else {
+            progressBar.classList.remove('progress-bar-indeterminate');
+        }
+    }
+}
+
+function hideProgress() {
+    const progressOverlay = document.getElementById('progressOverlay');
+    if (progressOverlay) progressOverlay.remove();
 }
 
 function escapeHtml(text) {

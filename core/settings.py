@@ -86,15 +86,8 @@ SQLITE_FILE = os.getenv("SQLITE_FILE", "").replace(".sqlite3", "").strip() or "l
 
 PROTOCOL = os.getenv("PROTOCOL", "http://")
 HOST = os.getenv("HOST", "0.0.0.0")
-BASE_PORT = int(os.getenv("PORT", 8000))
-START_MODE = os.getenv("START_MODE", "")
+PORT = int(os.getenv("PORT", 8000))
 
-if START_MODE == "direct":
-    PORT = BASE_PORT + 2
-else:
-    PORT = BASE_PORT
-
-# 使用127.0.0.1代替localhost，避免DNS解析问题，提高连接稳定性
 THIS_BASE_URL = PROTOCOL + "127.0.0.1:" + str(PORT)
 
 

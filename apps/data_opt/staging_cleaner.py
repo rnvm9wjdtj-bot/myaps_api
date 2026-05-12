@@ -3,7 +3,7 @@
 包含字段校验、关联校验、数据转换等功能
 """
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, Tuple, Type
 from enum import Enum
 
@@ -19,9 +19,94 @@ from apps.data_opt.staging_models import (
 from apps.io_api.models import (
     TMaterial, TWorkcenter, TMatVer, TMatWc, TMatWcBom, TMold, TMatWcMold
 )
-from globalobjects import logger as log_config
+from apps.io_api.schemas import AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom, AcceptMold, AcceptMatWcMold
+from globalobjects import logger as log_config, globalconst as gc
 
 logger = log_config.get_logger(__name__)
+
+
+NONE_AND_EMPTY = {None, ""}
+
+
+SCHEMA_DEFAULTS = {
+    "t_material": {
+        "plant": AcceptMaterial.model_fields["plant"].default,
+        "planner": AcceptMaterial.model_fields["planner"].default,
+        "fifo": AcceptMaterial.model_fields["fifo"].default,
+        "expday": AcceptMaterial.model_fields["expday"].default,
+        "phantom": AcceptMaterial.model_fields["phantom"].default,
+        "phantommin": AcceptMaterial.model_fields["phantommin"].default,
+        "firmday": AcceptMaterial.model_fields["firmday"].default,
+        "daygap": AcceptMaterial.model_fields["daygap"].default,
+        "candelay": AcceptMaterial.model_fields["candelay"].default,
+        "lotsize": AcceptMaterial.model_fields["lotsize"].default,
+        "lotfix": AcceptMaterial.model_fields["lotfix"].default,
+        "lotmin": AcceptMaterial.model_fields["lotmin"].default,
+        "lotmax": AcceptMaterial.model_fields["lotmax"].default,
+        "lotround": AcceptMaterial.model_fields["lotround"].default,
+        "lotss": AcceptMaterial.model_fields["lotss"].default,
+        "lotpoint": AcceptMaterial.model_fields["lotpoint"].default,
+        "lottop": AcceptMaterial.model_fields["lottop"].default,
+        "preday": AcceptMaterial.model_fields["preday"].default,
+        "subday": AcceptMaterial.model_fields["subday"].default,
+    },
+    "t_workcenter": {
+        "pri_wc": AcceptWorkcenter.model_fields["pri_wc"].default,
+        "bottleneck": AcceptWorkcenter.model_fields["bottleneck"].default,
+        "plant": AcceptWorkcenter.model_fields["plant"].default,
+        "finite": AcceptWorkcenter.model_fields["finite"].default,
+        "type": AcceptWorkcenter.model_fields["type"].default,
+    },
+    "t_mat_ver": {
+        "lotfrom": AcceptMatVer.model_fields["lotfrom"].default,
+        "lotto": AcceptMatVer.model_fields["lotto"].default,
+        "priority": AcceptMatVer.model_fields["priority"].default,
+        "active": AcceptMatVer.model_fields["active"].default,
+    },
+    "t_mat_wc": {
+        "fixqty": AcceptMatWc.model_fields["fixqty"].default,
+        "fixsec": AcceptMatWc.model_fields["fixsec"].default,
+        "sf": AcceptMatWc.model_fields["sf"].default,
+        "offsetsec": AcceptMatWc.model_fields["offsetsec"].default,
+        "rate": AcceptMatWc.model_fields["rate"].default,
+    },
+    "t_mat_wc_bom": {
+        "offsethour": AcceptMatWcBom.model_fields["offsethour"].default,
+    },
+    "t_mold": {},
+    "t_mat_wc_mold": {
+        "moldno": AcceptMatWcMold.model_fields["moldno"].default,
+        "fixsec": AcceptMatWcMold.model_fields["fixsec"].default,
+    },
+}
+
+
+def fill_defaults(table_name: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    填充默认值：对于NULL或空字符串的字段，使用schemas.py中定义的默认值填充
+    
+    Args:
+        table_name: 表名
+        data: 原始数据字典
+        
+    Returns:
+        填充后的数据字典
+    """
+    defaults = SCHEMA_DEFAULTS.get(table_name, {})
+    if not defaults:
+        return data
+    
+    result = data.copy()
+    for field_name, default_value in defaults.items():
+        if default_value is None:
+            continue
+        if result.get(field_name) in NONE_AND_EMPTY:
+            if isinstance(default_value, datetime):
+                default_value = default_value.replace(tzinfo=timezone.utc)
+            result[field_name] = default_value
+            logger.debug(f"填充默认值: {table_name}.{field_name} = {default_value}")
+    
+    return result
 
 
 class ErrorType(str, Enum):
@@ -51,6 +136,8 @@ class DataCleaner:
 
     MATERIAL_TYPE_ENUM = {"E", "P", "F", "M", "B"}
     YES_NO_ENUM = {"Y", "N"}
+    ABC_ENUM = {"A", "B", "C"}
+    FIFO_ENUM = {0, 1, "0", "1"}
     LOT_SIZE_ENUM = {"EX", "FX", "D1", "D2", "D3", "D4", "D5", "D6", "W1", "W2", "W3", "W4", "M1", "M2", "VB"}
     MOLD_TYPE_ENUM = {"注塑", "冲压", "压铸", "夹具"}
     MOLD_STATUS_ENUM = {"空闲", "生产中", "维修中", "报废"}
@@ -60,7 +147,9 @@ class DataCleaner:
         self.errors: List[Dict] = []
     
     async def check_duplicate(self, table_name: str, data: Dict[str, Any], staging_id: int = None) -> Tuple[bool, List[Dict]]:
-        """检测缓冲表中是否存在重复数据"""
+        """检测缓冲表中是否存在重复数据（使用原生SQL避免ORM时区问题）"""
+        from tortoise import Tortoise
+        
         pk_fields = BUSINESS_KEYS.get(table_name, [])
         if not pk_fields:
             return True, []
@@ -70,6 +159,11 @@ class DataCleaner:
             return True, []
         
         conditions = {}
+        field_map = {}
+        for field in staging_model._meta.fields_map.values():
+            db_col = field.source_field if field.source_field else field.model_field_name
+            field_map[field.model_field_name] = db_col
+        
         for pk in pk_fields:
             value = data.get(pk)
             if value is not None and value != '':
@@ -78,12 +172,25 @@ class DataCleaner:
         if not conditions:
             return True, []
         
-        query = staging_model.filter(**conditions)
-        if staging_id:
-            query = query.exclude(_staging_id=staging_id)
+        table_name_staging = f"{table_name}_staging"
+        conn = Tortoise.get_connection(self.db_name)
         
         try:
-            count = await query.count()
+            where_clauses = []
+            params = []
+            for pk, value in conditions.items():
+                db_col = field_map.get(pk, pk)
+                where_clauses.append(f'"{db_col}" = ${len(params) + 1}')
+                params.append(value)
+            
+            if staging_id:
+                where_clauses.append(f'"_staging_id" != ${len(params) + 1}')
+                params.append(staging_id)
+            
+            query = f'SELECT COUNT(*) as cnt FROM "{table_name_staging}" WHERE {" AND ".join(where_clauses)}'
+            result = await conn.execute_query(query, tuple(params))
+            count = result[1][0]["cnt"] if result[1] else 0
+            
             if count > 0:
                 pk_values = "/".join([str(data.get(pk, "")) for pk in pk_fields])
                 pk_fields_str = "/".join(pk_fields)
@@ -109,6 +216,17 @@ class DataCleaner:
 
         if not data.get("plant"):
             errors.append(self._create_error(staging_id, ErrorType.REQUIRED_FIELD, "plant", None, "工厂不能为空"))
+
+        abc_value = data.get("abc")
+        logger.info(f"[校验] staging_id={staging_id}, abc={abc_value}, ABC_ENUM={self.ABC_ENUM}")
+        if abc_value and str(abc_value) not in self.ABC_ENUM:
+            logger.warning(f"[校验失败] abc={abc_value} 不在合法枚举值中")
+            errors.append(self._create_error(staging_id, ErrorType.INVALID_ENUM, "abc", abc_value,
+                f"ABC分类必须为: A, B, C"))
+
+        if data.get("fifo") is not None and str(data["fifo"]) not in {"0", "1"}:
+            errors.append(self._create_error(staging_id, ErrorType.INVALID_ENUM, "fifo", data["fifo"],
+                f"FIFO必须为: 0 或 1"))
 
         if data.get("type") and data["type"] not in self.MATERIAL_TYPE_ENUM:
             errors.append(self._create_error(staging_id, ErrorType.INVALID_ENUM, "type", data["type"], 
@@ -155,6 +273,10 @@ class DataCleaner:
         if data.get("finite") and data["finite"] not in self.YES_NO_ENUM:
             errors.append(self._create_error(staging_id, ErrorType.INVALID_ENUM, "finite", data["finite"],
                 f"有限产能标识必须为: {self.YES_NO_ENUM}"))
+
+        if data.get("type") and data["type"] not in self.YES_NO_ENUM:
+            errors.append(self._create_error(staging_id, ErrorType.INVALID_ENUM, "type", data["type"],
+                f"首页显示标识必须为: {self.YES_NO_ENUM}"))
 
         is_unique, dup_errors = await self.check_duplicate("t_workcenter", data, staging_id)
         errors.extend(dup_errors)
@@ -380,16 +502,21 @@ class DataCleaner:
 
     async def save_errors(self, staging_table: str, errors: List[Dict]):
         """保存错误记录"""
-        for err in errors:
-            await ValidationError.create(
-                staging_table=staging_table,
-                staging_id=err.get("staging_id"),
-                error_type=err["error_type"],
-                error_field=err["error_field"],
-                error_value=err.get("error_value"),
-                error_message=err["error_message"],
-                suggestion=self._get_suggestion(err["error_type"])
-            )
+        try:
+            for err in errors:
+                await ValidationError.create(
+                    staging_table=staging_table,
+                    staging_id=err.get("staging_id"),
+                    error_type=err["error_type"],
+                    error_field=err["error_field"],
+                    error_value=err.get("error_value"),
+                    error_message=err["error_message"],
+                    suggestion=self._get_suggestion(err["error_type"])
+                )
+        except Exception as e:
+            import traceback
+            logger.error(f"保存错误记录失败: {str(e)}")
+            logger.error(traceback.format_exc())
 
     def _get_suggestion(self, error_type: ErrorType) -> str:
         """根据错误类型获取修复建议"""
@@ -496,55 +623,101 @@ class StagingProcessor:
         self.cleaner = DataCleaner(db_name)
         self.transformer = DataTransformer()
 
-    async def process_staging(self, table_name: str, batch_size: int = 100, use_transaction: bool = True) -> Dict[str, int]:
-        """处理缓冲表数据"""
-        from tortoise.transactions import in_transaction
+    async def process_staging(self, table_name: str, batch_size: int = 100, use_transaction: bool = True, max_batches: int = 100) -> Dict[str, int]:
+        """处理缓冲表数据（校验前先填充默认值，循环处理直到没有pending记录）
+        
+        Args:
+            table_name: 表名
+            batch_size: 每批处理数量
+            use_transaction: 是否使用事务
+            max_batches: 最大批次数（防止无限循环）
+        """
+        from tortoise import Tortoise
         
         staging_model = STAGING_MODEL_MAPPING.get(table_name)
         if not staging_model:
             raise ValueError(f"未知的缓冲表: {table_name}")
 
-        stats = {"validated": 0, "rejected": 0, "synced": 0}
-
-        pending_records = await staging_model.filter(_status=StagingStatus.PENDING).limit(batch_size)
-
-        if not pending_records:
-            return stats
-
-        if use_transaction:
-            async with in_transaction(connection_name=self.db_name) as tx:
-                for record in pending_records:
-                    data = self._record_to_dict(record)
-
-                    is_valid, errors = await self._validate(table_name, record._staging_id, data)
+        stats = {"validated": 0, "rejected": 0, "synced": 0, "filled": 0}
+        
+        conn = Tortoise.get_connection(self.db_name)
+        table_name_staging = f"{table_name}_staging"
+        
+        field_map = {}
+        for field in staging_model._meta.fields_map.values():
+            db_col_name = field.source_field if field.source_field else field.model_field_name
+            field_map[field.model_field_name] = db_col_name
+        
+        batch_count = 0
+        while batch_count < max_batches:
+            try:
+                query = f'SELECT * FROM "{table_name_staging}" WHERE "_status" = $1 LIMIT $2'
+                result = await conn.execute_query(query, ("pending", batch_size))
+                pending_records = result[1] if result[1] else []
+            except Exception as e:
+                logger.error(f"查询pending记录失败: {str(e)}")
+                break
+            
+            if not pending_records:
+                break
+            
+            batch_count += 1
+            logger.info(f"处理第{batch_count}批，共{len(pending_records)}条记录")
+            
+            for raw_record in pending_records:
+                record_dict = dict(raw_record)
+                staging_id = record_dict["_staging_id"]
+                
+                try:
+                    data = {}
+                    for python_field, db_field in field_map.items():
+                        if python_field.startswith('_'):
+                            continue
+                        value = record_dict.get(db_field)
+                        if isinstance(value, datetime):
+                            if value.tzinfo is None:
+                                value = value.replace(tzinfo=timezone.utc)
+                        data[python_field] = value
+                    
+                    logger.info(f"[校验] staging_id={staging_id}, 开始校验")
+                    
+                    filled_data = fill_defaults(table_name, data)
+                    
+                    is_valid, errors = await self._validate(table_name, staging_id, filled_data)
+                    
+                    logger.info(f"[校验] staging_id={staging_id}, 结果: is_valid={is_valid}, errors={len(errors)}")
 
                     if is_valid:
-                        record._status = StagingStatus.VALIDATED
+                        update_query = f'UPDATE "{table_name_staging}" SET "_status" = $1 WHERE "_staging_id" = $2'
+                        await conn.execute_query(update_query, ("validated", staging_id))
                         stats["validated"] += 1
                     else:
-                        record._status = StagingStatus.REJECTED
-                        record._error_msg = json.dumps(errors, ensure_ascii=False)
+                        error_json = json.dumps(errors, ensure_ascii=False)
+                        update_query = f'UPDATE "{table_name_staging}" SET "_status" = $1, "_error_msg" = $2 WHERE "_staging_id" = $3'
+                        await conn.execute_query(update_query, ("rejected", error_json, staging_id))
                         stats["rejected"] += 1
                         await self.cleaner.save_errors(table_name, errors)
+                        
+                except Exception as e:
+                    import traceback
+                    error_trace = traceback.format_exc()
+                    logger.error(f"处理记录失败 [{table_name}] _staging_id={staging_id}:")
+                    logger.error(error_trace)
+                    error_json = json.dumps([{
+                        "staging_id": staging_id,
+                        "error_type": "process_error",
+                        "error_field": None,
+                        "error_value": None,
+                        "error_message": f"处理异常: {str(e)}\n\n堆栈:\n{error_trace[:500]}"
+                    }], ensure_ascii=False)
+                    try:
+                        update_query = f'UPDATE "{table_name_staging}" SET "_status" = $1, "_error_msg" = $2 WHERE "_staging_id" = $3'
+                        await conn.execute_query(update_query, ("rejected", error_json, staging_id))
+                        stats["rejected"] += 1
+                    except Exception as e2:
+                        logger.error(f"更新错误状态失败: {str(e2)}")
 
-                    await record.save(using_db=tx)
-        else:
-            for record in pending_records:
-                data = self._record_to_dict(record)
-
-                is_valid, errors = await self._validate(table_name, record._staging_id, data)
-
-                if is_valid:
-                    record._status = StagingStatus.VALIDATED
-                    stats["validated"] += 1
-                else:
-                    record._status = StagingStatus.REJECTED
-                    record._error_msg = json.dumps(errors, ensure_ascii=False)
-                    stats["rejected"] += 1
-                    await self.cleaner.save_errors(table_name, errors)
-
-                await record.save()
-
+        logger.info(f"校验完成: validated={stats['validated']}, rejected={stats['rejected']}, batches={batch_count}")
         return stats
 
     async def sync_to_production(self, table_name: str, batch_size: int = 100, 
@@ -637,7 +810,7 @@ class StagingProcessor:
                 await mysql_conn.execute_query(sync_query, tuple(values))
                 
                 update_query = f'UPDATE "{staging_table_name}" SET "_status" = $1, "_synced_time" = $2 WHERE "_staging_id" = $3'
-                await pg_conn.execute_query(update_query, ("synced", datetime.now(), record._staging_id))
+                await pg_conn.execute_query(update_query, ("synced", datetime.now(timezone.utc), record._staging_id))
                 
                 stats["synced"] += 1
                 

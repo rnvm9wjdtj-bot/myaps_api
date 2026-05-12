@@ -20,32 +20,16 @@ class StatusCard {
     
     render() {
         this.container.innerHTML = `
-            <div class="row g-3">
-                <div class="col-md-3">
-                    <div class="card status-card" data-status="pending">
+            <div class="row g-2">
+                <div class="col">
+                    <div class="card status-card active" data-status="">
                         <div class="card-body text-center">
-                            <div class="status-number text-warning" id="pendingCount">-</div>
-                            <div class="status-label">待处理</div>
+                            <div class="status-number text-primary" id="totalCount">-</div>
+                            <div class="status-label">全部</div>
                         </div>
                     </div>
                 </div>
-                <div class="col-md-3">
-                    <div class="card status-card" data-status="validated">
-                        <div class="card-body text-center">
-                            <div class="status-number text-success" id="validatedCount">-</div>
-                            <div class="status-label">校验通过</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="card status-card" data-status="rejected">
-                        <div class="card-body text-center">
-                            <div class="status-number text-danger" id="rejectedCount">-</div>
-                            <div class="status-label">校验失败</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-3">
+                <div class="col">
                     <div class="card status-card" data-status="synced">
                         <div class="card-body text-center">
                             <div class="status-number text-info" id="syncedCount">-</div>
@@ -53,13 +37,43 @@ class StatusCard {
                         </div>
                     </div>
                 </div>
-            </div>
-            <div class="text-center mt-2">
-                <small class="text-muted">总计: <span id="totalCount">0</span> 条数据</small>
+                <div class="col">
+                    <div class="card status-card" data-status="ready_sync">
+                        <div class="card-body text-center">
+                            <div class="status-number text-success" id="readySyncCount">-</div>
+                            <div class="status-label">可同步</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="card status-card" data-status="pending">
+                        <div class="card-body text-center">
+                            <div class="status-number text-warning" id="pendingCount">-</div>
+                            <div class="status-label">待处理</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="card status-card" data-status="validated">
+                        <div class="card-body text-center">
+                            <div class="status-number text-success" id="validatedCount">-</div>
+                            <div class="status-label">校验通过</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="card status-card" data-status="rejected">
+                        <div class="card-body text-center">
+                            <div class="status-number text-danger" id="rejectedCount">-</div>
+                            <div class="status-label">校验失败</div>
+                        </div>
+                    </div>
+                </div>
             </div>
         `;
         
         this.bindEvents();
+        this.activeStatus = '';
     }
     
     bindEvents() {
@@ -77,8 +91,14 @@ class StatusCard {
                     this.container.querySelectorAll('.status-card').forEach(c => c.classList.remove('active'));
                     card.classList.add('active');
                     this.activeStatus = status;
+                    
+                    let actualStatus = status;
+                    if (status === 'ready_sync') {
+                        actualStatus = 'validated';
+                    }
+                    
                     if (this.onStatusClick) {
-                        this.onStatusClick(status);
+                        this.onStatusClick(actualStatus);
                     }
                 }
             });
@@ -95,17 +115,21 @@ class StatusCard {
     }
     
     updateDisplay() {
+        const total = document.getElementById('totalCount');
         const pending = document.getElementById('pendingCount');
         const validated = document.getElementById('validatedCount');
         const rejected = document.getElementById('rejectedCount');
         const synced = document.getElementById('syncedCount');
-        const total = document.getElementById('totalCount');
+        const readySync = document.getElementById('readySyncCount');
         
+        if (total) total.textContent = this.stats.total || 0;
         if (pending) pending.textContent = this.stats.pending || 0;
         if (validated) validated.textContent = this.stats.validated || 0;
         if (rejected) rejected.textContent = this.stats.rejected || 0;
         if (synced) synced.textContent = this.stats.synced || 0;
-        if (total) total.textContent = this.stats.total || 0;
+        
+        const readySyncCount = (this.stats.validated || 0);
+        if (readySync) readySync.textContent = readySyncCount;
     }
     
     refresh() {

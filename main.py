@@ -16,10 +16,6 @@ if os.name == 'nt':
     loop = asyncio.SelectorEventLoop()
     asyncio.set_event_loop(loop)
 
-# 在导入settings之前设置启动模式环境变量
-if __name__ == "__main__":
-    os.environ['START_MODE'] = 'direct'
-
 # 导入模块
 from core.app import create_app
 from core.lifespan import lifespan

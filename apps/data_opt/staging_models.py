@@ -27,8 +27,8 @@ class StagingBaseModel(TortoiseBaseModel):
     _error_msg = fields.TextField(null=True, description="错误信息JSON")
     _transform_rules = fields.TextField(null=True, description="应用的转换规则JSON")
     _retry_count = fields.IntField(default=0, description="重试次数")
-    _createtime = fields.DatetimeField(auto_now_add=True, description="创建时间")
-    _updatetime = fields.DatetimeField(auto_now=True, description="更新时间")
+    _createtime = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="创建时间")
+    _updatetime = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="更新时间")
     _synced_id = fields.CharField(max_length=128, null=True, description="同步后正式表ID")
     _synced_time = fields.DatetimeField(null=True, description="同步时间")
 
@@ -95,7 +95,7 @@ class ValidationError(TortoiseBaseModel):
     error_value = fields.TextField(null=True, description="错误值")
     error_message = fields.TextField(description="错误描述")
     suggestion = fields.TextField(null=True, description="修复建议")
-    createtime = fields.DatetimeField(auto_now_add=True)
+    createtime = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="创建时间")
 
     class Meta:
         table = "t_validation_error"

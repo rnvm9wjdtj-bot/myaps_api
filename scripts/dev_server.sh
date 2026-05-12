@@ -40,7 +40,7 @@ APP_NAME="myaps_api"
 PID_FILE="$PROJECT_DIR/.dev_server.pid"
 LOG_FILE="$PROJECT_DIR/logs/dev_server.log"
 HOST="0.0.0.0"
-PORT="8000"
+PORT="8001"
 
 # 创建日志目录
 mkdir -p "$PROJECT_DIR/logs"
@@ -77,7 +77,7 @@ start() {
     echo "API文档: http://localhost:$PORT/docs"
     
     # 启动服务
-    nohup $PYTHON_CMD main.py > "$LOG_FILE" 2>&1 &
+    nohup env PORT=$PORT $PYTHON_CMD main.py > "$LOG_FILE" 2>&1 &
     local pid=$!
     echo $pid > "$PID_FILE"
     

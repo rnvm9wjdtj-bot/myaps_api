@@ -1,0 +1,1426 @@
+# 数据清洗模块开发规范
+
+## 一、字段命名规范
+
+### 1.1 三层命名对应关系
+
+| 层级 | 命名格式 | 示例 | 说明 |
+|------|----------|------|------|
+| **API层** | 小写 | `materialno`, `description` | POST/GET接口使用 |
+| **Python层** | 小写 | `materialno`, `description` | 模型属性名 |
+| **数据库层** | 大驼峰 | `MaterialNo`, `Description` | PostgreSQL字段名 |
+
+### 1.2 字段映射机制
+
+通过 `source_field` 参数实现Python字段名到数据库字段名的映射：
+
+```python
+# protomodels.py 示例
+class ProtoMaterial(TortoiseBaseModel):
+    materialno = fields.CharField(source_field='MaterialNo', max_length=64)
+    # Python属性名: materialno (小写)
+    # 数据库字段名: MaterialNo (大驼峰)
+```
+
+---
+
+## 二、API接口规范
+
+### 2.1 请求格式
+
+**POST接口接收数据：**
+- 字段名：**小写格式**
+- Content-Type: `application/json`
+
+```json
+// 示例：POST /api/mds/t_material
+[
+    {
+        "materialno": "MAT001",
+        "description": "螺丝M4x10",
+        "plant": "chaoyue",
+        "type": "F",
+        "leadday": 10,
+        "unit": "PCS"
+    }
+]
+```
+
+### 2.2 响应格式
+
+**GET接口返回数据：**
+- 字段名：**小写格式**
+- 已屏蔽内部字段
+
+```json
+{
+    "status_code": 200,
+    "success": 1,
+    "message": "查询成功",
+    "data": {
+        "total": 10,
+        "records": [
+            {
+                "_staging_id": 1,
+                "materialno": "MAT001",
+                "description": "螺丝M4x10",
+                "plant": "chaoyue"
+            }
+        ]
+    }
+}
+```
+
+### 2.3 数据库连接规范
+
+**校验/同步API必须使用正确的数据库连接：**
+
+```python
+# staging_routers.py
+@rt.post("/validate/{table_name}")
+async def validate_staging(
+    request: Request,
+    table_name: str,
+    batch_size: int = Query(100),
+    db_name: str = Query(THIS_DB_NAME, description="账套")  # 使用 THIS_DB_NAME，不是 MYAPS_MAIN_DB
+):
+    processor = StagingProcessor(db_name)
+    stats = await processor.process_staging(table_name, batch_size)
+    return standard_response(success=1, message="校验完成", data=stats)
+```
+
+### 2.4 时区处理规范
+
+**数据库连接配置：**
+
+```python
+# core/database.py
+connections[THIS_DB_NAME] = {
+    "engine": "tortoise.backends.asyncpg",
+    "credentials": {
+        "host": THIS_DB_HOST,
+        "port": THIS_DB_PORT,
+        "user": THIS_DB_USER,
+        "password": THIS_DB_PASSWORD,
+        "database": THIS_DB_NAME,
+        "server_settings": {"TimeZone": TIMEZONE_NAME},
+    },
+    "min_size": 3,
+    "max_size": 10,
+    "use_tz": True,  # 启用时区支持
+}
+```
+
+**模型字段时区配置：**
+
+```python
+# staging_models.py
+from datetime import datetime, timezone
+
+class StagingBaseModel(TortoiseBaseModel):
+    _createtime = fields.DatetimeField(default=lambda: datetime.now(timezone.utc))
+    _updatetime = fields.DatetimeField(default=lambda: datetime.now(timezone.utc))
+```
+
+**校验逻辑使用原生SQL避免ORM时区问题：**
+
+```python
+# staging_cleaner.py
+async def process_staging(self, table_name: str, batch_size: int = 100) -> Dict[str, int]:
+    from tortoise import Tortoise
+    
+    conn = Tortoise.get_connection(self.db_name)
+    table_name_staging = f"{table_name}_staging"
+    
+    for record in pending_records:
+        # 使用原生SQL更新，避免ORM时区问题
+        if is_valid:
+            update_query = f'UPDATE "{table_name_staging}" SET "_status" = $1 WHERE "_staging_id" = $2'
+            await conn.execute_query(update_query, ("validated", record._staging_id))
+```
+
+---
+
+## 三、内部字段屏蔽规则
+
+### 3.1 屏蔽字段列表
+
+以下字段为APS系统内部使用，**不对外暴露**：
+
+| 字段名 | 说明 | 屏蔽原因 |
+|--------|------|----------|
+| `memo` | 备注 | 系统内部备注 |
+| `sys_user` | 系统用户 | 审计字段 |
+| `sys_date` | 系统日期 | 审计字段 |
+| `sys_stamp` | 系统时间戳 | 审计字段 |
+
+### 3.2 实现位置
+
+在 `staging_routers.py` 中定义：
+
+```python
+INTERNAL_FIELDS = {'memo', 'sys_user', 'sys_date', 'sys_stamp'}
+
+def convert_record_to_lowercase(record_dict: Dict, model_class) -> Dict:
+    reverse_field_map = {}
+    for field in model_class._meta.fields_map.values():
+        db_col_name = field.source_field if field.source_field else field.model_field_name
+        reverse_field_map[db_col_name] = field.model_field_name
+    
+    result = {}
+    for key, value in record_dict.items():
+        python_field = reverse_field_map.get(key, key)
+        if python_field in INTERNAL_FIELDS:
+            continue
+        result[python_field] = value
+    return result
+```
+
+---
+
+## 四、前端开发规范
+
+### 4.1 页面HTML结构
+
+**标准页面模板：**
+
+```html
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>[表名]数据清洗管理</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/mds/css/custom.css">
+</head>
+<body>
+    <!-- 导航栏：校验全部/同步全部按钮放右侧 -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-2">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/mds">数据清洗管理系统</a>
+            <div class="collapse navbar-collapse">
+                <ul class="navbar-nav me-auto">
+                    <!-- 各表链接 -->
+                </ul>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-outline-light btn-sm" style="width:100px" id="validateAllBtn">校验全部</button>
+                    <button class="btn btn-outline-light btn-sm" style="width:100px" id="syncAllBtn">同步全部</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid py-2">
+        <!-- 状态卡片：全部→已同步→可同步→待处理→校验通过→校验失败 -->
+        <div class="row mb-2">
+            <div class="col-12" id="statusCardContainer"></div>
+        </div>
+
+        <!-- 操作按钮：所有按钮宽度100px -->
+        <div class="filter-bar mb-2">
+            <div class="row g-2 align-items-center">
+                <div class="col-auto">
+                    <button class="btn btn-primary btn-sm" style="width:100px" data-bs-toggle="modal" data-bs-target="#uploadModal">导入</button>
+                    <button class="btn btn-success btn-sm" style="width:100px" id="validateBtn">校验</button>
+                    <button class="btn btn-info btn-sm" style="width:100px" id="syncBtn">同步</button>
+                    <button class="btn btn-outline-primary btn-sm" style="width:100px" onclick="downloadTemplate('t_material')">模板</button>
+                </div>
+                <!-- 筛选控件 -->
+            </div>
+        </div>
+
+        <!-- 数据列表 -->
+        <div class="data-table-container" id="tableContainer"></div>
+    </div>
+
+    <!-- 弹窗：精准筛选、批量编辑、上传、编辑 -->
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/mds/js/common.js"></script>
+    <script src="/static/mds/js/data-table.js"></script>
+    <script src="/static/mds/js/status-card.js"></script>
+    <script src="/static/mds/js/[表名].js"></script>
+</body>
+</html>
+```
+
+### 4.2 状态卡片规范
+
+**6个状态卡片顺序：**
+
+```javascript
+// status-card.js
+render() {
+    this.container.innerHTML = `
+        <div class="row g-2">
+            <div class="col">
+                <div class="card status-card active" data-status="">
+                    <div class="card-body text-center">
+                        <div class="status-number text-primary" id="totalCount">-</div>
+                        <div class="status-label">全部</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card status-card" data-status="synced">
+                    <div class="card-body text-center">
+                        <div class="status-number text-info" id="syncedCount">-</div>
+                        <div class="status-label">已同步</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card status-card" data-status="ready_sync">
+                    <div class="card-body text-center">
+                        <div class="status-number text-success" id="readySyncCount">-</div>
+                        <div class="status-label">可同步</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card status-card" data-status="pending">
+                    <div class="card-body text-center">
+                        <div class="status-number text-warning" id="pendingCount">-</div>
+                        <div class="status-label">待处理</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card status-card" data-status="validated">
+                    <div class="card-body text-center">
+                        <div class="status-number text-success" id="validatedCount">-</div>
+                        <div class="status-label">校验通过</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card status-card" data-status="rejected">
+                    <div class="card-body text-center">
+                        <div class="status-number text-danger" id="rejectedCount">-</div>
+                        <div class="status-label">校验失败</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+```
+
+**"可同步"计算逻辑：**
+
+```javascript
+updateDisplay() {
+    // 可同步数 = 校验通过数
+    const readySyncCount = (this.stats.validated || 0);
+    if (readySync) readySync.textContent = readySyncCount;
+}
+```
+
+### 4.3 列表配置规范
+
+**列定义：**
+
+```javascript
+// [表名].js
+const TABLE_COLUMNS = [
+    { field: '_status', title: '状态', width: '80px' },        // 状态列最左侧
+    { field: '_createtime', title: '创建时间', width: '180px', sortable: true },  // 时间列180px
+    { field: 'materialno', title: '物料号', width: '100px', sortable: true },
+    // ... 其他业务字段
+    { field: '_source_system', title: '来源', width: '80px' }
+    // 注意：不包含 _staging_id（隐藏）
+];
+```
+
+**字段标签映射（用于详情弹窗显示中文）：**
+
+```javascript
+const FIELD_LABELS = {};
+TABLE_COLUMNS.forEach(col => {
+    FIELD_LABELS[col.field] = col.title;
+});
+```
+
+### 4.4 枚举字段配置
+
+**必须与schemas.py一致：**
+
+```javascript
+// [表名].js
+const ENUM_OPTIONS = {
+    // 文本枚举
+    fifo: [
+        { value: '0', label: '最近原则' },
+        { value: '1', label: 'FIFO' }
+    ],
+    abc: [
+        { value: 'A', label: 'A类' },
+        { value: 'B', label: 'B类' },
+        { value: 'C', label: 'C类' }
+    ],
+    type: [
+        { value: 'E', label: '自制件(E)' },
+        { value: 'F', label: '采购件(F)' }
+    ],
+    phantom: [
+        { value: 'N', label: '否' },
+        { value: 'Y', label: '是' }
+    ],
+    candelay: [
+        { value: 'N', label: '否' },
+        { value: 'Y', label: '是' }
+    ],
+    lotsize: [
+        { value: 'EX', label: 'EX-一对一' },
+        { value: 'FX', label: 'FX-固定批' },
+        { value: 'VB', label: 'VB-重订货点' },
+        { value: 'D1', label: 'D1-按1天合并' },
+        { value: 'D2', label: 'D2-按2天合并' },
+        { value: 'D3', label: 'D3-按3天合并' },
+        { value: 'D4', label: 'D4-按4天合并' },
+        { value: 'D5', label: 'D5-按5天合并' },
+        { value: 'D6', label: 'D6-按6天合并' },
+        { value: 'W1', label: 'W1-按1周合并' },
+        { value: 'W2', label: 'W2-按2周合并' },
+        { value: 'W3', label: 'W3-按3周合并' },
+        { value: 'W4', label: 'W4-按4周合并' },
+        { value: 'M1', label: 'M1-按1月合并' },
+        { value: 'M2', label: 'M2-按2月合并' },
+        { value: 'M3', label: 'M3-按3月合并' }
+    ]
+};
+```
+
+### 4.5 NULL字段显示规范
+
+**列表中NULL字段：**
+
+```javascript
+// data-table.js
+renderCell(col, row) {
+    let value = row[col.field];
+    
+    if (value === null || value === undefined) {
+        // 自定义字段(free*)不高亮
+        const isFreeField = col.field.startsWith('free');
+        return isFreeField 
+            ? '<span class="text-muted">-</span>' 
+            : '<span class="null-cell">-</span>';  // 浅橙高亮
+    }
+    // ...
+}
+```
+
+**详情弹窗隐藏系统字段：**
+
+```javascript
+function showDetailModal(row) {
+    // 过滤掉 _ 开头的系统字段
+    const businessFields = Object.entries(row).filter(([key]) => !key.startsWith('_'));
+    
+    detailContent.innerHTML = `
+        <table class="table table-sm table-bordered">
+            <tbody>
+                ${businessFields.map(([key, value]) => `
+                    <tr>
+                        <th style="width: 120px">${FIELD_LABELS[key] || key}</th>
+                        <td>${formatDetailValue(key, value)}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+}
+```
+
+### 4.6 编辑弹窗规范
+
+**两列布局，modal-xl宽度：**
+
+```html
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">编辑记录</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editForm"></form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button class="btn btn-primary" id="saveBtn">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+```
+
+**字段生成逻辑：**
+
+```javascript
+function generateEditField(col, row) {
+    const fieldName = col.field;
+    const fieldValue = row[fieldName] !== null && row[fieldName] !== undefined ? row[fieldName] : '';
+    
+    const labelHtml = `<label class="form-label mb-1">${col.title}</label>`;
+    
+    if (ENUM_OPTIONS[fieldName]) {
+        // 枚举字段：下拉选择
+        const options = ENUM_OPTIONS[fieldName];
+        return `
+            <div class="mb-2">
+                ${labelHtml}
+                <select class="form-select font-mono" name="${fieldName}" 
+                        style="height: 31px; padding: 0.25rem 0.5rem; font-size: 0.8rem;">
+                    <option value="">-- 请选择 --</option>
+                    ${options.map(opt => `
+                        <option value="${opt.value}" ${String(fieldValue) === String(opt.value) ? 'selected' : ''}>
+                            ${opt.label}
+                        </option>
+                    `).join('')}
+                </select>
+            </div>
+        `;
+    }
+    
+    // 普通字段：文本输入
+    return `
+        <div class="mb-2">
+            ${labelHtml}
+            <input type="text" class="form-control font-mono" name="${fieldName}" 
+                   value="${escapeHtml(String(fieldValue))}"
+                   style="height: 31px; padding: 0.25rem 0.5rem; font-size: 0.8rem;">
+        </div>
+    `;
+}
+```
+
+### 4.7 精准筛选规范
+
+**字段分类：**
+
+```javascript
+function bindAdvancedFilterEvents() {
+    const stringFields = [
+        { value: 'MaterialNo', label: '物料号' },
+        { value: 'Description', label: '物料描述' },
+        { value: 'Plant', label: '工厂' },
+        { value: 'Planner', label: '计划员' },
+        { value: 'Unit', label: '单位' }
+    ];
+    
+    const numberFields = [
+        { value: 'LeadDay', label: '提前期' },
+        { value: 'ExpDay', label: '保质期' },
+        { value: 'GRDay', label: '质检期' },
+        { value: 'Price', label: '价格' },
+        // ...
+    ];
+    
+    const enumFields = [
+        { value: 'ABC', label: 'ABC分类', options: ENUM_OPTIONS.abc },
+        { value: 'Type', label: '类型', options: ENUM_OPTIONS.type },
+        { value: 'Phantom', label: '虚拟件', options: ENUM_OPTIONS.phantom },
+        { value: 'CanDelay', label: '可延迟', options: ENUM_OPTIONS.candelay },
+        { value: 'LotSize', label: '批量策略', options: ENUM_OPTIONS.lotsize },
+        { value: 'FIFO', label: 'FIFO', options: ENUM_OPTIONS.fifo }
+    ];
+}
+```
+
+**匹配模式：**
+
+| 字段类型 | 匹配模式 |
+|----------|----------|
+| 文本字段 | 等于、不等于、包含、不包含、开头是、结尾是、为空、不为空 |
+| 数值字段 | =、>、>=、<、<=、为空、不为空 |
+| 枚举字段 | 等于、包含、不包含、为空、不为空（用下拉选项代替输入） |
+
+### 4.8 批量编辑规范
+
+**核心实现：**
+
+```javascript
+function bindBatchEditEvents() {
+    let fieldValues = {};      // 保存已输入的值
+    let nullFields = new Set(); // 标记需要清空的字段
+    
+    function renderBatchEditFields() {
+        const selectedFields = [...]; // 从checkbox获取
+        
+        batchEditFields.innerHTML = selectedFields.map(field => {
+            const col = editableFields.find(c => c.field === field);
+            const enumOptions = ENUM_OPTIONS[field];
+            const isNull = nullFields.has(field);
+            const savedValue = fieldValues[field] || '';
+            
+            let inputHtml;
+            if (enumOptions) {
+                inputHtml = `<select ...>${options}</select>`;
+            } else {
+                inputHtml = `<input type="text" value="${savedValue}" ...>`;
+            }
+            
+            const clearBtnClass = isNull ? 'btn-danger' : 'btn-outline-danger';
+            const clearBtnText = isNull ? '已清空(点击恢复)' : '清空';
+            
+            return `...${inputHtml}...<button class="btn ${clearBtnClass}">${clearBtnText}</button>...`;
+        }).join('');
+    }
+    
+    // 提交时将nullFields中的字段设置为null
+    if (applyBatchEditBtn) {
+        applyBatchEditBtn.addEventListener('click', async () => {
+            const updates = {};
+            // 收集非空值
+            batchEditFields.querySelectorAll('.batch-edit-value').forEach(input => {
+                if (input.value.trim()) updates[input.dataset.field] = input.value.trim();
+            });
+            // 添加null值
+            nullFields.forEach(field => updates[field] = null);
+            // 提交
+            const response = await callApi(`/batch_update/${TABLE_NAME}`, 'POST', { ids, updates });
+        });
+    }
+}
+```
+
+### 4.9 表格布局规范
+
+**冻结表头表尾：**
+
+```javascript
+// data-table.js
+render() {
+    this.container.innerHTML = `
+        <div class="table-wrapper" style="display: flex; flex-direction: column; height: calc(100vh - 280px);">
+            <div class="table-responsive flex-grow-1" style="overflow-y: auto; overflow-x: auto;">
+                <table class="table table-hover table-nowrap mb-0">
+                    <thead class="table-header-fixed">
+                        <!-- 表头 -->
+                    </thead>
+                    <tbody id="tableBody">
+                        <!-- 数据行 -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="table-footer-fixed d-flex justify-content-between align-items-center px-2 py-2 bg-white border-top">
+            <!-- 分页栏固定底部 -->
+        </div>
+    `;
+}
+```
+
+```css
+/* custom.css */
+.table-header-fixed {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background-color: #f8f9fa;
+}
+
+.table-footer-fixed {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+}
+```
+
+### 4.10 全选按钮规范
+
+**按钮位置：批量编辑按钮左侧**
+
+```javascript
+// data-table.js render()方法
+<div class="d-flex align-items-center gap-2">
+    <span id="totalInfo">共 0 条</span>
+    <select class="form-select form-select-sm" id="pageSizeSelect">...</select>
+    <span>条/页</span>
+    
+    <!-- 全选按钮 -->
+    <button class="btn btn-sm btn-outline-success" id="selectAllPagesBtn">
+        全选(<span id="totalCount">0</span>)
+    </button>
+    
+    <!-- 批量操作按钮 -->
+    <button class="btn btn-sm btn-outline-primary ms-2" id="batchEditBtn" disabled>
+        编辑(<span id="selectedCount">0</span>)
+    </button>
+    <button class="btn btn-sm btn-outline-danger" id="batchDeleteBtn" disabled>
+        删除(<span id="selectedCountDup">0</span>)
+    </button>
+</div>
+```
+
+**功能实现：**
+
+```javascript
+// data-table.js
+
+// 1. 更新总记录数显示
+updateTotalCount() {
+    const totalCount = document.getElementById('totalCount');
+    if (totalCount) {
+        totalCount.textContent = this.total;
+    }
+}
+
+// 2. 全选所有分页记录
+async selectAllPages() {
+    if (this.total === 0) {
+        showMessage('没有可选择的记录', 'warning');
+        return;
+    }
+    
+    if (!confirm(`确定选中全部 ${this.total} 条记录吗？\n\n注意：这将获取所有分页的记录ID，可能需要较长时间。`)) {
+        return;
+    }
+    
+    showLoading();
+    
+    // 获取所有分页的记录ID（page_size=10000）
+    const queryParams = new URLSearchParams({
+        page: 1,
+        page_size: 10000,
+        sort_field: this.sortField,
+        sort_order: this.sortOrder,
+        ...this.filters
+    });
+    
+    if (this.advancedFilters && this.advancedFilters.length > 0) {
+        queryParams.set('advanced_filters', JSON.stringify(this.advancedFilters));
+    }
+    
+    const response = await callApi(`/list/${this.tableName}?${queryParams}`);
+    
+    hideLoading();
+    
+    handleResponse(response, (data) => {
+        const allRecords = data.data.records || [];
+        this.selectedIds.clear();
+        allRecords.forEach(row => {
+            this.selectedIds.add(row._staging_id);
+        });
+        
+        // 更新UI
+        const selectAll = document.getElementById('selectAll');
+        if (selectAll) selectAll.checked = true;
+        
+        document.querySelectorAll('.row-checkbox').forEach(cb => {
+            cb.checked = true;
+        });
+        
+        this.updateSelectedCount();
+        showMessage(`已选中 ${this.selectedIds.size} 条记录`, 'success');
+    });
+}
+
+// 3. 绑定事件
+bindEvents() {
+    const selectAllPagesBtn = document.getElementById('selectAllPagesBtn');
+    if (selectAllPagesBtn) {
+        selectAllPagesBtn.addEventListener('click', () => this.selectAllPages());
+    }
+    // ...
+}
+```
+
+**按钮布局（从左到右）：**
+
+```
+共 1250 条 | 100 条/页 | 全选(1250) | 编辑(0) | 删除(0)
+```
+
+### 4.12 Checkbox状态管理
+
+**所有数据重载操作必须清除选中状态：**
+
+```javascript
+// data-table.js
+
+// 1. setFilter方法
+setFilter(key, value) {
+    // ...
+    this.selectedIds.clear();
+    const selectAll = document.getElementById('selectAll');
+    if (selectAll) selectAll.checked = false;
+    this.updateSelectedCount();
+    this.loadData();
+}
+
+// 2. loadData方法
+async loadData(params = {}) {
+    if (Object.keys(params).length > 0 || this.advancedFilters) {
+        this.selectedIds.clear();
+        const selectAll = document.getElementById('selectAll');
+        if (selectAll) selectAll.checked = false;
+        this.updateSelectedCount();
+    }
+    // ...
+}
+
+// 3. 翻页
+pagination.querySelectorAll('.page-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+        // ...
+        this.selectedIds.clear();
+        const selectAll = document.getElementById('selectAll');
+        if (selectAll) selectAll.checked = false;
+        this.updateSelectedCount();
+        this.loadData();
+    });
+});
+
+// 4. 精准筛选
+if (applyBtn) {
+    applyBtn.addEventListener('click', () => {
+        // ...
+        dataTable.selectedIds.clear();
+        const selectAll = document.getElementById('selectAll');
+        if (selectAll) selectAll.checked = false;
+        dataTable.updateSelectedCount();
+        dataTable.loadData();
+    });
+}
+```
+
+### 4.13 时间格式化规范
+
+**显示格式：yyyy-mm-dd hh:mm:ss**
+
+```javascript
+// common.js
+function formatDateTime(dateStr) {
+    if (!dateStr) return '-';
+    const date = new Date(dateStr);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hour = String(date.getHours()).padStart(2, '0');
+    const minute = String(date.getMinutes()).padStart(2, '0');
+    const second = String(date.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+}
+```
+
+### 4.14 等宽字体规范
+
+**所有数据内容使用等宽字体：**
+
+```css
+/* custom.css */
+:root {
+    --mono-font: 'JetBrains Mono', 'Menlo', 'Source Code Pro', 'Consolas', monospace;
+}
+
+.font-mono {
+    font-family: var(--mono-font);
+}
+```
+
+```javascript
+// data-table.js
+renderCell(col, row) {
+    // ...
+    return `<span class="font-mono">${escapeHtml(value)}</span>`;
+}
+```
+
+---
+
+## 五、后端开发规范
+
+### 5.1 校验阶段默认值填充
+
+**校验时自动填充schemas.py中定义的默认值：**
+
+```python
+# staging_cleaner.py
+
+# 1. 从schemas.py提取各表默认值配置
+SCHEMA_DEFAULTS = {
+    "t_material": {
+        "plant": AcceptMaterial.model_fields["plant"].default,
+        "planner": AcceptMaterial.model_fields["planner"].default,
+        "fifo": AcceptMaterial.model_fields["fifo"].default,
+        "expday": AcceptMaterial.model_fields["expday"].default,
+        "phantom": AcceptMaterial.model_fields["phantom"].default,
+        # ... 其他有默认值的字段
+    },
+    "t_workcenter": {
+        "pri_wc": AcceptWorkcenter.model_fields["pri_wc"].default,
+        "bottleneck": AcceptWorkcenter.model_fields["bottleneck"].default,
+        # ...
+    },
+    # ... 其他表
+}
+
+# 2. 默认值填充函数
+NONE_AND_EMPTY = {None, ""}
+
+def fill_defaults(table_name: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    对于NULL或空字符串的字段，使用schemas.py中定义的默认值填充
+    
+    Args:
+        table_name: 表名
+        data: 原始数据字典
+        
+    Returns:
+        填充后的数据字典
+    """
+    defaults = SCHEMA_DEFAULTS.get(table_name, {})
+    if not defaults:
+        return data
+    
+    result = data.copy()
+    for field_name, default_value in defaults.items():
+        if default_value is None:
+            continue
+        if result.get(field_name) in NONE_AND_EMPTY:
+            result[field_name] = default_value
+    
+    return result
+
+# 3. 校验流程中调用
+async def process_staging(self, table_name: str, batch_size: int = 100):
+    for record in pending_records:
+        data = self._record_to_dict(record)
+        
+        # 先填充默认值
+        filled_data = fill_defaults(table_name, data)
+        
+        # 更新缓冲表（将填充的值写入数据库）
+        if filled_fields:
+            update_query = f'UPDATE "{table_name_staging}" SET ...'
+            await conn.execute_query(update_query, ...)
+            stats["filled"] += 1
+        
+        # 再校验
+        is_valid, errors = await self._validate(table_name, record._staging_id, filled_data)
+```
+
+**各表默认值字段清单：**
+
+| 表名 | 有默认值的字段 |
+|------|---------------|
+| t_material | plant, planner, fifo, expday, phantom, phantommin, firmday, daygap, candelay, lotsize, lotfix, lotmin, lotmax, lotround, lotss, lotpoint, lottop, preday, subday |
+| t_workcenter | pri_wc, bottleneck, plant, finite, type |
+| t_mat_ver | lotfrom, lotto, priority, active |
+| t_mat_wc | fixqty, fixsec, sf, offsetsec, rate |
+| t_mat_wc_bom | offsethour |
+| t_mold | (无) |
+| t_mat_wc_mold | moldno, fixsec |
+
+**校验返回统计：**
+
+```python
+stats = {
+    "filled": 2,      # 填充了默认值的记录数
+    "validated": 10,
+    "rejected": 1
+}
+```
+
+### 5.2 查询字段大小写映射
+
+**精准筛选字段名必须使用数据库实际字段名：**
+
+```python
+# staging_routers.py
+if advanced_filters:
+    filters = json.loads(advanced_filters)
+    for f in filters:
+        field = f.get('field')  # 这里field必须是数据库字段名（如MaterialNo）
+        operator = f.get('operator')
+        value = f.get('value')
+        
+        if operator == 'eq' and value:
+            conditions.append(f'"{field}" = ${param_idx}')
+            params.append(value)
+```
+
+**排序字段映射：**
+
+```python
+sort_field_mapping = {
+    '_createtime': '_createtime',  # 系统字段保持小写
+    '_updatetime': '_updatetime',
+    'materialno': 'MaterialNo'     # 业务字段映射为大驼峰
+}
+db_sort_field = sort_field_mapping.get(sort_field, sort_field)
+```
+
+**查询字段映射：**
+
+```python
+if keyword:
+    # 搜索物料号和描述
+    conditions.append(f'("MaterialNo" LIKE ${param_idx} OR "Description" LIKE ${param_idx})')
+    params.append(f"%{keyword}%")
+```
+
+### 5.2 批量更新API
+
+**支持NULL值：**
+
+```python
+@rt.post("/batch_update/{table_name}")
+async def batch_update_staging(request: Request, table_name: str, data: dict = Body(...)):
+    ids = data.get('ids', [])
+    updates = data.get('updates', {})
+    
+    set_clauses = []
+    params = []
+    param_idx = 1
+    
+    for python_field, value in updates.items():
+        db_field = field_mapping.get(python_field, python_field)
+        if value is None:
+            # NULL值直接设置
+            set_clauses.append(f'"{db_field}" = NULL')
+        else:
+            set_clauses.append(f'"{db_field}" = ${param_idx}')
+            params.append(value)
+            param_idx += 1
+    
+    params.append(ids)
+    update_query = f'''
+        UPDATE "{table_name_staging}"
+        SET {', '.join(set_clauses)}, "_updatetime" = NOW()
+        WHERE "_staging_id" = ANY(${param_idx})
+    '''
+    await conn.execute_query(update_query, tuple(params))
+```
+
+---
+
+## 六、业务字段完整列表
+
+### 6.1 物料表 (t_material)
+
+| 字段名 | 说明 | 必填 | 枚举值 |
+|--------|------|------|--------|
+| materialno | 物料号 | ✓ | - |
+| description | 物料描述 | ✓ | - |
+| size | 规格 | - | - |
+| plant | 工厂 | ✓ | - |
+| planner | 计划员 | - | - |
+| fifo | FIFO标识 | - | 0/1 |
+| leadday | 提前期(天) | ✓ | - |
+| expday | 保质期(天) | - | - |
+| grday | 收货质检(天) | ✓ | - |
+| abc | ABC分类 | - | A/B/C |
+| unit | 单位 | - | - |
+| price | 价格 | - | - |
+| groupno | 型号/分组 | - | - |
+| type | 物料类型 | - | E/F |
+| phantom | 虚拟件 | - | Y/N |
+| phantommin | 虚拟时间(分) | - | - |
+| firmday | 固定天数 | - | - |
+| daygap | MTO拆分天数 | - | - |
+| candelay | 可否延迟 | - | Y/N |
+| lotsize | 批量策略 | - | EX/FX/VB/D1-D6/W1-W4/M1-M3 |
+| lotfix | 固定批量 | - | - |
+| lotmin | 最小批量 | - | - |
+| lotmax | 最大批量 | - | - |
+| lotround | 取整值 | - | - |
+| lotss | 安全库存 | - | - |
+| lotpoint | 重订货点 | - | - |
+| lottop | 最大库存点 | - | - |
+| planitem | 产品组 | - | - |
+| preday | 向前冲销(天) | - | - |
+| subday | 向后冲销(天) | - | - |
+| free1 | 自定义1 | - | - |
+| free2 | 自定义2 | - | - |
+| free3 | 自定义3 | - | - |
+
+---
+
+## 七、开发检查清单
+
+### 7.1 前端开发检查
+
+- [ ] 页面HTML结构符合模板
+- [ ] 状态卡片顺序正确（6个）
+- [ ] 列配置包含所有业务字段
+- [ ] 枚举配置与schemas.py一致
+- [ ] 编辑弹窗两列布局
+- [ ] 精准筛选字段分类正确
+- [ ] 批量编辑支持NULL设置
+- [ ] 时间格式yyyy-mm-dd hh:mm:ss
+- [ ] 等宽字体应用正确
+- [ ] 所有按钮宽度100px
+- [ ] Checkbox状态管理完整
+- [ ] 全选按钮功能正常
+
+### 7.2 后端开发检查
+
+- [ ] 数据库连接使用THIS_DB_NAME
+- [ ] 时区配置正确（use_tz: True）
+- [ ] 字段映射正确（小写→大驼峰）
+- [ ] 查询字段大小写正确
+- [ ] 批量更新支持NULL值
+- [ ] 校验逻辑使用原生SQL
+- [ ] 内部字段已屏蔽
+- [ ] 默认值配置正确（从schemas.py提取）
+- [ ] 校验流程包含默认值填充步骤
+
+---
+
+## 八、更新日志
+
+| 日期 | 版本 | 更新内容 |
+|------|------|----------|
+| 2026-05-12 | v1.0 | 初始版本 |
+| 2026-05-12 | v2.0 | 完整前后端开发规范，可作为其他表的实施范式 |
+| 2026-05-12 | v2.1 | 新增：校验阶段自动填充默认值、前端全选按钮功能 |
+| 2026-05-12 | v2.2 | 修复：单条编辑空字符串处理、必填字段清空校验、校验循环处理、枚举校验完善、编辑后状态重置 |
+| 2026-05-12 | v2.3 | 优化：校验错误详情展示、datetime时区修复、枚举标签样式、校验进度条动画 |
+
+---
+
+## 九、v2.3版本更新详情
+
+### 9.1 校验错误详情展示
+
+**列表中错误字段高亮**：
+
+```javascript
+// data-table.js - renderCell方法
+const errorInfo = errorMap[col.field];
+if (errorInfo) {
+    return `<span class="error-cell" data-error-type="${errorInfo.type}" 
+                 data-error-msg="${errorInfo.message}">${value}</span>`;
+}
+```
+
+**悬停显示错误信息**：
+
+```javascript
+bindTooltip() {
+    document.querySelectorAll('.error-cell').forEach(cell => {
+        cell.addEventListener('mouseenter', (e) => {
+            // 显示错误类型和错误信息
+        });
+    });
+}
+```
+
+**状态单元格显示完整错误JSON**：
+
+- 悬停"校验失败"状态
+- 显示所有错误（包括无法指向具体字段的错误）
+- 支持多条错误分隔显示
+
+### 9.2 datetime时区问题修复
+
+**问题1：ValidationError.createtime**
+
+```python
+# 之前
+createtime = fields.DatetimeField(auto_now_add=True)
+
+# 现在
+createtime = fields.DatetimeField(default=lambda: datetime.now(timezone.utc))
+```
+
+**问题2：check_duplicate使用ORM查询**
+
+```python
+# 之前（ORM查询，有时区问题）
+query = staging_model.filter(**conditions)
+count = await query.count()
+
+# 现在（原生SQL）
+query = f'SELECT COUNT(*) as cnt FROM "{table_name_staging}" WHERE ...'
+result = await conn.execute_query(query, tuple(params))
+count = result[1][0]["cnt"]
+```
+
+**问题3：读取记录时datetime无时区**
+
+```python
+for python_field, db_field in field_map.items():
+    value = record_dict.get(db_field)
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+```
+
+### 9.3 枚举字段标签样式
+
+**实现效果**：枚举字段值以圆边矩形标签显示。
+
+**前端配置**：
+
+```javascript
+// material.js
+dataTable = new DataTable({
+    enumFields: Object.keys(ENUM_OPTIONS)  // ['abc', 'fifo', 'type', 'phantom', ...]
+});
+```
+
+**样式定义**：
+
+```css
+.enum-tag {
+    display: inline-block;
+    background-color: #c9e6fc;
+    border-radius: 4px;
+    padding: 0.1rem 0.4rem;
+    color: #0066cc;
+}
+
+.enum-tag-error {
+    background-color: #ffcccc;
+    color: #cc0000;
+}
+```
+
+### 9.4 校验进度条动画
+
+**实现效果**：
+- 实时显示校验进度
+- 平滑动画过渡
+- API等待时流动动画
+
+**进度条函数**：
+
+```javascript
+// common.js
+function showProgress(title, total)      // 显示进度条
+function updateProgress(current, total)  // 更新进度
+function setProgressIndeterminate(bool)  // 设置流动动画
+function hideProgress()                  // 隐藏进度条
+```
+
+**校验逻辑优化**：
+
+```javascript
+// material.js
+async function validateData() {
+    while (true) {
+        setProgressIndeterminate(true);  // API请求时流动动画
+        const response = await callApi(`/validate/${TABLE_NAME}?batch_size=200`, 'POST');
+        setProgressIndeterminate(false);
+        
+        // 平滑动画过渡（10步，每步30ms）
+        await animateProgress(processed, processed + batchProcessed, pendingCount);
+        processed += batchProcessed;
+        
+        await sleep(50);  // 批次间延迟
+    }
+}
+
+async function animateProgress(from, to, total) {
+    const steps = 10;
+    const stepSize = (to - from) / steps;
+    for (let i = 1; i <= steps; i++) {
+        updateProgress(Math.round(from + stepSize * i), total);
+        await sleep(30);
+    }
+}
+```
+
+**流动动画CSS**：
+
+```css
+.progress-bar-indeterminate {
+    background: linear-gradient(90deg, transparent 0%, #0d6efd 20%, #0dcaf0 40%, #0d6efd 60%, transparent 100%);
+    background-size: 200% 100%;
+    animation: progress-indeterminate 1.5s linear infinite;
+}
+
+@keyframes progress-indeterminate {
+    0% { background-position: 100% 0; }
+    100% { background-position: -100% 0; }
+}
+```
+
+### 9.5 修改文件清单
+
+| 文件 | 修改内容 |
+|------|----------|
+| `apps/data_opt/staging_models.py` | ValidationError.createtime时区修复 |
+| `apps/data_opt/staging_cleaner.py` | check_duplicate改原生SQL、异常捕获增强、日志输出 |
+| `static/mds/js/data-table.js` | 错误字段高亮、枚举标签、悬停提示、parseErrorFields方法 |
+| `static/mds/js/material.js` | 进度条动画、enumFields配置、animateProgress方法 |
+| `static/mds/js/common.js` | 进度条函数、不确定进度模式 |
+| `static/mds/css/custom.css` | 枚举标签样式、错误单元格样式、进度条动画样式 |
+
+---
+
+## 九、v2.2版本更新详情
+
+### 9.1 单条编辑空字符串处理
+
+**问题**：前端传空字符串，后端未处理，导致整型字段解析失败。
+
+**修复**：后端 `update_staging` 方法，空字符串自动转为NULL。
+
+```python
+# staging_routers.py
+for key, value in data.items():
+    if key not in exclude_fields:
+        db_col = field_map.get(key, key)
+        if value is None or value == '':
+            set_parts.append(f'"{db_col}" = NULL')
+        else:
+            set_parts.append(f'"{db_col}" = ${param_idx}')
+            values.append(value)
+```
+
+### 9.2 必填字段清空校验
+
+**问题**：批量编辑时可清空必填字段，导致违反NOT NULL约束。
+
+**修复**：前端增加 `REQUIRED_FIELDS` 配置，清空前校验。
+
+```javascript
+// material.js
+const REQUIRED_FIELDS = ['materialno', 'description', 'plant', 'leadday', 'grday', 'abc', 'unit', 'groupno'];
+
+// 清空前校验
+if (REQUIRED_FIELDS.includes(field)) {
+    showMessage('该字段是必填字段，不能清空', 'warning');
+    return;
+}
+```
+
+**编辑弹窗必填标记**：
+
+```javascript
+function generateEditField(col, row) {
+    const isRequired = REQUIRED_FIELDS.includes(fieldName);
+    const labelHtml = `<label>${col.title}${isRequired ? '<span class="text-danger">*</span>' : ''}</label>`;
+    // ...
+}
+```
+
+### 9.3 校验循环处理所有记录
+
+**问题**：`batch_size` 限制，每次只处理100条，剩余pending记录不处理。
+
+**修复**：改为while循环 + 原生SQL查询，直到没有pending记录。
+
+```python
+async def process_staging(self, table_name: str, batch_size: int = 100, max_batches: int = 100):
+    batch_count = 0
+    while batch_count < max_batches:
+        # 原生SQL查询（避免ORM缓存问题）
+        query = f'SELECT * FROM "{table_name_staging}" WHERE "_status" = $1 LIMIT $2'
+        result = await conn.execute_query(query, ("pending", batch_size))
+        pending_records = result[1] if result[1] else []
+        
+        if not pending_records:
+            break
+        
+        batch_count += 1
+        
+        for raw_record in pending_records:
+            # 处理单条记录...
+```
+
+**新增参数**：
+- `max_batches`：最大批次数（默认100），防止无限循环
+
+### 9.4 枚举校验完善
+
+**问题**：部分枚举字段未校验，如 `abc`、`fifo`。
+
+**修复**：补充完整枚举校验。
+
+```python
+class DataCleaner:
+    ABC_ENUM = {"A", "B", "C"}
+    FIFO_ENUM = {0, 1, "0", "1"}
+    MATERIAL_TYPE_ENUM = {"E", "P", "F", "M", "B"}
+    YES_NO_ENUM = {"Y", "N"}
+    LOT_SIZE_ENUM = {"EX", "FX", "D1", "D2", "D3", "D4", "D5", "D6", "W1", "W2", "W3", "W4", "M1", "M2", "VB"}
+
+async def validate_material(self, data, staging_id):
+    # ABC分类校验
+    if data.get("abc") and str(data["abc"]) not in self.ABC_ENUM:
+        errors.append(...)
+    
+    # FIFO校验
+    if data.get("fifo") is not None and str(data["fifo"]) not in {"0", "1"}:
+        errors.append(...)
+```
+
+**物料表完整枚举校验清单**：
+
+| 字段 | 枚举值 | 说明 |
+|------|--------|------|
+| abc | A, B, C | ABC分类 |
+| fifo | 0, 1 | FIFO标识 |
+| type | E, P, F, M, B | 物料类型 |
+| phantom | Y, N | 虚拟件标识 |
+| candelay | Y, N | 可否延迟 |
+| lotsize | EX, FX, VB, D1-D6, W1-W4, M1-M2 | 批量策略 |
+
+### 9.5 编辑后状态重置
+
+**问题**：编辑validated记录后状态仍为validated，可跳过校验直接同步。
+
+**修复**：编辑后状态重置为pending，清空错误信息。
+
+**单条更新**：
+
+```python
+# staging_routers.py - update_staging
+set_parts.append('"_status" = $' + str(param_idx))
+values.append('pending')
+set_parts.append('"_error_msg" = NULL')
+```
+
+**批量更新**：
+
+```python
+# staging_routers.py - batch_update_staging
+UPDATE "{table_name_staging}"
+SET ..., "_updatetime" = NOW(), "_status" = 'pending', "_error_msg" = NULL
+WHERE "_staging_id" = ANY(${param_idx})
+```
+
+**编辑后行为**：
+
+| 原状态 | 编辑后状态 | 说明 |
+|--------|-----------|------|
+| pending | pending | 无变化 |
+| validated | pending | 需重新校验 |
+| rejected | pending | 清空错误，重新校验 |
+| synced | pending | 需重新校验 |
+
+### 9.6 校验异常捕获
+
+**修复**：单条记录处理异常时，标记为rejected并记录错误信息，继续处理其他记录。
+
+```python
+for raw_record in pending_records:
+    try:
+        # 处理单条记录...
+    except Exception as e:
+        logger.error(f"处理记录失败: {str(e)}")
+        error_json = json.dumps([{
+            "error_type": "process_error",
+            "error_message": f"处理异常: {str(e)}"
+        }])
+        # 标记为rejected
+        await conn.execute_query(update_query, ("rejected", error_json, staging_id))
+        stats["rejected"] += 1
+```
+
+### 9.7 修改文件清单
+
+| 文件 | 修改内容 |
+|------|----------|
+| `apps/data_opt/staging_routers.py` | 空字符串转NULL、状态重置 |
+| `apps/data_opt/staging_cleaner.py` | 循环处理、枚举校验、异常捕获、日志输出 |
+| `static/mds/js/material.js` | REQUIRED_FIELDS、必填标记、清空校验 |
