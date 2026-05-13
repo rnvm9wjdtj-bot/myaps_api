@@ -16,6 +16,7 @@ dist/
 # IDE directories and files
 .vscode/
 .idea/
+.arts/
 *.suo
 *.ntvs*
 *.njsproj

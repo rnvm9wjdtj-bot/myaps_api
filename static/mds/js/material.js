@@ -25,8 +25,8 @@ const TABLE_COLUMNS = [
     { field: 'type', title: '类型', width: '50px' },
     { field: 'phantom', title: '虚拟件', width: '60px' },
     { field: 'phantommin', title: '虚拟时间', width: '70px' },
-    { field: 'firmday', title: '固定天', width: '60px' },
-    { field: 'daygap', title: '拆分天', width: '60px' },
+    { field: 'firmday', title: '固定天数', width: '60px' },
+    { field: 'daygap', title: '拆分天数', width: '60px' },
     { field: 'candelay', title: '可延迟', width: '60px' },
     { field: 'lotsize', title: '批量策略', width: '70px' },
     { field: 'lotfix', title: '固定批', width: '60px' },
@@ -357,17 +357,197 @@ async function validateAllData() {
 }
 
 async function syncData() {
-    showLoading();
+    const response = await callApi(`/status/${TABLE_NAME}`);
+    if (response.success !== 1) {
+        showMessage('获取状态失败', 'danger');
+        return;
+    }
     
-    const response = await callApi(`/sync/${TABLE_NAME}`, 'POST');
+    const stats = response.data;
+    const validatedCount = stats.validated || 0;
+    const retryExceeded = stats.retry_exceeded || 0;
     
-    hideLoading();
+    if (validatedCount === 0) {
+        showMessage('没有校验通过的记录可同步', 'warning');
+        return;
+    }
     
-    handleResponse(response, (data) => {
-        const stats = data.data;
-        showMessage(`同步完成: 成功${stats.synced}条, 失败${stats.failed}条`, 'success');
-        dataTable.refresh();
-        statusCard.refresh();
+    // 如果有超过重试次数的记录，询问是否重置
+    let resetRetry = false;
+    if (retryExceeded > 0) {
+        resetRetry = confirm(`有${retryExceeded}条记录的重试次数已达上限，是否重置重试次数后同步？\n\n点击"确定"重置并同步，点击"取消"跳过这些记录`);
+    }
+    
+    const { mode, targetDbs } = await showSyncModeDialog(validatedCount);
+    if (!mode || !targetDbs || targetDbs.length === 0) return;
+    
+    const targetDbParam = targetDbs.join(',');
+    const totalCount = validatedCount * targetDbs.length;
+    
+    showProgress(mode === 'incremental' ? '增量同步中' : '刷新同步中', totalCount);
+    
+    let totalSynced = 0;
+    let totalFailed = 0;
+    let processed = 0;
+    
+    // 构建API URL
+    const baseUrl = `/sync/${TABLE_NAME}?batch_size=200&mode=${mode}&target_dbs=${encodeURIComponent(targetDbParam)}&reset_retry=${resetRetry}`;
+    
+    // 刷新模式只调用一次，增量模式循环调用
+    if (mode === 'refresh') {
+        // 刷新模式：一次性同步
+        setProgressIndeterminate(true);
+        const syncResponse = await callApi(baseUrl, 'POST');
+        setProgressIndeterminate(false);
+        
+        if (syncResponse.success !== 1) {
+            hideProgress();
+            showMessage(syncResponse.message || '同步失败', 'danger');
+        } else {
+            const syncStats = syncResponse.data;
+            totalSynced = syncStats.total_synced || 0;
+            totalFailed = syncStats.total_failed || 0;
+            updateProgress(totalSynced + totalFailed, totalCount, `已处理 ${totalSynced + totalFailed}/${totalCount}`);
+            
+            // 根据成功/失败显示不同消息
+            if (totalFailed > 0) {
+                showMessage(`同步完成: ${targetDbs.length}个账套, 成功${totalSynced}条, 失败${totalFailed}条（部分记录缺少必填字段）`, 'warning');
+            } else {
+                showMessage(`同步完成: ${targetDbs.length}个账套, 成功${totalSynced}条`, 'success');
+            }
+        }
+    } else {
+        // 增量模式：循环调用直到没有数据
+        let firstCall = true;
+        while (true) {
+            setProgressIndeterminate(true);
+            const url = firstCall ? baseUrl : `/sync/${TABLE_NAME}?batch_size=200&mode=${mode}&target_dbs=${encodeURIComponent(targetDbParam)}`;
+            const syncResponse = await callApi(url, 'POST');
+            setProgressIndeterminate(false);
+            firstCall = false;
+            
+            if (syncResponse.success !== 1) {
+                hideProgress();
+                showMessage(syncResponse.message || '同步失败', 'danger');
+                break;
+            }
+            
+            const syncStats = syncResponse.data;
+            const batchSynced = syncStats.total_synced || 0;
+            const batchFailed = syncStats.total_failed || 0;
+            
+            totalSynced += batchSynced;
+            totalFailed += batchFailed;
+            processed += batchSynced + batchFailed;
+            
+            if (processed > 0) {
+                updateProgress(processed, totalCount, `已处理 ${processed}/${totalCount}`);
+            }
+            
+            if (batchSynced === 0 && batchFailed === 0) {
+                break;
+            }
+            
+            await sleep(50);
+        }
+        
+        // 根据成功/失败显示不同消息
+        if (totalFailed > 0) {
+            showMessage(`同步完成: ${targetDbs.length}个账套, 成功${totalSynced}条, 失败${totalFailed}条（部分记录缺少必填字段）`, 'warning');
+        } else {
+            showMessage(`同步完成: ${targetDbs.length}个账套, 成功${totalSynced}条`, 'success');
+        }
+    }
+    
+    hideProgress();
+    
+    dataTable.refresh();
+    statusCard.refresh();
+}
+
+async function showSyncModeDialog(validatedCount) {
+    // 获取账套列表
+    const dbListResponse = await callApi('/dblist');
+    const dbList = dbListResponse.success === 1 ? dbListResponse.data : [];
+    
+    return new Promise((resolve) => {
+        const modalHtml = `
+            <div class="modal fade" id="syncModeModal" tabindex="-1">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">选择同步模式</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">目标账套</label>
+                                <div class="border rounded p-2" style="max-height: 150px; overflow-y: auto;">
+                                    ${dbList.map((db, idx) => `
+                                        <div class="form-check">
+                                            <input class="form-check-input target-db-checkbox" type="checkbox" id="targetDb_${idx}" value="${db}" checked>
+                                            <label class="form-check-label" for="targetDb_${idx}">${db}</label>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                                <div class="form-text">默认全选，可取消勾选排除不需要同步的账套</div>
+                            </div>
+                            <hr>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">同步模式</label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="syncMode" id="modeIncremental" value="incremental" checked>
+                                    <label class="form-check-label" for="modeIncremental">
+                                        <strong>增量同步</strong> <span class="badge bg-primary">${validatedCount}条</span>
+                                    </label>
+                                    <div class="text-muted small mt-1">仅同步校验通过的新数据，保留正式表现有数据</div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="syncMode" id="modeRefresh" value="refresh">
+                                    <label class="form-check-label" for="modeRefresh">
+                                        <strong>刷新同步</strong> <span class="badge bg-warning text-dark">${validatedCount}条</span>
+                                    </label>
+                                    <div class="text-muted small mt-1">清空正式表后，重新同步校验通过的数据</div>
+                                </div>
+                            </div>
+                            <div class="alert alert-warning small mb-0">
+                                <i class="bi bi-exclamation-triangle"></i> 刷新同步将<strong>删除正式表所有数据</strong>，请谨慎操作！
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                            <button type="button" class="btn btn-primary" id="confirmSyncBtn">开始同步</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const modal = new bootstrap.Modal(document.getElementById('syncModeModal'));
+        const confirmBtn = document.getElementById('confirmSyncBtn');
+        
+        confirmBtn.addEventListener('click', () => {
+            const mode = document.querySelector('input[name="syncMode"]:checked').value;
+            const targetDbs = Array.from(document.querySelectorAll('.target-db-checkbox:checked')).map(cb => cb.value);
+            
+            if (targetDbs.length === 0) {
+                showMessage('请至少选择一个目标账套', 'warning');
+                return;
+            }
+            
+            modal.hide();
+            resolve({ mode, targetDbs });
+        });
+        
+        document.getElementById('syncModeModal').addEventListener('hidden.bs.modal', function() {
+            this.remove();
+            resolve({ mode: null, targetDbs: [] });
+        }, { once: true });
+        
+        modal.show();
     });
 }
 

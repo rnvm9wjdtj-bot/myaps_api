@@ -1082,10 +1082,360 @@ async def batch_update_staging(request: Request, table_name: str, data: dict = B
 | 2026-05-12 | v2.1 | 新增：校验阶段自动填充默认值、前端全选按钮功能 |
 | 2026-05-12 | v2.2 | 修复：单条编辑空字符串处理、必填字段清空校验、校验循环处理、枚举校验完善、编辑后状态重置 |
 | 2026-05-12 | v2.3 | 优化：校验错误详情展示、datetime时区修复、枚举标签样式、校验进度条动画 |
+| 2026-05-12 | v2.4 | 优化：双击编辑、错误呼吸动画、同步模式选择、数据类型转换、UPSERT机制 |
+| 2026-05-13 | v2.5 | 重大更新：多账套同步支持、前端内存泄漏修复、None值累加全面修复、错误信息格式统一、刷新同步逻辑优化 |
 
 ---
 
-## 九、v2.3版本更新详情
+## 九、v2.5版本更新详情
+
+### 9.1 多账套同步支持
+
+**新增功能**：支持将数据同步到多个账套（数据库）。
+
+**前端实现**：
+- 同步模式对话框增加账套选择
+- 默认全选所有账套，可取消勾选排除
+
+**后端实现**：
+- `sync_to_production` 新增 `update_status` 参数
+- 多账套同步策略：
+  - 先同步所有账套（`update_status=False`）
+  - 最后统一更新缓冲表状态
+
+**代码示例**：
+
+```python
+# staging_routers.py
+if len(target_db_list) > 1:
+    # 第一步：同步到所有账套（不更新状态）
+    for target_db in target_db_list:
+        stats = await processor.sync_to_production(
+            table_name=table_name,
+            target_db=target_db,
+            update_status=False  # 不更新状态
+        )
+    
+    # 第二步：统一更新缓冲表状态
+    update_query = f'UPDATE "{staging_table_name}" SET "_status" = $1 WHERE "_status" = $2'
+    await conn.execute_query(update_query, ("synced", "validated"))
+```
+
+### 9.2 前端内存泄漏修复
+
+**问题1：Blob URL未释放**
+
+```javascript
+// 修复前
+link.href = URL.createObjectURL(blob);
+link.click();
+// Blob URL泄漏！
+
+// 修复后
+const blobUrl = URL.createObjectURL(blob);
+link.href = blobUrl;
+link.click();
+setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+```
+
+**问题2：Tooltip DOM未删除**
+
+```javascript
+// 修复前
+cell.addEventListener('mouseleave', (e) => {
+    e.target._tooltip.style.display = 'none';  // 只隐藏
+});
+
+// 修复后
+cell.addEventListener('mouseleave', (e) => {
+    e.target._tooltip.remove();  // 删除DOM
+    e.target._tooltip = null;
+});
+```
+
+### 9.3 None值累加全面修复
+
+**问题根源**：Python的 `dict.get("key", 0)` 在值为 `None` 时返回 `None` 而非默认值。
+
+**错误写法**：
+```python
+value = dict.get("key", 0) + 1  # 如果值是None → TypeError!
+```
+
+**正确写法**：
+```python
+value = (dict.get("key") or 0) + 1  # 先取值，再处理None
+```
+
+**修复位置**：
+
+| 文件 | 修复内容 |
+|------|----------|
+| `db_operation.py` | 批次累加、账套累加、affected_rows计算 |
+| `db_manager.py` | `total_inserted`、`total_updated` |
+| `staging_cleaner.py` | `stats["failed"]`、`retry_count` |
+| `staging_routers.py` | `total_synced`、`total_failed` |
+| `event_aggregator.py` | `low_queue_count` |
+
+### 9.4 错误信息格式统一
+
+**问题**：`_error_msg` 字段格式不统一，前端解析失败。
+
+**统一格式**：
+
+```json
+[
+  {
+    "staging_id": 123,
+    "error_type": "schema_error",
+    "error_field": "groupno",
+    "error_value": null,
+    "error_message": "Input should be a valid string"
+  }
+]
+```
+
+**前端容错**：
+
+```javascript
+// data-table.js
+parseErrorFields(row) {
+    try {
+        let errorData = row._error_msg;
+        if (typeof errorData === 'string') {
+            errorData = JSON.parse(errorData);
+        }
+        if (!Array.isArray(errorData)) {
+            errorData = [errorData];
+        }
+        // ...
+    } catch (e) {
+        errorMap['_error'] = { type: 'parse_error', message: '错误信息格式异常' };
+    }
+}
+```
+
+### 9.5 刷新同步逻辑优化
+
+**问题**：前端循环调用同步API，每次都执行TRUNCATE，导致数据被清空。
+
+**修复方案**：
+
+| 模式 | 前端调用策略 |
+|------|-------------|
+| 增量模式 | 循环调用直到没有数据 |
+| 刷新模式 | 只调用一次 |
+
+**代码示例**：
+
+```javascript
+// material.js
+if (mode === 'refresh') {
+    // 刷新模式：一次性同步
+    const syncResponse = await callApi(`/sync/${TABLE_NAME}?mode=${mode}...`);
+    // 直接显示结果
+} else {
+    // 增量模式：循环调用
+    while (true) {
+        const syncResponse = await callApi(`/sync/${TABLE_NAME}?mode=${mode}...`);
+        if (batchSynced === 0 && batchFailed === 0) break;
+    }
+}
+```
+
+### 9.6 默认值填充增强
+
+**问题**：Schema中部分字段默认值为 `None`，填充函数未处理。
+
+**修复**：`fill_defaults` 函数增强：
+
+```python
+def fill_defaults(table_name: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    # 遍历所有字段
+    for field_name, field_info in schema_class.model_fields.items():
+        current_value = result.get(field_name)
+        
+        if current_value in NONE_AND_EMPTY:
+            # 优先使用 SCHEMA_DEFAULTS
+            if field_name in defaults and defaults[field_name] is not None:
+                result[field_name] = defaults[field_name]
+            else:
+                # 从 Field.default 获取
+                field_default = field_info.default
+                if field_default is not None:
+                    result[field_name] = field_default
+                # 特殊处理：可选字符串 → ""
+                elif field_name in ['size', 'planitem', 'memo']:
+                    result[field_name] = ""
+                # 特殊处理：可选数值 → 0.0
+                elif field_name in ['lotmin', 'lotmax']:
+                    result[field_name] = 0.0
+```
+
+---
+
+## 十、v2.4版本更新详情
+
+### 9.1 双击编辑触发
+
+**修改内容**：单击改双击打开编辑弹窗。
+
+```javascript
+// data-table.js
+tbody.querySelectorAll('.table-row').forEach(tr => {
+    tr.addEventListener('dblclick', (e) => {  // click → dblclick
+        // 打开编辑弹窗
+    });
+    tr.style.cursor = 'pointer';
+    tr.title = '双击编辑';
+});
+```
+
+### 9.2 错误字段呼吸动画
+
+**动画参数**：
+
+| 元素 | 周期 | 效果 |
+|------|------|------|
+| 枚举错误标签 | 3s | 背景色 + 外发光 |
+| 错误单元格 | 3s | 背景色 + 边框 + 外发光 |
+| 校验失败行 | 4s | 背景色渐变 |
+
+**CSS动画**：
+
+```css
+@keyframes error-cell-breathe {
+    0%, 100% {
+        background-color: #ffe6e6;
+        border-color: #dc3545;
+        box-shadow: 0 0 0 rgba(220, 53, 69, 0);
+    }
+    50% {
+        background-color: #ffcccc;
+        border-color: #ff6666;
+        box-shadow: 0 0 6px rgba(220, 53, 69, 0.4);
+    }
+}
+
+@keyframes row-rejected-breathe {
+    0%, 100% { background-color: #fff8f8; }
+    50% { background-color: #fff0f0; }
+}
+```
+
+### 9.3 同步模式选择
+
+**两种模式**：
+
+| 模式 | 说明 | 数据范围 |
+|------|------|----------|
+| 增量同步 | 仅同步校验通过的新数据 | validated 状态 |
+| 刷新同步 | 清空正式表后重新同步 | validated 状态 |
+
+**前端对话框**：
+
+```javascript
+function showSyncModeDialog(validatedCount) {
+    // 显示两种模式选项
+    // 增量同步：保留正式表现有数据
+    // 刷新同步：删除正式表所有数据
+}
+```
+
+**后端实现**：
+
+```python
+async def sync_to_production(..., mode: str = "incremental"):
+    if mode == "refresh":
+        # 清空正式表
+        await mysql_conn.execute_query(f'TRUNCATE TABLE `{target_table_name}`')
+    
+    # 无论哪种模式，都只同步 validated 状态
+    query = f'SELECT * FROM "{staging_table_name}" WHERE "_status" = $1'
+```
+
+### 9.4 数据类型自动转换
+
+**问题**：前端表单提交都是字符串，数据库需要正确类型。
+
+**修复**：后端根据字段类型自动转换。
+
+```python
+field_types = {}
+for field in model_class._meta.fields_map.values():
+    field_types[field.model_field_name] = type(field).__name__
+
+for key, value in data.items():
+    field_type = field_types.get(key, '')
+    if field_type == 'IntField':
+        value = int(value)
+    elif field_type == 'FloatField':
+        value = float(value)
+    elif field_type == 'DecimalField':
+        value = Decimal(str(value))
+```
+
+**影响范围**：
+- POST接收数据（insert_to_staging_table）
+- 单条编辑（update_staging）
+- 批量编辑（batch_update_staging）
+
+### 9.5 UPSERT机制
+
+**问题**：POST接收数据时，已存在记录会主键冲突报错。
+
+**修复**：改为 INSERT ON CONFLICT UPDATE。
+
+```python
+query = f'''
+    INSERT INTO "{table_name}" ({column_list}) VALUES ({placeholders})
+    ON CONFLICT ({conflict_target}) DO UPDATE SET {update_clause}
+'''
+```
+
+**各表主键**：
+
+| 表名 | 主键字段 |
+|------|----------|
+| t_material | materialno |
+| t_workcenter | workcenter |
+| t_mat_ver | materialno, matver |
+| t_mat_wc | materialno, matver, itemno |
+| t_mat_wc_bom | productno, matver, itemno, materialno |
+| t_mold | moldno |
+| t_mat_wc_mold | materialno, workcenter, itemno, moldno |
+
+**行为变化**：
+
+| 场景 | 之前 | 现在 |
+|------|------|------|
+| 新记录 | INSERT，状态 pending | INSERT，状态 pending |
+| 已存在记录 | ❌ 主键冲突 | UPDATE，状态 pending |
+| 已校验记录被覆盖 | 不可能 | 状态重置为 pending |
+
+**UPDATE字段**：
+- 所有业务字段
+- `_source_system`
+- `_status` → 'pending'
+- `_updatetime` → NOW()
+
+**不更新**：
+- `_staging_id`
+- `_createtime`
+
+### 9.6 修改文件清单
+
+| 文件 | 修改内容 |
+|------|----------|
+| `staging_routers.py` | UPSERT、类型转换 |
+| `staging_cleaner.py` | 同步模式参数、原生SQL |
+| `data-table.js` | 双击编辑、enumFields |
+| `material.js` | 同步模式对话框、进度条 |
+| `custom.css` | 呼吸动画 |
+
+---
+
+## 十、v2.3版本更新详情
 
 ### 9.1 校验错误详情展示
 

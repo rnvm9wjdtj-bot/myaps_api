@@ -248,8 +248,11 @@ function downloadTemplate(tableName) {
     let csv = data.map(row => row.join(',')).join('\n');
     
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    const blobUrl = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
+    link.href = blobUrl;
     link.download = `${tableName}_template.csv`;
     link.click();
+    
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
 }

@@ -115,8 +115,8 @@ class TransformRule(TortoiseBaseModel):
     is_active = fields.BooleanField(default=True, description="是否启用")
     priority = fields.IntField(default=0, description="优先级")
     description = fields.TextField(null=True, description="规则描述")
-    createtime = fields.DatetimeField(auto_now_add=True)
-    updatetime = fields.DatetimeField(auto_now=True)
+    createtime = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="创建时间")
+    updatetime = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="更新时间")
 
     class Meta:
         table = "t_transform_rule"

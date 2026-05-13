@@ -993,6 +993,7 @@ class DbManager:
                     # - 未改变：影响行数 = 0
                     # 使用实际处理的数据行数（len(batch)）代替batch_size，因为可能有重复数据
                     actual_size = len(batch)
+                    affected = affected or 0
                     updated = max(0, affected - actual_size)
                     inserted = affected - 2 * updated
                     # 确保插入数量为非负数
@@ -1001,11 +1002,13 @@ class DbManager:
                     # 对于 INSERT IGNORE:
                     # - 成功插入：影响行数 = 1
                     # - 忽略冲突：影响行数 = 0
-                    inserted = affected
+                    inserted = affected or 0
                     updated = 0
                 
-                total_inserted += inserted
-                total_updated += updated
+                logger.info(f"批量upsert执行成功: 表={table_name}, 批次={i//batch_size + 1}, 影响行数={affected}, 插入={inserted}, 更新={updated}")
+                
+                total_inserted = (total_inserted or 0) + inserted
+                total_updated = (total_updated or 0) + updated
                 
                 self.stats['batches_executed'] += 1
                 
@@ -1019,9 +1022,9 @@ class DbManager:
                 continue
         
         return {
-            'inserted': total_inserted,
-            'updated': total_updated,
-            'total': total_inserted + total_updated
+            'inserted': total_inserted or 0,
+            'updated': total_updated or 0,
+            'total': (total_inserted or 0) + (total_updated or 0)
         }
     
     
@@ -1142,9 +1145,9 @@ class DbManager:
                 inserted_count += 1
         
         return {
-            'inserted': inserted_count,
-            'updated': updated_count,
-            'total': inserted_count + updated_count
+            'inserted': inserted_count or 0,
+            'updated': updated_count or 0,
+            'total': (inserted_count or 0) + (updated_count or 0)
         }
     
 
@@ -1479,16 +1482,16 @@ class DbManager:
                 # 影响行数 = 新增行数 + 更新成功的行数
                 updated = max(0, affected - inserted)
                 
-                total_inserted += inserted
-                total_updated += updated
+                total_inserted = (total_inserted or 0) + inserted
+                total_updated = (total_updated or 0) + updated
         
         # 移除事务分支，直接执行批次处理
         await execute_batch()
         
         return {
-            'inserted': total_inserted,
-            'updated': total_updated,
-            'total': total_inserted + total_updated
+            'inserted': total_inserted or 0,
+            'updated': total_updated or 0,
+            'total': (total_inserted or 0) + (total_updated or 0)
         }
     
 

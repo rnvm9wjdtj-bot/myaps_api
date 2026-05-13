@@ -58,7 +58,7 @@ class AcceptMaterial(BaseModel):
     abc: gc.AbcEnum = Field(..., example="A", description="ABC分类")
     unit: str = Field(..., description='单位', example="PCS")
     price: Decimal = Field(0, description="价格", ge=0, example=100.50)
-    groupno: str = Field(..., description="型号", example="G001")
+    groupno: str = Field("", description="型号", example="G001")
     type: gc.EfEnum = Field(... if MYAPS_VERSION == 'P' else None, example="E", description="物料类型  E-自制件 F-采购件")
     phantom: gc.YesNoEnum = Field(pdv.MAT_PHANTOM, example="N", description='虚拟件')
     phantommin: int = Field(pdv.MAT_PHANTOMMIN, ge=0, description='虚拟时间(Minute)', example=0)

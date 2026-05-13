@@ -93,18 +93,53 @@ def fill_defaults(table_name: str, data: Dict[str, Any]) -> Dict[str, Any]:
         填充后的数据字典
     """
     defaults = SCHEMA_DEFAULTS.get(table_name, {})
-    if not defaults:
-        return data
     
     result = data.copy()
-    for field_name, default_value in defaults.items():
-        if default_value is None:
-            continue
-        if result.get(field_name) in NONE_AND_EMPTY:
-            if isinstance(default_value, datetime):
-                default_value = default_value.replace(tzinfo=timezone.utc)
-            result[field_name] = default_value
-            logger.debug(f"填充默认值: {table_name}.{field_name} = {default_value}")
+    
+    # 根据字段类型获取默认值
+    schema_map = {
+        "t_material": AcceptMaterial,
+        "t_workcenter": AcceptWorkcenter,
+        "t_mat_ver": AcceptMatVer,
+        "t_mat_wc": AcceptMatWc,
+        "t_mat_wc_bom": AcceptMatWcBom,
+        "t_mold": AcceptMold,
+        "t_mat_wc_mold": AcceptMatWcMold,
+    }
+    
+    schema_class = schema_map.get(table_name)
+    if not schema_class:
+        return data
+    
+    # 遍历所有字段，填充默认值
+    for field_name, field_info in schema_class.model_fields.items():
+        current_value = result.get(field_name)
+        
+        # 如果当前值是 None 或空字符串
+        if current_value in NONE_AND_EMPTY:
+            # 优先使用 SCHEMA_DEFAULTS 中的默认值
+            if field_name in defaults and defaults[field_name] is not None:
+                default_value = defaults[field_name]
+                if isinstance(default_value, datetime):
+                    default_value = default_value.replace(tzinfo=timezone.utc)
+                result[field_name] = default_value
+                logger.debug(f"填充默认值: {table_name}.{field_name} = {default_value}")
+            else:
+                # 根据 Field 定义获取默认值
+                field_default = field_info.default
+                
+                # 如果 Field 默认值不是 None 且不是 PydanticUndefined
+                if field_default is not None and str(field_default) != 'PydanticUndefined':
+                    result[field_name] = field_default
+                    logger.debug(f"填充字段默认值: {table_name}.{field_name} = {field_default}")
+                # 对于可选的字符串字段，填充空字符串
+                elif field_name in ['size', 'planitem', 'memo', 'free1', 'free2', 'free3']:
+                    result[field_name] = ""
+                    logger.debug(f"填充空字符串: {table_name}.{field_name} = ''")
+                # 对于可选的数值字段，填充 0
+                elif field_name in ['lotmin', 'lotmax']:
+                    result[field_name] = 0.0
+                    logger.debug(f"填充零值: {table_name}.{field_name} = 0.0")
     
     return result
 
@@ -504,15 +539,18 @@ class DataCleaner:
         """保存错误记录"""
         try:
             for err in errors:
-                await ValidationError.create(
-                    staging_table=staging_table,
-                    staging_id=err.get("staging_id"),
-                    error_type=err["error_type"],
-                    error_field=err["error_field"],
-                    error_value=err.get("error_value"),
-                    error_message=err["error_message"],
-                    suggestion=self._get_suggestion(err["error_type"])
-                )
+                try:
+                    await ValidationError.create(
+                        staging_table=staging_table,
+                        staging_id=err.get("staging_id"),
+                        error_type=err["error_type"],
+                        error_field=err["error_field"],
+                        error_value=err.get("error_value"),
+                        error_message=err["error_message"],
+                        suggestion=self._get_suggestion(err["error_type"])
+                    )
+                except Exception as e:
+                    logger.warning(f"保存单条错误记录失败(已忽略): {str(e)}")
         except Exception as e:
             import traceback
             logger.error(f"保存错误记录失败: {str(e)}")
@@ -721,110 +759,176 @@ class StagingProcessor:
         return stats
 
     async def sync_to_production(self, table_name: str, batch_size: int = 100, 
-                                   max_retries: int = 3, use_transaction: bool = True) -> Dict[str, int]:
-        """同步到正式表（使用原生SQL）"""
+                                   max_retries: int = 3, use_transaction: bool = True,
+                                   mode: str = "incremental", target_db: str = None,
+                                   update_status: bool = True) -> Dict[str, int]:
+        """同步到正式表（复用自有API的db_bupsert）
+        
+        Args:
+            table_name: 表名
+            batch_size: 每批同步数量
+            max_retries: 最大重试次数
+            use_transaction: 是否使用事务
+            mode: 同步模式
+                - incremental: 仅同步校验通过的记录
+                - refresh: 清空正式表后同步全部记录
+            target_db: 目标账套名，为空则使用 MYAPS_MAIN_DB
+            update_status: 是否更新缓冲表状态为synced（刷新模式多账套时可能需要设为False）
+        """
         from tortoise import Tortoise
-        from tortoise.transactions import in_transaction
         from core.settings import THIS_DB_NAME, MYAPS_MAIN_DB
+        from apps.io_api.utils.db_operation import db_bupsert
+        from apps.io_api.schemas import (
+            AcceptMaterial, AcceptWorkcenter, AcceptMatVer, 
+            AcceptMatWc, AcceptMatWcBom, AcceptMold, AcceptMatWcMold
+        )
         
         staging_model = STAGING_MODEL_MAPPING.get(table_name)
         target_model = self.TARGET_MODELS.get(table_name)
         
         if not staging_model or not target_model:
             raise ValueError(f"未知的表: {table_name}")
-
-        stats = {"synced": 0, "failed": 0, "skipped": 0}
-
-        validated_records = await staging_model.filter(
-            _status=StagingStatus.VALIDATED
-        ).filter(
-            _retry_count__lt=max_retries
-        ).limit(batch_size)
-
-        if not validated_records:
-            return stats
+        
+        target_db_name = target_db if target_db else MYAPS_MAIN_DB
+        stats = {"synced": 0, "failed": 0, "skipped": 0, "target_db": target_db_name}
 
         pg_conn = Tortoise.get_connection(THIS_DB_NAME)
-        mysql_conn = Tortoise.get_connection(MYAPS_MAIN_DB)
+        staging_table_name = staging_model._meta.db_table
+        target_table_name = target_model._meta.db_table
+        
+        if mode == "refresh":
+            mysql_conn = Tortoise.get_connection(target_db_name)
+            truncate_query = f'TRUNCATE TABLE `{target_table_name}`'
+            await mysql_conn.execute_query(truncate_query)
+            logger.info(f"已清空正式表: {target_table_name} (账套: {target_db_name})")
+        
+        query = f'SELECT * FROM "{staging_table_name}" WHERE "_status" = $1 AND ("_retry_count" IS NULL OR "_retry_count" < $2) LIMIT $3'
+        result = await pg_conn.execute_query(query, ("validated", max_retries, batch_size))
+        records_to_sync = result[1] if result[1] else []
+        
+        # 检查retry_count分布
+        retry_check = await pg_conn.execute_query(
+            f'SELECT "_retry_count", COUNT(*) as cnt FROM "{staging_table_name}" WHERE "_status" = $1 GROUP BY "_retry_count"',
+            ("validated",)
+        )
+        retry_dist = {row["_retry_count"]: row["cnt"] for row in retry_check[1]} if retry_check[1] else {}
+        
+        logger.info(f"同步查询: 表={staging_table_name}, 状态=validated, 重试<{max_retries}, 批次={batch_size}, 找到{len(records_to_sync)}条记录, retry分布={retry_dist}")
+        
+        if not records_to_sync:
+            return stats
 
-        pk_fields = []
-        for field_name, field in target_model._meta.fields_map.items():
-            if field.pk:
-                pk_fields.append(field_name)
+        # Schema映射
+        schema_map = {
+            "t_material": AcceptMaterial,
+            "t_workcenter": AcceptWorkcenter,
+            "t_mat_ver": AcceptMatVer,
+            "t_mat_wc": AcceptMatWc,
+            "t_mat_wc_bom": AcceptMatWcBom,
+            "t_mold": AcceptMold,
+            "t_mat_wc_mold": AcceptMatWcMold,
+        }
+        
+        schema_class = schema_map.get(table_name)
+        if not schema_class:
+            stats["skipped"] = len(records_to_sync)
+            return stats
 
         staging_field_map = {}
-        target_field_map = {}
         for field in staging_model._meta.fields_map.values():
             db_col = field.source_field if field.source_field else field.model_field_name
             staging_field_map[field.model_field_name] = db_col
-        for field in target_model._meta.fields_map.values():
-            db_col = field.source_field if field.source_field else field.model_field_name
-            target_field_map[field.model_field_name] = db_col
 
-        staging_table_name = staging_model._meta.table
-        target_table_name = target_model._meta.table
-
-        for record in validated_records:
-            try:
-                staging_data = self._record_to_dict(record, exclude_staging_fields=True)
-                
-                target_data = {}
-                for staging_field, value in staging_data.items():
-                    if staging_field not in target_field_map:
-                        continue
-                    target_col = target_field_map.get(staging_field, staging_field)
-                    target_data[target_col] = value
-
-                pk_conditions = []
-                pk_values = []
-                for pk_field in pk_fields:
-                    pk_col = staging_field_map.get(pk_field, pk_field)
-                    if pk_col in target_data:
-                        pk_conditions.append(f"`{pk_col}` = %s")
-                        pk_values.append(target_data[pk_col])
-
-                if not pk_conditions:
-                    stats["skipped"] += 1
+        data_list = []
+        staging_ids = []
+        
+        for raw_record in records_to_sync:
+            record_dict = dict(raw_record)
+            staging_id = record_dict.get("_staging_id")
+            
+            data = {}
+            for python_field, db_field in staging_field_map.items():
+                if python_field.startswith('_'):
                     continue
-
-                check_query = f"SELECT COUNT(*) as cnt FROM `{target_table_name}` WHERE {' AND '.join(pk_conditions)}"
-                result = await mysql_conn.execute_query(check_query, tuple(pk_values))
-                exists = result[1][0]['cnt'] > 0 if result[1] else False
-
-                if exists:
-                    set_parts = []
-                    values = []
-                    for col, val in target_data.items():
-                        if col not in [staging_field_map.get(pk, pk) for pk in pk_fields]:
-                            set_parts.append(f"`{col}` = %s")
-                            values.append(val)
-                    values.extend(pk_values)
-                    
-                    sync_query = f"UPDATE `{target_table_name}` SET {', '.join(set_parts)} WHERE {' AND '.join(pk_conditions)}"
-                else:
-                    columns = [f"`{col}`" for col in target_data.keys()]
-                    placeholders = ", ".join(["%s"] * len(target_data))
-                    sync_query = f"INSERT INTO `{target_table_name}` ({', '.join(columns)}) VALUES ({placeholders})"
-                    values = list(target_data.values())
-
-                await mysql_conn.execute_query(sync_query, tuple(values))
-                
-                update_query = f'UPDATE "{staging_table_name}" SET "_status" = $1, "_synced_time" = $2 WHERE "_staging_id" = $3'
-                await pg_conn.execute_query(update_query, ("synced", datetime.now(timezone.utc), record._staging_id))
-                
-                stats["synced"] += 1
-                
+                value = record_dict.get(db_field)
+                if isinstance(value, datetime):
+                    if value.tzinfo is None:
+                        value = value.replace(tzinfo=timezone.utc)
+                data[python_field] = value
+            
+            # 填充默认值（关键步骤）
+            data = fill_defaults(table_name, data)
+            
+            try:
+                schema_obj = schema_class(**data)
+                data_list.append(schema_obj)
+                staging_ids.append(staging_id)
             except Exception as e:
-                record._retry_count += 1
-                record._error_msg = str(e)
-                stats["failed"] += 1
-                logger.error(f"同步失败 [{table_name}] _staging_id={record._staging_id}, retry={record._retry_count}: {str(e)}")
+                logger.error(f"Schema转换失败 [{table_name}] _staging_id={staging_id}: {str(e)}")
+                retry_count = (record_dict.get("_retry_count") or 0) + 1
+                # Schema转换失败直接标记为rejected，不再重试
+                error_json = json.dumps([{
+                    "staging_id": staging_id,
+                    "error_type": "schema_error",
+                    "error_field": None,
+                    "error_value": None,
+                    "error_message": f"Schema转换失败: {str(e)}"
+                }], ensure_ascii=False)
                 
-                if record._retry_count >= max_retries:
-                    record._status = StagingStatus.REJECTED
-                    logger.warning(f"记录达到最大重试次数，已标记为拒绝: _staging_id={record._staging_id}")
+                try:
+                    update_query = f'UPDATE "{staging_table_name}" SET "_retry_count" = $1, "_error_msg" = $2, "_status" = $3 WHERE "_staging_id" = $4'
+                    await pg_conn.execute_query(update_query, (retry_count, error_json, "rejected", staging_id))
+                except Exception as update_err:
+                    logger.error(f"更新失败记录状态时出错: {update_err}")
                 
-                await record.save()
+                stats["failed"] = (stats.get("failed") or 0) + 1
+
+        if not data_list:
+            logger.warning(f"同步跳过 [{table_name}]: data_list为空，无有效数据可同步")
+            return stats
+
+        logger.info(f"准备同步 [{table_name}] 账套={target_db_name}: {len(data_list)}条数据, staging_ids={staging_ids[:5]}...")
+
+        try:
+            result = await db_bupsert(
+                db_names=target_db_name,
+                model_or_tablename=table_name,
+                data_list=data_list,
+                use_orm_or_sql="sql"
+            )
+            
+            logger.info(f"db_bupsert结果 [{table_name}]: success={result.success}, message={result.message}, meta={result.meta}")
+            
+            synced_count = result.affected_rows or 0
+            stats["synced"] = synced_count
+            
+            # 只有在 update_status=True 时才更新缓冲表状态
+            if update_status and synced_count > 0:
+                synced_time = datetime.now(timezone.utc).replace(tzinfo=None)
+                for staging_id in staging_ids[:synced_count]:
+                    update_query = f'UPDATE "{staging_table_name}" SET "_status" = $1, "_synced_time" = $2 WHERE "_staging_id" = $3'
+                    await pg_conn.execute_query(update_query, ("synced", synced_time, staging_id))
+            
+            if result.has_errors:
+                logger.warning(f"同步部分失败 [{table_name}] 账套={target_db_name}: {result.message}")
+                stats["failed"] += len(data_list) - (synced_count or 0)
+            
+        except Exception as e:
+            import traceback
+            logger.error(f"同步失败 [{table_name}] 账套={target_db_name}: {str(e)}")
+            logger.error(traceback.format_exc())
+            stats["failed"] = len(data_list)
+            for staging_id in staging_ids:
+                retry_count = 1
+                error_json = json.dumps([{
+                    "staging_id": staging_id,
+                    "error_type": "sync_error",
+                    "error_field": None,
+                    "error_value": None,
+                    "error_message": f"同步失败: {str(e)}"
+                }], ensure_ascii=False)
+                update_query = f'UPDATE "{staging_table_name}" SET "_retry_count" = $1, "_error_msg" = $2 WHERE "_staging_id" = $3'
+                await pg_conn.execute_query(update_query, (retry_count, error_json, staging_id))
 
         return stats
 

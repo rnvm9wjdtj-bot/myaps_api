@@ -223,7 +223,7 @@ class DataTable {
         });
         
         tbody.querySelectorAll('.table-row').forEach(tr => {
-            tr.addEventListener('click', (e) => {
+            tr.addEventListener('dblclick', (e) => {
                 if (e.target.type === 'checkbox') return;
                 const id = parseInt(tr.dataset.id);
                 const rowData = this.data.find(r => r._staging_id === id);
@@ -231,6 +231,8 @@ class DataTable {
                     this.onRowClick(rowData);
                 }
             });
+            tr.style.cursor = 'pointer';
+            tr.title = '双击编辑';
         });
     }
     
@@ -238,8 +240,14 @@ class DataTable {
         const errorMap = {};
         if (row._status === 'rejected' && row._error_msg) {
             try {
-                const errors = JSON.parse(row._error_msg);
-                errors.forEach(err => {
+                let errorData = row._error_msg;
+                if (typeof errorData === 'string') {
+                    errorData = JSON.parse(errorData);
+                }
+                if (!Array.isArray(errorData)) {
+                    errorData = [errorData];
+                }
+                errorData.forEach(err => {
                     if (err.error_field) {
                         errorMap[err.error_field] = {
                             type: err.error_type,
@@ -248,7 +256,11 @@ class DataTable {
                     }
                 });
             } catch (e) {
-                console.error('解析错误信息失败:', e);
+                console.error('解析错误信息失败:', e, '原始数据:', row._error_msg);
+                errorMap['_error'] = {
+                    type: 'parse_error',
+                    message: typeof row._error_msg === 'string' ? row._error_msg : '错误信息格式异常'
+                };
             }
         }
         return errorMap;
@@ -306,6 +318,9 @@ class DataTable {
     }
     
     bindTooltip() {
+        const existingTooltips = document.querySelectorAll('.error-tooltip');
+        existingTooltips.forEach(t => t.remove());
+        
         document.querySelectorAll('.error-cell').forEach(cell => {
             cell.addEventListener('mouseenter', (e) => {
                 const errorType = e.target.dataset.errorType;
@@ -325,7 +340,8 @@ class DataTable {
             
             cell.addEventListener('mouseleave', (e) => {
                 if (e.target._tooltip) {
-                    e.target._tooltip.style.display = 'none';
+                    e.target._tooltip.remove();
+                    e.target._tooltip = null;
                 }
             });
         });
@@ -360,7 +376,8 @@ class DataTable {
             
             cell.addEventListener('mouseleave', (e) => {
                 if (e.target._tooltip) {
-                    e.target._tooltip.style.display = 'none';
+                    e.target._tooltip.remove();
+                    e.target._tooltip = null;
                 }
             });
         });

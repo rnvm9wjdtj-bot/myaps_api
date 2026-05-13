@@ -256,7 +256,7 @@ class EventThreadPoolManager:
         
         # 缩容逻辑（需要连续多次检测队列都较低）
         elif queue_size < self._scale_down_threshold:
-            stats['low_queue_count'] = stats.get('low_queue_count', 0) + 1
+            stats['low_queue_count'] = (stats.get('low_queue_count') or 0) + 1
             if stats['low_queue_count'] >= 3 and current_workers > min_workers:
                 target_workers = max(current_workers - 1, min_workers)
                 logger.info(f"📉 线程池 {name} 队列空闲({queue_size})，缩容: {current_workers} → {target_workers}")

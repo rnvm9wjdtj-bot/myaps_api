@@ -188,9 +188,9 @@ class ProtoDemand(TortoiseBaseModel):
     apiex_sn = fields.CharField(source_field='ApiEx_SN', max_length=32, blank=True, null=True)  # Field name made lowercase.
     apiex_id = fields.CharField(source_field='ApiEx_ID', max_length=32, blank=True, null=True)  # Field name made lowercase.
     apiex_entryid = fields.CharField(source_field='ApiEx_EntryID', max_length=32, blank=True, null=True)  # Field name made lowercase.
-    sys_date = fields.DatetimeField(source_field='Sys_Date', blank=True, null=True, auto_now_add=True)  # Field name made lowercase.
+    sys_date = fields.DatetimeField(source_field='Sys_Date', blank=True, null=True)  # Field name made lowercase.
     sys_user = fields.CharField(source_field='Sys_User', max_length=32, blank=True, null=True)  # Field name made lowercase.
-    sys_stamp = fields.DatetimeField(source_field='Sys_Stamp', auto_now=True)  # Field name made lowercase.
+    sys_stamp = fields.DatetimeField(source_field='Sys_Stamp', blank=True, null=True)  # Field name made lowercase.
 
     class Meta:
         abstract = True
@@ -379,7 +379,7 @@ class ProtoMatWc(TortoiseBaseModel):
     offsetsec = fields.IntField(source_field='OffSetSec', blank=True, null=True)  # Field name made lowercase.
     rate = fields.FloatField(source_field='Rate', blank=True, null=True, description='配比')  # Field name made lowercase.
     memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
-    sys_stamp = fields.DatetimeField(source_field='Sys_Stamp', auto_now=True)  # Field name made lowercase.
+    sys_stamp = fields.DatetimeField(source_field='Sys_Stamp', blank=True, null=True)  # Field name made lowercase.
 
     class Meta:
         abstract = True
@@ -400,7 +400,7 @@ class ProtoMatWcBom(TortoiseBaseModel):
     scrap = fields.FloatField(source_field='Scrap', blank=True, null=True, description='%')  # Field name made lowercase.
     alt = fields.CharField(source_field='Alt', max_length=1, blank=True, null=True, description='Y/N是否是替代')  # Field name made lowercase.
     memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
-    sys_stamp = fields.DatetimeField(source_field='Sys_Stamp', auto_now=True)  # Field name made lowercase.
+    sys_stamp = fields.DatetimeField(source_field='Sys_Stamp', blank=True, null=True)  # Field name made lowercase.
 
     class Meta:
         abstract = True
@@ -510,9 +510,8 @@ class ProtoMaterial(TortoiseBaseModel):
     free3 = fields.CharField(source_field='Free3', max_length=255, blank=True, null=True)  # Field name made lowercase.
     memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
     sys_user = fields.CharField(source_field='Sys_User', max_length=32, blank=True, null=True)  # Field name made lowercase.
-    sys_date = fields.DatetimeField(source_field='Sys_Date', auto_now_add=True)  # Field name made lowercase.
-    sys_stamp = fields.DatetimeField(source_field='Sys_Stamp', auto_now=True)  # Field name made lowercase.
-
+    sys_date = fields.DatetimeField(source_field='Sys_Date', blank=True, null=True)  # Field name made lowercase.
+    sys_stamp = fields.DatetimeField(source_field='Sys_Stamp', blank=True, null=True)
     class Meta:
         abstract = True
         table = 't_material'
@@ -1096,11 +1095,11 @@ class ProtoSupply(TortoiseBaseModel):
     free3 = fields.CharField(source_field='Free3', max_length=255, blank=True, null=True)  # Field name made lowercase.
     apiex_sn = fields.CharField(source_field='ApiEx_SN', max_length=32, blank=True, null=True)  # Field name made lowercase.
     apiex_id = fields.CharField(source_field='ApiEx_ID', max_length=32, blank=True, null=True)  # Field name made lowercase.
-    apiex_entryid = fields.CharField(source_field='ApiEx_EntryID', max_length=32, blank=True, null=True)  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
-    sys_date = fields.DatetimeField(source_field='Sys_Date', blank=True, null=True, auto_now_add=True)  # Field name made lowercase.
-    sys_user = fields.CharField(source_field='Sys_User', max_length=32, blank=True, null=True)  # Field name made lowercase.
-    sys_stamp = fields.DatetimeField(source_field='Sys_Stamp', auto_now=True)  # Field name made lowercase.
+    apiex_entryid = fields.CharField(source_field='ApiEx_EntryID', max_length=32, blank=True, null=True)
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)
+    sys_date = fields.DatetimeField(source_field='Sys_Date', blank=True, null=True)
+    sys_user = fields.CharField(source_field='Sys_User', max_length=32, blank=True, null=True)
+    sys_stamp = fields.DatetimeField(source_field='Sys_Stamp', blank=True, null=True)
 
     class Meta:
         abstract = True

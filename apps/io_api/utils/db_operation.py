@@ -887,10 +887,10 @@ async def db_bupsert(
                         use_orm_or_sql=use_orm_or_sql
                     )
 
-                    batch_create = result.get("inserted", 0)
-                    batch_update = result.get("updated", 0)
-                    db_create_count += batch_create
-                    db_update_count += batch_update
+                    batch_create = result.get("inserted") or 0
+                    batch_update = result.get("updated") or 0
+                    db_create_count = (db_create_count or 0) + batch_create
+                    db_update_count = (db_update_count or 0) + batch_update
                     logger.insert("账套批次生效", f"{db_name} (批次{i+1}/{total_batches})", f"新增{batch_create}条，修改{batch_update}条")
                 except Exception as batch_error:
                     db_errors.append({"batch": i + 1, "error": str(batch_error), "skipped_count": len(batch_data)})
@@ -921,9 +921,9 @@ async def db_bupsert(
                 })
                 break
         
-        create_count_total += db_create_count
-        update_count_total += db_update_count
-        logger.insert("账套生效", db_name, f"新增{db_create_count}条，修改{db_update_count}条")
+        create_count_total = (create_count_total or 0) + (db_create_count or 0)
+        update_count_total = (update_count_total or 0) + (db_update_count or 0)
+        logger.insert("账套生效", db_name, f"新增{db_create_count or 0}条，修改{db_update_count or 0}条")
         db_results.append({
             "db_name": db_name,
             "success": db_success,
@@ -957,16 +957,16 @@ async def db_bupsert(
             data=data_list,
             message=f"生效{len(db_results)}个账套，总计新增{create_count_total}条，修改{update_count_total}条，但存在错误",
             meta={
-                "affected_rows": create_count_total + update_count_total,
-                "created_rows": create_count_total,
-                "updated_rows": update_count_total,
+                "affected_rows": (create_count_total or 0) + (update_count_total or 0),
+                "created_rows": create_count_total or 0,
+                "updated_rows": update_count_total or 0,
                 "origin_total": origin_total,
                 "distinct_total": len(processed_data_list),
                 "db_names": valid_dbs,
                 "table_name": table_name,
                 "has_errors": True,
                 "error_summary": error_summary,
-                "total_skipped_count": sum(r["skipped_count"] for r in db_results)
+                "total_skipped_count": sum(r.get("skipped_count") or 0 for r in db_results)
             }
         )
 
@@ -975,9 +975,9 @@ async def db_bupsert(
         data=data_list,
         message=f"生效{len(db_results)}个账套，总计新增{create_count_total}条，修改{update_count_total}条",
         meta={
-            "affected_rows": create_count_total + update_count_total,
-            "created_rows": create_count_total,
-            "updated_rows": update_count_total,
+            "affected_rows": (create_count_total or 0) + (update_count_total or 0),
+            "created_rows": create_count_total or 0,
+            "updated_rows": update_count_total or 0,
             "origin_total": origin_total,
             "distinct_total": len(processed_data_list),
             "db_names": valid_dbs,

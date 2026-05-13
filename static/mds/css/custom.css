@@ -345,6 +345,18 @@ body {
     background-color: #ffcccc;
     color: #cc0000;
     border: 1px solid #dc3545;
+    animation: enum-error-breathe 3s ease-in-out infinite;
+}
+
+@keyframes enum-error-breathe {
+    0%, 100% {
+        background-color: #ffcccc;
+        box-shadow: 0 0 0 rgba(220, 53, 69, 0);
+    }
+    50% {
+        background-color: #ffe6e6;
+        box-shadow: 0 0 4px rgba(220, 53, 69, 0.3);
+    }
 }
 
 /* 错误单元格高亮 */
@@ -355,6 +367,20 @@ body {
     padding: 0.1rem 0.3rem;
     cursor: help;
     position: relative;
+    animation: error-cell-breathe 3s ease-in-out infinite;
+}
+
+@keyframes error-cell-breathe {
+    0%, 100% {
+        background-color: #ffe6e6;
+        border-color: #dc3545;
+        box-shadow: 0 0 0 rgba(220, 53, 69, 0);
+    }
+    50% {
+        background-color: #ffcccc;
+        border-color: #ff6666;
+        box-shadow: 0 0 6px rgba(220, 53, 69, 0.4);
+    }
 }
 
 .error-cell.null-cell {
@@ -370,10 +396,21 @@ body {
 /* 校验失败行样式 */
 .table-row-rejected {
     background-color: #fff8f8 !important;
+    animation: row-rejected-breathe 4s ease-in-out infinite;
+}
+
+@keyframes row-rejected-breathe {
+    0%, 100% {
+        background-color: #fff8f8;
+    }
+    50% {
+        background-color: #fff0f0;
+    }
 }
 
 .table-row-rejected:hover {
-    background-color: #fff0f0 !important;
+    background-color: #ffe8e8 !important;
+    animation-play-state: paused;
 }
 
 /* 错误提示框 */

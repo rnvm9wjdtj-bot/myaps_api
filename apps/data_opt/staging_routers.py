@@ -15,7 +15,7 @@ from apps.data_opt.staging_models import (
 from apps.data_opt.staging_cleaner import StagingProcessor, DataTransformer
 from apps.io_api.utils.common import standard_response
 from apps.io_api.utils.db_operation import db_bupsert
-from core.settings import MYAPS_MAIN_DB, THIS_DB_NAME
+from core.settings import MYAPS_MAIN_DB, THIS_DB_NAME, MYAPS_DBSET_LIST
 from globalobjects import logger as log_config
 
 logger = log_config.get_logger(__name__)
@@ -38,19 +38,20 @@ async def insert_to_staging_table(
     exclude_fields: List[str] = None
 ) -> int:
     """
-    通用缓冲表SQL插入函数
+    通用缓冲表UPSERT函数（INSERT ON CONFLICT UPDATE）
     
     Args:
         model_class: Tortoise ORM 模型类
-        table_name: 目标表名
+        table_name: 目标表名（如 t_material_staging）
         data_list: 数据列表（字段名使用小写格式，如materialno）
         source_system: 来源系统
         exclude_fields: 排除的字段列表（如 datetime 字段）
     
     Returns:
-        插入记录数
+        插入/更新记录数
     """
     from tortoise import Tortoise
+    from apps.data_opt.staging_cleaner import BUSINESS_KEYS
     
     if exclude_fields is None:
         exclude_fields = ['_createtime', '_updatetime', 'sys_date', 'sys_stamp', 'sys_date']
@@ -59,9 +60,15 @@ async def insert_to_staging_table(
     
     # 获取字段映射：Python字段名(小写) -> 数据库字段名(大驼峰)
     field_map = {}
+    field_types = {}
     for field in model_class._meta.fields_map.values():
         db_col_name = field.source_field if field.source_field else field.model_field_name
         field_map[field.model_field_name] = db_col_name
+        field_types[field.model_field_name] = type(field).__name__
+    
+    # 获取主键字段
+    base_table_name = table_name.replace('_staging', '')
+    pk_fields = BUSINESS_KEYS.get(base_table_name, [])
     
     count = 0
     for item in data_list:
@@ -70,17 +77,66 @@ async def insert_to_staging_table(
         
         for key, value in item.items():
             if value is not None and key not in exclude_fields:
-                # key是传入的小写字段名，通过field_map映射到数据库字段名
                 db_column = field_map.get(key, key)
                 columns.append(db_column)
+                
+                # 类型转换
+                field_type = field_types.get(key, '')
+                if field_type == 'IntField':
+                    try:
+                        value = int(value)
+                    except (ValueError, TypeError):
+                        pass
+                elif field_type == 'FloatField':
+                    try:
+                        value = float(value)
+                    except (ValueError, TypeError):
+                        pass
+                elif field_type == 'DecimalField':
+                    try:
+                        from decimal import Decimal
+                        value = Decimal(str(value))
+                    except:
+                        pass
                 values.append(value)
         
         placeholders = ", ".join(["$" + str(i+1) for i in range(len(values))])
         column_list = ", ".join([f'"{col}"' for col in columns])
         
-        query = f'INSERT INTO "{table_name}" ({column_list}) VALUES ({placeholders})'
+        if pk_fields:
+            # 构建 ON CONFLICT 子句
+            pk_columns = [field_map.get(pk, pk) for pk in pk_fields]
+            conflict_target = ", ".join([f'"{col}"' for col in pk_columns])
+            
+            # 构建 UPDATE SET 子句（排除主键字段）
+            update_parts = []
+            update_values = []
+            param_offset = len(values) + 1
+            
+            for i, col in enumerate(columns):
+                if col in pk_columns:
+                    continue
+                if col in ['_createtime']:
+                    continue
+                update_parts.append(f'"{col}" = ${param_offset}')
+                update_values.append(values[i])
+                param_offset += 1
+            
+            # 添加 _updatetime
+            update_parts.append('"_updatetime" = NOW()')
+            
+            update_clause = ", ".join(update_parts)
+            all_values = values + update_values
+            
+            query = f'''
+                INSERT INTO "{table_name}" ({column_list}) VALUES ({placeholders})
+                ON CONFLICT ({conflict_target}) DO UPDATE SET {update_clause}
+            '''
+        else:
+            query = f'INSERT INTO "{table_name}" ({column_list}) VALUES ({placeholders})'
+            all_values = values
         
-        await conn.execute_query(query, tuple(values))
+        await conn.execute_query(query, tuple(all_values))
         count += 1
     
     return count
@@ -125,7 +181,7 @@ async def staging_material(
     request: Request,
     data: List[Dict] = Body(..., description="物料数据列表"),
     source_system: str = Query("unknown", description="来源系统"),
-    db_name: str = Query(MYAPS_MAIN_DB, description="账套")
+    # db_name: str = Query(MYAPS_MAIN_DB, description="账套")  # 未使用，已注释
 ):
     """接收外部系统的物料数据，写入缓冲表"""
     try:
@@ -149,7 +205,7 @@ async def staging_workcenter(
     request: Request,
     data: List[Dict] = Body(..., description="工作中心数据列表"),
     source_system: str = Query("unknown", description="来源系统"),
-    db_name: str = Query(MYAPS_MAIN_DB, description="账套")
+    # db_name: str = Query(MYAPS_MAIN_DB, description="账套")  # 未使用，已注释
 ):
     """接收外部系统的工作中心数据"""
     try:
@@ -173,7 +229,7 @@ async def staging_mat_ver(
     request: Request,
     data: List[Dict] = Body(..., description="产线版本数据列表"),
     source_system: str = Query("unknown", description="来源系统"),
-    db_name: str = Query(MYAPS_MAIN_DB, description="账套")
+    # db_name: str = Query(MYAPS_MAIN_DB, description="账套")  # 未使用，已注释
 ):
     """接收外部系统的产线版本数据"""
     try:
@@ -197,7 +253,7 @@ async def staging_mat_wc(
     request: Request,
     data: List[Dict] = Body(..., description="工艺路线数据列表"),
     source_system: str = Query("unknown", description="来源系统"),
-    db_name: str = Query(MYAPS_MAIN_DB, description="账套")
+    # db_name: str = Query(MYAPS_MAIN_DB, description="账套")  # 未使用，已注释
 ):
     """接收外部系统的工艺路线数据"""
     try:
@@ -221,7 +277,7 @@ async def staging_mat_wc_bom(
     request: Request,
     data: List[Dict] = Body(..., description="BOM数据列表"),
     source_system: str = Query("unknown", description="来源系统"),
-    db_name: str = Query(MYAPS_MAIN_DB, description="账套")
+    # db_name: str = Query(MYAPS_MAIN_DB, description="账套")  # 未使用，已注释
 ):
     """接收外部系统的BOM数据"""
     try:
@@ -245,7 +301,7 @@ async def staging_mold(
     request: Request,
     data: List[Dict] = Body(..., description="模具数据列表"),
     source_system: str = Query("unknown", description="来源系统"),
-    db_name: str = Query(MYAPS_MAIN_DB, description="账套")
+    # db_name: str = Query(MYAPS_MAIN_DB, description="账套")  # 未使用，已注释
 ):
     """接收外部系统的模具数据"""
     try:
@@ -269,7 +325,7 @@ async def staging_mat_wc_mold(
     request: Request,
     data: List[Dict] = Body(..., description="机台模具关联数据列表"),
     source_system: str = Query("unknown", description="来源系统"),
-    db_name: str = Query(MYAPS_MAIN_DB, description="账套")
+    # db_name: str = Query(MYAPS_MAIN_DB, description="账套")  # 未使用，已注释
 ):
     """接收外部系统的机台模具关联数据"""
     try:
@@ -351,17 +407,130 @@ async def sync_to_production(
     table_name: str,
     batch_size: int = Query(100, description="每批同步数量"),
     max_retries: int = Query(3, description="最大重试次数"),
+    mode: str = Query("incremental", description="同步模式: incremental-增量, refresh-刷新"),
+    target_dbs: str = Query(None, description="目标账套列表(逗号分隔)"),
+    reset_retry: bool = Query(False, description="是否重置重试次数"),
     db_name: str = Query(THIS_DB_NAME, description="账套")
 ):
-    """将校验通过的缓冲表数据同步到正式表"""
+    """将缓冲表数据同步到正式表
+    
+    Args:
+        mode: 
+            - incremental: 仅同步校验通过的记录
+            - refresh: 清空正式表后同步全部记录
+        target_dbs: 目标账套列表，多个用逗号分隔，为空则同步到所有账套
+        reset_retry: 是否重置重试次数（将retry_count设为0）
+    """
     try:
+        from core.settings import MYAPS_DBSET_LIST, MYAPS_MAIN_DB
+        from tortoise import Tortoise
+        
+        # 确定目标账套列表
+        if target_dbs:
+            target_db_list = [db.strip() for db in target_dbs.split(",") if db.strip()]
+        else:
+            target_db_list = MYAPS_DBSET_LIST
+        
+        if not target_db_list:
+            raise ValueError("未配置目标账套")
+        
+        # 重置重试次数
+        if reset_retry:
+            staging_model = STAGING_MODEL_MAPPING.get(table_name)
+            if staging_model:
+                conn = Tortoise.get_connection(THIS_DB_NAME)
+                staging_table_name = staging_model._meta.db_table
+                reset_query = f'UPDATE "{staging_table_name}" SET "_retry_count" = 0 WHERE "_status" = $1'
+                await conn.execute_query(reset_query, ("validated",))
+                logger.info(f"已重置重试次数: {staging_table_name}")
+        
         processor = StagingProcessor(db_name)
-        stats = await processor.sync_to_production(table_name, batch_size, max_retries)
+        
+        # 多账套同步：先同步所有账套，最后统一更新状态
+        if len(target_db_list) > 1:
+            all_stats = {}
+            
+            # 第一步：同步到所有账套（不更新状态）
+            for target_db in target_db_list:
+                stats = await processor.sync_to_production(
+                    table_name=table_name,
+                    batch_size=batch_size,
+                    max_retries=max_retries,
+                    mode=mode,
+                    target_db=target_db,
+                    update_status=False  # 不更新状态
+                )
+                all_stats[target_db] = stats
+            
+            # 第二步：统一更新缓冲表状态
+            # 只有全部成功时才标记为synced，否则标记为rejected
+            total_synced = sum(s.get("synced", 0) for s in all_stats.values())
+            total_failed = sum(s.get("failed", 0) for s in all_stats.values())
+            
+            if total_synced > 0 or total_failed > 0:
+                from tortoise import Tortoise
+                from datetime import datetime, timezone
+                
+                staging_model = STAGING_MODEL_MAPPING.get(table_name)
+                if staging_model:
+                    conn = Tortoise.get_connection(THIS_DB_NAME)
+                    staging_table_name = staging_model._meta.db_table
+                    synced_time = datetime.now(timezone.utc).replace(tzinfo=None)
+                    
+                    # 更新成功的记录为synced（只有validated状态且无错误的记录）
+                    if total_synced > 0:
+                        # 先查询需要更新的staging_id
+                        success_ids_query = f'SELECT "_staging_id" FROM "{staging_table_name}" WHERE "_status" = $1 AND "_error_msg" IS NULL LIMIT $2'
+                        success_ids_result = await conn.execute_query(success_ids_query, ("validated", total_synced))
+                        success_ids = [row["_staging_id"] for row in success_ids_result[1]] if success_ids_result[1] else []
+                        
+                        if success_ids:
+                            update_query = f'UPDATE "{staging_table_name}" SET "_status" = $1, "_synced_time" = $2 WHERE "_staging_id" = ANY($3)'
+                            await conn.execute_query(update_query, ("synced", synced_time, success_ids))
+                            logger.info(f"已更新成功记录状态: {len(success_ids)}条")
+                    
+                    # 失败记录已在sync_to_production中标记为rejected，无需再次更新
+                    logger.info(f"同步完成: {staging_table_name}, 成功{total_synced}条, 失败{total_failed}条")
+        else:
+            # 单账套：同步后立即更新状态
+            all_stats = {}
+            for target_db in target_db_list:
+                stats = await processor.sync_to_production(
+                    table_name=table_name,
+                    batch_size=batch_size,
+                    max_retries=max_retries,
+                    mode=mode,
+                    target_db=target_db,
+                    update_status=True  # 立即更新状态
+                )
+                all_stats[target_db] = stats
+        
+        # 汇总统计
+        total_synced = sum(s.get("synced") or 0 for s in all_stats.values())
+        total_failed = sum(s.get("failed") or 0 for s in all_stats.values())
+        total_skipped = sum(s.get("skipped") or 0 for s in all_stats.values())
+        
+        # 将details转为数组格式
+        details_list = [
+            {
+                "target_db": db_name,
+                "synced": stats.get("synced") or 0,
+                "failed": stats.get("failed") or 0,
+                "skipped": stats.get("skipped") or 0
+            }
+            for db_name, stats in all_stats.items()
+        ]
         
         return standard_response(
             success=1,
-            message=f"同步完成",
-            data=stats
+            message=f"同步完成: {len(target_db_list)}个账套, 成功{total_synced}条, 失败{total_failed}条",
+            data={
+                "target_dbs": target_db_list,
+                "total_synced": total_synced,
+                "total_failed": total_failed,
+                "total_skipped": total_skipped,
+                "details": details_list
+            }
         )
     except Exception as e:
         logger.error(f"同步失败 [{table_name}]: {str(e)}")
@@ -444,6 +613,16 @@ async def get_validation_errors(
         return standard_response(success=0, message=str(e))
 
 
+@rt.get("/dblist", summary="获取账套列表")
+async def get_db_list():
+    """获取可用的账套列表"""
+    return standard_response(
+        success=1,
+        message="查询成功",
+        data=MYAPS_DBSET_LIST
+    )
+
+
 @rt.get("/status/{table_name}", summary="获取缓冲表状态统计")
 async def get_staging_status(
     request: Request,
@@ -451,9 +630,17 @@ async def get_staging_status(
 ):
     """获取指定缓冲表的状态统计"""
     try:
+        import sys
+        from tortoise import Tortoise
+        from core.settings import THIS_DB_NAME
+        
         staging_model = STAGING_MODEL_MAPPING.get(table_name)
         if not staging_model:
             raise ValueError(f"未知的缓冲表: {table_name}")
+        
+        # 使用原生SQL查询，确保与同步查询条件一致
+        conn = Tortoise.get_connection(THIS_DB_NAME)
+        table_name_staging = staging_model._meta.db_table
         
         stats = {}
         for status in StagingStatus:
@@ -462,14 +649,25 @@ async def get_staging_status(
         
         stats["total"] = sum(stats.values())
         
+        # 额外统计：retry_count >= 3 的记录数
+        retry_exceeded_result = await conn.execute_query(
+            f'SELECT COUNT(*) as cnt FROM "{table_name_staging}" WHERE "_retry_count" >= $1',
+            (3,)
+        )
+        retry_exceeded = retry_exceeded_result[1][0]["cnt"] if retry_exceeded_result[1] else 0
+        stats["retry_exceeded"] = retry_exceeded
+        
         return standard_response(
             success=1,
             message="查询成功",
             data=stats
         )
     except Exception as e:
-        logger.error(f"查询状态统计失败: {str(e)}")
-        return standard_response(success=0, message=str(e))
+        import traceback
+        error_detail = f"{type(e).__name__}: {str(e)}" if str(e) else type(e).__name__
+        logger.error(f"查询状态统计失败: {error_detail}")
+        logger.error(traceback.format_exc())
+        return standard_response(success=0, message=error_detail)
 
 
 @rt.patch("/approve/{table_name}/{staging_id}", summary="审批缓冲表数据")
@@ -477,7 +675,7 @@ async def approve_staging(
     request: Request,
     table_name: str,
     staging_id: int,
-    db_name: str = Query(MYAPS_MAIN_DB, description="账套")
+    # db_name: str = Query(MYAPS_MAIN_DB, description="账套")  # 未使用，已注释
 ):
     """手动审批通过缓冲表记录"""
     try:
@@ -501,7 +699,6 @@ async def reject_staging(
     table_name: str,
     staging_id: int,
     reason: str = Query(..., description="拒绝原因"),
-    db_name: str = Query(MYAPS_MAIN_DB, description="账套")
 ):
     """手动拒绝缓冲表记录"""
     try:
@@ -511,7 +708,14 @@ async def reject_staging(
         
         record = await staging_model.get(_staging_id=staging_id)
         record._status = StagingStatus.REJECTED
-        record._error_msg = reason
+        error_json = json.dumps([{
+            "staging_id": staging_id,
+            "error_type": "manual_reject",
+            "error_field": None,
+            "error_value": None,
+            "error_message": reason
+        }], ensure_ascii=False)
+        record._error_msg = error_json
         await record.save()
         
         return standard_response(success=1, message="已拒绝")
@@ -670,7 +874,7 @@ async def retry_failed_records(
     request: Request,
     table_name: str,
     max_retry: int = Query(3, description="最大重试次数"),
-    db_name: str = Query(MYAPS_MAIN_DB, description="账套")
+    # db_name: str = Query(MYAPS_MAIN_DB, description="账套")  # 未使用，已注释
 ):
     """重试同步失败的记录"""
     try:
@@ -708,7 +912,7 @@ async def upload_excel(
     file: UploadFile = File(..., description="Excel文件"),
     source_system: str = Query("excel", description="来源系统"),
     dedup_strategy: str = Query("skip", description="去重策略: overwrite/skip/reject"),
-    db_name: str = Query(MYAPS_MAIN_DB, description="账套")
+    # db_name: str = Query(MYAPS_MAIN_DB, description="账套")  # 未使用，已注释
 ):
     """上传Excel文件并导入缓冲表，支持去重"""
     try:
@@ -936,9 +1140,11 @@ async def batch_update_staging(
         conn = Tortoise.get_connection(THIS_DB_NAME)
         
         field_mapping = {}
+        field_types = {}
         for field in staging_model._meta.fields_map.values():
             db_col_name = field.source_field if field.source_field else field.model_field_name
             field_mapping[field.model_field_name] = db_col_name
+            field_types[field.model_field_name] = type(field).__name__
         
         set_clauses = []
         params = []
@@ -949,6 +1155,23 @@ async def batch_update_staging(
             if value is None:
                 set_clauses.append(f'"{db_field}" = NULL')
             else:
+                field_type = field_types.get(python_field, '')
+                if field_type == 'IntField':
+                    try:
+                        value = int(value)
+                    except (ValueError, TypeError):
+                        pass
+                elif field_type == 'FloatField':
+                    try:
+                        value = float(value)
+                    except (ValueError, TypeError):
+                        pass
+                elif field_type == 'DecimalField':
+                    try:
+                        from decimal import Decimal
+                        value = Decimal(str(value))
+                    except:
+                        pass
                 set_clauses.append(f'"{db_field}" = ${param_idx}')
                 params.append(value)
                 param_idx += 1
@@ -1019,7 +1242,7 @@ async def update_staging(
     table_name: str,
     staging_id: int,
     data: Dict = Body(..., description="更新数据"),
-    db_name: str = Query(MYAPS_MAIN_DB, description="账套")
+    # db_name: str = Query(MYAPS_MAIN_DB, description="账套")  # 未使用，已注释
 ):
     """更新单条缓冲表记录"""
     try:
@@ -1033,9 +1256,11 @@ async def update_staging(
         conn = Tortoise.get_connection(THIS_DB_NAME)
         
         field_map = {}
+        field_types = {}
         for field in staging_model._meta.fields_map.values():
             db_col_name = field.source_field if field.source_field else field.model_field_name
             field_map[field.model_field_name] = db_col_name
+            field_types[field.model_field_name] = type(field).__name__
         
         set_parts = []
         values = []
@@ -1048,6 +1273,23 @@ async def update_staging(
                 if value is None or value == '':
                     set_parts.append(f'"{db_col}" = NULL')
                 else:
+                    field_type = field_types.get(key, '')
+                    if field_type == 'IntField':
+                        try:
+                            value = int(value)
+                        except (ValueError, TypeError):
+                            pass
+                    elif field_type == 'FloatField':
+                        try:
+                            value = float(value)
+                        except (ValueError, TypeError):
+                            pass
+                    elif field_type == 'DecimalField':
+                        try:
+                            from decimal import Decimal
+                            value = Decimal(str(value))
+                        except:
+                            pass
                     set_parts.append(f'"{db_col}" = ${param_idx}')
                     values.append(value)
                     param_idx += 1
