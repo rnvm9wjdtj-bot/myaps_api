@@ -1958,11 +1958,10 @@ class EventResultPoster:
         native_plno: str,
         to_status: Literal['NEW', 'CRE'] = 'CRE',
         msg: str = None,
-        raw_data: dict = None,
         push_data: dict = None,
         msg_from: str = 'SYSTEM'
     ):
-        logger.warning_msg(f"推送 MO {msg}", json.dumps(push_data, ensure_ascii=False), to_file=True)
+        logger.warning_msg(f"推送 MO {msg}", to_file=True)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if msg:
             try:
@@ -2047,9 +2046,8 @@ class EventResultPoster:
         msg: str = None,
         msg_from: str = 'SYSTEM',
         push_data: dict | list = None,
-        raw_data: dict | list = None
     ):
-        logger.warning_msg(f"推送 RS {msg}", json.dumps(push_data, ensure_ascii=False), to_file=True)
+        logger.warning_msg(f"推送 RS {msg}", to_file=True)
         if msg:
             try:
                 msg = str(msg)[:64]
@@ -2108,34 +2106,91 @@ class EventResultPoster:
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         results = {}
         
-        for p in prno_list:
-            memo = f"{now} {ce.RELEASE_SUCCESS.value} {msg_from}: '{msg}' @ {p}"
-            logger.update("PR状态", p, "")
+        memo = f"{now} {ce.RELEASE_SUCCESS.value} {msg_from}: '{msg}'"
+        
+        # 使用原生SQL批量更新，提高性能（每批200条）
+        if prno_list:
+            batch_size = 200
+            total_batches = (len(prno_list) + batch_size - 1) // batch_size
             
-            patch_data = {
-                'Status': to_status,
-                'Memo': memo[:255],
-                'ApiEx_SN': _code or "",
-                'ApiEx_ID': _id or "",
-                'ApiEx_EntryID': _entryid or "",
-            }
-            
-            response_json: MultiDbResult = await db_update_by_index(
-                db_names=self.db_name,
-                model_or_tablename="t_supply",
-                index_dict={"SupplyNo": p},
-                new_values_dict=patch_data,
-                not_found_behavior="skip"
-            )
-            
-            results[p] = response_json
-            
-            await self._collector.add_result(ExecutionResult(
-                success=True,
-                raw_data=p,
-                msg=f"{msg_from}: {msg}" if msg else None,
-                mono=_code
-            ))
+            for batch_idx in range(total_batches):
+                start_idx = batch_idx * batch_size
+                end_idx = min((batch_idx + 1) * batch_size, len(prno_list))
+                batch_prnos = prno_list[start_idx:end_idx]
+                
+                # 构建 CASE WHEN 语句实现批量更新
+                status_case = "CASE SupplyNo " + " ".join([f"WHEN %s THEN %s" for _ in batch_prnos]) + " END"
+                memo_case = "CASE SupplyNo " + " ".join([f"WHEN %s THEN %s" for _ in batch_prnos]) + " END"
+                sn_case = "CASE SupplyNo " + " ".join([f"WHEN %s THEN %s" for _ in batch_prnos]) + " END"
+                id_case = "CASE SupplyNo " + " ".join([f"WHEN %s THEN %s" for _ in batch_prnos]) + " END"
+                entryid_case = "CASE SupplyNo " + " ".join([f"WHEN %s THEN %s" for _ in batch_prnos]) + " END"
+                
+                # 构建参数列表：每个CASE WHEN需要 (prno, value) 对，最后加上IN子句的prno列表
+                params = []
+                # Status CASE WHEN 参数
+                for p in batch_prnos:
+                    params.extend([p, to_status])
+                # Memo CASE WHEN 参数
+                for p in batch_prnos:
+                    params.extend([p, memo[:255]])
+                # ApiEx_SN CASE WHEN 参数
+                for p in batch_prnos:
+                    params.extend([p, _code or ""])
+                # ApiEx_ID CASE WHEN 参数
+                for p in batch_prnos:
+                    params.extend([p, _id or ""])
+                # ApiEx_EntryID CASE WHEN 参数
+                for p in batch_prnos:
+                    params.extend([p, _entryid or ""])
+                # WHERE IN 子句参数
+                params.extend(batch_prnos)
+                
+                sql = f"UPDATE t_supply SET Status = {status_case}, Memo = {memo_case}, ApiEx_SN = {sn_case}, ApiEx_ID = {id_case}, ApiEx_EntryID = {entryid_case} WHERE SupplyNo IN ({','.join(['%s'] * len(batch_prnos))})"
+                
+                try:
+                    response_json: MultiDbResult = await db_exec_sql(
+                        db_name=self.db_name,
+                        sql=sql,
+                        params=params,
+                        description=f"批量更新PR状态(批次{batch_idx+1}/{total_batches})"
+                    )
+                    
+                    for p in batch_prnos:
+                        results[p] = response_json
+                        await self._collector.add_result(ExecutionResult(
+                            success=True,
+                            raw_data=p,
+                            msg=f"{msg_from}: {msg}" if msg else None,
+                            mono=_code
+                        ))
+                    
+                    logger.update("PR状态批量更新", f"批次{batch_idx+1}/{total_batches}", f"成功{len(batch_prnos)}个")
+                except Exception as e:
+                    logger.fail("PR状态批量更新失败", f"批次{batch_idx+1}/{total_batches}", str(e))
+                    # 失败时回退到逐条更新
+                    for p in batch_prnos:
+                        logger.update("PR状态", p, "逐条更新（批量失败）")
+                        patch_data = {
+                            'Status': to_status,
+                            'Memo': memo[:255],
+                            'ApiEx_SN': _code or "",
+                            'ApiEx_ID': _id or "",
+                            'ApiEx_EntryID': _entryid or "",
+                        }
+                        response_json: MultiDbResult = await db_update_by_index(
+                            db_names=self.db_name,
+                            model_or_tablename="t_supply",
+                            index_dict={"SupplyNo": p},
+                            new_values_dict=patch_data,
+                            not_found_behavior="skip"
+                        )
+                        results[p] = response_json
+                        await self._collector.add_result(ExecutionResult(
+                            success=True,
+                            raw_data=p,
+                            msg=f"{msg_from}: {msg}" if msg else None,
+                            mono=_code
+                        ))
         
         logger.info(f"更新PR状态响应：成功，共处理 {len(prno_list)} 个PR")
         
@@ -2152,41 +2207,110 @@ class EventResultPoster:
     # @async_error_handler("PR发布失败")
     async def pr_release_failed(
         self,
-        prno: str,
+        prno: str | list[str],
         to_status: Literal['E2A', 'REL'] = 'NEW',
         msg: str = None,
         msg_from: str = 'SYSTEM',
-        push_data: dict | list = None,
-        raw_data: dict | list = None
+        push_data: dict | list = None
     ):
         if msg:
             try:
                 msg = str(msg)[:64]
             except Exception as e:
                 pass
-        logger.warning_msg(f"推送 PR {msg}", json.dumps(push_data, ensure_ascii=False), to_file=True)
+        logger.warning_msg(f"推送 PR {msg}", to_file=True)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # 处理 prno 参数，支持列表和逗号分隔的字符串
+        prno_list = []
+        if isinstance(prno, str):
+            prno_list = [p.strip() for p in prno.split(',') if p.strip()]
+        elif isinstance(prno, list):
+            prno_list = [p.strip() for p in prno if isinstance(p, str) and p.strip()]
+        
+        if not prno_list:
+            logger.warning("PR发布失败：未提供有效的PR编号")
+            return MultiDbResult(success=True, data={}, message="未提供有效的PR编号")
+        
+        results = {}
         memo = f"{now} {ce.RELEASE_FAILED.value} {msg_from}: '{msg}'"
         
-        patch_data = {
-            'Status': to_status,
-            'Memo': memo[:255],
-        }
+        # 使用原生SQL批量更新，提高性能（每批200条）
+        batch_size = 200
+        total_batches = (len(prno_list) + batch_size - 1) // batch_size
         
-        response_json: MultiDbResult = await db_update_by_index(
-            db_names=self.db_name,
-            model_or_tablename="t_supply",
-            index_dict={"SupplyNo": prno},
-            new_values_dict=patch_data,
-            not_found_behavior="skip"
+        for batch_idx in range(total_batches):
+            start_idx = batch_idx * batch_size
+            end_idx = min((batch_idx + 1) * batch_size, len(prno_list))
+            batch_prnos = prno_list[start_idx:end_idx]
+            
+            # 构建 CASE WHEN 语句实现批量更新
+            status_case = "CASE SupplyNo " + " ".join([f"WHEN %s THEN %s" for _ in batch_prnos]) + " END"
+            memo_case = "CASE SupplyNo " + " ".join([f"WHEN %s THEN %s" for _ in batch_prnos]) + " END"
+            
+            # 构建参数列表：每个CASE WHEN需要 (prno, value) 对，最后加上IN子句的prno列表
+            params = []
+            # Status CASE WHEN 参数
+            for p in batch_prnos:
+                params.extend([p, to_status])
+            # Memo CASE WHEN 参数
+            for p in batch_prnos:
+                params.extend([p, memo[:255]])
+            # WHERE IN 子句参数
+            params.extend(batch_prnos)
+            
+            sql = f"UPDATE t_supply SET Status = {status_case}, Memo = {memo_case} WHERE SupplyNo IN ({','.join(['%s'] * len(batch_prnos))})"
+            
+            try:
+                response_json: MultiDbResult = await db_exec_sql(
+                    db_name=self.db_name,
+                    sql=sql,
+                    params=params,
+                    description=f"批量更新PR状态-失败(批次{batch_idx+1}/{total_batches})"
+                )
+                
+                for p in batch_prnos:
+                    results[p] = response_json
+                    await self._collector.add_result(ExecutionResult(
+                        success=False,
+                        raw_data=p,
+                        msg=f"{msg_from}: {msg}" if msg else None,
+                        push_data=push_data
+                    ))
+                
+                logger.update("PR发布失败批量更新", f"批次{batch_idx+1}/{total_batches}", f"成功{len(batch_prnos)}个")
+            except Exception as e:
+                logger.fail("PR发布失败批量更新失败", f"批次{batch_idx+1}/{total_batches}", str(e))
+                # 失败时回退到逐条更新
+                for p in batch_prnos:
+                    logger.update("PR发布失败", p, "逐条更新（批量失败）")
+                    patch_data = {
+                        'Status': to_status,
+                        'Memo': memo[:255],
+                    }
+                    response_json: MultiDbResult = await db_update_by_index(
+                        db_names=self.db_name,
+                        model_or_tablename="t_supply",
+                        index_dict={"SupplyNo": p},
+                        new_values_dict=patch_data,
+                        not_found_behavior="skip"
+                    )
+                    results[p] = response_json
+                    await self._collector.add_result(ExecutionResult(
+                        success=False,
+                        raw_data=p,
+                        msg=f"{msg_from}: {msg}" if msg else None,
+                        push_data=push_data
+                    ))
+        
+        logger.info(f"PR发布失败响应：成功，共处理 {len(prno_list)} 个PR")
+        
+        # 合并结果
+        merged_result = MultiDbResult(
+            success=all(r.success for r in results.values()),
+            data=results,
+            message=f"成功处理 {len(prno_list)} 个PR"
         )
         
-        await self._collector.add_result(ExecutionResult(
-            success=False,
-            raw_data=prno,
-            msg=f"{msg_from}: {msg}" if msg else None,
-            push_data=push_data
-        ))
-        
-        return response_json
+        return merged_result
 

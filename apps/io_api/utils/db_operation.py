@@ -519,10 +519,18 @@ async def db_exec_sql(db_name: str, sql: str, params: Optional[List[Any]] = None
 
     db_manager = get_db_manager(valid_db)
 
-    count, data_list = await db_manager._execute_native_sql(
-        sql=sql,
-        params=params if params is not None else [],
-        description=f"执行SQL {description}..."
+    async def _make_request():
+        return await db_manager._execute_native_sql(
+            sql=sql,
+            params=params if params is not None else [],
+            description=f"执行SQL {description}..."
+        )
+
+    count, data_list = await _execute_with_retry(
+        db_manager=db_manager,
+        coro_func=_make_request,
+        table_name="",
+        db_name=valid_db
     )
 
     return DbResult(
@@ -727,9 +735,17 @@ async def db_supsert(
     for db_name in valid_dbs:
         db_manager = get_db_manager(db_name)
         try:
-            result = await db_manager.single_upsert(
-                model_class=mdl,
-                data=data,
+            async def _make_request():
+                return await db_manager.single_upsert(
+                    model_class=mdl,
+                    data=data,
+                )
+            
+            result = await _execute_with_retry(
+                db_manager=db_manager,
+                coro_func=_make_request,
+                table_name=table_name,
+                db_name=db_name
             )
 
             if result['success']:
@@ -878,13 +894,21 @@ async def db_bupsert(
                 batch_data = upsert_data_list[start_idx:end_idx]
                 
                 try:
-                    result = await db_manager.bulk_upsert(
-                        model_class=mdl,
-                        data_list=batch_data,
-                        update_fields=update_fields,
-                        exclude_fields=exclude_fields,
-                        conflict_fields=tuple(model_key) if model_key else None,
-                        use_orm_or_sql=use_orm_or_sql
+                    async def _make_request():
+                        return await db_manager.bulk_upsert(
+                            model_class=mdl,
+                            data_list=batch_data,
+                            update_fields=update_fields,
+                            exclude_fields=exclude_fields,
+                            conflict_fields=tuple(model_key) if model_key else None,
+                            use_orm_or_sql=use_orm_or_sql
+                        )
+                    
+                    result = await _execute_with_retry(
+                        db_manager=db_manager,
+                        coro_func=_make_request,
+                        table_name=table_name,
+                        db_name=db_name
                     )
 
                     batch_create = result.get("inserted") or 0
@@ -1019,7 +1043,15 @@ async def db_delete(
     for db_name in valid_dbs:
         db_manager = get_db_manager(db_name)
         try:
-            exe_result = await db_manager.delete_data(table_name=table_name, filter_string=filter_string or '')
+            async def _make_request():
+                return await db_manager.delete_data(table_name=table_name, filter_string=filter_string or '')
+            
+            exe_result = await _execute_with_retry(
+                db_manager=db_manager,
+                coro_func=_make_request,
+                table_name=table_name,
+                db_name=db_name
+            )
             count = exe_result.get("affected_rows", 0)
             total_count += count
             success_db.append(db_name)
@@ -1110,7 +1142,60 @@ async def call_dbprocdure(
     return MultiDbResult(**response)
 
 
-@retry_on_connection_error(max_retries=3, retry_delay=1.0)
+# 定义需要重试的瞬态错误关键字
+TRANSIENT_ERROR_KEYWORDS = {
+    "Packet sequence number",
+    "Lost connection",
+    "Connection reset",
+    "Can't connect to MySQL server",
+    "server closed the connection unexpectedly",
+    "MySQL server has gone away",
+    "Unexpected end of stream",
+}
+
+async def _execute_with_retry(db_manager, coro_func=None, table_name="", db_name="", 
+                                mdl=None, index_dict=None, new_values_dict=None, not_found_behavior=None):
+    """
+    带重试的数据库操作执行
+    
+    支持两种调用方式：
+    1. 通过 coro_func 参数传入协程函数（通用方式）
+    2. 通过 mdl, index_dict 等参数（db_update_by_index 专用）
+    """
+    max_retries = 2
+    retry_delay = 0.5  # 初始重试延迟（秒）
+    
+    for attempt in range(max_retries + 1):
+        try:
+            # 优先使用 coro_func（通用方式）
+            if coro_func is not None:
+                return await coro_func()
+            # 兼容 db_update_by_index 的旧调用方式
+            elif mdl is not None:
+                return await db_manager.update_by_index(
+                    model_class=mdl,
+                    index_dict=index_dict,
+                    new_values_dict=new_values_dict,
+                    not_found_behavior=not_found_behavior
+                )
+            else:
+                raise ValueError("必须提供 coro_func 或数据库操作参数")
+        except Exception as e:
+            error_msg = str(e)
+            
+            # 检查是否是瞬态错误
+            is_transient = any(keyword in error_msg for keyword in TRANSIENT_ERROR_KEYWORDS)
+            
+            if is_transient and attempt < max_retries:
+                delay = retry_delay * (2 ** attempt)  # 指数退避
+                logger.warning(f"数据库瞬态错误，重试 {attempt+1}/{max_retries} ({db_name}.{table_name}): {error_msg}")
+                await asyncio.sleep(delay)
+                continue
+            
+            # 非瞬态错误或重试次数用尽，抛出异常
+            raise
+
+
 async def db_update_by_index(
     db_names: str,
     model_or_tablename: TortoiseBaseModel | str,
@@ -1132,6 +1217,11 @@ async def db_update_by_index(
         
     Returns:
         MultiDbResult: 统一格式的返回值
+        
+    特性:
+        - 支持针对瞬态数据库错误的自动重试（最多2次）
+        - 重试延迟采用指数退避策略
+        - 识别的瞬态错误包括：网络丢包、连接重置、MySQL断开等
     """
     mdl, table_name = process_model_or_tablename(model_or_tablename)
     
@@ -1155,11 +1245,14 @@ async def db_update_by_index(
         logger.debug(f"new_values_dict: {new_values_dict}")
 
         try:
-            result = await db_manager.update_by_index(
-                model_class=mdl,
+            result = await _execute_with_retry(
+                db_manager=db_manager,
+                mdl=mdl,
                 index_dict=index_dict,
                 new_values_dict=new_values_dict,
-                not_found_behavior=not_found_behavior
+                not_found_behavior=not_found_behavior,
+                table_name=table_name,
+                db_name=db_name
             )
 
             if result['success']:

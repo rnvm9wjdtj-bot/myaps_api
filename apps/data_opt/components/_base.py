@@ -976,7 +976,12 @@ class ExternalBaseConnection(ABC):
 
             try:
                 start_time = time.time()
-                result = await asyncio.wait_for(coro, timeout=adjusted_timeout)
+                # 支持协程工厂函数（用于重试场景）
+                if callable(coro):
+                    coro_instance = coro()
+                else:
+                    coro_instance = coro
+                result = await asyncio.wait_for(coro_instance, timeout=adjusted_timeout)
                 response_time = time.time() - start_time
 
                 # 成功：自动调整超时（网络好时收紧）

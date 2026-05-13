@@ -225,7 +225,9 @@ class MoPushModel(PydanticModel):
         demand_list = values.get('demand_list')
         orderwc_list = values.get('orderwc')
         mopd = []
+        
         if orderwc_list:
+            i = 1
             for orderwc in orderwc_list:
                 mopd.append({
                     'Inventory': {'Code': orderwc['materialno']},
@@ -234,7 +236,9 @@ class MoPushModel(PydanticModel):
                     'Quantity': orderwc['orderqty'],
                     'ProcessingType': {"Code": ""},
                     'Process': {"Code": orderwc['itemno']},
+                    'SequenceNumber': i,
                 })
+                i += 1
 
         momd = []
         if demand_list:
@@ -596,7 +600,7 @@ class YonyouTplusConnection(ExternalBaseConnection):
             return response
         
         response = await self.execute_with_timeout_protection(
-            make_request(),
+            make_request,  # 传递函数引用而不是协程对象，支持重试
             f"POST {endpoint}"
         )
         
@@ -790,10 +794,6 @@ class TplusRouting(BaseSource):
                     "dto": {"code": bom_code}
                 }
                 response = await self._CONNECTION._post(endpoint=endpoint, data=payload)
-                # 修复：检查 response 是否为可等待对象
-                if inspect.iscoroutine(response):
-                    response = await response
-                # 修复：直接使用 response 而不是调用 json()
                 bom_data = response[0] if isinstance(response, list) and response else {}
                 return process_route_data(bom_data, field_map=self._FIELD_HINTS)
             except Exception as e:
@@ -992,12 +992,13 @@ class TplusMo(MoVoucher):
 
         endpoint = cls._APPROVE_ENDPOINT
         payload = {"param": {"VoucherID": tplus_moid}}
-        asyncio.create_task(cls._CONNECTION._post(endpoint=endpoint, data=payload))
-        # resp_json = await cls._CONNECTION._post(endpoint=endpoint, data=payload)
-        # if str(resp_json['code']) == '0': # 响应错误码为0，MO 审批成功
-        #     return True
-        # else:
-        #     return False
+        resp_json = await cls._CONNECTION._post(endpoint=endpoint, data=payload)
+        if str(resp_json['code']) == '0':  # 响应错误码为0，MO 审批成功
+            logger.success("MO审批", tplus_moid)
+            return True
+        else:
+            logger.warning_msg(f"MO{tplus_moid}审批失败", resp_json['message'])
+            return False
 
 
     @classmethod
@@ -1118,49 +1119,57 @@ class TplusPr(BaseVoucher):
         pydantic_model: Type[PydanticModel] = None,
         **kwargs
     ):
-        # pr_create_response_json = {}
-        try:
-            assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
-            await cls._CONNECTION.auth()
-            endpoint = cls._CREATE_ENDPOINT
-            pydantic_model = pydantic_model or cls._PUSH_PYDANTIC_MODEL
+        assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
+        await cls._CONNECTION.auth()
+        # 分批处理，每批最多100条
+        batch_size = 100
+        total_batches = (len(event_data_list) + batch_size - 1) // batch_size
+        logger.info(f"开始推送请购单，共 {len(event_data_list)} 条，分为 {total_batches} 批")
+        
+        for batch_idx in range(total_batches):
+            start_idx = batch_idx * batch_size
+            end_idx = min((batch_idx + 1) * batch_size, len(event_data_list))
+            batch_data = event_data_list[start_idx:end_idx]
+            
+            if not batch_data:
+                continue
+                
+            prnos = [item['supplyno'] for item in batch_data]
+            logger.update("推送请购单", f"批次{batch_idx+1}/{total_batches}", f"处理 {len(batch_data)} 条")
+            
+            try:
+                endpoint = cls._CREATE_ENDPOINT
+                pydantic_model = pydantic_model or cls._PUSH_PYDANTIC_MODEL
 
-            # 转换为 T+ 格式
-            agg_data_list = await ApsPayloadSponsor.aggregate_pr_data(pr_data_list=event_data_list)
-            tplus_pr_data = pydantic_model(data=agg_data_list).model_dump(exclude_none=True)
-            payload = {"dto": tplus_pr_data}
-            endpoint = cls._CREATE_ENDPOINT
-            pr_create_response_json = await cls._CONNECTION._post(endpoint=endpoint, data=payload)
-            # pr_push_response_json = response.json()
-            if str(pr_create_response_json['code']) == '0':
-                tplus_pr_id = pr_create_response_json['data'].get('ID')
-                tplus_pr_code = pr_create_response_json['data'].get('Code')
-                tasks = [
-                    _erp.pr_release_success(
-                        prno=_['supplyno'],
+                # 转换为 T+ 格式
+                agg_data_list = await ApsPayloadSponsor.aggregate_pr_data(pr_data_list=batch_data)
+                tplus_pr_data = pydantic_model(data=agg_data_list).model_dump(exclude_none=True)
+                payload = {"dto": tplus_pr_data}
+                pr_create_response_json = await cls._CONNECTION._post(endpoint=endpoint, data=payload)
+                
+                if str(pr_create_response_json['code']) == '0':
+                    tplus_pr_id = pr_create_response_json['data'].get('ID')
+                    tplus_pr_code = pr_create_response_json['data'].get('Code')
+                    
+                    # 使用批量更新
+                    await _erp.pr_release_success(
+                        prno=prnos,
                         msg=pr_create_response_json['message'],
                         msg_from='T+',
                         _code=tplus_pr_code,
                         _id=tplus_pr_id
-                    ) for _ in event_data_list]
-                await asyncio.gather(*tasks)
-                auto_approve = kwargs.get('auto_approve', True)
-                if auto_approve:
-                    # 审批请购单
-                    await cls.approve(tplus_pr_code=tplus_pr_code)
-            else:
-                tasks = [
-                    _erp.pr_release_failed(
-                        prno=item['supplyno'],
-                        msg=pr_create_response_json['message'],
-                        msg_from='T+'
-                    ) for item in event_data_list]
-                await asyncio.gather(*tasks)
-        except Exception as e:
-            # msg = pr_create_response_json.get('message', str(e))
-            logger.fail("推送请购单", str(e))
-            tasks = [asyncio.create_task(_erp.pr_release_failed(prno=item['supplyno'], msg=str(e), msg_from='T+')) for item in event_data_list]
-            await asyncio.gather(*tasks)
+                    )
+                    auto_approve = kwargs.get('auto_approve', True)
+                    if auto_approve:
+                        # 审批请购单
+                        await cls.approve(tplus_pr_code=tplus_pr_code)
+                    logger.success("推送请购单", f"批次{batch_idx+1}/{total_batches}", f"成功")
+                else:
+                    await _erp.pr_release_failed(prno=prnos, msg=pr_create_response_json['message'], msg_from='T+')
+                    logger.warning("推送请购单", f"批次{batch_idx+1}/{total_batches}", pr_create_response_json['message'])
+            except Exception as e:
+                logger.fail("推送请购单", f"批次{batch_idx+1}/{total_batches}", str(e))
+                await _erp.pr_release_failed(prno=prnos, msg=str(e), msg_from='T+')
 
 
     @classmethod
@@ -1169,9 +1178,8 @@ class TplusPr(BaseVoucher):
 
         endpoint = cls._APPROVE_ENDPOINT
         payload = {"param": {'voucherCode': tplus_pr_code}}
-        asyncio.create_task(cls._CONNECTION._post(endpoint=endpoint, data=payload))
-        # response_json = await cls._CONNECTION._post(endpoint=endpoint, data=payload)
-        # if str(response_json['code']) == '0': # 审批成功
-        #     logger.success("请购单审批", tplus_pr_code)
-        # else:
-        #     logger.warning_msg(f"请购单{tplus_pr_code}审批失败" , response_json['message'])
+        response_json = await cls._CONNECTION._post(endpoint=endpoint, data=payload)
+        if str(response_json['code']) == '0':  # 审批成功
+            logger.success("请购单审批", tplus_pr_code)
+        else:
+            logger.warning_msg(f"请购单{tplus_pr_code}审批失败", response_json['message'])
