@@ -7,7 +7,7 @@ from typing import Dict, List, Any, Tuple, Optional
 from collections import defaultdict
 from enum import Enum
 
-from apps.data_opt.staging_cleaner import STAGING_TABLE_CONFIG, STAGING_MODEL_MAPPING
+from apps.data_opt.mds.staging_cleaner import STAGING_TABLE_CONFIG, STAGING_MODEL_MAPPING
 from globalobjects import logger as log_config
 
 logger = log_config.get_logger(__name__)

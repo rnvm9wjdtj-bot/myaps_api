@@ -6,19 +6,33 @@ from typing import List, Dict, Optional, Literal
 from datetime import datetime, timezone
 from fastapi import APIRouter, Query, Body, HTTPException, status, Request, UploadFile, File
 
-from apps.data_opt.staging_models import (
-    StagingStatus,
+from ._base import StagingStatus, INTERNAL_FIELDS, EXCLUDE_FIELDS, convert_record_to_lowercase
+from .staging_models import (
     TMaterialStaging, TWorkcenterStaging, TMatVerStaging,
     TMatWcStaging, TMatWcBomStaging, TMoldStaging, TMatWcMoldStaging,
     ValidationError, TransformRule
 )
-from apps.data_opt.staging_cleaner import StagingProcessor, DataTransformer, STAGING_TABLE_CONFIG, STAGING_MODEL_MAPPING
+from .staging_cleaner import StagingProcessor, DataTransformer, STAGING_TABLE_CONFIG, STAGING_MODEL_MAPPING
 from apps.io_api.utils.common import standard_response
 from apps.io_api.utils.db_operation import db_bupsert
 from core.settings import MYAPS_MAIN_DB, THIS_DB_NAME, MYAPS_DBSET_LIST
 from globalobjects import logger as log_config
 
 logger = log_config.get_logger(__name__)
+
+# ==============================================
+# 监控统计字段常量（P1优化）
+# ==============================================
+MONITOR_STATUS_FIELDS = (
+    StagingStatus.PENDING.value,
+    StagingStatus.COMPLIANCE_PASS.value,
+    StagingStatus.COMPLIANCE_ERROR.value,
+    StagingStatus.RELATION_PASS.value,
+    StagingStatus.RELATION_ERROR.value,
+    StagingStatus.SYNCED.value,
+)
+
+MONITOR_TIME_FIELDS = ("last_created", "last_synced")
 
 rt = APIRouter(prefix="/mds", tags=["数据清洗"])
 
@@ -54,13 +68,6 @@ for table_key, config in STAGING_TABLE_CONFIG.items():
     create_staging_endpoint(table_key, config)
 
 
-def ensure_timezone_aware(dt: datetime) -> datetime:
-    """确保datetime对象是时区感知的"""
-    if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt
-
-
 async def insert_to_staging_table(
     model_class,
     table_name: str,
@@ -82,10 +89,10 @@ async def insert_to_staging_table(
         插入/更新记录数
     """
     from tortoise import Tortoise
-    from apps.data_opt.staging_cleaner import BUSINESS_KEYS
+    from .staging_cleaner import BUSINESS_KEYS
     
     if exclude_fields is None:
-        exclude_fields = ['_createtime', '_updatetime', 'sys_date', 'sys_stamp', 'sys_date']
+        exclude_fields = EXCLUDE_FIELDS
     
     conn = Tortoise.get_connection(THIS_DB_NAME)
     
@@ -171,40 +178,6 @@ async def insert_to_staging_table(
         count += 1
     
     return count
-
-
-# APS系统内部使用字段，不对外暴露
-INTERNAL_FIELDS = {'memo', 'sys_user', 'sys_date', 'sys_stamp'}
-
-
-def convert_record_to_lowercase(record_dict: Dict, model_class) -> Dict:
-    """
-    将记录的字段名从数据库格式(大驼峰)转换为API格式(小写)
-    同时过滤掉APS系统内部使用的字段
-    
-    Args:
-        record_dict: 记录字典
-        model_class: 模型类
-    
-    Returns:
-        转换后的字典（字段名为小写，已过滤内部字段）
-    """
-    # 构建反向映射：数据库字段名 -> Python字段名(小写)
-    reverse_field_map = {}
-    for field in model_class._meta.fields_map.values():
-        db_col_name = field.source_field if field.source_field else field.model_field_name
-        reverse_field_map[db_col_name] = field.model_field_name
-    
-    result = {}
-    for key, value in record_dict.items():
-        # 将数据库字段名转换为Python字段名(小写)
-        python_field = reverse_field_map.get(key, key)
-        # 过滤掉内部使用字段
-        if python_field in INTERNAL_FIELDS:
-            continue
-        result[python_field] = value
-    
-    return result
 
 
 @rt.post("/validate/{table_name}", summary="校验缓冲表数据")
@@ -304,7 +277,7 @@ async def sync_to_production(
                 conn = Tortoise.get_connection(THIS_DB_NAME)
                 staging_table_name = staging_model._meta.db_table
                 reset_query = f'UPDATE "{staging_table_name}" SET "_retry_count" = 0 WHERE "_status" = $1'
-                await conn.execute_query(reset_query, ("validated",))
+                await conn.execute_query(reset_query, ("relation_pass",))
                 logger.info(f"已重置重试次数: {staging_table_name}")
         
         processor = StagingProcessor(db_name)
@@ -344,7 +317,7 @@ async def sync_to_production(
                     if total_synced > 0:
                         # 先查询需要更新的staging_id
                         success_ids_query = f'SELECT "_staging_id" FROM "{staging_table_name}" WHERE "_status" = $1 AND "_error_msg" IS NULL LIMIT $2'
-                        success_ids_result = await conn.execute_query(success_ids_query, ("validated", total_synced))
+                        success_ids_result = await conn.execute_query(success_ids_query, ("relation_pass", total_synced))
                         success_ids = [row["_staging_id"] for row in success_ids_result[1]] if success_ids_result[1] else []
                         
                         if success_ids:
@@ -637,10 +610,12 @@ async def get_monitor_summary(request: Request):
             query = f'''
                 SELECT 
                     COUNT(*) as total,
-                    COUNT(*) FILTER (WHERE "_status" = 'pending') as pending,
-                    COUNT(*) FILTER (WHERE "_status" = 'validated') as validated,
-                    COUNT(*) FILTER (WHERE "_status" = 'rejected') as rejected,
-                    COUNT(*) FILTER (WHERE "_status" = 'synced') as synced,
+                    COUNT(*) FILTER (WHERE "_status" = '{StagingStatus.PENDING.value}') as {StagingStatus.PENDING.value},
+                    COUNT(*) FILTER (WHERE "_status" = '{StagingStatus.COMPLIANCE_PASS.value}') as {StagingStatus.COMPLIANCE_PASS.value},
+                    COUNT(*) FILTER (WHERE "_status" = '{StagingStatus.COMPLIANCE_ERROR.value}') as {StagingStatus.COMPLIANCE_ERROR.value},
+                    COUNT(*) FILTER (WHERE "_status" = '{StagingStatus.RELATION_PASS.value}') as {StagingStatus.RELATION_PASS.value},
+                    COUNT(*) FILTER (WHERE "_status" = '{StagingStatus.RELATION_ERROR.value}') as {StagingStatus.RELATION_ERROR.value},
+                    COUNT(*) FILTER (WHERE "_status" = '{StagingStatus.SYNCED.value}') as {StagingStatus.SYNCED.value},
                     MAX("_createtime") as last_created,
                     MAX("_synced_time") as last_synced
                 FROM "{table}"
@@ -651,12 +626,14 @@ async def get_monitor_summary(request: Request):
             summary.append({
                 "table": table,
                 "total": row.get("total", 0),
-                "pending": row.get("pending", 0),
-                "validated": row.get("validated", 0),
-                "rejected": row.get("rejected", 0),
-                "synced": row.get("synced", 0),
-                "last_created": row.get("last_created").isoformat() if row.get("last_created") else None,
-                "last_synced": row.get("last_synced").isoformat() if row.get("last_synced") else None,
+                StagingStatus.PENDING.value: row.get(StagingStatus.PENDING.value, 0),
+                StagingStatus.COMPLIANCE_PASS.value: row.get(StagingStatus.COMPLIANCE_PASS.value, 0),
+                StagingStatus.COMPLIANCE_ERROR.value: row.get(StagingStatus.COMPLIANCE_ERROR.value, 0),
+                StagingStatus.RELATION_PASS.value: row.get(StagingStatus.RELATION_PASS.value, 0),
+                StagingStatus.RELATION_ERROR.value: row.get(StagingStatus.RELATION_ERROR.value, 0),
+                StagingStatus.SYNCED.value: row.get(StagingStatus.SYNCED.value, 0),
+                MONITOR_TIME_FIELDS[0]: row.get(MONITOR_TIME_FIELDS[0]).isoformat() if row.get(MONITOR_TIME_FIELDS[0]) else None,
+                MONITOR_TIME_FIELDS[1]: row.get(MONITOR_TIME_FIELDS[1]).isoformat() if row.get(MONITOR_TIME_FIELDS[1]) else None,
             })
         
         return standard_response(

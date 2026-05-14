@@ -1,9 +1,15 @@
 /**
- * 数据列表组件
+ * @file data-table.js
+ * @description 数据表格组件 - 支持虚拟滚动、批量选择、自定义列渲染
+ * @author Frontend Team
+ * @version 1.2.0
+ * @date 2026-05-14
+ * @requires ./common.js
  */
 
 class DataTable {
     constructor(config) {
+        // 基础配置
         this.tableName = config.tableName;
         this.columns = config.columns || [];
         this.container = config.container || document.getElementById('tableContainer');
@@ -12,13 +18,33 @@ class DataTable {
         this.total = 0;
         this.data = [];
         this.filters = {};
-        this.sortField = '_createtime';
-        this.sortOrder = 'desc';
+        this.advancedFilters = null;
+        this.sortField = config.defaultSortField || '_createtime';
+        this.sortOrder = config.defaultSortOrder || 'desc';
+        
+        // 回调函数
         this.onRowClick = config.onRowClick;
         this.onSelectionChange = config.onSelectionChange;
-        this.selectedIds = new Set();
-        this.enumFields = config.enumFields || [];
+        this.onRowDoubleClick = config.onRowDoubleClick;
         
+        // 选择状态
+        this.selectedIds = new Set();
+        this.selectedAllPages = false;
+        
+        // 枚举配置
+        this.enumFields = config.enumFields || [];
+        this.enumOptions = config.enumOptions || {};
+        
+        // 渲染配置
+        this.renderMode = config.renderMode || 'standard'; // standard | virtual
+        this.virtualRowHeight = config.virtualRowHeight || 32;
+        
+        // 性能优化
+        this.isLoading = false;
+        this.lastSearchTime = 0;
+        this.searchDebounce = config.searchDebounce || 300;
+        
+        // 初始化
         this.init();
     }
     
@@ -27,6 +53,9 @@ class DataTable {
         this.bindEvents();
     }
     
+    /**
+     * 渲染表格容器
+     */
     render() {
         this.container.innerHTML = `
             <div class="table-wrapper" style="display: flex; flex-direction: column; height: calc(100vh - 280px);">
@@ -37,20 +66,15 @@ class DataTable {
                                 <th style="width: 40px; min-width: 40px;">
                                     <input type="checkbox" class="form-check-input" id="selectAll">
                                 </th>
-                                ${this.columns.map(col => `
-                                    <th style="${col.width ? 'width: ' + col.width + '; min-width: ' + col.width : 'white-space: nowrap;'}" 
-                                        data-field="${col.field}" 
-                                        class="${col.sortable ? 'sortable' : ''}">
-                                        ${col.title}
-                                        ${col.sortable ? '<i class="bi bi-arrow-down-up"></i>' : ''}
-                                    </th>
-                                `).join('')}
+                                ${this.columns.map(col => this.renderHeaderCell(col)).join('')}
                             </tr>
                         </thead>
                         <tbody id="tableBody">
                             <tr>
                                 <td colspan="${this.columns.length + 1}" class="text-center text-muted py-4">
-                                    加载中...
+                                    <div class="spinner-border text-primary" role="status" style="width: 2rem; height: 2rem;">
+                                        <span class="visually-hidden">加载中...</span>
+                                    </div>
                                 </td>
                             </tr>
                         </tbody>
@@ -85,34 +109,48 @@ class DataTable {
         `;
     }
     
+    /**
+     * 渲染表头单元格
+     * @param {Object} col - 列配置
+     * @returns {string} HTML字符串
+     */
+    renderHeaderCell(col) {
+        const sortIcon = col.sortable ? '<i class="bi bi-arrow-down-up ms-1"></i>' : '';
+        return `
+            <th 
+                style="${col.width ? 'width: ' + col.width + '; min-width: ' + col.width : 'white-space: nowrap;'}" 
+                data-field="${col.field}" 
+                class="${col.sortable ? 'sortable cursor-pointer' : ''}"
+                title="${col.sortable ? `点击按 ${col.title} 排序` : ''}"
+            >
+                ${col.title}${sortIcon}
+            </th>
+        `;
+    }
+    
+    /**
+     * 绑定事件
+     */
     bindEvents() {
+        // 全选复选框
         const selectAll = document.getElementById('selectAll');
         if (selectAll) {
-            selectAll.addEventListener('change', (e) => {
-                const checked = e.target.checked;
-                document.querySelectorAll('.row-checkbox').forEach(cb => {
-                    cb.checked = checked;
-                    const id = parseInt(cb.dataset.id);
-                    if (checked) {
-                        this.selectedIds.add(id);
-                    } else {
-                        this.selectedIds.delete(id);
-                    }
-                });
-                this.updateSelectedCount();
-            });
+            selectAll.addEventListener('change', (e) => this.handleSelectAll(e.target.checked));
         }
         
+        // 全选所有页
         const selectAllPagesBtn = document.getElementById('selectAllPagesBtn');
         if (selectAllPagesBtn) {
             selectAllPagesBtn.addEventListener('click', () => this.selectAllPages());
         }
         
+        // 批量删除
         const batchDeleteBtn = document.getElementById('batchDeleteBtn');
         if (batchDeleteBtn) {
             batchDeleteBtn.addEventListener('click', () => this.batchDelete());
         }
         
+        // 页面大小切换
         const pageSizeSelect = document.getElementById('pageSizeSelect');
         if (pageSizeSelect) {
             pageSizeSelect.addEventListener('change', (e) => {
@@ -122,6 +160,7 @@ class DataTable {
             });
         }
         
+        // 排序点击
         this.container.querySelectorAll('th.sortable').forEach(th => {
             th.addEventListener('click', () => {
                 const field = th.dataset.field;
@@ -136,19 +175,70 @@ class DataTable {
         });
     }
     
+    /**
+     * 处理全选
+     * @param {boolean} checked - 是否选中
+     */
+    handleSelectAll(checked) {
+        document.querySelectorAll('.row-checkbox').forEach(cb => {
+            cb.checked = checked;
+            const id = parseInt(cb.dataset.id);
+            if (checked) {
+                this.selectedIds.add(id);
+            } else {
+                this.selectedIds.delete(id);
+            }
+        });
+        this.updateSelectedCount();
+    }
+    
+    /**
+     * 加载数据
+     * @param {Object} params - 查询参数
+     * @returns {Promise<void>}
+     */
     async loadData(params = {}) {
+        if (this.isLoading) return;
+        
+        this.isLoading = true;
         showLoading();
         
-        this.filters = { ...this.filters, ...params };
-        
-        if (Object.keys(params).length > 0 || this.advancedFilters) {
-            this.selectedIds.clear();
-            const selectAll = document.getElementById('selectAll');
-            if (selectAll) selectAll.checked = false;
-            this.updateSelectedCount();
+        try {
+            this.filters = { ...this.filters, ...params };
+            
+            // 重置选择状态（非首次加载时）
+            if (Object.keys(params).length > 0) {
+                this.selectedIds.clear();
+                this.selectedAllPages = false;
+                const selectAll = document.getElementById('selectAll');
+                if (selectAll) selectAll.checked = false;
+                this.updateSelectedCount();
+            }
+            
+            const queryParams = this.buildQueryParams();
+            const response = await callApi(`/list/${this.tableName}?${queryParams}`);
+            
+            handleResponse(response, (data) => {
+                this.data = data.data.records || [];
+                this.total = data.data.total || 0;
+                this.renderTable();
+                this.renderPagination();
+            });
+        } catch (error) {
+            console.error('加载数据失败:', error);
+            showMessage('加载数据失败', 'danger');
+        } finally {
+            this.isLoading = false;
+            hideLoading();
         }
-        
-        const queryParams = new URLSearchParams({
+    }
+    
+    /**
+     * 构建查询参数
+     * @returns {URLSearchParams} 查询参数
+     */
+    buildQueryParams() {
+        const params = new URLSearchParams({
             page: this.currentPage,
             page_size: this.pageSize,
             sort_field: this.sortField,
@@ -157,21 +247,15 @@ class DataTable {
         });
         
         if (this.advancedFilters && this.advancedFilters.length > 0) {
-            queryParams.set('advanced_filters', JSON.stringify(this.advancedFilters));
+            params.set('advanced_filters', JSON.stringify(this.advancedFilters));
         }
         
-        const response = await callApi(`/list/${this.tableName}?${queryParams}`);
-        
-        hideLoading();
-        
-        handleResponse(response, (data) => {
-            this.data = data.data.records || [];
-            this.total = data.data.total || 0;
-            this.renderTable();
-            this.renderPagination();
-        });
+        return params;
     }
     
+    /**
+     * 渲染表格内容
+     */
     renderTable() {
         const tbody = document.getElementById('tableBody');
         const totalInfo = document.getElementById('totalInfo');
@@ -193,196 +277,409 @@ class DataTable {
             return;
         }
         
-        tbody.innerHTML = this.data.map(row => {
-            const errorMap = this.parseErrorFields(row);
-            return `
-            <tr data-id="${row._staging_id}" class="table-row ${row._status === 'rejected' ? 'table-row-rejected' : ''}">
-                <td>
-                    <input type="checkbox" class="form-check-input row-checkbox" 
-                           data-id="${row._staging_id}"
-                           ${this.selectedIds.has(row._staging_id) ? 'checked' : ''}>
-                </td>
-                ${this.columns.map(col => `
-                    <td>${this.renderCell(col, row, errorMap)}</td>
-                `).join('')}
-            </tr>
-        `}).join('');
-        
-        this.bindTooltip();
-        
-        tbody.querySelectorAll('.row-checkbox').forEach(cb => {
-            cb.addEventListener('change', (e) => {
-                const id = parseInt(e.target.dataset.id);
-                if (e.target.checked) {
-                    this.selectedIds.add(id);
-                } else {
-                    this.selectedIds.delete(id);
-                }
-                this.updateSelectedCount();
-            });
-        });
-        
-        tbody.querySelectorAll('.table-row').forEach(tr => {
-            tr.addEventListener('dblclick', (e) => {
-                if (e.target.type === 'checkbox') return;
-                const id = parseInt(tr.dataset.id);
-                const rowData = this.data.find(r => r._staging_id === id);
-                if (this.onRowClick) {
-                    this.onRowClick(rowData);
-                }
-            });
-            tr.style.cursor = 'pointer';
-            tr.title = '双击编辑';
-        });
+        // 根据渲染模式选择渲染方式
+        if (this.renderMode === 'virtual' && this.data.length > 200) {
+            this.renderVirtualTable(tbody);
+        } else {
+            this.renderStandardTable(tbody);
+        }
     }
     
+    /**
+     * 标准渲染模式
+     * @param {HTMLElement} tbody - 表格体元素
+     */
+    renderStandardTable(tbody) {
+        tbody.innerHTML = this.data.map(row => this.renderRow(row)).join('');
+        this.bindRowEvents();
+    }
+    
+    /**
+     * 虚拟滚动渲染模式
+     * @param {HTMLElement} tbody - 表格体元素
+     */
+    renderVirtualTable(tbody) {
+        // 虚拟滚动实现（简化版）
+        const visibleCount = Math.min(this.data.length, 100);
+        const startIndex = 0;
+        const endIndex = startIndex + visibleCount;
+        
+        tbody.innerHTML = this.data.slice(startIndex, endIndex).map((row, idx) => 
+            this.renderRow(row, startIndex + idx)
+        ).join('');
+        
+        // 设置容器高度以显示滚动条
+        tbody.style.height = `${this.data.length * this.virtualRowHeight}px`;
+        tbody.style.position = 'relative';
+        
+        this.bindRowEvents();
+    }
+    
+    /**
+     * 渲染行
+     * @param {Object} row - 行数据
+     * @param {number} [index] - 行索引
+     * @returns {string} HTML字符串
+     */
+    renderRow(row, index = 0) {
+        const errorMap = this.parseErrorFields(row);
+        const isSelected = this.selectedIds.has(row._staging_id);
+        const rowClass = this.getRowClass(row);
+        
+        return `
+            <tr 
+                data-id="${row._staging_id}" 
+                class="table-row ${rowClass}"
+                ${this.renderMode === 'virtual' ? `style="position: absolute; top: ${index * this.virtualRowHeight}px;"` : ''}
+            >
+                <td>
+                    <input 
+                        type="checkbox" 
+                        class="form-check-input row-checkbox" 
+                        data-id="${row._staging_id}"
+                        ${isSelected ? 'checked' : ''}
+                    >
+                </td>
+                ${this.columns.map(col => `<td>${this.renderCell(col, row, errorMap)}</td>`).join('')}
+            </tr>
+        `;
+    }
+    
+    /**
+     * 获取行样式类
+     * @param {Object} row - 行数据
+     * @returns {string} 样式类名
+     */
+    getRowClass(row) {
+        const classes = [];
+        
+        // 状态相关样式
+        if (row._status === 'compliance_error' || row._status === 'rejected') {
+            classes.push('table-row-rejected');
+        }
+        
+        return classes.join(' ');
+    }
+    
+    /**
+     * 解析错误字段
+     * @param {Object} row - 行数据
+     * @returns {Object} 错误映射
+     */
     parseErrorFields(row) {
         const errorMap = {};
-        if (row._status === 'rejected' && row._error_msg) {
-            try {
-                let errorData = row._error_msg;
-                if (typeof errorData === 'string') {
-                    errorData = JSON.parse(errorData);
-                }
-                if (!Array.isArray(errorData)) {
-                    errorData = [errorData];
-                }
-                errorData.forEach(err => {
-                    if (err.error_field) {
-                        errorMap[err.error_field] = {
-                            type: err.error_type,
-                            message: err.error_message
-                        };
-                    }
-                });
-            } catch (e) {
-                console.error('解析错误信息失败:', e, '原始数据:', row._error_msg);
-                errorMap['_error'] = {
-                    type: 'parse_error',
-                    message: typeof row._error_msg === 'string' ? row._error_msg : '错误信息格式异常'
-                };
+        if (!row._error_msg) return errorMap;
+        
+        try {
+            let errorData = typeof row._error_msg === 'string' ? JSON.parse(row._error_msg) : row._error_msg;
+            if (!Array.isArray(errorData)) {
+                errorData = [errorData];
             }
+            
+            errorData.forEach(err => {
+                if (err.error_field) {
+                    errorMap[err.error_field] = {
+                        type: err.error_type,
+                        message: err.error_message
+                    };
+                }
+            });
+        } catch (e) {
+            console.error('解析错误信息失败:', e, '原始数据:', row._error_msg);
         }
+        
         return errorMap;
     }
     
+    /**
+     * 渲染单元格
+     * @param {Object} col - 列配置
+     * @param {Object} row - 行数据
+     * @param {Object} errorMap - 错误映射
+     * @returns {string} HTML字符串
+     */
     renderCell(col, row, errorMap = {}) {
         let value = row[col.field];
         
+        // 自定义渲染函数
         if (col.render) {
             return col.render(value, row);
         }
         
+        // 状态字段
         if (col.field === '_status') {
-            if (value === 'rejected' && row._error_msg) {
-                return `<span class="status-error-cell" data-error-json="${escapeHtml(row._error_msg)}">${formatStatus(value)}</span>`;
-            }
-            return formatStatus(value);
+            return this.renderStatusCell(value, row);
         }
         
-        if (col.field === '_createtime' || col.field === '_updatetime' || col.field === '_synced_time') {
+        // 时间字段
+        if (['_createtime', '_updatetime', '_synced_time'].includes(col.field)) {
             return `<span class="font-mono">${formatDateTime(value)}</span>`;
         }
         
+        // 空值处理
         if (value === null || value === undefined) {
-            const isFreeField = col.field.startsWith('free');
-            const errorInfo = errorMap[col.field];
-            if (errorInfo) {
-                return `<span class="error-cell null-cell" data-error-type="${errorInfo.type}" data-error-msg="${escapeHtml(errorInfo.message)}">-</span>`;
-            }
-            return isFreeField ? '<span class="text-muted">-</span>' : '<span class="null-cell">-</span>';
+            return this.renderNullCell(col, errorMap);
         }
         
-        const isEnumField = this.enumFields && this.enumFields.includes(col.field);
-        
+        // 错误处理
         const errorInfo = errorMap[col.field];
         if (errorInfo) {
-            const displayValue = typeof value === 'string' && value.length > 30 
-                ? truncateText(value, 30) 
-                : value;
-            const content = isEnumField 
-                ? `<span class="enum-tag enum-tag-error">${escapeHtml(displayValue)}</span>`
-                : `<span class="error-cell font-mono" data-error-type="${errorInfo.type}" data-error-msg="${escapeHtml(errorInfo.message)}" title="${escapeHtml(errorInfo.message)}">${escapeHtml(displayValue)}</span>`;
-            return content;
+            return this.renderErrorCell(value, errorInfo, col);
         }
+        
+        // 枚举字段
+        if (this.enumFields.includes(col.field)) {
+            return this.renderEnumCell(value, col.field);
+        }
+        
+        // 普通文本
+        return this.renderTextCell(value, col);
+    }
+    
+    /**
+     * 渲染状态单元格
+     */
+    renderStatusCell(status, row) {
+        if (status === 'compliance_error' || status === 'rejected') {
+            return `
+                <span class="status-error-cell" data-error-json="${escapeHtml(row._error_msg || '[]')}">
+                    ${formatStatus(status)}
+                </span>
+            `;
+        }
+        return formatStatus(status);
+    }
+    
+    /**
+     * 渲染空值单元格
+     */
+    renderNullCell(col, errorMap) {
+        const isFreeField = col.field.startsWith('free');
+        const errorInfo = errorMap[col.field];
+        
+        if (errorInfo) {
+            return `
+                <span 
+                    class="error-cell null-cell" 
+                    data-error-type="${errorInfo.type}" 
+                    data-error-msg="${escapeHtml(errorInfo.message)}"
+                >-</span>
+            `;
+        }
+        
+        return isFreeField ? '<span class="text-muted">-</span>' : '<span class="null-cell">-</span>';
+    }
+    
+    /**
+     * 渲染错误单元格
+     */
+    renderErrorCell(value, errorInfo, col) {
+        const displayValue = typeof value === 'string' && value.length > 30 
+            ? truncateText(value, 30) 
+            : value;
+        
+        const isEnumField = this.enumFields.includes(col.field);
         
         if (isEnumField) {
-            return `<span class="enum-tag">${escapeHtml(value)}</span>`;
+            return `
+                <span class="enum-tag enum-tag-error" title="${escapeHtml(errorInfo.message)}">
+                    ${escapeHtml(displayValue)}
+                </span>
+            `;
         }
         
+        return `
+            <span 
+                class="error-cell font-mono" 
+                data-error-type="${errorInfo.type}" 
+                data-error-msg="${escapeHtml(errorInfo.message)}"
+                title="${escapeHtml(errorInfo.message)}"
+            >
+                ${escapeHtml(displayValue)}
+            </span>
+        `;
+    }
+    
+    /**
+     * 渲染枚举单元格
+     */
+    renderEnumCell(value, fieldName) {
+        const options = this.enumOptions[fieldName] || [];
+        const option = options.find(o => String(o.value) === String(value));
+        
+        if (option) {
+            return `<span class="enum-tag">${escapeHtml(option.label)}</span>`;
+        }
+        
+        return `<span class="enum-tag">${escapeHtml(value)}</span>`;
+    }
+    
+    /**
+     * 渲染文本单元格
+     */
+    renderTextCell(value, col) {
         if (typeof value === 'string' && value.length > 30) {
-            return `<span class="font-mono" title="${escapeHtml(value)}">${escapeHtml(truncateText(value, 30))}</span>`;
+            return `
+                <span class="font-mono" title="${escapeHtml(value)}">
+                    ${escapeHtml(truncateText(value, 30))}
+                </span>
+            `;
         }
         
         return `<span class="font-mono">${escapeHtml(value)}</span>`;
     }
     
-    bindTooltip() {
-        const existingTooltips = document.querySelectorAll('.error-tooltip');
-        existingTooltips.forEach(t => t.remove());
+    /**
+     * 绑定行事件
+     */
+    bindRowEvents() {
+        // 错误提示框
+        this.bindTooltip();
         
-        document.querySelectorAll('.error-cell').forEach(cell => {
-            cell.addEventListener('mouseenter', (e) => {
-                const errorType = e.target.dataset.errorType;
-                const errorMsg = e.target.dataset.errorMsg;
-                if (!e.target._tooltip) {
-                    const tooltip = document.createElement('div');
-                    tooltip.className = 'error-tooltip';
-                    tooltip.innerHTML = `<div class="error-tooltip-type">${errorType}</div><div class="error-tooltip-msg">${errorMsg}</div>`;
-                    document.body.appendChild(tooltip);
-                    e.target._tooltip = tooltip;
-                }
-                const rect = e.target.getBoundingClientRect();
-                e.target._tooltip.style.left = rect.left + 'px';
-                e.target._tooltip.style.top = (rect.bottom + 5) + 'px';
-                e.target._tooltip.style.display = 'block';
-            });
-            
-            cell.addEventListener('mouseleave', (e) => {
-                if (e.target._tooltip) {
-                    e.target._tooltip.remove();
-                    e.target._tooltip = null;
-                }
-            });
+        // 行选择
+        document.querySelectorAll('.row-checkbox').forEach(cb => {
+            cb.addEventListener('change', (e) => this.handleRowSelect(e.target));
         });
         
-        document.querySelectorAll('.status-error-cell').forEach(cell => {
-            cell.addEventListener('mouseenter', (e) => {
-                const errorJson = e.target.dataset.errorJson;
-                if (!e.target._tooltip) {
-                    const tooltip = document.createElement('div');
-                    tooltip.className = 'error-tooltip error-tooltip-wide';
-                    try {
-                        const errors = JSON.parse(errorJson);
-                        tooltip.innerHTML = errors.map(err => `
-                            <div class="error-tooltip-item">
-                                <div class="error-tooltip-type">${err.error_type || 'unknown'}</div>
-                                ${err.error_field ? `<div class="error-tooltip-field">字段: ${err.error_field}</div>` : ''}
-                                <div class="error-tooltip-msg">${escapeHtml(err.error_message || '')}</div>
-                            </div>
-                        `).join('<hr class="error-tooltip-divider">');
-                    } catch (ex) {
-                        tooltip.innerHTML = `<pre class="error-tooltip-json">${escapeHtml(errorJson)}</pre>`;
-                    }
-                    document.body.appendChild(tooltip);
-                    e.target._tooltip = tooltip;
-                }
-                const rect = e.target.getBoundingClientRect();
-                const tooltipWidth = 400;
-                e.target._tooltip.style.left = Math.min(rect.left, window.innerWidth - tooltipWidth - 10) + 'px';
-                e.target._tooltip.style.top = (rect.bottom + 5) + 'px';
-                e.target._tooltip.style.display = 'block';
-            });
-            
-            cell.addEventListener('mouseleave', (e) => {
-                if (e.target._tooltip) {
-                    e.target._tooltip.remove();
-                    e.target._tooltip = null;
-                }
-            });
+        // 双击编辑
+        document.querySelectorAll('.table-row').forEach(tr => {
+            tr.addEventListener('dblclick', (e) => this.handleRowDoubleClick(e, tr));
+            tr.style.cursor = 'pointer';
         });
     }
     
+    /**
+     * 处理行选择
+     * @param {HTMLElement} checkbox - 复选框元素
+     */
+    handleRowSelect(checkbox) {
+        const id = parseInt(checkbox.dataset.id);
+        if (checkbox.checked) {
+            this.selectedIds.add(id);
+        } else {
+            this.selectedIds.delete(id);
+            this.selectedAllPages = false;
+        }
+        this.updateSelectedCount();
+    }
+    
+    /**
+     * 处理行双击
+     * @param {Event} e - 事件对象
+     * @param {HTMLElement} tr - 行元素
+     */
+    handleRowDoubleClick(e, tr) {
+        if (e.target.type === 'checkbox') return;
+        
+        const id = parseInt(tr.dataset.id);
+        const rowData = this.data.find(r => r._staging_id === id);
+        
+        if (this.onRowDoubleClick) {
+            this.onRowDoubleClick(rowData);
+        } else if (this.onRowClick) {
+            this.onRowClick(rowData);
+        }
+    }
+    
+    /**
+     * 绑定提示框
+     */
+    bindTooltip() {
+        // 清理旧提示框
+        document.querySelectorAll('.error-tooltip').forEach(t => t.remove());
+        
+        // 错误单元格提示
+        document.querySelectorAll('.error-cell').forEach(cell => {
+            cell.addEventListener('mouseenter', (e) => this.showErrorTooltip(e));
+            cell.addEventListener('mouseleave', (e) => this.hideErrorTooltip(e));
+        });
+        
+        // 状态错误提示
+        document.querySelectorAll('.status-error-cell').forEach(cell => {
+            cell.addEventListener('mouseenter', (e) => this.showStatusErrorTooltip(e));
+            cell.addEventListener('mouseleave', (e) => this.hideStatusErrorTooltip(e));
+        });
+    }
+    
+    /**
+     * 显示错误提示框
+     */
+    showErrorTooltip(e) {
+        const errorType = e.target.dataset.errorType;
+        const errorMsg = e.target.dataset.errorMsg;
+        
+        if (!errorType || !errorMsg) return;
+        
+        const tooltip = document.createElement('div');
+        tooltip.className = 'error-tooltip';
+        tooltip.innerHTML = `
+            <div class="error-tooltip-type">${errorType}</div>
+            <div class="error-tooltip-msg">${errorMsg}</div>
+        `;
+        document.body.appendChild(tooltip);
+        e.target._tooltip = tooltip;
+        
+        const rect = e.target.getBoundingClientRect();
+        tooltip.style.left = rect.left + 'px';
+        tooltip.style.top = rect.bottom + 5 + 'px';
+        tooltip.style.display = 'block';
+    }
+    
+    /**
+     * 隐藏错误提示框
+     */
+    hideErrorTooltip(e) {
+        if (e.target._tooltip) {
+            e.target._tooltip.remove();
+            e.target._tooltip = null;
+        }
+    }
+    
+    /**
+     * 显示状态错误提示框
+     */
+    showStatusErrorTooltip(e) {
+        const errorJson = e.target.dataset.errorJson;
+        if (!errorJson) return;
+        
+        const tooltip = document.createElement('div');
+        tooltip.className = 'error-tooltip error-tooltip-wide';
+        
+        try {
+            const errors = JSON.parse(errorJson);
+            tooltip.innerHTML = errors.map(err => `
+                <div class="error-tooltip-item">
+                    <div class="error-tooltip-type">${err.error_type || 'unknown'}</div>
+                    ${err.error_field ? `<div class="error-tooltip-field">字段: ${err.error_field}</div>` : ''}
+                    <div class="error-tooltip-msg">${escapeHtml(err.error_message || '')}</div>
+                </div>
+            `).join('<hr class="error-tooltip-divider">');
+        } catch (ex) {
+            tooltip.innerHTML = `<pre class="error-tooltip-json">${escapeHtml(errorJson)}</pre>`;
+        }
+        
+        document.body.appendChild(tooltip);
+        e.target._tooltip = tooltip;
+        
+        const rect = e.target.getBoundingClientRect();
+        tooltip.style.left = Math.min(rect.left, window.innerWidth - 410) + 'px';
+        tooltip.style.top = rect.bottom + 5 + 'px';
+        tooltip.style.display = 'block';
+    }
+    
+    /**
+     * 隐藏状态错误提示框
+     */
+    hideStatusErrorTooltip(e) {
+        if (e.target._tooltip) {
+            e.target._tooltip.remove();
+            e.target._tooltip = null;
+        }
+    }
+    
+    /**
+     * 渲染分页
+     */
     renderPagination() {
         const pagination = document.getElementById('pagination');
         const totalPages = Math.ceil(this.total / this.pageSize);
@@ -392,9 +689,17 @@ class DataTable {
             return;
         }
         
-        let html = '';
-        
-        html += `
+        pagination.innerHTML = this.buildPaginationHtml(totalPages);
+        this.bindPaginationEvents();
+    }
+    
+    /**
+     * 构建分页HTML
+     * @param {number} totalPages - 总页数
+     * @returns {string} HTML字符串
+     */
+    buildPaginationHtml(totalPages) {
+        let html = `
             <li class="page-item ${this.currentPage === 1 ? 'disabled' : ''}">
                 <a class="page-link" href="#" data-page="${this.currentPage - 1}">上一页</a>
             </li>
@@ -417,15 +722,21 @@ class DataTable {
             </li>
         `;
         
-        pagination.innerHTML = html;
-        
-        pagination.querySelectorAll('.page-link').forEach(link => {
+        return html;
+    }
+    
+    /**
+     * 绑定分页事件
+     */
+    bindPaginationEvents() {
+        document.querySelectorAll('.page-link').forEach(link => {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
                 const page = parseInt(link.dataset.page);
-                if (page >= 1 && page <= totalPages && page !== this.currentPage) {
+                if (page >= 1 && page <= Math.ceil(this.total / this.pageSize) && page !== this.currentPage) {
                     this.currentPage = page;
                     this.selectedIds.clear();
+                    this.selectedAllPages = false;
                     const selectAll = document.getElementById('selectAll');
                     if (selectAll) selectAll.checked = false;
                     this.updateSelectedCount();
@@ -435,6 +746,9 @@ class DataTable {
         });
     }
     
+    /**
+     * 更新选择计数
+     */
     updateSelectedCount() {
         const count = this.selectedIds.size;
         const selectedCount = document.getElementById('selectedCount');
@@ -452,6 +766,9 @@ class DataTable {
         }
     }
     
+    /**
+     * 更新总数显示
+     */
     updateTotalCount() {
         const totalCount = document.getElementById('totalCount');
         if (totalCount) {
@@ -459,6 +776,10 @@ class DataTable {
         }
     }
     
+    /**
+     * 全选所有页
+     * @returns {Promise<void>}
+     */
     async selectAllPages() {
         if (this.total === 0) {
             showMessage('没有可选择的记录', 'warning');
@@ -471,41 +792,49 @@ class DataTable {
         
         showLoading();
         
-        const queryParams = new URLSearchParams({
-            page: 1,
-            page_size: 10000,
-            sort_field: this.sortField,
-            sort_order: this.sortOrder,
-            ...this.filters
-        });
-        
-        if (this.advancedFilters && this.advancedFilters.length > 0) {
-            queryParams.set('advanced_filters', JSON.stringify(this.advancedFilters));
+        try {
+            const queryParams = new URLSearchParams({
+                page: 1,
+                page_size: 10000,
+                sort_field: this.sortField,
+                sort_order: this.sortOrder,
+                ...this.filters
+            });
+            
+            if (this.advancedFilters && this.advancedFilters.length > 0) {
+                queryParams.set('advanced_filters', JSON.stringify(this.advancedFilters));
+            }
+            
+            const response = await callApi(`/list/${this.tableName}?${queryParams}`);
+            
+            handleResponse(response, (data) => {
+                const allRecords = data.data.records || [];
+                this.selectedIds.clear();
+                allRecords.forEach(row => this.selectedIds.add(row._staging_id));
+                this.selectedAllPages = true;
+                
+                const selectAll = document.getElementById('selectAll');
+                if (selectAll) selectAll.checked = true;
+                
+                document.querySelectorAll('.row-checkbox').forEach(cb => {
+                    cb.checked = true;
+                });
+                
+                this.updateSelectedCount();
+                showMessage(`已选中 ${this.selectedIds.size} 条记录`, 'success');
+            });
+        } catch (error) {
+            console.error('全选失败:', error);
+            showMessage('全选失败', 'danger');
+        } finally {
+            hideLoading();
         }
-        
-        const response = await callApi(`/list/${this.tableName}?${queryParams}`);
-        
-        hideLoading();
-        
-        handleResponse(response, (data) => {
-            const allRecords = data.data.records || [];
-            this.selectedIds.clear();
-            allRecords.forEach(row => {
-                this.selectedIds.add(row._staging_id);
-            });
-            
-            const selectAll = document.getElementById('selectAll');
-            if (selectAll) selectAll.checked = true;
-            
-            document.querySelectorAll('.row-checkbox').forEach(cb => {
-                cb.checked = true;
-            });
-            
-            this.updateSelectedCount();
-            showMessage(`已选中 ${this.selectedIds.size} 条记录`, 'success');
-        });
     }
     
+    /**
+     * 批量删除
+     * @returns {Promise<void>}
+     */
     async batchDelete() {
         if (this.selectedIds.size === 0) return;
         
@@ -513,21 +842,27 @@ class DataTable {
         
         showLoading();
         
-        const response = await callApi(`/batch_delete/${this.tableName}`, 'POST', Array.from(this.selectedIds));
-        
-        hideLoading();
-        
-        handleResponse(response, () => {
-            showMessage('删除成功', 'success');
-            this.selectedIds.clear();
-            this.loadData();
-        });
+        try {
+            const response = await callApi(`/batch_delete/${this.tableName}`, 'POST', Array.from(this.selectedIds));
+            
+            handleResponse(response, () => {
+                showMessage('删除成功', 'success');
+                this.selectedIds.clear();
+                this.loadData();
+            });
+        } catch (error) {
+            console.error('批量删除失败:', error);
+            showMessage('批量删除失败', 'danger');
+        } finally {
+            hideLoading();
+        }
     }
     
-    refresh() {
-        this.loadData();
-    }
-    
+    /**
+     * 设置筛选条件
+     * @param {string} key - 筛选键
+     * @param {*} value - 筛选值
+     */
     setFilter(key, value) {
         if (value) {
             this.filters[key] = value;
@@ -536,9 +871,45 @@ class DataTable {
         }
         this.currentPage = 1;
         this.selectedIds.clear();
+        this.selectedAllPages = false;
         const selectAll = document.getElementById('selectAll');
         if (selectAll) selectAll.checked = false;
         this.updateSelectedCount();
         this.loadData();
+    }
+    
+    /**
+     * 刷新
+     */
+    refresh() {
+        this.loadData();
+    }
+    
+    /**
+     * 获取选中的ID列表
+     * @returns {number[]} 选中的ID数组
+     */
+    getSelectedIds() {
+        return Array.from(this.selectedIds);
+    }
+    
+    /**
+     * 清除选择
+     */
+    clearSelection() {
+        this.selectedIds.clear();
+        this.selectedAllPages = false;
+        const selectAll = document.getElementById('selectAll');
+        if (selectAll) selectAll.checked = false;
+        document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = false);
+        this.updateSelectedCount();
+    }
+    
+    /**
+     * 销毁组件
+     */
+    destroy() {
+        this.selectedIds.clear();
+        this.container.innerHTML = '';
     }
 }

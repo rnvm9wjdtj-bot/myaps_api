@@ -45,6 +45,7 @@
     "itemno_prefix": "P",
     "itemno": "P01",
     "plant": "chaoyue",
-    "planner": "chaoyue"
+    "planner": "chaoyue",
+    "lotmin": 0
   }
 }

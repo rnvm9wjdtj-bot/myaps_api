@@ -102,7 +102,7 @@ if THIS_DB_NAME:
         "use_tz": True,
     }
     TORTOISE_ORM_CONFIG["apps"]["data_opt_models"] = {
-        "models": ["apps.data_opt.staging_models", "aerich.models"],
+        "models": ["apps.data_opt.mds.staging_models", "aerich.models"],
         "default_connection": THIS_DB_NAME,
     }
 

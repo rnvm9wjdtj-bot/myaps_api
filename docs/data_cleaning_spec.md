@@ -1071,6 +1071,14 @@ async def batch_update_staging(request: Request, table_name: str, data: dict = B
 - [ ] 默认值配置正确（从schemas.py提取）
 - [ ] 校验流程包含默认值填充步骤
 
+**v3.0 配置驱动校验检查（新增）**：
+
+- [ ] Schema定义完整（包含所有校验约束：必填、枚举、范围、长度）
+- [ ] `STAGING_TABLE_CONFIG` 配置正确（schema、model、proto_model、foreign_keys）
+- [ ] 特殊业务规则已单独编写（无法通过Schema表达的规则）
+- [ ] `business_keys` 从proto_model自动提取
+- [ ] 外键约束已在配置中声明
+
 ---
 
 ## 八、更新日志
@@ -1084,6 +1092,7 @@ async def batch_update_staging(request: Request, table_name: str, data: dict = B
 | 2026-05-12 | v2.3 | 优化：校验错误详情展示、datetime时区修复、枚举标签样式、校验进度条动画 |
 | 2026-05-12 | v2.4 | 优化：双击编辑、错误呼吸动画、同步模式选择、数据类型转换、UPSERT机制 |
 | 2026-05-13 | v2.5 | 重大更新：多账套同步支持、前端内存泄漏修复、None值累加全面修复、错误信息格式统一、刷新同步逻辑优化 |
+| 2026-05-14 | v3.0 | **架构级重构**：校验逻辑从硬编码转为配置驱动，通过Pydantic Schema自动提取校验规则，大幅提升可维护性和扩展性 |
 
 ---
 
@@ -1435,7 +1444,179 @@ query = f'''
 
 ---
 
-## 十、v2.3版本更新详情
+## 十、v3.0版本更新详情
+
+### 10.1 架构重构概述
+
+**核心变更**：后端校验逻辑从**硬编码模式**重构为**配置驱动模式**。
+
+**设计理念**：Schema即规则，一次定义处处复用。
+
+**收益对比**：
+
+| 维度 | v2.5及之前 | v3.0 | 提升幅度 |
+|------|------------|------|----------|
+| 代码复用 | 每个表重复编码 | 配置驱动，自动提取 | **~50%代码量减少** |
+| 新增表成本 | 100+行代码 | 仅需配置Schema | **从小时级降为分钟级** |
+| 规则一致性 | 人工保证 | 自动从Schema提取 | **消除人工差异** |
+| 扩展性 | 修改规则需改多处 | 只需修改Schema | **变更成本大幅降低** |
+
+### 10.2 配置驱动校验机制
+
+**新增核心方法**：`validate_from_config()`
+
+```python
+# staging_cleaner.py - DataCleaner 类
+async def validate_from_config(self, table_key, data, staging_id):
+    errors = []
+    config = STAGING_TABLE_CONFIG.get(table_key)
+    schema_class = config["schema"]
+    
+    # 1. 从Schema自动提取并校验所有必填字段
+    self.validate_required_from_schema(errors, staging_id, data, schema_class)
+    
+    # 2. 从Schema自动提取并校验所有枚举字段
+    self.validate_enums_from_schema(errors, staging_id, data, schema_class)
+    
+    # 3. 从Schema自动提取并校验所有范围约束字段
+    self.validate_ranges_from_schema(errors, staging_id, data, schema_class)
+    
+    # 4. 从Schema自动提取并校验所有字符串长度约束
+    self.validate_max_lengths_from_schema(errors, staging_id, data, schema_class)
+    
+    # 5. 从配置自动提取并校验所有外键约束
+    await self.validate_foreign_keys_from_config(errors, staging_id, data, table_key)
+    
+    # 6. 重复检查
+    is_unique, dup_errors = await self.check_duplicate(table_key, data, staging_id)
+    errors.extend(dup_errors)
+    
+    return errors
+```
+
+### 10.3 自动提取函数
+
+| 函数 | 功能 | 提取来源 |
+|------|------|----------|
+| `extract_defaults_from_schema()` | 提取默认值配置 | `model_fields[field].default` |
+| `extract_required_fields()` | 提取必填字段列表 | `model_fields[field].is_required()` |
+| `extract_enum_fields()` | 提取枚举字段及允许值 | `Annotated` + `Field(description=...)` |
+| `extract_range_fields()` | 提取数值范围约束 | `gt`, `ge`, `lt`, `le` 参数 |
+| `extract_max_length_fields()` | 提取字符串长度约束 | `max_length` 参数 |
+| `get_field_map()` | 统一获取模型字段映射 | 模型元数据 |
+
+### 10.4 校验方法简化对比
+
+**v2.5及之前（硬编码）**：
+
+```python
+async def validate_material(self, data, staging_id):
+    errors = []
+    # 硬编码1：必填字段检查
+    if not data.get("materialno"):
+        errors.append(self._create_error(staging_id, ErrorType.REQUIRED_FIELD, "materialno", None, "物料号不能为空"))
+    if not data.get("description"):
+        errors.append(self._create_error(staging_id, ErrorType.REQUIRED_FIELD, "description", None, "物料描述不能为空"))
+    # 硬编码2：枚举值检查
+    abc_value = data.get("abc")
+    if abc_value and str(abc_value) not in self.ABC_ENUM:
+        errors.append(self._create_error(staging_id, ErrorType.INVALID_ENUM, "abc", abc_value, "ABC分类必须为: A, B, C"))
+    # ... 大量重复代码
+    # 硬编码3：重复检查
+    is_unique, dup_errors = await self.check_duplicate("t_material", data, staging_id)
+    errors.extend(dup_errors)
+    return len(errors) == 0, errors
+```
+
+**v3.0（配置驱动）**：
+
+```python
+async def validate_material(self, data, staging_id):
+    # 自动从配置提取规则
+    errors = await self.validate_from_config("t_material", data, staging_id)
+    
+    # 仅保留特殊业务规则（无法通过Schema表达的）
+    lotmin = data.get("lotmin")
+    lotmax = data.get("lotmax")
+    if lotmin is not None and lotmax is not None and lotmin > lotmax:
+        errors.append(self._create_error(staging_id, ErrorType.BUSINESS_RULE, "lotmin/lotmax",
+            f"{lotmin}/{lotmax}", "最小批量不能大于最大批量"))
+    
+    return len(errors) == 0, errors
+```
+
+### 10.5 配置结构增强
+
+`STAGING_TABLE_CONFIG` 现在会**自动填充**以下配置项：
+
+```python
+# 自动生成的配置项
+config["table_name"] = config["model"]._meta.table
+config["display_name"] = extract_display_name_from_model(config["model"])
+config["defaults"] = extract_defaults_from_schema(config["schema"])
+config["business_keys"] = extract_business_keys_from_model(config["proto_model"])
+```
+
+### 10.6 新开发流程
+
+**新增数据表步骤**（从100+行代码降为3步）：
+
+```
+1. 定义Schema（schemas.py）
+   ↓
+2. 配置STAGING_TABLE_CONFIG（staging_cleaner.py）
+   ↓
+3. 编写特殊业务规则（如需要）
+```
+
+**示例**：新增设备表 `t_equipment`
+
+```python
+# 步骤1：定义Schema
+class AcceptEquipment(BaseModel):
+    equipno: str = Field(..., description="设备编号")
+    description: str = Field(..., description="设备描述")
+    plant: str = Field(default="chaoyue", description="工厂")
+    status: Literal['A', 'I'] = Field(default='A', description="状态")
+    capacity: float = Field(gt=0, description="产能", default=0.0)
+
+# 步骤2：配置表映射
+STAGING_TABLE_CONFIG["t_equipment"] = {
+    "schema": AcceptEquipment,
+    "model": TEquipmentStaging,
+    "proto_model": ProtoEquipment,
+    "foreign_keys": [],
+}
+
+# 步骤3：编写业务规则（如不需要可省略）
+async def validate_equipment(self, data, staging_id):
+    errors = await self.validate_from_config("t_equipment", data, staging_id)
+    # 特殊规则...
+    return len(errors) == 0, errors
+```
+
+### 10.7 修改文件清单
+
+| 文件 | 变更类型 | 核心改动 |
+|------|----------|----------|
+| `staging_cleaner.py` | **重构** | 新增 `validate_from_config()` 及自动提取函数，简化各表 `validate_xxx()` 方法 |
+| `staging_models.py` | 简化 | 移除冗余定义，复用通用配置 |
+| `staging_routers.py` | 简化 | 移除重复代码，复用统一配置 |
+| `utils/duplicate_checker.py` | 优化 | 复用 `get_field_map()` 函数 |
+
+### 10.8 后端开发检查清单更新
+
+**v3.0新增检查项**：
+
+- [ ] Schema定义完整（包含所有校验约束）
+- [ ] `STAGING_TABLE_CONFIG` 配置正确
+- [ ] 特殊业务规则已单独编写（如需要）
+- [ ] `business_keys` 从proto_model自动提取
+- [ ] 外键约束已在配置中声明
+
+---
+
+## 十一、v2.3版本更新详情
 
 ### 9.1 校验错误详情展示
 

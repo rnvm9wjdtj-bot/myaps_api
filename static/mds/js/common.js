@@ -1,21 +1,96 @@
 /**
- * 公共函数库
+ * @file common.js
+ * @description 公共函数库 - 工具函数、状态定义、通用UI操作
+ * @author Frontend Team
+ * @version 1.1.0
+ * @date 2026-05-14
  */
 
 const API_BASE = '/api/mds';
 
+/**
+ * 缓冲表状态枚举定义
+ * @enum {Object}
+ */
+const STAGING_STATUS = {
+    PENDING: {
+        value: 'pending',
+        label: '待处理',
+        colorClass: 'text-warning',
+        bgClass: 'bg-warning',
+        badgeClass: 'status-badge status-badge-pending',
+        icon: 'clock'
+    },
+    COMPLIANCE_PASS: {
+        value: 'compliance_pass',
+        label: '合规通过',
+        colorClass: 'text-info',
+        bgClass: 'bg-info',
+        badgeClass: 'status-badge status-badge-compliance_pass',
+        icon: 'check-circle'
+    },
+    COMPLIANCE_ERROR: {
+        value: 'compliance_error',
+        label: '合规错误',
+        colorClass: 'text-danger',
+        bgClass: 'bg-danger',
+        badgeClass: 'status-badge status-badge-compliance_error',
+        icon: 'x-circle'
+    },
+    RELATION_PASS: {
+        value: 'relation_pass',
+        label: '关联通过',
+        colorClass: 'text-success',
+        bgClass: 'bg-success',
+        badgeClass: 'status-badge status-badge-relation_pass',
+        icon: 'link'
+    },
+    RELATION_ERROR: {
+        value: 'relation_error',
+        label: '关联错误',
+        colorClass: 'text-warning',
+        bgClass: 'bg-warning',
+        badgeClass: 'status-badge status-badge-relation_error',
+        icon: 'alert-circle'
+    },
+    SYNCED: {
+        value: 'synced',
+        label: '已推送',
+        colorClass: 'text-info',
+        bgClass: 'bg-info',
+        badgeClass: 'status-badge status-badge-synced',
+        icon: 'send'
+    }
+};
+
+// 旧状态映射（兼容历史数据）
+const LEGACY_STATUS_MAP = {
+    'validated': 'relation_pass',
+    'rejected': 'compliance_error'
+};
+
 const STATUS_COLORS = {
-    'pending': 'warning',
-    'validated': 'success',
-    'rejected': 'danger',
-    'synced': 'info'
+    'pending': 'pending',
+    'compliance_pass': 'compliance_pass',
+    'compliance_error': 'compliance_error',
+    'relation_pass': 'relation_pass',
+    'relation_error': 'relation_error',
+    'synced': 'synced',
+    // 兼容旧状态
+    'validated': 'validated',
+    'rejected': 'rejected'
 };
 
 const STATUS_TEXTS = {
     'pending': '待处理',
+    'compliance_pass': '合规通过',
+    'compliance_error': '合规错误',
+    'relation_pass': '关联通过',
+    'relation_error': '关联错误',
+    'synced': '已推送',
+    // 兼容旧状态
     'validated': '校验通过',
-    'rejected': '校验失败',
-    'synced': '已同步'
+    'rejected': '校验失败'
 };
 
 async function callApi(endpoint, method = 'GET', data = null) {
@@ -103,10 +178,32 @@ function formatDateTime(dateStr) {
     return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
 }
 
+/**
+ * 获取状态配置信息
+ * @param {string} status - 状态值
+ * @returns {Object} 状态配置对象
+ */
+function getStatusConfig(status) {
+    // 兼容旧状态
+    const normalizedStatus = LEGACY_STATUS_MAP[status] || status;
+    const colorKey = STATUS_COLORS[normalizedStatus] || STATUS_COLORS[status] || 'secondary';
+    return STAGING_STATUS[normalizedStatus.toUpperCase()] || {
+        value: status,
+        label: STATUS_TEXTS[normalizedStatus] || STATUS_TEXTS[status] || status,
+        colorClass: `text-${colorKey}`,
+        bgClass: `bg-${colorKey}`,
+        badgeClass: `status-badge status-badge-${colorKey}`
+    };
+}
+
+/**
+ * 格式化状态显示
+ * @param {string} status - 状态值
+ * @returns {string} HTML字符串
+ */
 function formatStatus(status) {
-    const color = STATUS_COLORS[status] || 'secondary';
-    const text = STATUS_TEXTS[status] || status;
-    return `<span class="badge badge-${status}">${text}</span>`;
+    const config = getStatusConfig(status);
+    return `<span class="badge ${config.badgeClass}">${config.label}</span>`;
 }
 
 function showLoading() {

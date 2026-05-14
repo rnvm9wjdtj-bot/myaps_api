@@ -1,39 +1,12 @@
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
-from enum import Enum
 
 from tortoise.models import Model as TortoiseBaseModel
 from tortoise import fields
 
 from core.settings import THIS_DB_NAME
 from apps.io_api import protomodels as pm
-
-
-class StagingStatus(str, Enum):
-    """缓冲表数据状态"""
-    PENDING = "pending"        # 待处理
-    VALIDATED = "validated"    # 校验通过
-    APPROVED = "approved"      # 已审批
-    REJECTED = "rejected"      # 校验失败/拒绝
-    SYNCED = "synced"          # 已同步到正式表
-
-
-class StagingBaseModel(TortoiseBaseModel):
-    """缓冲表基础模型"""
-    _staging_id = fields.IntField(primary_key=True, description="缓冲表主键")
-    _source_system = fields.CharField(max_length=32, description="来源系统", default="unknown")
-    _source_id = fields.CharField(max_length=128, null=True, description="源数据ID")
-    _status = fields.CharEnumField(StagingStatus, default=StagingStatus.PENDING, description="处理状态")
-    _error_msg = fields.TextField(null=True, description="错误信息JSON")
-    _transform_rules = fields.TextField(null=True, description="应用的转换规则JSON")
-    _retry_count = fields.IntField(default=0, description="重试次数")
-    _createtime = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="创建时间")
-    _updatetime = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="更新时间")
-    _synced_id = fields.CharField(max_length=128, null=True, description="同步后正式表ID")
-    _synced_time = fields.DatetimeField(null=True, description="同步时间")
-
-    class Meta:
-        abstract = True
+from ._base import StagingStatus, StagingBaseModel
 
 
 class TMaterialStaging(StagingBaseModel, pm.ProtoMaterial):

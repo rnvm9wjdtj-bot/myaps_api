@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 from apps.io_api.routers import rt as io_rt
 from apps.data_opt.routers import rt as do_rt
-from apps.data_opt.staging_routers import rt as mds_rt
+from apps.data_opt.mds.staging_routers import rt as mds_rt
 from apps.common.monitor.routers import router as monitor_rt
 from apps.common.help.routers import router as help_rt
 import os

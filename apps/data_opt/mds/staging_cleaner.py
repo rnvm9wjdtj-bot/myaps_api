@@ -10,11 +10,16 @@ from enum import Enum
 from tortoise import Tortoise
 from tortoise.models import Model
 
-from apps.data_opt.staging_models import (
-    StagingStatus, ValidationError, TransformRule,
+from ._base import (
+    StagingStatus, ErrorType, NONE_AND_EMPTY,
+    get_field_map, extract_defaults_from_schema, extract_required_fields,
+    extract_enum_fields, extract_range_fields, extract_max_length_fields,
+    extract_business_keys_from_model, extract_display_name_from_model,
+)
+from .staging_models import (
+    ValidationError, TransformRule,
     TMaterialStaging, TWorkcenterStaging, TMatVerStaging,
     TMatWcStaging, TMatWcBomStaging, TMoldStaging, TMatWcMoldStaging,
-    STAGING_MODEL_MAPPING
 )
 from apps.io_api.models import (
     TMaterial, TWorkcenter, TMatVer, TMatWc, TMatWcBom, TMold, TMatWcMold
@@ -25,224 +30,14 @@ from globalobjects import logger as log_config, globalconst as gc
 logger = log_config.get_logger(__name__)
 
 
-NONE_AND_EMPTY = {None, ""}
-
-
-def get_field_map(model_class):
-    """
-    获取模型的字段映射：Python字段名(小写) -> 数据库字段名(大驼峰)
-    
-    Args:
-        model_class: Tortoise ORM 模型类
-        
-    Returns:
-        字段映射字典
-    """
-    field_map = {}
-    for field in model_class._meta.fields_map.values():
-        db_col_name = field.source_field if field.source_field else field.model_field_name
-        field_map[field.model_field_name] = db_col_name
-    return field_map
-
-
-def extract_defaults_from_schema(schema_class):
-    """
-    自动提取Schema中所有有默认值的字段
-    
-    Args:
-        schema_class: Pydantic Schema类
-        
-    Returns:
-        字段名到默认值的映射字典
-    """
-    return {
-        field_name: field_info.default
-        for field_name, field_info in schema_class.model_fields.items()
-        if field_info.default is not None 
-        and str(field_info.default) != 'PydanticUndefined'
-    }
-
-
-def extract_required_fields(schema_class):
-    """
-    自动提取Schema中所有必填字段（没有默认值的字段）
-    
-    Args:
-        schema_class: Pydantic Schema类
-        
-    Returns:
-        必填字段列表 [(field_name, description), ...]
-    """
-    required_fields = []
-    for field_name, field_info in schema_class.model_fields.items():
-        # 私有字段和内部字段跳过
-        if field_name.startswith('_'):
-            continue
-        
-        # 检查是否必填：没有默认值或默认值是 PydanticUndefined
-        is_required = (
-            field_info.default is None 
-            or str(field_info.default) == 'PydanticUndefined'
-        )
-        
-        if is_required:
-            # 获取字段描述
-            description = field_info.description or field_name
-            required_fields.append((field_name, description))
-    
-    return required_fields
-
-
-def extract_enum_fields(schema_class):
-    """
-    从Schema自动提取所有枚举字段及其允许值
-
-    Args:
-        schema_class: Pydantic Schema类
-
-    Returns:
-        枚举字段字典 {field_name: (description, set of valid values)}
-    """
-    enum_fields = {}
-
-    for field_name, field_info in schema_class.model_fields.items():
-        annotation = field_info.annotation
-
-        if field_name.startswith('_'):
-            continue
-
-        if isinstance(annotation, type) and issubclass(annotation, Enum):
-            enum_values = {e.value for e in annotation}
-            description = field_info.description or field_name
-            enum_fields[field_name] = (description, enum_values)
-
-    return enum_fields
-
-
-def extract_range_fields(schema_class):
-    """
-    从Schema自动提取所有带范围约束的字段及其范围
-
-    Args:
-        schema_class: Pydantic Schema类
-
-    Returns:
-        范围字段字典 {field_name: (description, ge, gt, le, lt)}
-    """
-    range_fields = {}
-
-    for field_name, field_info in schema_class.model_fields.items():
-        if field_name.startswith('_'):
-            continue
-
-        ge = getattr(field_info, 'ge', None)
-        gt = getattr(field_info, 'gt', None)
-        le = getattr(field_info, 'le', None)
-        lt = getattr(field_info, 'lt', None)
-
-        if ge is not None or gt is not None or le is not None or lt is not None:
-            description = field_info.description or field_name
-            range_fields[field_name] = (description, ge, gt, le, lt)
-
-    return range_fields
-
-
-def extract_max_length_fields(schema_class):
-    """
-    从Schema自动提取所有带max_length约束的字段
-
-    Args:
-        schema_class: Pydantic Schema类
-
-    Returns:
-        最大长度字段字典 {field_name: (description, max_length)}
-    """
-    max_length_fields = {}
-
-    for field_name, field_info in schema_class.model_fields.items():
-        if field_name.startswith('_'):
-            continue
-
-        max_length = getattr(field_info, 'max_length', None)
-        if max_length is not None:
-            description = field_info.description or field_name
-            max_length_fields[field_name] = (description, max_length)
-
-    return max_length_fields
-
-
-def extract_business_keys_from_model(model_class):
-    """
-    从正式表模型自动提取业务主键
-    
-    优先级：
-    1. 主键字段（pk）
-    2. unique_together 约束
-    3. unique=True 的字段
-    
-    Args:
-        model_class: 正式表模型类（如 TMaterial）
-    
-    Returns:
-        业务主键字段列表
-    """
-    # 1. 检查是否有主键字段
-    pk_field = model_class._meta.pk
-    if pk_field and pk_field.model_field_name != 'id':
-        return [pk_field.model_field_name]
-    
-    # 2. 检查 unique_together 约束
-    meta = getattr(model_class, '_meta', None)
-    if meta:
-        unique_together = getattr(meta, 'unique_together', None)
-        if unique_together and len(unique_together) > 0:
-            return list(unique_together[0])
-    
-    # 3. 检查 unique=True 的字段
-    for field_name, field in model_class._meta.fields_map.items():
-        if getattr(field, 'unique', False):
-            return [field_name]
-    
-    return []
-
-
-def extract_display_name_from_model(model_class):
-    """
-    从模型自动提取显示名称
-    
-    从 table_description 中提取，去掉"数据缓冲表"或"缓冲表"后缀
-    
-    Args:
-        model_class: 模型类（如 TMaterialStaging）
-    
-    Returns:
-        显示名称
-    """
-    meta = getattr(model_class, '_meta', None)
-    if meta:
-        table_description = getattr(meta, 'table_description', None)
-        if table_description:
-            # 去掉"数据缓冲表"或"缓冲表"后缀
-            display_name = table_description
-            display_name = display_name.replace("数据缓冲表", "")
-            display_name = display_name.replace("缓冲表", "")
-            return display_name.strip()
-    
-    # 如果没有 table_description，从类名提取
-    class_name = model_class.__name__
-    # TMaterialStaging → Material
-    if class_name.startswith("T") and class_name.endswith("Staging"):
-        return class_name[1:-7]
-    
-    return class_name
-
-
 STAGING_TABLE_CONFIG = {
     "t_material": {
         "schema": AcceptMaterial,
         "model": TMaterialStaging,
         "proto_model": TMaterial,
         "foreign_keys": [],
+        "display_name": "物料",
+        "validator": lambda cleaner, data, staging_id: cleaner.validate_material(data, staging_id),
         # "business_keys": ["materialno"],
     },
     "t_workcenter": {
@@ -250,6 +45,8 @@ STAGING_TABLE_CONFIG = {
         "model": TWorkcenterStaging,
         "proto_model": TWorkcenter,
         "foreign_keys": [],
+        "display_name": "工作中心",
+        "validator": lambda cleaner, data, staging_id: cleaner.validate_workcenter(data, staging_id),
         # "business_keys": ["workcenter"],
     },
     "t_mat_ver": {
@@ -259,6 +56,8 @@ STAGING_TABLE_CONFIG = {
         "foreign_keys": [
             {"field": "materialno", "model": TMaterial},
         ],
+        "display_name": "产线版本",
+        "validator": lambda cleaner, data, staging_id: cleaner.validate_mat_ver(data, staging_id),
         # "business_keys": ["materialno", "matver"],
     },
     "t_mat_wc": {
@@ -269,6 +68,8 @@ STAGING_TABLE_CONFIG = {
             {"field": "materialno", "model": TMaterial},
             {"field": "workcenter", "model": TWorkcenter},
         ],
+        "display_name": "工艺路线",
+        "validator": lambda cleaner, data, staging_id: cleaner.validate_mat_wc(data, staging_id),
         # "business_keys": ["materialno", "matver", "itemno"],
     },
     "t_mat_wc_bom": {
@@ -281,6 +82,8 @@ STAGING_TABLE_CONFIG = {
             {"field": "workcenter", "model": TWorkcenter},
             {"field": "itemno", "model": TMatWc},
         ],
+        "display_name": "物料清单",
+        "validator": lambda cleaner, data, staging_id: cleaner.validate_mat_wc_bom(data, staging_id),
         # "business_keys": ["productno", "matver", "itemno", "materialno"],
     },
     "t_mold": {
@@ -288,6 +91,8 @@ STAGING_TABLE_CONFIG = {
         "model": TMoldStaging,
         "proto_model": TMold,
         "foreign_keys": [],
+        "display_name": "模具",
+        "validator": lambda cleaner, data, staging_id: cleaner.validate_mold(data, staging_id),
         # "business_keys": ["moldno"],
     },
     "t_mat_wc_mold": {
@@ -299,22 +104,43 @@ STAGING_TABLE_CONFIG = {
             {"field": "workcenter", "model": TWorkcenter},
             {"field": "moldno", "model": TMold},
         ],
+        "display_name": "机台模具关联",
+        "validator": lambda cleaner, data, staging_id: cleaner.validate_mat_wc_mold(data, staging_id),
         # "business_keys": ["materialno", "workcenter", "itemno", "moldno"],
     },
 }
 
-for table_key, config in STAGING_TABLE_CONFIG.items():
-    config["table_name"] = config["model"]._meta.table
-    config["display_name"] = extract_display_name_from_model(config["model"])
-    config["defaults"] = extract_defaults_from_schema(config["schema"])
-    config["business_keys"] = extract_business_keys_from_model(config["proto_model"])
+def initialize_table_config():
+    """延迟初始化表配置（等待Tortoise连接建立后调用）"""
+    for table_key, config in STAGING_TABLE_CONFIG.items():
+        # 使用 db_table 而不是 table，兼容Tortoise不同状态
+        meta = config["model"]._meta
+        config["table_name"] = getattr(meta, 'db_table', getattr(meta, 'table', table_key + '_staging'))
+        config["defaults"] = extract_defaults_from_schema(config["schema"])
+        config["business_keys"] = extract_business_keys_from_model(config["proto_model"])
 
-SCHEMA_DEFAULTS = {key: config["defaults"] for key, config in STAGING_TABLE_CONFIG.items()}
+
+# 标记是否已初始化
+_config_initialized = False
+
+
+def ensure_config_initialized():
+    """确保配置已初始化"""
+    global _config_initialized
+    if not _config_initialized:
+        initialize_table_config()
+        _config_initialized = True
 
 STAGING_MODEL_MAPPING = {
     table_key: config["model"] 
     for table_key, config in STAGING_TABLE_CONFIG.items()
 }
+
+
+def get_schema_defaults(table_name: str) -> Dict[str, Any]:
+    """获取指定表的默认值配置（延迟获取）"""
+    ensure_config_initialized()
+    return STAGING_TABLE_CONFIG.get(table_name, {}).get("defaults", {})
 
 
 def fill_defaults(table_name: str, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -328,7 +154,7 @@ def fill_defaults(table_name: str, data: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         填充后的数据字典
     """
-    defaults = SCHEMA_DEFAULTS.get(table_name, {})
+    defaults = get_schema_defaults(table_name)
     
     result = data.copy()
     
@@ -369,21 +195,6 @@ def fill_defaults(table_name: str, data: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-class ErrorType(str, Enum):
-    """错误类型枚举"""
-    REQUIRED_FIELD = "required_field"           # 必填字段缺失
-    INVALID_ENUM = "invalid_enum"               # 枚举值非法
-    INVALID_TYPE = "invalid_type"              # 类型错误
-    INVALID_RANGE = "invalid_range"             # 数值范围错误
-    INVALID_LENGTH = "invalid_length"           # 字符串长度超限
-    FK_NOT_FOUND = "fk_not_found"               # 外键引用不存在
-    DUPLICATE_KEY = "duplicate_key"            # 主键重复
-    BUSINESS_RULE = "business_rule"             # 业务规则违反
-
-
-
-
-
 class DataCleaner:
     """数据清洗器"""
 
@@ -412,7 +223,10 @@ class DataCleaner:
             # 从description中提取中文描述（去掉括号等内容）
             display_name = description.split('（')[0].split('(')[0] if description else field_name
             
-            if not data.get(field_name):
+            value = data.get(field_name)
+            # 正确的空值判断：只有当值为 None、空字符串或不存在时才认为是空
+            # 注意：0 和 0.0 是有效的数值，不应该被认为是空
+            if value is None or value == "":
                 errors.append(self._create_error(
                     staging_id, ErrorType.REQUIRED_FIELD,
                     field_name, None, f"{display_name}不能为空"
@@ -504,8 +318,7 @@ class DataCleaner:
 
         return all_valid
 
-    def validate_max_lengths_from_schema(self, errors: List[Dict], staging_id: int,
-                                        data: Dict, schema_class) -> bool:
+    def validate_max_lengths_from_schema(self, errors: List[Dict], staging_id: int, data: Dict, schema_class) -> bool:
         """
         从Schema自动提取并校验所有字符串长度约束字段
 
@@ -891,25 +704,9 @@ class DataTransformer:
 class StagingProcessor:
     """缓冲表处理器"""
 
-    VALIDATORS = {
-        "t_material": DataCleaner.validate_material,
-        "t_workcenter": DataCleaner.validate_workcenter,
-        "t_mat_ver": DataCleaner.validate_mat_ver,
-        "t_mat_wc": DataCleaner.validate_mat_wc,
-        "t_mat_wc_bom": DataCleaner.validate_mat_wc_bom,
-        "t_mold": DataCleaner.validate_mold,
-        "t_mat_wc_mold": DataCleaner.validate_mat_wc_mold,
-    }
-
-    TARGET_MODELS = {
-        "t_material": TMaterial,
-        "t_workcenter": TWorkcenter,
-        "t_mat_ver": TMatVer,
-        "t_mat_wc": TMatWc,
-        "t_mat_wc_bom": TMatWcBom,
-        "t_mold": TMold,
-        "t_mat_wc_mold": TMatWcMold,
-    }
+    # 校验器和目标模型已整合到 STAGING_TABLE_CONFIG 中，这里保留空字典作为兼容层
+    VALIDATORS = {}
+    TARGET_MODELS = {}
 
     def __init__(self, db_name: str):
         self.db_name = db_name
@@ -931,7 +728,7 @@ class StagingProcessor:
         if not staging_model:
             raise ValueError(f"未知的缓冲表: {table_name}")
 
-        stats = {"validated": 0, "rejected": 0, "synced": 0, "filled": 0}
+        stats = {"relation_pass": 0, "relation_error": 0, "synced": 0, "filled": 0}
         
         conn = Tortoise.get_connection(self.db_name)
         table_name_staging = f"{table_name}_staging"
@@ -953,6 +750,13 @@ class StagingProcessor:
             
             batch_count += 1
             logger.info(f"处理第{batch_count}批，共{len(pending_records)}条记录")
+            
+            # 清空这批记录的旧错误信息（防止旧错误影响新校验结果）
+            staging_ids = [record["_staging_id"] for record in pending_records]
+            placeholders = ", ".join(["$" + str(i + 1) for i in range(len(staging_ids))])
+            clear_error_query = f'UPDATE "{table_name_staging}" SET "_error_msg" = NULL WHERE "_staging_id" IN ({placeholders})'
+            await conn.execute_query(clear_error_query, tuple(staging_ids))
+            logger.debug(f"已清空{len(staging_ids)}条记录的旧错误信息")
             
             for raw_record in pending_records:
                 record_dict = dict(raw_record)
@@ -976,16 +780,26 @@ class StagingProcessor:
                     is_valid, errors = await self._validate(table_name, staging_id, filled_data)
                     
                     logger.info(f"[校验] staging_id={staging_id}, 结果: is_valid={is_valid}, errors={len(errors)}")
-
+                    
                     if is_valid:
                         update_query = f'UPDATE "{table_name_staging}" SET "_status" = $1 WHERE "_staging_id" = $2'
-                        await conn.execute_query(update_query, ("validated", staging_id))
-                        stats["validated"] += 1
+                        await conn.execute_query(update_query, ("relation_pass", staging_id))
+                        stats["relation_pass"] += 1
                     else:
                         error_json = json.dumps(errors, ensure_ascii=False)
+                        
+                        # 区分错误类型：检查是否包含外键关联错误
+                        has_fk_error = any(error.get("error_type") == "fk_not_found" for error in errors)
+                        if has_fk_error:
+                            status = "relation_error"
+                            stats["relation_error"] += 1
+                        else:
+                            # 其他错误都是合规错误
+                            status = "compliance_error"
+                            stats["compliance_error"] = (stats.get("compliance_error") or 0) + 1
+                        
                         update_query = f'UPDATE "{table_name_staging}" SET "_status" = $1, "_error_msg" = $2 WHERE "_staging_id" = $3'
-                        await conn.execute_query(update_query, ("rejected", error_json, staging_id))
-                        stats["rejected"] += 1
+                        await conn.execute_query(update_query, (status, error_json, staging_id))
                         await self.cleaner.save_errors(table_name, errors)
                         
                 except Exception as e:
@@ -1001,19 +815,21 @@ class StagingProcessor:
                         "error_message": f"处理异常: {str(e)}\n\n堆栈:\n{error_trace[:500]}"
                     }], ensure_ascii=False)
                     try:
+                        # 处理异常属于合规错误
                         update_query = f'UPDATE "{table_name_staging}" SET "_status" = $1, "_error_msg" = $2 WHERE "_staging_id" = $3'
-                        await conn.execute_query(update_query, ("rejected", error_json, staging_id))
-                        stats["rejected"] += 1
+                        await conn.execute_query(update_query, ("compliance_error", error_json, staging_id))
+                        stats["compliance_error"] = (stats.get("compliance_error") or 0) + 1
                     except Exception as e2:
                         logger.error(f"更新错误状态失败: {str(e2)}")
 
-        logger.info(f"校验完成: validated={stats['validated']}, rejected={stats['rejected']}, batches={batch_count}")
+        logger.info(f"校验完成: relation_pass={stats['relation_pass']}, relation_error={stats.get('relation_error', 0)}, compliance_error={stats.get('compliance_error', 0)}, batches={batch_count}")
         return stats
 
-    async def sync_to_production(self, table_name: str, batch_size: int = 100, 
-                                   max_retries: int = 3, use_transaction: bool = True,
-                                   mode: str = "incremental", target_db: str = None,
-                                   update_status: bool = True) -> Dict[str, int]:
+    async def sync_to_production(
+        self, table_name: str, batch_size: int = 100, 
+        max_retries: int = 3, use_transaction: bool = True,
+        mode: str = "incremental", target_db: str = None,
+        update_status: bool = True) -> Dict[str, int]:
         """同步到正式表（复用自有API的db_bupsert）
         
         Args:
@@ -1030,16 +846,18 @@ class StagingProcessor:
         from tortoise import Tortoise
         from core.settings import THIS_DB_NAME, MYAPS_MAIN_DB
         from apps.io_api.utils.db_operation import db_bupsert
-        from apps.io_api.schemas import (
-            AcceptMaterial, AcceptWorkcenter, AcceptMatVer, 
-            AcceptMatWc, AcceptMatWcBom, AcceptMold, AcceptMatWcMold
-        )
+
         
-        staging_model = STAGING_MODEL_MAPPING.get(table_name)
-        target_model = self.TARGET_MODELS.get(table_name)
+        # 从统一配置中获取模型（避免重复定义）
+        config = STAGING_TABLE_CONFIG.get(table_name)
+        if not config:
+            raise ValueError(f"未知的表: {table_name}")
+        
+        staging_model = config.get("model")
+        target_model = config.get("proto_model")
         
         if not staging_model or not target_model:
-            raise ValueError(f"未知的表: {table_name}")
+            raise ValueError(f"表配置不完整: {table_name}")
         
         target_db_name = target_db if target_db else MYAPS_MAIN_DB
         stats = {"synced": 0, "failed": 0, "skipped": 0, "target_db": target_db_name}
@@ -1055,33 +873,28 @@ class StagingProcessor:
             logger.info(f"已清空正式表: {target_table_name} (账套: {target_db_name})")
         
         query = f'SELECT * FROM "{staging_table_name}" WHERE "_status" = $1 AND ("_retry_count" IS NULL OR "_retry_count" < $2) LIMIT $3'
-        result = await pg_conn.execute_query(query, ("validated", max_retries, batch_size))
+        result = await pg_conn.execute_query(query, ("relation_pass", max_retries, batch_size))
         records_to_sync = result[1] if result[1] else []
         
         # 检查retry_count分布
         retry_check = await pg_conn.execute_query(
             f'SELECT "_retry_count", COUNT(*) as cnt FROM "{staging_table_name}" WHERE "_status" = $1 GROUP BY "_retry_count"',
-            ("validated",)
+            ("relation_pass",)
         )
         retry_dist = {row["_retry_count"]: row["cnt"] for row in retry_check[1]} if retry_check[1] else {}
         
-        logger.info(f"同步查询: 表={staging_table_name}, 状态=validated, 重试<{max_retries}, 批次={batch_size}, 找到{len(records_to_sync)}条记录, retry分布={retry_dist}")
+        logger.info(f"同步查询: 表={staging_table_name}, 状态=relation_pass, 重试<{max_retries}, 批次={batch_size}, 找到{len(records_to_sync)}条记录, retry分布={retry_dist}")
         
         if not records_to_sync:
             return stats
 
-        # Schema映射
-        schema_map = {
-            "t_material": AcceptMaterial,
-            "t_workcenter": AcceptWorkcenter,
-            "t_mat_ver": AcceptMatVer,
-            "t_mat_wc": AcceptMatWc,
-            "t_mat_wc_bom": AcceptMatWcBom,
-            "t_mold": AcceptMold,
-            "t_mat_wc_mold": AcceptMatWcMold,
-        }
+        # 从统一配置中获取Schema（避免重复定义）
+        config = STAGING_TABLE_CONFIG.get(table_name)
+        if not config:
+            stats["skipped"] = len(records_to_sync)
+            return stats
         
-        schema_class = schema_map.get(table_name)
+        schema_class = config.get("schema")
         if not schema_class:
             stats["skipped"] = len(records_to_sync)
             return stats
@@ -1126,7 +939,7 @@ class StagingProcessor:
                 
                 try:
                     update_query = f'UPDATE "{staging_table_name}" SET "_retry_count" = $1, "_error_msg" = $2, "_status" = $3 WHERE "_staging_id" = $4'
-                    await pg_conn.execute_query(update_query, (retry_count, error_json, "rejected", staging_id))
+                    await pg_conn.execute_query(update_query, (retry_count, error_json, "relation_error", staging_id))
                 except Exception as update_err:
                     logger.error(f"更新失败记录状态时出错: {update_err}")
                 
@@ -1183,9 +996,12 @@ class StagingProcessor:
 
     async def _validate(self, table_name: str, staging_id: int, data: Dict) -> Tuple[bool, List[Dict]]:
         """执行校验"""
-        validator = self.VALIDATORS.get(table_name)
-        if validator:
-            return await validator(self.cleaner, data, staging_id)
+        # 从统一配置中获取校验器
+        config = STAGING_TABLE_CONFIG.get(table_name)
+        if config:
+            validator = config.get("validator")
+            if validator:
+                return await validator(self.cleaner, data, staging_id)
         return True, []
 
     def _record_to_dict(self, record: Model, exclude_staging_fields: bool = False) -> Dict[str, Any]:
