@@ -120,14 +120,3 @@ class TransformRule(TortoiseBaseModel):
 
     class Meta:
         table = "t_transform_rule"
-
-
-STAGING_MODEL_MAPPING = {
-    "t_material": TMaterialStaging,
-    "t_workcenter": TWorkcenterStaging,
-    "t_mat_ver": TMatVerStaging,
-    "t_mat_wc": TMatWcStaging,
-    "t_mat_wc_bom": TMatWcBomStaging,
-    "t_mold": TMoldStaging,
-    "t_mat_wc_mold": TMatWcMoldStaging,
-}

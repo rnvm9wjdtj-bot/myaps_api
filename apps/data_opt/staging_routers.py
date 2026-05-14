@@ -7,12 +7,12 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Query, Body, HTTPException, status, Request, UploadFile, File
 
 from apps.data_opt.staging_models import (
-    StagingStatus, STAGING_MODEL_MAPPING,
+    StagingStatus,
     TMaterialStaging, TWorkcenterStaging, TMatVerStaging,
     TMatWcStaging, TMatWcBomStaging, TMoldStaging, TMatWcMoldStaging,
     ValidationError, TransformRule
 )
-from apps.data_opt.staging_cleaner import StagingProcessor, DataTransformer
+from apps.data_opt.staging_cleaner import StagingProcessor, DataTransformer, STAGING_TABLE_CONFIG, STAGING_MODEL_MAPPING
 from apps.io_api.utils.common import standard_response
 from apps.io_api.utils.db_operation import db_bupsert
 from core.settings import MYAPS_MAIN_DB, THIS_DB_NAME, MYAPS_DBSET_LIST
@@ -21,6 +21,37 @@ from globalobjects import logger as log_config
 logger = log_config.get_logger(__name__)
 
 rt = APIRouter(prefix="/mds", tags=["数据清洗"])
+
+
+def create_staging_endpoint(table_key: str, config: Dict):
+    """创建数据接收路由端点"""
+    @rt.post(f"/{table_key}", summary=f"接收{config['display_name']}数据到缓冲表")
+    async def staging_endpoint(
+        request: Request,
+        data: List[Dict] = Body(..., description=f"{config['display_name']}数据列表"),
+        source_system: str = Query("unknown", description="来源系统"),
+    ):
+        """接收外部系统的{config['display_name']}数据"""
+        try:
+            count = await insert_to_staging_table(
+                config['model'], config['table_name'], data, source_system
+            )
+            return standard_response(
+                success=1,
+                message=f"成功接收 {count} 条{config['display_name']}数据到缓冲表",
+                data={"count": count}
+            )
+        except Exception as e:
+            import traceback
+            logger.error(f"接收{config['display_name']}数据失败: {str(e)}")
+            logger.error(traceback.format_exc())
+            return standard_response(success=0, message=str(e))
+    
+    return staging_endpoint
+
+
+for table_key, config in STAGING_TABLE_CONFIG.items():
+    create_staging_endpoint(table_key, config)
 
 
 def ensure_timezone_aware(dt: datetime) -> datetime:
@@ -174,174 +205,6 @@ def convert_record_to_lowercase(record_dict: Dict, model_class) -> Dict:
         result[python_field] = value
     
     return result
-
-
-@rt.post("/t_material", summary="接收物料数据到缓冲表")
-async def staging_material(
-    request: Request,
-    data: List[Dict] = Body(..., description="物料数据列表"),
-    source_system: str = Query("unknown", description="来源系统"),
-    # db_name: str = Query(MYAPS_MAIN_DB, description="账套")  # 未使用，已注释
-):
-    """接收外部系统的物料数据，写入缓冲表"""
-    try:
-        count = await insert_to_staging_table(
-            TMaterialStaging, "t_material_staging", data, source_system
-        )
-        return standard_response(
-            success=1,
-            message=f"成功接收 {count} 条物料数据到缓冲表",
-            data={"count": count}
-        )
-    except Exception as e:
-        import traceback
-        logger.error(f"接收物料数据失败: {str(e)}")
-        logger.error(traceback.format_exc())
-        return standard_response(success=0, message=str(e))
-
-
-@rt.post("/t_workcenter", summary="接收工作中心数据到缓冲表")
-async def staging_workcenter(
-    request: Request,
-    data: List[Dict] = Body(..., description="工作中心数据列表"),
-    source_system: str = Query("unknown", description="来源系统"),
-    # db_name: str = Query(MYAPS_MAIN_DB, description="账套")  # 未使用，已注释
-):
-    """接收外部系统的工作中心数据"""
-    try:
-        count = await insert_to_staging_table(
-            TWorkcenterStaging, "t_workcenter_staging", data, source_system
-        )
-        return standard_response(
-            success=1,
-            message=f"成功接收 {count} 条工作中心数据到缓冲表",
-            data={"count": count}
-        )
-    except Exception as e:
-        import traceback
-        logger.error(f"接收工作中心数据失败: {str(e)}")
-        logger.error(traceback.format_exc())
-        return standard_response(success=0, message=str(e))
-
-
-@rt.post("/t_mat_ver", summary="接收产线版本数据到缓冲表")
-async def staging_mat_ver(
-    request: Request,
-    data: List[Dict] = Body(..., description="产线版本数据列表"),
-    source_system: str = Query("unknown", description="来源系统"),
-    # db_name: str = Query(MYAPS_MAIN_DB, description="账套")  # 未使用，已注释
-):
-    """接收外部系统的产线版本数据"""
-    try:
-        count = await insert_to_staging_table(
-            TMatVerStaging, "t_mat_ver_staging", data, source_system
-        )
-        return standard_response(
-            success=1,
-            message=f"成功接收 {count} 条产线版本数据到缓冲表",
-            data={"count": count}
-        )
-    except Exception as e:
-        import traceback
-        logger.error(f"接收产线版本数据失败: {str(e)}")
-        logger.error(traceback.format_exc())
-        return standard_response(success=0, message=str(e))
-
-
-@rt.post("/t_mat_wc", summary="接收工艺路线数据到缓冲表")
-async def staging_mat_wc(
-    request: Request,
-    data: List[Dict] = Body(..., description="工艺路线数据列表"),
-    source_system: str = Query("unknown", description="来源系统"),
-    # db_name: str = Query(MYAPS_MAIN_DB, description="账套")  # 未使用，已注释
-):
-    """接收外部系统的工艺路线数据"""
-    try:
-        count = await insert_to_staging_table(
-            TMatWcStaging, "t_mat_wc_staging", data, source_system
-        )
-        return standard_response(
-            success=1,
-            message=f"成功接收 {count} 条工艺路线数据到缓冲表",
-            data={"count": count}
-        )
-    except Exception as e:
-        import traceback
-        logger.error(f"接收工艺路线数据失败: {str(e)}")
-        logger.error(traceback.format_exc())
-        return standard_response(success=0, message=str(e))
-
-
-@rt.post("/t_mat_wc_bom", summary="接收BOM数据到缓冲表")
-async def staging_mat_wc_bom(
-    request: Request,
-    data: List[Dict] = Body(..., description="BOM数据列表"),
-    source_system: str = Query("unknown", description="来源系统"),
-    # db_name: str = Query(MYAPS_MAIN_DB, description="账套")  # 未使用，已注释
-):
-    """接收外部系统的BOM数据"""
-    try:
-        count = await insert_to_staging_table(
-            TMatWcBomStaging, "t_mat_wc_bom_staging", data, source_system
-        )
-        return standard_response(
-            success=1,
-            message=f"成功接收 {count} 条BOM数据到缓冲表",
-            data={"count": count}
-        )
-    except Exception as e:
-        import traceback
-        logger.error(f"接收BOM数据失败: {str(e)}")
-        logger.error(traceback.format_exc())
-        return standard_response(success=0, message=str(e))
-
-
-@rt.post("/t_mold", summary="接收模具数据到缓冲表")
-async def staging_mold(
-    request: Request,
-    data: List[Dict] = Body(..., description="模具数据列表"),
-    source_system: str = Query("unknown", description="来源系统"),
-    # db_name: str = Query(MYAPS_MAIN_DB, description="账套")  # 未使用，已注释
-):
-    """接收外部系统的模具数据"""
-    try:
-        count = await insert_to_staging_table(
-            TMoldStaging, "t_mold_staging", data, source_system
-        )
-        return standard_response(
-            success=1,
-            message=f"成功接收 {count} 条模具数据到缓冲表",
-            data={"count": count}
-        )
-    except Exception as e:
-        import traceback
-        logger.error(f"接收模具数据失败: {str(e)}")
-        logger.error(traceback.format_exc())
-        return standard_response(success=0, message=str(e))
-
-
-@rt.post("/t_mat_wc_mold", summary="接收机台模具关联数据到缓冲表")
-async def staging_mat_wc_mold(
-    request: Request,
-    data: List[Dict] = Body(..., description="机台模具关联数据列表"),
-    source_system: str = Query("unknown", description="来源系统"),
-    # db_name: str = Query(MYAPS_MAIN_DB, description="账套")  # 未使用，已注释
-):
-    """接收外部系统的机台模具关联数据"""
-    try:
-        count = await insert_to_staging_table(
-            TMatWcMoldStaging, "t_mat_wc_mold_staging", data, source_system
-        )
-        return standard_response(
-            success=1,
-            message=f"成功接收 {count} 条机台模具关联数据到缓冲表",
-            data={"count": count}
-        )
-    except Exception as e:
-        import traceback
-        logger.error(f"接收机台模具关联数据失败: {str(e)}")
-        logger.error(traceback.format_exc())
-        return standard_response(success=0, message=str(e))
 
 
 @rt.post("/validate/{table_name}", summary="校验缓冲表数据")

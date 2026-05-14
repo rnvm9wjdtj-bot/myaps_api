@@ -7,7 +7,7 @@ from typing import Dict, List, Any, Tuple, Optional
 from collections import defaultdict
 from enum import Enum
 
-from apps.data_opt.staging_models import STAGING_MODEL_MAPPING
+from apps.data_opt.staging_cleaner import STAGING_TABLE_CONFIG, STAGING_MODEL_MAPPING
 from globalobjects import logger as log_config
 
 logger = log_config.get_logger(__name__)
@@ -18,17 +18,6 @@ class DedupStrategy(str, Enum):
     OVERWRITE = "overwrite"  # 覆盖已有记录
     SKIP = "skip"            # 跳过重复记录
     REJECT = "reject"        # 拒绝并报错
-
-
-BUSINESS_KEYS = {
-    "t_material": ["materialno"],
-    "t_workcenter": ["workcenter"],
-    "t_mat_ver": ["materialno", "matver"],
-    "t_mat_wc": ["materialno", "matver", "itemno"],
-    "t_mat_wc_bom": ["productno", "matver", "itemno", "materialno"],
-    "t_mold": ["moldno"],
-    "t_mat_wc_mold": ["materialno", "workcenter", "itemno", "moldno"],
-}
 
 
 class DuplicateChecker:
@@ -42,7 +31,8 @@ class DuplicateChecker:
             table_name: 表名
         """
         self.table_name = table_name
-        self.pk_fields = BUSINESS_KEYS.get(table_name, [])
+        config = STAGING_TABLE_CONFIG.get(table_name, {})
+        self.pk_fields = config.get("business_keys", [])
         self.staging_model = STAGING_MODEL_MAPPING.get(table_name)
     
     async def check_duplicate_in_staging(
@@ -301,4 +291,5 @@ async def apply_dedup_strategy(
 
 def get_pk_fields(table_name: str) -> List[str]:
     """获取表的业务主键字段"""
-    return BUSINESS_KEYS.get(table_name, [])
+    config = STAGING_TABLE_CONFIG.get(table_name, {})
+    return config.get("business_keys", [])

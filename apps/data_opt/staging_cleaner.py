@@ -28,56 +28,292 @@ logger = log_config.get_logger(__name__)
 NONE_AND_EMPTY = {None, ""}
 
 
-SCHEMA_DEFAULTS = {
+def get_field_map(model_class):
+    """
+    获取模型的字段映射：Python字段名(小写) -> 数据库字段名(大驼峰)
+    
+    Args:
+        model_class: Tortoise ORM 模型类
+        
+    Returns:
+        字段映射字典
+    """
+    field_map = {}
+    for field in model_class._meta.fields_map.values():
+        db_col_name = field.source_field if field.source_field else field.model_field_name
+        field_map[field.model_field_name] = db_col_name
+    return field_map
+
+
+def extract_defaults_from_schema(schema_class):
+    """
+    自动提取Schema中所有有默认值的字段
+    
+    Args:
+        schema_class: Pydantic Schema类
+        
+    Returns:
+        字段名到默认值的映射字典
+    """
+    return {
+        field_name: field_info.default
+        for field_name, field_info in schema_class.model_fields.items()
+        if field_info.default is not None 
+        and str(field_info.default) != 'PydanticUndefined'
+    }
+
+
+def extract_required_fields(schema_class):
+    """
+    自动提取Schema中所有必填字段（没有默认值的字段）
+    
+    Args:
+        schema_class: Pydantic Schema类
+        
+    Returns:
+        必填字段列表 [(field_name, description), ...]
+    """
+    required_fields = []
+    for field_name, field_info in schema_class.model_fields.items():
+        # 私有字段和内部字段跳过
+        if field_name.startswith('_'):
+            continue
+        
+        # 检查是否必填：没有默认值或默认值是 PydanticUndefined
+        is_required = (
+            field_info.default is None 
+            or str(field_info.default) == 'PydanticUndefined'
+        )
+        
+        if is_required:
+            # 获取字段描述
+            description = field_info.description or field_name
+            required_fields.append((field_name, description))
+    
+    return required_fields
+
+
+def extract_enum_fields(schema_class):
+    """
+    从Schema自动提取所有枚举字段及其允许值
+
+    Args:
+        schema_class: Pydantic Schema类
+
+    Returns:
+        枚举字段字典 {field_name: (description, set of valid values)}
+    """
+    enum_fields = {}
+
+    for field_name, field_info in schema_class.model_fields.items():
+        annotation = field_info.annotation
+
+        if field_name.startswith('_'):
+            continue
+
+        if isinstance(annotation, type) and issubclass(annotation, Enum):
+            enum_values = {e.value for e in annotation}
+            description = field_info.description or field_name
+            enum_fields[field_name] = (description, enum_values)
+
+    return enum_fields
+
+
+def extract_range_fields(schema_class):
+    """
+    从Schema自动提取所有带范围约束的字段及其范围
+
+    Args:
+        schema_class: Pydantic Schema类
+
+    Returns:
+        范围字段字典 {field_name: (description, ge, gt, le, lt)}
+    """
+    range_fields = {}
+
+    for field_name, field_info in schema_class.model_fields.items():
+        if field_name.startswith('_'):
+            continue
+
+        ge = getattr(field_info, 'ge', None)
+        gt = getattr(field_info, 'gt', None)
+        le = getattr(field_info, 'le', None)
+        lt = getattr(field_info, 'lt', None)
+
+        if ge is not None or gt is not None or le is not None or lt is not None:
+            description = field_info.description or field_name
+            range_fields[field_name] = (description, ge, gt, le, lt)
+
+    return range_fields
+
+
+def extract_max_length_fields(schema_class):
+    """
+    从Schema自动提取所有带max_length约束的字段
+
+    Args:
+        schema_class: Pydantic Schema类
+
+    Returns:
+        最大长度字段字典 {field_name: (description, max_length)}
+    """
+    max_length_fields = {}
+
+    for field_name, field_info in schema_class.model_fields.items():
+        if field_name.startswith('_'):
+            continue
+
+        max_length = getattr(field_info, 'max_length', None)
+        if max_length is not None:
+            description = field_info.description or field_name
+            max_length_fields[field_name] = (description, max_length)
+
+    return max_length_fields
+
+
+def extract_business_keys_from_model(model_class):
+    """
+    从正式表模型自动提取业务主键
+    
+    优先级：
+    1. 主键字段（pk）
+    2. unique_together 约束
+    3. unique=True 的字段
+    
+    Args:
+        model_class: 正式表模型类（如 TMaterial）
+    
+    Returns:
+        业务主键字段列表
+    """
+    # 1. 检查是否有主键字段
+    pk_field = model_class._meta.pk
+    if pk_field and pk_field.model_field_name != 'id':
+        return [pk_field.model_field_name]
+    
+    # 2. 检查 unique_together 约束
+    meta = getattr(model_class, '_meta', None)
+    if meta:
+        unique_together = getattr(meta, 'unique_together', None)
+        if unique_together and len(unique_together) > 0:
+            return list(unique_together[0])
+    
+    # 3. 检查 unique=True 的字段
+    for field_name, field in model_class._meta.fields_map.items():
+        if getattr(field, 'unique', False):
+            return [field_name]
+    
+    return []
+
+
+def extract_display_name_from_model(model_class):
+    """
+    从模型自动提取显示名称
+    
+    从 table_description 中提取，去掉"数据缓冲表"或"缓冲表"后缀
+    
+    Args:
+        model_class: 模型类（如 TMaterialStaging）
+    
+    Returns:
+        显示名称
+    """
+    meta = getattr(model_class, '_meta', None)
+    if meta:
+        table_description = getattr(meta, 'table_description', None)
+        if table_description:
+            # 去掉"数据缓冲表"或"缓冲表"后缀
+            display_name = table_description
+            display_name = display_name.replace("数据缓冲表", "")
+            display_name = display_name.replace("缓冲表", "")
+            return display_name.strip()
+    
+    # 如果没有 table_description，从类名提取
+    class_name = model_class.__name__
+    # TMaterialStaging → Material
+    if class_name.startswith("T") and class_name.endswith("Staging"):
+        return class_name[1:-7]
+    
+    return class_name
+
+
+STAGING_TABLE_CONFIG = {
     "t_material": {
-        "plant": AcceptMaterial.model_fields["plant"].default,
-        "planner": AcceptMaterial.model_fields["planner"].default,
-        "fifo": AcceptMaterial.model_fields["fifo"].default,
-        "expday": AcceptMaterial.model_fields["expday"].default,
-        "phantom": AcceptMaterial.model_fields["phantom"].default,
-        "phantommin": AcceptMaterial.model_fields["phantommin"].default,
-        "firmday": AcceptMaterial.model_fields["firmday"].default,
-        "daygap": AcceptMaterial.model_fields["daygap"].default,
-        "candelay": AcceptMaterial.model_fields["candelay"].default,
-        "lotsize": AcceptMaterial.model_fields["lotsize"].default,
-        "lotfix": AcceptMaterial.model_fields["lotfix"].default,
-        "lotmin": AcceptMaterial.model_fields["lotmin"].default,
-        "lotmax": AcceptMaterial.model_fields["lotmax"].default,
-        "lotround": AcceptMaterial.model_fields["lotround"].default,
-        "lotss": AcceptMaterial.model_fields["lotss"].default,
-        "lotpoint": AcceptMaterial.model_fields["lotpoint"].default,
-        "lottop": AcceptMaterial.model_fields["lottop"].default,
-        "preday": AcceptMaterial.model_fields["preday"].default,
-        "subday": AcceptMaterial.model_fields["subday"].default,
+        "schema": AcceptMaterial,
+        "model": TMaterialStaging,
+        "proto_model": TMaterial,
+        "foreign_keys": [],
+        # "business_keys": ["materialno"],
     },
     "t_workcenter": {
-        "pri_wc": AcceptWorkcenter.model_fields["pri_wc"].default,
-        "bottleneck": AcceptWorkcenter.model_fields["bottleneck"].default,
-        "plant": AcceptWorkcenter.model_fields["plant"].default,
-        "finite": AcceptWorkcenter.model_fields["finite"].default,
-        "type": AcceptWorkcenter.model_fields["type"].default,
+        "schema": AcceptWorkcenter,
+        "model": TWorkcenterStaging,
+        "proto_model": TWorkcenter,
+        "foreign_keys": [],
+        # "business_keys": ["workcenter"],
     },
     "t_mat_ver": {
-        "lotfrom": AcceptMatVer.model_fields["lotfrom"].default,
-        "lotto": AcceptMatVer.model_fields["lotto"].default,
-        "priority": AcceptMatVer.model_fields["priority"].default,
-        "active": AcceptMatVer.model_fields["active"].default,
+        "schema": AcceptMatVer,
+        "model": TMatVerStaging,
+        "proto_model": TMatVer,
+        "foreign_keys": [
+            {"field": "materialno", "model": TMaterial},
+        ],
+        # "business_keys": ["materialno", "matver"],
     },
     "t_mat_wc": {
-        "fixqty": AcceptMatWc.model_fields["fixqty"].default,
-        "fixsec": AcceptMatWc.model_fields["fixsec"].default,
-        "sf": AcceptMatWc.model_fields["sf"].default,
-        "offsetsec": AcceptMatWc.model_fields["offsetsec"].default,
-        "rate": AcceptMatWc.model_fields["rate"].default,
+        "schema": AcceptMatWc,
+        "model": TMatWcStaging,
+        "proto_model": TMatWc,
+        "foreign_keys": [
+            {"field": "materialno", "model": TMaterial},
+            {"field": "workcenter", "model": TWorkcenter},
+        ],
+        # "business_keys": ["materialno", "matver", "itemno"],
     },
     "t_mat_wc_bom": {
-        "offsethour": AcceptMatWcBom.model_fields["offsethour"].default,
+        "schema": AcceptMatWcBom,
+        "model": TMatWcBomStaging,
+        "proto_model": TMatWcBom,
+        "foreign_keys": [
+            {"field": "productno", "model": TMaterial},
+            {"field": "materialno", "model": TMaterial},
+            {"field": "workcenter", "model": TWorkcenter},
+            {"field": "itemno", "model": TMatWc},
+        ],
+        # "business_keys": ["productno", "matver", "itemno", "materialno"],
     },
-    "t_mold": {},
+    "t_mold": {
+        "schema": AcceptMold,
+        "model": TMoldStaging,
+        "proto_model": TMold,
+        "foreign_keys": [],
+        # "business_keys": ["moldno"],
+    },
     "t_mat_wc_mold": {
-        "moldno": AcceptMatWcMold.model_fields["moldno"].default,
-        "fixsec": AcceptMatWcMold.model_fields["fixsec"].default,
+        "schema": AcceptMatWcMold,
+        "model": TMatWcMoldStaging,
+        "proto_model": TMatWcMold,
+        "foreign_keys": [
+            {"field": "materialno", "model": TMaterial},
+            {"field": "workcenter", "model": TWorkcenter},
+            {"field": "moldno", "model": TMold},
+        ],
+        # "business_keys": ["materialno", "workcenter", "itemno", "moldno"],
     },
+}
+
+for table_key, config in STAGING_TABLE_CONFIG.items():
+    config["table_name"] = config["model"]._meta.table
+    config["display_name"] = extract_display_name_from_model(config["model"])
+    config["defaults"] = extract_defaults_from_schema(config["schema"])
+    config["business_keys"] = extract_business_keys_from_model(config["proto_model"])
+
+SCHEMA_DEFAULTS = {key: config["defaults"] for key, config in STAGING_TABLE_CONFIG.items()}
+
+STAGING_MODEL_MAPPING = {
+    table_key: config["model"] 
+    for table_key, config in STAGING_TABLE_CONFIG.items()
 }
 
 
@@ -96,18 +332,7 @@ def fill_defaults(table_name: str, data: Dict[str, Any]) -> Dict[str, Any]:
     
     result = data.copy()
     
-    # 根据字段类型获取默认值
-    schema_map = {
-        "t_material": AcceptMaterial,
-        "t_workcenter": AcceptWorkcenter,
-        "t_mat_ver": AcceptMatVer,
-        "t_mat_wc": AcceptMatWc,
-        "t_mat_wc_bom": AcceptMatWcBom,
-        "t_mold": AcceptMold,
-        "t_mat_wc_mold": AcceptMatWcMold,
-    }
-    
-    schema_class = schema_map.get(table_name)
+    schema_class = STAGING_TABLE_CONFIG.get(table_name, {}).get("schema")
     if not schema_class:
         return data
     
@@ -148,44 +373,251 @@ class ErrorType(str, Enum):
     """错误类型枚举"""
     REQUIRED_FIELD = "required_field"           # 必填字段缺失
     INVALID_ENUM = "invalid_enum"               # 枚举值非法
-    INVALID_TYPE = "invalid_type"               # 类型错误
+    INVALID_TYPE = "invalid_type"              # 类型错误
     INVALID_RANGE = "invalid_range"             # 数值范围错误
+    INVALID_LENGTH = "invalid_length"           # 字符串长度超限
     FK_NOT_FOUND = "fk_not_found"               # 外键引用不存在
-    DUPLICATE_KEY = "duplicate_key"             # 主键重复
+    DUPLICATE_KEY = "duplicate_key"            # 主键重复
     BUSINESS_RULE = "business_rule"             # 业务规则违反
 
 
-BUSINESS_KEYS = {
-    "t_material": ["materialno"],
-    "t_workcenter": ["workcenter"],
-    "t_mat_ver": ["materialno", "matver"],
-    "t_mat_wc": ["materialno", "matver", "itemno"],
-    "t_mat_wc_bom": ["productno", "matver", "itemno", "materialno"],
-    "t_mold": ["moldno"],
-    "t_mat_wc_mold": ["materialno", "workcenter", "itemno", "moldno"],
-}
+
 
 
 class DataCleaner:
     """数据清洗器"""
 
-    MATERIAL_TYPE_ENUM = {"E", "P", "F", "M", "B"}
-    YES_NO_ENUM = {"Y", "N"}
-    ABC_ENUM = {"A", "B", "C"}
-    FIFO_ENUM = {0, 1, "0", "1"}
-    LOT_SIZE_ENUM = {"EX", "FX", "D1", "D2", "D3", "D4", "D5", "D6", "W1", "W2", "W3", "W4", "M1", "M2", "VB"}
-    MOLD_TYPE_ENUM = {"注塑", "冲压", "压铸", "夹具"}
-    MOLD_STATUS_ENUM = {"空闲", "生产中", "维修中", "报废"}
-
     def __init__(self, db_name: str):
         self.db_name = db_name
         self.errors: List[Dict] = []
     
+    def validate_required_from_schema(self, errors: List[Dict], staging_id: int, 
+                                      data: Dict, schema_class) -> bool:
+        """
+        从Schema自动提取并校验所有必填字段
+        
+        Args:
+            errors: 错误列表
+            staging_id: 缓冲表记录ID
+            data: 待校验数据
+            schema_class: Pydantic Schema类
+            
+        Returns:
+            是否所有必填字段都通过校验
+        """
+        required_fields = extract_required_fields(schema_class)
+        
+        all_valid = True
+        for field_name, description in required_fields:
+            # 从description中提取中文描述（去掉括号等内容）
+            display_name = description.split('（')[0].split('(')[0] if description else field_name
+            
+            if not data.get(field_name):
+                errors.append(self._create_error(
+                    staging_id, ErrorType.REQUIRED_FIELD,
+                    field_name, None, f"{display_name}不能为空"
+                ))
+                all_valid = False
+        
+        return all_valid
+    
+    def validate_enums_from_schema(self, errors: List[Dict], staging_id: int,
+                                   data: Dict, schema_class) -> bool:
+        """
+        从Schema自动提取并校验所有枚举字段
+
+        Args:
+            errors: 错误列表
+            staging_id: 缓冲表记录ID
+            data: 待校验数据
+            schema_class: Pydantic Schema类
+
+        Returns:
+            是否所有枚举字段都通过校验
+        """
+        enum_fields = extract_enum_fields(schema_class)
+
+        all_valid = True
+        for field_name, (description, valid_values) in enum_fields.items():
+            value = data.get(field_name)
+            if value is not None and value not in valid_values:
+                display_name = description.split('（')[0].split('(')[0] if description else field_name
+                errors.append(self._create_error(
+                    staging_id, ErrorType.INVALID_ENUM,
+                    field_name, value, f"{display_name}必须为: {', '.join(sorted(valid_values))}"
+                ))
+                all_valid = False
+
+        return all_valid
+
+    def validate_ranges_from_schema(self, errors: List[Dict], staging_id: int,
+                                     data: Dict, schema_class) -> bool:
+        """
+        从Schema自动提取并校验所有范围约束字段
+
+        Args:
+            errors: 错误列表
+            staging_id: 缓冲表记录ID
+            data: 待校验数据
+            schema_class: Pydantic Schema类
+
+        Returns:
+            是否所有范围字段都通过校验
+        """
+        range_fields = extract_range_fields(schema_class)
+
+        all_valid = True
+        for field_name, (description, ge, gt, le, lt) in range_fields.items():
+            value = data.get(field_name)
+            if value is None:
+                continue
+
+            display_name = description.split('（')[0].split('(')[0] if description else field_name
+
+            if ge is not None and value < ge:
+                errors.append(self._create_error(
+                    staging_id, ErrorType.INVALID_RANGE,
+                    field_name, value, f"{display_name}不能小于{ge}"
+                ))
+                all_valid = False
+
+            if gt is not None and value <= gt:
+                errors.append(self._create_error(
+                    staging_id, ErrorType.INVALID_RANGE,
+                    field_name, value, f"{display_name}必须大于{gt}"
+                ))
+                all_valid = False
+
+            if le is not None and value > le:
+                errors.append(self._create_error(
+                    staging_id, ErrorType.INVALID_RANGE,
+                    field_name, value, f"{display_name}不能大于{le}"
+                ))
+                all_valid = False
+
+            if lt is not None and value >= lt:
+                errors.append(self._create_error(
+                    staging_id, ErrorType.INVALID_RANGE,
+                    field_name, value, f"{display_name}必须小于{lt}"
+                ))
+                all_valid = False
+
+        return all_valid
+
+    def validate_max_lengths_from_schema(self, errors: List[Dict], staging_id: int,
+                                        data: Dict, schema_class) -> bool:
+        """
+        从Schema自动提取并校验所有字符串长度约束字段
+
+        Args:
+            errors: 错误列表
+            staging_id: 缓冲表记录ID
+            data: 待校验数据
+            schema_class: Pydantic Schema类
+
+        Returns:
+            是否所有长度字段都通过校验
+        """
+        max_length_fields = extract_max_length_fields(schema_class)
+
+        all_valid = True
+        for field_name, (description, max_length) in max_length_fields.items():
+            value = data.get(field_name)
+            if value is None:
+                continue
+
+            if isinstance(value, str) and len(value) > max_length:
+                display_name = description.split('（')[0].split('(')[0] if description else field_name
+                errors.append(self._create_error(
+                    staging_id, ErrorType.INVALID_LENGTH,
+                    field_name, len(value), f"{display_name}长度不能超过{max_length}个字符，当前长度{len(value)}"
+                ))
+                all_valid = False
+
+        return all_valid
+
+    async def validate_foreign_keys_from_config(self, errors: List[Dict], staging_id: int,
+                                                data: Dict, table_key: str) -> bool:
+        """
+        根据配置自动校验所有外键约束
+
+        Args:
+            errors: 错误列表
+            staging_id: 缓冲表记录ID
+            data: 待校验数据
+            table_key: 表配置键（如 "t_mat_wc"）
+
+        Returns:
+            是否所有外键校验都通过
+        """
+        config = STAGING_TABLE_CONFIG.get(table_key)
+        if not config or not config.get("foreign_keys"):
+            return True
+
+        all_valid = True
+        for fk_config in config["foreign_keys"]:
+            field_name = fk_config["field"]
+            model_class = fk_config["model"]
+            display_name = fk_config.get("display_name") or extract_display_name_from_model(model_class)
+            value = data.get(field_name)
+
+            if value:
+                exists = await model_class.filter(**{field_name: value}).exists()
+                if not exists:
+                    errors.append(self._create_error(
+                        staging_id, ErrorType.FK_NOT_FOUND,
+                        field_name, value, f"关联的{display_name}不存在"
+                    ))
+                    all_valid = False
+
+        return all_valid
+
+    async def validate_from_config(self, table_key: str, data: Dict[str, Any], staging_id: int = None) -> List[Dict]:
+        """
+        根据配置自动执行所有标准校验
+
+        Args:
+            table_key: 表配置键（如 "t_material"）
+            data: 待校验数据
+            staging_id: 缓冲表记录ID
+
+        Returns:
+            错误列表
+        """
+        errors = []
+        config = STAGING_TABLE_CONFIG.get(table_key)
+        if not config:
+            return errors
+
+        schema_class = config["schema"]
+
+        # 1. 从Schema自动提取并校验所有必填字段
+        self.validate_required_from_schema(errors, staging_id, data, schema_class)
+
+        # 2. 从Schema自动提取并校验所有枚举字段
+        self.validate_enums_from_schema(errors, staging_id, data, schema_class)
+
+        # 3. 从Schema自动提取并校验所有范围约束字段
+        self.validate_ranges_from_schema(errors, staging_id, data, schema_class)
+
+        # 4. 从Schema自动提取并校验所有字符串长度约束字段
+        self.validate_max_lengths_from_schema(errors, staging_id, data, schema_class)
+
+        # 5. 从配置自动提取并校验所有外键约束
+        await self.validate_foreign_keys_from_config(errors, staging_id, data, table_key)
+
+        # 6. 重复检查
+        is_unique, dup_errors = await self.check_duplicate(table_key, data, staging_id)
+        errors.extend(dup_errors)
+
+        return errors
+
     async def check_duplicate(self, table_name: str, data: Dict[str, Any], staging_id: int = None) -> Tuple[bool, List[Dict]]:
         """检测缓冲表中是否存在重复数据（使用原生SQL避免ORM时区问题）"""
         from tortoise import Tortoise
         
-        pk_fields = BUSINESS_KEYS.get(table_name, [])
+        config = STAGING_TABLE_CONFIG.get(table_name, {})
+        pk_fields = config.get("business_keys", [])
         if not pk_fields:
             return True, []
         
@@ -194,10 +626,7 @@ class DataCleaner:
             return True, []
         
         conditions = {}
-        field_map = {}
-        for field in staging_model._meta.fields_map.values():
-            db_col = field.source_field if field.source_field else field.model_field_name
-            field_map[field.model_field_name] = db_col
+        field_map = get_field_map(staging_model)
         
         for pk in pk_fields:
             value = data.get(pk)
@@ -241,180 +670,59 @@ class DataCleaner:
 
     async def validate_material(self, data: Dict[str, Any], staging_id: int = None) -> Tuple[bool, List[Dict]]:
         """校验物料数据"""
-        errors = []
+        errors = await self.validate_from_config("t_material", data, staging_id)
 
-        if not data.get("materialno"):
-            errors.append(self._create_error(staging_id, ErrorType.REQUIRED_FIELD, "materialno", None, "物料号不能为空"))
-
-        if not data.get("description"):
-            errors.append(self._create_error(staging_id, ErrorType.REQUIRED_FIELD, "description", None, "物料描述不能为空"))
-
-        if not data.get("plant"):
-            errors.append(self._create_error(staging_id, ErrorType.REQUIRED_FIELD, "plant", None, "工厂不能为空"))
-
-        abc_value = data.get("abc")
-        logger.info(f"[校验] staging_id={staging_id}, abc={abc_value}, ABC_ENUM={self.ABC_ENUM}")
-        if abc_value and str(abc_value) not in self.ABC_ENUM:
-            logger.warning(f"[校验失败] abc={abc_value} 不在合法枚举值中")
-            errors.append(self._create_error(staging_id, ErrorType.INVALID_ENUM, "abc", abc_value,
-                f"ABC分类必须为: A, B, C"))
-
-        if data.get("fifo") is not None and str(data["fifo"]) not in {"0", "1"}:
-            errors.append(self._create_error(staging_id, ErrorType.INVALID_ENUM, "fifo", data["fifo"],
-                f"FIFO必须为: 0 或 1"))
-
-        if data.get("type") and data["type"] not in self.MATERIAL_TYPE_ENUM:
-            errors.append(self._create_error(staging_id, ErrorType.INVALID_ENUM, "type", data["type"], 
-                f"物料类型必须为: {self.MATERIAL_TYPE_ENUM}"))
-
-        if data.get("phantom") and data["phantom"] not in self.YES_NO_ENUM:
-            errors.append(self._create_error(staging_id, ErrorType.INVALID_ENUM, "phantom", data["phantom"],
-                f"虚拟件标识必须为: {self.YES_NO_ENUM}"))
-
-        if data.get("candelay") and data["candelay"] not in self.YES_NO_ENUM:
-            errors.append(self._create_error(staging_id, ErrorType.INVALID_ENUM, "candelay", data["candelay"],
-                f"可否延迟必须为: {self.YES_NO_ENUM}"))
-
-        if data.get("lotsize") and data["lotsize"] not in self.LOT_SIZE_ENUM:
-            errors.append(self._create_error(staging_id, ErrorType.INVALID_ENUM, "lotsize", data["lotsize"],
-                f"批量策略必须为: {self.LOT_SIZE_ENUM}"))
-
-        leadday = data.get("leadday")
-        if leadday is not None and leadday < 0:
-            errors.append(self._create_error(staging_id, ErrorType.INVALID_RANGE, "leadday", leadday, "提前期不能为负数"))
-
+        # 业务规则：最小批量不能大于最大批量
         lotmin = data.get("lotmin")
         lotmax = data.get("lotmax")
         if lotmin is not None and lotmax is not None and lotmin > lotmax:
-            errors.append(self._create_error(staging_id, ErrorType.BUSINESS_RULE, "lotmin/lotmax", 
+            errors.append(self._create_error(staging_id, ErrorType.BUSINESS_RULE, "lotmin/lotmax",
                 f"{lotmin}/{lotmax}", "最小批量不能大于最大批量"))
-
-        is_unique, dup_errors = await self.check_duplicate("t_material", data, staging_id)
-        errors.extend(dup_errors)
 
         return len(errors) == 0, errors
 
     async def validate_workcenter(self, data: Dict[str, Any], staging_id: int = None) -> Tuple[bool, List[Dict]]:
         """校验工作中心数据"""
-        errors = []
-
-        if not data.get("workcenter"):
-            errors.append(self._create_error(staging_id, ErrorType.REQUIRED_FIELD, "workcenter", None, "工作中心编号不能为空"))
-
-        if data.get("bottleneck") and data["bottleneck"] not in self.YES_NO_ENUM:
-            errors.append(self._create_error(staging_id, ErrorType.INVALID_ENUM, "bottleneck", data["bottleneck"],
-                f"瓶颈标识必须为: {self.YES_NO_ENUM}"))
-
-        if data.get("finite") and data["finite"] not in self.YES_NO_ENUM:
-            errors.append(self._create_error(staging_id, ErrorType.INVALID_ENUM, "finite", data["finite"],
-                f"有限产能标识必须为: {self.YES_NO_ENUM}"))
-
-        if data.get("type") and data["type"] not in self.YES_NO_ENUM:
-            errors.append(self._create_error(staging_id, ErrorType.INVALID_ENUM, "type", data["type"],
-                f"首页显示标识必须为: {self.YES_NO_ENUM}"))
-
-        is_unique, dup_errors = await self.check_duplicate("t_workcenter", data, staging_id)
-        errors.extend(dup_errors)
+        errors = await self.validate_from_config("t_workcenter", data, staging_id)
 
         return len(errors) == 0, errors
 
     async def validate_mat_ver(self, data: Dict[str, Any], staging_id: int = None) -> Tuple[bool, List[Dict]]:
         """校验产线版本数据"""
-        errors = []
+        errors = await self.validate_from_config("t_mat_ver", data, staging_id)
 
-        if not data.get("materialno"):
-            errors.append(self._create_error(staging_id, ErrorType.REQUIRED_FIELD, "materialno", None, "物料号不能为空"))
-        else:
-            exists = await TMaterial.filter(materialno=data["materialno"]).exists()
-            if not exists:
-                errors.append(self._create_error(staging_id, ErrorType.FK_NOT_FOUND, "materialno", 
-                    data["materialno"], "关联的物料不存在"))
-
-        if not data.get("matver"):
-            errors.append(self._create_error(staging_id, ErrorType.REQUIRED_FIELD, "matver", None, "版本号不能为空"))
-
-        if data.get("active") and data["active"] not in self.YES_NO_ENUM:
-            errors.append(self._create_error(staging_id, ErrorType.INVALID_ENUM, "active", data["active"],
-                f"激活标识必须为: {self.YES_NO_ENUM}"))
-
+        # 业务规则：批量下限不能大于批量上限
         lotfrom = data.get("lotfrom")
         lotto = data.get("lotto")
         if lotfrom is not None and lotto is not None and lotfrom > lotto:
             errors.append(self._create_error(staging_id, ErrorType.BUSINESS_RULE, "lotfrom/lotto",
                 f"{lotfrom}/{lotto}", "批量下限不能大于批量上限"))
 
-        is_unique, dup_errors = await self.check_duplicate("t_mat_ver", data, staging_id)
-        errors.extend(dup_errors)
-
         return len(errors) == 0, errors
 
     async def validate_mat_wc(self, data: Dict[str, Any], staging_id: int = None) -> Tuple[bool, List[Dict]]:
         """校验工艺路线数据"""
-        errors = []
+        errors = await self.validate_from_config("t_mat_wc", data, staging_id)
 
-        if not data.get("materialno"):
-            errors.append(self._create_error(staging_id, ErrorType.REQUIRED_FIELD, "materialno", None, "物料号不能为空"))
-        else:
-            exists = await TMaterial.filter(materialno=data["materialno"]).exists()
-            if not exists:
-                errors.append(self._create_error(staging_id, ErrorType.FK_NOT_FOUND, "materialno",
-                    data["materialno"], "关联的物料不存在"))
-
-        if not data.get("workcenter"):
-            errors.append(self._create_error(staging_id, ErrorType.REQUIRED_FIELD, "workcenter", None, "工作中心不能为空"))
-        else:
-            exists = await TWorkcenter.filter(workcenter=data["workcenter"]).exists()
-            if not exists:
-                errors.append(self._create_error(staging_id, ErrorType.FK_NOT_FOUND, "workcenter",
-                    data["workcenter"], "关联的工作中心不存在"))
-
+        # 复合外键校验（物料+版本）
         if data.get("materialno") and data.get("matver"):
             exists = await TMatVer.filter(materialno=data["materialno"], matver=data["matver"]).exists()
             if not exists:
                 errors.append(self._create_error(staging_id, ErrorType.FK_NOT_FOUND, "matver",
                     f"{data['materialno']}/{data['matver']}", "关联的产线版本不存在"))
 
-        if not data.get("itemno"):
-            errors.append(self._create_error(staging_id, ErrorType.REQUIRED_FIELD, "itemno", None, "工序号不能为空"))
-
-        if data.get("sf") and data["sf"] not in {"S", "F"}:
-            errors.append(self._create_error(staging_id, ErrorType.INVALID_ENUM, "sf", data["sf"],
-                "串并行标识必须为 S(串行) 或 F(并行)"))
-
-        if data.get("basesec") is None:
-            errors.append(self._create_error(staging_id, ErrorType.REQUIRED_FIELD, "basesec", None, "基础工时不能为空"))
-        elif data["basesec"] < 0:
-            errors.append(self._create_error(staging_id, ErrorType.INVALID_RANGE, "basesec", data["basesec"], "基础工时不能为负数"))
-
-        is_unique, dup_errors = await self.check_duplicate("t_mat_wc", data, staging_id)
-        errors.extend(dup_errors)
-
         return len(errors) == 0, errors
 
     async def validate_mat_wc_bom(self, data: Dict[str, Any], staging_id: int = None) -> Tuple[bool, List[Dict]]:
         """校验物料清单数据"""
-        errors = []
+        errors = await self.validate_from_config("t_mat_wc_bom", data, staging_id)
 
-        if not data.get("productno"):
-            errors.append(self._create_error(staging_id, ErrorType.REQUIRED_FIELD, "productno", None, "父件料号不能为空"))
-        else:
-            exists = await TMaterial.filter(materialno=data["productno"]).exists()
-            if not exists:
-                errors.append(self._create_error(staging_id, ErrorType.FK_NOT_FOUND, "productno",
-                    data["productno"], "关联的父件物料不存在"))
-
-        if not data.get("materialno"):
-            errors.append(self._create_error(staging_id, ErrorType.REQUIRED_FIELD, "materialno", None, "子件料号不能为空"))
-        else:
-            exists = await TMaterial.filter(materialno=data["materialno"]).exists()
-            if not exists:
-                errors.append(self._create_error(staging_id, ErrorType.FK_NOT_FOUND, "materialno",
-                    data["materialno"], "关联的子件物料不存在"))
-
+        # 业务规则：父件和子件不能为同一物料
         if data.get("productno") == data.get("materialno"):
             errors.append(self._create_error(staging_id, ErrorType.BUSINESS_RULE, "productno/materialno",
                 f"{data.get('productno')}/{data.get('materialno')}", "父件和子件不能为同一物料"))
 
+        # 复合外键校验（产品+版本）
         if data.get("productno") and data.get("matver"):
             exists = await TMatVer.filter(materialno=data["productno"], matver=data["matver"]).exists()
             if not exists:
@@ -431,81 +739,33 @@ class DataCleaner:
                 errors.append(self._create_error(staging_id, ErrorType.FK_NOT_FOUND, "itemno",
                     f"{data['productno']}/{data['matver']}/{data['itemno']}", "关联的工序不存在"))
 
-        if data.get("qty") is None:
-            errors.append(self._create_error(staging_id, ErrorType.REQUIRED_FIELD, "qty", None, "用量不能为空"))
-        elif data["qty"] <= 0:
+        if data.get("qty") is not None and data["qty"] <= 0:
             errors.append(self._create_error(staging_id, ErrorType.INVALID_RANGE, "qty", data["qty"], "用量必须大于0"))
 
         if data.get("scrap") is not None and (data["scrap"] < 0 or data["scrap"] > 100):
             errors.append(self._create_error(staging_id, ErrorType.INVALID_RANGE, "scrap", data["scrap"], "损耗率必须在0-100之间"))
 
-        if data.get("mto") and data["mto"] not in self.YES_NO_ENUM:
-            errors.append(self._create_error(staging_id, ErrorType.INVALID_ENUM, "mto", data["mto"],
-                f"MTO标识必须为: {self.YES_NO_ENUM}"))
-
-        if data.get("alt") and data["alt"] not in self.YES_NO_ENUM:
-            errors.append(self._create_error(staging_id, ErrorType.INVALID_ENUM, "alt", data["alt"],
-                f"替代料标识必须为: {self.YES_NO_ENUM}"))
-
-        is_unique, dup_errors = await self.check_duplicate("t_mat_wc_bom", data, staging_id)
-        errors.extend(dup_errors)
-
         return len(errors) == 0, errors
 
     async def validate_mold(self, data: Dict[str, Any], staging_id: int = None) -> Tuple[bool, List[Dict]]:
         """校验模具数据"""
-        errors = []
+        errors = await self.validate_from_config("t_mold", data, staging_id)
 
-        if not data.get("moldno"):
-            errors.append(self._create_error(staging_id, ErrorType.REQUIRED_FIELD, "moldno", None, "模具编号不能为空"))
-
-        if data.get("type") and data["type"] not in self.MOLD_TYPE_ENUM:
-            errors.append(self._create_error(staging_id, ErrorType.INVALID_ENUM, "type", data["type"],
-                f"模具类型必须为: {self.MOLD_TYPE_ENUM}"))
-
-        if data.get("status") and data["status"] not in self.MOLD_STATUS_ENUM:
-            errors.append(self._create_error(staging_id, ErrorType.INVALID_ENUM, "status", data["status"],
-                f"模具状态必须为: {self.MOLD_STATUS_ENUM}"))
-
+        # 业务规则：模具穴数必须≥1
         if data.get("moldnum") is not None and data["moldnum"] < 1:
             errors.append(self._create_error(staging_id, ErrorType.INVALID_RANGE, "moldnum", data["moldnum"], "模具穴数必须≥1"))
 
+        # 业务规则：模具台数必须≥1
         if data.get("qty") is not None and data["qty"] < 1:
             errors.append(self._create_error(staging_id, ErrorType.INVALID_RANGE, "qty", data["qty"], "模具台数必须≥1"))
-
-        is_unique, dup_errors = await self.check_duplicate("t_mold", data, staging_id)
-        errors.extend(dup_errors)
 
         return len(errors) == 0, errors
 
     async def validate_mat_wc_mold(self, data: Dict[str, Any], staging_id: int = None) -> Tuple[bool, List[Dict]]:
         """校验机台模具关联数据"""
-        errors = []
+        errors = await self.validate_from_config("t_mat_wc_mold", data, staging_id)
 
-        if not data.get("materialno"):
-            errors.append(self._create_error(staging_id, ErrorType.REQUIRED_FIELD, "materialno", None, "物料号不能为空"))
-        else:
-            exists = await TMaterial.filter(materialno=data["materialno"]).exists()
-            if not exists:
-                errors.append(self._create_error(staging_id, ErrorType.FK_NOT_FOUND, "materialno",
-                    data["materialno"], "关联的物料不存在"))
-
-        if not data.get("workcenter"):
-            errors.append(self._create_error(staging_id, ErrorType.REQUIRED_FIELD, "workcenter", None, "工作中心不能为空"))
-        else:
-            exists = await TWorkcenter.filter(workcenter=data["workcenter"]).exists()
-            if not exists:
-                errors.append(self._create_error(staging_id, ErrorType.FK_NOT_FOUND, "workcenter",
-                    data["workcenter"], "关联的工作中心不存在"))
-
-        if not data.get("moldno"):
-            errors.append(self._create_error(staging_id, ErrorType.REQUIRED_FIELD, "moldno", None, "模具编号不能为空"))
-        else:
-            exists = await TMold.filter(moldno=data["moldno"]).exists()
-            if not exists:
-                errors.append(self._create_error(staging_id, ErrorType.FK_NOT_FOUND, "moldno",
-                    data["moldno"], "关联的模具不存在"))
-
+        # 复合外键校验（物料+工作中心+工序）
         if data.get("materialno") and data.get("workcenter") and data.get("itemno"):
             exists = await TMatWc.filter(
                 materialno=data["materialno"],
@@ -514,13 +774,7 @@ class DataCleaner:
             ).exists()
             if not exists:
                 errors.append(self._create_error(staging_id, ErrorType.FK_NOT_FOUND, "itemno",
-                    f"{data['materialno']}/{data['workcenter']}/{data['itemno']}", "关联的工序不存在"))
-
-        if data.get("basesec") is not None and data["basesec"] < 0:
-            errors.append(self._create_error(staging_id, ErrorType.INVALID_RANGE, "basesec", data["basesec"], "UPH不能为负数"))
-
-        is_unique, dup_errors = await self.check_duplicate("t_mat_wc_mold", data, staging_id)
-        errors.extend(dup_errors)
+                    f"{data['materialno']}/{data['workcenter']}/{data['itemno']}", "关联的工艺路线不存在"))
 
         return len(errors) == 0, errors
 
@@ -563,6 +817,7 @@ class DataCleaner:
             ErrorType.INVALID_ENUM: "请填写合法的枚举值",
             ErrorType.INVALID_TYPE: "请修正字段类型",
             ErrorType.INVALID_RANGE: "请修正数值范围",
+            ErrorType.INVALID_LENGTH: "请修正字符串长度",
             ErrorType.FK_NOT_FOUND: "请先导入关联的主数据，或检查引用值是否正确",
             ErrorType.DUPLICATE_KEY: "请检查是否存在重复数据",
             ErrorType.BUSINESS_RULE: "请检查业务规则约束",
@@ -681,10 +936,7 @@ class StagingProcessor:
         conn = Tortoise.get_connection(self.db_name)
         table_name_staging = f"{table_name}_staging"
         
-        field_map = {}
-        for field in staging_model._meta.fields_map.values():
-            db_col_name = field.source_field if field.source_field else field.model_field_name
-            field_map[field.model_field_name] = db_col_name
+        field_map = get_field_map(staging_model)
         
         batch_count = 0
         while batch_count < max_batches:
@@ -834,10 +1086,7 @@ class StagingProcessor:
             stats["skipped"] = len(records_to_sync)
             return stats
 
-        staging_field_map = {}
-        for field in staging_model._meta.fields_map.values():
-            db_col = field.source_field if field.source_field else field.model_field_name
-            staging_field_map[field.model_field_name] = db_col
+        staging_field_map = get_field_map(staging_model)
 
         data_list = []
         staging_ids = []
