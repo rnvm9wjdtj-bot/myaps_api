@@ -1257,14 +1257,17 @@ class ApsPayloadSponsor:
 
 
     @classmethod
-    async def aggregate_pr_data(cls, pr_data_list: list[dict]=None, group_by: list=['materialno', 'avail_date', 'vendorno']) -> list[dict]:
+    async def aggregate_pr_data(cls, pr_data_list: list[dict]=None, group_by: list=['materialno', 'avail_date', 'vendorno'], batch_size: int=100) -> list[tuple[list[dict], list[str]]]:
         """
-        聚合 PR avail_qty 字段
+        聚合 PR avail_qty 字段，按批次返回列表
         Args:
             pr_data_list: PR 数据列表，若为None则查询主账套中状态为 NEW 的 PR 数据
             group_by: 分组字段，默认['materialno', 'avail_date', 'vendorno']
+            batch_size: 每批聚合数据的数量，默认100
         Returns:
-            聚合后的 PR 数据列表
+            list[(batch_agg_data, batch_supplynos)]
+            - batch_agg_data: 该批次的聚合数据列表
+            - batch_supplynos: 该批次对应的原始 supplyno 列表
         """
         import pandas as pd
 
@@ -1277,23 +1280,47 @@ class ApsPayloadSponsor:
 
         df = pd.DataFrame(pr_data_list)
         
-        keep_cols = ['materialno', 'category', 'avail_qty', 'create_date', 'avail_date', 'vendorno']
+        keep_cols = ['materialno', 'category', 'avail_qty', 'create_date', 'avail_date', 'vendorno', 'supplyno']
         df = df[[col for col in keep_cols if col in df.columns]]
         
         for field in group_by:
             if field in pr_datetime_fields and field in df.columns:
                 df[field] = pd.to_datetime(df[field], errors='coerce').dt.date
         
-        agg_dict = {'avail_qty': 'sum'}
-        other_cols = [col for col in df.columns if col not in group_by and col != 'avail_qty']
+        # 聚合：avail_qty 求和，其他字段取 last，supplyno 聚合为列表
+        agg_dict = {'avail_qty': 'sum', 'supplyno': list}
+        other_cols = [col for col in df.columns if col not in group_by and col not in ['avail_qty', 'supplyno']]
         for col in other_cols:
             agg_dict[col] = 'last'
         
-        result_df = df.groupby(group_by, dropna=False).agg(agg_dict).reset_index()
+        result_df = df.groupby(group_by, dropna=False).agg(agg_dict).reset_index().sort_values(by='avail_date', ascending=True)
         
         result_df = result_df.replace({pd.NA: None, pd.NaT: None, float('nan'): None})
         
-        return result_df.to_dict('records')
+        agg_data_list = result_df.to_dict('records')
+        
+        # 按批次构建列表
+        pr_batches = []
+        total_batches = (len(agg_data_list) + batch_size - 1) // batch_size
+        for batch_idx in range(total_batches):
+            start_idx = batch_idx * batch_size
+            end_idx = min((batch_idx + 1) * batch_size, len(agg_data_list))
+            batch_agg_data = agg_data_list[start_idx:end_idx]
+            
+            # 收集该批次对应的所有 supplynos
+            batch_supplynos = []
+            for agg_item in batch_agg_data:
+                supplynos = agg_item.get('supplyno', [])
+                if supplynos:
+                    batch_supplynos.extend(supplynos)
+            
+            # 移除 supplyno 字段，只保留推送需要的字段
+            clean_agg_data = [{k: v for k, v in item.items() if k != 'supplyno'} 
+                            for item in batch_agg_data]
+            
+            pr_batches.append((clean_agg_data, batch_supplynos))
+        
+        return pr_batches
 
 
     @classmethod
@@ -1961,7 +1988,7 @@ class EventResultPoster:
         push_data: dict = None,
         msg_from: str = 'SYSTEM'
     ):
-        logger.warning_msg(f"推送 MO {msg}", to_file=True)
+        logger.warning_msg("推送 MO", msg, to_file=True)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if msg:
             try:
@@ -2047,7 +2074,7 @@ class EventResultPoster:
         msg_from: str = 'SYSTEM',
         push_data: dict | list = None,
     ):
-        logger.warning_msg(f"推送 RS {msg}", to_file=True)
+        logger.warning_msg("推送 RS", msg, to_file=True)
         if msg:
             try:
                 msg = str(msg)[:64]
@@ -2218,7 +2245,7 @@ class EventResultPoster:
                 msg = str(msg)[:64]
             except Exception as e:
                 pass
-        logger.warning_msg(f"推送 PR {msg}", to_file=True)
+        logger.warning_msg("推送 PR", msg, to_file=True)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         # 处理 prno 参数，支持列表和逗号分隔的字符串

@@ -1119,57 +1119,61 @@ class TplusPr(BaseVoucher):
         pydantic_model: Type[PydanticModel] = None,
         **kwargs
     ):
+        if not event_data_list:
+            return
+            
         assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
         await cls._CONNECTION.auth()
-        # 分批处理，每批最多100条
-        batch_size = 100
-        total_batches = (len(event_data_list) + batch_size - 1) // batch_size
-        logger.info(f"开始推送请购单，共 {len(event_data_list)} 条，分为 {total_batches} 批")
-        
-        for batch_idx in range(total_batches):
-            start_idx = batch_idx * batch_size
-            end_idx = min((batch_idx + 1) * batch_size, len(event_data_list))
-            batch_data = event_data_list[start_idx:end_idx]
+        try:
+            pydantic_model = pydantic_model or cls._PUSH_PYDANTIC_MODEL
             
-            if not batch_data:
-                continue
-                
-            prnos = [item['supplyno'] for item in batch_data]
-            logger.update("推送请购单", f"批次{batch_idx+1}/{total_batches}", f"处理 {len(batch_data)} 条")
+            logger.info(f"开始推送请购单，共 {len(event_data_list)} 条原始数据")
             
-            try:
-                endpoint = cls._CREATE_ENDPOINT
-                pydantic_model = pydantic_model or cls._PUSH_PYDANTIC_MODEL
-
-                # 转换为 T+ 格式
-                agg_data_list = await ApsPayloadSponsor.aggregate_pr_data(pr_data_list=batch_data)
-                tplus_pr_data = pydantic_model(data=agg_data_list).model_dump(exclude_none=True)
-                payload = {"dto": tplus_pr_data}
-                pr_create_response_json = await cls._CONNECTION._post(endpoint=endpoint, data=payload)
+            pr_batches = await ApsPayloadSponsor.aggregate_pr_data(pr_data_list=event_data_list)
+            
+            for batch_idx, (batch_agg_data, batch_supplynos) in enumerate(pr_batches, 1):
+                logger.update("推送请购单", f"批次{batch_idx}/{len(pr_batches)}", 
+                              f"处理 {len(batch_agg_data)} 条聚合数据，对应 {len(batch_supplynos)} 条原始记录")
                 
-                if str(pr_create_response_json['code']) == '0':
-                    tplus_pr_id = pr_create_response_json['data'].get('ID')
-                    tplus_pr_code = pr_create_response_json['data'].get('Code')
+                try:
+                    tplus_pr_data = pydantic_model(data=batch_agg_data).model_dump(exclude_none=True)
+                    payload = {"dto": tplus_pr_data}
+                    endpoint = cls._CREATE_ENDPOINT
+                    pr_create_response_json = await cls._CONNECTION._post(endpoint=endpoint, data=payload)
                     
-                    # 使用批量更新
-                    await _erp.pr_release_success(
-                        prno=prnos,
-                        msg=pr_create_response_json['message'],
-                        msg_from='T+',
-                        _code=tplus_pr_code,
-                        _id=tplus_pr_id
+                    if str(pr_create_response_json['code']) == '0':
+                        tplus_pr_id = pr_create_response_json['data'].get('ID')
+                        tplus_pr_code = pr_create_response_json['data'].get('Code')
+                        
+                        await _erp.pr_release_success(
+                            prno=batch_supplynos,
+                            msg=pr_create_response_json['message'],
+                            msg_from='T+',
+                            _code=tplus_pr_code,
+                            _id=tplus_pr_id
+                        )
+                        auto_approve = kwargs.get('auto_approve', True)
+                        if auto_approve:
+                            await cls.approve(tplus_pr_code=tplus_pr_code)
+                        logger.success("推送请购单", f"批次{batch_idx}", f"成功")
+                    else:
+                        await _erp.pr_release_failed(
+                            prno=batch_supplynos, 
+                            msg=pr_create_response_json['message'], 
+                            msg_from='T+'
+                        )
+                        logger.warning("推送请购单", f"批次{batch_idx}", pr_create_response_json['message'])
+                except Exception as e:
+                    logger.fail("推送请购单", f"批次{batch_idx}", str(e))
+                    await _erp.pr_release_failed(
+                        prno=batch_supplynos, 
+                        msg=str(e), 
+                        msg_from='T+'
                     )
-                    auto_approve = kwargs.get('auto_approve', True)
-                    if auto_approve:
-                        # 审批请购单
-                        await cls.approve(tplus_pr_code=tplus_pr_code)
-                    logger.success("推送请购单", f"批次{batch_idx+1}/{total_batches}", f"成功")
-                else:
-                    await _erp.pr_release_failed(prno=prnos, msg=pr_create_response_json['message'], msg_from='T+')
-                    logger.warning("推送请购单", f"批次{batch_idx+1}/{total_batches}", pr_create_response_json['message'])
-            except Exception as e:
-                logger.fail("推送请购单", f"批次{batch_idx+1}/{total_batches}", str(e))
-                await _erp.pr_release_failed(prno=prnos, msg=str(e), msg_from='T+')
+        except Exception as e:
+            all_prnos = [item['supplyno'] for item in event_data_list]
+            logger.fail("推送请购单", "整体失败", str(e))
+            await _erp.pr_release_failed(prno=all_prnos, msg=str(e), msg_from='T+')
 
 
     @classmethod
