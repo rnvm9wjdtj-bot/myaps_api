@@ -84,12 +84,22 @@ class MDSPageController {
         return [];
     }
     
+    isReadOnlyField(fieldName) {
+        if (this.config?.display?.columns) {
+            const col = this.config.display.columns.find(c => c.field === fieldName);
+            if (col && col.readOnly !== undefined) {
+                return col.readOnly;
+            }
+        }
+        return false;
+    }
+
     getEditableFields() {
         let fields = [];
         
         if (this.config?.display?.columns) {
             fields = this.config.display.columns.filter(
-                col => !col.field.startsWith('_')
+                col => !col.field.startsWith('_') && !this.isReadOnlyField(col.field)
             );
         } else if (this.tableMeta?.fields) {
             fields = this.tableMeta.fields.filter(f => !f.is_internal);
@@ -663,6 +673,7 @@ class MDSPageController {
         const fieldName = col.field;
         const fieldValue = row[fieldName] !== null && row[fieldName] !== undefined ? row[fieldName] : '';
         const isRequired = this.isRequiredField(fieldName);
+        const isReadOnly = this.isReadOnlyField(fieldName);
         
         const errorFields = this.getErrorFields(row);
         const isErrorField = errorFields.includes(fieldName);
@@ -671,8 +682,22 @@ class MDSPageController {
         const labelHtml = `
             <label class="col-form-label flex-shrink-0" style="font-weight: 700; color: #1a1a1a; text-align: right; padding-right: 8px; margin-bottom: 0; white-space: nowrap;">
                 ${col.title}${isRequired ? '<span class="text-danger">*</span>' : ''}
+                ${isReadOnly ? '<span class="text-muted ms-1"><i class="bi bi-lock"></i></span>' : ''}
             </label>
         `;
+        
+        if (isReadOnly) {
+            return `
+                <div class="mb-2 row align-items-center justify-content-start" style="gap: 4px;">
+                    <div class="flex-shrink-0" style="min-width: 90px; max-width: 120px;">${labelHtml}</div>
+                    <div class="flex-grow-1" style="min-width: 0;">
+                        <div class="form-control-plaintext font-mono" style="height: 31px; padding: 0.25rem 0.5rem; font-size: 0.8rem;">
+                            ${fieldValue === null || fieldValue === undefined ? '<span class="text-muted">-</span>' : escapeHtml(String(fieldValue))}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
         
         const enumOptions = this.getEnumOptions(fieldName);
         if (enumOptions.length > 0) {
@@ -748,6 +773,7 @@ class MDSPageController {
         
         const requiredFields = this.getRequiredFields();
         for (const fieldName of requiredFields) {
+            if (this.isReadOnlyField(fieldName)) continue;
             const col = columns.find(c => c.field === fieldName);
             const input = form.querySelector(`[name="${fieldName}"]`);
             if (input && !input.value.trim()) {
@@ -761,6 +787,7 @@ class MDSPageController {
         const data = {};
         
         formData.forEach((value, key) => {
+            if (this.isReadOnlyField(key)) return;
             if (value === '') {
                 data[key] = null;
             } else {

@@ -56,11 +56,18 @@ def render_mds_page(page_key):
     
     config = MDS_PAGE_CONFIG[page_key]
     
+    # 生成前端配置（所有页面都使用动态配置）
+    frontend_config = None
+    from apps.data_opt.mds.config_generator import get_cached_config
+    frontend_config = get_cached_config(page_key)
+    
     # 准备替换变量
+    import json
     replacements = {
         "{page_title}": config["page_title"],
         "{keyword_placeholder}": config["keyword_placeholder"],
-        "{config_file}": config["config_file"]
+        "{config_file}": config["config_file"],
+        "{MDS_PAGE_CONFIG}": json.dumps(frontend_config, ensure_ascii=False) if frontend_config else "null"
     }
     
     # 设置导航栏高亮

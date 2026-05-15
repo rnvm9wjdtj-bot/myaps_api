@@ -1095,6 +1095,7 @@ async def batch_update_staging(request: Request, table_name: str, data: dict = B
 | 2026-05-14 | v3.0 | **架构级重构**：校验逻辑从硬编码转为配置驱动，通过Pydantic Schema自动提取校验规则，大幅提升可维护性和扩展性 |
 | 2026-05-15 | v3.1 | **两阶段校验增强**：新增合规性校验、关联校验分阶段处理，新增校验规则文档化API，完善前端通用组件库 |
 | 2026-05-15 | v3.2 | **前端架构重构**：通用控制器 + 配置驱动，所有表共用同一套代码，新增表只需编写配置文件 |
+| 2026-05-15 | v3.3 | **配置自动生成**：从后端 Schema 自动生成前端配置文件，新增表"零配置"，新增 Bootstrap 图标库 |
 
 ---
 
@@ -2047,7 +2048,155 @@ class MDSPageController {
 
 ---
 
-## 十三、v2.3版本更新详情
+## 十三、v3.3版本更新详情
+
+### 13.1 配置自动生成器
+
+**新增核心文件**：`config_generator.py`（396行）
+
+**核心功能**：从后端 Schema 自动生成前端配置文件，实现"零配置"新增表。
+
+**生成器架构**：
+
+```python
+# config_generator.py
+def auto_generate_columns(schema_class) -> List[Dict[str, Any]]:
+    """从 Schema 自动生成 columns 配置"""
+    pass
+
+def auto_generate_enum_fields(schema_class) -> List[Dict[str, Any]]:
+    """从 Schema 自动生成 enumFields 配置"""
+    pass
+
+def auto_generate_string_fields(schema_class) -> List[Dict[str, str]]:
+    """从 Schema 自动生成 stringFields 配置"""
+    pass
+
+def auto_generate_number_fields(schema_class) -> List[Dict[str, str]]:
+    """从 Schema 自动生成 numberFields 配置"""
+    pass
+
+def auto_generate_date_fields(schema_class) -> List[Dict[str, str]]:
+    """从 Schema 自动生成 dateFields 配置"""
+    pass
+
+def auto_generate_edit_fields(schema_class, staging_model) -> List[Dict[str, Any]]:
+    """从 Schema 和模型自动生成 edit.fields 配置"""
+    pass
+
+def generate_full_config(table_key: str, schema_class, staging_model) -> Dict[str, Any]:
+    """生成完整的配置对象"""
+    return {
+        'tableKey': table_key,
+        'tableDisplayName': extract_display_name_from_model(staging_model),
+        'display': {
+            'columns': auto_generate_columns(schema_class),
+            'defaultSortField': '_createtime',
+            'defaultSortDir': 'desc',
+            'advancedFilterCategories': {
+                'stringFields': auto_generate_string_fields(schema_class),
+                'enumFields': auto_generate_enum_fields(schema_class),
+                'numberFields': auto_generate_number_fields(schema_class),
+                'dateFields': auto_generate_date_fields(schema_class)
+            }
+        },
+        'edit': {
+            'fields': auto_generate_edit_fields(schema_class, staging_model)
+        }
+    }
+```
+
+**枚举选项智能提取**：
+
+```python
+def get_enum_options_from_schema(schema_class, field_name: str):
+    """
+    从 Schema 字段中获取枚举选项
+    优先使用 Enum 类的 get_options() 方法
+    """
+    # 1. 尝试从 Enum.get_options() 获取
+    # 2. fallback 到手动映射（用于 fifo 等特殊字段）
+    pass
+
+MANUAL_LABEL_MAPS = {
+    "fifo": {
+        "0": "最近原则",
+        "1": "FIFO"
+    }
+}
+```
+
+### 13.2 架构演进对比
+
+| 版本 | 新增表方式 | 工作量 |
+|------|----------|--------|
+| v2.5- | 手写后端 + 手写前端 | >600行代码 |
+| v3.0-3.2 | Schema + 手写配置 | ~100行配置 |
+| **v3.3** | Schema + 运行 `generate_config()` | **零配置** |
+
+### 13.3 新增 Bootstrap 图标库
+
+**新增资源**：
+
+| 文件 | 说明 |
+|------|------|
+| `bootstrap-icons.css` | Bootstrap 图标样式（2078行） |
+| `fonts/bootstrap-icons.woff` | 图标字体文件（176KB） |
+| `fonts/bootstrap-icons.woff2` | 图标字体文件（130KB） |
+
+**使用示例**：
+
+```html
+<i class="bi bi-search"></i>
+<i class="bi bi-check-circle"></i>
+<i class="bi bi-x-circle"></i>
+```
+
+### 13.4 配置文件删除
+
+**变更**：删除7个手动编写的配置文件
+
+| 删除文件 | 说明 |
+|----------|------|
+| `material.config.js` | 物料表配置（现在自动生成） |
+| `workcenter.config.js` | 工作中心表配置（现在自动生成） |
+| `mat-ver.config.js` | 产线版本表配置（现在自动生成） |
+| `mat-wc.config.js` | 工艺路线表配置（现在自动生成） |
+| `mat-wc-bom.config.js` | 物料清单表配置（现在自动生成） |
+| `mold.config.js` | 模具表配置（现在自动生成） |
+| `mat-wc-mold.config.js` | 机台模具关联表配置（现在自动生成） |
+
+**原因**：配置现在从 Schema 自动生成，不再需要手动维护。
+
+### 13.5 新增表开发流程（v3.3最终版）
+
+**新增表只需2步**：
+
+```
+1. 后端：定义 Schema + 配置 STAGING_TABLE_CONFIG
+   ↓
+2. 运行：调用 generate_full_config() 自动生成前端配置
+   ↓
+3. 完成！
+```
+
+### 13.6 修改文件清单
+
+| 文件 | 变更类型 | 核心改动 |
+|------|----------|----------|
+| `config_generator.py` | **新增** | 配置自动生成器（396行） |
+| `routes_register.py` | 优化 | 路由更新 |
+| 7个配置文件 | **删除** | 不再需要手动配置 |
+| `bootstrap-icons.css` | **新增** | Bootstrap 图标样式 |
+| `fonts/bootstrap-icons.woff` | **新增** | 图标字体 |
+| `fonts/bootstrap-icons.woff2` | **新增** | 图标字体 |
+| `data-table.js` | 优化 | 配合图标库 |
+| `mds-page-controller.js` | 优化 | 配合配置自动生成 |
+| `template.html` | 优化 | 图标库集成 |
+
+---
+
+## 十四、v2.3版本更新详情
 
 ### 9.1 校验错误详情展示
 

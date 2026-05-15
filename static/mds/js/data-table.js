@@ -119,14 +119,15 @@ class DataTable {
      */
     renderHeaderCell(col) {
         const sortIcon = col.sortable ? '<i class="bi bi-arrow-down-up ms-1"></i>' : '';
+        const readOnlyIcon = col.readOnly ? '<i class="bi bi-lock ms-1 text-muted" style="font-size: 0.8rem;"></i>' : '';
         return `
             <th 
                 style="${col.width ? 'width: ' + col.width + '; min-width: ' + col.width : 'white-space: nowrap;'}" 
                 data-field="${col.field}" 
                 class="${col.sortable ? 'sortable cursor-pointer' : ''}"
-                title="${col.sortable ? `点击按 ${col.title} 排序` : ''}"
+                title="${col.sortable ? `点击按 ${col.title} 排序` : ''}${col.readOnly ? ' - 只读字段' : ''}"
             >
-                ${col.title}${sortIcon}
+                ${col.title}${readOnlyIcon}${sortIcon}
             </th>
         `;
     }
@@ -409,6 +410,7 @@ class DataTable {
      */
     renderCell(col, row, errorMap = {}) {
         let value = row[col.field];
+        const isReadOnly = col.readOnly;
         
         // 自定义渲染函数
         if (col.render) {
@@ -422,7 +424,12 @@ class DataTable {
         
         // 时间字段
         if (['_createtime', '_updatetime', '_synced_time'].includes(col.field)) {
-            return `<span class="font-mono">${formatDateTime(value)}</span>`;
+            return `
+                <span class="font-mono${isReadOnly ? ' text-muted' : ''}">
+                    ${formatDateTime(value)}
+                    ${isReadOnly ? '<i class="bi bi-lock ms-1" style="font-size: 0.7rem;"></i>' : ''}
+                </span>
+            `;
         }
         
         // 空值处理
@@ -438,7 +445,7 @@ class DataTable {
         
         // 枚举字段
         if (this.enumFields.includes(col.field)) {
-            return this.renderEnumCell(value, col.field);
+            return this.renderEnumCell(value, col.field, col);
         }
         
         // 普通文本
@@ -512,30 +519,48 @@ class DataTable {
     /**
      * 渲染枚举单元格
      */
-    renderEnumCell(value, fieldName) {
+    renderEnumCell(value, fieldName, col) {
+        const isReadOnly = col?.readOnly;
         const options = this.enumOptions[fieldName] || [];
         const option = options.find(o => String(o.value) === String(value));
         
         if (option) {
-            return `<span class="enum-tag">${escapeHtml(option.label)}</span>`;
+            return `
+                <span class="enum-tag${isReadOnly ? ' text-muted' : ''}">
+                    ${escapeHtml(option.label)}
+                    ${isReadOnly ? '<i class="bi bi-lock ms-1" style="font-size: 0.7rem;"></i>' : ''}
+                </span>
+            `;
         }
         
-        return `<span class="enum-tag">${escapeHtml(value)}</span>`;
+        return `
+            <span class="enum-tag${isReadOnly ? ' text-muted' : ''}">
+                ${escapeHtml(value)}
+                ${isReadOnly ? '<i class="bi bi-lock ms-1" style="font-size: 0.7rem;"></i>' : ''}
+            </span>
+        `;
     }
     
     /**
      * 渲染文本单元格
      */
     renderTextCell(value, col) {
+        const isReadOnly = col.readOnly;
         if (typeof value === 'string' && value.length > 30) {
             return `
-                <span class="font-mono" title="${escapeHtml(value)}">
+                <span class="font-mono${isReadOnly ? ' text-muted' : ''}" title="${escapeHtml(value)}">
                     ${escapeHtml(truncateText(value, 30))}
+                    ${isReadOnly ? '<i class="bi bi-lock ms-1" style="font-size: 0.7rem;"></i>' : ''}
                 </span>
             `;
         }
         
-        return `<span class="font-mono">${escapeHtml(value)}</span>`;
+        return `
+            <span class="font-mono${isReadOnly ? ' text-muted' : ''}">
+                ${escapeHtml(value)}
+                ${isReadOnly ? '<i class="bi bi-lock ms-1" style="font-size: 0.7rem;"></i>' : ''}
+            </span>
+        `;
     }
     
     /**

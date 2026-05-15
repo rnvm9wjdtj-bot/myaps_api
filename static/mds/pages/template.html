@@ -5,42 +5,47 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{page_title}</title>
     <link href="/static/mds/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/mds/css/bootstrap-icons.css">
     <link rel="stylesheet" href="/static/mds/css/custom.css">
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-2">
         <div class="container-fluid">
-            <a class="navbar-brand" href="/mds">📊 数据清洗管理系统</a>
+            <a class="navbar-brand" href="/mds"><i class="bi bi-clipboard-data"></i> 数据清洗管理系统</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
-                        <a class="nav-link {material_active}" href="/mds/material">📦 物料</a>
+                        <a class="nav-link {material_active}" href="/mds/material"><i class="bi bi-box-seam"></i> 物料</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {workcenter_active}" href="/mds/workcenter">🏭 工作中心</a>
+                        <a class="nav-link {workcenter_active}" href="/mds/workcenter"><i class="bi bi-building-gear"></i> 工作中心</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {mat_ver_active}" href="/mds/mat-ver">📋 产线版本</a>
+                        <a class="nav-link {mat_ver_active}" href="/mds/mat-ver"><i class="bi bi-list-check"></i> 产线版本</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {mat_wc_active}" href="/mds/mat-wc">🛠️ 工艺路线</a>
+                        <a class="nav-link {mat_wc_active}" href="/mds/mat-wc"><i class="bi bi-tools"></i> 工艺路线</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {mat_wc_bom_active}" href="/mds/mat-wc-bom">📐 BOM</a>
+                        <a class="nav-link {mat_wc_bom_active}" href="/mds/mat-wc-bom"><i class="bi bi-list-tree"></i> BOM</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {mold_active}" href="/mds/mold">🔧 模具</a>
+                        <a class="nav-link {mold_active}" href="/mds/mold"><i class="bi bi-wrench"></i> 模具</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {mat_wc_mold_active}" href="/mds/mat-wc-mold">🔩 机台模具</a>
+                        <a class="nav-link {mat_wc_mold_active}" href="/mds/mat-wc-mold"><i class="bi bi-gear-wide-connected"></i> 机台模具</a>
                     </li>
                 </ul>
                 <div class="d-flex gap-2">
-                    <button class="btn btn-outline-light btn-sm" style="width:100px" id="validateAllBtn">校验全部</button>
-                    <button class="btn btn-outline-light btn-sm" style="width:100px" id="syncAllBtn">推送全部</button>
+                    <button class="btn btn-outline-light btn-sm" style="width:100px" id="validateAllBtn">
+                        <i class="bi bi-check2-all"></i> 校验全部
+                    </button>
+                    <button class="btn btn-outline-light btn-sm" style="width:100px" id="syncAllBtn">
+                        <i class="bi bi-send-fill"></i> 推送全部
+                    </button>
                 </div>
             </div>
         </div>
@@ -54,13 +59,23 @@
         <div class="filter-bar mb-2">
             <div class="row g-2 align-items-center">
                 <div class="col-auto">
-                    <button class="btn btn-primary btn-sm" style="width:100px" data-bs-toggle="modal" data-bs-target="#uploadModal">导入</button>
-                    <button class="btn btn-success btn-sm" style="width:100px" id="validateBtn">校验</button>
-                    <button class="btn btn-info btn-sm" style="width:100px" id="syncBtn">推送</button>
-                    <button class="btn btn-outline-warning btn-sm" style="width:100px" id="rulesBtn">校验规则</button>
+                    <button class="btn btn-primary btn-sm" style="width:100px" data-bs-toggle="modal" data-bs-target="#uploadModal">
+                        <i class="bi bi-upload"></i> 导入
+                    </button>
+                    <button class="btn btn-success btn-sm" style="width:100px" id="validateBtn">
+                        <i class="bi bi-check2-circle-fill"></i> 校验
+                    </button>
+                    <button class="btn btn-info btn-sm" style="width:100px" id="syncBtn">
+                        <i class="bi bi-send-fill"></i> 推送
+                    </button>
+                    <button class="btn btn-outline-warning btn-sm" style="width:100px" id="rulesBtn">
+                        <i class="bi bi-sliders"></i> 校验规则
+                    </button>
                 </div>
                 <div class="col-auto ms-auto">
-                    <button class="btn btn-outline-info btn-sm" style="width:100px" id="downloadTemplateBtn">下载模板</button>
+                    <button class="btn btn-outline-info btn-sm" style="width:100px" id="downloadTemplateBtn">
+                        <i class="bi bi-download"></i> 下载模板
+                    </button>
                 </div>
                 <div class="col-auto">
                     <select class="form-select form-select-sm" id="statusFilter" style="width:100px">
@@ -84,9 +99,15 @@
                     <input type="text" class="form-control form-control-sm" id="keywordInput" placeholder="{keyword_placeholder}">
                 </div>
                 <div class="col-auto">
-                    <button class="btn btn-primary btn-sm" id="searchBtn">查询</button>
-                    <button class="btn btn-outline-secondary btn-sm" id="resetBtn">重置</button>
-                    <button class="btn btn-outline-info btn-sm" data-bs-toggle="modal" data-bs-target="#advancedFilterModal">精准筛选</button>
+                    <button class="btn btn-primary btn-sm" id="searchBtn">
+                        <i class="bi bi-search"></i> 查询
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm" id="resetBtn">
+                        <i class="bi bi-arrow-counterclockwise"></i> 重置
+                    </button>
+                    <button class="btn btn-outline-info btn-sm" data-bs-toggle="modal" data-bs-target="#advancedFilterModal">
+                        <i class="bi bi-funnel"></i> 精准筛选
+                    </button>
                 </div>
             </div>
         </div>
@@ -223,7 +244,18 @@
     <script src="/static/mds/js/api-client.js"></script>
     <script src="/static/mds/js/data-table.js"></script>
     <script src="/static/mds/js/status-card.js"></script>
-    <script src="/static/mds/configs/{config_file}"></script>
+    <!-- 条件加载配置：优先使用嵌入的配置，否则加载外部文件 -->
+    <script>
+        var MDS_PAGE_CONFIG = {MDS_PAGE_CONFIG};
+    </script>
+    <script>
+        if (MDS_PAGE_CONFIG === null) {
+            // 如果没有嵌入配置，则动态加载外部文件
+            var script = document.createElement('script');
+            script.src = '/static/mds/configs/{config_file}';
+            document.head.appendChild(script);
+        }
+    </script>
     <script src="/static/mds/js/mds-page-controller.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
