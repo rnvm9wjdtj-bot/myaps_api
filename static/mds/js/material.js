@@ -4,7 +4,9 @@
 
 const TABLE_NAME = 't_material';
 
-const REQUIRED_FIELDS = ['materialno', 'description', 'plant', 'leadday', 'grday', 'abc', 'unit', 'groupno'];
+// 必填字段 - 与后端 schemas.py 中的定义保持一致
+// 仅包含使用 ... 作为默认值的字段
+const REQUIRED_FIELDS = ['materialno', 'description', 'leadday', 'grday', 'abc', 'unit'];
 
 const TABLE_COLUMNS = [
     { field: '_status', title: '状态', width: '80px' },
@@ -174,6 +176,7 @@ function bindActionEvents() {
     const validateAllBtn = document.getElementById('validateAllBtn');
     const syncBtn = document.getElementById('syncBtn');
     const syncAllBtn = document.getElementById('syncAllBtn');
+    const rulesBtn = document.getElementById('rulesBtn');
     
     if (validateBtn) {
         validateBtn.addEventListener('click', () => validateData());
@@ -189,6 +192,10 @@ function bindActionEvents() {
     
     if (syncAllBtn) {
         syncAllBtn.addEventListener('click', () => syncAllData());
+    }
+    
+    if (rulesBtn) {
+        rulesBtn.addEventListener('click', () => showValidationRulesModal(TABLE_NAME, '物料'));
     }
 }
 
@@ -291,10 +298,13 @@ async function validateData() {
         }
         
         const stats = response.data;
-        const batchProcessed = (stats.validated || 0) + (stats.rejected || 0);
+        // 后端返回字段映射：relation_pass -> validated，relation_error+compliance_error -> rejected
+        const batchValidated = stats.relation_pass || 0;
+        const batchRejected = (stats.relation_error || 0) + (stats.compliance_error || 0);
+        const batchProcessed = batchValidated + batchRejected;
         
-        totalValidated += stats.validated || 0;
-        totalRejected += stats.rejected || 0;
+        totalValidated += batchValidated;
+        totalRejected += batchRejected;
         totalFilled += stats.filled || 0;
         
         if (batchProcessed > 0) {
@@ -642,37 +652,78 @@ function showErrorDetail(errorMsg) {
     }
 }
 
+/**
+ * 从行数据中获取错误字段列表
+ * @param {Object} row - 行数据
+ * @returns {Array} 错误字段名数组
+ */
+function getErrorFields(row) {
+    const errorFields = [];
+    if (!row._error_msg) return errorFields;
+    
+    try {
+        let errorData = typeof row._error_msg === 'string' ? JSON.parse(row._error_msg) : row._error_msg;
+        if (!Array.isArray(errorData)) {
+            errorData = [errorData];
+        }
+        
+        errorData.forEach(err => {
+            if (err.error_field) {
+                errorFields.push(err.error_field);
+            }
+        });
+    } catch (e) {
+        console.error('解析错误信息失败:', e);
+    }
+    
+    return errorFields;
+}
+
 function generateEditField(col, row) {
     const fieldName = col.field;
     const fieldValue = row[fieldName] !== null && row[fieldName] !== undefined ? row[fieldName] : '';
     const isRequired = REQUIRED_FIELDS.includes(fieldName);
     
-    const labelHtml = `<label class="form-label mb-1">${col.title}${isRequired ? '<span class="text-danger">*</span>' : ''}</label>`;
+    // 获取错误字段列表（从 _error_msg 中解析）
+    const errorFields = getErrorFields(row);
+    const isErrorField = errorFields.includes(fieldName);
+    const errorClass = isErrorField ? ' is-invalid' : '';
+    
+    // 水平布局：label 在左侧，加粗加黑，右对齐，靠近输入框
+    const labelHtml = `
+        <label class="col-form-label flex-shrink-0" style="font-weight: 700; color: #1a1a1a; text-align: right; padding-right: 8px; margin-bottom: 0; white-space: nowrap;">
+            ${col.title}${isRequired ? '<span class="text-danger">*</span>' : ''}
+        </label>
+    `;
     
     if (ENUM_OPTIONS[fieldName]) {
         const options = ENUM_OPTIONS[fieldName];
         return `
-            <div class="mb-2">
-                ${labelHtml}
-                <select class="form-select font-mono" name="${fieldName}" style="height: 31px; padding: 0.25rem 0.5rem; font-size: 0.8rem;" ${isRequired ? 'required' : ''}>
-                    <option value="">-- 请选择 --</option>
-                    ${options.map(opt => `
-                        <option value="${opt.value}" ${String(fieldValue) === String(opt.value) ? 'selected' : ''}>
-                            ${opt.label}
-                        </option>
-                    `).join('')}
-                </select>
+            <div class="mb-2 row align-items-center justify-content-start" style="gap: 4px;">
+                <div class="flex-shrink-0" style="min-width: 90px; max-width: 120px;">${labelHtml}</div>
+                <div class="flex-grow-1" style="min-width: 0;">
+                    <select class="form-select font-mono${errorClass}" name="${fieldName}" style="height: 31px; padding: 0.25rem 0.5rem; font-size: 0.8rem;" ${isRequired ? 'required' : ''}>
+                        <option value="">-- 请选择 --</option>
+                        ${options.map(opt => `
+                            <option value="${opt.value}" ${String(fieldValue) === String(opt.value) ? 'selected' : ''}>
+                                ${opt.label}
+                            </option>
+                        `).join('')}
+                    </select>
+                </div>
             </div>
         `;
     }
     
     return `
-        <div class="mb-2">
-            ${labelHtml}
-            <input type="text" class="form-control font-mono" name="${fieldName}" 
-                   value="${escapeHtml(String(fieldValue))}"
-                   style="height: 31px; padding: 0.25rem 0.5rem; font-size: 0.8rem;"
-                   ${isRequired ? 'required' : ''}>
+        <div class="mb-2 row align-items-center justify-content-start" style="gap: 4px;">
+            <div class="flex-shrink-0" style="min-width: 90px; max-width: 120px;">${labelHtml}</div>
+            <div class="flex-grow-1" style="min-width: 0;">
+                <input type="text" class="form-control font-mono${errorClass}" name="${fieldName}" 
+                       value="${escapeHtml(String(fieldValue))}"
+                       style="height: 31px; padding: 0.25rem 0.5rem; font-size: 0.8rem;"
+                       ${isRequired ? 'required' : ''}>
+            </div>
         </div>
     `;
 }

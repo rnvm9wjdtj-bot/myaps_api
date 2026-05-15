@@ -92,14 +92,17 @@ class DataTable {
                         <option value="1000" ${this.pageSize === 1000 ? 'selected' : ''}>1000</option>
                     </select>
                     <span>条/页</span>
-                    <button class="btn btn-sm btn-outline-success" id="selectAllPagesBtn">
+                    <button class="btn btn-sm btn-outline-success" id="selectAllPagesBtn" style="width: 100px;">
                         全选(<span id="totalCount">0</span>)
                     </button>
-                    <button class="btn btn-sm btn-outline-primary ms-2" id="batchEditBtn" disabled>
+                    <button class="btn btn-sm btn-outline-primary ms-2" id="batchEditBtn" disabled style="width: 100px;">
                         编辑(<span id="selectedCount">0</span>)
                     </button>
-                    <button class="btn btn-sm btn-outline-danger" id="batchDeleteBtn" disabled>
+                    <button class="btn btn-sm btn-outline-danger" id="batchDeleteBtn" disabled style="width: 100px;">
                         删除(<span id="selectedCountDup">0</span>)
+                    </button>
+                    <button class="btn btn-sm btn-outline-cyan" id="templateBtn" style="width: 100px;">
+                        模板
                     </button>
                 </div>
                 <nav>
@@ -148,6 +151,12 @@ class DataTable {
         const batchDeleteBtn = document.getElementById('batchDeleteBtn');
         if (batchDeleteBtn) {
             batchDeleteBtn.addEventListener('click', () => this.batchDelete());
+        }
+        
+        // 模板下载
+        const templateBtn = document.getElementById('templateBtn');
+        if (templateBtn) {
+            templateBtn.addEventListener('click', () => downloadTemplate(this.tableName));
         }
         
         // 页面大小切换
@@ -481,8 +490,9 @@ class DataTable {
         const isEnumField = this.enumFields.includes(col.field);
         
         if (isEnumField) {
+            // 统一使用 data-error-msg 方式（替代 title）
             return `
-                <span class="enum-tag enum-tag-error" title="${escapeHtml(errorInfo.message)}">
+                <span class="enum-tag enum-tag-error" data-error-type="${errorInfo.type}" data-error-msg="${escapeHtml(errorInfo.message)}">
                     ${escapeHtml(displayValue)}
                 </span>
             `;
@@ -493,7 +503,6 @@ class DataTable {
                 class="error-cell font-mono" 
                 data-error-type="${errorInfo.type}" 
                 data-error-msg="${escapeHtml(errorInfo.message)}"
-                title="${escapeHtml(errorInfo.message)}"
             >
                 ${escapeHtml(displayValue)}
             </span>
@@ -588,8 +597,8 @@ class DataTable {
         // 清理旧提示框
         document.querySelectorAll('.error-tooltip').forEach(t => t.remove());
         
-        // 错误单元格提示
-        document.querySelectorAll('.error-cell').forEach(cell => {
+        // 错误单元格提示（包括普通错误和枚举错误）
+        document.querySelectorAll('.error-cell, .enum-tag-error').forEach(cell => {
             cell.addEventListener('mouseenter', (e) => this.showErrorTooltip(e));
             cell.addEventListener('mouseleave', (e) => this.hideErrorTooltip(e));
         });
@@ -701,12 +710,30 @@ class DataTable {
     buildPaginationHtml(totalPages) {
         let html = `
             <li class="page-item ${this.currentPage === 1 ? 'disabled' : ''}">
-                <a class="page-link" href="#" data-page="${this.currentPage - 1}">上一页</a>
+                <a class="page-link" href="#" data-page="${this.currentPage - 1}">
+                    <i class="bi bi-chevron-left"></i> 上一页
+                </a>
             </li>
         `;
         
         const startPage = Math.max(1, this.currentPage - 2);
         const endPage = Math.min(totalPages, this.currentPage + 2);
+        
+        // 添加前面的省略号
+        if (startPage > 1) {
+            html += `
+                <li class="page-item">
+                    <a class="page-link" href="#" data-page="1">1</a>
+                </li>
+            `;
+            if (startPage > 2) {
+                html += `
+                    <li class="page-item disabled">
+                        <span class="page-link">...</span>
+                    </li>
+                `;
+            }
+        }
         
         for (let i = startPage; i <= endPage; i++) {
             html += `
@@ -716,9 +743,27 @@ class DataTable {
             `;
         }
         
+        // 添加后面的省略号
+        if (endPage < totalPages) {
+            if (endPage < totalPages - 1) {
+                html += `
+                    <li class="page-item disabled">
+                        <span class="page-link">...</span>
+                    </li>
+                `;
+            }
+            html += `
+                <li class="page-item">
+                    <a class="page-link" href="#" data-page="${totalPages}">${totalPages}</a>
+                </li>
+            `;
+        }
+        
         html += `
             <li class="page-item ${this.currentPage === totalPages ? 'disabled' : ''}">
-                <a class="page-link" href="#" data-page="${this.currentPage + 1}">下一页</a>
+                <a class="page-link" href="#" data-page="${this.currentPage + 1}">
+                    下一页 <i class="bi bi-chevron-right"></i>
+                </a>
             </li>
         `;
         

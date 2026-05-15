@@ -11,32 +11,32 @@
     <!-- 导航栏 -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-2">
         <div class="container-fluid">
-            <a class="navbar-brand" href="/mds">数据清洗管理系统</a>
+            <a class="navbar-brand" href="/mds">📊 数据清洗管理系统</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
-                        <a class="nav-link active" href="/mds/material">物料</a>
+                        <a class="nav-link active" href="/mds/material">📦 物料</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/mds/workcenter">工作中心</a>
+                        <a class="nav-link" href="/mds/workcenter">🏭 工作中心</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/mds/mat-ver">产线版本</a>
+                        <a class="nav-link" href="/mds/mat-ver">📋 产线版本</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/mds/mat-wc">工艺路线</a>
+                        <a class="nav-link" href="/mds/mat-wc">🛠️ 工艺路线</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/mds/mat-wc-bom">BOM</a>
+                        <a class="nav-link" href="/mds/mat-wc-bom">📐 BOM</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/mds/mold">模具</a>
+                        <a class="nav-link" href="/mds/mold">🔧 模具</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/mds/mat-wc-mold">机台模具</a>
+                        <a class="nav-link" href="/mds/mat-wc-mold">🔩 机台模具</a>
                     </li>
                 </ul>
                 <div class="d-flex gap-2">
@@ -60,7 +60,7 @@
                     <button class="btn btn-primary btn-sm" style="width:100px" data-bs-toggle="modal" data-bs-target="#uploadModal">导入</button>
                     <button class="btn btn-success btn-sm" style="width:100px" id="validateBtn">校验</button>
                     <button class="btn btn-info btn-sm" style="width:100px" id="syncBtn">同步</button>
-                    <button class="btn btn-outline-primary btn-sm" style="width:100px" onclick="downloadTemplate('t_material')">模板</button>
+                    <button class="btn btn-outline-warning btn-sm" style="width:100px" id="rulesBtn">校验规则</button>
                 </div>
                 <div class="col-auto">
                     <select class="form-select form-select-sm" id="statusFilter" style="width:100px">
@@ -224,6 +224,8 @@
 
     <script src="/static/mds/js/bootstrap.bundle.min.js"></script>
     <script src="/static/mds/js/common.js"></script>
+    <script src="/static/mds/js/modal-manager.js"></script>
+    <script src="/static/mds/js/api-client.js"></script>
     <script src="/static/mds/js/data-table.js"></script>
     <script src="/static/mds/js/status-card.js"></script>
     <script src="/static/mds/js/material.js"></script>

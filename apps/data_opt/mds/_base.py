@@ -366,3 +366,81 @@ INTERNAL_FIELDS = {'memo', 'sys_user', 'sys_date', 'sys_stamp'}
 
 # 排除的字段（插入时跳过）
 EXCLUDE_FIELDS = ['_createtime', '_updatetime', 'sys_date', 'sys_stamp']
+
+
+def generate_validation_rules_doc(table_key: str, config: Dict) -> Dict[str, Any]:
+    """
+    生成完整的校验规则文档
+    
+    Args:
+        table_key: 表配置键（如 "t_material"）
+        config: 表配置字典（来自 STAGING_TABLE_CONFIG）
+    
+    Returns:
+        结构化的校验规则文档
+    """
+    schema_class = config.get('schema')
+    model_class = config.get('model')
+    proto_model = config.get('proto_model')
+    
+    doc = {
+        "table_name": extract_display_name_from_model(model_class),
+        "table_key": table_key,
+        
+        "required_fields": [],
+        "enum_fields": [],
+        "range_fields": [],
+        "max_length_fields": [],
+        "business_rules": [],
+        "foreign_keys": [],
+        "business_keys": []
+    }
+    
+    # 必填字段
+    if schema_class:
+        required_fields = extract_required_fields(schema_class)
+        doc["required_fields"] = [
+            {"field": field, "description": desc}
+            for field, desc in required_fields
+        ]
+        
+        # 枚举字段
+        enum_fields = extract_enum_fields(schema_class)
+        doc["enum_fields"] = [
+            {"field": field, "description": desc, "allowed_values": list(values)}
+            for field, (desc, values) in enum_fields.items()
+        ]
+        
+        # 范围字段
+        range_fields = extract_range_fields(schema_class)
+        doc["range_fields"] = [
+            {"field": field, "description": desc, "ge": ge, "gt": gt, "le": le, "lt": lt}
+            for field, (desc, ge, gt, le, lt) in range_fields.items()
+        ]
+        
+        # 最大长度字段
+        max_length_fields = extract_max_length_fields(schema_class)
+        doc["max_length_fields"] = [
+            {"field": field, "description": desc, "max_length": max_length}
+            for field, (desc, max_length) in max_length_fields.items()
+        ]
+    
+    # 外键约束
+    foreign_keys = config.get('foreign_keys', [])
+    doc["foreign_keys"] = [
+        {"field": fk.get("field"), "description": f"引用 {fk.get('field')} 必须存在于正式表"}
+        for fk in foreign_keys
+    ]
+    
+    # 业务规则
+    business_rules = config.get('business_rules', [])
+    doc["business_rules"] = [
+        {"name": rule.get("name", ""), "description": rule.get("description", "")}
+        for rule in business_rules
+    ]
+    
+    # 业务主键
+    if proto_model:
+        doc["business_keys"] = extract_business_keys_from_model(proto_model)
+    
+    return doc

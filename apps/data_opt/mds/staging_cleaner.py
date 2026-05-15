@@ -30,6 +30,117 @@ from globalobjects import logger as log_config, globalconst as gc
 logger = log_config.get_logger(__name__)
 
 
+# ==============================================
+# 业务规则校验函数
+# ==============================================
+
+async def validate_material_rules(cleaner, data, staging_id):
+    """物料业务规则校验"""
+    errors = []
+    lotmin = data.get("lotmin")
+    lotmax = data.get("lotmax")
+    if lotmin is not None and lotmax is not None and lotmin > lotmax:
+        errors.append(cleaner._create_error(
+            staging_id, ErrorType.BUSINESS_RULE, "lotmin/lotmax",
+            f"{lotmin}/{lotmax}", "最小批量不能大于最大批量"
+        ))
+    return errors
+
+
+async def validate_mat_ver_rules(cleaner, data, staging_id):
+    """产线版本业务规则校验"""
+    errors = []
+    lotfrom = data.get("lotfrom")
+    lotto = data.get("lotto")
+    if lotfrom is not None and lotto is not None and lotfrom > lotto:
+        errors.append(cleaner._create_error(
+            staging_id, ErrorType.BUSINESS_RULE, "lotfrom/lotto",
+            f"{lotfrom}/{lotto}", "批量下限不能大于批量上限"
+        ))
+    return errors
+
+
+async def validate_mat_wc_rules(cleaner, data, staging_id):
+    """工艺路线业务规则校验"""
+    errors = []
+    if data.get("materialno") and data.get("matver"):
+        exists = await TMatVer.filter(materialno=data["materialno"], matver=data["matver"]).exists()
+        if not exists:
+            errors.append(cleaner._create_error(
+                staging_id, ErrorType.FK_NOT_FOUND, "matver",
+                f"{data['materialno']}/{data['matver']}", "关联的产线版本不存在"
+            ))
+    return errors
+
+
+async def validate_mat_wc_bom_rules(cleaner, data, staging_id):
+    """物料清单业务规则校验"""
+    errors = []
+    if data.get("productno") == data.get("materialno"):
+        errors.append(cleaner._create_error(
+            staging_id, ErrorType.BUSINESS_RULE, "productno/materialno",
+            f"{data.get('productno')}/{data.get('materialno')}", "父件和子件不能为同一物料"
+        ))
+    if data.get("productno") and data.get("matver"):
+        exists = await TMatVer.filter(materialno=data["productno"], matver=data["matver"]).exists()
+        if not exists:
+            errors.append(cleaner._create_error(
+                staging_id, ErrorType.FK_NOT_FOUND, "matver",
+                f"{data['productno']}/{data['matver']}", "关联的产线版本不存在"
+            ))
+    if data.get("productno") and data.get("matver") and data.get("itemno"):
+        exists = await TMatWc.filter(
+            materialno=data["productno"], 
+            matver=data["matver"], 
+            itemno=data["itemno"]
+        ).exists()
+        if not exists:
+            errors.append(cleaner._create_error(
+                staging_id, ErrorType.FK_NOT_FOUND, "itemno",
+                f"{data['productno']}/{data['matver']}/{data['itemno']}", "关联的工序不存在"
+            ))
+    if data.get("qty") is not None and data["qty"] <= 0:
+        errors.append(cleaner._create_error(
+            staging_id, ErrorType.INVALID_RANGE, "qty", data["qty"], "用量必须大于0"
+        ))
+    if data.get("scrap") is not None and (data["scrap"] < 0 or data["scrap"] > 100):
+        errors.append(cleaner._create_error(
+            staging_id, ErrorType.INVALID_RANGE, "scrap", data["scrap"], "损耗率必须在0-100之间"
+        ))
+    return errors
+
+
+async def validate_mold_rules(cleaner, data, staging_id):
+    """模具业务规则校验"""
+    errors = []
+    if data.get("moldnum") is not None and data["moldnum"] < 1:
+        errors.append(cleaner._create_error(
+            staging_id, ErrorType.INVALID_RANGE, "moldnum", data["moldnum"], "模具穴数必须≥1"
+        ))
+    if data.get("qty") is not None and data["qty"] < 1:
+        errors.append(cleaner._create_error(
+            staging_id, ErrorType.INVALID_RANGE, "qty", data["qty"], "模具台数必须≥1"
+        ))
+    return errors
+
+
+async def validate_mat_wc_mold_rules(cleaner, data, staging_id):
+    """机台模具关联业务规则校验"""
+    errors = []
+    if data.get("materialno") and data.get("workcenter") and data.get("itemno"):
+        exists = await TMatWc.filter(
+            materialno=data["materialno"],
+            workcenter=data["workcenter"],
+            itemno=data["itemno"]
+        ).exists()
+        if not exists:
+            errors.append(cleaner._create_error(
+                staging_id, ErrorType.FK_NOT_FOUND, "itemno",
+                f"{data['materialno']}/{data['workcenter']}/{data['itemno']}", "关联的工艺路线不存在"
+            ))
+    return errors
+
+
 STAGING_TABLE_CONFIG = {
     "t_material": {
         "schema": AcceptMaterial,
@@ -38,6 +149,13 @@ STAGING_TABLE_CONFIG = {
         "foreign_keys": [],
         "display_name": "物料",
         "validator": lambda cleaner, data, staging_id: cleaner.validate_material(data, staging_id),
+        "business_rules": [
+            {
+                "name": "最小批量≤最大批量",
+                "description": "最小批量不能大于最大批量",
+                "validator": validate_material_rules,
+            }
+        ],
         # "business_keys": ["materialno"],
     },
     "t_workcenter": {
@@ -47,6 +165,7 @@ STAGING_TABLE_CONFIG = {
         "foreign_keys": [],
         "display_name": "工作中心",
         "validator": lambda cleaner, data, staging_id: cleaner.validate_workcenter(data, staging_id),
+        "business_rules": [],
         # "business_keys": ["workcenter"],
     },
     "t_mat_ver": {
@@ -58,6 +177,13 @@ STAGING_TABLE_CONFIG = {
         ],
         "display_name": "产线版本",
         "validator": lambda cleaner, data, staging_id: cleaner.validate_mat_ver(data, staging_id),
+        "business_rules": [
+            {
+                "name": "批量下限≤批量上限",
+                "description": "批量下限不能大于批量上限",
+                "validator": validate_mat_ver_rules,
+            }
+        ],
         # "business_keys": ["materialno", "matver"],
     },
     "t_mat_wc": {
@@ -70,6 +196,13 @@ STAGING_TABLE_CONFIG = {
         ],
         "display_name": "工艺路线",
         "validator": lambda cleaner, data, staging_id: cleaner.validate_mat_wc(data, staging_id),
+        "business_rules": [
+            {
+                "name": "复合外键校验（物料+版本）",
+                "description": "关联的产线版本必须存在",
+                "validator": validate_mat_wc_rules,
+            }
+        ],
         # "business_keys": ["materialno", "matver", "itemno"],
     },
     "t_mat_wc_bom": {
@@ -84,6 +217,13 @@ STAGING_TABLE_CONFIG = {
         ],
         "display_name": "物料清单",
         "validator": lambda cleaner, data, staging_id: cleaner.validate_mat_wc_bom(data, staging_id),
+        "business_rules": [
+            {
+                "name": "父件≠子件",
+                "description": "父件和子件不能为同一物料",
+                "validator": validate_mat_wc_bom_rules,
+            }
+        ],
         # "business_keys": ["productno", "matver", "itemno", "materialno"],
     },
     "t_mold": {
@@ -93,6 +233,18 @@ STAGING_TABLE_CONFIG = {
         "foreign_keys": [],
         "display_name": "模具",
         "validator": lambda cleaner, data, staging_id: cleaner.validate_mold(data, staging_id),
+        "business_rules": [
+            {
+                "name": "模具穴数≥1",
+                "description": "模具穴数必须≥1",
+                "validator": validate_mold_rules,
+            },
+            {
+                "name": "模具台数≥1",
+                "description": "模具台数必须≥1",
+                "validator": validate_mold_rules,
+            }
+        ],
         # "business_keys": ["moldno"],
     },
     "t_mat_wc_mold": {
@@ -106,6 +258,13 @@ STAGING_TABLE_CONFIG = {
         ],
         "display_name": "机台模具关联",
         "validator": lambda cleaner, data, staging_id: cleaner.validate_mat_wc_mold(data, staging_id),
+        "business_rules": [
+            {
+                "name": "复合外键校验（物料+工作中心+工序）",
+                "description": "关联的工艺路线必须存在",
+                "validator": validate_mat_wc_mold_rules,
+            }
+        ],
         # "business_keys": ["materialno", "workcenter", "itemno", "moldno"],
     },
 }
@@ -423,6 +582,11 @@ class DataCleaner:
         is_unique, dup_errors = await self.check_duplicate(table_key, data, staging_id)
         errors.extend(dup_errors)
 
+        # 7. 执行业务规则校验
+        for rule in config.get("business_rules", []):
+            rule_errors = await rule["validator"](self, data, staging_id)
+            errors.extend(rule_errors)
+
         return errors
 
     async def check_duplicate(self, table_name: str, data: Dict[str, Any], staging_id: int = None) -> Tuple[bool, List[Dict]]:
@@ -484,111 +648,36 @@ class DataCleaner:
     async def validate_material(self, data: Dict[str, Any], staging_id: int = None) -> Tuple[bool, List[Dict]]:
         """校验物料数据"""
         errors = await self.validate_from_config("t_material", data, staging_id)
-
-        # 业务规则：最小批量不能大于最大批量
-        lotmin = data.get("lotmin")
-        lotmax = data.get("lotmax")
-        if lotmin is not None and lotmax is not None and lotmin > lotmax:
-            errors.append(self._create_error(staging_id, ErrorType.BUSINESS_RULE, "lotmin/lotmax",
-                f"{lotmin}/{lotmax}", "最小批量不能大于最大批量"))
-
         return len(errors) == 0, errors
 
     async def validate_workcenter(self, data: Dict[str, Any], staging_id: int = None) -> Tuple[bool, List[Dict]]:
         """校验工作中心数据"""
         errors = await self.validate_from_config("t_workcenter", data, staging_id)
-
         return len(errors) == 0, errors
 
     async def validate_mat_ver(self, data: Dict[str, Any], staging_id: int = None) -> Tuple[bool, List[Dict]]:
         """校验产线版本数据"""
         errors = await self.validate_from_config("t_mat_ver", data, staging_id)
-
-        # 业务规则：批量下限不能大于批量上限
-        lotfrom = data.get("lotfrom")
-        lotto = data.get("lotto")
-        if lotfrom is not None and lotto is not None and lotfrom > lotto:
-            errors.append(self._create_error(staging_id, ErrorType.BUSINESS_RULE, "lotfrom/lotto",
-                f"{lotfrom}/{lotto}", "批量下限不能大于批量上限"))
-
         return len(errors) == 0, errors
 
     async def validate_mat_wc(self, data: Dict[str, Any], staging_id: int = None) -> Tuple[bool, List[Dict]]:
         """校验工艺路线数据"""
         errors = await self.validate_from_config("t_mat_wc", data, staging_id)
-
-        # 复合外键校验（物料+版本）
-        if data.get("materialno") and data.get("matver"):
-            exists = await TMatVer.filter(materialno=data["materialno"], matver=data["matver"]).exists()
-            if not exists:
-                errors.append(self._create_error(staging_id, ErrorType.FK_NOT_FOUND, "matver",
-                    f"{data['materialno']}/{data['matver']}", "关联的产线版本不存在"))
-
         return len(errors) == 0, errors
 
     async def validate_mat_wc_bom(self, data: Dict[str, Any], staging_id: int = None) -> Tuple[bool, List[Dict]]:
         """校验物料清单数据"""
         errors = await self.validate_from_config("t_mat_wc_bom", data, staging_id)
-
-        # 业务规则：父件和子件不能为同一物料
-        if data.get("productno") == data.get("materialno"):
-            errors.append(self._create_error(staging_id, ErrorType.BUSINESS_RULE, "productno/materialno",
-                f"{data.get('productno')}/{data.get('materialno')}", "父件和子件不能为同一物料"))
-
-        # 复合外键校验（产品+版本）
-        if data.get("productno") and data.get("matver"):
-            exists = await TMatVer.filter(materialno=data["productno"], matver=data["matver"]).exists()
-            if not exists:
-                errors.append(self._create_error(staging_id, ErrorType.FK_NOT_FOUND, "matver",
-                    f"{data['productno']}/{data['matver']}", "关联的产线版本不存在"))
-
-        if data.get("productno") and data.get("matver") and data.get("itemno"):
-            exists = await TMatWc.filter(
-                materialno=data["productno"], 
-                matver=data["matver"], 
-                itemno=data["itemno"]
-            ).exists()
-            if not exists:
-                errors.append(self._create_error(staging_id, ErrorType.FK_NOT_FOUND, "itemno",
-                    f"{data['productno']}/{data['matver']}/{data['itemno']}", "关联的工序不存在"))
-
-        if data.get("qty") is not None and data["qty"] <= 0:
-            errors.append(self._create_error(staging_id, ErrorType.INVALID_RANGE, "qty", data["qty"], "用量必须大于0"))
-
-        if data.get("scrap") is not None and (data["scrap"] < 0 or data["scrap"] > 100):
-            errors.append(self._create_error(staging_id, ErrorType.INVALID_RANGE, "scrap", data["scrap"], "损耗率必须在0-100之间"))
-
         return len(errors) == 0, errors
 
     async def validate_mold(self, data: Dict[str, Any], staging_id: int = None) -> Tuple[bool, List[Dict]]:
         """校验模具数据"""
         errors = await self.validate_from_config("t_mold", data, staging_id)
-
-        # 业务规则：模具穴数必须≥1
-        if data.get("moldnum") is not None and data["moldnum"] < 1:
-            errors.append(self._create_error(staging_id, ErrorType.INVALID_RANGE, "moldnum", data["moldnum"], "模具穴数必须≥1"))
-
-        # 业务规则：模具台数必须≥1
-        if data.get("qty") is not None and data["qty"] < 1:
-            errors.append(self._create_error(staging_id, ErrorType.INVALID_RANGE, "qty", data["qty"], "模具台数必须≥1"))
-
         return len(errors) == 0, errors
 
     async def validate_mat_wc_mold(self, data: Dict[str, Any], staging_id: int = None) -> Tuple[bool, List[Dict]]:
         """校验机台模具关联数据"""
         errors = await self.validate_from_config("t_mat_wc_mold", data, staging_id)
-
-        # 复合外键校验（物料+工作中心+工序）
-        if data.get("materialno") and data.get("workcenter") and data.get("itemno"):
-            exists = await TMatWc.filter(
-                materialno=data["materialno"],
-                workcenter=data["workcenter"],
-                itemno=data["itemno"]
-            ).exists()
-            if not exists:
-                errors.append(self._create_error(staging_id, ErrorType.FK_NOT_FOUND, "itemno",
-                    f"{data['materialno']}/{data['workcenter']}/{data['itemno']}", "关联的工艺路线不存在"))
-
         return len(errors) == 0, errors
 
     def _create_error(self, staging_id: int, error_type: ErrorType, field: str, 
@@ -728,7 +817,13 @@ class StagingProcessor:
         if not staging_model:
             raise ValueError(f"未知的缓冲表: {table_name}")
 
-        stats = {"relation_pass": 0, "relation_error": 0, "synced": 0, "filled": 0}
+        stats = {
+            "relation_pass": 0, 
+            "relation_error": 0, 
+            "compliance_error": 0, 
+            "synced": 0, 
+            "filled": 0
+        }
         
         conn = Tortoise.get_connection(self.db_name)
         table_name_staging = f"{table_name}_staging"

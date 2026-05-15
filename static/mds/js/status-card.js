@@ -67,7 +67,7 @@ class StatusCard {
                     <div class="card status-card" data-status="relation_pass">
                         <div class="card-body text-center">
                             <div class="status-number text-success" id="relationPassCount">-</div>
-                            <div class="status-label">关联通过</div>
+                            <div class="status-label">外键通过</div>
                         </div>
                     </div>
                 </div>
@@ -75,7 +75,7 @@ class StatusCard {
                     <div class="card status-card" data-status="relation_error">
                         <div class="card-body text-center">
                             <div class="status-number text-warning" id="relationErrorCount">-</div>
-                            <div class="status-label">关联错误</div>
+                            <div class="status-label">外键错误</div>
                         </div>
                     </div>
                 </div>

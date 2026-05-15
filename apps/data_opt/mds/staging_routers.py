@@ -6,7 +6,7 @@ from typing import List, Dict, Optional, Literal
 from datetime import datetime, timezone
 from fastapi import APIRouter, Query, Body, HTTPException, status, Request, UploadFile, File
 
-from ._base import StagingStatus, INTERNAL_FIELDS, EXCLUDE_FIELDS, convert_record_to_lowercase
+from ._base import StagingStatus, INTERNAL_FIELDS, EXCLUDE_FIELDS, convert_record_to_lowercase, generate_validation_rules_doc
 from .staging_models import (
     TMaterialStaging, TWorkcenterStaging, TMatVerStaging,
     TMatWcStaging, TMatWcBomStaging, TMoldStaging, TMatWcMoldStaging,
@@ -192,10 +192,17 @@ async def validate_staging(
         processor = StagingProcessor(db_name)
         stats = await processor.process_staging(table_name, batch_size)
         
+        # 添加兼容字段，确保前端可以正确处理
+        stats_compat = {
+            **stats,
+            "validated": stats.get("relation_pass", 0),
+            "rejected": (stats.get("relation_error", 0) + stats.get("compliance_error", 0))
+        }
+        
         return standard_response(
             success=1,
             message=f"校验完成",
-            data=stats
+            data=stats_compat
         )
     except Exception as e:
         logger.error(f"校验失败 [{table_name}]: {str(e)}")
@@ -225,7 +232,12 @@ async def validate_all_staging(
         
         for table_name in table_order:
             stats = await processor.process_staging(table_name, batch_size)
-            all_stats[table_name] = stats
+            # 添加兼容字段
+            all_stats[table_name] = {
+                **stats,
+                "validated": stats.get("relation_pass", 0),
+                "rejected": (stats.get("relation_error", 0) + stats.get("compliance_error", 0))
+            }
         
         return standard_response(
             success=1,
@@ -446,6 +458,50 @@ async def get_validation_errors(
         )
     except Exception as e:
         logger.error(f"查询错误记录失败: {str(e)}")
+        return standard_response(success=0, message=str(e))
+
+
+@rt.get("/rules/{table_key}", summary="获取表的校验规则文档")
+async def get_validation_rules(
+    request: Request,
+    table_key: str
+):
+    """获取指定表的完整校验规则文档"""
+    try:
+        config = STAGING_TABLE_CONFIG.get(table_key)
+        if not config:
+            raise ValueError(f"未知的表: {table_key}")
+        
+        rules_doc = generate_validation_rules_doc(table_key, config)
+        
+        return standard_response(
+            success=1,
+            message="查询成功",
+            data=rules_doc
+        )
+    except Exception as e:
+        logger.error(f"查询校验规则失败: {str(e)}")
+        return standard_response(success=0, message=str(e))
+
+
+@rt.get("/rules/list", summary="获取所有表的校验规则列表")
+async def get_all_validation_rules():
+    """获取所有表的校验规则列表（仅包含表名和表键）"""
+    try:
+        tables_list = []
+        for table_key, config in STAGING_TABLE_CONFIG.items():
+            tables_list.append({
+                "table_key": table_key,
+                "table_name": config.get("display_name", table_key)
+            })
+        
+        return standard_response(
+            success=1,
+            message="查询成功",
+            data=tables_list
+        )
+    except Exception as e:
+        logger.error(f"获取表列表失败: {str(e)}")
         return standard_response(success=0, message=str(e))
 
 

@@ -1093,6 +1093,7 @@ async def batch_update_staging(request: Request, table_name: str, data: dict = B
 | 2026-05-12 | v2.4 | 优化：双击编辑、错误呼吸动画、同步模式选择、数据类型转换、UPSERT机制 |
 | 2026-05-13 | v2.5 | 重大更新：多账套同步支持、前端内存泄漏修复、None值累加全面修复、错误信息格式统一、刷新同步逻辑优化 |
 | 2026-05-14 | v3.0 | **架构级重构**：校验逻辑从硬编码转为配置驱动，通过Pydantic Schema自动提取校验规则，大幅提升可维护性和扩展性 |
+| 2026-05-15 | v3.1 | **两阶段校验增强**：新增合规性校验、关联校验分阶段处理，新增校验规则文档化API，完善前端通用组件库 |
 
 ---
 
@@ -1616,7 +1617,231 @@ async def validate_equipment(self, data, staging_id):
 
 ---
 
-## 十一、v2.3版本更新详情
+## 十一、v3.1版本更新详情
+
+### 11.1 两阶段校验架构
+
+**核心设计**：将校验分为两个独立阶段，提高用户体验和问题定位能力。
+
+**阶段划分**：
+
+| 阶段 | 校验内容 | 状态更新 | 说明 |
+|------|----------|----------|------|
+| **阶段1** | 合规性校验 | `compliance_pass` / `compliance_error` | 必填、枚举、范围、长度等不依赖外部数据的校验 |
+| **阶段2** | 关联校验 | `relation_pass` / `relation_error` | 外键、重复检查等依赖外部数据的校验 |
+
+**实现代码**：
+
+```python
+# staging_cleaner.py - StagingProcessor
+async def process_staging(self, table_name: str, batch_size: int = 100, max_batches: int = 100):
+    # 阶段1：合规性校验
+    await self._validate_compliance(table_name, batch_size, max_batches)
+    
+    # 阶段2：关联校验（仅处理合规性通过的记录）
+    await self._validate_relations(table_name, batch_size, max_batches)
+
+# 阶段1实现
+async def _validate_compliance(self, table_name, batch_size, max_batches):
+    while batch_count < max_batches:
+        query = f'SELECT * FROM "{table_name_staging}" WHERE "_status" = $1 LIMIT $2'
+        result = await conn.execute_query(query, ("pending", batch_size))
+        # 仅做合规性校验
+        for record in pending_records:
+            errors = await cleaner.validate_compliance(table_key, data, staging_id)
+            status = StagingStatus.COMPLIANCE_PASS if not errors else StagingStatus.COMPLIANCE_ERROR
+            # 更新状态和错误信息
+
+# 阶段2实现
+async def _validate_relations(self, table_name, batch_size, max_batches):
+    while batch_count < max_batches:
+        query = f'SELECT * FROM "{table_name_staging}" WHERE "_status" = $1 LIMIT $2'
+        result = await conn.execute_query(query, ("compliance_pass", batch_size))
+        # 仅做关联校验
+        for record in pending_records:
+            errors = await cleaner.validate_relations(table_key, data, staging_id)
+            status = StagingStatus.RELATION_PASS if not errors else StagingStatus.RELATION_ERROR
+            # 更新状态和错误信息
+```
+
+**DataCleaner接口新增**：
+
+```python
+# staging_cleaner.py
+async def validate_compliance(self, table_key, data, staging_id):
+    """阶段1：合规性校验（不依赖外部数据）"""
+    errors = []
+    config = STAGING_TABLE_CONFIG.get(table_key)
+    schema_class = config["schema"]
+    
+    self.validate_required_from_schema(errors, staging_id, data, schema_class)
+    self.validate_enums_from_schema(errors, staging_id, data, schema_class)
+    self.validate_ranges_from_schema(errors, staging_id, data, schema_class)
+    self.validate_max_lengths_from_schema(errors, staging_id, data, schema_class)
+    
+    return errors
+
+async def validate_relations(self, table_key, data, staging_id):
+    """阶段2：关联校验（依赖外部数据）"""
+    errors = []
+    
+    await self.validate_foreign_keys_from_config(errors, staging_id, data, table_key)
+    is_unique, dup_errors = await self.check_duplicate(table_key, data, staging_id)
+    errors.extend(dup_errors)
+    
+    return errors
+```
+
+### 11.2 状态枚举扩展
+
+**新增状态**：
+
+```python
+# _base.py
+class StagingStatus(str, Enum):
+    """缓冲表数据状态"""
+    PENDING = "pending"
+    COMPLIANCE_PASS = "compliance_pass"
+    COMPLIANCE_ERROR = "compliance_error"
+    RELATION_PASS = "relation_pass"
+    RELATION_ERROR = "relation_error"
+    APPROVED = "approved"
+    SYNCED = "synced"
+```
+
+**状态流转图**：
+
+```
+pending
+    ├─→ compliance_pass → relation_pass → approved → synced
+    │                  └─→ relation_error
+    └─→ compliance_error
+```
+
+### 11.3 校验规则文档化API
+
+**新增API端点**：
+
+| 端点 | 方法 | 功能 |
+|------|------|------|
+| `/mds/rules/{table_key}` | GET | 获取指定表的完整校验规则文档 |
+| `/mds/rules/list` | GET | 获取所有表的校验规则列表 |
+
+**API实现**：
+
+```python
+# staging_routers.py
+@rt.get("/rules/{table_key}", summary="获取指定表的校验规则文档")
+async def get_validation_rules(table_key: str):
+    if table_key not in STAGING_TABLE_CONFIG:
+        raise HTTPException(status_code=404, detail=f"Table {table_key} not found")
+    
+    config = STAGING_TABLE_CONFIG[table_key]
+    rules_doc = generate_validation_rules_doc(table_key, config)
+    return standard_response(data=rules_doc)
+
+@rt.get("/rules/list", summary="获取所有表的校验规则列表")
+async def list_validation_rules():
+    rules_list = []
+    for table_key, config in STAGING_TABLE_CONFIG.items():
+        rules_doc = generate_validation_rules_doc(table_key, config)
+        rules_list.append({
+            "table_key": table_key,
+            "display_name": config["display_name"],
+            "rules": rules_doc
+        })
+    return standard_response(data=rules_list)
+```
+
+**规则文档结构**：
+
+```python
+# 返回数据结构示例
+{
+    "table_key": "t_material",
+    "display_name": "物料表",
+    "required_fields": [
+        {"field": "materialno", "description": "物料号"},
+        {"field": "description", "description": "物料描述"}
+    ],
+    "enum_fields": [
+        {"field": "abc", "description": "ABC分类", "values": ["A", "B", "C"]}
+    ],
+    "range_fields": [
+        {"field": "lotmin", "description": "最小批量", "ge": 0}
+    ],
+    "max_length_fields": [
+        {"field": "materialno", "description": "物料号", "max_length": 20}
+    ],
+    "foreign_keys": [],
+    "business_rules": [],
+    "business_keys": ["materialno", "plant"]
+}
+```
+
+### 11.4 前端通用组件库完善
+
+**新增JS文件**：
+
+| 文件 | 功能 |
+|------|------|
+| `common.js` | 通用工具函数、状态映射、API调用封装 |
+| `form-renderer.js` | 表单渲染器 |
+| `modal-manager.js` | 弹窗管理器 |
+
+**状态映射（common.js）**：
+
+```javascript
+const STATUS_LABELS = {
+    'pending': '待处理',
+    'compliance_pass': '合规通过',
+    'compliance_error': '合规错误',
+    'relation_pass': '外键通过',
+    'relation_error': '外键错误',
+    'approved': '已审批',
+    'synced': '已同步'
+};
+
+const STATUS_CLASSES = {
+    'pending': 'bg-secondary',
+    'compliance_pass': 'bg-info',
+    'compliance_error': 'bg-danger',
+    'relation_pass': 'bg-success',
+    'relation_error': 'bg-warning',
+    'approved': 'bg-primary',
+    'synced': 'bg-secondary'
+};
+```
+
+### 11.5 向后兼容性处理
+
+**统计字段兼容**：
+
+```python
+# staging_routers.py
+# 为响应添加兼容字段
+stats["validated"] = stats.get("compliance_pass", 0) + stats.get("relation_pass", 0)
+stats["rejected"] = stats.get("compliance_error", 0) + stats.get("relation_error", 0)
+```
+
+### 11.6 修改文件清单
+
+| 文件 | 变更类型 | 核心改动 |
+|------|----------|----------|
+| `_base.py` | **新增** | 新增 `generate_validation_rules_doc()` 函数，状态枚举扩展 |
+| `staging_cleaner.py` | **重构** | 两阶段校验实现，`validate_compliance()` 和 `validate_relations()` 拆分 |
+| `staging_routers.py` | **新增** | 新增校验规则文档化API端点，向后兼容性处理 |
+| `common.js` | **新增** | 通用工具函数、状态映射 |
+| `form-renderer.js` | **新增** | 表单渲染器 |
+| `modal-manager.js` | **新增** | 弹窗管理器 |
+| `data-table.js` | 优化 | 数据表格组件 |
+| `status-card.js` | 优化 | 状态卡片组件 |
+| `custom.css` | 优化 | 自定义样式 |
+| 各业务页HTML | 优化 | 统一更新，复用通用组件 |
+
+---
+
+## 十二、v2.3版本更新详情
 
 ### 9.1 校验错误详情展示
 
