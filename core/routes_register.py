@@ -9,6 +9,71 @@ import os
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# MDS 页面配置字典
+MDS_PAGE_CONFIG = {
+    "material": {
+        "page_title": "物料数据清洗管理",
+        "keyword_placeholder": "搜索物料号或描述...",
+        "config_file": "material.config.js"
+    },
+    "workcenter": {
+        "page_title": "工作中心数据清洗管理",
+        "keyword_placeholder": "搜索工作中心或描述...",
+        "config_file": "workcenter.config.js"
+    },
+    "mat-ver": {
+        "page_title": "产线版本数据清洗管理",
+        "keyword_placeholder": "搜索物料号或版本号...",
+        "config_file": "mat-ver.config.js"
+    },
+    "mat-wc": {
+        "page_title": "工艺路线数据清洗管理",
+        "keyword_placeholder": "搜索物料号或工作中心...",
+        "config_file": "mat-wc.config.js"
+    },
+    "mat-wc-bom": {
+        "page_title": "BOM数据清洗管理",
+        "keyword_placeholder": "搜索父件或子件料号...",
+        "config_file": "mat-wc-bom.config.js"
+    },
+    "mold": {
+        "page_title": "模具数据清洗管理",
+        "keyword_placeholder": "搜索模具编号或描述...",
+        "config_file": "mold.config.js"
+    },
+    "mat-wc-mold": {
+        "page_title": "机台模具数据清洗管理",
+        "keyword_placeholder": "搜索物料号或模具编号...",
+        "config_file": "mat-wc-mold.config.js"
+    }
+}
+
+def render_mds_page(page_key):
+    """使用模板渲染MDS页面"""
+    template_path = os.path.join(BASE_DIR, "static", "mds", "pages", "template.html")
+    with open(template_path, "r", encoding="utf-8") as f:
+        template = f.read()
+    
+    config = MDS_PAGE_CONFIG[page_key]
+    
+    # 准备替换变量
+    replacements = {
+        "{page_title}": config["page_title"],
+        "{keyword_placeholder}": config["keyword_placeholder"],
+        "{config_file}": config["config_file"]
+    }
+    
+    # 设置导航栏高亮
+    for key in MDS_PAGE_CONFIG.keys():
+        replacements[f"{{{key.replace('-', '_')}_active}}"] = "active" if key == page_key else ""
+    
+    # 执行替换
+    html = template
+    for old, new in replacements.items():
+        html = html.replace(old, new)
+    
+    return html
+
 
 router = APIRouter()
 
@@ -55,42 +120,28 @@ def register_routes(app):
     
     @app.get("/mds/material", response_class=HTMLResponse, include_in_schema=False)
     async def mds_material():
-        file_path = os.path.join(BASE_DIR, "static", "mds", "pages", "material.html")
-        with open(file_path, "r", encoding="utf-8") as f:
-            return f.read()
+        return render_mds_page("material")
     
     @app.get("/mds/workcenter", response_class=HTMLResponse, include_in_schema=False)
     async def mds_workcenter():
-        file_path = os.path.join(BASE_DIR, "static", "mds", "pages", "workcenter.html")
-        with open(file_path, "r", encoding="utf-8") as f:
-            return f.read()
+        return render_mds_page("workcenter")
     
     @app.get("/mds/mat-ver", response_class=HTMLResponse, include_in_schema=False)
     async def mds_mat_ver():
-        file_path = os.path.join(BASE_DIR, "static", "mds", "pages", "mat-ver.html")
-        with open(file_path, "r", encoding="utf-8") as f:
-            return f.read()
+        return render_mds_page("mat-ver")
     
     @app.get("/mds/mat-wc", response_class=HTMLResponse, include_in_schema=False)
     async def mds_mat_wc():
-        file_path = os.path.join(BASE_DIR, "static", "mds", "pages", "mat-wc.html")
-        with open(file_path, "r", encoding="utf-8") as f:
-            return f.read()
+        return render_mds_page("mat-wc")
     
     @app.get("/mds/mat-wc-bom", response_class=HTMLResponse, include_in_schema=False)
     async def mds_mat_wc_bom():
-        file_path = os.path.join(BASE_DIR, "static", "mds", "pages", "mat-wc-bom.html")
-        with open(file_path, "r", encoding="utf-8") as f:
-            return f.read()
+        return render_mds_page("mat-wc-bom")
     
     @app.get("/mds/mold", response_class=HTMLResponse, include_in_schema=False)
     async def mds_mold():
-        file_path = os.path.join(BASE_DIR, "static", "mds", "pages", "mold.html")
-        with open(file_path, "r", encoding="utf-8") as f:
-            return f.read()
+        return render_mds_page("mold")
     
     @app.get("/mds/mat-wc-mold", response_class=HTMLResponse, include_in_schema=False)
     async def mds_mat_wc_mold():
-        file_path = os.path.join(BASE_DIR, "static", "mds", "pages", "mat-wc-mold.html")
-        with open(file_path, "r", encoding="utf-8") as f:
-            return f.read()
+        return render_mds_page("mat-wc-mold")

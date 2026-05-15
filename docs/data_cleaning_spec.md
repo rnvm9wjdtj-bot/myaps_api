@@ -1094,6 +1094,7 @@ async def batch_update_staging(request: Request, table_name: str, data: dict = B
 | 2026-05-13 | v2.5 | 重大更新：多账套同步支持、前端内存泄漏修复、None值累加全面修复、错误信息格式统一、刷新同步逻辑优化 |
 | 2026-05-14 | v3.0 | **架构级重构**：校验逻辑从硬编码转为配置驱动，通过Pydantic Schema自动提取校验规则，大幅提升可维护性和扩展性 |
 | 2026-05-15 | v3.1 | **两阶段校验增强**：新增合规性校验、关联校验分阶段处理，新增校验规则文档化API，完善前端通用组件库 |
+| 2026-05-15 | v3.2 | **前端架构重构**：通用控制器 + 配置驱动，所有表共用同一套代码，新增表只需编写配置文件 |
 
 ---
 
@@ -1841,7 +1842,212 @@ stats["rejected"] = stats.get("compliance_error", 0) + stats.get("relation_error
 
 ---
 
-## 十二、v2.3版本更新详情
+## 十二、v3.2版本更新详情
+
+### 12.1 前端架构重构概览
+
+**核心设计理念**：所有表共用同一套代码，新增表只需编写配置文件。
+
+**架构演进**：
+
+| 阶段 | 实现方式 | 新增表成本 |
+|------|----------|------------|
+| v2.5- | 每个表单独编写JS + HTML | 数百行代码 |
+| v3.0 | 配置驱动后端校验 | 数行配置 |
+| v3.2 | 配置驱动前后端 | 仅需配置文件 |
+
+### 12.2 配置文件设计
+
+**新增配置目录**：`static/mds/configs/`
+
+**配置文件结构**：
+
+```javascript
+// material.config.js
+const MDS_PAGE_CONFIG = {
+    tableKey: 't_material',
+    tableDisplayName: '物料',
+    
+    display: {
+        columns: [
+            { field: '_status', title: '状态', width: '80px' },
+            { field: '_createtime', title: '创建时间', width: '180px', sortable: true },
+            { field: 'materialno', title: '物料号', width: '100px', sortable: true },
+            { field: 'description', title: '物料描述', width: '150px' },
+            // ... 更多字段
+        ],
+        defaultSortField: '_createtime',
+        defaultSortDir: 'desc',
+        
+        advancedFilterCategories: {
+            stringFields: [...],
+            enumFields: [...],
+            dateFields: [...]
+        }
+    },
+    
+    edit: {
+        fields: [...]
+    }
+};
+```
+
+**配置文件清单**：
+
+| 配置文件 | 对应表 |
+|----------|--------|
+| `material.config.js` | t_material |
+| `workcenter.config.js` | t_workcenter |
+| `mat-ver.config.js` | t_mat_ver |
+| `mat-wc.config.js` | t_mat_wc |
+| `mat-wc-bom.config.js` | t_mat_wc_bom |
+| `mold.config.js` | t_mold |
+| `mat-wc-mold.config.js` | t_mat_wc_mold |
+
+### 12.3 通用页面控制器
+
+**新增核心文件**：`mds-page-controller.js`（1219行）
+
+**控制器架构**：
+
+```javascript
+class MDSPageController {
+    constructor(config) {
+        this.config = config;
+        this.tableKey = config.tableKey;
+        this.tableDisplayName = config.tableDisplayName;
+        
+        this.tableMeta = null;
+        this.dataTable = null;
+        this.statusCard = null;
+        
+        this.fieldValues = {};
+        this.nullFields = new Set();
+        
+        this.init();
+    }
+    
+    async init() {
+        await this.loadTableMeta();
+        this.initStatusCard();
+        this.initDataTable();
+        this.bindEvents();
+    }
+    
+    // 从 /rules/{tableKey} API 加载校验规则元数据
+    async loadTableMeta() {
+        const response = await callApi(`/rules/${this.tableKey}`);
+        if (response.success === 1) {
+            this.tableMeta = response.data;
+        }
+    }
+    
+    // 动态获取字段信息（从API元数据或配置文件）
+    getFieldLabel(fieldName) { ... }
+    getFieldType(fieldName) { ... }
+    getEnumOptions(fieldName) { ... }
+    isRequiredField(fieldName) { ... }
+    
+    // 核心功能
+    loadData() { ... }
+    validateData() { ... }
+    approveData() { ... }
+    syncToProduction() { ... }
+}
+```
+
+**核心特性**：
+
+1. **元数据驱动**：从 `/rules/{tableKey}` API 动态加载字段信息、枚举选项、必填字段
+2. **配置驱动**：表特定配置（列定义、排序、筛选等）完全外部化
+3. **完整功能**：数据加载、校验、审批、同步、编辑、删除等所有功能通用化
+4. **模板页面**：`template.html` 作为所有表的统一入口
+
+### 12.4 页面模板化
+
+**文件变更**：
+
+| 变更 | 说明 |
+|------|------|
+| 重命名 | `material.html` → `template.html` |
+| 删除 | mat-ver.html、mat-wc-bom.html、mat-wc-mold.html、mat-wc.html、mold.html、workcenter.html |
+
+**模板页面使用**：
+
+```html
+<!-- template.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MDS - {{config.tableDisplayName}}</title>
+    <!-- 通用资源引用 -->
+    <script src="../configs/{{tableKey}}.config.js"></script>
+    <script src="../js/mds-page-controller.js"></script>
+</head>
+<body>
+    <!-- 通用模板结构 -->
+</body>
+</html>
+```
+
+### 12.5 后端配合更新
+
+**新增路由**：
+
+```python
+# routes_register.py
+# 新增表的API路由注册
+```
+
+**全局常量更新**：
+
+```python
+# globalconst.py
+# 表配置更新
+```
+
+### 12.6 新增表开发流程（v3.2版本）
+
+**新增表只需3步**：
+
+```
+1. 后端：定义Schema + 配置 STAGING_TABLE_CONFIG
+   ↓
+2. 前端：编写 {tableKey}.config.js 配置文件
+   ↓
+3. 完成！
+```
+
+**对比v2.5版本**：
+
+| 阶段 | v2.5及之前 | v3.2 |
+|------|------------|------|
+| 后端 | 100+行代码 | Schema + 配置 |
+| 前端 | 500+行代码 | 仅配置文件 |
+| 总计 | >600行代码 | <100行配置 |
+
+### 12.7 修改文件清单
+
+| 文件 | 变更类型 | 核心改动 |
+|------|----------|----------|
+| `_base.py` | 优化 | 配合前端重构 |
+| `routes_register.py` | 优化 | 新增路由注册 |
+| `globalconst.py` | 优化 | 全局常量更新 |
+| `mds-page-controller.js` | **新增** | 通用页面控制器（1219行） |
+| `material.config.js` | **新增** | 物料表配置 |
+| `workcenter.config.js` | **新增** | 工作中心表配置 |
+| `mat-ver.config.js` | **新增** | 产线版本表配置 |
+| `mat-wc.config.js` | **新增** | 工艺路线表配置 |
+| `mat-wc-bom.config.js` | **新增** | 物料清单表配置 |
+| `mold.config.js` | **新增** | 模具表配置 |
+| `mat-wc-mold.config.js` | **新增** | 机台模具关联表配置 |
+| `material.js` | 优化 | 简化为配置驱动 |
+| `template.html` | **重命名** | `material.html` → `template.html` |
+| 5个旧页面文件 | **删除** | 不再需要单独的页面文件 |
+
+---
+
+## 十三、v2.3版本更新详情
 
 ### 9.1 校验错误详情展示
 

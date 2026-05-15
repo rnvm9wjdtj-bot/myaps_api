@@ -374,18 +374,17 @@ async function syncData() {
     }
     
     const stats = response.data;
-    const validatedCount = stats.validated || 0;
+    const validatedCount = stats.relation_pass || stats.validated || 0;
     const retryExceeded = stats.retry_exceeded || 0;
     
     if (validatedCount === 0) {
-        showMessage('没有校验通过的记录可同步', 'warning');
-        return;
+        showMessage('没有外键通过的记录可推送', 'warning');
     }
     
     // 如果有超过重试次数的记录，询问是否重置
     let resetRetry = false;
     if (retryExceeded > 0) {
-        resetRetry = confirm(`有${retryExceeded}条记录的重试次数已达上限，是否重置重试次数后同步？\n\n点击"确定"重置并同步，点击"取消"跳过这些记录`);
+        resetRetry = confirm(`有${retryExceeded}条记录的重试次数已达上限，是否重置重试次数后推送？\n\n点击"确定"重置并推送，点击"取消"跳过这些记录`);
     }
     
     const { mode, targetDbs } = await showSyncModeDialog(validatedCount);
@@ -394,7 +393,7 @@ async function syncData() {
     const targetDbParam = targetDbs.join(',');
     const totalCount = validatedCount * targetDbs.length;
     
-    showProgress(mode === 'incremental' ? '增量同步中' : '刷新同步中', totalCount);
+    showProgress(mode === 'incremental' ? '增量推送中' : '刷新推送中', totalCount);
     
     let totalSynced = 0;
     let totalFailed = 0;
@@ -405,14 +404,14 @@ async function syncData() {
     
     // 刷新模式只调用一次，增量模式循环调用
     if (mode === 'refresh') {
-        // 刷新模式：一次性同步
+        // 刷新模式：一次性推送
         setProgressIndeterminate(true);
         const syncResponse = await callApi(baseUrl, 'POST');
         setProgressIndeterminate(false);
         
         if (syncResponse.success !== 1) {
             hideProgress();
-            showMessage(syncResponse.message || '同步失败', 'danger');
+            showMessage(syncResponse.message || '推送失败', 'danger');
         } else {
             const syncStats = syncResponse.data;
             totalSynced = syncStats.total_synced || 0;
@@ -421,9 +420,9 @@ async function syncData() {
             
             // 根据成功/失败显示不同消息
             if (totalFailed > 0) {
-                showMessage(`同步完成: ${targetDbs.length}个账套, 成功${totalSynced}条, 失败${totalFailed}条（部分记录缺少必填字段）`, 'warning');
+                showMessage(`推送完成: ${targetDbs.length}个账套, 成功${totalSynced}条, 失败${totalFailed}条（部分记录缺少必填字段）`, 'warning');
             } else {
-                showMessage(`同步完成: ${targetDbs.length}个账套, 成功${totalSynced}条`, 'success');
+                showMessage(`推送完成: ${targetDbs.length}个账套, 成功${totalSynced}条`, 'success');
             }
         }
     } else {
@@ -438,7 +437,7 @@ async function syncData() {
             
             if (syncResponse.success !== 1) {
                 hideProgress();
-                showMessage(syncResponse.message || '同步失败', 'danger');
+                showMessage(syncResponse.message || '推送失败', 'danger');
                 break;
             }
             
@@ -463,9 +462,9 @@ async function syncData() {
         
         // 根据成功/失败显示不同消息
         if (totalFailed > 0) {
-            showMessage(`同步完成: ${targetDbs.length}个账套, 成功${totalSynced}条, 失败${totalFailed}条（部分记录缺少必填字段）`, 'warning');
+            showMessage(`推送完成: ${targetDbs.length}个账套, 成功${totalSynced}条, 失败${totalFailed}条（部分记录缺少必填字段）`, 'warning');
         } else {
-            showMessage(`同步完成: ${targetDbs.length}个账套, 成功${totalSynced}条`, 'success');
+            showMessage(`推送完成: ${targetDbs.length}个账套, 成功${totalSynced}条`, 'success');
         }
     }
     
@@ -486,7 +485,7 @@ async function showSyncModeDialog(validatedCount) {
                 <div class="modal-dialog modal-dialog-centered">
                     <div class="modal-content">
                         <div class="modal-header">
-                            <h5 class="modal-title">选择同步模式</h5>
+                            <h5 class="modal-title">选择推送模式</h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body">
@@ -500,35 +499,35 @@ async function showSyncModeDialog(validatedCount) {
                                         </div>
                                     `).join('')}
                                 </div>
-                                <div class="form-text">默认全选，可取消勾选排除不需要同步的账套</div>
+                                <div class="form-text">默认全选，可取消勾选排除不需要推送的账套</div>
                             </div>
                             <hr>
                             <div class="mb-3">
-                                <label class="form-label fw-bold">同步模式</label>
+                                <label class="form-label fw-bold">推送模式</label>
                                 <div class="form-check">
                                     <input class="form-check-input" type="radio" name="syncMode" id="modeIncremental" value="incremental" checked>
                                     <label class="form-check-label" for="modeIncremental">
-                                        <strong>增量同步</strong> <span class="badge bg-primary">${validatedCount}条</span>
+                                        <strong>增量推送</strong> <span class="badge bg-primary">${validatedCount}条</span>
                                     </label>
-                                    <div class="text-muted small mt-1">仅同步校验通过的新数据，保留正式表现有数据</div>
+                                    <div class="text-muted small mt-1">仅推送校验通过的新数据，保留正式表现有数据</div>
                                 </div>
                             </div>
                             <div class="mb-3">
                                 <div class="form-check">
                                     <input class="form-check-input" type="radio" name="syncMode" id="modeRefresh" value="refresh">
                                     <label class="form-check-label" for="modeRefresh">
-                                        <strong>刷新同步</strong> <span class="badge bg-warning text-dark">${validatedCount}条</span>
+                                        <strong>刷新推送</strong> <span class="badge bg-warning text-dark">${validatedCount}条</span>
                                     </label>
-                                    <div class="text-muted small mt-1">清空正式表后，重新同步校验通过的数据</div>
+                                    <div class="text-muted small mt-1">清空正式表后，重新推送校验通过的数据</div>
                                 </div>
                             </div>
                             <div class="alert alert-warning small mb-0">
-                                <i class="bi bi-exclamation-triangle"></i> 刷新同步将<strong>删除正式表所有数据</strong>，请谨慎操作！
+                                <i class="bi bi-exclamation-triangle"></i> 刷新推送将<strong>删除正式表所有数据</strong>，请谨慎操作！
                             </div>
                         </div>
                         <div class="modal-footer">
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                            <button type="button" class="btn btn-primary" id="confirmSyncBtn">开始同步</button>
+                            <button type="button" class="btn btn-primary" id="confirmSyncBtn">开始推送</button>
                         </div>
                     </div>
                 </div>
@@ -562,7 +561,7 @@ async function showSyncModeDialog(validatedCount) {
 }
 
 async function syncAllData() {
-    if (!confirm('确定要同步所有校验通过的数据吗？')) return;
+    if (!confirm('确定要推送所有校验通过的数据吗？')) return;
     
     showLoading();
     
@@ -571,7 +570,7 @@ async function syncAllData() {
     hideLoading();
     
     handleResponse(response, (data) => {
-        showMessage('所有表同步完成', 'success');
+        showMessage('所有表推送完成', 'success');
         dataTable.refresh();
         statusCard.refresh();
     });

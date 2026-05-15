@@ -3,12 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>物料数据清洗管理</title>
+    <title>{page_title}</title>
     <link href="/static/mds/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/static/mds/css/custom.css">
 </head>
 <body>
-    <!-- 导航栏 -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-2">
         <div class="container-fluid">
             <a class="navbar-brand" href="/mds">📊 数据清洗管理系统</a>
@@ -18,49 +17,50 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
-                        <a class="nav-link active" href="/mds/material">📦 物料</a>
+                        <a class="nav-link {material_active}" href="/mds/material">📦 物料</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/mds/workcenter">🏭 工作中心</a>
+                        <a class="nav-link {workcenter_active}" href="/mds/workcenter">🏭 工作中心</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/mds/mat-ver">📋 产线版本</a>
+                        <a class="nav-link {mat_ver_active}" href="/mds/mat-ver">📋 产线版本</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/mds/mat-wc">🛠️ 工艺路线</a>
+                        <a class="nav-link {mat_wc_active}" href="/mds/mat-wc">🛠️ 工艺路线</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/mds/mat-wc-bom">📐 BOM</a>
+                        <a class="nav-link {mat_wc_bom_active}" href="/mds/mat-wc-bom">📐 BOM</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/mds/mold">🔧 模具</a>
+                        <a class="nav-link {mold_active}" href="/mds/mold">🔧 模具</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/mds/mat-wc-mold">🔩 机台模具</a>
+                        <a class="nav-link {mat_wc_mold_active}" href="/mds/mat-wc-mold">🔩 机台模具</a>
                     </li>
                 </ul>
                 <div class="d-flex gap-2">
                     <button class="btn btn-outline-light btn-sm" style="width:100px" id="validateAllBtn">校验全部</button>
-                    <button class="btn btn-outline-light btn-sm" style="width:100px" id="syncAllBtn">同步全部</button>
+                    <button class="btn btn-outline-light btn-sm" style="width:100px" id="syncAllBtn">推送全部</button>
                 </div>
             </div>
         </div>
     </nav>
 
     <div class="container-fluid py-2">
-        <!-- 状态统计卡片 -->
         <div class="row mb-2">
             <div class="col-12" id="statusCardContainer"></div>
         </div>
 
-        <!-- 操作按钮 + 筛选区域 -->
         <div class="filter-bar mb-2">
             <div class="row g-2 align-items-center">
                 <div class="col-auto">
                     <button class="btn btn-primary btn-sm" style="width:100px" data-bs-toggle="modal" data-bs-target="#uploadModal">导入</button>
                     <button class="btn btn-success btn-sm" style="width:100px" id="validateBtn">校验</button>
-                    <button class="btn btn-info btn-sm" style="width:100px" id="syncBtn">同步</button>
+                    <button class="btn btn-info btn-sm" style="width:100px" id="syncBtn">推送</button>
                     <button class="btn btn-outline-warning btn-sm" style="width:100px" id="rulesBtn">校验规则</button>
+                </div>
+                <div class="col-auto ms-auto">
+                    <button class="btn btn-outline-info btn-sm" style="width:100px" id="downloadTemplateBtn">下载模板</button>
                 </div>
                 <div class="col-auto">
                     <select class="form-select form-select-sm" id="statusFilter" style="width:100px">
@@ -68,7 +68,7 @@
                         <option value="pending">待处理</option>
                         <option value="validated">校验通过</option>
                         <option value="rejected">校验失败</option>
-                        <option value="synced">已同步</option>
+                        <option value="synced">已推送</option>
                     </select>
                 </div>
                 <div class="col-auto">
@@ -81,7 +81,7 @@
                     </select>
                 </div>
                 <div class="col-auto flex-grow-1">
-                    <input type="text" class="form-control form-control-sm" id="keywordInput" placeholder="搜索物料号或描述...">
+                    <input type="text" class="form-control form-control-sm" id="keywordInput" placeholder="{keyword_placeholder}">
                 </div>
                 <div class="col-auto">
                     <button class="btn btn-primary btn-sm" id="searchBtn">查询</button>
@@ -91,11 +91,9 @@
             </div>
         </div>
 
-        <!-- 数据列表区域 -->
         <div class="data-table-container" id="tableContainer"></div>
     </div>
 
-    <!-- 上传弹窗 -->
     <div class="modal fade" id="uploadModal" tabindex="-1">
         <div class="modal-dialog">
             <div class="modal-content">
@@ -125,7 +123,6 @@
         </div>
     </div>
 
-    <!-- 精准筛选弹窗 -->
     <div class="modal fade" id="advancedFilterModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
@@ -177,7 +174,6 @@
         </div>
     </div>
 
-    <!-- 批量编辑弹窗 -->
     <div class="modal fade" id="batchEditModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
@@ -203,7 +199,6 @@
         </div>
     </div>
 
-    <!-- 编辑弹窗 -->
     <div class="modal fade" id="editModal" tabindex="-1">
         <div class="modal-dialog modal-xl">
             <div class="modal-content">
@@ -228,6 +223,12 @@
     <script src="/static/mds/js/api-client.js"></script>
     <script src="/static/mds/js/data-table.js"></script>
     <script src="/static/mds/js/status-card.js"></script>
-    <script src="/static/mds/js/material.js"></script>
+    <script src="/static/mds/configs/{config_file}"></script>
+    <script src="/static/mds/js/mds-page-controller.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            new MDSPageController(MDS_PAGE_CONFIG);
+        });
+    </script>
 </body>
 </html>

@@ -368,6 +368,105 @@ INTERNAL_FIELDS = {'memo', 'sys_user', 'sys_date', 'sys_stamp'}
 EXCLUDE_FIELDS = ['_createtime', '_updatetime', 'sys_date', 'sys_stamp']
 
 
+def extract_all_fields(schema_class, model_class) -> List[Dict[str, Any]]:
+    """
+    从Schema和Model提取完整的字段元数据
+    
+    Args:
+        schema_class: Pydantic Schema类
+        model_class: Tortoise Model类
+    
+    Returns:
+        字段元数据列表
+    """
+    fields = []
+    
+    if not schema_class or not model_class:
+        return fields
+    
+    # 获取字段映射
+    field_map = get_field_map(model_class)
+    
+    for field_name, field_info in schema_class.model_fields.items():
+        if field_name.startswith('_'):
+            continue
+            
+        # 判断字段类型
+        annotation = field_info.annotation
+        data_type = 'string'
+        
+        # 判断数据类型
+        if isinstance(annotation, type):
+            if issubclass(annotation, (int, float)):
+                data_type = 'number'
+            elif issubclass(annotation, Enum):
+                data_type = 'enum'
+        
+        # 获取枚举选项
+        enum_options = None
+        if data_type == 'enum' and hasattr(annotation, 'get_options'):
+            enum_options = annotation.get_options()
+        
+        # 判断是否必填
+        is_required = field_info.is_required()
+        
+        # 获取范围约束
+        ge = getattr(field_info, 'ge', None)
+        gt = getattr(field_info, 'gt', None)
+        le = getattr(field_info, 'le', None)
+        lt = getattr(field_info, 'lt', None)
+        
+        # 获取最大长度
+        max_length = getattr(field_info, 'max_length', None)
+        
+        # 获取描述
+        description = field_info.description or field_name
+        
+        # 构建字段元数据
+        field_meta = {
+            "field": field_name,
+            "title": description,
+            "description": description,
+            "data_type": data_type,
+            "is_required": is_required,
+            "is_internal": False,
+            "enum_options": enum_options,
+            "range": {
+                "ge": ge,
+                "gt": gt,
+                "le": le,
+                "lt": lt
+            },
+            "max_length": max_length
+        }
+        
+        fields.append(field_meta)
+    
+    # 添加内部字段
+    internal_fields_config = {
+        '_staging_id', '_source_system', '_source_id', '_status',
+        '_error_msg', '_transform_rules', '_retry_count',
+        '_createtime', '_updatetime', '_synced_id', '_synced_time'
+    }
+    
+    for field_name in internal_fields_config:
+        if field_name in model_class._meta.fields_map:
+            field = model_class._meta.fields_map[field_name]
+            fields.append({
+                "field": field_name,
+                "title": field.description or field_name,
+                "description": field.description or field_name,
+                "data_type": 'string',
+                "is_required": False,
+                "is_internal": True,
+                "enum_options": None,
+                "range": None,
+                "max_length": None
+            })
+    
+    return fields
+
+
 def generate_validation_rules_doc(table_key: str, config: Dict) -> Dict[str, Any]:
     """
     生成完整的校验规则文档
@@ -386,6 +485,7 @@ def generate_validation_rules_doc(table_key: str, config: Dict) -> Dict[str, Any
     doc = {
         "table_name": extract_display_name_from_model(model_class),
         "table_key": table_key,
+        "fields": [],
         
         "required_fields": [],
         "enum_fields": [],
@@ -395,6 +495,10 @@ def generate_validation_rules_doc(table_key: str, config: Dict) -> Dict[str, Any
         "foreign_keys": [],
         "business_keys": []
     }
+    
+    # 完整字段元数据
+    if schema_class and model_class:
+        doc["fields"] = extract_all_fields(schema_class, model_class)
     
     # 必填字段
     if schema_class:
