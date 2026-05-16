@@ -2,6 +2,7 @@
 数据清洗API路由
 提供缓冲表数据接收、校验、审批、同步等接口
 """
+import json
 from typing import List, Dict, Optional, Literal
 from datetime import datetime
 from fastapi import APIRouter, Query, Body, HTTPException, status, Request, UploadFile, File
@@ -44,16 +45,45 @@ def create_staging_endpoint(table_key: str, config: Dict):
         request: Request,
         data: List[Dict] = Body(..., description=f"{config['display_name']}数据列表"),
         source_system: str = Query("unknown", description="来源系统"),
+        dedup_strategy: str = Query("overwrite", description="去重策略: overwrite/skip/reject"),
     ):
-        """接收外部系统的{config['display_name']}数据"""
+        """接收外部系统的{config['display_name']}数据，支持去重"""
         try:
-            count = await insert_to_staging_table(
-                config['model'], config['table_name'], data, source_system
+            from apps.data_opt.utils.duplicate_checker import apply_dedup_strategy, DedupStrategy
+            
+            # 应用去重策略
+            strategy = DedupStrategy(dedup_strategy)
+            processed_data, handled_data = await apply_dedup_strategy(
+                table_key, data, strategy
             )
+            
+            inserted_count = 0
+            
+            if processed_data:
+                # OVERWRITE策略：先删除已存在的记录
+                if strategy == DedupStrategy.OVERWRITE:
+                    overwrite_records = [h for h in handled_data if h.get("action") == "overwrite"]
+                    if overwrite_records:
+                        await delete_existing_records(config['model'], config['table_name'], overwrite_records)
+                
+                inserted_count = await insert_to_staging_table(
+                    config['model'], config['table_name'], processed_data, source_system
+                )
+            
+            # 统计
+            overwrite_count = len([h for h in handled_data if h.get("action") == "overwrite"])
+            skip_count = len(handled_data) - overwrite_count
+            
             return standard_response(
                 success=1,
-                message=f"成功接收 {count} 条{config['display_name']}数据到缓冲表",
-                data={"count": count}
+                message=f"导入完成: 新增{inserted_count - overwrite_count}条, 覆盖{overwrite_count}条, 跳过{skip_count}条",
+                data={
+                    "total": len(data),
+                    "inserted": inserted_count,
+                    "overwritten": overwrite_count,
+                    "skipped": skip_count,
+                    "handled_details": handled_data[:20]
+                }
             )
         except Exception as e:
             import traceback
@@ -271,6 +301,7 @@ async def sync_to_production(
     mode: str = Query("incremental", description="同步模式: incremental-增量, refresh-刷新"),
     target_dbs: str = Query(None, description="目标账套列表(逗号分隔)"),
     reset_retry: bool = Query(False, description="是否重置重试次数"),
+    skip_truncate: bool = Query(False, description="是否跳过清空表(刷新模式分批调用时使用)"),
     db_name: str = Query(THIS_DB_NAME, description="账套")
 ):
     """将缓冲表数据同步到正式表
@@ -281,6 +312,7 @@ async def sync_to_production(
             - refresh: 清空正式表后同步全部记录
         target_dbs: 目标账套列表，多个用逗号分隔，为空则同步到所有账套
         reset_retry: 是否重置重试次数（将retry_count设为0）
+        skip_truncate: 刷新模式分批调用时，后续批次跳过 TRUNCATE
     """
     try:
         from core.settings import MYAPS_DBSET_LIST, MYAPS_MAIN_DB
@@ -319,16 +351,23 @@ async def sync_to_production(
                     max_retries=max_retries,
                     mode=mode,
                     target_db=target_db,
-                    update_status=False  # 不更新状态
+                    update_status=False,  # 不更新状态
+                    skip_truncate=skip_truncate
                 )
                 all_stats[target_db] = stats
             
             # 第二步：统一更新缓冲表状态
-            # 只有全部成功时才标记为synced，否则标记为rejected
-            total_synced = sum(s.get("synced", 0) for s in all_stats.values())
+            all_synced_ids = []
+            all_dedup_ids = []
+            
+            for target_db, db_stats in all_stats.items():
+                all_synced_ids.extend(db_stats.get("synced_staging_ids", []))
+                all_dedup_ids.extend(db_stats.get("dedup_staging_ids", []))
+            
+            total_synced = len(all_synced_ids)
             total_failed = sum(s.get("failed", 0) for s in all_stats.values())
             
-            if total_synced > 0 or total_failed > 0:
+            if all_synced_ids or all_dedup_ids:
                 from tortoise import Tortoise
                 
                 staging_model = STAGING_MODEL_MAPPING.get(table_name)
@@ -337,20 +376,27 @@ async def sync_to_production(
                     staging_table_name = staging_model._meta.db_table
                     synced_time = datetime.now()
                     
-                    # 更新成功的记录为synced（只有validated状态且无错误的记录）
-                    if total_synced > 0:
-                        # 先查询需要更新的staging_id
-                        success_ids_query = f'SELECT "_staging_id" FROM "{staging_table_name}" WHERE "_status" = $1 AND "_error_msg" IS NULL LIMIT $2'
-                        success_ids_result = await conn.execute_query(success_ids_query, ("relation_pass", total_synced))
-                        success_ids = [row["_staging_id"] for row in success_ids_result[1]] if success_ids_result[1] else []
-                        
-                        if success_ids:
-                            update_query = f'UPDATE "{staging_table_name}" SET "_status" = $1, "_synced_time" = $2 WHERE "_staging_id" = ANY($3)'
-                            await conn.execute_query(update_query, ("synced", synced_time, success_ids))
-                            logger.info(f"已更新成功记录状态: {len(success_ids)}条")
+                    # 更新成功同步的记录
+                    if all_synced_ids:
+                        update_query = f'UPDATE "{staging_table_name}" SET "_status" = $1, "_synced_time" = $2 WHERE "_staging_id" = ANY($3)'
+                        await conn.execute_query(update_query, ("synced", synced_time, all_synced_ids))
+                        logger.info(f"已更新成功记录状态: {len(all_synced_ids)}条")
                     
-                    # 失败记录已在sync_to_production中标记为rejected，无需再次更新
-                    logger.info(f"同步完成: {staging_table_name}, 成功{total_synced}条, 失败{total_failed}条")
+                    # 更新去重失败的记录
+                    if all_dedup_ids:
+                        for staging_id in all_dedup_ids:
+                            error_json = json.dumps([{
+                                "staging_id": staging_id,
+                                "error_type": "duplicate_key",
+                                "error_field": None,
+                                "error_value": None,
+                                "error_message": f"数据重复：存在相同主键的记录，被去重丢弃"
+                            }], ensure_ascii=False)
+                            update_query = f'UPDATE "{staging_table_name}" SET "_status" = $1, "_error_msg" = $2 WHERE "_staging_id" = $3'
+                            await conn.execute_query(update_query, ("relation_error", error_json, staging_id))
+                        logger.info(f"已更新去重失败记录状态: {len(all_dedup_ids)}条")
+                    
+                    logger.info(f"同步完成: {staging_table_name}, 成功{len(all_synced_ids)}条, 去重失败{len(all_dedup_ids)}条, 其他失败{total_failed}条")
         else:
             # 单账套：同步后立即更新状态
             all_stats = {}
@@ -361,34 +407,38 @@ async def sync_to_production(
                     max_retries=max_retries,
                     mode=mode,
                     target_db=target_db,
-                    update_status=True  # 立即更新状态
+                    update_status=True,  # 立即更新状态
+                    skip_truncate=skip_truncate
                 )
                 all_stats[target_db] = stats
         
         # 汇总统计
-        total_synced = sum(s.get("synced") or 0 for s in all_stats.values())
+        total_synced = sum(len(s.get("synced_staging_ids", [])) for s in all_stats.values())
         total_failed = sum(s.get("failed") or 0 for s in all_stats.values())
         total_skipped = sum(s.get("skipped") or 0 for s in all_stats.values())
+        total_dedup = sum(len(s.get("dedup_staging_ids", [])) for s in all_stats.values())
         
         # 将details转为数组格式
         details_list = [
             {
                 "target_db": db_name,
-                "synced": stats.get("synced") or 0,
+                "synced": len(stats.get("synced_staging_ids", [])),
                 "failed": stats.get("failed") or 0,
-                "skipped": stats.get("skipped") or 0
+                "skipped": stats.get("skipped") or 0,
+                "dedup": len(stats.get("dedup_staging_ids", []))
             }
             for db_name, stats in all_stats.items()
         ]
         
         return standard_response(
             success=1,
-            message=f"同步完成: {len(target_db_list)}个账套, 成功{total_synced}条, 失败{total_failed}条",
+            message=f"同步完成: {len(target_db_list)}个账套, 成功{total_synced}条, 去重失败{total_dedup}条, 其他失败{total_failed}条",
             data={
                 "target_dbs": target_db_list,
                 "total_synced": total_synced,
                 "total_failed": total_failed,
                 "total_skipped": total_skipped,
+                "total_dedup": total_dedup,
                 "details": details_list
             }
         )

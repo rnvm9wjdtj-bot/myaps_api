@@ -149,7 +149,8 @@ class DuplicateChecker:
         
         duplicate_data = []
         for dup_info in internal_duplicates:
-            for idx in dup_info["indices"]:
+            # 只将重复的记录（除第一条外）加入 duplicate_data
+            for idx in dup_info["indices"][1:]:
                 duplicate_data.append({
                     "index": idx,
                     "data": data_list[idx],
@@ -247,19 +248,43 @@ async def apply_dedup_strategy(
             })
     
     elif strategy == DedupStrategy.OVERWRITE:
-        for item in result["unique"]:
-            processed_data.append(item["data"])
+        # 收集所有内部重复的主键
+        internal_dup_pk_values = set(item["pk_value"] for item in result["duplicates"])
         
-        for item in result["duplicates"]:
-            if item["index"] == item["duplicate_count"] - 1:
-                processed_data.append(item["data"])
+        # 处理 unique 数据：如果主键有内部重复，跳过（保留最后一条）
+        for item in result["unique"]:
+            if item["pk_value"] in internal_dup_pk_values:
+                # 这条会被 duplicates 中的最后一条替代
+                handled_data.append({
+                    "data": item["data"],
+                    "reason": "内部重复（保留最后一条）",
+                    "pk_value": item["pk_value"]
+                })
             else:
+                processed_data.append(item["data"])
+        
+        # 处理内部重复：保留每组最后一条
+        internal_dup_groups = {}
+        for item in result["duplicates"]:
+            pk_value = item["pk_value"]
+            if pk_value not in internal_dup_groups:
+                internal_dup_groups[pk_value] = []
+            internal_dup_groups[pk_value].append(item)
+        
+        for pk_value, items in internal_dup_groups.items():
+            # 按索引排序，保留最后一条
+            items_sorted = sorted(items, key=lambda x: x["index"])
+            # 最后一条：导入
+            processed_data.append(items_sorted[-1]["data"])
+            # 其他条：跳过
+            for item in items_sorted[:-1]:
                 handled_data.append({
                     "data": item["data"],
                     "reason": "内部重复（保留最后一条）",
                     "pk_value": item["pk_value"]
                 })
         
+        # 处理缓冲表已存在的记录
         for item in result["existing"]:
             processed_data.append(item["data"])
             handled_data.append({
@@ -271,8 +296,13 @@ async def apply_dedup_strategy(
     
     elif strategy == DedupStrategy.REJECT:
         if result["duplicates"] or result["existing"]:
+            # 有重复数据，拒绝整个批次
             for item in result["unique"]:
-                processed_data.append(item["data"])
+                handled_data.append({
+                    "data": item["data"],
+                    "reason": "存在重复数据，拒绝导入",
+                    "pk_value": item["pk_value"]
+                })
             
             for item in result["duplicates"]:
                 handled_data.append({
@@ -288,7 +318,9 @@ async def apply_dedup_strategy(
                     "pk_value": item["pk_value"]
                 })
         else:
+            # 无重复数据，全部导入
             for item in result["unique"]:
+                processed_data.append(item["data"])
                 processed_data.append(item["data"])
     
     logger.info(

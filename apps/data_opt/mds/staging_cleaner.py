@@ -917,7 +917,7 @@ class StagingProcessor:
         self, table_name: str, batch_size: int = 100, 
         max_retries: int = 3, use_transaction: bool = True,
         mode: str = "incremental", target_db: str = None,
-        update_status: bool = True) -> Dict[str, int]:
+        update_status: bool = True, skip_truncate: bool = False) -> Dict[str, int]:
         """同步到正式表（复用自有API的db_bupsert）
         
         Args:
@@ -930,6 +930,7 @@ class StagingProcessor:
                 - refresh: 清空正式表后同步全部记录
             target_db: 目标账套名，为空则使用 MYAPS_MAIN_DB
             update_status: 是否更新缓冲表状态为synced（刷新模式多账套时可能需要设为False）
+            skip_truncate: 刷新模式分批调用时，后续批次跳过 TRUNCATE
         """
         from tortoise import Tortoise
         from core.settings import THIS_DB_NAME, MYAPS_MAIN_DB
@@ -948,18 +949,19 @@ class StagingProcessor:
             raise ValueError(f"表配置不完整: {table_name}")
         
         target_db_name = target_db if target_db else MYAPS_MAIN_DB
-        stats = {"synced": 0, "failed": 0, "skipped": 0, "target_db": target_db_name}
+        stats = {"synced": 0, "failed": 0, "skipped": 0, "target_db": target_db_name, "synced_staging_ids": []}
 
         pg_conn = Tortoise.get_connection(THIS_DB_NAME)
         staging_table_name = staging_model._meta.db_table
         target_table_name = target_model._meta.db_table
         
-        if mode == "refresh":
+        if mode == "refresh" and not skip_truncate:
             mysql_conn = Tortoise.get_connection(target_db_name)
             truncate_query = f'TRUNCATE TABLE `{target_table_name}`'
             await mysql_conn.execute_query(truncate_query)
             logger.info(f"已清空正式表: {target_table_name} (账套: {target_db_name})")
         
+        # 统一使用 batch_size 分批查询
         query = f'SELECT * FROM "{staging_table_name}" WHERE "_status" = $1 AND ("_retry_count" IS NULL OR "_retry_count" < $2) LIMIT $3'
         result = await pg_conn.execute_query(query, ("relation_pass", max_retries, batch_size))
         records_to_sync = result[1] if result[1] else []
@@ -992,6 +994,11 @@ class StagingProcessor:
         data_list = []
         staging_ids = []
         
+        # 记录每条数据的冲突键，用于追踪去重
+        from apps.io_api.utils.db_operation import DbManager
+        model_key = DbManager._get_conflict_fields(target_model)
+        conflict_key_to_staging_ids = {}  # 冲突键 -> staging_id 列表
+        
         for raw_record in records_to_sync:
             record_dict = dict(raw_record)
             staging_id = record_dict.get("_staging_id")
@@ -1006,6 +1013,13 @@ class StagingProcessor:
             # 填充默认值（关键步骤）
             data = fill_defaults(table_name, data)
             
+            # 计算冲突键
+            conflict_key = tuple(data.get(field) for field in model_key) if model_key else None
+            if conflict_key:
+                if conflict_key not in conflict_key_to_staging_ids:
+                    conflict_key_to_staging_ids[conflict_key] = []
+                conflict_key_to_staging_ids[conflict_key].append(staging_id)
+            
             try:
                 schema_obj = schema_class(**data)
                 data_list.append(schema_obj)
@@ -1013,7 +1027,6 @@ class StagingProcessor:
             except Exception as e:
                 logger.error(f"Schema转换失败 [{table_name}] _staging_id={staging_id}: {str(e)}")
                 retry_count = (record_dict.get("_retry_count") or 0) + 1
-                # Schema转换失败直接标记为rejected，不再重试
                 error_json = json.dumps([{
                     "staging_id": staging_id,
                     "error_type": "schema_error",
@@ -1029,6 +1042,13 @@ class StagingProcessor:
                     logger.error(f"更新失败记录状态时出错: {update_err}")
                 
                 stats["failed"] = (stats.get("failed") or 0) + 1
+        
+        # 检查是否有重复的冲突键
+        duplicate_keys = {k: v for k, v in conflict_key_to_staging_ids.items() if len(v) > 1}
+        if duplicate_keys:
+            logger.warning(f"发现重复的冲突键 [{table_name}]: {len(duplicate_keys)}个")
+            for conflict_key, ids in duplicate_keys.items():
+                logger.warning(f"  冲突键={conflict_key}, staging_ids={ids}")
 
         if not data_list:
             logger.warning(f"同步跳过 [{table_name}]: data_list为空，无有效数据可同步")
@@ -1047,14 +1067,60 @@ class StagingProcessor:
             logger.info(f"db_bupsert结果 [{table_name}]: success={result.success}, message={result.message}, meta={result.meta}")
             
             synced_count = result.affected_rows or 0
-            stats["synced"] = synced_count
+            created_count = result.meta.get('created_rows', 0) or 0
+            updated_count = result.meta.get('updated_rows', 0) or 0
+            distinct_total = result.meta.get('distinct_total', 0) or 0
             
-            # 只有在 update_status=True 时才更新缓冲表状态
-            if update_status and synced_count > 0:
+            stats["synced"] = synced_count
+            stats["created"] = created_count
+            stats["updated"] = updated_count
+            
+            logger.info(f"同步统计 [{table_name}]: affected={synced_count}, created={created_count}, updated={updated_count}, distinct={distinct_total}, staging_ids={len(staging_ids)}")
+            
+            # 计算实际成功同步的 staging_ids
+            synced_staging_ids = []
+            dedup_staging_ids = []
+            
+            if distinct_total < len(staging_ids):
+                # 存在去重
+                for conflict_key, ids in conflict_key_to_staging_ids.items():
+                    if len(ids) > 1:
+                        dedup_staging_ids.extend(ids[:-1])
+                
+                if dedup_staging_ids:
+                    logger.error(f"数据去重 [{table_name}]: 输入{len(staging_ids)}条, 去重后{distinct_total}条, 丢弃{len(dedup_staging_ids)}条, staging_ids={dedup_staging_ids}")
+                
+                synced_staging_ids = [sid for sid in staging_ids if sid not in dedup_staging_ids]
+            else:
+                # 无去重
+                synced_staging_ids = list(staging_ids)
+            
+            stats["synced_staging_ids"] = synced_staging_ids
+            stats["dedup_staging_ids"] = dedup_staging_ids
+            
+            if update_status:
                 synced_time = datetime.now()
-                for staging_id in staging_ids[:synced_count]:
-                    update_query = f'UPDATE "{staging_table_name}" SET "_status" = $1, "_synced_time" = $2 WHERE "_staging_id" = $3'
-                    await pg_conn.execute_query(update_query, ("synced", synced_time, staging_id))
+                
+                # 标记去重失败的记录
+                if dedup_staging_ids:
+                    for staging_id in dedup_staging_ids:
+                        error_json = json.dumps([{
+                            "staging_id": staging_id,
+                            "error_type": "duplicate_key",
+                            "error_field": None,
+                            "error_value": None,
+                            "error_message": f"数据重复：存在相同主键的记录，被去重丢弃"
+                        }], ensure_ascii=False)
+                        update_query = f'UPDATE "{staging_table_name}" SET "_status" = $1, "_error_msg" = $2 WHERE "_staging_id" = $3'
+                        await pg_conn.execute_query(update_query, ("relation_error", error_json, staging_id))
+                
+                # 标记成功同步的记录
+                if synced_staging_ids:
+                    for staging_id in synced_staging_ids:
+                        update_query = f'UPDATE "{staging_table_name}" SET "_status" = $1, "_synced_time" = $2 WHERE "_staging_id" = $3'
+                        await pg_conn.execute_query(update_query, ("synced", synced_time, staging_id))
+                    
+                    logger.info(f"已标记同步成功 [{table_name}]: {len(synced_staging_ids)}条")
             
             if result.has_errors:
                 logger.warning(f"同步部分失败 [{table_name}] 账套={target_db_name}: {result.message}")

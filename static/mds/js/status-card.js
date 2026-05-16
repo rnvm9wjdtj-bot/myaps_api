@@ -34,7 +34,7 @@ class StatusCard {
                 <div class="col">
                     <div class="card status-card active" data-status="">
                         <div class="card-body text-center">
-                            <div class="status-number text-primary" id="totalCount">-</div>
+                            <div class="status-number text-primary" id="statusTotalCount">-</div>
                             <div class="status-label">全部</div>
                         </div>
                     </div>
@@ -140,7 +140,7 @@ class StatusCard {
     updateDisplay() {
         // 计算总数
         const total = this.calculateTotal();
-        document.getElementById('totalCount').textContent = total;
+        document.getElementById('statusTotalCount').textContent = total;
         
         // 更新各状态计数
         const statusMappings = [

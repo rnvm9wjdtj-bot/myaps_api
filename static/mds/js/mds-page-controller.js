@@ -211,6 +211,7 @@ class MDSPageController {
                 if (keywordInput) keywordInput.value = '';
                 this.statusCard.setActiveStatus(null);
                 this.dataTable.filters = {};
+                this.dataTable.advancedFilters = null;
                 this.dataTable.loadData();
             });
         }
@@ -330,25 +331,43 @@ class MDSPageController {
         
         const strategy = this.getDedupStrategy();
         
+        // 禁用上传按钮，防止重复提交
+        const uploadBtn = document.getElementById('uploadBtn');
+        if (uploadBtn) {
+            uploadBtn.disabled = true;
+            uploadBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 上传中...';
+        }
+        
         showLoading();
         
-        const response = await uploadFile(this.tableKey, file, strategy);
-        
-        hideLoading();
-        
-        handleResponse(response, (data) => {
-            const result = data.data;
-            showMessage(`导入完成: 成功${result.inserted}条, 跳过${result.skipped}条`, 'success');
+        try {
+            const response = await uploadFile(this.tableKey, file, strategy);
             
-            this.resetUploadArea();
-            this.pendingFile = null;
+            hideLoading();
             
-            const uploadModal = bootstrap.Modal.getInstance(document.getElementById('uploadModal'));
-            if (uploadModal) uploadModal.hide();
-            
-            this.dataTable.refresh();
-            this.statusCard.refresh();
-        });
+            handleResponse(response, (data) => {
+                const result = data.data;
+                showMessage(`导入完成: 成功${result.inserted}条, 跳过${result.skipped}条`, 'success');
+                
+                this.resetUploadArea();
+                this.pendingFile = null;
+                
+                const uploadModal = bootstrap.Modal.getInstance(document.getElementById('uploadModal'));
+                if (uploadModal) uploadModal.hide();
+                
+                this.dataTable.refresh();
+                this.statusCard.refresh();
+            });
+        } catch (error) {
+            hideLoading();
+            showMessage('上传失败', 'danger');
+        } finally {
+            // 恢复上传按钮
+            if (uploadBtn) {
+                uploadBtn.disabled = false;
+                uploadBtn.innerHTML = '上传';
+            }
+        }
     }
     
     resetUploadArea() {
@@ -499,72 +518,59 @@ class MDSPageController {
         
         let totalSynced = 0;
         let totalFailed = 0;
+        let totalDedup = 0;
         let processed = 0;
         
         const baseUrl = `/sync/${this.tableKey}?batch_size=200&mode=${mode}&target_dbs=${encodeURIComponent(targetDbParam)}&reset_retry=${resetRetry}`;
         
-        if (mode === 'refresh') {
+        // 统一使用循环处理，支持大批量数据
+        let firstCall = true;
+        while (true) {
             setProgressIndeterminate(true);
-            const syncResponse = await callApi(baseUrl, 'POST');
+            let url = baseUrl;
+            if (!firstCall && mode === 'refresh') {
+                // 刷新模式后续调用：跳过 truncate
+                url = `/sync/${this.tableKey}?batch_size=200&mode=${mode}&target_dbs=${encodeURIComponent(targetDbParam)}&skip_truncate=true`;
+            }
+            const syncResponse = await callApi(url, 'POST');
             setProgressIndeterminate(false);
+            firstCall = false;
             
             if (syncResponse.success !== 1) {
                 hideProgress();
                 showMessage(syncResponse.message || '推送失败', 'danger');
-            } else {
-                const syncStats = syncResponse.data;
-                totalSynced = syncStats.total_synced || 0;
-                totalFailed = syncStats.total_failed || 0;
-                updateProgress(totalSynced + totalFailed, totalCount, `已处理 ${totalSynced + totalFailed}/${totalCount}`);
-                
-                if (totalFailed > 0) {
-                    showMessage(`推送完成: ${targetDbs.length}个账套, 成功${totalSynced}条, 失败${totalFailed}条（部分记录缺少必填字段）`, 'warning');
-                } else {
-                    showMessage(`推送完成: ${targetDbs.length}个账套, 成功${totalSynced}条`, 'success');
-                }
-            }
-        } else {
-            let firstCall = true;
-            while (true) {
-                setProgressIndeterminate(true);
-                const url = firstCall ? baseUrl : `/sync/${this.tableKey}?batch_size=200&mode=${mode}&target_dbs=${encodeURIComponent(targetDbParam)}`;
-                const syncResponse = await callApi(url, 'POST');
-                setProgressIndeterminate(false);
-                firstCall = false;
-                
-                if (syncResponse.success !== 1) {
-                    hideProgress();
-                    showMessage(syncResponse.message || '推送失败', 'danger');
-                    break;
-                }
-                
-                const syncStats = syncResponse.data;
-                const batchSynced = syncStats.total_synced || 0;
-                const batchFailed = syncStats.total_failed || 0;
-                
-                totalSynced += batchSynced;
-                totalFailed += batchFailed;
-                processed += batchSynced + batchFailed;
-                
-                if (processed > 0) {
-                    updateProgress(processed, totalCount, `已处理 ${processed}/${totalCount}`);
-                }
-                
-                if (batchSynced === 0 && batchFailed === 0) {
-                    break;
-                }
-                
-                await this.sleep(50);
+                break;
             }
             
-            if (totalFailed > 0) {
-                showMessage(`推送完成: ${targetDbs.length}个账套, 成功${totalSynced}条, 失败${totalFailed}条（部分记录缺少必填字段）`, 'warning');
-            } else {
-                showMessage(`推送完成: ${targetDbs.length}个账套, 成功${totalSynced}条`, 'success');
+            const syncStats = syncResponse.data;
+            const batchSynced = syncStats.total_synced || 0;
+            const batchFailed = syncStats.total_failed || 0;
+            const batchDedup = syncStats.total_dedup || 0;
+            
+            totalSynced += batchSynced;
+            totalFailed += batchFailed;
+            totalDedup += batchDedup;
+            processed += batchSynced + batchFailed + batchDedup;
+            
+            if (processed > 0) {
+                updateProgress(processed, totalCount, `已处理 ${processed}/${totalCount}`);
             }
+            
+            // 如果本批次没有处理任何记录，说明已完成
+            if (batchSynced === 0 && batchFailed === 0 && batchDedup === 0) {
+                break;
+            }
+            
+            await this.sleep(50);
         }
         
         hideProgress();
+        
+        if (totalFailed > 0 || totalDedup > 0) {
+            showMessage(`推送完成: ${targetDbs.length}个账套, 成功${totalSynced}条, 去重失败${totalDedup}条, 其他失败${totalFailed}条`, 'warning');
+        } else {
+            showMessage(`推送完成: ${targetDbs.length}个账套, 成功${totalSynced}条`, 'success');
+        }
         
         this.dataTable.refresh();
         this.statusCard.refresh();
@@ -1049,6 +1055,7 @@ class MDSPageController {
             clearBtn.addEventListener('click', () => {
                 filterConditions.innerHTML = '';
                 filterConditions.appendChild(createConditionRow(true));
+                this.dataTable.advancedFilters = null;
             });
         }
         

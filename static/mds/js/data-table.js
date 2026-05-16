@@ -87,31 +87,33 @@ class DataTable {
             </div>
             <div class="table-footer-fixed d-flex justify-content-between align-items-center px-2 py-2 bg-white border-top" style="font-size:0.75rem">
                 <div class="d-flex align-items-center gap-2">
-                    <span id="totalInfo">共 0 条</span>
-                    <select class="form-select form-select-sm" id="pageSizeSelect" style="width: 80px;">
+                    <button class="btn btn-sm btn-outline-success font-monospace" id="selectAllPagesBtn" style="width: 150px;">
+                        <i class="bi bi-check-all"></i> 全选(<span id="totalCount">0</span>)
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary font-monospace" id="batchEditBtn" disabled style="width: 150px;">
+                        <i class="bi bi-pencil"></i> 编辑(<span id="selectedCount">0</span>)
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger font-monospace" id="batchDeleteBtn" disabled style="width: 150px;">
+                        <i class="bi bi-trash"></i> 删除(<span id="selectedCountDup">0</span>)
+                    </button>
+                    <button class="btn btn-sm btn-outline-info font-monospace" id="templateBtn" style="width: 150px;">
+                        <i class="bi bi-download"></i> 导出
+                    </button>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <select class="form-select form-select-sm font-monospace" id="pageSizeSelect" style="width: 80px;">
                         <option value="50" ${this.pageSize === 50 ? 'selected' : ''}>50</option>
                         <option value="100" ${this.pageSize === 100 ? 'selected' : ''}>100</option>
                         <option value="200" ${this.pageSize === 200 ? 'selected' : ''}>200</option>
                         <option value="500" ${this.pageSize === 500 ? 'selected' : ''}>500</option>
                         <option value="1000" ${this.pageSize === 1000 ? 'selected' : ''}>1000</option>
                     </select>
-                    <span>条/页</span>
-                    <button class="btn btn-sm btn-outline-success" id="selectAllPagesBtn" style="width: 100px;">
-                        全选(<span id="totalCount">0</span>)
-                    </button>
-                    <button class="btn btn-sm btn-outline-primary ms-2" id="batchEditBtn" disabled style="width: 100px;">
-                        编辑(<span id="selectedCount">0</span>)
-                    </button>
-                    <button class="btn btn-sm btn-outline-danger" id="batchDeleteBtn" disabled style="width: 100px;">
-                        删除(<span id="selectedCountDup">0</span>)
-                    </button>
-                    <button class="btn btn-sm btn-outline-cyan" id="templateBtn" style="width: 100px;">
-                        模板
-                    </button>
+                    <span class="font-monospace">条/页</span>
+                    <span id="totalInfo" class="font-monospace">共 0 条</span>
+                    <nav>
+                        <ul class="pagination pagination-sm mb-0" id="pagination"></ul>
+                    </nav>
                 </div>
-                <nav>
-                    <ul class="pagination pagination-sm mb-0" id="pagination"></ul>
-                </nav>
             </div>
         `;
     }
@@ -161,7 +163,6 @@ class DataTable {
         // 导出选中数据
         const templateBtn = document.getElementById('templateBtn');
         if (templateBtn) {
-            templateBtn.innerHTML = '<i class="bi bi-download"></i> 导出';
             templateBtn.addEventListener('click', () => this.exportSelected());
         }
         
@@ -171,6 +172,7 @@ class DataTable {
             pageSizeSelect.addEventListener('change', (e) => {
                 this.pageSize = parseInt(e.target.value);
                 this.currentPage = 1;
+                this.clearSelection();
                 this.loadData();
             });
         }
@@ -195,6 +197,10 @@ class DataTable {
      * @param {boolean} checked - 是否选中
      */
     handleSelectAll(checked) {
+        if (!checked) {
+            this.selectedAllPages = false;
+        }
+        
         document.querySelectorAll('.row-checkbox').forEach(cb => {
             cb.checked = checked;
             const id = parseInt(cb.dataset.id);
@@ -204,6 +210,12 @@ class DataTable {
                 this.selectedIds.delete(id);
             }
         });
+        
+        // 如果选中了当前页所有记录，且当前页记录数等于总数，则标记为全选
+        if (checked && this.data.length === this.total) {
+            this.selectedAllPages = true;
+        }
+        
         this.updateSelectedCount();
     }
     
@@ -844,8 +856,28 @@ class DataTable {
         if (batchEditBtn) batchEditBtn.disabled = count === 0;
         if (batchDeleteBtn) batchDeleteBtn.disabled = count === 0;
         
+        this.updateSelectAllBtn();
+        
         if (this.onSelectionChange) {
             this.onSelectionChange(Array.from(this.selectedIds));
+        }
+    }
+    
+    /**
+     * 更新全选按钮状态
+     */
+    updateSelectAllBtn() {
+        const btn = document.getElementById('selectAllPagesBtn');
+        if (!btn) return;
+        
+        const isAllSelected = this.selectedAllPages || this.selectedIds.size === this.total;
+        
+        if (isAllSelected && this.selectedIds.size > 0) {
+            btn.className = 'btn btn-sm btn-success font-monospace';
+            btn.innerHTML = `<i class="bi bi-check-all"></i> 已全选${this.selectedIds.size}条`;
+        } else {
+            btn.className = 'btn btn-sm btn-outline-success font-monospace';
+            btn.innerHTML = `<i class="bi bi-check-all"></i> 全选`;
         }
     }
     
@@ -857,6 +889,7 @@ class DataTable {
         if (totalCount) {
             totalCount.textContent = this.total;
         }
+        this.updateSelectAllBtn();
     }
     
     /**
@@ -864,15 +897,43 @@ class DataTable {
      * @returns {Promise<void>}
      */
     async selectAllPages() {
+        // 如果已全选，则取消全选
+        if (this.selectedAllPages || this.selectedIds.size === this.total) {
+            this.clearSelection();
+            showMessage('已取消全选', 'info');
+            return;
+        }
+        
         if (this.total === 0) {
             showMessage('没有可选择的记录', 'warning');
             return;
         }
         
-        if (!confirm(`确定选中全部 ${this.total} 条记录吗？\n\n注意：这将获取所有分页的记录ID，可能需要较长时间。`)) {
+        // 如果数据量不超过当前页大小，直接选中
+        if (this.total <= this.pageSize) {
+            this.selectedIds.clear();
+            document.querySelectorAll('.row-checkbox').forEach(cb => {
+                cb.checked = true;
+                this.selectedIds.add(parseInt(cb.dataset.id));
+            });
+            
+            if (this.data.length === this.total) {
+                this.selectedAllPages = true;
+            }
+            
+            this.updateSelectedCount();
+            showMessage(`已选中 ${this.selectedIds.size} 条记录`, 'success');
             return;
         }
         
+        // 数据量超过 1000 条时需要确认（防止误操作导致大量请求）
+        if (this.total > 1000) {
+            if (!confirm(`确定选中全部 ${this.total} 条记录吗？\n\n数据量较大，获取所有记录可能需要较长时间。`)) {
+                return;
+            }
+        }
+        
+        // 1000 条以内，直接执行全选（用户已点击全选按钮，说明意图明确）
         showLoading();
         
         try {

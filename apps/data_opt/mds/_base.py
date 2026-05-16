@@ -17,12 +17,12 @@ from tortoise import fields
 class StagingStatus(str, Enum):
     """缓冲表数据状态"""
     PENDING = ("pending", "待处理", "warning")
-    COMPLIANCE_PASS = ("compliance_pass", "合规通过", "info")
-    COMPLIANCE_ERROR = ("compliance_error", "合规错误", "danger")
-    RELATION_PASS = ("relation_pass", "关联通过", "success")
-    RELATION_ERROR = ("relation_error", "关联错误", "warning")
+    COMPLIANCE_PASS = ("compliance_pass", "基本校验通过", "info")
+    COMPLIANCE_ERROR = ("compliance_error", "基本校验错误", "danger")
+    RELATION_PASS = ("relation_pass", "联合校验通过", "success")
+    RELATION_ERROR = ("relation_error", "联合校验错误", "warning")
     APPROVED = ("approved", "已审批", "primary")
-    SYNCED = ("synced", "已同步", "secondary")
+    SYNCED = ("synced", "已推送", "secondary")
 
     def __new__(cls, value, label, color):
         obj = str.__new__(cls, value)

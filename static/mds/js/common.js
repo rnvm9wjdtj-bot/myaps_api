@@ -628,7 +628,7 @@ async function showValidationRulesModal(tableKey, tableName) {
         
         modalManager.register('validationRules', {
             id: 'validationRulesModal',
-            title: `📋 ${tableName || tableKey} 校验规则`,
+            title: `${tableName || tableKey} 校验规则`,
             size: 'lg',
             body: (data) => {
                 if (!data.rules) {

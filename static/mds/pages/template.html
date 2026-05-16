@@ -41,10 +41,10 @@
                     </li>
                 </ul>
                 <div class="d-flex gap-2">
-                    <button class="btn btn-outline-light btn-sm" style="width:100px" id="validateAllBtn">
+                    <button class="btn btn-outline-light btn-sm font-monospace" style="width:150px" id="validateAllBtn">
                         <i class="bi bi-check2-all"></i> 校验全部
                     </button>
-                    <button class="btn btn-outline-light btn-sm" style="width:100px" id="syncAllBtn">
+                    <button class="btn btn-outline-light btn-sm font-monospace" style="width:150px" id="syncAllBtn">
                         <i class="bi bi-send-fill"></i> 推送全部
                     </button>
                 </div>
@@ -59,17 +59,17 @@
 
         <div class="filter-bar mb-2">
             <div class="row g-2 align-items-center">
-                <div class="col-auto">
-                    <button class="btn btn-primary btn-sm" style="width:100px" data-bs-toggle="modal" data-bs-target="#uploadModal">
+                <div class="col-auto d-flex gap-2">
+                    <button class="btn btn-primary btn-sm font-monospace" style="width:150px" data-bs-toggle="modal" data-bs-target="#uploadModal">
                         <i class="bi bi-upload"></i> 导入
                     </button>
-                    <button class="btn btn-success btn-sm" style="width:100px" id="validateBtn">
+                    <button class="btn btn-success btn-sm font-monospace" style="width:150px" id="validateBtn">
                         <i class="bi bi-check2-circle-fill"></i> 校验
                     </button>
-                    <button class="btn btn-info btn-sm" style="width:100px" id="syncBtn">
+                    <button class="btn btn-info btn-sm font-monospace" style="width:150px" id="syncBtn">
                         <i class="bi bi-send-fill"></i> 推送
                     </button>
-                    <button class="btn btn-outline-warning btn-sm" style="width:100px" id="rulesBtn">
+                    <button class="btn btn-outline-warning btn-sm font-monospace" style="width:150px" id="rulesBtn">
                         <i class="bi bi-sliders"></i> 校验规则
                     </button>
                 </div>
@@ -94,15 +94,15 @@
                 <div class="col-auto flex-grow-1">
                     <input type="text" class="form-control form-control-sm" id="keywordInput" placeholder="{keyword_placeholder}">
                 </div>
-                <div class="col-auto">
-                    <button class="btn btn-primary btn-sm" id="searchBtn">
+                <div class="col-auto d-flex gap-2">
+                    <button class="btn btn-primary btn-sm font-monospace" style="width:150px" id="searchBtn">
                         <i class="bi bi-search"></i> 查询
                     </button>
-                    <button class="btn btn-outline-secondary btn-sm" id="resetBtn">
-                        <i class="bi bi-arrow-counterclockwise"></i> 重置
-                    </button>
-                    <button class="btn btn-outline-info btn-sm" data-bs-toggle="modal" data-bs-target="#advancedFilterModal">
+                    <button class="btn btn-outline-info btn-sm font-monospace" style="width:150px" data-bs-toggle="modal" data-bs-target="#advancedFilterModal">
                         <i class="bi bi-funnel"></i> 精准筛选
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm font-monospace" style="width:150px" id="resetBtn">
+                        <i class="bi bi-arrow-counterclockwise"></i> 重置
                     </button>
                 </div>
             </div>
