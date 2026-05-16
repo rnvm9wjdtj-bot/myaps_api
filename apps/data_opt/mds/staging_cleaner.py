@@ -129,9 +129,9 @@ STAGING_TABLE_CONFIG = {
         "display_name": "产线版本",
         "validator": lambda cleaner, data, staging_id: cleaner.validate_mat_ver(data, staging_id),
         "config_rules": [
-            create_comparison_rule("lotfrom", "lotto", ">", "批量下限不能大于批量上限"),
+            create_comparison_rule("lotfrom", "lotto", "<=", "批量下限不能大于批量上限"),
         ],
-        # "business_keys": ["materialno", "matver"],
+        # "business_keys": ["materialno", "matver"],  # 由 proto_model 的 unique_together 自动提取
     },
     "t_mat_wc": {
         "schema": AcceptMatWc,
@@ -265,7 +265,9 @@ def initialize_table_config():
         meta = config["model"]._meta
         config["table_name"] = getattr(meta, 'db_table', getattr(meta, 'table', table_key + '_staging'))
         config["defaults"] = extract_defaults_from_schema(config["schema"])
-        config["business_keys"] = extract_business_keys_from_model(config["proto_model"])
+        # 只有未手动配置 business_keys 时才自动提取
+        if "business_keys" not in config:
+            config["business_keys"] = extract_business_keys_from_model(config["proto_model"])
 
 
 # 标记是否已初始化

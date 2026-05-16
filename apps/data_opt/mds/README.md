@@ -17,6 +17,7 @@
 - [步骤五：实现校验器](#步骤五实现校验器可选)
 - [配置字段说明](#配置字段说明)
 - [外键配置说明](#外键配置说明)
+- [业务主键配置注意事项](#业务主键配置注意事项)
 - [完整示例](#完整示例)
 
 ---
@@ -329,6 +330,74 @@ async def validate_xxx_rules(cleaner, data, staging_id):
 1. **自动校验**：系统自动检查外键值是否在引用表中存在
 2. **选项 API**：配置 `value_field` 和 `label_field` 后，可通过 `/fk-options/{table_key}/{field_name}` 获取下拉选项
 3. **复合外键**：需要通过 `business_rules` 自定义校验函数
+
+---
+
+## 业务主键配置注意事项
+
+### 自动提取逻辑
+
+系统通过 `extract_business_keys_from_model()` 自动从正式表模型提取业务主键，优先级为：
+
+1. **`unique_together` 约束**（最高优先级）
+2. **`unique=True` 的字段**
+3. **主键字段**（排除自增 `id`）
+
+### 常见问题
+
+#### 问题：去重失效，插入重复数据
+
+**原因**：模型有自增主键（如 `vid`），自动提取返回 `['vid']` 而非业务主键。
+
+**示例**：
+```python
+# apps/io_api/models.py
+class TMatVer(TortoiseBaseModel):
+    vid = fields.IntField(pk=True)  # 自增主键
+    materialno = fields.CharField(max_length=64)
+    matver = fields.CharField(max_length=4)
+    
+    class Meta:
+        unique_together = [("materialno", "matver")]  # 业务主键
+```
+
+**错误提取**：`['vid']`（使用自增主键去重）  
+**正确提取**：`['materialno', 'matver']`（使用业务主键去重）
+
+#### 解决方案
+
+**方案一：正确配置 `unique_together`**（推荐）
+
+```python
+class ProtoMatVer(TortoiseBaseModel):
+    materialno = fields.CharField(max_length=64)
+    matver = fields.CharField(max_length=4)
+    
+    class Meta:
+        abstract = True
+        unique_together = [("materialno", "matver")]  # 业务主键约束
+```
+
+**方案二：显式配置 `business_keys`**
+
+```python
+STAGING_TABLE_CONFIG["t_mat_ver"] = {
+    ...
+    "business_keys": ["materialno", "matver"],  # 覆盖自动提取
+}
+```
+
+### 操作注意事项
+
+1. **修改配置后需重启服务**
+2. **检查日志确认提取结果**：
+   ```python
+   # 添加临时调试日志
+   logger.info(f"pk_fields={config.get('business_keys', [])}")
+   ```
+3. **复合主键必须配置 `unique_together`**：
+   - 单字段主键：`unique=True` 或 `pk=True`
+   - 复合主键：`unique_together = [("field1", "field2")]`
 
 ---
 

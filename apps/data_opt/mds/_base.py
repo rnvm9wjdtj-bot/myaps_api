@@ -241,9 +241,9 @@ def extract_business_keys_from_model(model_class: Type[TortoiseBaseModel]) -> Li
     从正式表模型自动提取业务主键
     
     优先级：
-    1. 主键字段（pk）
-    2. unique_together 约束
-    3. unique=True 的字段
+    1. unique_together 约束（业务主键）
+    2. unique=True 的字段
+    3. 主键字段（pk，排除自增ID）
     
     Args:
         model_class: 正式表模型类（如 TMaterial）
@@ -251,19 +251,23 @@ def extract_business_keys_from_model(model_class: Type[TortoiseBaseModel]) -> Li
     Returns:
         业务主键字段列表
     """
-    pk_field = model_class._meta.pk
-    if pk_field and pk_field.model_field_name != 'id':
-        return [pk_field.model_field_name]
-    
     meta = getattr(model_class, '_meta', None)
+    
+    # 优先使用 unique_together（业务主键）
     if meta:
         unique_together = getattr(meta, 'unique_together', None)
         if unique_together and len(unique_together) > 0:
             return list(unique_together[0])
     
+    # 其次检查 unique=True 的字段
     for field_name, field in model_class._meta.fields_map.items():
         if getattr(field, 'unique', False):
             return [field_name]
+    
+    # 最后检查主键（排除自增ID和虚拟主键vid）
+    pk_field = model_class._meta.pk
+    if pk_field and pk_field.model_field_name not in ('id', 'vid'):
+        return [pk_field.model_field_name]
     
     return []
 
