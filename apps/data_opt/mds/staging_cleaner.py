@@ -3,7 +3,7 @@
 包含字段校验、关联校验、数据转换等功能
 """
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple, Type
 from enum import Enum
 
@@ -15,6 +15,8 @@ from ._base import (
     get_field_map, extract_defaults_from_schema, extract_required_fields,
     extract_enum_fields, extract_range_fields, extract_max_length_fields,
     extract_business_keys_from_model, extract_display_name_from_model,
+    BusinessRule, create_comparison_rule, create_range_rule, 
+    create_positive_rule, create_not_equal_rule,
 )
 from .staging_models import (
     ValidationError, TransformRule,
@@ -31,37 +33,11 @@ logger = log_config.get_logger(__name__)
 
 
 # ==============================================
-# 业务规则校验函数
+# 业务规则校验函数（保留：有特殊外键存在校验）
 # ==============================================
 
-async def validate_material_rules(cleaner, data, staging_id):
-    """物料业务规则校验"""
-    errors = []
-    lotmin = data.get("lotmin")
-    lotmax = data.get("lotmax")
-    if lotmin is not None and lotmax is not None and lotmin > lotmax:
-        errors.append(cleaner._create_error(
-            staging_id, ErrorType.BUSINESS_RULE, "lotmin/lotmax",
-            f"{lotmin}/{lotmax}", "最小批量不能大于最大批量"
-        ))
-    return errors
-
-
-async def validate_mat_ver_rules(cleaner, data, staging_id):
-    """产线版本业务规则校验"""
-    errors = []
-    lotfrom = data.get("lotfrom")
-    lotto = data.get("lotto")
-    if lotfrom is not None and lotto is not None and lotfrom > lotto:
-        errors.append(cleaner._create_error(
-            staging_id, ErrorType.BUSINESS_RULE, "lotfrom/lotto",
-            f"{lotfrom}/{lotto}", "批量下限不能大于批量上限"
-        ))
-    return errors
-
-
 async def validate_mat_wc_rules(cleaner, data, staging_id):
-    """工艺路线业务规则校验"""
+    """工艺路线业务规则校验：外键存在校验"""
     errors = []
     if data.get("materialno") and data.get("matver"):
         exists = await TMatVer.filter(materialno=data["materialno"], matver=data["matver"]).exists()
@@ -74,13 +50,9 @@ async def validate_mat_wc_rules(cleaner, data, staging_id):
 
 
 async def validate_mat_wc_bom_rules(cleaner, data, staging_id):
-    """物料清单业务规则校验"""
+    """物料清单业务规则校验：外键存在校验"""
     errors = []
-    if data.get("productno") == data.get("materialno"):
-        errors.append(cleaner._create_error(
-            staging_id, ErrorType.BUSINESS_RULE, "productno/materialno",
-            f"{data.get('productno')}/{data.get('materialno')}", "父件和子件不能为同一物料"
-        ))
+    # productno/materialno 比较已用 config_rules 替代
     if data.get("productno") and data.get("matver"):
         exists = await TMatVer.filter(materialno=data["productno"], matver=data["matver"]).exists()
         if not exists:
@@ -99,33 +71,12 @@ async def validate_mat_wc_bom_rules(cleaner, data, staging_id):
                 staging_id, ErrorType.FK_NOT_FOUND, "itemno",
                 f"{data['productno']}/{data['matver']}/{data['itemno']}", "关联的工序不存在"
             ))
-    if data.get("qty") is not None and data["qty"] <= 0:
-        errors.append(cleaner._create_error(
-            staging_id, ErrorType.INVALID_RANGE, "qty", data["qty"], "用量必须大于0"
-        ))
-    if data.get("scrap") is not None and (data["scrap"] < 0 or data["scrap"] > 100):
-        errors.append(cleaner._create_error(
-            staging_id, ErrorType.INVALID_RANGE, "scrap", data["scrap"], "损耗率必须在0-100之间"
-        ))
-    return errors
-
-
-async def validate_mold_rules(cleaner, data, staging_id):
-    """模具业务规则校验"""
-    errors = []
-    if data.get("moldnum") is not None and data["moldnum"] < 1:
-        errors.append(cleaner._create_error(
-            staging_id, ErrorType.INVALID_RANGE, "moldnum", data["moldnum"], "模具穴数必须≥1"
-        ))
-    if data.get("qty") is not None and data["qty"] < 1:
-        errors.append(cleaner._create_error(
-            staging_id, ErrorType.INVALID_RANGE, "qty", data["qty"], "模具台数必须≥1"
-        ))
+    # qty 和 scrap 范围已用 config_rules 替代
     return errors
 
 
 async def validate_mat_wc_mold_rules(cleaner, data, staging_id):
-    """机台模具关联业务规则校验"""
+    """机台模具关联业务规则校验：外键存在校验"""
     errors = []
     if data.get("materialno") and data.get("workcenter") and data.get("itemno"):
         exists = await TMatWc.filter(
@@ -149,12 +100,8 @@ STAGING_TABLE_CONFIG = {
         "foreign_keys": [],
         "display_name": "物料",
         "validator": lambda cleaner, data, staging_id: cleaner.validate_material(data, staging_id),
-        "business_rules": [
-            {
-                "name": "最小批量≤最大批量",
-                "description": "最小批量不能大于最大批量",
-                "validator": validate_material_rules,
-            }
+        "config_rules": [
+            create_comparison_rule("lotmin", "lotmax", ">", "最小批量不能大于最大批量"),
         ],
         # "business_keys": ["materialno"],
     },
@@ -165,7 +112,6 @@ STAGING_TABLE_CONFIG = {
         "foreign_keys": [],
         "display_name": "工作中心",
         "validator": lambda cleaner, data, staging_id: cleaner.validate_workcenter(data, staging_id),
-        "business_rules": [],
         # "business_keys": ["workcenter"],
     },
     "t_mat_ver": {
@@ -173,16 +119,17 @@ STAGING_TABLE_CONFIG = {
         "model": TMatVerStaging,
         "proto_model": TMatVer,
         "foreign_keys": [
-            {"field": "materialno", "model": TMaterial},
+            {
+                "field": "materialno",
+                "model": TMaterial,
+                "value_field": "materialno",
+                "label_field": "description"
+            },
         ],
         "display_name": "产线版本",
         "validator": lambda cleaner, data, staging_id: cleaner.validate_mat_ver(data, staging_id),
-        "business_rules": [
-            {
-                "name": "批量下限≤批量上限",
-                "description": "批量下限不能大于批量上限",
-                "validator": validate_mat_ver_rules,
-            }
+        "config_rules": [
+            create_comparison_rule("lotfrom", "lotto", ">", "批量下限不能大于批量上限"),
         ],
         # "business_keys": ["materialno", "matver"],
     },
@@ -191,8 +138,18 @@ STAGING_TABLE_CONFIG = {
         "model": TMatWcStaging,
         "proto_model": TMatWc,
         "foreign_keys": [
-            {"field": "materialno", "model": TMaterial},
-            {"field": "workcenter", "model": TWorkcenter},
+            {
+                "field": "materialno",
+                "model": TMaterial,
+                "value_field": "materialno",
+                "label_field": "description"
+            },
+            {
+                "field": "workcenter",
+                "model": TWorkcenter,
+                "value_field": "workcenter",
+                "label_field": "workcentername"
+            },
         ],
         "display_name": "工艺路线",
         "validator": lambda cleaner, data, staging_id: cleaner.validate_mat_wc(data, staging_id),
@@ -210,19 +167,44 @@ STAGING_TABLE_CONFIG = {
         "model": TMatWcBomStaging,
         "proto_model": TMatWcBom,
         "foreign_keys": [
-            {"field": "productno", "model": TMaterial},
-            {"field": "materialno", "model": TMaterial},
-            {"field": "workcenter", "model": TWorkcenter},
-            {"field": "itemno", "model": TMatWc},
+            {
+                "field": "productno",
+                "model": TMaterial,
+                "value_field": "materialno",
+                "label_field": "description"
+            },
+            {
+                "field": "materialno",
+                "model": TMaterial,
+                "value_field": "materialno",
+                "label_field": "description"
+            },
+            {
+                "field": "workcenter",
+                "model": TWorkcenter,
+                "value_field": "workcenter",
+                "label_field": "workcentername"
+            },
+            {
+                "field": "itemno",
+                "model": TMatWc,
+                "value_field": "itemno",
+                "label_field": "description"
+            },
         ],
         "display_name": "物料清单",
         "validator": lambda cleaner, data, staging_id: cleaner.validate_mat_wc_bom(data, staging_id),
         "business_rules": [
             {
-                "name": "父件≠子件",
-                "description": "父件和子件不能为同一物料",
+                "name": "复合外键校验",
+                "description": "关联的产线版本和工序必须存在",
                 "validator": validate_mat_wc_bom_rules,
             }
+        ],
+        "config_rules": [
+            create_not_equal_rule("productno", "materialno", "父件和子件不能为同一物料"),
+            create_positive_rule("qty", "用量必须大于0"),
+            create_range_rule("scrap", 0, 100, "损耗率必须在0-100之间"),
         ],
         # "business_keys": ["productno", "matver", "itemno", "materialno"],
     },
@@ -233,17 +215,9 @@ STAGING_TABLE_CONFIG = {
         "foreign_keys": [],
         "display_name": "模具",
         "validator": lambda cleaner, data, staging_id: cleaner.validate_mold(data, staging_id),
-        "business_rules": [
-            {
-                "name": "模具穴数≥1",
-                "description": "模具穴数必须≥1",
-                "validator": validate_mold_rules,
-            },
-            {
-                "name": "模具台数≥1",
-                "description": "模具台数必须≥1",
-                "validator": validate_mold_rules,
-            }
+        "config_rules": [
+            create_range_rule("moldnum", 1, 9999, "模具穴数必须≥1"),
+            create_range_rule("qty", 1, 9999, "模具台数必须≥1"),
         ],
         # "business_keys": ["moldno"],
     },
@@ -252,9 +226,24 @@ STAGING_TABLE_CONFIG = {
         "model": TMatWcMoldStaging,
         "proto_model": TMatWcMold,
         "foreign_keys": [
-            {"field": "materialno", "model": TMaterial},
-            {"field": "workcenter", "model": TWorkcenter},
-            {"field": "moldno", "model": TMold},
+            {
+                "field": "materialno",
+                "model": TMaterial,
+                "value_field": "materialno",
+                "label_field": "description"
+            },
+            {
+                "field": "workcenter",
+                "model": TWorkcenter,
+                "value_field": "workcenter",
+                "label_field": "workcentername"
+            },
+            {
+                "field": "moldno",
+                "model": TMold,
+                "value_field": "moldno",
+                "label_field": "description"
+            },
         ],
         "display_name": "机台模具关联",
         "validator": lambda cleaner, data, staging_id: cleaner.validate_mat_wc_mold(data, staging_id),
@@ -329,11 +318,8 @@ def fill_defaults(table_name: str, data: Dict[str, Any]) -> Dict[str, Any]:
         if current_value in NONE_AND_EMPTY:
             # 优先使用 SCHEMA_DEFAULTS 中的默认值
             if field_name in defaults and defaults[field_name] is not None:
-                default_value = defaults[field_name]
-                if isinstance(default_value, datetime):
-                    default_value = default_value.replace(tzinfo=timezone.utc)
-                result[field_name] = default_value
-                logger.debug(f"填充默认值: {table_name}.{field_name} = {default_value}")
+                result[field_name] = defaults[field_name]
+                logger.debug(f"填充默认值: {table_name}.{field_name} = {defaults[field_name]}")
             else:
                 # 根据 Field 定义获取默认值
                 field_default = field_info.default
@@ -582,15 +568,20 @@ class DataCleaner:
         is_unique, dup_errors = await self.check_duplicate(table_key, data, staging_id)
         errors.extend(dup_errors)
 
-        # 7. 执行业务规则校验
+        # 7. 执行业务规则校验（保留：有特殊外键存在校验）
         for rule in config.get("business_rules", []):
             rule_errors = await rule["validator"](self, data, staging_id)
             errors.extend(rule_errors)
 
+        # 8. 执行配置化规则校验
+        for rule in config.get("config_rules", []):
+            if rule.validate(data):
+                errors.append(rule.create_error(staging_id))
+
         return errors
 
     async def check_duplicate(self, table_name: str, data: Dict[str, Any], staging_id: int = None) -> Tuple[bool, List[Dict]]:
-        """检测缓冲表中是否存在重复数据（使用原生SQL避免ORM时区问题）"""
+        """检测缓冲表中是否存在重复数据"""
         from tortoise import Tortoise
         
         config = STAGING_TABLE_CONFIG.get(table_name, {})
@@ -693,20 +684,25 @@ class DataCleaner:
 
     async def save_errors(self, staging_table: str, errors: List[Dict]):
         """保存错误记录"""
+        from .staging_models import ValidationError
+        
+        if not errors:
+            return
+        
         try:
+            error_objs = []
             for err in errors:
-                try:
-                    await ValidationError.create(
-                        staging_table=staging_table,
-                        staging_id=err.get("staging_id"),
-                        error_type=err["error_type"],
-                        error_field=err["error_field"],
-                        error_value=err.get("error_value"),
-                        error_message=err["error_message"],
-                        suggestion=self._get_suggestion(err["error_type"])
-                    )
-                except Exception as e:
-                    logger.warning(f"保存单条错误记录失败(已忽略): {str(e)}")
+                error_objs.append(ValidationError(
+                    staging_table=staging_table,
+                    staging_id=err.get("staging_id"),
+                    error_type=err["error_type"],
+                    error_field=err["error_field"],
+                    error_value=err.get("error_value"),
+                    error_message=err["error_message"],
+                    suggestion=self._get_suggestion(err["error_type"])
+                ))
+            
+            await ValidationError.bulk_create(error_objs)
         except Exception as e:
             import traceback
             logger.error(f"保存错误记录失败: {str(e)}")
@@ -863,9 +859,6 @@ class StagingProcessor:
                         if python_field.startswith('_'):
                             continue
                         value = record_dict.get(db_field)
-                        if isinstance(value, datetime):
-                            if value.tzinfo is None:
-                                value = value.replace(tzinfo=timezone.utc)
                         data[python_field] = value
                     
                     logger.info(f"[校验] staging_id={staging_id}, 开始校验")
@@ -1008,9 +1001,6 @@ class StagingProcessor:
                 if python_field.startswith('_'):
                     continue
                 value = record_dict.get(db_field)
-                if isinstance(value, datetime):
-                    if value.tzinfo is None:
-                        value = value.replace(tzinfo=timezone.utc)
                 data[python_field] = value
             
             # 填充默认值（关键步骤）
@@ -1061,7 +1051,7 @@ class StagingProcessor:
             
             # 只有在 update_status=True 时才更新缓冲表状态
             if update_status and synced_count > 0:
-                synced_time = datetime.now(timezone.utc).replace(tzinfo=None)
+                synced_time = datetime.now()
                 for staging_id in staging_ids[:synced_count]:
                     update_query = f'UPDATE "{staging_table_name}" SET "_status" = $1, "_synced_time" = $2 WHERE "_staging_id" = $3'
                     await pg_conn.execute_query(update_query, ("synced", synced_time, staging_id))

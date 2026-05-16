@@ -3,7 +3,7 @@
 提供缓冲表数据接收、校验、审批、同步等接口
 """
 from typing import List, Dict, Optional, Literal
-from datetime import datetime, timezone
+from datetime import datetime
 from fastapi import APIRouter, Query, Body, HTTPException, status, Request, UploadFile, File
 
 from ._base import StagingStatus, INTERNAL_FIELDS, EXCLUDE_FIELDS, convert_record_to_lowercase, generate_validation_rules_doc
@@ -330,13 +330,12 @@ async def sync_to_production(
             
             if total_synced > 0 or total_failed > 0:
                 from tortoise import Tortoise
-                from datetime import datetime, timezone
                 
                 staging_model = STAGING_MODEL_MAPPING.get(table_name)
                 if staging_model:
                     conn = Tortoise.get_connection(THIS_DB_NAME)
                     staging_table_name = staging_model._meta.db_table
-                    synced_time = datetime.now(timezone.utc).replace(tzinfo=None)
+                    synced_time = datetime.now()
                     
                     # 更新成功的记录为synced（只有validated状态且无错误的记录）
                     if total_synced > 0:
@@ -525,6 +524,106 @@ async def get_db_list():
         success=1,
         message="查询成功",
         data=MYAPS_DBSET_LIST
+    )
+
+
+@rt.get("/status-meta", summary="获取状态元数据")
+async def get_status_meta():
+    """
+    获取所有状态的元数据，包括值、标签、颜色
+
+    Returns:
+        List[Dict]: [
+            {"value": "pending", "label": "待处理", "color": "warning"},
+            ...
+        ]
+    """
+    return standard_response(
+        success=1,
+        message="查询成功",
+        data=[
+            {
+                "value": status.value,
+                "label": status.label,
+                "color": status.color
+            }
+            for status in StagingStatus
+        ]
+    )
+
+
+@rt.get("/fk-options/{table_key}/{field_name}", summary="获取外键选项")
+async def get_fk_options(
+    request: Request,
+    table_key: str,
+    field_name: str,
+    search: Optional[str] = Query(None, description="搜索关键词"),
+    limit: int = Query(100, description="返回数量限制", le=500)
+):
+    """
+    获取指定表指定字段的外键选项（阶段三新增）
+
+    Args:
+        table_key: 表键名（如 t_material）
+        field_name: 字段名（如 materialno）
+        search: 搜索关键词（可选，模糊匹配 label_field）
+        limit: 返回数量限制（默认100，最大500）
+
+    Returns:
+        [{ "value": "...", "label": "..." }, ...]
+    """
+    ensure_config_initialized()
+    
+    config = STAGING_TABLE_CONFIG.get(table_key)
+    if not config:
+        raise HTTPException(status_code=404, detail=f"表 {table_key} 不存在")
+
+    foreign_keys = config.get("foreign_keys", [])
+    fk_config = None
+    for fk in foreign_keys:
+        if fk.get("field") == field_name:
+            fk_config = fk
+            break
+    
+    if not fk_config:
+        return standard_response(
+            success=1,
+            message="无外键配置",
+            data=[]
+        )
+    
+    value_field = fk_config.get("value_field")
+    label_field = fk_config.get("label_field")
+    
+    if not value_field or not label_field:
+        return standard_response(
+            success=1,
+            message="外键未配置选项字段",
+            data=[]
+        )
+
+    model = fk_config["model"]
+
+    query = model.all()
+    if search:
+        try:
+            filter_kwargs = {f"{label_field}__contains": search}
+            query = query.filter(**filter_kwargs)
+        except Exception as e:
+            logger.warning(f"外键选项搜索失败: {e}")
+
+    items = await query.limit(limit)
+
+    return standard_response(
+        success=1,
+        message=f"查询成功，共{len(items)}条",
+        data=[
+            {
+                "value": getattr(item, value_field),
+                "label": getattr(item, label_field) or getattr(item, value_field)
+            }
+            for item in items
+        ]
     )
 
 

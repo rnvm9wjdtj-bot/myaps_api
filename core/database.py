@@ -99,7 +99,7 @@ if THIS_DB_NAME:
         },
         "min_size": 3,
         "max_size": 10,
-        "use_tz": True,
+        "use_tz": False,
     }
     TORTOISE_ORM_CONFIG["apps"]["data_opt_models"] = {
         "models": ["apps.data_opt.mds.staging_models", "aerich.models"],

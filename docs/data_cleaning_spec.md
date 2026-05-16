@@ -1096,6 +1096,7 @@ async def batch_update_staging(request: Request, table_name: str, data: dict = B
 | 2026-05-15 | v3.1 | **两阶段校验增强**：新增合规性校验、关联校验分阶段处理，新增校验规则文档化API，完善前端通用组件库 |
 | 2026-05-15 | v3.2 | **前端架构重构**：通用控制器 + 配置驱动，所有表共用同一套代码，新增表只需编写配置文件 |
 | 2026-05-15 | v3.3 | **配置自动生成 + Excel导入**：从后端 Schema 自动生成前端配置文件，新增表"零配置"，新增 Bootstrap 图标库，增强 Excel 导入功能，完成架构清理 |
+| 2026-05-16 | v4.0 | **架构完善 + 配置化**：状态元数据统一、字段元数据增强、外键选项API、业务规则配置化、旧代码清理 |
 
 ---
 
@@ -2269,7 +2270,278 @@ async def get_db_list():
 
 ---
 
-## 十四、v2.3版本更新详情
+## 十四、v4.0版本更新详情
+
+### 14.1 状态元数据统一（阶段一）
+
+**问题**：前后端各自定义状态枚举，修改时需要两边同步。
+
+**解决方案**：后端枚举增强 + 前端动态加载。
+
+**后端增强**：
+```python
+# _base.py - StagingStatus 枚举增强
+class StagingStatus(str, Enum):
+    PENDING = ("pending", "待处理", "warning")
+    COMPLIANCE_PASS = ("compliance_pass", "合规通过", "info")
+    COMPLIANCE_ERROR = ("compliance_error", "合规错误", "danger")
+    RELATION_PASS = ("relation_pass", "关联通过", "success")
+    RELATION_ERROR = ("relation_error", "关联错误", "warning")
+    APPROVED = ("approved", "已审批", "primary")
+    SYNCED = ("synced", "已同步", "secondary")
+
+    def __new__(cls, value, label, color):
+        obj = str.__new__(cls)
+        obj._value_ = value
+        obj.label = label
+        obj.color = color
+        return obj
+```
+
+**新增 API**：
+```python
+@rt.get("/status-meta", summary="获取状态元数据")
+async def get_status_meta():
+    """获取所有状态的元数据（label、color）"""
+    return standard_response(data=[
+        {
+            "value": status.value,
+            "label": status.label,
+            "color": status.color
+        }
+        for status in StagingStatus
+    ])
+```
+
+**前端兼容改造**：
+```javascript
+// common.js - 优先后端元数据，fallback到硬编码
+let STAGING_STATUS_META = null;
+
+async function loadStatusMeta() {
+    if (!STAGING_STATUS_META) {
+        const response = await callApi('/status-meta');
+        if (response.success === 1) {
+            STAGING_STATUS_META = {};
+            response.data.forEach(item => {
+                STAGING_STATUS_META[item.value] = item;
+            });
+        }
+    }
+    return STAGING_STATUS_META;
+}
+
+function getStatusConfig(status) {
+    const meta = STAGING_STATUS_META?.[status];
+    if (meta) {
+        return {
+            value: meta.value,
+            label: meta.label,
+            colorClass: `text-${meta.color}`,
+            bgClass: `bg-${meta.color}`
+        };
+    }
+    // Fallback到旧的硬编码
+    return STAGING_STATUS[status] || STAGING_STATUS.PENDING;
+}
+```
+
+### 14.2 字段元数据增强（阶段二）
+
+**增强内容**：`/rules/{table_key}` 返回完整的字段元数据。
+
+**新增字段**：
+| 字段 | 说明 |
+|------|------|
+| `data_type` | 数据类型（string/number/enum/datetime/date/boolean） |
+| `is_required` | 是否必填 |
+| `enum_options` | 枚举选项 |
+| `range_constraint` | 范围约束（ge/gt/le/lt） |
+| `max_length` | 最大长度 |
+| `readOnly` | 是否只读 |
+| `display_order` | 显示顺序 |
+| `foreign_key_to` | 外键关联表 |
+
+**向后兼容**：保留旧的 `range` 字段。
+
+### 14.3 外键选项 API（阶段三）
+
+**新增 API**：
+```python
+@rt.get("/fk-options/{table_key}/{field_name}", summary="获取外键选项")
+async def get_fk_options(
+    table_key: str, 
+    field_name: str,
+    search: Optional[str] = None
+):
+    """获取指定表指定字段的外键选项，支持搜索"""
+    config = STAGING_TABLE_CONFIG.get(table_key)
+    if not config:
+        raise HTTPException(404, "Table not found")
+    
+    fk_config = None
+    for fk in config.get("foreign_keys", []):
+        if fk["field"] == field_name:
+            fk_config = fk
+            break
+    
+    if not fk_config:
+        return standard_response(data=[])
+    
+    model = fk_config["model"]
+    value_field = fk_config.get("value_field", "materialno")
+    label_field = fk_config.get("label_field", "description")
+    
+    query = model.all()
+    if search:
+        query = query.filter(**{f"{label_field}__contains": search})
+    
+    items = await query.limit(100)
+    
+    return standard_response(data=[
+        {
+            "value": getattr(item, value_field),
+            "label": getattr(item, label_field)
+        }
+        for item in items
+    ])
+```
+
+### 14.4 业务规则配置化（阶段四）
+
+**BusinessRule 基类**：
+```python
+# _base.py - BusinessRule 基类
+class BusinessRule:
+    def __init__(self, name, description, validate_func, error_message):
+        self.name = name
+        self.description = description
+        self.validate_func = validate_func
+        self.error_message = error_message
+    
+    def validate(self, data):
+        return self.validate_func(data)
+    
+    def create_error(self, staging_id):
+        return {
+            "_staging_id": staging_id,
+            "_error_type": ErrorType.BUSINESS_RULE,
+            "_field": self.name,
+            "_bad_value": None,
+            "_error_message": self.error_message
+        }
+```
+
+**预定义规则函数**：
+```python
+# _base.py - 预定义规则
+def create_comparison_rule(field_a, field_b, operator, description):
+    """创建比较规则：field_a operator field_b"""
+    def validate(data):
+        a = data.get(field_a)
+        b = data.get(field_b)
+        if a is None or b is None:
+            return False
+        if operator == ">":
+            return a > b
+        if operator == ">=":
+            return a >= b
+        if operator == "<":
+            return a < b
+        if operator == "<=":
+            return a <= b
+        if operator == "==":
+            return a == b
+        return False
+    return BusinessRule(f"{field_a}_{operator}_{field_b}", description, validate, description)
+
+def create_not_equal_rule(field_a, field_b, description):
+    """创建不等于规则"""
+    return create_comparison_rule(field_a, field_b, "==", description)
+
+def create_positive_rule(field, description):
+    """创建正数规则"""
+    def validate(data):
+        val = data.get(field)
+        return val is not None and val <= 0
+    return BusinessRule(f"{field}_positive", description, validate, description)
+
+def create_range_rule(field, min_val, max_val, description):
+    """创建范围规则"""
+    def validate(data):
+        val = data.get(field)
+        return val is not None and (val < min_val or val > max_val)
+    return BusinessRule(f"{field}_range", description, validate, description)
+```
+
+**配置示例**：
+```python
+# staging_cleaner.py - STAGING_TABLE_CONFIG
+STAGING_TABLE_CONFIG = {
+    "t_material": {
+        "config_rules": [
+            create_comparison_rule("lotmin", "lotmax", ">", "最小批量不能大于最大批量"),
+        ],
+    },
+    "t_mat_wc_bom": {
+        "config_rules": [
+            create_not_equal_rule("productno", "materialno", "父件和子件不能为同一物料"),
+            create_positive_rule("qty", "用量必须大于0"),
+            create_range_rule("scrap", 0, 100, "损耗率必须在0-100之间"),
+        ],
+    },
+}
+```
+
+### 14.5 旧代码清理
+
+**删除的函数**（已用 config_rules 替代）：
+- `validate_material_rules` - 物料业务规则
+- `validate_mat_ver_rules` - 产线版本业务规则
+- `validate_mold_rules` - 模具业务规则
+
+**删除的配置**：
+- `t_material` 的旧 `business_rules`
+- `t_mat_ver` 的旧 `business_rules`
+- `t_mold` 的旧 `business_rules`
+
+**保留的函数**（有特殊外键存在校验）：
+- `validate_mat_wc_rules` - 复合外键存在校验
+- `validate_mat_wc_bom_rules` - 复合外键存在校验
+- `validate_mat_wc_mold_rules` - 复合外键存在校验
+
+### 14.6 修改文件清单
+
+| 文件 | 变更 | 核心改动 |
+|------|------|----------|
+| `_base.py` | +289行 | 状态枚举增强、BusinessRule 基类、辅助函数、字段元数据增强 |
+| `staging_routers.py` | +100行 | 新增 /status-meta、/fk-options API |
+| `staging_cleaner.py` | +48行 | 外键配置增强、config_rules 配置、旧代码清理 |
+| `common.js` | +65行 | loadStatusMeta、getStatusConfig 兼容改造 |
+| `status-card.js` | -3行 | 小优化 |
+| `mds_optimization_plan.md` | +1192行 | 新增优化计划文档 |
+
+### 14.7 新增表开发流程（v4.0最终版）
+
+**只需 2 步**：
+1. 在 `staging_models.py` 添加新表模型和 Schema
+2. 在 `staging_cleaner.py` 的 `STAGING_TABLE_CONFIG` 添加配置
+
+**配置示例**：
+```python
+"t_new_table": {
+    "schema": AcceptNewTable,
+    "model": TNewTableStaging,
+    "proto_model": TNewTable,
+    "foreign_keys": [...],
+    "display_name": "新表",
+    "config_rules": [...],
+}
+```
+
+---
+
+## 十五、v2.3版本更新详情
 
 ### 9.1 校验错误详情展示
 

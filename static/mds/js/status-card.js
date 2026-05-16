@@ -176,8 +176,7 @@ class StatusCard {
      * @returns {number} 总数
      */
     calculateTotal() {
-        return Object.values(STATUS_COLORS).reduce((sum, _) => sum, 0)
-            || this.stats.total 
+        return this.stats.total 
             || this.getStatusCount('pending') 
                 + this.getStatusCount('compliance_pass') 
                 + this.getStatusCount('compliance_error') 

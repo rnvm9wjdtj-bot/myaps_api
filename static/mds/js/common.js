@@ -115,6 +115,56 @@ async function callApi(endpoint, method = 'GET', data = null) {
     }
 }
 
+
+// ==================== 状态元数据加载（阶段一新增）====================
+let STAGING_STATUS_META = null;
+let STAGING_META_LOADED = false;
+
+/**
+ * 从后端加载状态元数据
+ * @param {boolean} forceReload - 强制重新加载
+ * @returns {Promise<Object|null>}
+ */
+async function loadStatusMeta(forceReload = false) {
+    if (STAGING_STATUS_META && !forceReload) {
+        return STAGING_STATUS_META;
+    }
+    
+    try {
+        const response = await callApi('/status-meta');
+        if (response && response.success === 1) {
+            STAGING_STATUS_META = {};
+            response.data.forEach(item => {
+                STAGING_STATUS_META[item.value] = item;
+            });
+            STAGING_META_LOADED = true;
+            console.log('状态元数据加载成功:', Object.keys(STAGING_STATUS_META));
+        }
+    } catch (e) {
+        console.warn('加载状态元数据失败，使用硬编码 fallback', e);
+        STAGING_META_LOADED = true;
+    }
+    
+    return STAGING_STATUS_META;
+}
+
+/**
+ * 等待状态元数据加载完成
+ * @param {number} timeout - 超时时间（毫秒）
+ * @returns {Promise<void>}
+ */
+async function waitForStatusMeta(timeout = 3000) {
+    const startTime = Date.now();
+    while (!STAGING_META_LOADED && (Date.now() - startTime) < timeout) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+    }
+}
+
+// 页面加载时自动加载状态元数据（非阻塞）
+document.addEventListener('DOMContentLoaded', () => {
+    loadStatusMeta().catch(e => console.warn('自动加载状态元数据失败', e));
+});
+
 function handleResponse(response, onSuccess, onError) {
     if (response.success === 1) {
         if (onSuccess) onSuccess(response);
@@ -186,6 +236,21 @@ function formatDateTime(dateStr) {
 function getStatusConfig(status) {
     // 兼容旧状态
     const normalizedStatus = LEGACY_STATUS_MAP[status] || status;
+    
+    // 优先使用后端元数据
+    const meta = STAGING_STATUS_META?.[normalizedStatus];
+    if (meta) {
+        return {
+            value: meta.value,
+            label: meta.label,
+            colorClass: `text-${meta.color}`,
+            bgClass: `bg-${meta.color}`,
+            badgeClass: `badge bg-${meta.color}`,
+            icon: 'circle'
+        };
+    }
+    
+    // Fallback到旧的硬编码
     const colorKey = STATUS_COLORS[normalizedStatus] || STATUS_COLORS[status] || 'secondary';
     return STAGING_STATUS[normalizedStatus.toUpperCase()] || {
         value: status,

@@ -1,10 +1,10 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional, Dict, Any
 
 from tortoise.models import Model as TortoiseBaseModel
 from tortoise import fields
 
-from core.settings import THIS_DB_NAME
+from core.settings import THIS_DB_NAME, TIMEZONE_NAME
 from apps.io_api import protomodels as pm
 from ._base import StagingStatus, StagingBaseModel
 
@@ -68,7 +68,7 @@ class ValidationError(TortoiseBaseModel):
     error_value = fields.TextField(null=True, description="错误值")
     error_message = fields.TextField(description="错误描述")
     suggestion = fields.TextField(null=True, description="修复建议")
-    createtime = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="创建时间")
+    createtime = fields.DatetimeField(auto_now_add=True, description="创建时间")
 
     class Meta:
         table = "t_validation_error"
@@ -88,8 +88,8 @@ class TransformRule(TortoiseBaseModel):
     is_active = fields.BooleanField(default=True, description="是否启用")
     priority = fields.IntField(default=0, description="优先级")
     description = fields.TextField(null=True, description="规则描述")
-    createtime = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="创建时间")
-    updatetime = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="更新时间")
+    createtime = fields.DatetimeField(auto_now_add=True, description="创建时间")
+    updatetime = fields.DatetimeField(auto_now=True, description="更新时间")
 
     class Meta:
         table = "t_transform_rule"
