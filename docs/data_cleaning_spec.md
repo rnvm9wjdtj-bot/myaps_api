@@ -1095,7 +1095,7 @@ async def batch_update_staging(request: Request, table_name: str, data: dict = B
 | 2026-05-14 | v3.0 | **架构级重构**：校验逻辑从硬编码转为配置驱动，通过Pydantic Schema自动提取校验规则，大幅提升可维护性和扩展性 |
 | 2026-05-15 | v3.1 | **两阶段校验增强**：新增合规性校验、关联校验分阶段处理，新增校验规则文档化API，完善前端通用组件库 |
 | 2026-05-15 | v3.2 | **前端架构重构**：通用控制器 + 配置驱动，所有表共用同一套代码，新增表只需编写配置文件 |
-| 2026-05-15 | v3.3 | **配置自动生成**：从后端 Schema 自动生成前端配置文件，新增表"零配置"，新增 Bootstrap 图标库 |
+| 2026-05-15 | v3.3 | **配置自动生成 + Excel导入**：从后端 Schema 自动生成前端配置文件，新增表"零配置"，新增 Bootstrap 图标库，增强 Excel 导入功能，完成架构清理 |
 
 ---
 
@@ -2180,7 +2180,62 @@ MANUAL_LABEL_MAPS = {
 3. 完成！
 ```
 
-### 13.6 修改文件清单
+### 13.6 Excel 导入功能增强
+
+**新增资源**：
+
+| 文件 | 说明 |
+|------|------|
+| `xlsx.full.min.js` | SheetJS 库（用于前端 Excel 解析） |
+
+**后端配合**：
+
+| 文件 | 变更 | 说明 |
+|------|------|------|
+| `excel_parser.py` | ±159行 | Excel 解析器优化 |
+| `duplicate_checker.py` | ±14行 | 重复检查器优化 |
+
+**新增 API**：
+
+```python
+@rt.get("/dblist", summary="获取账套列表")
+async def get_db_list():
+    """获取可用的账套列表"""
+    return standard_response(
+        success=1,
+        message="查询成功",
+        data=MYAPS_DBSET_LIST
+    )
+```
+
+### 13.7 架构清理完成
+
+**重要里程碑**：删除 `material.js`（1217行）
+
+**变更**：
+
+| 文件 | 变更类型 | 说明 |
+|------|----------|------|
+| `material.js` | **删除** | 不再需要单个表脚本 |
+
+**意义**：完全采用通用控制器架构，所有表共用同一套代码。
+
+### 13.8 组件优化
+
+**大幅优化的文件**：
+
+| 文件 | 变更 | 说明 |
+|------|------|------|
+| `data-table.js` | +293行 | 数据表格组件大幅优化 |
+| `mds-page-controller.js` | ±98行 | 通用控制器完善 |
+| `common.js` | ±63行 | 通用工具函数优化 |
+| `custom.css` | +35行 | 自定义样式新增 |
+| `status-card.js` | ±8行 | 状态卡片组件优化 |
+| `template.html` | ±30行 | 模板页面优化 |
+
+### 13.9 修改文件清单（完整版）
+
+**第一波（v3.3初始）**：
 
 | 文件 | 变更类型 | 核心改动 |
 |------|----------|----------|
@@ -2193,6 +2248,24 @@ MANUAL_LABEL_MAPS = {
 | `data-table.js` | 优化 | 配合图标库 |
 | `mds-page-controller.js` | 优化 | 配合配置自动生成 |
 | `template.html` | 优化 | 图标库集成 |
+
+**第二波（v3.3完善）**：
+
+| 文件 | 变更类型 | 核心改动 |
+|------|----------|----------|
+| `staging_routers.py` | 优化 | 新增 /dblist API |
+| `config_generator.py` | 优化 | 配置生成器优化 |
+| `duplicate_checker.py` | 优化 | 重复检查器优化 |
+| `excel_parser.py` | 优化 | Excel 解析器优化 |
+| `dev_server.bat/sh` | 优化 | 开发服务器脚本更新 |
+| `xlsx.full.min.js` | **新增** | Excel 解析库 |
+| `data-table.js` | **优化** | +293行大幅改进 |
+| `mds-page-controller.js` | 优化 | 通用控制器完善 |
+| `common.js` | 优化 | 通用工具函数优化 |
+| `custom.css` | 优化 | 自定义样式新增 |
+| `status-card.js` | 优化 | 状态卡片组件优化 |
+| `template.html` | 优化 | 模板页面优化 |
+| `material.js` | **删除** | 完全转向通用控制器（1217行） |
 
 ---
 

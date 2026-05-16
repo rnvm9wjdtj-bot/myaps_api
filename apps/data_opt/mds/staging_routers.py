@@ -12,7 +12,7 @@ from .staging_models import (
     TMatWcStaging, TMatWcBomStaging, TMoldStaging, TMatWcMoldStaging,
     ValidationError, TransformRule
 )
-from .staging_cleaner import StagingProcessor, DataTransformer, STAGING_TABLE_CONFIG, STAGING_MODEL_MAPPING
+from .staging_cleaner import StagingProcessor, DataTransformer, STAGING_TABLE_CONFIG, STAGING_MODEL_MAPPING, ensure_config_initialized
 from apps.io_api.utils.common import standard_response
 from apps.io_api.utils.db_operation import db_bupsert
 from core.settings import MYAPS_MAIN_DB, THIS_DB_NAME, MYAPS_DBSET_LIST
@@ -68,6 +68,40 @@ for table_key, config in STAGING_TABLE_CONFIG.items():
     create_staging_endpoint(table_key, config)
 
 
+async def delete_existing_records(model_class, table_name: str, records: List[Dict]) -> int:
+    """
+    删除缓冲表中已存在的记录（用于OVERWRITE策略）
+    
+    Args:
+        model_class: Tortoise ORM 模型类
+        table_name: 表名
+        records: 要删除的记录列表（包含 pk_value）
+    
+    Returns:
+        删除的记录数
+    """
+    base_table_name = table_name.replace('_staging', '')
+    pk_fields = STAGING_TABLE_CONFIG.get(base_table_name, {}).get("business_keys", [])
+    
+    if not pk_fields:
+        return 0
+    
+    count = 0
+    for record in records:
+        data = record.get("data", {})
+        conditions = {}
+        for pk in pk_fields:
+            value = data.get(pk)
+            if value is not None:
+                conditions[pk] = value
+        
+        if conditions:
+            deleted = await model_class.filter(**conditions).delete()
+            count += deleted
+    
+    return count
+
+
 async def insert_to_staging_table(
     model_class,
     table_name: str,
@@ -89,7 +123,6 @@ async def insert_to_staging_table(
         插入/更新记录数
     """
     from tortoise import Tortoise
-    from .staging_cleaner import BUSINESS_KEYS
     
     if exclude_fields is None:
         exclude_fields = EXCLUDE_FIELDS
@@ -104,17 +137,23 @@ async def insert_to_staging_table(
         field_map[field.model_field_name] = db_col_name
         field_types[field.model_field_name] = type(field).__name__
     
-    # 获取主键字段
+    # 获取主键字段（确保配置已初始化）- 用于日志记录
     base_table_name = table_name.replace('_staging', '')
-    pk_fields = BUSINESS_KEYS.get(base_table_name, [])
+    ensure_config_initialized()
+    pk_fields = STAGING_TABLE_CONFIG.get(base_table_name, {}).get("business_keys", [])
     
     count = 0
+    skipped_fields = set()
+    
     for item in data_list:
         columns = ["_source_system", "_status"]
         values = [source_system, "pending"]
         
         for key, value in item.items():
             if value is not None and key not in exclude_fields:
+                if key not in field_map:
+                    skipped_fields.add(key)
+                    continue
                 db_column = field_map.get(key, key)
                 columns.append(db_column)
                 
@@ -141,41 +180,15 @@ async def insert_to_staging_table(
         placeholders = ", ".join(["$" + str(i+1) for i in range(len(values))])
         column_list = ", ".join([f'"{col}"' for col in columns])
         
-        if pk_fields:
-            # 构建 ON CONFLICT 子句
-            pk_columns = [field_map.get(pk, pk) for pk in pk_fields]
-            conflict_target = ", ".join([f'"{col}"' for col in pk_columns])
-            
-            # 构建 UPDATE SET 子句（排除主键字段）
-            update_parts = []
-            update_values = []
-            param_offset = len(values) + 1
-            
-            for i, col in enumerate(columns):
-                if col in pk_columns:
-                    continue
-                if col in ['_createtime']:
-                    continue
-                update_parts.append(f'"{col}" = ${param_offset}')
-                update_values.append(values[i])
-                param_offset += 1
-            
-            # 添加 _updatetime
-            update_parts.append('"_updatetime" = NOW()')
-            
-            update_clause = ", ".join(update_parts)
-            all_values = values + update_values
-            
-            query = f'''
-                INSERT INTO "{table_name}" ({column_list}) VALUES ({placeholders})
-                ON CONFLICT ({conflict_target}) DO UPDATE SET {update_clause}
-            '''
-        else:
-            query = f'INSERT INTO "{table_name}" ({column_list}) VALUES ({placeholders})'
-            all_values = values
+        # 缓冲表无唯一约束，去重已在 apply_dedup_strategy 中完成，此处只需简单 INSERT
+        query = f'INSERT INTO "{table_name}" ({column_list}) VALUES ({placeholders})'
+        all_values = values
         
         await conn.execute_query(query, tuple(all_values))
         count += 1
+    
+    if skipped_fields:
+        logger.warning(f"跳过未知字段: {skipped_fields}")
     
     return count
 
@@ -807,7 +820,7 @@ async def upload_excel(
     table_name: str,
     file: UploadFile = File(..., description="Excel文件"),
     source_system: str = Query("excel", description="来源系统"),
-    dedup_strategy: str = Query("skip", description="去重策略: overwrite/skip/reject"),
+    dedup_strategy: str = Query("overwrite", description="去重策略: overwrite/skip/reject"),
     # db_name: str = Query(MYAPS_MAIN_DB, description="账套")  # 未使用，已注释
 ):
     """上传Excel文件并导入缓冲表，支持去重"""
@@ -821,7 +834,7 @@ async def upload_excel(
         
         file_bytes = await file.read()
         parser = get_parser_for_table(table_name)
-        data_list, parse_errors = parser.parse(file_bytes)
+        data_list, parse_errors = parser.parse(file_bytes, filename=file.filename)
         
         if parse_errors and not data_list:
             return standard_response(
@@ -837,18 +850,30 @@ async def upload_excel(
         
         table_name_staging = f"{table_name}_staging"
         inserted_count = 0
+        
         if processed_data:
+            # OVERWRITE策略：先删除已存在的记录
+            if strategy == DedupStrategy.OVERWRITE:
+                overwrite_records = [h for h in handled_data if h.get("action") == "overwrite"]
+                if overwrite_records:
+                    await delete_existing_records(staging_model, table_name_staging, overwrite_records)
+            
             inserted_count = await insert_to_staging_table(
                 staging_model, table_name_staging, processed_data, source_system
             )
         
+        # 统计覆盖数量
+        overwrite_count = len([h for h in handled_data if h.get("action") == "overwrite"])
+        skip_count = len(handled_data) - overwrite_count
+        
         return standard_response(
             success=1,
-            message=f"Excel导入完成: 成功{inserted_count}条, 跳过{len(handled_data)}条",
+            message=f"导入完成: 新增{inserted_count - overwrite_count}条, 覆盖{overwrite_count}条, 跳过{skip_count}条",
             data={
                 "total": len(data_list),
                 "inserted": inserted_count,
-                "skipped": len(handled_data),
+                "overwritten": overwrite_count,
+                "skipped": skip_count,
                 "parse_errors": len(parse_errors),
                 "handled_details": handled_data[:20]
             }

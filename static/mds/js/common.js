@@ -23,7 +23,7 @@ const STAGING_STATUS = {
     },
     COMPLIANCE_PASS: {
         value: 'compliance_pass',
-        label: '合规通过',
+        label: '基本校验通过',
         colorClass: 'text-info',
         bgClass: 'bg-info',
         badgeClass: 'status-badge status-badge-compliance_pass',
@@ -31,7 +31,7 @@ const STAGING_STATUS = {
     },
     COMPLIANCE_ERROR: {
         value: 'compliance_error',
-        label: '合规错误',
+        label: '基本校验错误',
         colorClass: 'text-danger',
         bgClass: 'bg-danger',
         badgeClass: 'status-badge status-badge-compliance_error',
@@ -39,7 +39,7 @@ const STAGING_STATUS = {
     },
     RELATION_PASS: {
         value: 'relation_pass',
-        label: '外键通过',
+        label: '联合校验通过',
         colorClass: 'text-success',
         bgClass: 'bg-success',
         badgeClass: 'status-badge status-badge-relation_pass',
@@ -47,7 +47,7 @@ const STAGING_STATUS = {
     },
     RELATION_ERROR: {
         value: 'relation_error',
-        label: '外键错误',
+        label: '联合校验错误',
         colorClass: 'text-warning',
         bgClass: 'bg-warning',
         badgeClass: 'status-badge status-badge-relation_error',
@@ -83,10 +83,10 @@ const STATUS_COLORS = {
 
 const STATUS_TEXTS = {
     'pending': '待处理',
-    'compliance_pass': '合规通过',
-    'compliance_error': '合规错误',
-    'relation_pass': '外键通过',
-    'relation_error': '外键错误',
+    'compliance_pass': '基本校验通过',
+    'compliance_error': '基本校验错误',
+    'relation_pass': '联合校验通过',
+    'relation_error': '联合校验错误',
     'synced': '已推送',
     // 兼容旧状态
     'validated': '校验通过',
@@ -289,7 +289,7 @@ function truncateText(text, maxLength = 50) {
     return text.substring(0, maxLength) + '...';
 }
 
-async function uploadFile(tableName, file, dedupStrategy = 'skip') {
+async function uploadFile(tableName, file, dedupStrategy = 'overwrite') {
     const formData = new FormData();
     formData.append('file', file);
     
@@ -309,50 +309,7 @@ async function uploadFile(tableName, file, dedupStrategy = 'skip') {
     }
 }
 
-function downloadTemplate(tableName) {
-    const templates = {
-        't_material': [
-            ['物料号', '物料描述', '工厂', '物料类型', '虚拟件', '可否延迟', '批量策略', '提前期', '最小批量', '最大批量', '单位'],
-            ['MAT001', '示例物料', '1000', 'P', 'N', 'Y', 'EX', '10', '1', '100', 'EA']
-        ],
-        't_workcenter': [
-            ['工作中心', '描述', '瓶颈', '有限产能', '产能'],
-            ['WC001', '示例工作中心', 'N', 'Y', '100']
-        ],
-        't_mat_ver': [
-            ['物料号', '版本号', '描述', '激活', '批量下限', '批量上限'],
-            ['MAT001', 'V1', '示例版本', 'Y', '1', '1000']
-        ],
-        't_mat_wc': [
-            ['物料号', '版本号', '工序号', '工作中心', '串并行', '基础工时'],
-            ['MAT001', 'V1', 'P01', 'WC001', 'S', '60']
-        ],
-        't_mat_wc_bom': [
-            ['父件料号', '子件料号', '版本号', '工序号', '用量', '损耗率', 'MTO', '替代料'],
-            ['MAT001', 'COMP001', 'V1', 'P01', '2', '5', 'N', 'N']
-        ],
-        't_mold': [
-            ['模具编号', '描述', '类型', '状态', '穴数', '台数'],
-            ['MOLD001', '示例模具', '注塑', '空闲', '4', '1']
-        ],
-        't_mat_wc_mold': [
-            ['物料号', '工作中心', '工序号', '模具编号', 'UPH'],
-            ['MAT001', 'WC001', 'P01', 'MOLD001', '100']
-        ]
-    };
-    
-    const data = templates[tableName] || [['暂无模板']];
-    let csv = data.map(row => row.join(',')).join('\n');
-    
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
-    const blobUrl = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = blobUrl;
-    link.download = `${tableName}_template.csv`;
-    link.click();
-    
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
-}
+
 
 /**
  * 获取校验规则文档

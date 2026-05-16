@@ -51,7 +51,7 @@ class StatusCard {
                     <div class="card status-card" data-status="compliance_pass">
                         <div class="card-body text-center">
                             <div class="status-number text-info" id="compliancePassCount">-</div>
-                            <div class="status-label">合规通过</div>
+                            <div class="status-label">基本校验通过</div>
                         </div>
                     </div>
                 </div>
@@ -59,7 +59,7 @@ class StatusCard {
                     <div class="card status-card" data-status="compliance_error">
                         <div class="card-body text-center">
                             <div class="status-number text-danger" id="complianceErrorCount">-</div>
-                            <div class="status-label">合规错误</div>
+                            <div class="status-label">基本校验错误</div>
                         </div>
                     </div>
                 </div>
@@ -67,7 +67,7 @@ class StatusCard {
                     <div class="card status-card" data-status="relation_pass">
                         <div class="card-body text-center">
                             <div class="status-number text-success" id="relationPassCount">-</div>
-                            <div class="status-label">外键通过</div>
+                            <div class="status-label">联合校验通过</div>
                         </div>
                     </div>
                 </div>
@@ -75,7 +75,7 @@ class StatusCard {
                     <div class="card status-card" data-status="relation_error">
                         <div class="card-body text-center">
                             <div class="status-number text-warning" id="relationErrorCount">-</div>
-                            <div class="status-label">外键错误</div>
+                            <div class="status-label">联合校验错误</div>
                         </div>
                     </div>
                 </div>

@@ -535,6 +535,22 @@ span.badge.status-badge.status-badge-relation_error {
 
 .table-header-fixed th {
     border-bottom: 2px solid #dee2e6;
+    border-right: 1px solid #dee2e6;
+}
+
+.table-header-fixed th:last-child {
+    border-right: none;
+}
+
+/* 表格纵向单元格线 */
+.table th,
+.table td {
+    border-right: 1px solid #dee2e6;
+}
+
+.table th:last-child,
+.table td:last-child {
+    border-right: none;
 }
 
 /* 表格尾部固定 */
@@ -589,6 +605,25 @@ span.badge.status-badge.status-badge-relation_error {
         background-color: #ffe6e6;
         box-shadow: 0 0 4px rgba(220, 53, 69, 0.3);
     }
+}
+
+/* 外键字段标签样式 */
+.foreign-key-tag {
+    display: inline-block;
+    background-color: #dec3fa;
+    border-radius: 4px;
+    padding: 0.1rem 0.4rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #000000;
+}
+
+.foreign-key-tag-error {
+    background-color: #ffcccc;
+    color: #cc0000;
+    border: 1px solid #dc3545;
+    cursor: help;
+    animation: enum-error-breathe 3s ease-in-out infinite;
 }
 
 /* 错误单元格高亮 */

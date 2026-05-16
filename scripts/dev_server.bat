@@ -17,7 +17,7 @@ cd /d "%PROJECT_DIR%"
 
 REM 配置
 set "APP_NAME=myaps_api"
-set "PID_FILE=%PROJECT_DIR%\.dev_server.pid"
+set "PID_FILE=%PROJECT_DIR%\storage\.dev_server.pid"
 set "LOG_FILE=%PROJECT_DIR%\logs\dev_server.log"
 set "HOST=0.0.0.0"
 set "PORT=8000"

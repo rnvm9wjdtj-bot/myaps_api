@@ -194,67 +194,67 @@ _PAGE_KEY_TO_TABLE_KEY = {
 # TODO: 可以进一步优化，从模型中提取更多信息
 _PAGE_COLUMNS_CONFIG = {
     "t_material": [
-        {"field": "_status", "title": "状态", "width": "80px", "readOnly": True},
-        {"field": "_createtime", "title": "创建时间", "width": "180px", "sortable": True, "readOnly": True},
-        {"field": "materialno", "title": "物料号", "width": "100px", "sortable": True, "readOnly": True},
-        {"field": "description", "title": "物料描述", "width": "150px"},
+        {"field": "_status", "title": "状态"},
+        {"field": "_createtime", "title": "创建时间", "sortable": True},
+        {"field": "materialno", "title": "物料号", "sortable": True, "readOnly": True},
+        {"field": "description", "title": "物料描述"},
         {"field": "size", "title": "规格"},
-        {"field": "plant", "title": "工厂", "width": "70px"},
+        {"field": "plant", "title": "工厂"},
         {"field": "planner", "title": "计划员"},
-        {"field": "fifo", "title": "FIFO", "width": "50px"},
-        {"field": "leadday", "title": "提前期", "width": "60px"},
-        {"field": "expday", "title": "保质期", "width": "60px"},
-        {"field": "grday", "title": "质检期", "width": "60px"},
-        {"field": "abc", "title": "ABC", "width": "50px"},
-        {"field": "unit", "title": "单位", "width": "50px"},
-        {"field": "price", "title": "价格", "width": "80px"},
+        {"field": "fifo", "title": "FIFO"},
+        {"field": "leadday", "title": "提前期"},
+        {"field": "expday", "title": "保质期"},
+        {"field": "grday", "title": "质检期"},
+        {"field": "abc", "title": "ABC"},
+        {"field": "unit", "title": "单位"},
+        {"field": "price", "title": "价格"},
         {"field": "groupno", "title": "型号"},
-        {"field": "type", "title": "类型", "width": "50px"},
-        {"field": "phantom", "title": "虚拟件", "width": "60px"},
-        {"field": "phantommin", "title": "虚拟时间", "width": "70px"},
-        {"field": "firmday", "title": "固定天数", "width": "60px"},
-        {"field": "daygap", "title": "拆分天数", "width": "60px"},
-        {"field": "candelay", "title": "可延迟", "width": "60px"},
-        {"field": "lotsize", "title": "批量策略", "width": "70px"},
-        {"field": "lotfix", "title": "固定批", "width": "60px"},
-        {"field": "lotmin", "title": "最小批", "width": "60px"},
-        {"field": "lotmax", "title": "最大批", "width": "60px"},
-        {"field": "lotround", "title": "取整值", "width": "60px"},
-        {"field": "lotss", "title": "安全库存", "width": "60px"},
-        {"field": "lotpoint", "title": "订货点", "width": "60px"},
-        {"field": "lottop", "title": "最大库存", "width": "60px"},
+        {"field": "type", "title": "类型"},
+        {"field": "phantom", "title": "虚拟件"},
+        {"field": "phantommin", "title": "虚拟时间"},
+        {"field": "firmday", "title": "固定天数"},
+        {"field": "daygap", "title": "拆分天数"},
+        {"field": "candelay", "title": "可延迟"},
+        {"field": "lotsize", "title": "批量策略"},
+        {"field": "lotfix", "title": "固定批"},
+        {"field": "lotmin", "title": "最小批"},
+        {"field": "lotmax", "title": "最大批"},
+        {"field": "lotround", "title": "取整值"},
+        {"field": "lotss", "title": "安全库存"},
+        {"field": "lotpoint", "title": "订货点"},
+        {"field": "lottop", "title": "最大库存"},
         {"field": "planitem", "title": "产品组"},
-        {"field": "preday", "title": "向前冲销", "width": "60px"},
-        {"field": "subday", "title": "向后冲销", "width": "60px"},
+        {"field": "preday", "title": "向前冲销"},
+        {"field": "subday", "title": "向后冲销"},
         {"field": "free1", "title": "自定义1"},
         {"field": "free2", "title": "自定义2"},
         {"field": "free3", "title": "自定义3"},
-        {"field": "_source_system", "title": "来源", "width": "80px", "readOnly": True}
+        {"field": "_source_system", "title": "来源"}
     ],
     "t_workcenter": [
-        {"field": "_status", "title": "状态", "width": "80px", "readOnly": True},
-        {"field": "_createtime", "title": "创建时间", "width": "180px", "sortable": True, "readOnly": True},
+        {"field": "_status", "title": "状态", "width": "80px"},
+        {"field": "_createtime", "title": "创建时间", "width": "180px", "sortable": True},
         {"field": "workcenter", "title": "工作中心", "width": "120px", "sortable": True, "readOnly": True},
         {"field": "description", "title": "描述", "width": "200px"},
         {"field": "bottleneck", "title": "瓶颈", "width": "80px"},
         {"field": "finite", "title": "有限产能", "width": "100px"},
         {"field": "capacity", "title": "产能", "width": "100px"},
-        {"field": "_source_system", "title": "来源", "width": "80px", "readOnly": True}
+        {"field": "_source_system", "title": "来源", "width": "80px"}
     ],
     "t_mat_ver": [
-        {"field": "_status", "title": "状态", "width": "80px", "readOnly": True},
-        {"field": "_createtime", "title": "创建时间", "width": "180px", "sortable": True, "readOnly": True},
+        {"field": "_status", "title": "状态", "width": "80px"},
+        {"field": "_createtime", "title": "创建时间", "width": "180px", "sortable": True},
         {"field": "materialno", "title": "物料号", "width": "120px", "sortable": True, "readOnly": True},
         {"field": "matver", "title": "版本号", "width": "80px", "sortable": True},
         {"field": "description", "title": "描述", "width": "200px"},
         {"field": "active", "title": "激活", "width": "80px"},
         {"field": "lotfrom", "title": "批量下限", "width": "100px"},
         {"field": "lotto", "title": "批量上限", "width": "100px"},
-        {"field": "_source_system", "title": "来源", "width": "80px", "readOnly": True}
+        {"field": "_source_system", "title": "来源", "width": "80px"}
     ],
     "t_mat_wc": [
-        {"field": "_status", "title": "状态", "width": "80px", "readOnly": True},
-        {"field": "_createtime", "title": "创建时间", "width": "180px", "sortable": True, "readOnly": True},
+        {"field": "_status", "title": "状态", "width": "80px"},
+        {"field": "_createtime", "title": "创建时间", "width": "180px", "sortable": True},
         {"field": "materialno", "title": "物料号", "width": "120px", "sortable": True, "readOnly": True},
         {"field": "matver", "title": "版本号", "width": "80px"},
         {"field": "itemno", "title": "工序号", "width": "80px"},
@@ -262,36 +262,36 @@ _PAGE_COLUMNS_CONFIG = {
         {"field": "sf", "title": "串并行", "width": "80px"},
         {"field": "basesec", "title": "基础工时", "width": "100px"},
         {"field": "sortno", "title": "排序", "width": "80px"},
-        {"field": "_source_system", "title": "来源", "width": "80px", "readOnly": True}
+        {"field": "_source_system", "title": "来源", "width": "80px"}
     ],
     "t_mat_wc_bom": [
-        {"field": "_status", "title": "状态", "width": "80px", "readOnly": True},
-        {"field": "_createtime", "title": "创建时间", "width": "180px", "sortable": True, "readOnly": True},
+        {"field": "_status", "title": "状态", "width": "80px"},
+        {"field": "_createtime", "title": "创建时间", "width": "180px", "sortable": True},
         {"field": "productno", "title": "父件号", "width": "100px", "readOnly": True},
         {"field": "matver", "title": "版本号", "width": "80px"},
         {"field": "itemno", "title": "工序号", "width": "80px"},
         {"field": "materialno", "title": "子件号", "width": "100px"},
         {"field": "workcenter", "title": "工作中心", "width": "100px"},
         {"field": "qty", "title": "用量", "width": "80px"},
-        {"field": "_source_system", "title": "来源", "width": "80px", "readOnly": True}
+        {"field": "_source_system", "title": "来源", "width": "80px"}
     ],
     "t_mold": [
-        {"field": "_status", "title": "状态", "width": "80px", "readOnly": True},
-        {"field": "_createtime", "title": "创建时间", "width": "180px", "sortable": True, "readOnly": True},
+        {"field": "_status", "title": "状态", "width": "80px"},
+        {"field": "_createtime", "title": "创建时间", "width": "180px", "sortable": True},
         {"field": "moldno", "title": "模具号", "width": "120px", "sortable": True, "readOnly": True},
         {"field": "description", "title": "描述", "width": "200px"},
         {"field": "cavity", "title": "穴数", "width": "80px"},
         {"field": "count", "title": "台数", "width": "80px"},
-        {"field": "_source_system", "title": "来源", "width": "80px", "readOnly": True}
+        {"field": "_source_system", "title": "来源", "width": "80px"}
     ],
     "t_mat_wc_mold": [
-        {"field": "_status", "title": "状态", "width": "80px", "readOnly": True},
-        {"field": "_createtime", "title": "创建时间", "width": "180px", "sortable": True, "readOnly": True},
+        {"field": "_status", "title": "状态", "width": "80px"},
+        {"field": "_createtime", "title": "创建时间", "width": "180px", "sortable": True},
         {"field": "materialno", "title": "物料号", "width": "100px", "readOnly": True},
         {"field": "workcenter", "title": "工作中心", "width": "100px"},
         {"field": "itemno", "title": "工序号", "width": "80px"},
         {"field": "moldno", "title": "模具号", "width": "100px"},
-        {"field": "_source_system", "title": "来源", "width": "80px", "readOnly": True}
+        {"field": "_source_system", "title": "来源", "width": "80px"}
     ]
 }
 
@@ -348,6 +348,7 @@ def generate_generic_page_config(page_key: str) -> Optional[Dict[str, Any]]:
     
     # 从 STAGING_TABLE_CONFIG 获取配置
     from apps.data_opt.mds.staging_cleaner import STAGING_TABLE_CONFIG
+    from apps.data_opt.mds._base import extract_display_name_from_model
     if table_key not in STAGING_TABLE_CONFIG:
         return None
     
@@ -372,9 +373,32 @@ def generate_generic_page_config(page_key: str) -> Optional[Dict[str, Any]]:
     # 获取列配置
     columns = _PAGE_COLUMNS_CONFIG.get(table_key, [])
     
+    # 处理外键配置
+    foreign_keys = []
+    if table_config.get("foreign_keys"):
+        for fk in table_config["foreign_keys"]:
+            field_name = fk.get("field")
+            ref_model = fk.get("model")
+            
+            # 获取外键字段的描述
+            field_description = field_name
+            if field_name in schema_class.model_fields:
+                field_description = schema_class.model_fields[field_name].description or field_name
+            
+            # 获取引用表的显示名称
+            ref_table_display_name = extract_display_name_from_model(ref_model)
+            
+            foreign_keys.append({
+                "field": field_name,
+                "title": field_description,
+                "refTable": ref_model.__name__ if ref_model else None,
+                "refTableDisplayName": ref_table_display_name
+            })
+    
     return {
         "tableKey": table_key,
         "tableDisplayName": display_name,
+        "foreignKeys": foreign_keys,
         "display": {
             "columns": columns,
             "defaultSortField": "_createtime",

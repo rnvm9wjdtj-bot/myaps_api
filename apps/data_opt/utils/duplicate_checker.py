@@ -7,7 +7,7 @@ from typing import Dict, List, Any, Tuple, Optional
 from collections import defaultdict
 from enum import Enum
 
-from apps.data_opt.mds.staging_cleaner import STAGING_TABLE_CONFIG, STAGING_MODEL_MAPPING
+from apps.data_opt.mds.staging_cleaner import STAGING_TABLE_CONFIG, STAGING_MODEL_MAPPING, ensure_config_initialized
 from globalobjects import logger as log_config
 
 logger = log_config.get_logger(__name__)
@@ -31,9 +31,13 @@ class DuplicateChecker:
             table_name: 表名
         """
         self.table_name = table_name
+        ensure_config_initialized()
         config = STAGING_TABLE_CONFIG.get(table_name, {})
         self.pk_fields = config.get("business_keys", [])
         self.staging_model = STAGING_MODEL_MAPPING.get(table_name)
+        
+        if not self.pk_fields:
+            logger.warning(f"表 {table_name} 未配置 business_keys，去重策略将不生效")
     
     async def check_duplicate_in_staging(
         self,
@@ -96,7 +100,7 @@ class DuplicateChecker:
         """
         if not self.pk_fields:
             return {
-                "unique": data_list,
+                "unique": [{"index": idx, "data": data, "pk_value": None} for idx, data in enumerate(data_list)],
                 "duplicates": [],
                 "existing": [],
                 "pk_map": {}
@@ -258,6 +262,12 @@ async def apply_dedup_strategy(
         
         for item in result["existing"]:
             processed_data.append(item["data"])
+            handled_data.append({
+                "data": item["data"],
+                "reason": "覆盖已存在记录",
+                "pk_value": item["pk_value"],
+                "action": "overwrite"
+            })
     
     elif strategy == DedupStrategy.REJECT:
         if result["duplicates"] or result["existing"]:

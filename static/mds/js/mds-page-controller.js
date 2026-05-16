@@ -14,6 +14,7 @@ class MDSPageController {
         
         this.fieldValues = {};
         this.nullFields = new Set();
+        this.pendingFile = null;
         
         this.init();
     }
@@ -143,13 +144,22 @@ class MDSPageController {
     }
     
     initDataTable() {
+        // 准备枚举选项
+        const enumOptions = {};
+        const enumFieldKeys = this.getEnumFieldKeys();
+        enumFieldKeys.forEach(fieldName => {
+            enumOptions[fieldName] = this.getEnumOptions(fieldName);
+        });
+        
         this.dataTable = new DataTable({
             tableName: this.tableKey,
             columns: this.getColumns(),
             container: document.getElementById('tableContainer'),
             pageSize: 100,
             onRowClick: (row) => this.showEditModal(row),
-            enumFields: this.getEnumFieldKeys()
+            enumFields: enumFieldKeys,
+            enumOptions: enumOptions,
+            foreignKeys: this.config.foreignKeys || []
         });
         
         this.dataTable.loadData();
@@ -235,19 +245,12 @@ class MDSPageController {
                 showValidationRulesModal(this.tableKey, this.tableDisplayName);
             });
         }
-        
-        if (downloadTemplateBtn) {
-            downloadTemplateBtn.addEventListener('click', () => {
-                downloadTemplate(this.tableKey);
-            });
-        }
     }
     
     bindUploadEvents() {
         const uploadArea = document.getElementById('uploadArea');
         const fileInput = document.getElementById('fileInput');
         const uploadBtn = document.getElementById('uploadBtn');
-        const dedupStrategy = document.getElementById('dedupStrategy');
         
         if (uploadArea && fileInput) {
             uploadArea.addEventListener('click', () => fileInput.click());
@@ -266,26 +269,57 @@ class MDSPageController {
                 uploadArea.classList.remove('dragover');
                 const files = e.dataTransfer.files;
                 if (files.length > 0) {
-                    this.handleFileUpload(files[0]);
+                    this.setPendingFile(files[0]);
                 }
             });
             
             fileInput.addEventListener('change', (e) => {
                 if (e.target.files.length > 0) {
-                    this.handleFileUpload(e.target.files[0]);
+                    this.setPendingFile(e.target.files[0]);
                 }
             });
         }
         
         if (uploadBtn) {
             uploadBtn.addEventListener('click', () => {
-                if (fileInput && fileInput.files.length > 0) {
-                    this.handleFileUpload(fileInput.files[0]);
-                } else {
-                    showMessage('请先选择文件', 'warning');
-                }
+                this.uploadPendingFile();
             });
         }
+    }
+    
+    setPendingFile(file) {
+        if (!file.name.match(/\.(xlsx|xls|csv)$/i)) {
+            showMessage('请上传Excel或CSV文件', 'warning');
+            return;
+        }
+        
+        this.pendingFile = file;
+        
+        const uploadArea = document.getElementById('uploadArea');
+        if (uploadArea) {
+            const sizeKB = (file.size / 1024).toFixed(1);
+            const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+            const sizeDisplay = file.size > 1024 * 1024 ? `${sizeMB} MB` : `${sizeKB} KB`;
+            uploadArea.innerHTML = `
+                <i class="bi bi-file-earmark-spreadsheet fs-1 text-primary mb-2"></i>
+                <p class="mb-0 text-primary fw-bold">${file.name}</p>
+                <p class="mb-0 text-muted small">${sizeDisplay}</p>
+            `;
+        }
+    }
+    
+    async uploadPendingFile() {
+        if (!this.pendingFile) {
+            showMessage('请先选择文件', 'warning');
+            return;
+        }
+        
+        await this.handleFileUpload(this.pendingFile);
+    }
+    
+    getDedupStrategy() {
+        const radio = document.querySelector('input[name="dedupStrategy"]:checked');
+        return radio ? radio.value : 'overwrite';
     }
     
     async handleFileUpload(file) {
@@ -294,7 +328,7 @@ class MDSPageController {
             return;
         }
         
-        const strategy = document.getElementById('dedupStrategy')?.value || 'skip';
+        const strategy = this.getDedupStrategy();
         
         showLoading();
         
@@ -306,12 +340,38 @@ class MDSPageController {
             const result = data.data;
             showMessage(`导入完成: 成功${result.inserted}条, 跳过${result.skipped}条`, 'success');
             
-            const fileInput = document.getElementById('fileInput');
-            if (fileInput) fileInput.value = '';
+            this.resetUploadArea();
+            this.pendingFile = null;
+            
+            const uploadModal = bootstrap.Modal.getInstance(document.getElementById('uploadModal'));
+            if (uploadModal) uploadModal.hide();
             
             this.dataTable.refresh();
             this.statusCard.refresh();
         });
+    }
+    
+    resetUploadArea() {
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        
+        if (fileInput) fileInput.value = '';
+        
+        if (uploadArea) {
+            uploadArea.innerHTML = `
+                <p class="mb-0">点击或拖拽文件上传（支持 .xlsx, .xls, .csv）</p>
+                <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display: none;">
+            `;
+            
+            const newFileInput = document.getElementById('fileInput');
+            if (newFileInput) {
+                newFileInput.addEventListener('change', (e) => {
+                    if (e.target.files.length > 0) {
+                        this.setPendingFile(e.target.files[0]);
+                    }
+                });
+            }
+        }
     }
     
     async validateData() {
@@ -421,7 +481,7 @@ class MDSPageController {
         const retryExceeded = stats.retry_exceeded || 0;
         
         if (validatedCount === 0) {
-            showMessage('没有外键通过的记录可推送', 'warning');
+            showMessage('没有【联合校验通过】的记录可推送', 'warning');
         }
         
         let resetRetry = false;

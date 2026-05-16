@@ -37,7 +37,7 @@ PYTHON_CMD=$(find_python)
 
 # 配置
 APP_NAME="myaps_api"
-PID_FILE="$PROJECT_DIR/.dev_server.pid"
+PID_FILE="$PROJECT_DIR/storage/.dev_server.pid"
 LOG_FILE="$PROJECT_DIR/logs/dev_server.log"
 HOST="0.0.0.0"
 PORT="8001"

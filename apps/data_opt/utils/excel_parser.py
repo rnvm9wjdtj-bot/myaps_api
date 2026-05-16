@@ -13,6 +13,69 @@ from globalobjects import logger as log_config
 logger = log_config.get_logger(__name__)
 
 
+def get_table_field_mappers() -> Dict[str, Dict[str, str]]:
+    """
+    动态生成所有表的字段映射
+    
+    Returns:
+        {表名: {字段名: 中文名}}
+    """
+    from apps.data_opt.mds.config_generator import _PAGE_COLUMNS_CONFIG
+    
+    mappers = {}
+    for table_key, columns in _PAGE_COLUMNS_CONFIG.items():
+        field_mapper = {}
+        for col in columns:
+            field = col.get("field")
+            title = col.get("title")
+            if field and title and not field.startswith("_"):
+                field_mapper[field] = title
+        if field_mapper:
+            mappers[table_key] = field_mapper
+    
+    return mappers
+
+
+def get_table_required_fields() -> Dict[str, List[str]]:
+    """
+    动态生成所有表的必填字段（使用 business_keys）
+    
+    Returns:
+        {表名: [必填字段列表]}
+    """
+    from apps.data_opt.mds.staging_cleaner import STAGING_TABLE_CONFIG, ensure_config_initialized
+    
+    ensure_config_initialized()
+    
+    required_fields = {}
+    for table_key, config in STAGING_TABLE_CONFIG.items():
+        business_keys = config.get("business_keys", [])
+        if business_keys:
+            required_fields[table_key] = business_keys
+    
+    return required_fields
+
+
+TABLE_FIELD_MAPPERS = None
+TABLE_REQUIRED_FIELDS = None
+
+
+def get_field_mapper(table_name: str) -> Dict[str, str]:
+    """获取指定表的字段映射"""
+    global TABLE_FIELD_MAPPERS
+    if TABLE_FIELD_MAPPERS is None:
+        TABLE_FIELD_MAPPERS = get_table_field_mappers()
+    return TABLE_FIELD_MAPPERS.get(table_name, {})
+
+
+def get_required_fields(table_name: str) -> List[str]:
+    """获取指定表的必填字段"""
+    global TABLE_REQUIRED_FIELDS
+    if TABLE_REQUIRED_FIELDS is None:
+        TABLE_REQUIRED_FIELDS = get_table_required_fields()
+    return TABLE_REQUIRED_FIELDS.get(table_name, [])
+
+
 class ExcelParser:
     """Excel解析器"""
     
@@ -38,12 +101,13 @@ class ExcelParser:
         self.skip_empty_rows = skip_empty_rows
         self.parsing_errors = []
     
-    def parse(self, file_bytes: bytes) -> Tuple[List[Dict], List[Dict]]:
+    def parse(self, file_bytes: bytes, filename: str = None) -> Tuple[List[Dict], List[Dict]]:
         """
-        解析Excel文件
+        解析Excel或CSV文件
         
         Args:
-            file_bytes: Excel文件字节流
+            file_bytes: 文件字节流
+            filename: 文件名（用于判断文件类型）
         
         Returns:
             (成功解析的数据列表, 错误记录列表)
@@ -51,10 +115,14 @@ class ExcelParser:
         self.parsing_errors = []
         
         try:
-            df = pd.read_excel(BytesIO(file_bytes), sheet_name=self.sheet_name)
+            if filename and filename.lower().endswith('.csv'):
+                df = pd.read_csv(BytesIO(file_bytes), encoding='utf-8-sig')
+            else:
+                df = pd.read_excel(BytesIO(file_bytes), sheet_name=self.sheet_name)
         except Exception as e:
-            logger.error(f"读取Excel文件失败: {str(e)}")
-            return [], [{"error": f"读取Excel文件失败: {str(e)}"}]
+            file_type = "CSV" if filename and filename.lower().endswith('.csv') else "Excel"
+            logger.error(f"读取{file_type}文件失败: {str(e)}")
+            return [], [{"error": f"读取{file_type}文件失败: {str(e)}"}]
         
         if df.empty:
             return [], []
@@ -225,85 +293,10 @@ class ExcelExporter:
         return output.getvalue()
 
 
-TABLE_FIELD_MAPPERS = {
-    "t_material": {
-        "materialno": "物料号",
-        "description": "物料描述",
-        "plant": "工厂",
-        "type": "物料类型",
-        "phantom": "虚拟件",
-        "candelay": "可否延迟",
-        "lotsize": "批量策略",
-        "leadday": "提前期",
-        "lotmin": "最小批量",
-        "lotmax": "最大批量",
-        "unit": "单位",
-    },
-    "t_workcenter": {
-        "workcenter": "工作中心",
-        "description": "描述",
-        "bottleneck": "瓶颈",
-        "finite": "有限产能",
-        "capacity": "产能",
-    },
-    "t_mat_ver": {
-        "materialno": "物料号",
-        "matver": "版本号",
-        "description": "描述",
-        "active": "激活",
-        "lotfrom": "批量下限",
-        "lotto": "批量上限",
-    },
-    "t_mat_wc": {
-        "materialno": "物料号",
-        "matver": "版本号",
-        "itemno": "工序号",
-        "workcenter": "工作中心",
-        "sf": "串并行",
-        "basesec": "基础工时",
-    },
-    "t_mat_wc_bom": {
-        "productno": "父件料号",
-        "materialno": "子件料号",
-        "matver": "版本号",
-        "itemno": "工序号",
-        "qty": "用量",
-        "scrap": "损耗率",
-        "mto": "MTO",
-        "alt": "替代料",
-    },
-    "t_mold": {
-        "moldno": "模具编号",
-        "description": "描述",
-        "type": "类型",
-        "status": "状态",
-        "moldnum": "穴数",
-        "qty": "台数",
-    },
-    "t_mat_wc_mold": {
-        "materialno": "物料号",
-        "workcenter": "工作中心",
-        "itemno": "工序号",
-        "moldno": "模具编号",
-        "basesec": "UPH",
-    },
-}
-
-TABLE_REQUIRED_FIELDS = {
-    "t_material": ["materialno", "description", "plant"],
-    "t_workcenter": ["workcenter"],
-    "t_mat_ver": ["materialno", "matver"],
-    "t_mat_wc": ["materialno", "matver", "itemno", "workcenter"],
-    "t_mat_wc_bom": ["productno", "materialno", "qty"],
-    "t_mold": ["moldno"],
-    "t_mat_wc_mold": ["materialno", "workcenter", "moldno"],
-}
-
-
 def get_parser_for_table(table_name: str) -> ExcelParser:
     """获取指定表的Excel解析器"""
-    field_mapper = TABLE_FIELD_MAPPERS.get(table_name, {})
-    required_fields = TABLE_REQUIRED_FIELDS.get(table_name, [])
+    field_mapper = get_field_mapper(table_name)
+    required_fields = get_required_fields(table_name)
     
     return ExcelParser(
         field_mapper=field_mapper,

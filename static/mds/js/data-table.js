@@ -35,6 +35,10 @@ class DataTable {
         this.enumFields = config.enumFields || [];
         this.enumOptions = config.enumOptions || {};
         
+        // 外键配置
+        this.foreignKeyFields = config.foreignKeyFields || [];
+        this.foreignKeys = config.foreignKeys || [];
+        
         // 渲染配置
         this.renderMode = config.renderMode || 'standard'; // standard | virtual
         this.virtualRowHeight = config.virtualRowHeight || 32;
@@ -60,7 +64,7 @@ class DataTable {
         this.container.innerHTML = `
             <div class="table-wrapper" style="display: flex; flex-direction: column; height: calc(100vh - 280px);">
                 <div class="table-responsive flex-grow-1" style="overflow-y: auto; overflow-x: auto;">
-                    <table class="table table-hover table-nowrap mb-0" style="min-width: max-content;">
+                    <table class="table table-hover table-nowrap mb-0" style="width: 100%; table-layout: auto;">
                         <thead class="table-header-fixed">
                             <tr>
                                 <th style="width: 40px; min-width: 40px;">
@@ -154,10 +158,11 @@ class DataTable {
             batchDeleteBtn.addEventListener('click', () => this.batchDelete());
         }
         
-        // 模板下载
+        // 导出选中数据
         const templateBtn = document.getElementById('templateBtn');
         if (templateBtn) {
-            templateBtn.addEventListener('click', () => downloadTemplate(this.tableName));
+            templateBtn.innerHTML = '<i class="bi bi-download"></i> 导出';
+            templateBtn.addEventListener('click', () => this.exportSelected());
         }
         
         // 页面大小切换
@@ -342,7 +347,7 @@ class DataTable {
                 class="table-row ${rowClass}"
                 ${this.renderMode === 'virtual' ? `style="position: absolute; top: ${index * this.virtualRowHeight}px;"` : ''}
             >
-                <td>
+                <td style="white-space: nowrap;">
                     <input 
                         type="checkbox" 
                         class="form-check-input row-checkbox" 
@@ -350,7 +355,12 @@ class DataTable {
                         ${isSelected ? 'checked' : ''}
                     >
                 </td>
-                ${this.columns.map(col => `<td>${this.renderCell(col, row, errorMap)}</td>`).join('')}
+                ${this.columns.map(col => {
+                    const cellStyle = col.width 
+                        ? 'white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: ' + col.width + ';'
+                        : 'white-space: nowrap;';
+                    return `<td style="${cellStyle}" title="${escapeHtml(row[col.field] || '')}">${this.renderCell(col, row, errorMap)}</td>`;
+                }).join('')}
             </tr>
         `;
     }
@@ -410,7 +420,6 @@ class DataTable {
      */
     renderCell(col, row, errorMap = {}) {
         let value = row[col.field];
-        const isReadOnly = col.readOnly;
         
         // 自定义渲染函数
         if (col.render) {
@@ -424,12 +433,7 @@ class DataTable {
         
         // 时间字段
         if (['_createtime', '_updatetime', '_synced_time'].includes(col.field)) {
-            return `
-                <span class="font-mono${isReadOnly ? ' text-muted' : ''}">
-                    ${formatDateTime(value)}
-                    ${isReadOnly ? '<i class="bi bi-lock ms-1" style="font-size: 0.7rem;"></i>' : ''}
-                </span>
-            `;
+            return `<span class="font-mono">${formatDateTime(value)}</span>`;
         }
         
         // 空值处理
@@ -437,7 +441,7 @@ class DataTable {
             return this.renderNullCell(col, errorMap);
         }
         
-        // 错误处理
+        // 错误处理 - 优先级最高
         const errorInfo = errorMap[col.field];
         if (errorInfo) {
             return this.renderErrorCell(value, errorInfo, col);
@@ -445,7 +449,13 @@ class DataTable {
         
         // 枚举字段
         if (this.enumFields.includes(col.field)) {
-            return this.renderEnumCell(value, col.field, col);
+            return this.renderEnumCell(value, col.field);
+        }
+        
+        // 外键字段
+        const isForeignKey = this.foreignKeys.some(fk => fk.field === col.field);
+        if (isForeignKey) {
+            return this.renderForeignKeyCell(value, col.field);
         }
         
         // 普通文本
@@ -495,11 +505,21 @@ class DataTable {
             : value;
         
         const isEnumField = this.enumFields.includes(col.field);
+        const isForeignKey = this.foreignKeys.some(fk => fk.field === col.field);
         
         if (isEnumField) {
-            // 统一使用 data-error-msg 方式（替代 title）
+            // 枚举字段错误样式
             return `
                 <span class="enum-tag enum-tag-error" data-error-type="${errorInfo.type}" data-error-msg="${escapeHtml(errorInfo.message)}">
+                    ${escapeHtml(displayValue)}
+                </span>
+            `;
+        }
+        
+        if (isForeignKey) {
+            // 外键字段错误样式 - 优先级高于外键普通样式
+            return `
+                <span class="foreign-key-tag foreign-key-tag-error" data-error-type="${errorInfo.type}" data-error-msg="${escapeHtml(errorInfo.message)}">
                     ${escapeHtml(displayValue)}
                 </span>
             `;
@@ -519,48 +539,41 @@ class DataTable {
     /**
      * 渲染枚举单元格
      */
-    renderEnumCell(value, fieldName, col) {
-        const isReadOnly = col?.readOnly;
+    renderEnumCell(value, fieldName) {
         const options = this.enumOptions[fieldName] || [];
         const option = options.find(o => String(o.value) === String(value));
         
         if (option) {
-            return `
-                <span class="enum-tag${isReadOnly ? ' text-muted' : ''}">
-                    ${escapeHtml(option.label)}
-                    ${isReadOnly ? '<i class="bi bi-lock ms-1" style="font-size: 0.7rem;"></i>' : ''}
-                </span>
-            `;
+            return `<span class="enum-tag">${escapeHtml(option.label)}</span>`;
         }
         
-        return `
-            <span class="enum-tag${isReadOnly ? ' text-muted' : ''}">
-                ${escapeHtml(value)}
-                ${isReadOnly ? '<i class="bi bi-lock ms-1" style="font-size: 0.7rem;"></i>' : ''}
-            </span>
-        `;
+        return `<span class="enum-tag">${escapeHtml(value)}</span>`;
+    }
+    
+    /**
+     * 渲染外键单元格
+     */
+    renderForeignKeyCell(value, fieldName) {
+        // 获取外键配置
+        const fkConfig = this.foreignKeys.find(fk => fk.field === fieldName);
+        const refTableDisplayName = fkConfig ? fkConfig.refTableDisplayName : '';
+        
+        return `<span class="foreign-key-tag" title="引用: ${escapeHtml(refTableDisplayName)}">${escapeHtml(value)}</span>`;
     }
     
     /**
      * 渲染文本单元格
      */
     renderTextCell(value, col) {
-        const isReadOnly = col.readOnly;
         if (typeof value === 'string' && value.length > 30) {
             return `
-                <span class="font-mono${isReadOnly ? ' text-muted' : ''}" title="${escapeHtml(value)}">
+                <span class="font-mono" title="${escapeHtml(value)}">
                     ${escapeHtml(truncateText(value, 30))}
-                    ${isReadOnly ? '<i class="bi bi-lock ms-1" style="font-size: 0.7rem;"></i>' : ''}
                 </span>
             `;
         }
         
-        return `
-            <span class="font-mono${isReadOnly ? ' text-muted' : ''}">
-                ${escapeHtml(value)}
-                ${isReadOnly ? '<i class="bi bi-lock ms-1" style="font-size: 0.7rem;"></i>' : ''}
-            </span>
-        `;
+        return `<span class="font-mono">${escapeHtml(value)}</span>`;
     }
     
     /**
@@ -961,6 +974,210 @@ class DataTable {
      */
     getSelectedIds() {
         return Array.from(this.selectedIds);
+    }
+    
+    /**
+     * 获取选中的数据
+     * @returns {Promise<Array>} 选中的数据数组
+     */
+    async getSelectedData() {
+        if (this.selectedIds.size === 0) {
+            return [];
+        }
+        
+        // 如果选中了所有页，需要获取全部数据
+        if (this.selectedAllPages) {
+            showLoading();
+            try {
+                const queryParams = new URLSearchParams({
+                    page: 1,
+                    page_size: 10000,
+                    sort_field: this.sortField,
+                    sort_order: this.sortOrder,
+                    ...this.filters
+                });
+                
+                if (this.advancedFilters && this.advancedFilters.length > 0) {
+                    queryParams.set('advanced_filters', JSON.stringify(this.advancedFilters));
+                }
+                
+                const response = await callApi(`/list/${this.tableName}?${queryParams}`);
+                
+                let data = [];
+                handleResponse(response, (responseData) => {
+                    data = responseData.data.records || [];
+                });
+                return data;
+            } catch (error) {
+                console.error('获取数据失败:', error);
+                showMessage('获取数据失败', 'danger');
+                return [];
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // 只选中了当前页，直接从this.data中过滤
+        return this.data.filter(row => this.selectedIds.has(row._staging_id));
+    }
+    
+    /**
+     * 导出选中数据
+     */
+    async exportSelected() {
+        try {
+            let selectedData = await this.getSelectedData();
+            
+            if (selectedData.length === 0) {
+                showMessage('请先选择要导出的数据', 'warning');
+                return;
+            }
+            
+            // 从列配置中获取业务字段，保证与表格显示顺序一致
+            const businessFields = this.columns
+                .filter(col => !col.field.startsWith('_'))
+                .map(col => col.field);
+            
+            if (businessFields.length === 0) {
+                showMessage('没有可导出的业务字段', 'warning');
+                return;
+            }
+            
+            // 构建字段名到中文列名的映射
+            const fieldTitleMap = {};
+            this.columns.forEach(col => {
+                fieldTitleMap[col.field] = col.title;
+            });
+            
+            // 准备导出数据
+            const headers = businessFields.map(field => fieldTitleMap[field]);
+            const rows = selectedData.map(row => {
+                return businessFields.map(field => this.getExportValue(field, row[field], row));
+            });
+            
+            // 生成本地时间戳
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hour = String(now.getHours()).padStart(2, '0');
+            const minute = String(now.getMinutes()).padStart(2, '0');
+            const second = String(now.getSeconds()).padStart(2, '0');
+            const timestamp = `${year}${month}${day}_${hour}${minute}${second}`;
+            
+            // 估算数据大小，超过1MB用CSV，否则用XLSX
+            const estimatedSize = this.estimateExportSize(headers, rows);
+            const useCSV = estimatedSize > 1024 * 1024;
+            
+            if (useCSV) {
+                this.downloadAsCSV(headers, rows, timestamp);
+            } else {
+                this.downloadAsExcel(headers, rows, timestamp);
+            }
+            
+            showMessage(`成功导出 ${selectedData.length} 条数据`, 'success');
+        } catch (error) {
+            console.error('导出失败:', error);
+            showMessage('导出失败: ' + error.message, 'danger');
+        }
+    }
+    
+    /**
+     * 估算导出数据大小
+     */
+    estimateExportSize(headers, rows) {
+        let size = headers.join(',').length + 1;
+        for (let i = 0; i < Math.min(rows.length, 100); i++) {
+            size += rows[i].join(',').length + 1;
+        }
+        return size * (rows.length / Math.min(rows.length, 100));
+    }
+    
+    /**
+     * 下载为CSV文件
+     */
+    downloadAsCSV(headers, rows, timestamp) {
+        let csvContent = '\ufeff' + headers.join(',') + '\n';
+        rows.forEach(row => {
+            csvContent += row.map(v => this.formatCsvValue(v)).join(',') + '\n';
+        });
+        
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        this.downloadBlob(blob, `${this.tableName}_export_${timestamp}.csv`);
+    }
+    
+    /**
+     * 下载为Excel文件
+     */
+    downloadAsExcel(headers, rows, timestamp) {
+        const wsData = [headers, ...rows];
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+        
+        const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+        const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        this.downloadBlob(blob, `${this.tableName}_export_${timestamp}.xlsx`);
+    }
+    
+    /**
+     * 下载Blob文件
+     */
+    downloadBlob(blob, filename) {
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', filename);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
+    
+    /**
+     * 获取导出用的显示值
+     * 注意：保持原始值以便重新导入，枚举/外键字段不做转换
+     * @param {string} field - 字段名
+     * @param {*} value - 原始值
+     * @param {Object} row - 行数据
+     * @returns {*} 显示值
+     */
+    getExportValue(field, value, row) {
+        if (value === null || value === undefined) {
+            return '';
+        }
+        
+        if (['_createtime', '_updatetime', '_synced_time'].includes(field)) {
+            return formatDateTime(value);
+        }
+        
+        return value;
+    }
+    
+    /**
+     * 格式化CSV值（处理逗号、引号、换行符）
+     * @param {*} value - 值
+     * @returns {string} 格式化后的CSV值
+     */
+    formatCsvValue(value) {
+        if (value === null || value === undefined) {
+            return '';
+        }
+        
+        let strValue = String(value);
+        
+        // 如果包含逗号、引号或换行符，需要用引号包裹并转义
+        if (strValue.includes(',') || strValue.includes('"') || strValue.includes('\n') || strValue.includes('\r')) {
+            // 转义引号（双引号变两个双引号）
+            strValue = strValue.replace(/"/g, '""');
+            // 移除换行符（或替换为空格）
+            strValue = strValue.replace(/[\r\n]+/g, ' ');
+            // 用引号包裹
+            strValue = '"' + strValue + '"';
+        }
+        
+        return strValue;
     }
     
     /**
