@@ -4,12 +4,12 @@ Redis 监控采集器
 用于采集 Redis 连接池和操作的监控指标
 """
 
-import logging
 from typing import Dict, Any
 
 from apps.common.utils.redis_pool_manager import get_redis_pool_manager
+from globalobjects import logger as log_config
 
-logger = logging.getLogger(__name__)
+logger = log_config.get_logger(__name__)
 
 
 class RedisCollector:

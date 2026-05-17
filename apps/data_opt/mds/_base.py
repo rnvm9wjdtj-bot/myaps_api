@@ -8,8 +8,11 @@ from enum import Enum
 
 from tortoise.models import Model as TortoiseBaseModel
 from tortoise import fields
+from globalobjects import logger as log_config
 
 
+
+logger = log_config.get_logger(__name__)
 # ==============================================
 # 状态枚举定义
 # ==============================================
@@ -17,11 +20,11 @@ from tortoise import fields
 class StagingStatus(str, Enum):
     """缓冲表数据状态"""
     PENDING = ("pending", "待处理", "warning")
-    COMPLIANCE_PASS = ("compliance_pass", "基本校验通过", "info")
-    COMPLIANCE_ERROR = ("compliance_error", "基本校验错误", "danger")
-    RELATION_PASS = ("relation_pass", "联合校验通过", "success")
-    RELATION_ERROR = ("relation_error", "联合校验错误", "warning")
-    APPROVED = ("approved", "已审批", "primary")
+    COMPLIANCE_PASS = ("compliance_pass", "初检通过", "info")
+    COMPLIANCE_ERROR = ("compliance_error", "初检错误", "danger")
+    RELATION_PASS = ("relation_pass", "联检通过", "success")
+    RELATION_ERROR = ("relation_error", "联检错误", "warning")
+    SYNC_ERROR = ("sync_error", "推送失败", "warning")
     SYNCED = ("synced", "已推送", "secondary")
 
     def __new__(cls, value, label, color):
@@ -33,15 +36,6 @@ class StagingStatus(str, Enum):
     
     def __str__(self):
         return self._value_
-
-    @classmethod
-    def from_legacy(cls, legacy_status: str) -> 'StagingStatus':
-        """从旧状态转换到新状态"""
-        mapping = {
-            'validated': cls.RELATION_PASS,
-            'rejected': cls.RELATION_ERROR,
-        }
-        return mapping.get(legacy_status, cls(legacy_status))
     
     @classmethod
     def get_meta(cls, value: str) -> Optional[Dict[str, str]]:
@@ -241,9 +235,9 @@ def extract_business_keys_from_model(model_class: Type[TortoiseBaseModel]) -> Li
     从正式表模型自动提取业务主键
     
     优先级：
-    1. unique_together 约束（业务主键）
+    1. unique_together 约束（业务主键）- 最高优先级
     2. unique=True 的字段
-    3. 主键字段（pk，排除自增ID）
+    3. 主键字段（pk，排除自增ID和虚拟主键vid）
     
     Args:
         model_class: 正式表模型类（如 TMaterial）
@@ -251,24 +245,38 @@ def extract_business_keys_from_model(model_class: Type[TortoiseBaseModel]) -> Li
     Returns:
         业务主键字段列表
     """
+    
     meta = getattr(model_class, '_meta', None)
+    model_name = model_class.__name__ if model_class else 'Unknown'
     
-    # 优先使用 unique_together（业务主键）
-    if meta:
-        unique_together = getattr(meta, 'unique_together', None)
-        if unique_together and len(unique_together) > 0:
-            return list(unique_together[0])
+    if not meta:
+        logger.warning(f"[业务主键提取] {model_name}: 无_meta属性，返回空列表")
+        return []
     
-    # 其次检查 unique=True 的字段
-    for field_name, field in model_class._meta.fields_map.items():
+    # 优先级1：unique_together 约束（业务主键）
+    unique_together = getattr(meta, 'unique_together', None)
+    if unique_together and len(unique_together) > 0:
+        keys = list(unique_together[0])
+        logger.debug(f"[业务主键提取] {model_name}: 从unique_together提取 -> {keys}")
+        return keys
+    
+    # 优先级2：unique=True 的字段
+    for field_name, field in meta.fields_map.items():
         if getattr(field, 'unique', False):
+            logger.debug(f"[业务主键提取] {model_name}: 从unique字段提取 -> [{field_name}]")
             return [field_name]
     
-    # 最后检查主键（排除自增ID和虚拟主键vid）
-    pk_field = model_class._meta.pk
-    if pk_field and pk_field.model_field_name not in ('id', 'vid'):
-        return [pk_field.model_field_name]
+    # 优先级3：主键字段（排除自增ID和虚拟主键vid）
+    pk_field = meta.pk
+    if pk_field:
+        pk_name = pk_field.model_field_name
+        if pk_name not in ('id', 'vid'):
+            logger.debug(f"[业务主键提取] {model_name}: 从主键字段提取 -> [{pk_name}]")
+            return [pk_name]
+        else:
+            logger.warning(f"[业务主键提取] {model_name}: 主键为自增字段'{pk_name}'，跳过（请在模型中配置unique_together）")
     
+    logger.warning(f"[业务主键提取] {model_name}: 未找到业务主键，返回空列表")
     return []
 
 
@@ -298,9 +306,6 @@ def extract_display_name_from_model(model_class: Type[TortoiseBaseModel]) -> str
         return class_name[1:-7]
     
     return class_name
-
-
-
 
 
 def convert_record_to_lowercase(record_dict: Dict, model_class) -> Dict:
@@ -370,11 +375,11 @@ def get_suggestion(error_type: ErrorType) -> str:
 
 TABLE_PROCESS_ORDER = [
     "t_material",
-    "t_workcenter",
-    "t_mold",
     "t_mat_ver",
+    "t_workcenter",
     "t_mat_wc",
     "t_mat_wc_bom",
+    "t_mold",
     "t_mat_wc_mold",
 ]
 
@@ -662,8 +667,7 @@ class BusinessRule:
         try:
             return self.validate_func(data)
         except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning(f"业务规则执行异常: {self.name}, {e}")
+            logger.warning(f"业务规则执行异常: {self.name}, {e}")
             return False
     
     def create_error(self, staging_id: int) -> Dict[str, Any]:

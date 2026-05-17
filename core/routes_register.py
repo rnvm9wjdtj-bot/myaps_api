@@ -5,48 +5,68 @@ from apps.data_opt.routers import rt as do_rt
 from apps.data_opt.mds.staging_routers import rt as mds_rt
 from apps.common.monitor.routers import router as monitor_rt
 from apps.common.help.routers import router as help_rt
+from apps.data_opt.mds.config_generator import TABLE_DISPLAY_CONFIG
+from apps.data_opt.mds.staging_cleaner import STAGING_TABLE_CONFIG
 import os
+import json
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# MDS 页面配置字典
-MDS_PAGE_CONFIG = {
-    "material": {
-        "page_title": "物料数据清洗管理",
-        "keyword_placeholder": "搜索物料号或描述...",
-        "config_file": "material.config.js"
-    },
-    "workcenter": {
-        "page_title": "工作中心数据清洗管理",
-        "keyword_placeholder": "搜索工作中心或描述...",
-        "config_file": "workcenter.config.js"
-    },
-    "mat-ver": {
-        "page_title": "产线版本数据清洗管理",
-        "keyword_placeholder": "搜索物料号或版本号...",
-        "config_file": "mat-ver.config.js"
-    },
-    "mat-wc": {
-        "page_title": "工艺路线数据清洗管理",
-        "keyword_placeholder": "搜索物料号或工作中心...",
-        "config_file": "mat-wc.config.js"
-    },
-    "mat-wc-bom": {
-        "page_title": "BOM数据清洗管理",
-        "keyword_placeholder": "搜索父件或子件料号...",
-        "config_file": "mat-wc-bom.config.js"
-    },
-    "mold": {
-        "page_title": "模具数据清洗管理",
-        "keyword_placeholder": "搜索模具编号或描述...",
-        "config_file": "mold.config.js"
-    },
-    "mat-wc-mold": {
-        "page_title": "机台模具数据清洗管理",
-        "keyword_placeholder": "搜索物料号或模具编号...",
-        "config_file": "mat-wc-mold.config.js"
-    }
-}
+
+def get_mds_page_config():
+    """从 TABLE_DISPLAY_CONFIG 生成页面配置"""
+    config = {}
+    for table_key, display_config in TABLE_DISPLAY_CONFIG.items():
+        route = display_config["route"]
+        config[route] = {
+            "page_title": display_config["page_title"],
+            "keyword_placeholder": display_config["keyword_placeholder"],
+            "table_key": table_key,
+        }
+    return config
+
+MDS_PAGE_CONFIG = get_mds_page_config()
+
+
+def render_mds_index():
+    """动态渲染 MDS 首页导航"""
+    template_path = os.path.join(BASE_DIR, "static", "mds", "index.html")
+    with open(template_path, "r", encoding="utf-8") as f:
+        template = f.read()
+    
+    # 生成导航列表 HTML
+    nav_items = []
+    for table_key, display_config in TABLE_DISPLAY_CONFIG.items():
+        route = display_config["route"]
+        gradient = display_config["gradient"]
+        # 从 STAGING_TABLE_CONFIG 获取 display_name
+        display_name = STAGING_TABLE_CONFIG.get(table_key, {}).get("display_name", table_key)
+        nav_item = f'''
+                    <a href="/mds/{route}" class="table-link border-bottom">
+                        <div class="d-flex align-items-center">
+                            <div class="table-icon" style="background: linear-gradient(135deg, {gradient[0]}, {gradient[1]});">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
+                                    <path d="M8.186 1.113a.5.5 0 0 0 0 1l1.5 1.5a.5.5 0 0 0 1 0l1.5-1.5a.5.5 0 0 0 0-1l-1.5-1.5a.5.5 0 0 0-1 0zM4 4a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1A.5.5 0 0 0 5 4zm2 0a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1A.5.5 0 0 0 7 4zm2 0a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1A.5.5 0 0 0 9 4z"/>
+                                </svg>
+                            </div>
+                            <div class="table-info ms-3">
+                                <div class="table-title">{display_name}</div>
+                                <div class="table-desc">{display_config["description"]}</div>
+                            </div>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="#ccc" viewBox="0 0 16 16">
+                                <path fill-rule="evenodd" d="M4 8a.5.5 0 0 1 .5-.5h5.793L8.146 5.354a.5.5 0 1 1 .708-.708l3 3a.5.5 0 0 1 0 .708l-3 3a.5.5 0 0 1-.708-.708L10.293 8.5H4.5A.5.5 0 0 1 4 8"/>
+                            </svg>
+                        </div>
+                    </a>'''
+        nav_items.append(nav_item)
+    
+    # 最后一个移除 border-bottom
+    nav_items[-1] = nav_items[-1].replace('class="table-link border-bottom"', 'class="table-link"')
+    
+    nav_html = '\n'.join(nav_items)
+    html = template.replace('{nav_items}', nav_html)
+    return html
+
 
 def render_mds_page(page_key):
     """使用模板渲染MDS页面"""
@@ -62,11 +82,9 @@ def render_mds_page(page_key):
     frontend_config = get_cached_config(page_key)
     
     # 准备替换变量
-    import json
     replacements = {
         "{page_title}": config["page_title"],
         "{keyword_placeholder}": config["keyword_placeholder"],
-        "{config_file}": config["config_file"],
         "{MDS_PAGE_CONFIG}": json.dumps(frontend_config, ensure_ascii=False) if frontend_config else "null"
     }
     
@@ -121,9 +139,7 @@ def register_routes(app):
     # MDS 数据清洗页面路由
     @app.get("/mds", response_class=HTMLResponse, include_in_schema=False)
     async def mds_index():
-        file_path = os.path.join(BASE_DIR, "static", "mds", "index.html")
-        with open(file_path, "r", encoding="utf-8") as f:
-            return f.read()
+        return render_mds_index()
     
     @app.get("/mds/material", response_class=HTMLResponse, include_in_schema=False)
     async def mds_material():

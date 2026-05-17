@@ -77,8 +77,9 @@
                     <select class="form-select form-select-sm" id="statusFilter" style="width:100px">
                         <option value="">全部状态</option>
                         <option value="pending">待处理</option>
-                        <option value="validated">校验通过</option>
-                        <option value="rejected">校验失败</option>
+                        <option value="relation_pass">校验通过</option>
+                        <option value="compliance_error">校验失败</option>
+                        <option value="sync_error">推送失败</option>
                         <option value="synced">已推送</option>
                     </select>
                 </div>
@@ -247,20 +248,11 @@
     <script src="/static/mds/js/bootstrap.bundle.min.js"></script>
     <script src="/static/mds/js/common.js"></script>
     <script src="/static/mds/js/modal-manager.js"></script>
-    <script src="/static/mds/js/api-client.js"></script>
     <script src="/static/mds/js/data-table.js"></script>
     <script src="/static/mds/js/status-card.js"></script>
     <!-- 条件加载配置：优先使用嵌入的配置，否则加载外部文件 -->
     <script>
         var MDS_PAGE_CONFIG = {MDS_PAGE_CONFIG};
-    </script>
-    <script>
-        if (MDS_PAGE_CONFIG === null) {
-            // 如果没有嵌入配置，则动态加载外部文件
-            var script = document.createElement('script');
-            script.src = '/static/mds/configs/{config_file}';
-            document.head.appendChild(script);
-        }
     </script>
     <script src="/static/mds/js/mds-page-controller.js"></script>
     <script>

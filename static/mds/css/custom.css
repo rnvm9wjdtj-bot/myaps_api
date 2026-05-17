@@ -307,16 +307,6 @@ span.badge.status-badge.status-badge-pending {
     color: #000 !important;
 }
 
-span.badge.status-badge.status-badge-validated {
-    background-color: var(--success-color) !important;
-    color: #fff !important;
-}
-
-span.badge.status-badge.status-badge-rejected {
-    background-color: var(--danger-color) !important;
-    color: #fff !important;
-}
-
 span.badge.status-badge.status-badge-synced {
     background-color: var(--info-color) !important;
     color: #000 !important;

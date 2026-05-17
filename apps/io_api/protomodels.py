@@ -350,13 +350,13 @@ class ProtoMatGrp(TortoiseBaseModel):
 
 class ProtoMatVer(TortoiseBaseModel):
     # vid = fields.IntField(primary_key=True)
-    materialno = fields.CharField(source_field='MaterialNo', max_length=64)  # Field name made lowercase.
-    matver = fields.CharField(source_field='MatVer', max_length=4)  # Field name made lowercase.
-    lotfrom = fields.IntField(source_field='LotFrom', blank=True, null=True)  # Field name made lowercase.
-    lotto = fields.IntField(source_field='LotTo', blank=True, null=True)  # Field name made lowercase.
+    materialno = fields.CharField(source_field='MaterialNo', max_length=64, description='物料号')  # Field name made lowercase.
+    matver = fields.CharField(source_field='MatVer', max_length=4, description='版本号')  # Field name made lowercase.
+    lotfrom = fields.IntField(source_field='LotFrom', blank=True, null=True, description='批量下限')  # Field name made lowercase.
+    lotto = fields.IntField(source_field='LotTo', blank=True, null=True, description='批量上限')  # Field name made lowercase.
     priority = fields.IntField(source_field='Priority', blank=True, null=True)  # Field name made lowercase.
-    refno = fields.CharField(source_field='RefNo', max_length=64, blank=True, null=True)  # Field name made lowercase.
-    active = fields.CharField(source_field='Active', max_length=1, blank=True, null=True)  # Field name made lowercase.
+    refno = fields.CharField(source_field='RefNo', max_length=64, blank=True, null=True, description='MTO订单号/认证线')  # Field name made lowercase.
+    active = fields.CharField(source_field='Active', max_length=1, blank=True, null=True, description='激活')  # Field name made lowercase.
     memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
 
     class Meta:
@@ -367,16 +367,16 @@ class ProtoMatVer(TortoiseBaseModel):
 
 class ProtoMatWc(TortoiseBaseModel):
     # vid = fields.IntField(primary_key=True)
-    materialno = fields.CharField(source_field='MaterialNo', max_length=64)  # Field name made lowercase.
-    matver = fields.CharField(source_field='MatVer', max_length=4)  # Field name made lowercase.
-    itemno = fields.CharField(source_field='ItemNo', max_length=6)  # Field name made lowercase.
-    workcenter = fields.CharField(source_field='WorkCenter', max_length=32, description='工作中心，机台')  # Field name made lowercase.
-    sortno = fields.IntField(source_field='SortNo', description='唯一')  # Field name made lowercase.
-    basesec = fields.IntField(source_field='BaseSec')  # Field name made lowercase.
-    fixqty = fields.IntField(source_field='FixQty')  # Field name made lowercase.
-    fixsec = fields.IntField(source_field='FixSec')  # Field name made lowercase.
-    sf = fields.CharField(source_field='SF', max_length=1, blank=True, null=True, description='S=串行, F=并行')  # Field name made lowercase.
-    offsetsec = fields.IntField(source_field='OffSetSec', blank=True, null=True)  # Field name made lowercase.
+    materialno = fields.CharField(source_field='MaterialNo', max_length=64, description='物料号')  # Field name made lowercase.
+    matver = fields.CharField(source_field='MatVer', max_length=4, description='版本号')  # Field name made lowercase.
+    itemno = fields.CharField(source_field='ItemNo', max_length=6, description='工序号')  # Field name made lowercase.
+    workcenter = fields.CharField(source_field='WorkCenter', max_length=32, description='工作中心')  # Field name made lowercase.
+    sortno = fields.IntField(source_field='SortNo', description='排序')  # Field name made lowercase.
+    basesec = fields.IntField(source_field='BaseSec', description='节拍')  # Field name made lowercase.
+    fixqty = fields.IntField(source_field='FixQty', description='额定量')  # Field name made lowercase.
+    fixsec = fields.IntField(source_field='FixSec', description='额定时间(秒)')  # Field name made lowercase.
+    sf = fields.CharField(source_field='SF', max_length=1, blank=True, null=True, description='串并行')  # Field name made lowercase.
+    offsetsec = fields.IntField(source_field='OffSetSec', blank=True, null=True, description='偏置±秒')  # Field name made lowercase.
     rate = fields.FloatField(source_field='Rate', blank=True, null=True, description='配比')  # Field name made lowercase.
     memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
     sys_stamp = fields.DatetimeField(source_field='Sys_Stamp', blank=True, null=True)  # Field name made lowercase.
@@ -389,16 +389,16 @@ class ProtoMatWc(TortoiseBaseModel):
 
 class ProtoMatWcBom(TortoiseBaseModel):
     # vid = fields.IntField(primary_key=True)
-    productno = fields.CharField(source_field='ProductNo', max_length=64)  # Field name made lowercase.
-    matver = fields.CharField(source_field='MatVer', max_length=4)  # Field name made lowercase.
-    itemno = fields.CharField(source_field='ItemNo', max_length=6)  # Field name made lowercase.
-    materialno = fields.CharField(source_field='MaterialNo', max_length=64)  # Field name made lowercase.
-    qty = fields.FloatField(source_field='Qty')  # Field name made lowercase.
-    offsethour = fields.IntField(source_field='OffsetHour')  # Field name made lowercase.
+    productno = fields.CharField(source_field='ProductNo', max_length=64, description='父件号')  # Field name made lowercase.
+    matver = fields.CharField(source_field='MatVer', max_length=4, description='版本号')  # Field name made lowercase.
+    itemno = fields.CharField(source_field='ItemNo', max_length=6, description='工序号')  # Field name made lowercase.
+    materialno = fields.CharField(source_field='MaterialNo', max_length=64, description='子件号')  # Field name made lowercase.
+    qty = fields.FloatField(source_field='Qty', description='用量')  # Field name made lowercase.
+    offsethour = fields.IntField(source_field='OffsetHour', description='偏置±小时')  # Field name made lowercase.
     treeno = fields.IntField(source_field='TreeNo', blank=True, null=True)  # Field name made lowercase.
-    mto = fields.CharField(source_field='MTO', max_length=1, blank=True, null=True, description='Y/N')  # Field name made lowercase.
-    scrap = fields.FloatField(source_field='Scrap', blank=True, null=True, description='%')  # Field name made lowercase.
-    alt = fields.CharField(source_field='Alt', max_length=1, blank=True, null=True, description='Y/N是否是替代')  # Field name made lowercase.
+    mto = fields.CharField(source_field='MTO', max_length=1, blank=True, null=True, description='是否MTO')  # Field name made lowercase.
+    scrap = fields.FloatField(source_field='Scrap', blank=True, null=True, description='报废率')  # Field name made lowercase.
+    alt = fields.CharField(source_field='Alt', max_length=1, blank=True, null=True, description='是否是替代')  # Field name made lowercase.
     memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
     sys_stamp = fields.DatetimeField(source_field='Sys_Stamp', blank=True, null=True)  # Field name made lowercase.
 
@@ -444,13 +444,13 @@ class ProtoMatWcData(TortoiseBaseModel):
 class ProtoMatWcMold(TortoiseBaseModel):
     # pk = fields.CompositePrimaryKey('MaterialNo', 'WorkCenter', 'MoldNo')
     # vid = fields.IntField(primary_key=True)
-    materialno = fields.CharField(source_field='MaterialNo', max_length=64, description='产品')  # Field name made lowercase.
-    workcenter = fields.CharField(source_field='WorkCenter', max_length=32, description='机台')  # Field name made lowercase.
-    itemno = fields.CharField(source_field='ItemNo', max_length=6, description='工序项目')  # Field name made lowercase.
-    moldno = fields.CharField(source_field='MoldNo', max_length=32)  # Field name made lowercase.
-    basesec = fields.IntField(source_field='BaseSec', blank=True, null=True, description='UPH（Units Per Hour）每小时产量')  # Field name made lowercase.
-    fixsec = fields.IntField(source_field='FixSec', blank=True, null=True)  # Field name made lowercase.
-    priority = fields.IntField(source_field='Priority', blank=True, null=True)  # Field name made lowercase.
+    materialno = fields.CharField(source_field='MaterialNo', max_length=64, description='物料号')  # Field name made lowercase.
+    workcenter = fields.CharField(source_field='WorkCenter', max_length=32, description='工作中心')  # Field name made lowercase.
+    itemno = fields.CharField(source_field='ItemNo', max_length=6, description='工序号')  # Field name made lowercase.
+    moldno = fields.CharField(source_field='MoldNo', max_length=32, description='模具号')  # Field name made lowercase.
+    basesec = fields.IntField(source_field='BaseSec', blank=True, null=True, description='节拍')  # Field name made lowercase.
+    fixsec = fields.IntField(source_field='FixSec', blank=True, null=True, description='额定时间(秒)')  # Field name made lowercase.
+    priority = fields.IntField(source_field='Priority', blank=True, null=True, description='优先级')  # Field name made lowercase.
     memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
 
     class Meta:
@@ -475,39 +475,39 @@ class ProtoMatWcSwitch(TortoiseBaseModel):
 
 
 class ProtoMaterial(TortoiseBaseModel):
-    materialno = fields.CharField(source_field='MaterialNo', unique=True, max_length=64, description='物料')  # Field name made lowercase.
-    description = fields.CharField(source_field='Description', max_length=128)  # Field name made lowercase.
-    size = fields.CharField(source_field='Size', max_length=128, blank=True, null=True)  # Field name made lowercase.
+    materialno = fields.CharField(source_field='MaterialNo', unique=True, max_length=64, description='物料号')  # Field name made lowercase.
+    description = fields.CharField(source_field='Description', max_length=128, description='物料描述')  # Field name made lowercase.
+    size = fields.CharField(source_field='Size', max_length=128, blank=True, null=True, description='规格')  # Field name made lowercase.
     plant = fields.CharField(source_field='Plant', max_length=32, description='工厂')  # Field name made lowercase.
-    planner = fields.CharField(source_field='Planner', max_length=64, blank=True, null=True)  # Field name made lowercase.
-    fifo = fields.IntField(source_field='FIFO', description='Y-FIFO ,N-最近原则')  # Field name made lowercase.
-    leadday = fields.IntField(source_field='LeadDay')  # Field name made lowercase.
-    expday = fields.IntField(source_field='ExpDay', blank=True, null=True)  # Field name made lowercase.
-    grday = fields.IntField(source_field='GRDay')  # Field name made lowercase.
-    abc = fields.CharField(source_field='ABC', max_length=8, blank=True, null=True)  # Field name made lowercase.
-    unit = fields.CharField(source_field='Unit', max_length=8, blank=True, null=True, description='KG/L/g')  # Field name made lowercase.
-    price = fields.DecimalField(source_field='Price', max_digits=10, decimal_places=2, blank=True, null=True)  # Field name made lowercase.
-    groupno = fields.CharField(source_field='GroupNo', max_length=32, blank=True, null=True)  # Field name made lowercase.
-    type = fields.CharField(source_field='Type', max_length=1, blank=True, null=True)  # Field name made lowercase.
-    phantom = fields.CharField(source_field='Phantom', max_length=1, blank=True, null=True, description='Y/N')  # Field name made lowercase.
-    phantommin = fields.IntField(source_field='PhantomMin', description='Phantom Offset Time(Minute)')  # Field name made lowercase.
-    firmday = fields.IntField(source_field='FirmDay', blank=True, null=True)  # Field name made lowercase.
-    daygap = fields.IntField(source_field='DayGap', blank=True, null=True, description='MTO Split')  # Field name made lowercase.
-    candelay = fields.CharField(source_field='CanDelay', max_length=1, blank=True, null=True, description='Y/N')  # Field name made lowercase.
-    lotsize = fields.CharField(source_field='LotSize', max_length=2, blank=True, null=True, description='EX/FX/D1/D2/D3/D4/D5/D6/W1/W2/W3/W4/M1/M2/VB')  # Field name made lowercase.
-    lotfix = fields.FloatField(source_field='LotFix', blank=True, null=True, description='Fixed LotSize')  # Field name made lowercase.
-    lotmin = fields.FloatField(source_field='LotMin', blank=True, null=True, description='Minimum Lot Size')  # Field name made lowercase.
-    lotmax = fields.FloatField(source_field='LotMax', blank=True, null=True, description='Maximum Lot Size')  # Field name made lowercase.
-    lotround = fields.FloatField(source_field='LotRound', blank=True, null=True, description='Rounding value')  # Field name made lowercase.
-    lotss = fields.FloatField(source_field='LotSS', blank=True, null=True, description='Safty Stock')  # Field name made lowercase.
-    lotpoint = fields.FloatField(source_field='LotPoint', blank=True, null=True, description='trigger Point')  # Field name made lowercase.
-    lottop = fields.FloatField(source_field='LotTop', blank=True, null=True, description='Top Value')  # Field name made lowercase.
-    planitem = fields.CharField(source_field='PlanItem', max_length=32, blank=True, null=True, description='FC PlanItem, PlanGroup')  # Field name made lowercase.
-    preday = fields.IntField(source_field='PreDay', blank=True, null=True, description='FC PreDay')  # Field name made lowercase.
-    subday = fields.IntField(source_field='SubDay', blank=True, null=True, description='FC SubDay')  # Field name made lowercase.
-    free1 = fields.CharField(source_field='Free1', max_length=255, blank=True, null=True)  # Field name made lowercase.
-    free2 = fields.CharField(source_field='Free2', max_length=255, blank=True, null=True)  # Field name made lowercase.
-    free3 = fields.CharField(source_field='Free3', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    planner = fields.CharField(source_field='Planner', max_length=64, blank=True, null=True, description='计划员')  # Field name made lowercase.
+    fifo = fields.IntField(source_field='FIFO', description='FIFO')  # Field name made lowercase.
+    leadday = fields.IntField(source_field='LeadDay', description='提前期')  # Field name made lowercase.
+    expday = fields.IntField(source_field='ExpDay', blank=True, null=True, description='保质期')  # Field name made lowercase.
+    grday = fields.IntField(source_field='GRDay', description='质检期')  # Field name made lowercase.
+    abc = fields.CharField(source_field='ABC', max_length=8, blank=True, null=True, description='ABC分类')  # Field name made lowercase.
+    unit = fields.CharField(source_field='Unit', max_length=8, blank=True, null=True, description='单位')  # Field name made lowercase.
+    price = fields.DecimalField(source_field='Price', max_digits=10, decimal_places=2, blank=True, null=True, description='价格')  # Field name made lowercase.
+    groupno = fields.CharField(source_field='GroupNo', max_length=32, blank=True, null=True, description='型号')  # Field name made lowercase.
+    type = fields.CharField(source_field='Type', max_length=1, blank=True, null=True, description='类型')  # Field name made lowercase.
+    phantom = fields.CharField(source_field='Phantom', max_length=1, blank=True, null=True, description='虚拟件')  # Field name made lowercase.
+    phantommin = fields.IntField(source_field='PhantomMin', description='虚拟时间')  # Field name made lowercase.
+    firmday = fields.IntField(source_field='FirmDay', blank=True, null=True, description='固定天数')  # Field name made lowercase.
+    daygap = fields.IntField(source_field='DayGap', blank=True, null=True, description='拆分天数')  # Field name made lowercase.
+    candelay = fields.CharField(source_field='CanDelay', max_length=1, blank=True, null=True, description='可延迟')  # Field name made lowercase.
+    lotsize = fields.CharField(source_field='LotSize', max_length=2, blank=True, null=True, description='批量策略')  # Field name made lowercase.
+    lotfix = fields.FloatField(source_field='LotFix', blank=True, null=True, description='固定批')  # Field name made lowercase.
+    lotmin = fields.FloatField(source_field='LotMin', blank=True, null=True, description='最小批')  # Field name made lowercase.
+    lotmax = fields.FloatField(source_field='LotMax', blank=True, null=True, description='最大批')  # Field name made lowercase.
+    lotround = fields.FloatField(source_field='LotRound', blank=True, null=True, description='取整值')  # Field name made lowercase.
+    lotss = fields.FloatField(source_field='LotSS', blank=True, null=True, description='安全库存')  # Field name made lowercase.
+    lotpoint = fields.FloatField(source_field='LotPoint', blank=True, null=True, description='订货点')  # Field name made lowercase.
+    lottop = fields.FloatField(source_field='LotTop', blank=True, null=True, description='最大库存')  # Field name made lowercase.
+    planitem = fields.CharField(source_field='PlanItem', max_length=32, blank=True, null=True, description='产品组')  # Field name made lowercase.
+    preday = fields.IntField(source_field='PreDay', blank=True, null=True, description='向前冲销')  # Field name made lowercase.
+    subday = fields.IntField(source_field='SubDay', blank=True, null=True, description='向后冲销')  # Field name made lowercase.
+    free1 = fields.CharField(source_field='Free1', max_length=255, blank=True, null=True, description='自定义1')  # Field name made lowercase.
+    free2 = fields.CharField(source_field='Free2', max_length=255, blank=True, null=True, description='自定义2')  # Field name made lowercase.
+    free3 = fields.CharField(source_field='Free3', max_length=255, blank=True, null=True, description='自定义3')  # Field name made lowercase.
     memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
     sys_user = fields.CharField(source_field='Sys_User', max_length=32, blank=True, null=True)  # Field name made lowercase.
     sys_date = fields.DatetimeField(source_field='Sys_Date', blank=True, null=True)  # Field name made lowercase.
@@ -601,12 +601,12 @@ class ProtoMaterialNa(TortoiseBaseModel):
 
 
 class ProtoMold(TortoiseBaseModel):
-    moldno = fields.CharField(source_field='MoldNo', unique=True, max_length=32)  # Field name made lowercase.
-    moldname = fields.CharField(source_field='MoldName', max_length=255, blank=True, null=True)  # Field name made lowercase.
-    type = fields.CharField(source_field='Type', max_length=8, blank=True, null=True, description="'注塑','冲压','压铸','夹具'")  # Field name made lowercase.
-    status = fields.CharField(source_field='Status', max_length=8, blank=True, null=True, description="'空闲','生产中','维修中','报废'")  # Field name made lowercase.
-    moldnum = fields.IntField(source_field='MoldNum', blank=True, null=True, description='模具穴数')  # Field name made lowercase.
-    qty = fields.IntField(source_field='Qty', blank=True, null=True, description='模具台数')  # Field name made lowercase.
+    moldno = fields.CharField(source_field='MoldNo', unique=True, max_length=32, description='模具号')  # Field name made lowercase.
+    moldname = fields.CharField(source_field='MoldName', max_length=255, blank=True, null=True, description='模具名称')  # Field name made lowercase.
+    type = fields.CharField(source_field='Type', max_length=8, blank=True, null=True, description="类型")  # Field name made lowercase.
+    status = fields.CharField(source_field='Status', max_length=8, blank=True, null=True, description="状态")  # Field name made lowercase.
+    moldnum = fields.IntField(source_field='MoldNum', blank=True, null=True, description='穴数')  # Field name made lowercase.
+    qty = fields.IntField(source_field='Qty', blank=True, null=True, description='台数')  # Field name made lowercase.
     memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
 
     class Meta:
@@ -1282,20 +1282,20 @@ class ProtoVendor(TortoiseBaseModel):
 
 
 class ProtoWorkcenter(TortoiseBaseModel):
-    workcenter = fields.CharField(source_field='WorkCenter', unique=True, max_length=32)  # Field name made lowercase.
-    workcentername = fields.CharField(source_field='WorkCenterName', max_length=255, blank=True, null=True)  # Field name made lowercase.
-    pri_wc = fields.IntField(source_field='Pri_WC', blank=True, null=True, description='Planning时，多个WorkCenter的优先级选定')  # Field name made lowercase.
-    bottleneck = fields.CharField(source_field='Bottleneck', max_length=1, blank=True, null=True, description='Y/N')  # Field name made lowercase.
-    sortno = fields.CharField(source_field='SortNo', max_length=4, blank=True, null=True)  # Field name made lowercase.
-    plant = fields.CharField(source_field='Plant', max_length=32, blank=True, null=True)  # Field name made lowercase.
-    location = fields.CharField(source_field='Location', max_length=32, blank=True, null=True)  # Field name made lowercase.
-    finite = fields.CharField(source_field='Finite', max_length=1, blank=True, null=True, description='Y/N')  # Field name made lowercase.
-    type = fields.CharField(source_field='Type', max_length=32, blank=True, null=True)  # Field name made lowercase.
-    capnum = fields.IntField(source_field='CapNum', blank=True, null=True)  # Field name made lowercase.
-    capmax = fields.IntField(source_field='CapMax', blank=True, null=True)  # Field name made lowercase.
+    workcenter = fields.CharField(source_field='WorkCenter', unique=True, max_length=32, description='工作中心编号')  # Field name made lowercase.
+    workcentername = fields.CharField(source_field='WorkCenterName', max_length=255, blank=True, null=True, description='名称')  # Field name made lowercase.
+    pri_wc = fields.IntField(source_field='Pri_WC', blank=True, null=True, description='优先级')  # Field name made lowercase.
+    bottleneck = fields.CharField(source_field='Bottleneck', max_length=1, blank=True, null=True, description='是否瓶颈')  # Field name made lowercase.
+    sortno = fields.CharField(source_field='SortNo', max_length=4, blank=True, null=True, description='序号')  # Field name made lowercase.
+    plant = fields.CharField(source_field='Plant', max_length=32, blank=True, null=True, description='工厂')  # Field name made lowercase.
+    location = fields.CharField(source_field='Location', max_length=32, blank=True, null=True, description='车间')  # Field name made lowercase.
+    finite = fields.CharField(source_field='Finite', max_length=1, blank=True, null=True, description='有限')  # Field name made lowercase.
+    type = fields.CharField(source_field='Type', max_length=32, blank=True, null=True, description='首页显示')  # Field name made lowercase.
+    capnum = fields.IntField(source_field='CapNum', blank=True, null=True, description='默认机台数')  # Field name made lowercase.
+    capmax = fields.IntField(source_field='CapMax', blank=True, null=True, description='最大机台数')  # Field name made lowercase.
     worker = fields.FloatField(source_field='Worker', blank=True, null=True, description='工时')  # Field name made lowercase.
     setupno = fields.CharField(source_field='SetupNo', max_length=6, blank=True, null=True, description='切换组')  # Field name made lowercase.
-    grpno = fields.CharField(source_field='GrpNo', max_length=6, blank=True, null=True, description='同类')  # Field name made lowercase.
+    grpno = fields.CharField(source_field='GrpNo', max_length=6, blank=True, null=True, description='同组号')  # Field name made lowercase.
     memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
 
     class Meta:

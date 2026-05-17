@@ -496,11 +496,13 @@ class MDSPageController {
         }
         
         const stats = response.data;
-        const validatedCount = stats.relation_pass || stats.validated || 0;
+        const relationPassCount = stats.relation_pass || 0;
+        const syncErrorCount = stats.sync_error || 0;
         const retryExceeded = stats.retry_exceeded || 0;
         
-        if (validatedCount === 0) {
-            showMessage('没有【联合校验通过】的记录可推送', 'warning');
+        if (relationPassCount === 0 && syncErrorCount === 0) {
+            showMessage('没有【联合校验通过】或【同步失败】的记录可推送', 'warning');
+            return;
         }
         
         let resetRetry = false;
@@ -508,11 +510,11 @@ class MDSPageController {
             resetRetry = confirm(`有${retryExceeded}条记录的重试次数已达上限，是否重置重试次数后推送？\n\n点击"确定"重置并推送，点击"取消"跳过这些记录`);
         }
         
-        const { mode, targetDbs } = await this.showSyncModeDialog(validatedCount);
+        const { mode, targetDbs } = await this.showSyncModeDialog(relationPassCount, syncErrorCount);
         if (!mode || !targetDbs || targetDbs.length === 0) return;
         
         const targetDbParam = targetDbs.join(',');
-        const totalCount = validatedCount * targetDbs.length;
+        const totalCount = (relationPassCount + syncErrorCount) * targetDbs.length;
         
         showProgress(mode === 'incremental' ? '增量推送中' : '刷新推送中', totalCount);
         
@@ -576,9 +578,12 @@ class MDSPageController {
         this.statusCard.refresh();
     }
     
-    async showSyncModeDialog(validatedCount) {
+    async showSyncModeDialog(relationPassCount, syncErrorCount) {
         const dbListResponse = await callApi('/dblist');
         const dbList = dbListResponse.success === 1 ? dbListResponse.data : [];
+        
+        const totalCount = relationPassCount + syncErrorCount;
+        const hasSyncError = syncErrorCount > 0;
         
         return new Promise((resolve) => {
             const modalHtml = `
@@ -590,6 +595,12 @@ class MDSPageController {
                                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                             </div>
                             <div class="modal-body">
+                                ${hasSyncError ? `
+                                <div class="alert alert-info small mb-3">
+                                    <i class="bi bi-info-circle"></i> 
+                                    将推送 <strong>${relationPassCount}</strong> 条【联合校验通过】+ <strong>${syncErrorCount}</strong> 条【同步失败】的记录
+                                </div>
+                                ` : ''}
                                 <div class="mb-3">
                                     <label class="form-label fw-bold">目标账套</label>
                                     <div class="border rounded p-2" style="max-height: 150px; overflow-y: auto;">
@@ -608,7 +619,7 @@ class MDSPageController {
                                     <div class="form-check">
                                         <input class="form-check-input" type="radio" name="syncMode" id="modeIncremental" value="incremental" checked>
                                         <label class="form-check-label" for="modeIncremental">
-                                            <strong>增量推送</strong> <span class="badge bg-primary">${validatedCount}条</span>
+                                            <strong>增量推送</strong> <span class="badge bg-primary">${totalCount}条</span>
                                         </label>
                                         <div class="text-muted small mt-1">仅推送校验通过的新数据，保留正式表现有数据</div>
                                     </div>
@@ -617,7 +628,7 @@ class MDSPageController {
                                     <div class="form-check">
                                         <input class="form-check-input" type="radio" name="syncMode" id="modeRefresh" value="refresh">
                                         <label class="form-check-label" for="modeRefresh">
-                                            <strong>刷新推送</strong> <span class="badge bg-warning text-dark">${validatedCount}条</span>
+                                            <strong>刷新推送</strong> <span class="badge bg-warning text-dark">${totalCount}条</span>
                                         </label>
                                         <div class="text-muted small mt-1">清空正式表后，重新推送校验通过的数据</div>
                                     </div>

@@ -7,7 +7,7 @@ from typing import List, Dict, Optional, Literal
 from datetime import datetime
 from fastapi import APIRouter, Query, Body, HTTPException, status, Request, UploadFile, File
 
-from ._base import StagingStatus, INTERNAL_FIELDS, EXCLUDE_FIELDS, convert_record_to_lowercase, generate_validation_rules_doc
+from ._base import StagingStatus, INTERNAL_FIELDS, EXCLUDE_FIELDS, TABLE_PROCESS_ORDER, convert_record_to_lowercase, generate_validation_rules_doc
 from .staging_models import (
     TMaterialStaging, TWorkcenterStaging, TMatVerStaging,
     TMatWcStaging, TMatWcBomStaging, TMoldStaging, TMatWcMoldStaging,
@@ -30,6 +30,7 @@ MONITOR_STATUS_FIELDS = (
     StagingStatus.COMPLIANCE_ERROR.value,
     StagingStatus.RELATION_PASS.value,
     StagingStatus.RELATION_ERROR.value,
+    StagingStatus.SYNC_ERROR.value,
     StagingStatus.SYNCED.value,
 )
 
@@ -235,17 +236,10 @@ async def validate_staging(
         processor = StagingProcessor(db_name)
         stats = await processor.process_staging(table_name, batch_size)
         
-        # 添加兼容字段，确保前端可以正确处理
-        stats_compat = {
-            **stats,
-            "validated": stats.get("relation_pass", 0),
-            "rejected": (stats.get("relation_error", 0) + stats.get("compliance_error", 0))
-        }
-        
         return standard_response(
             success=1,
             message=f"校验完成",
-            data=stats_compat
+            data=stats
         )
     except Exception as e:
         logger.error(f"校验失败 [{table_name}]: {str(e)}")
@@ -259,28 +253,13 @@ async def validate_all_staging(
     db_name: str = Query(THIS_DB_NAME, description="账套")
 ):
     """按依赖顺序校验所有缓冲表数据"""
-    table_order = [
-        "t_material",
-        "t_workcenter",
-        "t_mold",
-        "t_mat_ver",
-        "t_mat_wc",
-        "t_mat_wc_bom",
-        "t_mat_wc_mold",
-    ]
-    
     try:
         processor = StagingProcessor(db_name)
         all_stats = {}
         
-        for table_name in table_order:
+        for table_name in TABLE_PROCESS_ORDER:
             stats = await processor.process_staging(table_name, batch_size)
-            # 添加兼容字段
-            all_stats[table_name] = {
-                **stats,
-                "validated": stats.get("relation_pass", 0),
-                "rejected": (stats.get("relation_error", 0) + stats.get("compliance_error", 0))
-            }
+            all_stats[table_name] = stats
         
         return standard_response(
             success=1,
@@ -443,7 +422,7 @@ async def sync_to_production(
             }
         )
     except Exception as e:
-        logger.error(f"同步失败 [{table_name}]: {str(e)}")
+        logger.error(f"推送失败 [{table_name}]: {str(e)}")
         return standard_response(success=0, message=str(e))
 
 
@@ -455,21 +434,11 @@ async def sync_all_to_production(
     db_name: str = Query(THIS_DB_NAME, description="账套")
 ):
     """按依赖顺序同步所有缓冲表数据到正式表"""
-    table_order = [
-        "t_material",
-        "t_workcenter",
-        "t_mold",
-        "t_mat_ver",
-        "t_mat_wc",
-        "t_mat_wc_bom",
-        "t_mat_wc_mold",
-    ]
-    
     try:
         processor = StagingProcessor(db_name)
         all_stats = {}
         
-        for table_name in table_order:
+        for table_name in TABLE_PROCESS_ORDER:
             stats = await processor.sync_to_production(table_name, batch_size, max_retries)
             all_stats[table_name] = stats
         
@@ -724,60 +693,6 @@ async def get_staging_status(
         return standard_response(success=0, message=error_detail)
 
 
-@rt.patch("/approve/{table_name}/{staging_id}", summary="审批缓冲表数据")
-async def approve_staging(
-    request: Request,
-    table_name: str,
-    staging_id: int,
-    # db_name: str = Query(MYAPS_MAIN_DB, description="账套")  # 未使用，已注释
-):
-    """手动审批通过缓冲表记录"""
-    try:
-        staging_model = STAGING_MODEL_MAPPING.get(table_name)
-        if not staging_model:
-            raise ValueError(f"未知的缓冲表: {table_name}")
-        
-        record = await staging_model.get(_staging_id=staging_id)
-        record._status = StagingStatus.APPROVED
-        await record.save()
-        
-        return standard_response(success=1, message="审批通过")
-    except Exception as e:
-        logger.error(f"审批失败: {str(e)}")
-        return standard_response(success=0, message=str(e))
-
-
-@rt.patch("/reject/{table_name}/{staging_id}", summary="拒绝缓冲表数据")
-async def reject_staging(
-    request: Request,
-    table_name: str,
-    staging_id: int,
-    reason: str = Query(..., description="拒绝原因"),
-):
-    """手动拒绝缓冲表记录"""
-    try:
-        staging_model = STAGING_MODEL_MAPPING.get(table_name)
-        if not staging_model:
-            raise ValueError(f"未知的缓冲表: {table_name}")
-        
-        record = await staging_model.get(_staging_id=staging_id)
-        record._status = StagingStatus.REJECTED
-        error_json = json.dumps([{
-            "staging_id": staging_id,
-            "error_type": "manual_reject",
-            "error_field": None,
-            "error_value": None,
-            "error_message": reason
-        }], ensure_ascii=False)
-        record._error_msg = error_json
-        await record.save()
-        
-        return standard_response(success=1, message="已拒绝")
-    except Exception as e:
-        logger.error(f"拒绝操作失败: {str(e)}")
-        return standard_response(success=0, message=str(e))
-
-
 @rt.delete("/clear/{table_name}", summary="清空缓冲表")
 async def clear_staging(
     request: Request,
@@ -833,6 +748,7 @@ async def get_monitor_summary(request: Request):
                     COUNT(*) FILTER (WHERE "_status" = '{StagingStatus.COMPLIANCE_ERROR.value}') as {StagingStatus.COMPLIANCE_ERROR.value},
                     COUNT(*) FILTER (WHERE "_status" = '{StagingStatus.RELATION_PASS.value}') as {StagingStatus.RELATION_PASS.value},
                     COUNT(*) FILTER (WHERE "_status" = '{StagingStatus.RELATION_ERROR.value}') as {StagingStatus.RELATION_ERROR.value},
+                    COUNT(*) FILTER (WHERE "_status" = '{StagingStatus.SYNC_ERROR.value}') as {StagingStatus.SYNC_ERROR.value},
                     COUNT(*) FILTER (WHERE "_status" = '{StagingStatus.SYNCED.value}') as {StagingStatus.SYNCED.value},
                     MAX("_createtime") as last_created,
                     MAX("_synced_time") as last_synced
@@ -849,6 +765,7 @@ async def get_monitor_summary(request: Request):
                 StagingStatus.COMPLIANCE_ERROR.value: row.get(StagingStatus.COMPLIANCE_ERROR.value, 0),
                 StagingStatus.RELATION_PASS.value: row.get(StagingStatus.RELATION_PASS.value, 0),
                 StagingStatus.RELATION_ERROR.value: row.get(StagingStatus.RELATION_ERROR.value, 0),
+                StagingStatus.SYNC_ERROR.value: row.get(StagingStatus.SYNC_ERROR.value, 0),
                 StagingStatus.SYNCED.value: row.get(StagingStatus.SYNCED.value, 0),
                 MONITOR_TIME_FIELDS[0]: row.get(MONITOR_TIME_FIELDS[0]).isoformat() if row.get(MONITOR_TIME_FIELDS[0]) else None,
                 MONITOR_TIME_FIELDS[1]: row.get(MONITOR_TIME_FIELDS[1]).isoformat() if row.get(MONITOR_TIME_FIELDS[1]) else None,
@@ -941,13 +858,13 @@ async def retry_failed_records(
             raise ValueError(f"未知的缓冲表: {table_name}")
         
         records = await staging_model.filter(
-            _status=StagingStatus.REJECTED,
+            _status=StagingStatus.SYNC_ERROR,
             _retry_count__lt=max_retry
         )
         
         reset_count = 0
         for record in records:
-            record._status = StagingStatus.VALIDATED
+            record._status = StagingStatus.PENDING
             record._retry_count = 0
             record._error_msg = None
             await record.save()

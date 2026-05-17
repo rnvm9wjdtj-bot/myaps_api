@@ -9,7 +9,6 @@ from typing import Optional, Dict, Any, List
 from logging.handlers import TimedRotatingFileHandler, QueueHandler, QueueListener
 
 
-from core.settings import USE_LOGURU
 # 日志流处理器列表 - 用于存储外部注册的日志流处理器
 _log_stream_handlers: List[logging.Handler] = []
 
@@ -2308,6 +2307,8 @@ def _check_use_loguru() -> bool:
     2. 如果 USE_LOGURU=true 或未设置，尝试使用 V2
     3. 如果 loguru 未安装，自动回退到 V1
     """
+    from core.settings import USE_LOGURU
+    
     global _use_loguru
     if _use_loguru is None:
         try:

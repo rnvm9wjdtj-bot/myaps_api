@@ -45,7 +45,7 @@ risky_function()  # 异常被记录，程序继续
 
 ```python
 logger.success("推送订单", "订单001", "共10条")
-logger.fail("同步失败", "仓库A", "网络超时")
+logger.fail("推送失败", "仓库A", "网络超时")
 logger.query("订单表", count=100)
 logger.insert("日志表", count=5)
 ```

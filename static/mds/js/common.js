@@ -23,7 +23,7 @@ const STAGING_STATUS = {
     },
     COMPLIANCE_PASS: {
         value: 'compliance_pass',
-        label: '基本校验通过',
+        label: '初检通过',
         colorClass: 'text-info',
         bgClass: 'bg-info',
         badgeClass: 'status-badge status-badge-compliance_pass',
@@ -31,7 +31,7 @@ const STAGING_STATUS = {
     },
     COMPLIANCE_ERROR: {
         value: 'compliance_error',
-        label: '基本校验错误',
+        label: '初检错误',
         colorClass: 'text-danger',
         bgClass: 'bg-danger',
         badgeClass: 'status-badge status-badge-compliance_error',
@@ -39,7 +39,7 @@ const STAGING_STATUS = {
     },
     RELATION_PASS: {
         value: 'relation_pass',
-        label: '联合校验通过',
+        label: '联检通过',
         colorClass: 'text-success',
         bgClass: 'bg-success',
         badgeClass: 'status-badge status-badge-relation_pass',
@@ -47,11 +47,19 @@ const STAGING_STATUS = {
     },
     RELATION_ERROR: {
         value: 'relation_error',
-        label: '联合校验错误',
+        label: '联检错误',
         colorClass: 'text-warning',
         bgClass: 'bg-warning',
         badgeClass: 'status-badge status-badge-relation_error',
         icon: 'alert-circle'
+    },
+    SYNC_ERROR: {
+        value: 'sync_error',
+        label: '推送失败',
+        colorClass: 'text-warning',
+        bgClass: 'bg-warning',
+        badgeClass: 'status-badge status-badge-sync_error',
+        icon: 'exclamation-triangle'
     },
     SYNCED: {
         value: 'synced',
@@ -61,36 +69,6 @@ const STAGING_STATUS = {
         badgeClass: 'status-badge status-badge-synced',
         icon: 'send'
     }
-};
-
-// 旧状态映射（兼容历史数据）
-const LEGACY_STATUS_MAP = {
-    'validated': 'relation_pass',
-    'rejected': 'compliance_error'
-};
-
-const STATUS_COLORS = {
-    'pending': 'pending',
-    'compliance_pass': 'compliance_pass',
-    'compliance_error': 'compliance_error',
-    'relation_pass': 'relation_pass',
-    'relation_error': 'relation_error',
-    'synced': 'synced',
-    // 兼容旧状态
-    'validated': 'validated',
-    'rejected': 'rejected'
-};
-
-const STATUS_TEXTS = {
-    'pending': '待处理',
-    'compliance_pass': '基本校验通过',
-    'compliance_error': '基本校验错误',
-    'relation_pass': '联合校验通过',
-    'relation_error': '联合校验错误',
-    'synced': '已推送',
-    // 兼容旧状态
-    'validated': '校验通过',
-    'rejected': '校验失败'
 };
 
 async function callApi(endpoint, method = 'GET', data = null) {
@@ -114,56 +92,6 @@ async function callApi(endpoint, method = 'GET', data = null) {
         return { success: 0, message: error.message };
     }
 }
-
-
-// ==================== 状态元数据加载（阶段一新增）====================
-let STAGING_STATUS_META = null;
-let STAGING_META_LOADED = false;
-
-/**
- * 从后端加载状态元数据
- * @param {boolean} forceReload - 强制重新加载
- * @returns {Promise<Object|null>}
- */
-async function loadStatusMeta(forceReload = false) {
-    if (STAGING_STATUS_META && !forceReload) {
-        return STAGING_STATUS_META;
-    }
-    
-    try {
-        const response = await callApi('/status-meta');
-        if (response && response.success === 1) {
-            STAGING_STATUS_META = {};
-            response.data.forEach(item => {
-                STAGING_STATUS_META[item.value] = item;
-            });
-            STAGING_META_LOADED = true;
-            console.log('状态元数据加载成功:', Object.keys(STAGING_STATUS_META));
-        }
-    } catch (e) {
-        console.warn('加载状态元数据失败，使用硬编码 fallback', e);
-        STAGING_META_LOADED = true;
-    }
-    
-    return STAGING_STATUS_META;
-}
-
-/**
- * 等待状态元数据加载完成
- * @param {number} timeout - 超时时间（毫秒）
- * @returns {Promise<void>}
- */
-async function waitForStatusMeta(timeout = 3000) {
-    const startTime = Date.now();
-    while (!STAGING_META_LOADED && (Date.now() - startTime) < timeout) {
-        await new Promise(resolve => setTimeout(resolve, 50));
-    }
-}
-
-// 页面加载时自动加载状态元数据（非阻塞）
-document.addEventListener('DOMContentLoaded', () => {
-    loadStatusMeta().catch(e => console.warn('自动加载状态元数据失败', e));
-});
 
 function handleResponse(response, onSuccess, onError) {
     if (response.success === 1) {
@@ -204,19 +132,7 @@ function createToastContainer() {
     return container;
 }
 
-function formatDate(dateStr) {
-    if (!dateStr) return '-';
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('zh-CN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
-}
-
-function formatDateTime(dateStr) {
+function formatDate(dateStr, includeSecond = false) {
     if (!dateStr) return '-';
     const date = new Date(dateStr);
     const year = date.getFullYear();
@@ -224,8 +140,12 @@ function formatDateTime(dateStr) {
     const day = String(date.getDate()).padStart(2, '0');
     const hour = String(date.getHours()).padStart(2, '0');
     const minute = String(date.getMinutes()).padStart(2, '0');
-    const second = String(date.getSeconds()).padStart(2, '0');
-    return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+    
+    if (includeSecond) {
+        const second = String(date.getSeconds()).padStart(2, '0');
+        return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+    }
+    return `${year}-${month}-${day} ${hour}:${minute}`;
 }
 
 /**
@@ -234,30 +154,18 @@ function formatDateTime(dateStr) {
  * @returns {Object} 状态配置对象
  */
 function getStatusConfig(status) {
-    // 兼容旧状态
-    const normalizedStatus = LEGACY_STATUS_MAP[status] || status;
-    
-    // 优先使用后端元数据
-    const meta = STAGING_STATUS_META?.[normalizedStatus];
-    if (meta) {
-        return {
-            value: meta.value,
-            label: meta.label,
-            colorClass: `text-${meta.color}`,
-            bgClass: `bg-${meta.color}`,
-            badgeClass: `badge bg-${meta.color}`,
-            icon: 'circle'
-        };
+    const statusConfig = STAGING_STATUS[status.toUpperCase()];
+    if (statusConfig) {
+        return statusConfig;
     }
     
-    // Fallback到旧的硬编码
-    const colorKey = STATUS_COLORS[normalizedStatus] || STATUS_COLORS[status] || 'secondary';
-    return STAGING_STATUS[normalizedStatus.toUpperCase()] || {
+    // 未知状态
+    return {
         value: status,
-        label: STATUS_TEXTS[normalizedStatus] || STATUS_TEXTS[status] || status,
-        colorClass: `text-${colorKey}`,
-        bgClass: `bg-${colorKey}`,
-        badgeClass: `status-badge status-badge-${colorKey}`
+        label: status,
+        colorClass: 'text-secondary',
+        bgClass: 'bg-secondary',
+        badgeClass: 'badge bg-secondary'
     };
 }
 

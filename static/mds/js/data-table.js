@@ -386,7 +386,7 @@ class DataTable {
         const classes = [];
         
         // 状态相关样式
-        if (row._status === 'compliance_error' || row._status === 'rejected') {
+        if (row._status === 'compliance_error') {
             classes.push('table-row-rejected');
         }
         
@@ -445,7 +445,7 @@ class DataTable {
         
         // 时间字段
         if (['_createtime', '_updatetime', '_synced_time'].includes(col.field)) {
-            return `<span class="font-mono">${formatDateTime(value)}</span>`;
+            return `<span class="font-mono">${formatDate(value, true)}</span>`;
         }
         
         // 空值处理
@@ -478,7 +478,7 @@ class DataTable {
      * 渲染状态单元格
      */
     renderStatusCell(status, row) {
-        if (status === 'compliance_error' || status === 'rejected') {
+        if (status === 'compliance_error') {
             return `
                 <span class="status-error-cell" data-error-json="${escapeHtml(row._error_msg || '[]')}">
                     ${formatStatus(status)}
@@ -1210,7 +1210,7 @@ class DataTable {
         }
         
         if (['_createtime', '_updatetime', '_synced_time'].includes(field)) {
-            return formatDateTime(value);
+            return formatDate(value, true);
         }
         
         return value;

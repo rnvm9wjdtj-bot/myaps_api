@@ -151,7 +151,7 @@ STAGING_TABLE_CONFIG = {
                 "label_field": "workcentername"
             },
         ],
-        "display_name": "工艺路线",
+        "display_name": "工序",
         "validator": lambda cleaner, data, staging_id: cleaner.validate_mat_wc(data, staging_id),
         "business_rules": [
             {
@@ -964,18 +964,19 @@ class StagingProcessor:
             logger.info(f"已清空正式表: {target_table_name} (账套: {target_db_name})")
         
         # 统一使用 batch_size 分批查询
-        query = f'SELECT * FROM "{staging_table_name}" WHERE "_status" = $1 AND ("_retry_count" IS NULL OR "_retry_count" < $2) LIMIT $3'
-        result = await pg_conn.execute_query(query, ("relation_pass", max_retries, batch_size))
+        # 允许 relation_pass 和 sync_error 状态的数据进行同步
+        query = f'SELECT * FROM "{staging_table_name}" WHERE "_status" IN ($1, $2) AND ("_retry_count" IS NULL OR "_retry_count" < $3) LIMIT $4'
+        result = await pg_conn.execute_query(query, ("relation_pass", "sync_error", max_retries, batch_size))
         records_to_sync = result[1] if result[1] else []
         
-        # 检查retry_count分布
-        retry_check = await pg_conn.execute_query(
-            f'SELECT "_retry_count", COUNT(*) as cnt FROM "{staging_table_name}" WHERE "_status" = $1 GROUP BY "_retry_count"',
-            ("relation_pass",)
+        # 检查各状态数量分布
+        status_check = await pg_conn.execute_query(
+            f'SELECT "_status", COUNT(*) as cnt FROM "{staging_table_name}" WHERE "_status" IN ($1, $2) GROUP BY "_status"',
+            ("relation_pass", "sync_error")
         )
-        retry_dist = {row["_retry_count"]: row["cnt"] for row in retry_check[1]} if retry_check[1] else {}
+        status_dist = {row["_status"]: row["cnt"] for row in status_check[1]} if status_check[1] else {}
         
-        logger.info(f"同步查询: 表={staging_table_name}, 状态=relation_pass, 重试<{max_retries}, 批次={batch_size}, 找到{len(records_to_sync)}条记录, retry分布={retry_dist}")
+        logger.info(f"同步查询: 表={staging_table_name}, 状态=relation_pass/sync_error, 重试<{max_retries}, 批次={batch_size}, 找到{len(records_to_sync)}条记录, 状态分布={status_dist}")
         
         if not records_to_sync:
             return stats
@@ -1039,7 +1040,7 @@ class StagingProcessor:
                 
                 try:
                     update_query = f'UPDATE "{staging_table_name}" SET "_retry_count" = $1, "_error_msg" = $2, "_status" = $3 WHERE "_staging_id" = $4'
-                    await pg_conn.execute_query(update_query, (retry_count, error_json, "relation_error", staging_id))
+                    await pg_conn.execute_query(update_query, (retry_count, error_json, "sync_error", staging_id))
                 except Exception as update_err:
                     logger.error(f"更新失败记录状态时出错: {update_err}")
                 
@@ -1114,7 +1115,7 @@ class StagingProcessor:
                             "error_message": f"数据重复：存在相同主键的记录，被去重丢弃"
                         }], ensure_ascii=False)
                         update_query = f'UPDATE "{staging_table_name}" SET "_status" = $1, "_error_msg" = $2 WHERE "_staging_id" = $3'
-                        await pg_conn.execute_query(update_query, ("relation_error", error_json, staging_id))
+                        await pg_conn.execute_query(update_query, ("sync_error", error_json, staging_id))
                 
                 # 标记成功同步的记录
                 if synced_staging_ids:
@@ -1130,7 +1131,7 @@ class StagingProcessor:
             
         except Exception as e:
             import traceback
-            logger.error(f"同步失败 [{table_name}] 账套={target_db_name}: {str(e)}")
+            logger.error(f"推送失败 [{table_name}] 账套={target_db_name}: {str(e)}")
             logger.error(traceback.format_exc())
             stats["failed"] = len(data_list)
             for staging_id in staging_ids:
@@ -1140,10 +1141,10 @@ class StagingProcessor:
                     "error_type": "sync_error",
                     "error_field": None,
                     "error_value": None,
-                    "error_message": f"同步失败: {str(e)}"
+                    "error_message": f"推送失败: {str(e)}"
                 }], ensure_ascii=False)
-                update_query = f'UPDATE "{staging_table_name}" SET "_retry_count" = $1, "_error_msg" = $2 WHERE "_staging_id" = $3'
-                await pg_conn.execute_query(update_query, (retry_count, error_json, staging_id))
+                update_query = f'UPDATE "{staging_table_name}" SET "_retry_count" = $1, "_error_msg" = $2, "_status" = $3 WHERE "_staging_id" = $4'
+                await pg_conn.execute_query(update_query, (retry_count, error_json, "sync_error", staging_id))
 
         return stats
 

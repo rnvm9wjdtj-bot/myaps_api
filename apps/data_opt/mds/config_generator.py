@@ -179,23 +179,88 @@ def auto_generate_filter_categories_from_extraction(
 
 
 
-# 页面键到表键的映射
-_PAGE_KEY_TO_TABLE_KEY = {
-    "material": "t_material",
-    "workcenter": "t_workcenter",
-    "mat-ver": "t_mat_ver",
-    "mat-wc": "t_mat_wc",
-    "mat-wc-bom": "t_mat_wc_bom",
-    "mold": "t_mold",
-    "mat-wc-mold": "t_mat_wc_mold"
+# ==============================================
+# 表展示配置（用于前端导航和页面渲染）
+# ==============================================
+
+TABLE_DISPLAY_CONFIG = {
+    "t_material": {
+        "route": "material",
+        "icon": "material",
+        "description": "物料主数据管理，包含物料号、描述、类型等信息",
+        "gradient": ("#0d6efd", "#0dcaf0"),
+        "page_title": "物料数据清洗管理",
+        "keyword_placeholder": "搜索物料号或描述...",
+    },
+    "t_workcenter": {
+        "route": "workcenter",
+        "icon": "workcenter",
+        "description": "工作中心管理，包含产能、瓶颈标识等信息",
+        "gradient": ("#198754", "#20c997"),
+        "page_title": "工作中心数据清洗管理",
+        "keyword_placeholder": "搜索工作中心或描述...",
+    },
+    "t_mat_ver": {
+        "route": "mat-ver",
+        "icon": "version",
+        "description": "物料版本管理，定义不同生产版本的批量范围",
+        "gradient": ("#fd7e14", "#ffc107"),
+        "page_title": "产线版本数据清洗管理",
+        "keyword_placeholder": "搜索物料号或版本号...",
+    },
+    "t_mat_wc": {
+        "route": "mat-wc",
+        "icon": "route",
+        "description": "工艺路线管理，定义物料生产的工序流程",
+        "gradient": ("#6f42c1", "#d63384"),
+        "page_title": "工艺路线数据清洗管理",
+        "keyword_placeholder": "搜索物料号或工作中心...",
+    },
+    "t_mat_wc_bom": {
+        "route": "mat-wc-bom",
+        "icon": "bom",
+        "description": "物料清单管理，定义产品的组成结构和用量",
+        "gradient": ("#dc3545", "#fd7e14"),
+        "page_title": "BOM数据清洗管理",
+        "keyword_placeholder": "搜索父件或子件料号...",
+    },
+    "t_mold": {
+        "route": "mold",
+        "icon": "mold",
+        "description": "模具主数据管理，包含模具类型、状态、穴数等",
+        "gradient": ("#343a40", "#6c757d"),
+        "page_title": "模具数据清洗管理",
+        "keyword_placeholder": "搜索模具编号或描述...",
+    },
+    "t_mat_wc_mold": {
+        "route": "mat-wc-mold",
+        "icon": "link",
+        "description": "机台与模具的关联关系管理",
+        "gradient": ("#0dcaf0", "#20c997"),
+        "page_title": "机台模具数据清洗管理",
+        "keyword_placeholder": "搜索物料号或模具编号...",
+    },
 }
+
+
+# ==============================================
+# 系统公共字段（每个表都显示）
+# ==============================================
+
+SYSTEM_COMMON_COLUMNS_PREFIX = [
+    {"field": "_status", "title": "状态", "width": "80px"},
+    {"field": "_createtime", "title": "创建时间", "width": "180px", "sortable": True},
+]
+
+SYSTEM_COMMON_COLUMNS_SUFFIX = [
+    {"field": "_source_system", "title": "来源", "width": "80px"},
+]
+
 
 # 前端配置（列配置等）
 # TODO: 可以进一步优化，从模型中提取更多信息
 _PAGE_COLUMNS_CONFIG = {
-    "t_material": [
-        {"field": "_status", "title": "状态"},
-        {"field": "_createtime", "title": "创建时间", "sortable": True},
+    "t_material": SYSTEM_COMMON_COLUMNS_PREFIX + [
         {"field": "materialno", "title": "物料号", "sortable": True, "readOnly": True},
         {"field": "description", "title": "物料描述"},
         {"field": "size", "title": "规格"},
@@ -229,32 +294,26 @@ _PAGE_COLUMNS_CONFIG = {
         {"field": "free1", "title": "自定义1"},
         {"field": "free2", "title": "自定义2"},
         {"field": "free3", "title": "自定义3"},
-        {"field": "_source_system", "title": "来源"}
-    ],
-    "t_workcenter": [
-        {"field": "_status", "title": "状态", "width": "80px"},
-        {"field": "_createtime", "title": "创建时间", "width": "180px", "sortable": True},
-        {"field": "workcenter", "title": "工作中心", "width": "120px", "sortable": True, "readOnly": True},
-        {"field": "description", "title": "描述", "width": "200px"},
-        {"field": "bottleneck", "title": "瓶颈", "width": "80px"},
-        {"field": "finite", "title": "有限产能", "width": "100px"},
-        {"field": "capacity", "title": "产能", "width": "100px"},
-        {"field": "_source_system", "title": "来源", "width": "80px"}
-    ],
-    "t_mat_ver": [
-        {"field": "_status", "title": "状态", "width": "80px"},
-        {"field": "_createtime", "title": "创建时间", "width": "180px", "sortable": True},
+    ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
+
+    "t_workcenter": SYSTEM_COMMON_COLUMNS_PREFIX + [
+        {"field": "workcenter", "title": "工作中心", "sortable": True, "readOnly": True},
+        {"field": "description", "title": "描述"},
+        {"field": "bottleneck", "title": "瓶颈"},
+        {"field": "finite", "title": "有限产能"},
+        {"field": "capacity", "title": "产能"},
+    ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
+
+    "t_mat_ver": SYSTEM_COMMON_COLUMNS_PREFIX + [
         {"field": "materialno", "title": "物料号", "width": "120px", "sortable": True, "readOnly": True},
         {"field": "matver", "title": "版本号", "width": "80px", "sortable": True},
-        {"field": "description", "title": "描述", "width": "200px"},
-        {"field": "active", "title": "激活", "width": "80px"},
         {"field": "lotfrom", "title": "批量下限", "width": "100px"},
         {"field": "lotto", "title": "批量上限", "width": "100px"},
-        {"field": "_source_system", "title": "来源", "width": "80px"}
-    ],
-    "t_mat_wc": [
-        {"field": "_status", "title": "状态", "width": "80px"},
-        {"field": "_createtime", "title": "创建时间", "width": "180px", "sortable": True},
+        {"field": "refno", "title": "MTO订单号/认证线", "width": "150px"},
+        {"field": "active", "title": "激活", "width": "80px"},
+    ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
+
+    "t_mat_wc": SYSTEM_COMMON_COLUMNS_PREFIX + [
         {"field": "materialno", "title": "物料号", "width": "120px", "sortable": True, "readOnly": True},
         {"field": "matver", "title": "版本号", "width": "80px"},
         {"field": "itemno", "title": "工序号", "width": "80px"},
@@ -262,37 +321,29 @@ _PAGE_COLUMNS_CONFIG = {
         {"field": "sf", "title": "串并行", "width": "80px"},
         {"field": "basesec", "title": "基础工时", "width": "100px"},
         {"field": "sortno", "title": "排序", "width": "80px"},
-        {"field": "_source_system", "title": "来源", "width": "80px"}
-    ],
-    "t_mat_wc_bom": [
-        {"field": "_status", "title": "状态", "width": "80px"},
-        {"field": "_createtime", "title": "创建时间", "width": "180px", "sortable": True},
+    ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
+    
+    "t_mat_wc_bom": SYSTEM_COMMON_COLUMNS_PREFIX + [
         {"field": "productno", "title": "父件号", "width": "100px", "readOnly": True},
         {"field": "matver", "title": "版本号", "width": "80px"},
         {"field": "itemno", "title": "工序号", "width": "80px"},
         {"field": "materialno", "title": "子件号", "width": "100px"},
-        {"field": "workcenter", "title": "工作中心", "width": "100px"},
         {"field": "qty", "title": "用量", "width": "80px"},
-        {"field": "_source_system", "title": "来源", "width": "80px"}
-    ],
-    "t_mold": [
-        {"field": "_status", "title": "状态", "width": "80px"},
-        {"field": "_createtime", "title": "创建时间", "width": "180px", "sortable": True},
+    ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
+
+    "t_mold": SYSTEM_COMMON_COLUMNS_PREFIX + [
         {"field": "moldno", "title": "模具号", "width": "120px", "sortable": True, "readOnly": True},
-        {"field": "description", "title": "描述", "width": "200px"},
-        {"field": "cavity", "title": "穴数", "width": "80px"},
-        {"field": "count", "title": "台数", "width": "80px"},
-        {"field": "_source_system", "title": "来源", "width": "80px"}
-    ],
-    "t_mat_wc_mold": [
-        {"field": "_status", "title": "状态", "width": "80px"},
-        {"field": "_createtime", "title": "创建时间", "width": "180px", "sortable": True},
+        {"field": "moldname", "title": "描述"},
+        {"field": "moldnum", "title": "穴数", "width": "80px"},
+        {"field": "qty", "title": "台数", "width": "80px"},
+    ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
+    
+    "t_mat_wc_mold": SYSTEM_COMMON_COLUMNS_PREFIX + [
         {"field": "materialno", "title": "物料号", "width": "100px", "readOnly": True},
         {"field": "workcenter", "title": "工作中心", "width": "100px"},
         {"field": "itemno", "title": "工序号", "width": "80px"},
         {"field": "moldno", "title": "模具号", "width": "100px"},
-        {"field": "_source_system", "title": "来源", "width": "80px"}
-    ]
+    ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
 }
 
 # 筛选字段配置
@@ -302,11 +353,11 @@ _PAGE_FILTER_CONFIG = {
         "number_fields": ["leadday", "expday", "grday", "price", "phantommin", "firmday", "daygap", "lotfix", "lotmin", "lotmax"]
     },
     "t_workcenter": {
-        "string_fields": ["workcenter", "description"],
-        "number_fields": ["capacity"]
+        "string_fields": ["workcenter", "workcentername"],
+        "number_fields": ["capnum"]
     },
     "t_mat_ver": {
-        "string_fields": ["materialno", "matver", "description"],
+        "string_fields": ["materialno", "matver"],
         "number_fields": ["lotfrom", "lotto"]
     },
     "t_mat_wc": {
@@ -314,12 +365,12 @@ _PAGE_FILTER_CONFIG = {
         "number_fields": ["basesec", "sortno"]
     },
     "t_mat_wc_bom": {
-        "string_fields": ["productno", "materialno", "workcenter", "matver", "itemno"],
+        "string_fields": ["productno", "materialno", "matver", "itemno"],
         "number_fields": ["qty"]
     },
     "t_mold": {
-        "string_fields": ["moldno", "description"],
-        "number_fields": ["cavity", "count"]
+        "string_fields": ["moldno", "moldname"],
+        "number_fields": ["moldnum", "qty"]
     },
     "t_mat_wc_mold": {
         "string_fields": ["materialno", "workcenter", "itemno", "moldno"],
@@ -341,8 +392,13 @@ def generate_generic_page_config(page_key: str) -> Optional[Dict[str, Any]]:
     Returns:
         页面配置字典，如果不支持该页面则返回 None
     """
-    # 从页面键获取表键
-    table_key = _PAGE_KEY_TO_TABLE_KEY.get(page_key)
+    # 从页面键获取表键（通过 route 匹配）
+    table_key = None
+    for tk, config in TABLE_DISPLAY_CONFIG.items():
+        if config["route"] == page_key:
+            table_key = tk
+            break
+    
     if not table_key:
         return None
     

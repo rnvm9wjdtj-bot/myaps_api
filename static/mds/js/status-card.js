@@ -51,7 +51,7 @@ class StatusCard {
                     <div class="card status-card" data-status="compliance_pass">
                         <div class="card-body text-center">
                             <div class="status-number text-info" id="compliancePassCount">-</div>
-                            <div class="status-label">基本校验通过</div>
+                            <div class="status-label">初检通过</div>
                         </div>
                     </div>
                 </div>
@@ -59,7 +59,7 @@ class StatusCard {
                     <div class="card status-card" data-status="compliance_error">
                         <div class="card-body text-center">
                             <div class="status-number text-danger" id="complianceErrorCount">-</div>
-                            <div class="status-label">基本校验错误</div>
+                            <div class="status-label">初检错误</div>
                         </div>
                     </div>
                 </div>
@@ -67,7 +67,7 @@ class StatusCard {
                     <div class="card status-card" data-status="relation_pass">
                         <div class="card-body text-center">
                             <div class="status-number text-success" id="relationPassCount">-</div>
-                            <div class="status-label">联合校验通过</div>
+                            <div class="status-label">联检通过</div>
                         </div>
                     </div>
                 </div>
@@ -75,7 +75,15 @@ class StatusCard {
                     <div class="card status-card" data-status="relation_error">
                         <div class="card-body text-center">
                             <div class="status-number text-warning" id="relationErrorCount">-</div>
-                            <div class="status-label">联合校验错误</div>
+                            <div class="status-label">联检错误</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="card status-card" data-status="sync_error">
+                        <div class="card-body text-center">
+                            <div class="status-number text-warning" id="syncErrorCount">-</div>
+                            <div class="status-label">推送失败</div>
                         </div>
                     </div>
                 </div>
@@ -149,6 +157,7 @@ class StatusCard {
             { status: 'compliance_error', elementId: 'complianceErrorCount' },
             { status: 'relation_pass', elementId: 'relationPassCount' },
             { status: 'relation_error', elementId: 'relationErrorCount' },
+            { status: 'sync_error', elementId: 'syncErrorCount' },
             { status: 'synced', elementId: 'syncedCount' }
         ];
         
@@ -182,6 +191,7 @@ class StatusCard {
                 + this.getStatusCount('compliance_error') 
                 + this.getStatusCount('relation_pass') 
                 + this.getStatusCount('relation_error') 
+                + this.getStatusCount('sync_error')
                 + this.getStatusCount('synced');
     }
     
@@ -191,18 +201,7 @@ class StatusCard {
      * @returns {number} 计数值
      */
     getStatusCount(status) {
-        // 优先从stats获取
-        if (this.stats[status] !== undefined) {
-            return this.stats[status];
-        }
-        
-        // 兼容旧状态命名
-        const legacyMap = {
-            'relation_pass': this.stats.validated,
-            'compliance_error': this.stats.rejected
-        };
-        
-        return legacyMap[status] || 0;
+        return this.stats[status] || 0;
     }
     
     /**
@@ -215,7 +214,7 @@ class StatusCard {
             const count = parseInt(numberElement.textContent) || 0;
             
             // 根据状态和数量添加视觉反馈
-            if (status === 'compliance_error' || status === 'relation_error') {
+            if (status === 'compliance_error' || status === 'relation_error' || status === 'sync_error') {
                 if (count > 0) {
                     card.classList.add('status-card-error');
                 } else {
@@ -276,11 +275,11 @@ class StatusCard {
     }
     
     /**
-     * 获取可推送数量
+     * 获取可推送数量（联合校验通过 + 同步失败）
      * @returns {number} 可推送数量
      */
     getReadyToSyncCount() {
-        return this.getStatusCount('relation_pass');
+        return this.getStatusCount('relation_pass') + this.getStatusCount('sync_error');
     }
     
     /**

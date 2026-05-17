@@ -9,6 +9,11 @@ import logging
 from collections import deque
 from typing import Set, List, Dict, Optional
 
+# 延迟导入避免循环依赖
+def _get_logger():
+    from globalobjects import logger as log_config
+    return log_config.get_logger(__name__)
+
 
 class LogStreamManager:
     """全局日志流管理器 - 单例模式，确保所有模块使用同一个实例"""
@@ -84,7 +89,7 @@ class LogStreamService:
         async with self._lock:
             for queue in self._active_connections:
                 await queue.put(None)
-        logging.info("[日志流] 服务已停止")
+        _get_logger().info("[日志流] 服务已停止")
 
     def _add_log_handler(self):
         """添加自定义日志处理器（不影响现有处理器）"""

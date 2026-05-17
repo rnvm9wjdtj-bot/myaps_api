@@ -1,13 +1,17 @@
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, TypeVar, Generic
-import logging
 from datetime import datetime
 import threading
 import time
 
 
 T = TypeVar('T')
+
+# 延迟导入避免循环依赖
+def _get_logger():
+    from globalobjects import logger as log_config
+    return log_config.get_logger(__name__)
 
 class JSONManager:
     """基础的JSON文件管理器"""
@@ -50,7 +54,7 @@ class JSONManager:
             with self.filepath.open('r', encoding=self.encoding) as f:
                 self._data = json.load(f)
         except (json.JSONDecodeError, FileNotFoundError):
-            logging.warning(f"无法加载 {self.filepath}，使用空数据")
+            _get_logger().warning(f"无法加载 {self.filepath}，使用空数据")
             self._data = {}
     
     def _save(self) -> None:
@@ -78,14 +82,14 @@ class JSONManager:
                     
                 except PermissionError as e:
                     if attempt < max_retries - 1:
-                        logging.warning(f"文件被占用，第 {attempt + 1} 次重试: {e}")
+                        _get_logger().warning(f"文件被占用，第 {attempt + 1} 次重试: {e}")
                         time.sleep(retry_delay * (attempt + 1))
                         continue
                     else:
-                        logging.error(f"保存失败，已重试 {max_retries} 次: {e}")
+                        _get_logger().error(f"保存失败，已重试 {max_retries} 次: {e}")
                         raise
                 except Exception as e:
-                    logging.error(f"保存失败: {e}")
+                    _get_logger().error(f"保存失败: {e}")
                     raise
     
     def get(self, 
