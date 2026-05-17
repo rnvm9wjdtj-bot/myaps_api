@@ -4,17 +4,15 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
+# 先加载环境变量，确保 USE_LOGURU 在 logger 导入前就已设置
+BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(os.getenv('ENV_FILE', os.path.join(BASE_DIR, '.env')), override=False)
 
 from globalobjects.json_manager import JSONManager
 from globalobjects import logger as log_config
 
 
 logger = log_config.get_logger(__name__)
-# 加载.env文件中的环境变量
-from pathlib import Path
-BASE_DIR = Path(__file__).resolve().parent.parent
-# override=False: 系统环境变量优先于 .env 文件，允许 Systemd 传递的环境变量生效
-load_dotenv(os.getenv('ENV_FILE', os.path.join(BASE_DIR, '.env')), override=False)
 
 
 
@@ -79,6 +77,12 @@ SCHEDULER_MINUTE = os.getenv("SCHEDULER_MINUTE") or "55"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "").strip() or "INFO"
 # 日志保留天数，默认5
 LOG_RETENTION = int(os.getenv("LOG_RETENTION", 5))
+
+# 日志引擎开关：使用 loguru (V2) 还是原生 logging (V1)
+# 默认 True，使用 loguru；设置为 False 切换到原生 logging
+# 注意：如果 loguru 未安装，会自动回退到原生 logging
+USE_LOGURU = os.getenv("USE_LOGURU", "true").lower().strip() == "true"
+
 
 # 本地 SQLite 数据库名称
 SQLITE_FILE = os.getenv("SQLITE_FILE", "").replace(".sqlite3", "").strip() or "local_data"

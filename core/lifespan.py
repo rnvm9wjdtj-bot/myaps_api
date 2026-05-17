@@ -23,7 +23,7 @@ from core.database import check_db_connections, warmup_connections, start_pool_m
 async def lifespan(app):
     """应用生命周期管理器"""
     # 应用启动时执行的操作
-    log_config.initialize_logging()
+    log_config.initialize_logging_unified()
     
     # 将主应用事件循环传递给调度器
     main_loop = asyncio.get_running_loop()

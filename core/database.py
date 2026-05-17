@@ -314,9 +314,9 @@ def register_database(app):
     )
     
     # 标记数据库已初始化，允许日志写入数据库
-    from globalobjects.logger import get_logger
-    logger = get_logger("database")
-    logger.set_db_initialized_all(True)
+    # 使用统一函数，同时设置 V1 和 V2
+    from globalobjects.logger import set_db_initialized_unified
+    set_db_initialized_unified(True)
     
     # 启动监控服务（使用现有的监控架构）
     from apps.common.monitor.service import monitor_service

@@ -8,6 +8,8 @@ import threading
 from typing import Optional, Dict, Any, List
 from logging.handlers import TimedRotatingFileHandler, QueueHandler, QueueListener
 
+
+from core.settings import USE_LOGURU
 # 日志流处理器列表 - 用于存储外部注册的日志流处理器
 _log_stream_handlers: List[logging.Handler] = []
 
@@ -2289,6 +2291,117 @@ def get_logger(name: Optional[str] = None, level: str = 'INFO') -> logging.Logge
     logger = setup_logger(name, level=level)
     
     return logger
+
+
+# ============================================================================
+# 日志引擎切换（V1: logging / V2: loguru）
+# ============================================================================
+
+_use_loguru = None
+
+def _check_use_loguru() -> bool:
+    """
+    检查是否使用 loguru
+    
+    逻辑：
+    1. 如果 USE_LOGURU=false，强制使用 V1
+    2. 如果 USE_LOGURU=true 或未设置，尝试使用 V2
+    3. 如果 loguru 未安装，自动回退到 V1
+    """
+    global _use_loguru
+    if _use_loguru is None:
+        try:
+            import os
+            use_loguru_env = USE_LOGURU
+            
+            # 如果明确设置为 false，使用 V1
+            if use_loguru_env == "false":
+                _use_loguru = False
+                return _use_loguru
+            
+            # 默认使用 V2，但需要检查 loguru 是否安装
+            try:
+                import loguru
+                _use_loguru = True
+            except ImportError:
+                # loguru 未安装，回退到 V1
+                import warnings
+                warnings.warn("loguru 未安装，回退到原生 logging")
+                _use_loguru = False
+        except Exception:
+            _use_loguru = False
+    return _use_loguru
+
+
+def get_logger_unified(name: Optional[str] = None, level: str = 'INFO'):
+    """
+    获取统一的日志器（自动选择 V1 或 V2）
+    
+    根据环境变量 USE_LOGURU 和 loguru 安装状态决定使用哪个日志引擎：
+    - USE_LOGURU=false: 强制使用原生 logging (V1)
+    - USE_LOGURU=true 或未设置: 优先使用 loguru (V2)，未安装则回退到 V1
+    
+    Args:
+        name: 日志器名称
+        level: 日志级别
+    
+    Returns:
+        SmartLogger (V1) 或 SmartLoggerV2 (V2)
+    """
+    if _check_use_loguru():
+        try:
+            from globalobjects.logger_v2 import get_logger_v2
+            return get_logger_v2(name or "app", level)
+        except Exception:
+            pass
+    
+    return get_logger(name, level)
+
+
+def initialize_logging_unified() -> None:
+    """
+    初始化日志系统（自动选择 V1 或 V2）
+    """
+    if _check_use_loguru():
+        try:
+            from globalobjects.logger_v2 import initialize_logging_v2
+            initialize_logging_v2()
+            return
+        except Exception:
+            pass
+    
+    initialize_logging()
+
+
+def shutdown_logging_unified() -> None:
+    """
+    关闭日志系统（自动选择 V1 或 V2）
+    """
+    if _check_use_loguru():
+        try:
+            from globalobjects.logger_v2 import shutdown_logging_v2
+            shutdown_logging_v2()
+            return
+        except Exception:
+            pass
+    
+    shutdown_logging()
+
+
+def set_db_initialized_unified(initialized: bool = True) -> None:
+    """
+    设置数据库初始化状态（V1 和 V2 通用）
+    """
+    global db_initialized
+    db_initialized = initialized
+    
+    # 同时设置 V2
+    if _check_use_loguru():
+        try:
+            from globalobjects.logger_v2 import set_db_initialized
+            set_db_initialized(initialized)
+        except Exception:
+            pass
 
 
 def initialize_logging() -> None:
