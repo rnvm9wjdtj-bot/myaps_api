@@ -4,7 +4,7 @@
 """
 import json
 from typing import List, Dict, Optional, Literal
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Query, Body, HTTPException, status, Request, UploadFile, File
 
 from ._base import StagingStatus, INTERNAL_FIELDS, EXCLUDE_FIELDS, TABLE_PROCESS_ORDER, convert_record_to_lowercase, generate_validation_rules_doc
@@ -353,7 +353,7 @@ async def sync_to_production(
                 if staging_model:
                     conn = Tortoise.get_connection(THIS_DB_NAME)
                     staging_table_name = staging_model._meta.db_table
-                    synced_time = datetime.now()
+                    synced_time = datetime.now(timezone.utc)
                     
                     # 更新成功同步的记录
                     if all_synced_ids:

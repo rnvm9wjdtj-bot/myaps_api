@@ -80,7 +80,7 @@ TORTOISE_ORM_CONFIG = {
             "default_connection": MYAPS_MAIN_DB  # 使用MyAPS账套
         },
         "monitor_models": {
-            "models": ["apps.common.monitor.models", "aerich.models"],
+            "models": ["apps.common.monitor.models"],
             "default_connection": SQLITE_FILE  # 使用SQLite数据库
         },
     },
@@ -102,7 +102,7 @@ if THIS_DB_NAME:
         "use_tz": True,
     }
     TORTOISE_ORM_CONFIG["apps"]["data_opt_models"] = {
-        "models": ["apps.data_opt.mds.staging_models", "aerich.models"],
+        "models": ["apps.data_opt.mds.staging_models"],
         "default_connection": THIS_DB_NAME,
     }
 

@@ -52,11 +52,8 @@ echo.
 echo    [2] Create tables with Tortoise
 echo        - Only create new tables
 echo.
-echo    [3] Use Aerich migration system
-echo        - Standard aerich workflow
-echo.
-echo    [4] Reset migrations (aerich)
-echo        - Delete all migrations
+echo    [3] Reset migrations
+echo        - Delete all migrations and re-init
 echo.
 echo    [5] Backup only
 echo        - Just backup database
@@ -69,8 +66,7 @@ set /p choice="Enter option (default: 1): "
 if /i "%choice%"=="" goto :auto_migrate
 if /i "%choice%"=="1" goto :auto_migrate
 if /i "%choice%"=="2" goto :tortoise
-if /i "%choice%"=="3" goto :aerich
-if /i "%choice%"=="4" goto :reset
+if /i "%choice%"=="3" goto :reset
 if /i "%choice%"=="5" goto :backup_only
 if /i "%choice%"=="Q" goto :end
 if /i "%choice%"=="q" goto :end
@@ -154,61 +150,10 @@ echo.
 if errorlevel 1 goto :error
 goto :success
 
-:aerich
-echo.
-echo ========================================
-echo  [3] Use Aerich migration system
-echo ========================================
-call :setup_env
-if errorlevel 1 goto :end
-
-echo.
-echo [Step 1] Checking aerich config...
-if exist "migrations\monitor_models" (
-    echo [OK] Migration folder exists
-) else (
-    echo [INFO] Initializing aerich...
-    %PYTHON_VENV_DIR%\Scripts\python.exe -m aerich init -t scripts.migrate.migrate_with_tortoise.monitor_orm_config
-    if errorlevel 1 (
-        echo [WARN] Init failed, continuing...
-    )
-)
-
-echo.
-echo [Step 2] Initializing database...
-%PYTHON_VENV_DIR%\Scripts\python.exe -m aerich init-db
-if errorlevel 1 (
-    echo [INFO] init-db may have already been run
-)
-
-echo.
-echo [Step 3] Generating migration...
-set "TIMESTAMP=%date:~0,4%%date:~5,2%%date:~8,2%_%time:~0,2%%time:~3,2%%time:~6,2%"
-set "TIMESTAMP=%TIMESTAMP: =0%"
-%PYTHON_VENV_DIR%\Scripts\python.exe -m aerich migrate --name "auto_migrate_%TIMESTAMP%"
-if errorlevel 1 (
-    echo [INFO] No new migrations found
-    goto :skip_upgrade
-)
-
-echo.
-echo [Step 4] Upgrading database...
-%PYTHON_VENV_DIR%\Scripts\python.exe -m aerich upgrade
-if errorlevel 1 goto :error
-
-goto :success
-
-:skip_upgrade
-echo.
-echo ========================================
-echo  No changes to migrate
-echo ========================================
-goto :end
-
 :reset
 echo.
 echo ========================================
-echo  [4] Reset migrations
+echo  [3] Reset migrations
 echo ========================================
 echo.
 echo [WARNING] This will delete all migrations!
@@ -224,7 +169,7 @@ call :setup_env
 if errorlevel 1 goto :end
 
 echo.
-echo [1/3] Deleting migrations...
+echo [1/2] Deleting migrations...
 if exist "migrations\monitor_models" (
     rmdir /s /q "migrations\monitor_models"
     echo [OK] Deleted
@@ -236,17 +181,9 @@ if exist "migrations" (
 )
 
 echo.
-echo [2/3] Re-initializing aerich...
-%PYTHON_VENV_DIR%\Scripts\python.exe -m aerich init -t scripts.migrate.migrate_with_tortoise.monitor_orm_config
+echo [2/2] Re-creating tables with Tortoise...
+%PYTHON_VENV_DIR%\Scripts\python.exe scripts\migrate\migrate_with_tortoise.py
 if errorlevel 1 goto :error
-echo [OK] Initialized
-
-echo.
-echo [3/3] Running init-db...
-%PYTHON_VENV_DIR%\Scripts\python.exe -m aerich init-db
-if errorlevel 1 (
-    echo [WARN] init-db may have failed
-)
 
 echo.
 echo ========================================

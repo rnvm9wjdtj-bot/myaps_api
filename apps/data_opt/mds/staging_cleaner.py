@@ -3,7 +3,7 @@
 包含字段校验、关联校验、数据转换等功能
 """
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, Tuple, Type
 from enum import Enum
 
@@ -1102,7 +1102,7 @@ class StagingProcessor:
             stats["dedup_staging_ids"] = dedup_staging_ids
             
             if update_status:
-                synced_time = datetime.now()
+                synced_time = datetime.now(timezone.utc)
                 
                 # 标记去重失败的记录
                 if dedup_staging_ids:

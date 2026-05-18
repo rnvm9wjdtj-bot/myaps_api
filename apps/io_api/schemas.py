@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 # import enum
 from typing import Literal, Dict, Optional, Any#, List
 from decimal import Decimal
@@ -893,7 +893,7 @@ class AcceptConfirm(BaseModel):
         # 处理 recorddt 字段，支持时间戳转换
         recorddt = values.get("recorddt")
         if recorddt in gc.NONE_AND_EMPTY:
-            values["recorddt"] = datetime.now()
+            values["recorddt"] = datetime.now(timezone.utc)
         else:
             try:
                 # 尝试将时间戳转换为 datetime
@@ -901,9 +901,9 @@ class AcceptConfirm(BaseModel):
                     timestamp = float(recorddt)
                     # 判断是毫秒还是秒
                     if timestamp > 10000000000:  # 毫秒时间戳
-                        values["recorddt"] = datetime.fromtimestamp(timestamp / 1000)
+                        values["recorddt"] = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
                     else:  # 秒时间戳
-                        values["recorddt"] = datetime.fromtimestamp(timestamp)
+                        values["recorddt"] = datetime.fromtimestamp(timestamp, tz=timezone.utc)
             except (ValueError, TypeError):
                 # 如果转换失败，保持原样让 Pydantic 处理
                 pass

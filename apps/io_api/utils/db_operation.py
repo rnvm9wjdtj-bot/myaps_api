@@ -3,7 +3,7 @@ import json
 import uuid
 from copy import deepcopy
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
@@ -346,7 +346,7 @@ def retry_on_connection_error(max_retries: int = 3, retry_delay: float = 1.0):
                                 try:
                                     await FailedOperation.create(
                                         operation_id=operation_id,
-                                        timestamp=datetime.now(),
+                                        timestamp=datetime.now(timezone.utc),
                                         db_name=db_name,
                                         function_name=func.__name__,
                                         args_json=args_json,
@@ -356,7 +356,7 @@ def retry_on_connection_error(max_retries: int = 3, retry_delay: float = 1.0):
                                         status="pending",
                                         retry_count=0,
                                         max_retries=10,
-                                        next_retry_time=datetime.now() + timedelta(minutes=5),
+                                        next_retry_time=datetime.now(timezone.utc) + timedelta(minutes=5),
                                     )
                                     error_summary_parts.append(f"{db_name}: {error_str}")
                                     logger.info(
