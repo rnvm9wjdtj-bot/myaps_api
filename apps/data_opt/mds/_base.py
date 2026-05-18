@@ -652,7 +652,8 @@ class BusinessRule:
         description: str,
         validate_func: Callable[[Dict[str, Any]], bool],
         error_message: str,
-        error_type: ErrorType = None
+        error_type: ErrorType = None,
+        error_fields: List[str] = None
     ):
         """
         初始化业务规则
@@ -663,12 +664,14 @@ class BusinessRule:
             validate_func: 校验函数，返回 True 表示违反规则
             error_message: 错误消息
             error_type: 错误类型（默认 BUSINESS_RULE）
+            error_fields: 涉及的字段列表（用于前端高亮）
         """
         self.name = name
         self.description = description
         self.validate_func = validate_func
         self.error_message = error_message
         self.error_type = error_type or ErrorType.BUSINESS_RULE
+        self.error_fields = error_fields or []
     
     def validate(self, data: Dict[str, Any]) -> bool:
         """
@@ -692,6 +695,7 @@ class BusinessRule:
             "staging_id": staging_id,
             "error_type": self.error_type.value,
             "error_field": self.name,
+            "error_fields": self.error_fields,
             "error_value": None,
             "error_message": self.error_message
         }
@@ -737,7 +741,8 @@ def create_comparison_rule(
         name=f"{field_a}_{comparator}_{field_b}",
         description=f"{field_a} {comparator} {field_b}",
         validate_func=validate,
-        error_message=error_message
+        error_message=error_message,
+        error_fields=[field_a, field_b]
     )
 
 

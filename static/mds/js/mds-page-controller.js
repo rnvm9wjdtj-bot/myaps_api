@@ -16,6 +16,9 @@ class MDSPageController {
         this.nullFields = new Set();
         this.pendingFile = null;
         
+        // 外键选项缓存
+        this.fkOptionsCache = new Map();
+        
         this.init();
     }
     
@@ -36,6 +39,39 @@ class MDSPageController {
         if (response.success === 1) {
             this.tableMeta = response.data;
         }
+    }
+    
+    /**
+     * 获取外键选项（带缓存）
+     * @param {string} fieldName - 字段名
+     * @returns {Promise<Array>} 选项数组 [{value, label}, ...]
+     */
+    async getFkOptions(fieldName) {
+        // 检查缓存
+        if (this.fkOptionsCache.has(fieldName)) {
+            return this.fkOptionsCache.get(fieldName);
+        }
+        
+        // 调用API获取
+        const response = await callApi(`/fk-options/${this.tableKey}/${fieldName}`);
+        if (response.success === 1) {
+            const options = response.data || [];
+            // 缓存结果
+            this.fkOptionsCache.set(fieldName, options);
+            return options;
+        }
+        
+        return [];
+    }
+    
+    /**
+     * 判断是否为外键字段
+     * @param {string} fieldName - 字段名
+     * @returns {boolean}
+     */
+    isForeignKeyField(fieldName) {
+        const foreignKeys = this.config.foreignKeys || [];
+        return foreignKeys.some(fk => fk.field === fieldName);
     }
     
     getFieldLabel(fieldName) {
@@ -770,6 +806,7 @@ class MDSPageController {
         const fieldValue = row[fieldName] !== null && row[fieldName] !== undefined ? row[fieldName] : '';
         const isRequired = this.isRequiredField(fieldName);
         const isReadOnly = this.isReadOnlyField(fieldName);
+        const isForeignKey = this.isForeignKeyField(fieldName);
         
         const errorFields = this.getErrorFields(row);
         const isErrorField = errorFields.includes(fieldName);
@@ -808,6 +845,23 @@ class MDSPageController {
                                     ${opt.label}
                                 </option>
                             `).join('')}
+                        </select>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // 外键字段 - 使用下拉选择（异步加载选项）
+        if (isForeignKey) {
+            return `
+                <div class="mb-2 row align-items-center justify-content-start" style="gap: 4px;">
+                    <div class="flex-shrink-0" style="min-width: 90px; max-width: 120px;">${labelHtml}</div>
+                    <div class="flex-grow-1" style="min-width: 0;">
+                        <select class="form-select font-mono${errorClass} fk-select" name="${fieldName}" 
+                                data-field="${fieldName}"
+                                style="height: 31px; padding: 0.25rem 0.5rem; font-size: 0.8rem;" 
+                                ${isRequired ? 'required' : ''}>
+                            <option value="">加载中...</option>
                         </select>
                     </div>
                 </div>
@@ -861,6 +915,66 @@ class MDSPageController {
         }
         
         modal.show();
+        
+        // 异步加载外键选项
+        this.loadFkOptionsInForm(row);
+    }
+    
+    /**
+     * 加载表单中的外键选项
+     * @param {Object} row - 行数据
+     */
+    async loadFkOptionsInForm(row) {
+        const fkSelects = document.querySelectorAll('.fk-select');
+        
+        for (const select of fkSelects) {
+            const fieldName = select.dataset.field;
+            const currentValue = row[fieldName] || '';
+            
+            try {
+                const options = await this.getFkOptions(fieldName);
+                
+                select.innerHTML = `
+                    <option value="">-- 请选择 --</option>
+                    ${options.map(opt => `
+                        <option value="${opt.value}" ${String(currentValue) === String(opt.value) ? 'selected' : ''}>
+                            ${opt.label}
+                        </option>
+                    `).join('')}
+                `;
+            } catch (error) {
+                console.error(`加载外键选项失败 [${fieldName}]:`, error);
+                select.innerHTML = '<option value="">加载失败</option>';
+            }
+        }
+    }
+    
+    /**
+     * 加载批量编辑表单中的外键选项
+     */
+    async loadFkOptionsInBatchEdit() {
+        const fkSelects = document.querySelectorAll('.fk-batch-select');
+        
+        for (const select of fkSelects) {
+            const fieldName = select.dataset.field;
+            const savedValue = this.fieldValues[fieldName] || '';
+            
+            try {
+                const options = await this.getFkOptions(fieldName);
+                
+                select.innerHTML = `
+                    <option value="">请选择</option>
+                    ${options.map(opt => `
+                        <option value="${opt.value}" ${savedValue === opt.value ? 'selected' : ''}>
+                            ${opt.label}
+                        </option>
+                    `).join('')}
+                `;
+            } catch (error) {
+                console.error(`加载外键选项失败 [${fieldName}]:`, error);
+                select.innerHTML = '<option value="">加载失败</option>';
+            }
+        }
     }
     
     async saveRecord(stagingId) {
@@ -1185,18 +1299,19 @@ class MDSPageController {
                 }
                 
                 cb.addEventListener('change', () => {
-                    this.renderBatchEditFields(editableFields);
+                    renderBatchEditFields(editableFields);
                 });
             });
         };
         
         const renderBatchEditFields = (fields) => {
             const selectedFields = Array.from(fieldCheckboxList.querySelectorAll('.field-checkbox:checked'))
-                .map(cb => c.value);
+                .map(cb => cb.value);
             
             batchEditFields.innerHTML = selectedFields.map(field => {
                 const col = fields.find(f => f.field === field);
                 const enumOptions = this.getEnumOptions(field);
+                const isForeignKey = this.isForeignKeyField(field);
                 const isNull = this.nullFields.has(field);
                 const savedValue = this.fieldValues[field] || '';
                 
@@ -1206,6 +1321,12 @@ class MDSPageController {
                         <select class="form-select form-select-sm batch-edit-value" data-field="${field}" ${isNull ? 'disabled' : ''}>
                             <option value="">请选择</option>
                             ${enumOptions.map(opt => `<option value="${opt.value}" ${savedValue === opt.value ? 'selected' : ''}>${opt.label}</option>`).join('')}
+                        </select>
+                    `;
+                } else if (isForeignKey) {
+                    inputHtml = `
+                        <select class="form-select form-select-sm batch-edit-value fk-batch-select" data-field="${field}" ${isNull ? 'disabled' : ''}>
+                            <option value="">加载中...</option>
                         </select>
                     `;
                 } else {
@@ -1258,9 +1379,12 @@ class MDSPageController {
                         delete this.fieldValues[field];
                     }
                     
-                    this.renderBatchEditFields(editableFields);
+                    renderBatchEditFields(editableFields);
                 });
             });
+            
+            // 异步加载外键选项
+            this.loadFkOptionsInBatchEdit();
         };
         
         if (showFieldSelectBtn) {
@@ -1269,7 +1393,7 @@ class MDSPageController {
                 fieldSelectPanel.style.display = isVisible ? 'none' : 'block';
                 if (!isVisible) {
                     renderFieldCheckboxes();
-                    this.renderBatchEditFields(editableFields);
+                    renderBatchEditFields(editableFields);
                 }
             });
         }
@@ -1334,6 +1458,9 @@ class MDSPageController {
                     showMessage(`成功更新 ${ids.length} 条记录`, 'success');
                     bootstrap.Modal.getInstance(document.getElementById('batchEditModal')).hide();
                     this.dataTable.selectedIds.clear();
+                    this.dataTable.updateSelectedCount();
+                    const selectAllCheckbox = document.getElementById('selectAll');
+                    if (selectAllCheckbox) selectAllCheckbox.checked = false;
                     this.dataTable.loadData();
                     this.statusCard.refresh();
                 });

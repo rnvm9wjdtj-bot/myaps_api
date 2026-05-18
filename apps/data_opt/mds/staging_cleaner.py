@@ -129,7 +129,7 @@ STAGING_TABLE_CONFIG = {
         "display_name": "产线版本",
         "validator": lambda cleaner, data, staging_id: cleaner.validate_mat_ver(data, staging_id),
         "config_rules": [
-            create_comparison_rule("lotfrom", "lotto", "<=", "批量下限不能大于批量上限"),
+            create_comparison_rule("lotfrom", "lotto", ">", "批量下限不能大于批量上限"),
         ],
         # "business_keys": ["materialno", "matver"],  # 由 proto_model 的 unique_together 自动提取
     },

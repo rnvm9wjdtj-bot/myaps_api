@@ -74,6 +74,8 @@ class ProjectDefaultValues:
 
     WC_WORKER = defaults.get("worker", 1)  # 默认工人数
     WC_PRIORITY = defaults.get("wc_priority", 0)  # 默认优先级
+    WC_CAPNUM = defaults.get("capnum", 1)  # 默认台数
+    WC_CAPMAX = defaults.get("capmax", 1)  # 默认最大台数
 
     ITEMNO = f"{itemno_prefix}{1:0{itemno_width}d}" # 示例 / 默认工序项目
 

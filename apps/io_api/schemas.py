@@ -185,18 +185,18 @@ class AcceptMaterial(BaseModel):
 class AcceptWorkcenter(BaseModel):
     workcenter: str = Field(..., max_length=32, description="工作中心代码", example="WC001")
     workcentername: str = Field(..., max_length=255, description="工作中心名称", example="装配车间")
-    pri_wc: int = Field(1, description='优先级', example=1)
+    pri_wc: int = Field(pdv.WC_PRIORITY, description='优先级', example=1)
     bottleneck: gc.YesNoEnum = Field(None, example="N", description='瓶颈')
     sortno: str = Field(None, max_length=4, description="序号", example="0001")
     plant: str = Field(pdv.MAT_PLANT, max_length=32, description="工厂", example="1600")
     location: str = Field(None, max_length=32, description="车间", example="A区")
     finite: gc.YesNoEnum = Field(gc.YesNoEnum.YES, example="N", description='有限')
     type: gc.YesNoEnum = Field(gc.YesNoEnum.YES, example="N", description="首页显示")
-    capnum: int = Field(None, gt=0, description="默认机台数", example=6)
-    capmax: int = Field(None, gt=0, description="最大机台数", example=10)
-    worker: float = Field(None, ge=0, description='工时', example=8.0)
-    setupno: str = Field(None, max_length=6, description='切换组别', example="S001")
-    grpno: str = Field(None, max_length=6, description='同组号', example="G001")
+    capnum: int | None = Field(pdv.WC_CAPNUM, gt=0, description="默认机台数", example=6)
+    capmax: int | None = Field(pdv.WC_CAPMAX, gt=0, description="最大机台数", example=10)
+    worker: float = Field(pdv.WC_WORKER, ge=0, description='工时', example=8.0)
+    setupno: str | None = Field(None, max_length=6, description='切换组别', example="S001")
+    grpno: str | None = Field(None, max_length=6, description='同组号', example="G001")
     memo: str = Field(None, max_length=255, description="备注", example="标准工作中心")
     _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
     
@@ -256,8 +256,18 @@ class AcceptWorkcenter(BaseModel):
             values["worker"] = pdv.WC_WORKER
         if values.get("pri_wc") in gc.NONE_AND_EMPTY:
             values["pri_wc"] = pdv.WC_PRIORITY
-        if values.get("capmax", 0) < values.get("capnum", 0):
-            values["capmax"] = values["capnum"]
+        if values.get("capnum") in gc.NONE_AND_EMPTY:
+            values["capnum"] = pdv.WC_CAPNUM
+        if values.get("capmax") in gc.NONE_AND_EMPTY:
+            values["capmax"] = pdv.WC_CAPMAX
+        if values.get("setupno") is None:
+            values["setupno"] = ""
+        if values.get("grpno") is None:
+            values["grpno"] = ""
+        capmax = values.get("capmax") or 0
+        capnum = values.get("capnum") or 0
+        if capmax < capnum:
+            values["capmax"] = capnum
         return values
 
     @model_validator(mode="after")

@@ -106,7 +106,7 @@ class DataTable {
                         <i class="bi bi-trash"></i> 删除(<span id="selectedCountDup">0</span>)
                     </button>
                     <button class="btn btn-sm btn-outline-info font-monospace" id="templateBtn" style="width: 150px;">
-                        <i class="bi bi-download"></i> 导出
+                        <i class="bi bi-download"></i> <span id="exportBtnText">导出模板</span>
                     </button>
                 </div>
                 <div class="d-flex align-items-center gap-2">
@@ -427,7 +427,10 @@ class DataTable {
                     const cellStyle = col.width 
                         ? 'white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: ' + col.width + ';'
                         : 'white-space: nowrap;';
-                    return `<td style="${cellStyle}" title="${escapeHtml(row[col.field] || '')}">${this.renderCell(col, row, errorMap)}</td>`;
+                    // 状态字段或有错误的字段不设置title，避免覆盖错误提示框
+                    const hasError = errorMap[col.field];
+                    const cellTitle = (col.field === '_status' || hasError) ? '' : `title="${escapeHtml(row[col.field] || '')}"`;
+                    return `<td style="${cellStyle}" ${cellTitle}>${this.renderCell(col, row, errorMap)}</td>`;
                 }).join('')}
             </tr>
         `;
@@ -465,7 +468,15 @@ class DataTable {
             }
             
             errorData.forEach(err => {
-                if (err.error_field) {
+                // 支持多字段错误高亮（如业务规则涉及多个字段）
+                if (err.error_fields && Array.isArray(err.error_fields)) {
+                    err.error_fields.forEach(field => {
+                        errorMap[field] = {
+                            type: err.error_type,
+                            message: err.error_message
+                        };
+                    });
+                } else if (err.error_field) {
                     errorMap[err.error_field] = {
                         type: err.error_type,
                         message: err.error_message
@@ -559,11 +570,13 @@ class DataTable {
                     class="error-cell null-cell" 
                     data-error-type="${errorInfo.type}" 
                     data-error-msg="${escapeHtml(errorInfo.message)}"
-                >🈳</span>
+                ><i class="bi bi-dash-square-dotted"></i></span>
             `;
         }
         
-        return showNullBg ? '<span class="null-cell">🈳</span>' : '<span class="text-muted">🈳</span>';
+        return showNullBg 
+            ? '<span class="null-cell"><i class="bi bi-dash-square-dotted"></i></span>' 
+            : '<span class="text-muted"><i class="bi bi-dash-square-dotted"></i></span>';
     }
     
     /**
@@ -908,11 +921,13 @@ class DataTable {
         const selectedCountDup = document.getElementById('selectedCountDup');
         const batchEditBtn = document.getElementById('batchEditBtn');
         const batchDeleteBtn = document.getElementById('batchDeleteBtn');
+        const exportBtnText = document.getElementById('exportBtnText');
         
         if (selectedCount) selectedCount.textContent = count;
         if (selectedCountDup) selectedCountDup.textContent = count;
         if (batchEditBtn) batchEditBtn.disabled = count === 0;
         if (batchDeleteBtn) batchDeleteBtn.disabled = count === 0;
+        if (exportBtnText) exportBtnText.textContent = count === 0 ? '导出模板' : `导出(${count})`;
         
         this.updateSelectAllBtn();
         
@@ -1050,6 +1065,10 @@ class DataTable {
             handleResponse(response, () => {
                 showMessage('删除成功', 'success');
                 this.selectedIds.clear();
+                this.selectedAllPages = false;
+                const selectAll = document.getElementById('selectAll');
+                if (selectAll) selectAll.checked = false;
+                this.updateSelectedCount();
                 this.loadData();
             });
         } catch (error) {
@@ -1147,11 +1166,6 @@ class DataTable {
         try {
             let selectedData = await this.getSelectedData();
             
-            if (selectedData.length === 0) {
-                showMessage('请先选择要导出的数据', 'warning');
-                return;
-            }
-            
             // 从列配置中获取业务字段，保证与表格显示顺序一致
             const businessFields = this.columns
                 .filter(col => !col.field.startsWith('_'))
@@ -1194,7 +1208,11 @@ class DataTable {
                 this.downloadAsExcel(headers, rows, timestamp);
             }
             
-            showMessage(`成功导出 ${selectedData.length} 条数据`, 'success');
+            if (selectedData.length > 0) {
+                showMessage(`成功导出 ${selectedData.length} 条数据`, 'success');
+            } else {
+                showMessage('已导出模板文件', 'success');
+            }
         } catch (error) {
             console.error('导出失败:', error);
             showMessage('导出失败: ' + error.message, 'danger');
