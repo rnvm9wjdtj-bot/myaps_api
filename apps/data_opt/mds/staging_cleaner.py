@@ -871,9 +871,31 @@ class StagingProcessor:
                     
                     logger.info(f"[校验] staging_id={staging_id}, 结果: is_valid={is_valid}, errors={len(errors)}")
                     
+                    # 检查是否有填充的字段（与原始数据不同）
+                    filled_fields = []
+                    for key, filled_value in filled_data.items():
+                        original_value = data.get(key)
+                        if original_value in NONE_AND_EMPTY and filled_value not in NONE_AND_EMPTY:
+                            filled_fields.append(key)
+                    
                     if is_valid:
-                        update_query = f'UPDATE "{table_name_staging}" SET "_status" = $1 WHERE "_staging_id" = $2'
-                        await conn.execute_query(update_query, ("relation_pass", staging_id))
+                        # 构建更新语句：更新状态和填充后的字段
+                        if filled_fields:
+                            set_clauses = ['"_status" = $1']
+                            update_values = ["relation_pass"]
+                            for i, field_name in enumerate(filled_fields):
+                                db_field = field_map.get(field_name, field_name)
+                                set_clauses.append(f'"{db_field}" = ${i + 2}')
+                                update_values.append(filled_data[field_name])
+                            set_clauses_str = ", ".join(set_clauses)
+                            update_query = f'UPDATE "{table_name_staging}" SET {set_clauses_str} WHERE "_staging_id" = ${len(update_values) + 1}'
+                            update_values.append(staging_id)
+                            await conn.execute_query(update_query, tuple(update_values))
+                            logger.debug(f"已更新填充字段: {filled_fields}")
+                            stats["filled"] = stats.get("filled", 0) + 1
+                        else:
+                            update_query = f'UPDATE "{table_name_staging}" SET "_status" = $1 WHERE "_staging_id" = $2'
+                            await conn.execute_query(update_query, ("relation_pass", staging_id))
                         stats["relation_pass"] += 1
                     else:
                         error_json = json.dumps(errors, ensure_ascii=False)
@@ -888,8 +910,22 @@ class StagingProcessor:
                             status = "compliance_error"
                             stats["compliance_error"] = (stats.get("compliance_error") or 0) + 1
                         
-                        update_query = f'UPDATE "{table_name_staging}" SET "_status" = $1, "_error_msg" = $2 WHERE "_staging_id" = $3'
-                        await conn.execute_query(update_query, (status, error_json, staging_id))
+                        # 更新状态、错误信息，以及填充的字段
+                        if filled_fields:
+                            set_clauses = ['"_status" = $1', '"_error_msg" = $2']
+                            update_values = [status, error_json]
+                            for i, field_name in enumerate(filled_fields):
+                                db_field = field_map.get(field_name, field_name)
+                                set_clauses.append(f'"{db_field}" = ${i + 3}')
+                                update_values.append(filled_data[field_name])
+                            set_clauses_str = ", ".join(set_clauses)
+                            update_query = f'UPDATE "{table_name_staging}" SET {set_clauses_str} WHERE "_staging_id" = ${len(update_values) + 1}'
+                            update_values.append(staging_id)
+                            await conn.execute_query(update_query, tuple(update_values))
+                            logger.debug(f"校验失败但已更新填充字段: {filled_fields}")
+                        else:
+                            update_query = f'UPDATE "{table_name_staging}" SET "_status" = $1, "_error_msg" = $2 WHERE "_staging_id" = $3'
+                            await conn.execute_query(update_query, (status, error_json, staging_id))
                         await self.cleaner.save_errors(table_name, errors)
                         
                 except Exception as e:

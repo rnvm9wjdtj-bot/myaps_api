@@ -7,7 +7,7 @@ from typing import List, Dict, Optional, Literal
 from datetime import datetime, timezone
 from fastapi import APIRouter, Query, Body, HTTPException, status, Request, UploadFile, File
 
-from ._base import StagingStatus, INTERNAL_FIELDS, EXCLUDE_FIELDS, TABLE_PROCESS_ORDER, convert_record_to_lowercase, generate_validation_rules_doc
+from ._base import StagingStatus, INTERNAL_FIELDS, EXCLUDE_FIELDS, TABLE_PROCESS_ORDER, convert_record_to_lowercase, generate_validation_rules_doc, get_field_map
 from .staging_models import (
     TMaterialStaging, TWorkcenterStaging, TMatVerStaging,
     TMatWcStaging, TMatWcBomStaging, TMoldStaging, TMatWcMoldStaging,
@@ -1062,12 +1062,9 @@ async def list_staging(
         offset = (page - 1) * page_size
         sort_direction = "DESC" if sort_order == "desc" else "ASC"
         
-        sort_field_mapping = {
-            '_createtime': '_createtime',
-            '_updatetime': '_updatetime',
-            'materialno': 'MaterialNo'
-        }
-        db_sort_field = sort_field_mapping.get(sort_field, sort_field)
+        # 使用字段映射获取正确的数据库列名
+        field_map = get_field_map(staging_model)
+        db_sort_field = field_map.get(sort_field, sort_field)
         
         data_query = f'''
             SELECT * FROM "{table_name_staging}"

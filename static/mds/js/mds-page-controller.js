@@ -100,7 +100,7 @@ class MDSPageController {
         
         if (this.config?.display?.columns) {
             fields = this.config.display.columns.filter(
-                col => !col.field.startsWith('_') && !this.isReadOnlyField(col.field)
+                col => col.field && !col.field.startsWith('_') && !this.isReadOnlyField(col.field)
             );
         } else if (this.tableMeta?.fields) {
             fields = this.tableMeta.fields.filter(f => !f.is_internal);
@@ -151,6 +151,18 @@ class MDSPageController {
             enumOptions[fieldName] = this.getEnumOptions(fieldName);
         });
         
+        // 获取字段映射和默认值
+        const fieldMap = {};
+        const fieldDefaults = {};
+        if (this.tableMeta?.fields) {
+            this.tableMeta.fields.forEach(f => {
+                fieldMap[f.field] = f.db_field || f.field;
+                if (f.default_value !== undefined && f.default_value !== null) {
+                    fieldDefaults[f.field] = f.default_value;
+                }
+            });
+        }
+        
         this.dataTable = new DataTable({
             tableName: this.tableKey,
             columns: this.getColumns(),
@@ -159,7 +171,10 @@ class MDSPageController {
             onRowClick: (row) => this.showEditModal(row),
             enumFields: enumFieldKeys,
             enumOptions: enumOptions,
-            foreignKeys: this.config.foreignKeys || []
+            foreignKeys: this.config.foreignKeys || [],
+            requiredFields: this.getRequiredFields(),
+            fieldMap: fieldMap,
+            fieldDefaults: fieldDefaults
         });
         
         this.dataTable.loadData();
@@ -400,6 +415,10 @@ class MDSPageController {
             return;
         }
         
+        if (!confirm('缺失的字段值将自动填充为默认值，确定开始校验吗？')) {
+            return;
+        }
+        
         showProgress('校验中', pendingCount);
         
         let totalValidated = 0;
@@ -473,7 +492,7 @@ class MDSPageController {
     }
     
     async validateAllData() {
-        if (!confirm('确定要校验所有待处理数据吗？')) return;
+        if (!confirm('缺失的字段值将自动填充为默认值，确定校验所有待处理数据吗？')) return;
         
         showProgress('校验所有表', 100);
         

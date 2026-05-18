@@ -39,6 +39,15 @@ class DataTable {
         this.foreignKeyFields = config.foreignKeyFields || [];
         this.foreignKeys = config.foreignKeys || [];
         
+        // 必填字段配置
+        this.requiredFields = config.requiredFields || [];
+        
+        // 字段映射（Python字段名 -> 数据库字段名）
+        this.fieldMap = config.fieldMap || {};
+        
+        // 字段默认值
+        this.fieldDefaults = config.fieldDefaults || {};
+        
         // 渲染配置
         this.renderMode = config.renderMode || 'standard'; // standard | virtual
         this.virtualRowHeight = config.virtualRowHeight || 32;
@@ -124,18 +133,63 @@ class DataTable {
      * @returns {string} HTML字符串
      */
     renderHeaderCell(col) {
-        const sortIcon = col.sortable ? '<i class="bi bi-arrow-down-up ms-1"></i>' : '';
+        const isEnum = this.enumFields.includes(col.field);
+        const isForeignKey = this.foreignKeys.some(fk => fk.field === col.field);
+        const isRequired = this.requiredFields.includes(col.field);
+        const dbFieldName = this.fieldMap[col.field] || col.field;
+        const defaultValue = this.fieldDefaults[col.field];
         const readOnlyIcon = col.readOnly ? '<i class="bi bi-lock ms-1 text-muted" style="font-size: 0.8rem;"></i>' : '';
+        const enumIcon = isEnum ? '<i class="bi bi-list-ul ms-1" style="font-size: 0.8rem; color: #08c9c9;" title="枚举字段"></i>' : '';
+        const foreignKeyIcon = isForeignKey ? '<i class="bi bi-link-45deg ms-1" style="font-size: 0.8rem; color: #08c9c9;" title="外键字段"></i>' : '';
+        const requiredIcon = isRequired ? '<span class="ms-1" style="color: #f52222; font-weight: bold;">*</span>' : '';
+        
+        let sortIcon = '';
+        if (col.sortable) {
+            if (this.sortField === col.field) {
+                sortIcon = this.sortOrder === 'asc' 
+                    ? '<i class="bi bi-arrow-up ms-1" style="color: #08c9c9;"></i>' 
+                    : '<i class="bi bi-arrow-down ms-1" style="color: #08c9c9;"></i>';
+            } else {
+                sortIcon = '<i class="bi bi-arrow-down-up ms-1" style="color: #08c9c9;"></i>';
+            }
+        }
+        
+        const titleParts = [`字段: ${dbFieldName}`];
+        if (defaultValue !== undefined && defaultValue !== null) {
+            titleParts.push(`默认: ${defaultValue}`);
+        }
+        if (col.sortable) titleParts.push('点击排序');
+        if (col.readOnly) titleParts.push('只读');
+        if (isEnum) titleParts.push('枚举');
+        if (isForeignKey) titleParts.push('外键');
+        if (isRequired) titleParts.push('必填');
+        
         return `
             <th 
-                style="${col.width ? 'width: ' + col.width + '; min-width: ' + col.width : 'white-space: nowrap;'}" 
+                style="${col.width ? 'width: ' + col.width + '; min-width: ' + col.width + ';' : 'white-space: nowrap;'}${col.sortable ? ' cursor: pointer;' : ''}" 
                 data-field="${col.field}" 
-                class="${col.sortable ? 'sortable cursor-pointer' : ''}"
-                title="${col.sortable ? `点击按 ${col.title} 排序` : ''}${col.readOnly ? ' - 只读字段' : ''}"
+                class="${col.sortable ? 'sortable' : ''}"
+                title="${titleParts.join(' | ')}"
             >
-                ${col.title}${readOnlyIcon}${sortIcon}
+                ${col.title}${requiredIcon}${readOnlyIcon}${enumIcon}${foreignKeyIcon}${sortIcon}
             </th>
         `;
+    }
+    
+    /**
+     * 渲染表头
+     */
+    renderHeader() {
+        const thead = this.container.querySelector('thead tr');
+        if (thead) {
+            thead.innerHTML = `
+                <th style="width: 40px; min-width: 40px;">
+                    <input type="checkbox" class="form-check-input" id="selectAll">
+                </th>
+                ${this.columns.map(col => this.renderHeaderCell(col)).join('')}
+            `;
+            this.bindEvents();
+        }
     }
     
     /**
@@ -187,6 +241,8 @@ class DataTable {
                     this.sortField = field;
                     this.sortOrder = 'desc';
                 }
+                this.renderHeader();
+                this.clearSelection();
                 this.loadData();
             });
         });
@@ -359,7 +415,7 @@ class DataTable {
                 class="table-row ${rowClass}"
                 ${this.renderMode === 'virtual' ? `style="position: absolute; top: ${index * this.virtualRowHeight}px;"` : ''}
             >
-                <td style="white-space: nowrap;">
+                <td style="width: 40px; min-width: 40px; max-width: 40px; white-space: nowrap;">
                     <input 
                         type="checkbox" 
                         class="form-check-input row-checkbox" 
@@ -492,7 +548,9 @@ class DataTable {
      * 渲染空值单元格
      */
     renderNullCell(col, errorMap) {
-        const isFreeField = col.field.startsWith('free');
+        const isRequired = this.requiredFields.includes(col.field);
+        const hasDefault = this.fieldDefaults[col.field] !== undefined && this.fieldDefaults[col.field] !== null;
+        const showNullBg = isRequired && !hasDefault;
         const errorInfo = errorMap[col.field];
         
         if (errorInfo) {
@@ -501,11 +559,11 @@ class DataTable {
                     class="error-cell null-cell" 
                     data-error-type="${errorInfo.type}" 
                     data-error-msg="${escapeHtml(errorInfo.message)}"
-                >-</span>
+                >🈳</span>
             `;
         }
         
-        return isFreeField ? '<span class="text-muted">-</span>' : '<span class="null-cell">-</span>';
+        return showNullBg ? '<span class="null-cell">🈳</span>' : '<span class="text-muted">🈳</span>';
     }
     
     /**

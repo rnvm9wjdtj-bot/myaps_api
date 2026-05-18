@@ -12,6 +12,11 @@
     --mono-font: 'JetBrains Mono', 'Menlo', 'Source Code Pro', 'Consolas', monospace;
 }
 
+/* 全局等宽字体 */
+body {
+    font-family: var(--mono-font);
+}
+
 /* 紫色文本和背景类 */
 .text-purple {
     color: var(--purple-color) !important;
@@ -303,34 +308,39 @@ span.badge.status-badge {
 }
 
 span.badge.status-badge.status-badge-pending {
-    background-color: var(--warning-color) !important;
-    color: #000 !important;
+    background-color: #808080 !important;
+    color: #fff !important;
 }
 
 span.badge.status-badge.status-badge-synced {
-    background-color: var(--info-color) !important;
-    color: #000 !important;
+    background-color: #9C27B0 !important;
+    color: #fff !important;
 }
 
 /* 新状态样式 - 六态验证模型 */
 span.badge.status-badge.status-badge-compliance_pass {
-    background-color: var(--info-color) !important;
-    color: #000 !important;
+    background-color: #00C853 !important;
+    color: #fff !important;
 }
 
 span.badge.status-badge.status-badge-compliance_error {
-    background-color: var(--danger-color) !important;
+    background-color: #FF9800 !important;
     color: #fff !important;
 }
 
 span.badge.status-badge.status-badge-relation_pass {
-    background-color: var(--success-color) !important;
+    background-color: #2196F3 !important;
     color: #fff !important;
 }
 
 span.badge.status-badge.status-badge-relation_error {
-    background-color: var(--warning-color) !important;
-    color: #000 !important;
+    background-color: #F44336 !important;
+    color: #fff !important;
+}
+
+span.badge.status-badge.status-badge-sync_error {
+    background-color: #E91E63 !important;
+    color: #fff !important;
 }
 
 .action-btn {
@@ -570,12 +580,12 @@ span.badge.status-badge.status-badge-relation_error {
 /* 枚举字段标签样式 */
 .enum-tag {
     display: inline-block;
-    background-color: #c9e6fc;
+    background-color: #cae7fc;
     border-radius: 4px;
     padding: 0.1rem 0.4rem;
     font-size: 0.75rem;
     font-weight: 500;
-    color: #0066cc;
+    color: #000000;
 }
 
 .enum-tag-error {
@@ -600,7 +610,7 @@ span.badge.status-badge.status-badge-relation_error {
 /* 外键字段标签样式 */
 .foreign-key-tag {
     display: inline-block;
-    background-color: #dec3fa;
+    background-color: #cae7fc;
     border-radius: 4px;
     padding: 0.1rem 0.4rem;
     font-size: 0.75rem;

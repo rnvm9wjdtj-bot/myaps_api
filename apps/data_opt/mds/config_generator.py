@@ -296,14 +296,6 @@ _PAGE_COLUMNS_CONFIG = {
         {"field": "free3", "title": "自定义3"},
     ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
 
-    "t_workcenter": SYSTEM_COMMON_COLUMNS_PREFIX + [
-        {"field": "workcenter", "title": "工作中心", "sortable": True, "readOnly": True},
-        {"field": "description", "title": "描述"},
-        {"field": "bottleneck", "title": "瓶颈"},
-        {"field": "finite", "title": "有限产能"},
-        {"field": "capacity", "title": "产能"},
-    ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
-
     "t_mat_ver": SYSTEM_COMMON_COLUMNS_PREFIX + [
         {"field": "materialno", "title": "物料号", "width": "120px", "sortable": True, "readOnly": True},
         {"field": "matver", "title": "版本号", "width": "80px", "sortable": True},
@@ -311,6 +303,18 @@ _PAGE_COLUMNS_CONFIG = {
         {"field": "lotto", "title": "批量上限", "width": "100px"},
         {"field": "refno", "title": "MTO订单号/认证线", "width": "150px"},
         {"field": "active", "title": "激活", "width": "80px"},
+    ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
+
+    "t_workcenter": SYSTEM_COMMON_COLUMNS_PREFIX + [
+        {"field": "workcenter", "title": "编号", "sortable": True, "readOnly": True},
+        {"field": "workcentername", "title": "名称"},
+        {"field": "bottleneck", "title": "是否瓶颈"},
+        {"field": "finite", "title": "有限产能"},
+        {"field": "worker", "title": "工时"},
+        {"field": "capnum", "title": "默认机台数"},
+        {"field": "capmax", "title": "最大机台数"},
+        {"field": "setupno", "title": "切换组别"},
+        {"field": "grpno", "title": "同组号"},
     ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
 
     "t_mat_wc": SYSTEM_COMMON_COLUMNS_PREFIX + [

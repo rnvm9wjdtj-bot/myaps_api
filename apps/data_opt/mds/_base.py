@@ -415,6 +415,11 @@ def extract_all_fields(schema_class, model_class, config: Dict = None) -> List[D
     # 获取字段映射
     field_map = get_field_map(model_class)
     
+    # 获取默认值
+    from apps.data_opt.mds.staging_cleaner import get_schema_defaults
+    table_key = config.get("table_key") if config else None
+    schema_defaults = get_schema_defaults(table_key) if table_key else {}
+    
     # 外键信息映射（从配置中提取）
     foreign_key_map = {}
     if config:
@@ -468,9 +473,17 @@ def extract_all_fields(schema_class, model_class, config: Dict = None) -> List[D
         if field_name in foreign_key_map:
             foreign_key_to = foreign_key_map[field_name].get("model", None).__name__ if foreign_key_map[field_name].get("model") else None
         
+        # 获取默认值
+        default_value = schema_defaults.get(field_name)
+        if default_value is None:
+            field_default = field_info.default
+            if field_default is not None and str(field_default) != 'PydanticUndefined':
+                default_value = field_default
+        
         # 构建字段元数据
         field_meta = {
             "field": field_name,
+            "db_field": field_map.get(field_name, field_name),
             "title": description,
             "description": description,
             "data_type": data_type,
@@ -486,7 +499,8 @@ def extract_all_fields(schema_class, model_class, config: Dict = None) -> List[D
             },
             "max_length": max_length,
             "display_order": len(fields) + 1,
-            "foreign_key_to": foreign_key_to
+            "foreign_key_to": foreign_key_to,
+            "default_value": default_value
         }
         
         fields.append(field_meta)
@@ -550,7 +564,9 @@ def generate_validation_rules_doc(table_key: str, config: Dict) -> Dict[str, Any
     
     # 完整字段元数据
     if schema_class and model_class:
-        doc["fields"] = extract_all_fields(schema_class, model_class, config)
+        # 将 table_key 传入 config，以便提取默认值
+        config_with_key = {**config, "table_key": table_key}
+        doc["fields"] = extract_all_fields(schema_class, model_class, config_with_key)
     
     # 向后兼容：添加旧结构的字段（防止旧代码报错）
     if doc["fields"]:
