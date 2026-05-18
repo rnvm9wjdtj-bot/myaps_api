@@ -8,9 +8,135 @@ from collections import defaultdict
 from enum import Enum
 
 from apps.data_opt.mds.staging_cleaner import STAGING_TABLE_CONFIG, STAGING_MODEL_MAPPING, ensure_config_initialized
-from globalobjects import logger as log_config
+from globalobjects import logger as log_config, globalconst as gc
 
 logger = log_config.get_logger(__name__)
+
+# 内部字段（比对时排除）
+INTERNAL_FIELDS = {'_staging_id', '_status', '_error_msg', '_createtime', '_updatetime', 
+                   '_synced_time', '_retry_count', '_source_system'}
+
+
+def compare_content(existing_record, new_data: Dict, field_map: Dict = None, update_mode: str = "partial") -> Tuple[bool, str]:
+    """
+    比对已存在记录与新数据的内容是否一致
+    
+    Args:
+        existing_record: 已存在的记录（ORM对象）
+        new_data: 新数据（字典）
+        field_map: 字段映射（Python字段名 -> 数据库字段名）
+        update_mode: 更新模式
+            - "partial": 部分更新，跳过new_data中不存在的字段（默认）
+            - "full": 完整更新，所有字段都参与比对（不存在的字段视为None）
+    
+    Returns:
+        (是否一致, 差异字段列表)
+    
+    关键逻辑：
+    - partial模式：new_data中不存在的字段 → 跳过比对（部分更新语义）
+    - new_data中存在但值为None/空字符串 → 参与比对（显式清空）
+    - 与API的model_dump(exclude_none=True)行为一致
+    """
+    if not existing_record:
+        return False, "无已存在记录"
+    
+    try:
+        diff_fields = []
+        same_count = 0
+        diff_count = 0
+        skip_count = 0
+        
+        # 获取模型的所有字段
+        model_fields = existing_record._meta.fields_map.keys()
+        
+        for field_name in model_fields:
+            # 跳过内部字段
+            if field_name in INTERNAL_FIELDS:
+                continue
+            
+            # 部分更新模式：跳过new_data中不存在的字段
+            if update_mode == "partial" and field_name not in new_data:
+                skip_count += 1
+                continue
+            
+            # 获取已存在记录的值
+            existing_value = getattr(existing_record, field_name, None)
+            
+            # 获取新数据的值
+            new_value = new_data.get(field_name)
+            
+            # 统一NULL/空字符串处理
+            existing_value = normalize_value(existing_value)
+            new_value = normalize_value(new_value)
+            
+            # 类型一致性处理
+            if existing_value is not None and new_value is not None:
+                existing_value, new_value = normalize_types(existing_value, new_value)
+            
+            # 比较
+            if existing_value != new_value:
+                diff_fields.append(field_name)
+                diff_count += 1
+            else:
+                same_count += 1
+        
+        # logger.info(f"内容比对: 相同字段={same_count}, 差异字段={diff_count}, 跳过字段={skip_count}, 差异列表={diff_fields[:5]}")
+        
+        if diff_fields:
+            return False, f"差异字段: {', '.join(diff_fields[:5])}"
+        
+        return True, ""
+        
+    except Exception as e:
+        logger.warning(f"内容比对异常: {str(e)}")
+        # 有任何不确定时，保守策略：执行覆盖
+        return False, f"比对异常: {str(e)}"
+
+
+def normalize_value(value: Any) -> Any:
+    """
+    统一NULL/空字符串处理
+    
+    Args:
+        value: 原始值
+    
+    Returns:
+        标准化后的值
+    """
+    if value is None:
+        return None
+    if isinstance(value, str) and value.strip() == '':
+        return None
+    return value
+
+
+def normalize_types(val1: Any, val2: Any) -> Tuple[Any, Any]:
+    """
+    类型一致性处理
+    
+    Args:
+        val1: 值1
+        val2: 值2
+    
+    Returns:
+        (标准化后的值1, 标准化后的值2)
+    """
+    try:
+        # 如果都是数值型字符串，转换为float比较
+        if isinstance(val1, str) and isinstance(val2, str):
+            if val1.replace('.', '').replace('-', '').isdigit() and \
+               val2.replace('.', '').replace('-', '').isdigit():
+                return float(val1), float(val2)
+        
+        # 如果一个是数值一个是字符串，统一转换
+        if isinstance(val1, (int, float)) and isinstance(val2, str):
+            return val1, float(val2) if val2.replace('.', '').replace('-', '').isdigit() else val2
+        if isinstance(val2, (int, float)) and isinstance(val1, str):
+            return float(val1) if val1.replace('.', '').replace('-', '').isdigit() else val1, val2
+        
+        return val1, val2
+    except:
+        return val1, val2
 
 
 class DedupStrategy(str, Enum):
@@ -35,6 +161,8 @@ class DuplicateChecker:
         config = STAGING_TABLE_CONFIG.get(table_name, {})
         self.pk_fields = config.get("business_keys", [])
         self.staging_model = STAGING_MODEL_MAPPING.get(table_name)
+        
+        logger.debug(f"DuplicateChecker初始化: 表={table_name}, business_keys={self.pk_fields}, model={self.staging_model.__name__ if self.staging_model else None}")
         
         if not self.pk_fields:
             logger.warning(f"表 {table_name} 未配置 business_keys，去重策略将不生效")
@@ -128,20 +256,79 @@ class DuplicateChecker:
         existing_in_db = []
         unique_data = []
         
-        for idx in unique_indices:
-            data = data_list[idx]
-            pk_value = self._get_pk_value(data)
+        # 批量查询已存在记录（优化：一次查询替代N次查询）
+        if unique_indices and self.pk_fields:
+            pk_field = self.pk_fields[0]  # 主键字段
+            pk_values_to_query = []
+            idx_to_pk_map = {}
             
-            is_unique, _ = await self.check_duplicate_in_staging(data)
+            for idx in unique_indices:
+                data = data_list[idx]
+                pk_value = self._get_pk_value(data)
+                if pk_value:
+                    pk_values_to_query.append(pk_value)
+                    idx_to_pk_map[idx] = pk_value
             
-            if is_unique:
-                unique_data.append({
-                    "index": idx,
-                    "data": data,
-                    "pk_value": pk_value
-                })
+            # 去重后批量查询
+            unique_pk_values = list(set(pk_values_to_query))
+            
+            # logger.info(f"去重检测: 表={self.table_name}, 主键字段={pk_field}, 待查询主键值数量={len(unique_pk_values)}, 示例={unique_pk_values[:3]}...")
+            
+            if unique_pk_values:
+                try:
+                    # 一次性查询所有已存在的记录
+                    existing_records = await self.staging_model.filter(
+                        **{f"{pk_field}__in": unique_pk_values}
+                    ).all()
+                    
+                    # 构建主键 -> 记录的映射
+                    existing_map = {}
+                    for record in existing_records:
+                        pk_val = getattr(record, pk_field)
+                        # 统一转换为字符串进行比较
+                        existing_map[str(pk_val)] = record
+                    
+                    # logger.info(f"批量查询已存在记录: 找到{len(existing_map)}条, 映射键={list(existing_map.keys())[:3]}")
+                except Exception as e:
+                    logger.error(f"批量查询已存在记录失败: {str(e)}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    existing_map = {}
             else:
-                existing_in_db.append({
+                logger.warning(f"无有效主键值，跳过批量查询")
+                existing_map = {}
+            
+            # 分类处理
+            for idx in unique_indices:
+                data = data_list[idx]
+                pk_value = idx_to_pk_map.get(idx)
+                
+                # 详细日志：显示主键值和匹配情况
+                # if pk_value:
+                #     in_map = pk_value in existing_map
+                #     logger.info(f"分类处理: idx={idx}, pk_value={pk_value}, in_existing_map={in_map}")
+                
+                if pk_value and pk_value in existing_map:
+                    # 已存在于缓冲表
+                    existing_in_db.append({
+                        "index": idx,
+                        "data": data,
+                        "pk_value": pk_value,
+                        "existing_record": existing_map[pk_value]  # 完整记录
+                    })
+                else:
+                    # 新数据
+                    unique_data.append({
+                        "index": idx,
+                        "data": data,
+                        "pk_value": pk_value
+                    })
+        else:
+            # 无主键配置，全部视为新数据
+            for idx in unique_indices:
+                data = data_list[idx]
+                pk_value = self._get_pk_value(data)
+                unique_data.append({
                     "index": idx,
                     "data": data,
                     "pk_value": pk_value
@@ -210,7 +397,8 @@ class DuplicateChecker:
 async def apply_dedup_strategy(
     table_name: str,
     data_list: List[Dict[str, Any]],
-    strategy: DedupStrategy = DedupStrategy.SKIP
+    strategy: DedupStrategy = DedupStrategy.SKIP,
+    update_mode: str = "partial"
 ) -> Tuple[List[Dict], List[Dict]]:
     """
     应用去重策略
@@ -219,6 +407,9 @@ async def apply_dedup_strategy(
         table_name: 表名
         data_list: 数据列表
         strategy: 去重策略
+        update_mode: 更新模式
+            - "partial": 部分更新，跳过未传递的字段（默认）
+            - "full": 完整更新，所有字段都参与比对
     
     Returns:
         (处理后的数据列表, 被处理的数据列表)
@@ -284,15 +475,37 @@ async def apply_dedup_strategy(
                     "pk_value": item["pk_value"]
                 })
         
-        # 处理缓冲表已存在的记录
+        # 处理缓冲表已存在的记录（添加内容比对）
+        skip_unchanged_count = 0
         for item in result["existing"]:
-            processed_data.append(item["data"])
-            handled_data.append({
-                "data": item["data"],
-                "reason": "覆盖已存在记录",
-                "pk_value": item["pk_value"],
-                "action": "overwrite"
-            })
+            existing_record = item.get("existing_record")
+            new_data = item["data"]
+            
+            # 内容比对（传入update_mode）
+            is_same, diff_info = compare_content(existing_record, new_data, update_mode=update_mode)
+            
+            if is_same:
+                # 内容相同，跳过覆盖
+                handled_data.append({
+                    "data": new_data,
+                    "reason": f"内容相同，跳过覆盖",
+                    "pk_value": item["pk_value"],
+                    "action": "skip"
+                })
+                skip_unchanged_count += 1
+            else:
+                # 内容不同，执行覆盖
+                processed_data.append(new_data)
+                handled_data.append({
+                    "data": new_data,
+                    "reason": f"覆盖已存在记录 ({diff_info})",
+                    "pk_value": item["pk_value"],
+                    "action": "overwrite"
+                })
+        
+        # 日志记录跳过数量
+        if skip_unchanged_count > 0:
+            logger.info(f"内容相同跳过覆盖: {skip_unchanged_count}条")
     
     elif strategy == DedupStrategy.REJECT:
         if result["duplicates"] or result["existing"]:

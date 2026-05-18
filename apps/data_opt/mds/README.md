@@ -401,6 +401,152 @@ STAGING_TABLE_CONFIG["t_mat_ver"] = {
 
 ---
 
+## 去重检测与内容比对
+
+### 去重策略
+
+系统支持三种去重策略，通过 `dedup_strategy` 参数控制：
+
+| 策略 | 说明 | 适用场景 |
+|------|------|----------|
+| `overwrite` | 覆盖已存在记录 | 默认策略，支持内容比对优化 |
+| `skip` | 跳过已存在记录 | 不更新已有数据 |
+| `reject` | 拒绝整个批次 | 严格模式，发现重复即拒绝 |
+
+### 内容比对逻辑（overwrite策略）
+
+**核心机制**：导入相同数据时，通过内容比对判断是否需要覆盖，避免无意义的数据更新。
+
+**比对流程**：
+```
+1. 批量查询已存在记录（按业务主键）
+   ↓
+2. 逐条比对内容是否一致
+   ↓
+3. 内容相同 → 跳过覆盖，状态保持不变
+   内容不同 → 执行覆盖
+```
+
+### 更新模式（update_mode）
+
+通过 `update_mode` 参数控制字段比对范围：
+
+| 模式 | 说明 | 行为示例 |
+|------|------|----------|
+| `partial`（默认） | 部分更新 | 只比对新数据中存在的字段，未传递字段保持不变 |
+| `full` | 完整更新 | 所有字段都参与比对，未传递字段视为None |
+
+**partial模式示例**：
+
+```python
+# 数据库已有记录
+{
+    "materialno": "M001",
+    "description": "测试物料",
+    "price": 100,
+    "unit": "PCS"
+}
+
+# Excel/API只传递部分字段
+{
+    "materialno": "M001",
+    "description": "测试物料"
+}
+
+# partial模式比对结果：相同
+# - 未传递的 price、unit 字段被跳过
+# - 只比对 materialno、description
+# - 内容相同 → 跳过覆盖，price/unit 保持不变
+```
+
+**full模式示例**：
+
+```python
+# 同上场景
+# full模式比对结果：差异
+# - 未传递的 price、unit 视为 None
+# - None ≠ 数据库值 → 触发覆盖
+# - price、unit 被覆盖为 None
+```
+
+### 显式清空字段
+
+如需清空某个字段，需显式传递空值：
+
+```python
+# 方式1：传递空字符串（Excel）
+{
+    "materialno": "M001",
+    "description": "测试物料",
+    "price": ""  # 显式清空
+}
+
+# 方式2：传递null（API）
+{
+    "materialno": "M001",
+    "description": "测试物料",
+    "price": null  # 显式清空
+}
+
+# 比对结果：差异
+# - 空值被normalize为None
+# - None ≠ 数据库值(100) → 触发覆盖
+# - price 被清空为 None
+```
+
+### 与API行为的一致性
+
+**Pydantic Schema的exclude_none行为**：
+
+```python
+# API接收数据后转换
+data = AcceptMaterial(**request_data)
+dict_data = data.model_dump(exclude_none=True)  # 排除未传递字段
+
+# 比对时
+# - exclude_none=True 排除了未传递字段
+# - partial模式跳过不存在的字段
+# - 行为一致：部分更新语义
+```
+
+**数据流转路径**：
+
+```
+API导入：
+  Request → Pydantic验证 → model_dump(exclude_none=True) → 比对(partial) → 数据库
+  
+Excel导入：
+  Excel → Dict → 比对(partial) → 数据库
+  
+两者行为一致：未传递字段不参与更新
+```
+
+### API参数说明
+
+**导入接口**：
+
+```python
+POST /mds/{table_key}
+POST /mds/upload/{table_name}
+
+参数：
+  - dedup_strategy: str = "overwrite"  # overwrite/skip/reject
+  - update_mode: str = "partial"       # partial/full
+```
+
+**推荐配置**：
+
+- **默认场景**：`dedup_strategy="overwrite"` + `update_mode="partial"`
+  - 适合大部分场景，未传递字段保持不变
+  
+- **完整覆盖场景**：`dedup_strategy="overwrite"` + `update_mode="full"`
+  - 需要清空未传递字段时使用
+  
+- **只导入新数据**：`dedup_strategy="skip"`
+  - 不更新已有数据，只导入新数据
+
+---
+
 ## 完整示例
 
 ### 新增供应商表（t_supplier）

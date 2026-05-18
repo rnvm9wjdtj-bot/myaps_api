@@ -570,13 +570,13 @@ class DataTable {
                     class="error-cell null-cell" 
                     data-error-type="${errorInfo.type}" 
                     data-error-msg="${escapeHtml(errorInfo.message)}"
-                ><i class="bi bi-dash-square-dotted"></i></span>
+                ><i class="bi bi-slash-square-fill"></i></span>
             `;
         }
         
         return showNullBg 
-            ? '<span class="null-cell"><i class="bi bi-dash-square-dotted"></i></span>' 
-            : '<span class="text-muted"><i class="bi bi-dash-square-dotted"></i></span>';
+            ? '<span class="null-cell"><i class="bi bi-slash-square-fill"></i></span>' 
+            : '<span class="text-muted"><i class="bi bi-slash-square-fill"></i></span>';
     }
     
     /**

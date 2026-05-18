@@ -301,20 +301,28 @@ _PAGE_COLUMNS_CONFIG = {
         {"field": "matver", "title": "版本号", "width": "80px", "sortable": True},
         {"field": "lotfrom", "title": "批量下限", "width": "100px"},
         {"field": "lotto", "title": "批量上限", "width": "100px"},
+        {"field": "priority", "title": "优先级", "width": "80px"},
         {"field": "refno", "title": "MTO订单号/认证线", "width": "150px"},
         {"field": "active", "title": "激活", "width": "80px"},
+        {"field": "memo", "title": "备注"},
     ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
 
     "t_workcenter": SYSTEM_COMMON_COLUMNS_PREFIX + [
-        {"field": "workcenter", "title": "编号", "sortable": True, "readOnly": True},
+        {"field": "workcenter", "title": "编号", "width": "120px", "sortable": True, "readOnly": True},
         {"field": "workcentername", "title": "名称"},
+        {"field": "pri_wc", "title": "优先级", "width": "80px"},
         {"field": "bottleneck", "title": "是否瓶颈"},
+        {"field": "sortno", "title": "序号", "width": "80px"},
+        {"field": "plant", "title": "工厂", "width": "80px"},
+        {"field": "location", "title": "车间"},
         {"field": "finite", "title": "有限产能"},
+        {"field": "type", "title": "首页显示"},
         {"field": "worker", "title": "工时"},
         {"field": "capnum", "title": "默认机台数"},
         {"field": "capmax", "title": "最大机台数"},
         {"field": "setupno", "title": "切换组别"},
         {"field": "grpno", "title": "同组号"},
+        {"field": "memo", "title": "备注"},
     ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
 
     "t_mat_wc": SYSTEM_COMMON_COLUMNS_PREFIX + [
@@ -322,9 +330,14 @@ _PAGE_COLUMNS_CONFIG = {
         {"field": "matver", "title": "版本号", "width": "80px"},
         {"field": "itemno", "title": "工序号", "width": "80px"},
         {"field": "workcenter", "title": "工作中心", "width": "100px"},
-        {"field": "sf", "title": "串并行", "width": "80px"},
-        {"field": "basesec", "title": "基础工时", "width": "100px"},
         {"field": "sortno", "title": "排序", "width": "80px"},
+        {"field": "basesec", "title": "基础工时", "width": "100px"},
+        {"field": "fixqty", "title": "额定量", "width": "80px"},
+        {"field": "fixsec", "title": "额定时间", "width": "80px"},
+        {"field": "sf", "title": "串并行", "width": "80px"},
+        {"field": "offsetsec", "title": "偏置时间", "width": "80px"},
+        {"field": "rate", "title": "配比"},
+        {"field": "memo", "title": "备注"},
     ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
     
     "t_mat_wc_bom": SYSTEM_COMMON_COLUMNS_PREFIX + [
@@ -333,13 +346,22 @@ _PAGE_COLUMNS_CONFIG = {
         {"field": "itemno", "title": "工序号", "width": "80px"},
         {"field": "materialno", "title": "子件号", "width": "100px"},
         {"field": "qty", "title": "用量", "width": "80px"},
+        {"field": "offsethour", "title": "偏置小时", "width": "80px"},
+        {"field": "treeno", "title": "树号", "width": "80px"},
+        {"field": "mto", "title": "MTO", "width": "80px"},
+        {"field": "scrap", "title": "损耗率"},
+        {"field": "alt", "title": "替代组"},
+        {"field": "memo", "title": "备注"},
     ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
 
     "t_mold": SYSTEM_COMMON_COLUMNS_PREFIX + [
         {"field": "moldno", "title": "模具号", "width": "120px", "sortable": True, "readOnly": True},
         {"field": "moldname", "title": "描述"},
+        {"field": "type", "title": "类型", "width": "80px"},
+        {"field": "status", "title": "状态", "width": "80px"},
         {"field": "moldnum", "title": "穴数", "width": "80px"},
         {"field": "qty", "title": "台数", "width": "80px"},
+        {"field": "memo", "title": "备注"},
     ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
     
     "t_mat_wc_mold": SYSTEM_COMMON_COLUMNS_PREFIX + [
@@ -347,6 +369,10 @@ _PAGE_COLUMNS_CONFIG = {
         {"field": "workcenter", "title": "工作中心", "width": "100px"},
         {"field": "itemno", "title": "工序号", "width": "80px"},
         {"field": "moldno", "title": "模具号", "width": "100px"},
+        {"field": "basesec", "title": "基础工时", "width": "100px"},
+        {"field": "fixsec", "title": "额定时间", "width": "80px"},
+        {"field": "priority", "title": "优先级", "width": "80px"},
+        {"field": "memo", "title": "备注"},
     ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
 }
 

@@ -47,6 +47,7 @@ def create_staging_endpoint(table_key: str, config: Dict):
         data: List[Dict] = Body(..., description=f"{config['display_name']}数据列表"),
         source_system: str = Query("unknown", description="来源系统"),
         dedup_strategy: str = Query("overwrite", description="去重策略: overwrite/skip/reject"),
+        update_mode: str = Query("partial", description="更新模式: partial-部分更新(跳过未传递字段)/full-完整更新"),
     ):
         """接收外部系统的{config['display_name']}数据，支持去重"""
         try:
@@ -55,7 +56,7 @@ def create_staging_endpoint(table_key: str, config: Dict):
             # 应用去重策略
             strategy = DedupStrategy(dedup_strategy)
             processed_data, handled_data = await apply_dedup_strategy(
-                table_key, data, strategy
+                table_key, data, strategy, update_mode
             )
             
             inserted_count = 0
@@ -887,7 +888,7 @@ async def upload_excel(
     file: UploadFile = File(..., description="Excel文件"),
     source_system: str = Query("excel", description="来源系统"),
     dedup_strategy: str = Query("overwrite", description="去重策略: overwrite/skip/reject"),
-    # db_name: str = Query(MYAPS_MAIN_DB, description="账套")  # 未使用，已注释
+    update_mode: str = Query("partial", description="更新模式: partial-部分更新(跳过未传递字段)/full-完整更新"),
 ):
     """上传Excel文件并导入缓冲表，支持去重"""
     try:
@@ -908,6 +909,11 @@ async def upload_excel(
                 message="Excel解析失败",
                 data={"errors": parse_errors[:10]}
             )
+        
+        strategy = DedupStrategy(dedup_strategy)
+        processed_data, handled_data = await apply_dedup_strategy(
+            table_name, data_list, strategy, update_mode
+        )
         
         strategy = DedupStrategy(dedup_strategy)
         processed_data, handled_data = await apply_dedup_strategy(
