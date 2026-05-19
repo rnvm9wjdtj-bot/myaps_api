@@ -39,15 +39,14 @@ def render_mds_index():
     for table_key, display_config in TABLE_DISPLAY_CONFIG.items():
         route = display_config["route"]
         gradient = display_config["gradient"]
+        icon = display_config.get("icon", "bi-folder")
         # 从 STAGING_TABLE_CONFIG 获取 display_name
         display_name = STAGING_TABLE_CONFIG.get(table_key, {}).get("display_name", table_key)
         nav_item = f'''
                     <a href="/mds/{route}" class="table-link border-bottom">
                         <div class="d-flex align-items-center">
                             <div class="table-icon" style="background: linear-gradient(135deg, {gradient[0]}, {gradient[1]});">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
-                                    <path d="M8.186 1.113a.5.5 0 0 0 0 1l1.5 1.5a.5.5 0 0 0 1 0l1.5-1.5a.5.5 0 0 0 0-1l-1.5-1.5a.5.5 0 0 0-1 0zM4 4a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1A.5.5 0 0 0 5 4zm2 0a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1A.5.5 0 0 0 7 4zm2 0a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1A.5.5 0 0 0 9 4z"/>
-                                </svg>
+                                <i class="bi {icon}"></i>
                             </div>
                             <div class="table-info ms-3">
                                 <div class="table-title">{display_name}</div>
@@ -88,9 +87,13 @@ def render_mds_page(page_key):
         "{MDS_PAGE_CONFIG}": json.dumps(frontend_config, ensure_ascii=False) if frontend_config else "null"
     }
     
-    # 设置导航栏高亮
+    # 设置导航栏高亮和图标
     for key in MDS_PAGE_CONFIG.keys():
         replacements[f"{{{key.replace('-', '_')}_active}}"] = "active" if key == page_key else ""
+        # 设置导航栏图标
+        table_key = MDS_PAGE_CONFIG[key]["table_key"]
+        icon = TABLE_DISPLAY_CONFIG.get(table_key, {}).get("icon", "bi-folder")
+        replacements[f"{{{key.replace('-', '_')}_icon}}"] = icon
     
     # 执行替换
     html = template

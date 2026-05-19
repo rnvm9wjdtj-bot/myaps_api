@@ -7,6 +7,7 @@ class MDSPageController {
         this.config = config;
         this.tableKey = config.tableKey;
         this.tableDisplayName = config.tableDisplayName;
+        this.runtimeConfig = config.runtimeConfig || {};
         
         this.tableMeta = null;
         this.dataTable = null;
@@ -45,22 +46,43 @@ class MDSPageController {
      * 获取外键选项（带缓存）
      * @param {string} fieldName - 字段名
      * @param {string} search - 搜索关键词（可选）
+     * @param {Object} conditions - 前置条件（多维约束使用）
      * @returns {Promise<Array>} 选项数组 [{value, label}, ...]
      */
-    async getFkOptions(fieldName, search = '') {
+    async getFkOptions(fieldName, search = '', conditions = null) {
+        let url = `/fk-options/${this.tableKey}/${fieldName}`;
+        const params = [];
+        
         if (search) {
-            const response = await callApi(`/fk-options/${this.tableKey}/${fieldName}?search=${encodeURIComponent(search)}&limit=50`);
+            params.push(`search=${encodeURIComponent(search)}`);
+        }
+        
+        if (conditions && Object.keys(conditions).length > 0) {
+            params.push(`conditions=${encodeURIComponent(JSON.stringify(conditions))}`);
+        }
+        
+        const fkLimit = this.runtimeConfig.fkOptionsLimit || 50;
+        params.push(`limit=${fkLimit}`);
+        
+        if (params.length > 0) {
+            url += `?${params.join('&')}`;
+        }
+        
+        // 有搜索或前置条件时不使用缓存
+        if (search || conditions) {
+            const response = await callApi(url);
             if (response.success === 1) {
                 return response.data || [];
             }
             return [];
         }
         
+        // 无搜索和前置条件时使用缓存
         if (this.fkOptionsCache.has(fieldName)) {
             return this.fkOptionsCache.get(fieldName);
         }
         
-        const response = await callApi(`/fk-options/${this.tableKey}/${fieldName}`);
+        const response = await callApi(url);
         if (response.success === 1) {
             const options = response.data || [];
             this.fkOptionsCache.set(fieldName, options);
@@ -209,37 +231,25 @@ class MDSPageController {
             tableName: this.tableKey,
             columns: this.getColumns(),
             container: document.getElementById('tableContainer'),
-            pageSize: 100,
+            pageSize: this.runtimeConfig.defaultPageSize || 100,
             onRowClick: (row) => this.showEditModal(row),
             enumFields: enumFieldKeys,
             enumOptions: enumOptions,
             foreignKeys: this.config.foreignKeys || [],
             requiredFields: this.getRequiredFields(),
+            primaryKeyFields: this.config.primaryKeyFields || [],
             fieldMap: fieldMap,
-            fieldDefaults: fieldDefaults
+            fieldDefaults: fieldDefaults,
+            defaultSortField: this.config.display?.defaultSortField || '_createtime',
+            defaultSortOrder: this.config.display?.defaultSortDir || 'desc',
+            selectAllPageSize: this.runtimeConfig.selectAllPageSize || 10000
         });
         
-        // 预加载外键选项并设置到 dataTable
-        this.loadForeignKeyOptions().then(() => {
-            this.dataTable.loadData();
-        });
+        // 表格中不需要显示外键 label，直接加载数据
+        this.dataTable.loadData();
     }
     
-    /**
-     * 预加载所有外键选项
-     */
-    async loadForeignKeyOptions() {
-        const foreignKeys = this.config.foreignKeys || [];
-        
-        for (const fk of foreignKeys) {
-            try {
-                const options = await this.getFkOptions(fk.field);
-                this.dataTable.setForeignKeyOptions(fk.field, options);
-            } catch (error) {
-                console.error(`加载外键选项失败 [${fk.field}]:`, error);
-            }
-        }
-    }
+
     
     bindEvents() {
         this.bindFilterEvents();
@@ -490,7 +500,8 @@ class MDSPageController {
         while (true) {
             setProgressIndeterminate(true);
             
-            const response = await callApi(`/validate/${this.tableKey}?batch_size=200`, 'POST');
+            const batchSize = this.runtimeConfig.validateBatchSize || 200;
+            const response = await callApi(`/validate/${this.tableKey}?batch_size=${batchSize}`, 'POST');
             
             setProgressIndeterminate(false);
             
@@ -603,7 +614,8 @@ class MDSPageController {
         let totalDedup = 0;
         let processed = 0;
         
-        const baseUrl = `/sync/${this.tableKey}?batch_size=200&mode=${mode}&target_dbs=${encodeURIComponent(targetDbParam)}&reset_retry=${resetRetry}`;
+        const batchSize = this.runtimeConfig.syncBatchSize || 200;
+        const baseUrl = `/sync/${this.tableKey}?batch_size=${batchSize}&mode=${mode}&target_dbs=${encodeURIComponent(targetDbParam)}&reset_retry=${resetRetry}`;
         
         // 统一使用循环处理，支持大批量数据
         let firstCall = true;
@@ -612,7 +624,7 @@ class MDSPageController {
             let url = baseUrl;
             if (!firstCall && mode === 'refresh') {
                 // 刷新模式后续调用：跳过 truncate
-                url = `/sync/${this.tableKey}?batch_size=200&mode=${mode}&target_dbs=${encodeURIComponent(targetDbParam)}&skip_truncate=true`;
+                url = `/sync/${this.tableKey}?batch_size=${batchSize}&mode=${mode}&target_dbs=${encodeURIComponent(targetDbParam)}&skip_truncate=true`;
             }
             const syncResponse = await callApi(url, 'POST');
             setProgressIndeterminate(false);
@@ -961,19 +973,68 @@ class MDSPageController {
      */
     async loadFkOptionsInForm(row) {
         const fkInputs = document.querySelectorAll('.fk-search-input');
+        const fieldDependencies = {}; // 记录字段依赖关系 { 依赖字段: [ 依赖它的字段列表 ] }
         
+        // 首先分析字段依赖关系
+        for (const input of fkInputs) {
+            const fieldName = input.dataset.field;
+            const fkConfig = this.getForeignKeyConfig(fieldName);
+            
+            if (fkConfig && fkConfig.conditions) {
+                // 这是一个多维约束字段
+                for (const cond of fkConfig.conditions) {
+                    const dependencyField = cond.local;
+                    if (dependencyField !== fieldName) {
+                        if (!fieldDependencies[dependencyField]) {
+                            fieldDependencies[dependencyField] = [];
+                        }
+                        fieldDependencies[dependencyField].push(fieldName);
+                    }
+                }
+            }
+        }
+        
+        // 为每个外键字段设置交互逻辑
         for (const input of fkInputs) {
             const fieldName = input.dataset.field;
             const currentValue = row[fieldName] || '';
+            const fkConfig = this.getForeignKeyConfig(fieldName);
             
             const dropdown = document.querySelector(`.fk-dropdown[data-field="${fieldName}"]`);
             if (!dropdown) continue;
             
+            // 获取当前字段的前置条件
+            const getCurrentConditions = () => {
+                const conditions = {};
+                if (fkConfig && fkConfig.conditions) {
+                    for (const cond of fkConfig.conditions) {
+                        const depField = cond.local;
+                        if (depField !== fieldName) {
+                            const depInput = document.querySelector(`input[name="${depField}"]`);
+                            if (depInput) {
+                                // 外键字段用 dataset.value，普通字段用 value
+                                const depValue = depInput.classList.contains('fk-search-input') 
+                                    ? depInput.dataset.value 
+                                    : depInput.value;
+                                if (depValue) {
+                                    conditions[depField] = depValue;
+                                }
+                            } else if (row[depField]) {
+                                conditions[depField] = row[depField];
+                            }
+                        }
+                    }
+                }
+                return conditions;
+            };
+            
             let selectedValue = currentValue;
             let selectedLabel = currentValue;
             
+            // 初始化显示
             if (currentValue) {
-                const options = await this.getFkOptions(fieldName);
+                const conditions = getCurrentConditions();
+                const options = await this.getFkOptions(fieldName, '', conditions);
                 const currentOpt = options.find(o => String(o.value) === String(currentValue));
                 if (currentOpt) {
                     selectedLabel = currentOpt.label;
@@ -984,10 +1045,17 @@ class MDSPageController {
             input.dataset.value = selectedValue;
             
             const renderDropdown = async (searchText = '') => {
-                const options = await this.getFkOptions(fieldName, searchText);
+                const conditions = getCurrentConditions();
+                const options = await this.getFkOptions(fieldName, searchText, conditions);
                 
                 if (options.length === 0) {
-                    dropdown.innerHTML = '<div class="dropdown-item text-muted">无匹配结果</div>';
+                    const hasRequiredConditions = fkConfig && fkConfig.conditions && 
+                        fkConfig.conditions.some(c => c.local !== fieldName && !conditions[c.local]);
+                    if (hasRequiredConditions) {
+                        dropdown.innerHTML = '<div class="dropdown-item text-muted">请先填写前置字段</div>';
+                    } else {
+                        dropdown.innerHTML = '<div class="dropdown-item text-muted">无匹配结果</div>';
+                    }
                     return;
                 }
                 
@@ -1028,7 +1096,13 @@ class MDSPageController {
                         dropdown.classList.remove('show');
                     });
                 } else {
-                    dropdown.innerHTML = '<div class="dropdown-item text-muted">无选中值</div>';
+                    const hasRequiredConditions = fkConfig && fkConfig.conditions && 
+                        fkConfig.conditions.some(c => c.local !== fieldName && !getCurrentConditions()[c.local]);
+                    if (hasRequiredConditions) {
+                        dropdown.innerHTML = '<div class="dropdown-item text-muted">请先填写前置字段</div>';
+                    } else {
+                        dropdown.innerHTML = '<div class="dropdown-item text-muted">无选中值</div>';
+                    }
                 }
             };
             
@@ -1075,7 +1149,30 @@ class MDSPageController {
                     }
                 });
             }
+            
+            // 监听当前字段的变化，通知依赖它的字段重新加载
+            input.addEventListener('change', async () => {
+                const dependentFields = fieldDependencies[fieldName] || [];
+                for (const depField of dependentFields) {
+                    const depInput = document.querySelector(`.fk-search-input[data-field="${depField}"]`);
+                    if (depInput) {
+                        // 清空依赖字段的值
+                        depInput.value = '';
+                        depInput.dataset.value = '';
+                    }
+                }
+            });
         }
+    }
+    
+    /**
+     * 获取外键字段配置
+     * @param {string} fieldName - 字段名
+     * @returns {Object|null}
+     */
+    getForeignKeyConfig(fieldName) {
+        const foreignKeys = this.config.foreignKeys || [];
+        return foreignKeys.find(fk => fk.field === fieldName) || null;
     }
     
     /**

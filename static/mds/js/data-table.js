@@ -21,6 +21,7 @@ class DataTable {
         this.advancedFilters = null;
         this.sortField = config.defaultSortField || '_createtime';
         this.sortOrder = config.defaultSortOrder || 'desc';
+        this.selectAllPageSize = config.selectAllPageSize || 10000;
         
         // 回调函数
         this.onRowClick = config.onRowClick;
@@ -42,6 +43,9 @@ class DataTable {
         
         // 必填字段配置
         this.requiredFields = config.requiredFields || [];
+        
+        // 主键字段配置
+        this.primaryKeyFields = config.primaryKeyFields || [];
         
         // 字段映射（Python字段名 -> 数据库字段名）
         this.fieldMap = config.fieldMap || {};
@@ -137,8 +141,13 @@ class DataTable {
         const isEnum = this.enumFields.includes(col.field);
         const isForeignKey = this.foreignKeys.some(fk => fk.field === col.field);
         const isRequired = this.requiredFields.includes(col.field);
+        const isPrimaryKey = this.primaryKeyFields.includes(col.field);
+        const isCompositeKey = this.primaryKeyFields.length > 1 && isPrimaryKey;
         const dbFieldName = this.fieldMap[col.field] || col.field;
         const defaultValue = this.fieldDefaults[col.field];
+        const primaryKeyIcon = isPrimaryKey 
+            ? `<i class="bi ${isCompositeKey ? 'bi-key' : 'bi-key'} ms-1" style="font-size: 0.85rem; color: #ff9300;" title="${isCompositeKey ? '联合主键字段' : '主键字段'}"></i>` 
+            : '';
         const readOnlyIcon = col.readOnly ? '<i class="bi bi-lock ms-1 text-muted" style="font-size: 0.8rem;"></i>' : '';
         const enumIcon = isEnum ? '<i class="bi bi-list-ul ms-1" style="font-size: 0.8rem; color: #08c9c9;" title="枚举字段"></i>' : '';
         const foreignKeyIcon = isForeignKey ? '<i class="bi bi-link-45deg ms-1" style="font-size: 0.8rem; color: #08c9c9;" title="外键字段"></i>' : '';
@@ -163,6 +172,7 @@ class DataTable {
         if (col.readOnly) titleParts.push('只读');
         if (isEnum) titleParts.push('枚举');
         if (isForeignKey) titleParts.push('外键');
+        if (isPrimaryKey) titleParts.push(isCompositeKey ? '联合主键' : '主键');
         if (isRequired) titleParts.push('必填');
         
         return `
@@ -172,7 +182,7 @@ class DataTable {
                 class="${col.sortable ? 'sortable' : ''}"
                 title="${titleParts.join(' | ')}"
             >
-                ${col.title}${requiredIcon}${readOnlyIcon}${enumIcon}${foreignKeyIcon}${sortIcon}
+                ${col.title}${primaryKeyIcon}${requiredIcon}${readOnlyIcon}${enumIcon}${foreignKeyIcon}${sortIcon}
             </th>
         `;
     }
@@ -644,20 +654,15 @@ class DataTable {
     }
 
     /**
-     * 渲染外键单元格
+     * 渲染外键单元格（所有外键字段在列表中只显示数据库 value）
      */
     renderForeignKeyCell(value, fieldName) {
         // 获取外键配置
         const fkConfig = this.foreignKeys.find(fk => fk.field === fieldName);
         const refTableDisplayName = fkConfig ? fkConfig.refTableDisplayName : '';
         
-        // 尝试从缓存中查找对应的 label
-        const options = this.foreignKeyOptions[fieldName] || [];
-        const option = options.find(o => String(o.value) === String(value));
-        
-        const displayValue = option ? option.label : value;
-        
-        return `<span class="foreign-key-tag" title="引用: ${escapeHtml(refTableDisplayName)}">${escapeHtml(displayValue)}</span>`;
+        // 所有外键字段只显示数据库 value
+        return `<span class="foreign-key-tag" title="引用: ${escapeHtml(refTableDisplayName)}">${escapeHtml(value)}</span>`;
     }
     
     /**
@@ -1028,7 +1033,7 @@ class DataTable {
         try {
             const queryParams = new URLSearchParams({
                 page: 1,
-                page_size: 10000,
+                page_size: this.selectAllPageSize,
                 sort_field: this.sortField,
                 sort_order: this.sortOrder,
                 ...this.filters
@@ -1145,7 +1150,7 @@ class DataTable {
             try {
                 const queryParams = new URLSearchParams({
                     page: 1,
-                    page_size: 10000,
+                    page_size: this.selectAllPageSize,
                     sort_field: this.sortField,
                     sort_order: this.sortOrder,
                     ...this.filters

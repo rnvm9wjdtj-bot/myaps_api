@@ -103,8 +103,8 @@ STAGING_TABLE_CONFIG = {
         "config_rules": [
             create_comparison_rule("lotmin", "lotmax", ">", "最小批量不能大于最大批量"),
         ],
-        # "business_keys": ["materialno"],
     },
+
     "t_workcenter": {
         "schema": AcceptWorkcenter,
         "model": TWorkcenterStaging,
@@ -112,8 +112,8 @@ STAGING_TABLE_CONFIG = {
         "foreign_keys": [],
         "display_name": "工作中心",
         "validator": lambda cleaner, data, staging_id: cleaner.validate_workcenter(data, staging_id),
-        # "business_keys": ["workcenter"],
     },
+
     "t_mat_ver": {
         "schema": AcceptMatVer,
         "model": TMatVerStaging,
@@ -131,8 +131,8 @@ STAGING_TABLE_CONFIG = {
         "config_rules": [
             create_comparison_rule("lotfrom", "lotto", ">", "批量下限不能大于批量上限"),
         ],
-        # "business_keys": ["materialno", "matver"],  # 由 proto_model 的 unique_together 自动提取
     },
+
     "t_mat_wc": {
         "schema": AcceptMatWc,
         "model": TMatWcStaging,
@@ -150,6 +150,15 @@ STAGING_TABLE_CONFIG = {
                 "value_field": "workcenter",
                 "label_field": "workcentername"
             },
+            {
+                "field": "matver",
+                "model": TMatVerStaging,
+                "display_name": "产线版本",
+                "conditions": [
+                    {"local": "materialno", "foreign": "materialno"},
+                    {"local": "matver", "foreign": "matver"}
+                ]
+            },
         ],
         "display_name": "工序",
         "validator": lambda cleaner, data, staging_id: cleaner.validate_mat_wc(data, staging_id),
@@ -160,8 +169,8 @@ STAGING_TABLE_CONFIG = {
                 "validator": validate_mat_wc_rules,
             }
         ],
-        # "business_keys": ["materialno", "matver", "itemno"],
     },
+
     "t_mat_wc_bom": {
         "schema": AcceptMatWcBom,
         "model": TMatWcBomStaging,
@@ -171,43 +180,45 @@ STAGING_TABLE_CONFIG = {
                 "field": "productno",
                 "model": TMaterialStaging,
                 "value_field": "materialno",
-                "label_field": "description"
+                "label_field": "description",
+                "display_name": "父项物料"
             },
             {
                 "field": "materialno",
                 "model": TMaterialStaging,
                 "value_field": "materialno",
-                "label_field": "description"
+                "label_field": "description",
+                "display_name": "子项物料"
             },
             {
                 "field": "matver",
                 "model": TMatVerStaging,
-                "value_field": "matver",
-                "label_field": "materialno"
+                "display_name": "产线版本",
+                "conditions": [
+                    {"local": "productno", "foreign": "materialno"},
+                    {"local": "matver", "foreign": "matver"}
+                ]
             },
             {
                 "field": "itemno",
                 "model": TMatWcStaging,
-                "value_field": "itemno",
-                "label_field": "workcenter"
+                "display_name": "工序号",
+                "conditions": [
+                    {"local": "productno", "foreign": "materialno"},
+                    {"local": "itemno", "foreign": "itemno"}
+                ]
             },
         ],
-        "display_name": "物料清单",
+        "display_name": "BOM",
         "validator": lambda cleaner, data, staging_id: cleaner.validate_mat_wc_bom(data, staging_id),
-        "business_rules": [
-            {
-                "name": "复合外键校验",
-                "description": "关联的产线版本和工序必须存在",
-                "validator": validate_mat_wc_bom_rules,
-            }
-        ],
+        "business_rules": [],
         "config_rules": [
             create_not_equal_rule("productno", "materialno", "父件和子件不能为同一物料"),
             create_positive_rule("qty", "用量必须大于0"),
             create_range_rule("scrap", 0, 100, "损耗率必须在0-100之间"),
         ],
-        # "business_keys": ["productno", "matver", "itemno", "materialno"],
     },
+
     "t_mold": {
         "schema": AcceptMold,
         "model": TMoldStaging,
@@ -219,8 +230,8 @@ STAGING_TABLE_CONFIG = {
             create_range_rule("moldnum", 1, 9999, "模具穴数必须≥1"),
             create_range_rule("qty", 1, 9999, "模具台数必须≥1"),
         ],
-        # "business_keys": ["moldno"],
     },
+
     "t_mat_wc_mold": {
         "schema": AcceptMatWcMold,
         "model": TMatWcMoldStaging,
@@ -254,9 +265,9 @@ STAGING_TABLE_CONFIG = {
                 "validator": validate_mat_wc_mold_rules,
             }
         ],
-        # "business_keys": ["materialno", "workcenter", "itemno", "moldno"],
     },
 }
+
 
 def initialize_table_config():
     """延迟初始化表配置（等待Tortoise连接建立后调用）"""
@@ -518,18 +529,46 @@ class DataCleaner:
         for fk_config in config["foreign_keys"]:
             field_name = fk_config["field"]
             model_class = fk_config["model"]
-            value_field = fk_config.get("value_field", field_name)
             display_name = fk_config.get("display_name") or extract_display_name_from_model(model_class)
-            value = data.get(field_name)
+            conditions = fk_config.get("conditions")
 
-            if value:
-                exists = await model_class.filter(**{value_field: value}).exists()
-                if not exists:
-                    errors.append(self._create_error(
-                        staging_id, ErrorType.FK_NOT_FOUND,
-                        field_name, value, f"关联的{display_name}不存在"
-                    ))
-                    all_valid = False
+            if conditions:
+                # ========== 多维约束校验 ==========
+                # 检查所有条件字段都有值
+                all_fields_present = True
+                condition_values = {}
+                for cond in conditions:
+                    local_field = cond["local"]
+                    local_value = data.get(local_field)
+                    if not local_value:
+                        all_fields_present = False
+                        break
+                    condition_values[cond["foreign"]] = local_value
+
+                if all_fields_present:
+                    # 构建查询条件
+                    exists = await model_class.filter(**condition_values).exists()
+                    if not exists:
+                        # 构建错误信息，显示所有条件值
+                        error_value_parts = [f"{data.get(cond['local'])}" for cond in conditions]
+                        error_value = "/".join(error_value_parts)
+                        errors.append(self._create_error(
+                            staging_id, ErrorType.FK_NOT_FOUND,
+                            field_name, error_value, f"关联的{display_name}不存在"
+                        ))
+                        all_valid = False
+            else:
+                # ========== 单约束校验（保持向后兼容） ==========
+                value_field = fk_config.get("value_field", field_name)
+                value = data.get(field_name)
+                if value:
+                    exists = await model_class.filter(**{value_field: value}).exists()
+                    if not exists:
+                        errors.append(self._create_error(
+                            staging_id, ErrorType.FK_NOT_FOUND,
+                            field_name, value, f"关联的{display_name}不存在"
+                        ))
+                        all_valid = False
 
         return all_valid
 

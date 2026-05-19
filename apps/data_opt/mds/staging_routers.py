@@ -15,7 +15,7 @@ from .staging_models import (
     ValidationError, TransformRule
 )
 from .staging_cleaner import StagingProcessor, DataTransformer, STAGING_TABLE_CONFIG, STAGING_MODEL_MAPPING, ensure_config_initialized
-from .config_generator import TABLE_DISPLAY_CONFIG
+from .config_generator import TABLE_DISPLAY_CONFIG, SYSTEM_RUNTIME_CONFIG
 from apps.io_api.utils.common import standard_response
 from apps.io_api.utils.db_operation import db_bupsert
 from core.settings import MYAPS_MAIN_DB, THIS_DB_NAME, MYAPS_DBSET_LIST
@@ -231,11 +231,13 @@ async def insert_to_staging_table(
 async def validate_staging(
     request: Request,
     table_name: str,
-    batch_size: int = Query(100, description="每批处理数量"),
+    batch_size: int = Query(None, description="每批处理数量"),
     db_name: str = Query(THIS_DB_NAME, description="账套")
 ):
     """校验指定缓冲表中的待处理数据"""
     try:
+        if batch_size is None:
+            batch_size = SYSTEM_RUNTIME_CONFIG["validateBatchSize"]
         processor = StagingProcessor(db_name)
         stats = await processor.process_staging(table_name, batch_size)
         
@@ -252,11 +254,13 @@ async def validate_staging(
 @rt.post("/validate_all", summary="校验所有缓冲表数据")
 async def validate_all_staging(
     request: Request,
-    batch_size: int = Query(100, description="每批处理数量"),
+    batch_size: int = Query(None, description="每批处理数量"),
     db_name: str = Query(THIS_DB_NAME, description="账套")
 ):
     """按依赖顺序校验所有缓冲表数据"""
     try:
+        if batch_size is None:
+            batch_size = SYSTEM_RUNTIME_CONFIG["validateBatchSize"]
         processor = StagingProcessor(db_name)
         all_stats = {}
         
@@ -278,7 +282,7 @@ async def validate_all_staging(
 async def sync_to_production(
     request: Request,
     table_name: str,
-    batch_size: int = Query(100, description="每批同步数量"),
+    batch_size: int = Query(None, description="每批同步数量"),
     max_retries: int = Query(3, description="最大重试次数"),
     mode: str = Query("incremental", description="同步模式: incremental-增量, refresh-刷新"),
     target_dbs: str = Query(None, description="目标账套列表(逗号分隔)"),
@@ -297,6 +301,8 @@ async def sync_to_production(
         skip_truncate: 刷新模式分批调用时，后续批次跳过 TRUNCATE
     """
     try:
+        if batch_size is None:
+            batch_size = SYSTEM_RUNTIME_CONFIG["syncBatchSize"]
         from core.settings import MYAPS_DBSET_LIST, MYAPS_MAIN_DB
         from tortoise import Tortoise
         
@@ -432,12 +438,14 @@ async def sync_to_production(
 @rt.post("/sync_all", summary="同步所有缓冲表数据到正式表")
 async def sync_all_to_production(
     request: Request,
-    batch_size: int = Query(100, description="每批同步数量"),
+    batch_size: int = Query(None, description="每批同步数量"),
     max_retries: int = Query(3, description="最大重试次数"),
     db_name: str = Query(THIS_DB_NAME, description="账套")
 ):
     """按依赖顺序同步所有缓冲表数据到正式表"""
     try:
+        if batch_size is None:
+            batch_size = SYSTEM_RUNTIME_CONFIG["syncBatchSize"]
         processor = StagingProcessor(db_name)
         all_stats = {}
         
@@ -580,20 +588,25 @@ async def get_fk_options(
     table_key: str,
     field_name: str,
     search: Optional[str] = Query(None, description="搜索关键词"),
-    limit: int = Query(100, description="返回数量限制", le=500)
+    limit: int = Query(None, description="返回数量限制", le=500),
+    # 新增：用于多维约束的前置条件参数
+    conditions: Optional[str] = Query(None, description="前置条件JSON，如 {\"productno\": \"MAT001\"}")
 ):
     """
-    获取指定表指定字段的外键选项（阶段三新增）
+    获取指定表指定字段的外键选项（支持单约束和多维约束）
 
     Args:
         table_key: 表键名（如 t_material）
         field_name: 字段名（如 materialno）
         search: 搜索关键词（可选，模糊匹配 label_field）
-        limit: 返回数量限制（默认100，最大500）
+        limit: 返回数量限制（默认取系统配置，最大500）
+        conditions: 前置条件JSON（多维约束使用）
 
     Returns:
         [{ "value": "...", "label": "..." }, ...]
     """
+    if limit is None:
+        limit = SYSTEM_RUNTIME_CONFIG["fkOptionsLimit"]
     ensure_config_initialized()
     
     config = STAGING_TABLE_CONFIG.get(table_key)
@@ -614,25 +627,65 @@ async def get_fk_options(
             data=[]
         )
     
-    value_field = fk_config.get("value_field")
-    label_field = fk_config.get("label_field")
-    
-    if not value_field or not label_field:
-        return standard_response(
-            success=1,
-            message="外键未配置选项字段",
-            data=[]
-        )
-
     model = fk_config["model"]
-
+    conditions_config = fk_config.get("conditions")
+    
+    # ========== 解析前置条件 ==========
+    conditions_data = {}
+    if conditions:
+        try:
+            conditions_data = json.loads(conditions)
+        except Exception as e:
+            logger.warning(f"前置条件解析失败: {e}")
+    
+    # ========== 构建查询 ==========
     query = model.all()
+    
+    # 应用多维约束前置条件
+    if conditions_config and conditions_data:
+        for cond in conditions_config:
+            local_field = cond["local"]
+            foreign_field = cond["foreign"]
+            if local_field in conditions_data and conditions_data[local_field]:
+                query = query.filter(**{foreign_field: conditions_data[local_field]})
+    
+    # ========== 确定 value 和 label 字段 ==========
+    value_field = None
+    label_fields = []
+    
+    if conditions_config:
+        # 多维约束：最后一个条件作为 value_field，其他用于 label
+        if conditions_config:
+            value_field = conditions_config[-1]["foreign"]
+            # 收集所有 foreign 字段用于显示 label
+            label_fields = [cond["foreign"] for cond in conditions_config]
+    else:
+        # 单约束：使用配置的 value_field 和 label_field
+        value_field = fk_config.get("value_field")
+        label_field = fk_config.get("label_field")
+        if not value_field or not label_field:
+            return standard_response(
+                success=1,
+                message="外键未配置选项字段",
+                data=[]
+            )
+        # 包含 value_field 和 label_field，使 label 格式统一
+        label_fields = [value_field, label_field] if value_field != label_field else [label_field]
+    
+    # ========== 搜索过滤 ==========
     if search:
         try:
-            query = query.filter(
-                Q(**{f"{value_field}__contains": search}) | 
-                Q(**{f"{label_field}__contains": search})
-            )
+            q_list = []
+            for lf in label_fields:
+                q_list.append(Q(**{f"{lf}__contains": search}))
+            if value_field not in label_fields:
+                q_list.append(Q(**{f"{value_field}__contains": search}))
+            
+            if q_list:
+                combined_q = q_list[0]
+                for q in q_list[1:]:
+                    combined_q |= q
+                query = query.filter(combined_q)
         except Exception as e:
             logger.warning(f"外键选项搜索失败: {e}")
 
@@ -641,8 +694,13 @@ async def get_fk_options(
     data = []
     for item in items:
         val = getattr(item, value_field)
-        label_val = getattr(item, label_field)
-        label = f"{val} - {label_val}" if label_val else val
+        # 构建 label：连接所有 label 字段
+        label_parts = []
+        for lf in label_fields:
+            lv = getattr(item, lf, "")
+            if lv:
+                label_parts.append(str(lv))
+        label = " - ".join(label_parts) if label_parts else str(val)
         data.append({"value": val, "label": label})
 
     return standard_response(
@@ -971,12 +1029,14 @@ async def list_staging(
     keyword: Optional[str] = Query(None, description="关键词搜索"),
     advanced_filters: Optional[str] = Query(None, description="精准筛选条件JSON"),
     page: int = Query(1, description="页码"),
-    page_size: int = Query(20, description="每页数量"),
+    page_size: int = Query(None, description="每页数量"),
     sort_field: str = Query("_createtime", description="排序字段"),
     sort_order: str = Query("desc", description="排序方向: asc/desc")
 ):
     """分页查询缓冲表数据"""
     try:
+        if page_size is None:
+            page_size = SYSTEM_RUNTIME_CONFIG["defaultPageSize"]
         from tortoise import Tortoise
         import json
         

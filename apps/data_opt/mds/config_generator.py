@@ -183,69 +183,94 @@ def auto_generate_filter_categories_from_extraction(
 # 表展示配置（用于前端导航和页面渲染）
 # ==============================================
 
+DEFAULT_SORT_CONFIG = {
+    "defaultSortField": "_updatetime",
+    "defaultSortDir": "desc",
+}
+
+SYSTEM_RUNTIME_CONFIG = {
+    "defaultPageSize": 500,         # 默认每页显示条数，数据列表首次加载时显示的记录数量
+    "validateBatchSize": 200,       # 校验批次大小，批量校验时每次请求处理的记录数，影响服务器负载
+    "syncBatchSize": 200,           # 同步批次大小，推送数据时每次请求处理的记录数，影响数据库写入压力
+    "fkOptionsLimit": 50,           # 外键选项下拉限制，外键字段下拉框显示的最大选项数量
+    "selectAllPageSize": 10000,     # 全选获取数据量，点击"全选所有页"时一次性获取的最大记录数
+}
+
 TABLE_DISPLAY_CONFIG = {
     "t_material": {
         "route": "material",
-        "icon": "material",
-        "description": "物料主数据管理，包含物料号、描述、类型等信息",
-        "gradient": ("#0d6efd", "#0dcaf0"),
+        "icon": "bi-box-seam",
+        "description": "物料主数据管理，包含物料基本信息、规格、工厂等",
+        "gradient": ("#0d6efd", "#6610f0"),
         "page_title": "物料数据清洗管理",
         "keyword_placeholder": "搜索物料号或描述...",
         "keyword_fields": ["MaterialNo", "Description"],
+        **DEFAULT_SORT_CONFIG,
     },
+
     "t_workcenter": {
         "route": "workcenter",
-        "icon": "workcenter",
+        "icon": "bi-building-gear",
         "description": "工作中心管理，包含产能、瓶颈标识等信息",
         "gradient": ("#198754", "#20c997"),
         "page_title": "工作中心数据清洗管理",
         "keyword_placeholder": "搜索工作中心或名称...",
         "keyword_fields": ["WorkCenter", "WorkCenterName"],
+        **DEFAULT_SORT_CONFIG,
     },
+
     "t_mat_ver": {
         "route": "mat-ver",
-        "icon": "version",
+        "icon": "bi-tags",
         "description": "物料版本管理，定义不同生产版本的批量范围",
         "gradient": ("#fd7e14", "#ffc107"),
         "page_title": "产线版本数据清洗管理",
         "keyword_placeholder": "搜索物料号或版本号...",
         "keyword_fields": ["MaterialNo", "MatVer"],
+        **DEFAULT_SORT_CONFIG,
     },
+
     "t_mat_wc": {
         "route": "mat-wc",
-        "icon": "route",
+        "icon": "bi-tools",
         "description": "工艺路线管理，定义物料生产的工序流程",
         "gradient": ("#6f42c1", "#d63384"),
         "page_title": "工艺路线数据清洗管理",
         "keyword_placeholder": "搜索物料号或工作中心...",
         "keyword_fields": ["MaterialNo", "WorkCenter"],
+        **DEFAULT_SORT_CONFIG,
     },
+
     "t_mat_wc_bom": {
         "route": "mat-wc-bom",
-        "icon": "bom",
+        "icon": "bi-diagram-3",
         "description": "物料清单管理，定义产品的组成结构和用量",
         "gradient": ("#dc3545", "#fd7e14"),
         "page_title": "BOM数据清洗管理",
         "keyword_placeholder": "搜索父件或子件料号...",
         "keyword_fields": ["ProductNo", "MaterialNo"],
+        **DEFAULT_SORT_CONFIG,
     },
     "t_mold": {
         "route": "mold",
-        "icon": "mold",
+        "icon": "bi-device-ssd",
         "description": "模具主数据管理，包含模具类型、状态、穴数等",
         "gradient": ("#343a40", "#6c757d"),
         "page_title": "模具数据清洗管理",
         "keyword_placeholder": "搜索模具编号或名称...",
         "keyword_fields": ["MoldNo", "MoldName"],
+        **DEFAULT_SORT_CONFIG,
     },
+
     "t_mat_wc_mold": {
         "route": "mat-wc-mold",
-        "icon": "link",
+        "icon": "bi-gear-wide-connected",
         "description": "机台与模具的关联关系管理",
         "gradient": ("#0dcaf0", "#20c997"),
         "page_title": "机台模具数据清洗管理",
         "keyword_placeholder": "搜索物料号或模具编号...",
         "keyword_fields": ["MaterialNo", "MoldNo"],
+        **DEFAULT_SORT_CONFIG,
     },
 }
 
@@ -255,9 +280,11 @@ TABLE_DISPLAY_CONFIG = {
 # ==============================================
 
 SYSTEM_COMMON_COLUMNS_PREFIX = [
-    {"field": "_staging_id", "title": "ID", "width": "30px", "sortable": True},
-    {"field": "_status", "title": "状态", "width": "80px"},
-    {"field": "_createtime", "title": "创建时间", "width": "180px", "sortable": True},
+    {"field": "_staging_id", "title": "ID", "width": "60px", "sortable": True},
+    {"field": "_status", "title": "状态", "width": "100px"},
+    # {"field": "_createtime", "title": "创建时间", "width": "180px", "sortable": True},
+    {"field": "_updatetime", "title": "更新时间", "width": "180px", "sortable": True},
+    # {"field": "_synced_time", "title": "同步时间", "width": "180px", "sortable": True},
 ]
 
 SYSTEM_COMMON_COLUMNS_SUFFIX = [
@@ -449,6 +476,7 @@ def generate_generic_page_config(page_key: str) -> Optional[Dict[str, Any]]:
     table_config = STAGING_TABLE_CONFIG[table_key]
     schema_class = table_config["schema"]
     model_class = table_config["model"]
+    proto_model = table_config.get("proto_model")  # 正式表模型，用于提取业务主键
     display_name = table_config["display_name"]
     
     # 获取筛选配置
@@ -482,21 +510,37 @@ def generate_generic_page_config(page_key: str) -> Optional[Dict[str, Any]]:
             # 获取引用表的显示名称
             ref_table_display_name = extract_display_name_from_model(ref_model)
             
-            foreign_keys.append({
+            fk_config = {
                 "field": field_name,
                 "title": field_description,
                 "refTable": ref_model.__name__ if ref_model else None,
                 "refTableDisplayName": ref_table_display_name
-            })
+            }
+            # 传递 conditions 信息
+            if fk.get("conditions"):
+                fk_config["conditions"] = fk["conditions"]
+            # 传递 value_field 和 label_field（用于单约束）
+            if fk.get("value_field"):
+                fk_config["value_field"] = fk["value_field"]
+            if fk.get("label_field"):
+                fk_config["label_field"] = fk["label_field"]
+            
+            foreign_keys.append(fk_config)
+    
+    # 获取主键字段列表（从正式表模型提取业务主键）
+    from apps.data_opt.mds._base import extract_business_keys_from_model
+    primary_key_fields = extract_business_keys_from_model(proto_model) if proto_model else []
     
     return {
         "tableKey": table_key,
         "tableDisplayName": display_name,
         "foreignKeys": foreign_keys,
+        "primaryKeyFields": primary_key_fields,
+        "runtimeConfig": SYSTEM_RUNTIME_CONFIG,
         "display": {
             "columns": columns,
-            "defaultSortField": "_createtime",
-            "defaultSortDir": "desc",
+            "defaultSortField": TABLE_DISPLAY_CONFIG.get(table_key, {}).get("defaultSortField", "_createtime"),
+            "defaultSortDir": TABLE_DISPLAY_CONFIG.get(table_key, {}).get("defaultSortDir", "desc"),
             "advancedFilterCategories": advanced_filter_categories
         }
     }

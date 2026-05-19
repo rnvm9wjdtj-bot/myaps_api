@@ -429,7 +429,7 @@ class AcceptMatWcBom(BaseModel):
     materialno: str = Field(..., max_length=64, description='子件料号', example="M001")
     qty: float = Field(..., ge=0, description='数量', example=2.0)
     offsethour: int = Field(0, description='偏置+/-(小时)', example=0)
-    treeno: int = Field(None, description='层级', example=1)
+    # treeno: Optional[int] = Field(None, description='层级', example=1)
     mto: gc.YesNoEnum = Field(gc.YesNoEnum.NO, example="N", description='MTO')
     scrap: float = Field(0, ge=0, description='报废率%', example=0.0)
     alt: gc.YesNoEnum = Field(gc.YesNoEnum.NO, example="N", description='是否是替代')
@@ -448,7 +448,7 @@ class AcceptMatWcBom(BaseModel):
                 "materialno": "M001",
                 "qty": 2.0,
                 "offsethour": 0,
-                "treeno": 1,
+                # "treeno": 1,
                 "mto": "N",
                 "scrap": 0.0,
                 "alt": "N",
@@ -462,7 +462,8 @@ class AcceptMatWcBom(BaseModel):
         _cache_raw_input_data(cls, values)
         
         # 转换整数字段 - 支持字符串形式的浮点数（如 "30.00000000000000"）
-        int_fields = ["offsethour", "treeno"]
+        # int_fields = ["offsethour", "treeno"]
+        int_fields = ["offsethour",]
         for field in int_fields:
             if field in values:
                 try:
