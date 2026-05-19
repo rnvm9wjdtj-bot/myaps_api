@@ -39,6 +39,7 @@
     "sign": "MjZlMTc2ZTZmNTc1ZDYxMzg1OWQ4ZjM3ZDg4MTRhNzBmZWRjMTcxNDNkYjg3OTQwMjNlN2JlYjU5YjM4MTBmZg=="
   },
   "defaults": {
+    "auto_matver": true,
     "matver_prefix": "A",
     "matver_width": 2,
     "matver": "A01",

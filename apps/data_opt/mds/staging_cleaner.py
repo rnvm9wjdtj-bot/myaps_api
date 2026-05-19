@@ -27,7 +27,7 @@ from apps.io_api.models import (
     TMaterial, TWorkcenter, TMatVer, TMatWc, TMatWcBom, TMold, TMatWcMold
 )
 from apps.io_api.schemas import AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom, AcceptMold, AcceptMatWcMold
-from globalobjects import logger as log_config, globalconst as gc
+from globalobjects import logger as log_config, globalconst as gc, ProjectDefaultValues as pdv
 
 logger = log_config.get_logger(__name__)
 
@@ -36,60 +36,106 @@ logger = log_config.get_logger(__name__)
 # 业务规则校验函数（保留：有特殊外键存在校验）
 # ==============================================
 
-async def validate_mat_wc_rules(cleaner, data, staging_id):
-    """工艺路线业务规则校验：外键存在校验"""
+async def validate_material_type_e_rules(cleaner, data, staging_id):
+    """物料业务规则校验：自制件必须有工艺路线、BOM和产线版本"""
+    if data.get("type") != gc.EfEnum.E.value:
+        return []
+
     errors = []
-    if data.get("materialno") and data.get("matver"):
-        exists = await TMatVer.filter(materialno=data["materialno"], matver=data["matver"]).exists()
-        if not exists:
+    materialno = data.get("materialno")
+    if materialno:
+        # 校验工艺路线存在（从缓冲表查找）
+        mat_wc_exists = await TMatWcStaging.filter(materialno=materialno).exists()
+        if not mat_wc_exists:
             errors.append(cleaner._create_error(
-                staging_id, ErrorType.FK_NOT_FOUND, "matver",
-                f"{data['materialno']}/{data['matver']}", "关联的产线版本不存在"
+                staging_id, ErrorType.BUSINESS_RULE, 
+                ["materialno", "type"],
+                materialno, "自制件必须有工艺路线"
             ))
+        # 校验BOM存在（从缓冲表查找）
+        bom_exists = await TMatWcBomStaging.filter(productno=materialno).exists()
+        if not bom_exists:
+            errors.append(cleaner._create_error(
+                staging_id, ErrorType.BUSINESS_RULE, 
+                ["materialno", "type"],
+                materialno, "自制件必须有BOM"
+            ))
+        # 校验产线版本存在（从缓冲表查找）
+        matver_exists = await TMatVerStaging.filter(materialno=materialno).exists()
+        if not matver_exists:
+            if pdv.auto_matver:
+                # 自动生成产线版本
+                await TMatVerStaging.create(
+                    materialno=materialno,
+                    matver=pdv.MATVER,
+                    lotfrom=pdv.MATVER_LOTFROM,
+                    lotto=pdv.MATVER_LOTTO,
+                    priority=pdv.MATVER_PRIORITY,
+                    _source_system="SYS_AUTO",
+                )
+            else:
+                errors.append(cleaner._create_error(
+                    staging_id, ErrorType.BUSINESS_RULE, 
+                    ["materialno", "type"],
+                    materialno, "自制件必须有产线版本"
+                ))
     return errors
 
 
-async def validate_mat_wc_bom_rules(cleaner, data, staging_id):
-    """物料清单业务规则校验：外键存在校验"""
-    errors = []
-    # productno/materialno 比较已用 config_rules 替代
-    if data.get("productno") and data.get("matver"):
-        exists = await TMatVer.filter(materialno=data["productno"], matver=data["matver"]).exists()
-        if not exists:
-            errors.append(cleaner._create_error(
-                staging_id, ErrorType.FK_NOT_FOUND, "matver",
-                f"{data['productno']}/{data['matver']}", "关联的产线版本不存在"
-            ))
-    if data.get("productno") and data.get("matver") and data.get("itemno"):
-        exists = await TMatWc.filter(
-            materialno=data["productno"], 
-            matver=data["matver"], 
-            itemno=data["itemno"]
-        ).exists()
-        if not exists:
-            errors.append(cleaner._create_error(
-                staging_id, ErrorType.FK_NOT_FOUND, "itemno",
-                f"{data['productno']}/{data['matver']}/{data['itemno']}", "关联的工序不存在"
-            ))
-    # qty 和 scrap 范围已用 config_rules 替代
-    return errors
+# async def validate_mat_wc_rules(cleaner, data, staging_id):
+#     """工艺路线业务规则校验：外键存在校验"""
+#     errors = []
+#     if data.get("materialno") and data.get("matver"):
+#         exists = await TMatVer.filter(materialno=data["materialno"], matver=data["matver"]).exists()
+#         if not exists:
+#             errors.append(cleaner._create_error(
+#                 staging_id, ErrorType.FK_NOT_FOUND, "matver",
+#                 f"{data['materialno']}/{data['matver']}", "关联的产线版本不存在"
+#             ))
+#     return errors
 
 
-async def validate_mat_wc_mold_rules(cleaner, data, staging_id):
-    """机台模具关联业务规则校验：外键存在校验"""
-    errors = []
-    if data.get("materialno") and data.get("workcenter") and data.get("itemno"):
-        exists = await TMatWc.filter(
-            materialno=data["materialno"],
-            workcenter=data["workcenter"],
-            itemno=data["itemno"]
-        ).exists()
-        if not exists:
-            errors.append(cleaner._create_error(
-                staging_id, ErrorType.FK_NOT_FOUND, "itemno",
-                f"{data['materialno']}/{data['workcenter']}/{data['itemno']}", "关联的工艺路线不存在"
-            ))
-    return errors
+# async def validate_mat_wc_bom_rules(cleaner, data, staging_id):
+#     """物料清单业务规则校验：外键存在校验"""
+#     errors = []
+#     # productno/materialno 比较已用 config_rules 替代
+#     if data.get("productno") and data.get("matver"):
+#         exists = await TMatVer.filter(materialno=data["productno"], matver=data["matver"]).exists()
+#         if not exists:
+#             errors.append(cleaner._create_error(
+#                 staging_id, ErrorType.FK_NOT_FOUND, "matver",
+#                 f"{data['productno']}/{data['matver']}", "关联的产线版本不存在"
+#             ))
+#     if data.get("productno") and data.get("matver") and data.get("itemno"):
+#         exists = await TMatWc.filter(
+#             materialno=data["productno"], 
+#             matver=data["matver"], 
+#             itemno=data["itemno"]
+#         ).exists()
+#         if not exists:
+#             errors.append(cleaner._create_error(
+#                 staging_id, ErrorType.FK_NOT_FOUND, "itemno",
+#                 f"{data['productno']}/{data['matver']}/{data['itemno']}", "关联的工序不存在"
+#             ))
+#     # qty 和 scrap 范围已用 config_rules 替代
+#     return errors
+
+
+# async def validate_mat_wc_mold_rules(cleaner, data, staging_id):
+#     """机台模具关联业务规则校验：外键存在校验"""
+#     errors = []
+#     if data.get("materialno") and data.get("workcenter") and data.get("itemno"):
+#         exists = await TMatWc.filter(
+#             materialno=data["materialno"],
+#             workcenter=data["workcenter"],
+#             itemno=data["itemno"]
+#         ).exists()
+#         if not exists:
+#             errors.append(cleaner._create_error(
+#                 staging_id, ErrorType.FK_NOT_FOUND, "itemno",
+#                 f"{data['materialno']}/{data['workcenter']}/{data['itemno']}", "关联的工艺路线不存在"
+#             ))
+#     return errors
 
 
 STAGING_TABLE_CONFIG = {
@@ -102,6 +148,13 @@ STAGING_TABLE_CONFIG = {
         "validator": lambda cleaner, data, staging_id: cleaner.validate_material(data, staging_id),
         "config_rules": [
             create_comparison_rule("lotmin", "lotmax", ">", "最小批量不能大于最大批量"),
+        ],
+        "business_rules": [
+            {
+                "name": "E类型物料校验",
+                "description": "E类型物料必须存在工艺路线和BOM",
+                "validator": validate_material_type_e_rules,
+            }
         ],
     },
 
@@ -163,11 +216,11 @@ STAGING_TABLE_CONFIG = {
         "display_name": "工序",
         "validator": lambda cleaner, data, staging_id: cleaner.validate_mat_wc(data, staging_id),
         "business_rules": [
-            {
-                "name": "复合外键校验（物料+版本）",
-                "description": "关联的产线版本必须存在",
-                "validator": validate_mat_wc_rules,
-            }
+            # {
+            #     "name": "复合外键校验（物料+版本）",
+            #     "description": "关联的产线版本必须存在",
+            #     "validator": validate_mat_wc_rules,
+            # }
         ],
     },
 
@@ -255,15 +308,25 @@ STAGING_TABLE_CONFIG = {
                 "value_field": "moldno",
                 "label_field": "moldname"
             },
+            {
+                "field": "itemno",
+                "model": TMatWcStaging,
+                "display_name": "工艺路线",
+                "conditions": [
+                    {"local": "materialno", "foreign": "materialno"},
+                    {"local": "workcenter", "foreign": "workcenter"},
+                    {"local": "itemno", "foreign": "itemno"}
+                ]
+            },
         ],
         "display_name": "机台模具关联",
         "validator": lambda cleaner, data, staging_id: cleaner.validate_mat_wc_mold(data, staging_id),
         "business_rules": [
-            {
-                "name": "复合外键校验（物料+工作中心+工序）",
-                "description": "关联的工艺路线必须存在",
-                "validator": validate_mat_wc_mold_rules,
-            }
+            # {
+            #     "name": "复合外键校验（物料+工作中心+工序）",
+            #     "description": "关联的工艺路线必须存在",
+            #     "validator": validate_mat_wc_mold_rules,
+            # }
         ],
     },
 }
@@ -713,16 +776,30 @@ class DataCleaner:
         errors = await self.validate_from_config("t_mat_wc_mold", data, staging_id)
         return len(errors) == 0, errors
 
-    def _create_error(self, staging_id: int, error_type: ErrorType, field: str, 
+    def _create_error(self, staging_id: int, error_type: ErrorType, field, 
                       value: Any, message: str) -> Dict:
-        """创建错误记录"""
-        return {
+        """创建错误记录
+        
+        Args:
+            staging_id: 缓冲表记录ID
+            error_type: 错误类型
+            field: 错误字段名（字符串或字段列表）
+            value: 错误字段值
+            message: 错误描述
+        """
+        error = {
             "staging_id": staging_id,
             "error_type": error_type.value,
-            "error_field": field,
             "error_value": str(value) if value is not None else None,
             "error_message": message
         }
+        # 支持单字段或多字段
+        if isinstance(field, list):
+            error["error_fields"] = field
+            error["error_field"] = field[0] if field else None
+        else:
+            error["error_field"] = field
+        return error
 
     async def save_errors(self, staging_table: str, errors: List[Dict]):
         """保存错误记录"""

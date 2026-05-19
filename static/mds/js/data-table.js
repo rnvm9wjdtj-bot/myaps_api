@@ -482,16 +482,23 @@ class DataTable {
                 // 支持多字段错误高亮（如业务规则涉及多个字段）
                 if (err.error_fields && Array.isArray(err.error_fields)) {
                     err.error_fields.forEach(field => {
-                        errorMap[field] = {
+                        if (!errorMap[field]) {
+                            errorMap[field] = { type: err.error_type, message: err.error_message };
+                        } else {
+                            // 合并多个错误信息
+                            errorMap[field].message += ' | ' + err.error_message;
+                        }
+                    });
+                } else if (err.error_field) {
+                    if (!errorMap[err.error_field]) {
+                        errorMap[err.error_field] = {
                             type: err.error_type,
                             message: err.error_message
                         };
-                    });
-                } else if (err.error_field) {
-                    errorMap[err.error_field] = {
-                        type: err.error_type,
-                        message: err.error_message
-                    };
+                    } else {
+                        // 合并多个错误信息
+                        errorMap[err.error_field].message += ' | ' + err.error_message;
+                    }
                 }
             });
         } catch (e) {
@@ -798,13 +805,22 @@ class DataTable {
         
         try {
             const errors = JSON.parse(errorJson);
-            tooltip.innerHTML = errors.map(err => `
-                <div class="error-tooltip-item">
-                    <div class="error-tooltip-type">${err.error_type || 'unknown'}</div>
-                    ${err.error_field ? `<div class="error-tooltip-field">字段: ${err.error_field}</div>` : ''}
-                    <div class="error-tooltip-msg">${escapeHtml(err.error_message || '')}</div>
-                </div>
-            `).join('<hr class="error-tooltip-divider">');
+            tooltip.innerHTML = errors.map(err => {
+                // 支持多字段显示
+                let fieldHtml = '';
+                if (err.error_fields && Array.isArray(err.error_fields)) {
+                    fieldHtml = `<div class="error-tooltip-field">字段: ${err.error_fields.join(', ')}</div>`;
+                } else if (err.error_field) {
+                    fieldHtml = `<div class="error-tooltip-field">字段: ${err.error_field}</div>`;
+                }
+                return `
+                    <div class="error-tooltip-item">
+                        <div class="error-tooltip-type">${err.error_type || 'unknown'}</div>
+                        ${fieldHtml}
+                        <div class="error-tooltip-msg">${escapeHtml(err.error_message || '')}</div>
+                    </div>
+                `;
+            }).join('<hr class="error-tooltip-divider">');
         } catch (ex) {
             tooltip.innerHTML = `<pre class="error-tooltip-json">${escapeHtml(errorJson)}</pre>`;
         }

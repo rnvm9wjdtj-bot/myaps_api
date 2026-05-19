@@ -791,8 +791,17 @@ class MDSPageController {
             }
             
             errorData.forEach(err => {
-                if (err.error_field) {
-                    errorFields.push(err.error_field);
+                // 支持多字段
+                if (err.error_fields && Array.isArray(err.error_fields)) {
+                    err.error_fields.forEach(field => {
+                        if (!errorFields.includes(field)) {
+                            errorFields.push(field);
+                        }
+                    });
+                } else if (err.error_field) {
+                    if (!errorFields.includes(err.error_field)) {
+                        errorFields.push(err.error_field);
+                    }
                 }
             });
         } catch (e) {
@@ -824,12 +833,19 @@ class MDSPageController {
                 errorContainer.innerHTML = `
                     <div class="alert alert-danger">
                         <strong>校验错误：</strong>
-                        ${errors.map(e => `
-                            <div class="error-detail mt-2">
-                                <div><span class="error-type">${e.error_type}</span> - <span class="error-field">${e.error_field}</span></div>
-                                <div class="error-message">${escapeHtml(e.error_message)}</div>
-                            </div>
-                        `).join('')}
+                        ${errors.map(e => {
+                            // 支持多字段显示
+                            let fieldDisplay = e.error_field || '';
+                            if (e.error_fields && Array.isArray(e.error_fields)) {
+                                fieldDisplay = e.error_fields.join(', ');
+                            }
+                            return `
+                                <div class="error-detail mt-2">
+                                    <div><span class="error-type">${e.error_type}</span> - <span class="error-field">${fieldDisplay}</span></div>
+                                    <div class="error-message">${escapeHtml(e.error_message)}</div>
+                                </div>
+                            `;
+                        }).join('')}
                     </div>
                 `;
             }
