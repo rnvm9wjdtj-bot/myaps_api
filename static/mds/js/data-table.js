@@ -38,6 +38,7 @@ class DataTable {
         // 外键配置
         this.foreignKeyFields = config.foreignKeyFields || [];
         this.foreignKeys = config.foreignKeys || [];
+        this.foreignKeyOptions = {}; // 外键选项缓存 {fieldName: [{value, label}, ...]}
         
         // 必填字段配置
         this.requiredFields = config.requiredFields || [];
@@ -48,7 +49,7 @@ class DataTable {
         // 字段默认值
         this.fieldDefaults = config.fieldDefaults || {};
         
-        // 渲染配置
+        // 渲染模式
         this.renderMode = config.renderMode || 'standard'; // standard | virtual
         this.virtualRowHeight = config.virtualRowHeight || 32;
         
@@ -570,13 +571,13 @@ class DataTable {
                     class="error-cell null-cell" 
                     data-error-type="${errorInfo.type}" 
                     data-error-msg="${escapeHtml(errorInfo.message)}"
-                ><i class="bi bi-slash-square-fill"></i></span>
+                ><i class="bi bi-slash-square-fill" style="color:#bdbdbd"></i></span>
             `;
         }
         
         return showNullBg 
-            ? '<span class="null-cell"><i class="bi bi-slash-square-fill"></i></span>' 
-            : '<span class="text-muted"><i class="bi bi-slash-square-fill"></i></span>';
+            ? '<span class="null-cell"><i class="bi bi-slash-square-fill" style="color:#bdbdbd"></i></span>' 
+            : '<span class="text-muted"><i class="bi bi-slash-square-fill" style="color:#bdbdbd"></i></span>';
     }
     
     /**
@@ -634,6 +635,15 @@ class DataTable {
     }
     
     /**
+     * 设置外键选项缓存
+     * @param {string} fieldName - 字段名
+     * @param {Array} options - 选项数组 [{value, label}, ...]
+     */
+    setForeignKeyOptions(fieldName, options) {
+        this.foreignKeyOptions[fieldName] = options;
+    }
+
+    /**
      * 渲染外键单元格
      */
     renderForeignKeyCell(value, fieldName) {
@@ -641,7 +651,13 @@ class DataTable {
         const fkConfig = this.foreignKeys.find(fk => fk.field === fieldName);
         const refTableDisplayName = fkConfig ? fkConfig.refTableDisplayName : '';
         
-        return `<span class="foreign-key-tag" title="引用: ${escapeHtml(refTableDisplayName)}">${escapeHtml(value)}</span>`;
+        // 尝试从缓存中查找对应的 label
+        const options = this.foreignKeyOptions[fieldName] || [];
+        const option = options.find(o => String(o.value) === String(value));
+        
+        const displayValue = option ? option.label : value;
+        
+        return `<span class="foreign-key-tag" title="引用: ${escapeHtml(refTableDisplayName)}">${escapeHtml(displayValue)}</span>`;
     }
     
     /**

@@ -121,7 +121,7 @@ STAGING_TABLE_CONFIG = {
         "foreign_keys": [
             {
                 "field": "materialno",
-                "model": TMaterial,
+                "model": TMaterialStaging,
                 "value_field": "materialno",
                 "label_field": "description"
             },
@@ -140,13 +140,13 @@ STAGING_TABLE_CONFIG = {
         "foreign_keys": [
             {
                 "field": "materialno",
-                "model": TMaterial,
+                "model": TMaterialStaging,
                 "value_field": "materialno",
                 "label_field": "description"
             },
             {
                 "field": "workcenter",
-                "model": TWorkcenter,
+                "model": TWorkcenterStaging,
                 "value_field": "workcenter",
                 "label_field": "workcentername"
             },
@@ -169,27 +169,27 @@ STAGING_TABLE_CONFIG = {
         "foreign_keys": [
             {
                 "field": "productno",
-                "model": TMaterial,
+                "model": TMaterialStaging,
                 "value_field": "materialno",
                 "label_field": "description"
             },
             {
                 "field": "materialno",
-                "model": TMaterial,
+                "model": TMaterialStaging,
                 "value_field": "materialno",
                 "label_field": "description"
             },
             {
-                "field": "workcenter",
-                "model": TWorkcenter,
-                "value_field": "workcenter",
-                "label_field": "workcentername"
+                "field": "matver",
+                "model": TMatVerStaging,
+                "value_field": "matver",
+                "label_field": "materialno"
             },
             {
                 "field": "itemno",
-                "model": TMatWc,
+                "model": TMatWcStaging,
                 "value_field": "itemno",
-                "label_field": "description"
+                "label_field": "workcenter"
             },
         ],
         "display_name": "物料清单",
@@ -228,21 +228,21 @@ STAGING_TABLE_CONFIG = {
         "foreign_keys": [
             {
                 "field": "materialno",
-                "model": TMaterial,
+                "model": TMaterialStaging,
                 "value_field": "materialno",
                 "label_field": "description"
             },
             {
                 "field": "workcenter",
-                "model": TWorkcenter,
+                "model": TWorkcenterStaging,
                 "value_field": "workcenter",
                 "label_field": "workcentername"
             },
             {
                 "field": "moldno",
-                "model": TMold,
+                "model": TMoldStaging,
                 "value_field": "moldno",
-                "label_field": "description"
+                "label_field": "moldname"
             },
         ],
         "display_name": "机台模具关联",
@@ -270,6 +270,11 @@ def initialize_table_config():
             config["business_keys"] = extract_business_keys_from_model(config["proto_model"])
 
 
+STAGING_MODEL_MAPPING = {
+    table_key: config["model"] 
+    for table_key, config in STAGING_TABLE_CONFIG.items()
+}
+
 # 标记是否已初始化
 _config_initialized = False
 
@@ -280,11 +285,6 @@ def ensure_config_initialized():
     if not _config_initialized:
         initialize_table_config()
         _config_initialized = True
-
-STAGING_MODEL_MAPPING = {
-    table_key: config["model"] 
-    for table_key, config in STAGING_TABLE_CONFIG.items()
-}
 
 
 def get_schema_defaults(table_name: str) -> Dict[str, Any]:
@@ -518,11 +518,12 @@ class DataCleaner:
         for fk_config in config["foreign_keys"]:
             field_name = fk_config["field"]
             model_class = fk_config["model"]
+            value_field = fk_config.get("value_field", field_name)
             display_name = fk_config.get("display_name") or extract_display_name_from_model(model_class)
             value = data.get(field_name)
 
             if value:
-                exists = await model_class.filter(**{field_name: value}).exists()
+                exists = await model_class.filter(**{value_field: value}).exists()
                 if not exists:
                     errors.append(self._create_error(
                         staging_id, ErrorType.FK_NOT_FOUND,

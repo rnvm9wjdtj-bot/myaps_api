@@ -44,19 +44,25 @@ class MDSPageController {
     /**
      * 获取外键选项（带缓存）
      * @param {string} fieldName - 字段名
+     * @param {string} search - 搜索关键词（可选）
      * @returns {Promise<Array>} 选项数组 [{value, label}, ...]
      */
-    async getFkOptions(fieldName) {
-        // 检查缓存
+    async getFkOptions(fieldName, search = '') {
+        if (search) {
+            const response = await callApi(`/fk-options/${this.tableKey}/${fieldName}?search=${encodeURIComponent(search)}&limit=50`);
+            if (response.success === 1) {
+                return response.data || [];
+            }
+            return [];
+        }
+        
         if (this.fkOptionsCache.has(fieldName)) {
             return this.fkOptionsCache.get(fieldName);
         }
         
-        // 调用API获取
         const response = await callApi(`/fk-options/${this.tableKey}/${fieldName}`);
         if (response.success === 1) {
             const options = response.data || [];
-            // 缓存结果
             this.fkOptionsCache.set(fieldName, options);
             return options;
         }
@@ -213,7 +219,26 @@ class MDSPageController {
             fieldDefaults: fieldDefaults
         });
         
-        this.dataTable.loadData();
+        // 预加载外键选项并设置到 dataTable
+        this.loadForeignKeyOptions().then(() => {
+            this.dataTable.loadData();
+        });
+    }
+    
+    /**
+     * 预加载所有外键选项
+     */
+    async loadForeignKeyOptions() {
+        const foreignKeys = this.config.foreignKeys || [];
+        
+        for (const fk of foreignKeys) {
+            try {
+                const options = await this.getFkOptions(fk.field);
+                this.dataTable.setForeignKeyOptions(fk.field, options);
+            } catch (error) {
+                console.error(`加载外键选项失败 [${fk.field}]:`, error);
+            }
+        }
     }
     
     bindEvents() {
@@ -851,18 +876,28 @@ class MDSPageController {
             `;
         }
         
-        // 外键字段 - 使用下拉选择（异步加载选项）
+        // 外键字段 - 使用可搜索下拉选择（异步加载选项）
         if (isForeignKey) {
             return `
                 <div class="mb-2 row align-items-center justify-content-start" style="gap: 4px;">
                     <div class="flex-shrink-0" style="min-width: 90px; max-width: 120px;">${labelHtml}</div>
-                    <div class="flex-grow-1" style="min-width: 0;">
-                        <select class="form-select font-mono${errorClass} fk-select" name="${fieldName}" 
-                                data-field="${fieldName}"
-                                style="height: 31px; padding: 0.25rem 0.5rem; font-size: 0.8rem;" 
-                                ${isRequired ? 'required' : ''}>
-                            <option value="">加载中...</option>
-                        </select>
+                    <div class="flex-grow-1" style="min-width: 0; position: relative;">
+                        <div class="input-group input-group-sm" style="height: 31px;">
+                            <input type="text" 
+                                   class="form-control font-mono${errorClass} fk-search-input" 
+                                   name="${fieldName}"
+                                   data-field="${fieldName}"
+                                   data-value="${escapeHtml(String(fieldValue))}"
+                                   value="${escapeHtml(String(fieldValue))}"
+                                   placeholder="输入搜索..."
+                                   autocomplete="off"
+                                   style="font-size: 0.8rem;"
+                                   ${isRequired ? 'required' : ''}>
+                            <span class="input-group-text" style="cursor: pointer; background: #fff;">
+                                <i class="bi bi-chevron-down"></i>
+                            </span>
+                        </div>
+                        <div class="fk-dropdown dropdown-menu" data-field="${fieldName}" style="width: 100%; max-height: 200px; overflow-y: auto;"></div>
                     </div>
                 </div>
             `;
@@ -925,26 +960,120 @@ class MDSPageController {
      * @param {Object} row - 行数据
      */
     async loadFkOptionsInForm(row) {
-        const fkSelects = document.querySelectorAll('.fk-select');
+        const fkInputs = document.querySelectorAll('.fk-search-input');
         
-        for (const select of fkSelects) {
-            const fieldName = select.dataset.field;
+        for (const input of fkInputs) {
+            const fieldName = input.dataset.field;
             const currentValue = row[fieldName] || '';
             
-            try {
+            const dropdown = document.querySelector(`.fk-dropdown[data-field="${fieldName}"]`);
+            if (!dropdown) continue;
+            
+            let selectedValue = currentValue;
+            let selectedLabel = currentValue;
+            
+            if (currentValue) {
                 const options = await this.getFkOptions(fieldName);
+                const currentOpt = options.find(o => String(o.value) === String(currentValue));
+                if (currentOpt) {
+                    selectedLabel = currentOpt.label;
+                    input.value = selectedLabel;
+                }
+            }
+            
+            input.dataset.value = selectedValue;
+            
+            const renderDropdown = async (searchText = '') => {
+                const options = await this.getFkOptions(fieldName, searchText);
                 
-                select.innerHTML = `
-                    <option value="">-- 请选择 --</option>
-                    ${options.map(opt => `
-                        <option value="${opt.value}" ${String(currentValue) === String(opt.value) ? 'selected' : ''}>
-                            ${opt.label}
-                        </option>
-                    `).join('')}
-                `;
-            } catch (error) {
-                console.error(`加载外键选项失败 [${fieldName}]:`, error);
-                select.innerHTML = '<option value="">加载失败</option>';
+                if (options.length === 0) {
+                    dropdown.innerHTML = '<div class="dropdown-item text-muted">无匹配结果</div>';
+                    return;
+                }
+                
+                dropdown.innerHTML = options.map(opt => `
+                    <div class="dropdown-item fk-option" data-value="${escapeHtml(opt.value)}" data-label="${escapeHtml(opt.label)}" style="cursor: pointer;">
+                        ${escapeHtml(opt.label)}
+                    </div>
+                `).join('');
+                
+                dropdown.querySelectorAll('.fk-option').forEach(item => {
+                    item.addEventListener('click', () => {
+                        const val = item.dataset.value;
+                        const lbl = item.dataset.label;
+                        input.value = lbl;
+                        input.dataset.value = val;
+                        dropdown.classList.remove('show');
+                    });
+                    
+                    item.addEventListener('mouseenter', () => {
+                        item.classList.add('active');
+                    });
+                    item.addEventListener('mouseleave', () => {
+                        item.classList.remove('active');
+                    });
+                });
+            };
+            
+            const renderCurrentOption = () => {
+                const val = input.dataset.value;
+                const lbl = input.value;
+                if (val && lbl && lbl !== val) {
+                    dropdown.innerHTML = `
+                        <div class="dropdown-item fk-option" data-value="${escapeHtml(val)}" data-label="${escapeHtml(lbl)}" style="cursor: pointer;">
+                            ${escapeHtml(lbl)}
+                        </div>
+                    `;
+                    dropdown.querySelector('.fk-option').addEventListener('click', () => {
+                        dropdown.classList.remove('show');
+                    });
+                } else {
+                    dropdown.innerHTML = '<div class="dropdown-item text-muted">无选中值</div>';
+                }
+            };
+            
+            let debounceTimer = null;
+            input.addEventListener('focus', async () => {
+                dropdown.classList.add('show');
+                if (input.dataset.value && !input._searchTriggered) {
+                    renderCurrentOption();
+                } else {
+                    dropdown.innerHTML = '<div class="dropdown-item text-muted">加载中...</div>';
+                    await renderDropdown();
+                }
+            });
+            
+            input.addEventListener('input', (e) => {
+                input._searchTriggered = true;
+                clearTimeout(debounceTimer);
+                dropdown.classList.add('show');
+                dropdown.innerHTML = '<div class="dropdown-item text-muted">搜索中...</div>';
+                debounceTimer = setTimeout(async () => {
+                    await renderDropdown(e.target.value);
+                }, 200);
+            });
+            
+            input.addEventListener('blur', (e) => {
+                input._searchTriggered = false;
+                setTimeout(() => {
+                    dropdown.classList.remove('show');
+                }, 200);
+            });
+            
+            const toggleBtn = input.parentElement.querySelector('.input-group-text');
+            if (toggleBtn) {
+                toggleBtn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    if (dropdown.classList.contains('show')) {
+                        dropdown.classList.remove('show');
+                    } else {
+                        dropdown.innerHTML = '<div class="dropdown-item text-muted">加载中...</div>';
+                        dropdown.classList.add('show');
+                        await renderDropdown();
+                        input.focus();
+                        input._searchTriggered = true;
+                    }
+                });
             }
         }
     }
@@ -953,26 +1082,93 @@ class MDSPageController {
      * 加载批量编辑表单中的外键选项
      */
     async loadFkOptionsInBatchEdit() {
-        const fkSelects = document.querySelectorAll('.fk-batch-select');
+        const fkInputs = document.querySelectorAll('.fk-batch-search-input');
         
-        for (const select of fkSelects) {
-            const fieldName = select.dataset.field;
+        for (const input of fkInputs) {
+            const fieldName = input.dataset.field;
             const savedValue = this.fieldValues[fieldName] || '';
             
-            try {
+            const dropdown = document.querySelector(`.fk-batch-dropdown[data-field="${fieldName}"]`);
+            if (!dropdown) continue;
+            
+            if (savedValue) {
                 const options = await this.getFkOptions(fieldName);
+                const savedOpt = options.find(o => String(o.value) === String(savedValue));
+                if (savedOpt) {
+                    input.value = savedOpt.label;
+                }
+            }
+            
+            input.dataset.value = savedValue;
+            
+            const renderDropdown = async (searchText = '') => {
+                const options = await this.getFkOptions(fieldName, searchText);
                 
-                select.innerHTML = `
-                    <option value="">请选择</option>
-                    ${options.map(opt => `
-                        <option value="${opt.value}" ${savedValue === opt.value ? 'selected' : ''}>
-                            ${opt.label}
-                        </option>
-                    `).join('')}
-                `;
-            } catch (error) {
-                console.error(`加载外键选项失败 [${fieldName}]:`, error);
-                select.innerHTML = '<option value="">加载失败</option>';
+                if (options.length === 0) {
+                    dropdown.innerHTML = '<div class="dropdown-item text-muted">无匹配结果</div>';
+                    return;
+                }
+                
+                dropdown.innerHTML = options.map(opt => `
+                    <div class="dropdown-item fk-option" data-value="${escapeHtml(opt.value)}" data-label="${escapeHtml(opt.label)}" style="cursor: pointer;">
+                        ${escapeHtml(opt.label)}
+                    </div>
+                `).join('');
+                
+                dropdown.querySelectorAll('.fk-option').forEach(item => {
+                    item.addEventListener('click', () => {
+                        const val = item.dataset.value;
+                        const lbl = item.dataset.label;
+                        input.value = lbl;
+                        input.dataset.value = val;
+                        this.fieldValues[fieldName] = val;
+                        dropdown.classList.remove('show');
+                    });
+                    
+                    item.addEventListener('mouseenter', () => {
+                        item.classList.add('active');
+                    });
+                    item.addEventListener('mouseleave', () => {
+                        item.classList.remove('active');
+                    });
+                });
+            };
+            
+            let debounceTimer = null;
+            input.addEventListener('focus', async () => {
+                dropdown.innerHTML = '<div class="dropdown-item text-muted">加载中...</div>';
+                dropdown.classList.add('show');
+                await renderDropdown();
+            });
+            
+            input.addEventListener('input', (e) => {
+                clearTimeout(debounceTimer);
+                dropdown.classList.add('show');
+                dropdown.innerHTML = '<div class="dropdown-item text-muted">搜索中...</div>';
+                debounceTimer = setTimeout(async () => {
+                    await renderDropdown(e.target.value);
+                }, 200);
+            });
+            
+            input.addEventListener('blur', (e) => {
+                setTimeout(() => {
+                    dropdown.classList.remove('show');
+                }, 200);
+            });
+            
+            const toggleBtn = input.parentElement.querySelector('.input-group-text');
+            if (toggleBtn) {
+                toggleBtn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    if (dropdown.classList.contains('show')) {
+                        dropdown.classList.remove('show');
+                    } else {
+                        dropdown.innerHTML = '<div class="dropdown-item text-muted">加载中...</div>';
+                        dropdown.classList.add('show');
+                        await renderDropdown();
+                        input.focus();
+                    }
+                });
             }
         }
     }
@@ -993,15 +1189,24 @@ class MDSPageController {
             }
         }
         
-        const formData = new FormData(form);
         const data = {};
+        const inputs = form.querySelectorAll('input, select');
         
-        formData.forEach((value, key) => {
-            if (this.isReadOnlyField(key)) return;
-            if (value === '') {
-                data[key] = null;
+        inputs.forEach(input => {
+            const fieldName = input.name;
+            if (!fieldName || this.isReadOnlyField(fieldName)) return;
+            
+            let value;
+            if (input.classList.contains('fk-search-input')) {
+                value = input.dataset.value || '';
             } else {
-                data[key] = value;
+                value = input.value;
+            }
+            
+            if (value === '') {
+                data[fieldName] = null;
+            } else {
+                data[fieldName] = value;
             }
         });
         
@@ -1325,9 +1530,22 @@ class MDSPageController {
                     `;
                 } else if (isForeignKey) {
                     inputHtml = `
-                        <select class="form-select form-select-sm batch-edit-value fk-batch-select" data-field="${field}" ${isNull ? 'disabled' : ''}>
-                            <option value="">加载中...</option>
-                        </select>
+                        <div style="position: relative;">
+                            <div class="input-group input-group-sm">
+                                <input type="text" 
+                                       class="form-control batch-edit-value fk-batch-search-input" 
+                                       data-field="${field}"
+                                       data-value="${escapeHtml(savedValue)}"
+                                       value="${escapeHtml(savedValue)}"
+                                       placeholder="输入搜索..."
+                                       autocomplete="off"
+                                       ${isNull ? 'disabled' : ''}>
+                                <span class="input-group-text" style="cursor: pointer; background: #fff;">
+                                    <i class="bi bi-chevron-down"></i>
+                                </span>
+                            </div>
+                            <div class="fk-dropdown dropdown-menu fk-batch-dropdown" data-field="${field}" style="width: 100%; max-height: 200px; overflow-y: auto;"></div>
+                        </div>
                     `;
                 } else {
                     inputHtml = `<input type="text" class="form-control form-control-sm batch-edit-value" data-field="${field}" value="${escapeHtml(savedValue)}" placeholder="输入新值" ${isNull ? 'disabled' : ''}>`;
@@ -1352,6 +1570,10 @@ class MDSPageController {
             }).join('');
             
             batchEditFields.querySelectorAll('.batch-edit-value').forEach(input => {
+                if (input.classList.contains('fk-batch-search-input')) {
+                    return;
+                }
+                
                 input.addEventListener('input', (e) => {
                     const field = e.target.dataset.field;
                     this.fieldValues[field] = e.target.value;
@@ -1428,7 +1650,12 @@ class MDSPageController {
                 
                 batchEditFields.querySelectorAll('.batch-edit-value').forEach(input => {
                     const field = input.dataset.field;
-                    const value = input.value.trim();
+                    let value;
+                    if (input.classList.contains('fk-batch-search-input')) {
+                        value = input.dataset.value || '';
+                    } else {
+                        value = input.value.trim();
+                    }
                     if (value) {
                         updates[field] = value;
                     }

@@ -6,6 +6,7 @@ import json
 from typing import List, Dict, Optional, Literal
 from datetime import datetime, timezone
 from fastapi import APIRouter, Query, Body, HTTPException, status, Request, UploadFile, File
+from tortoise.models import Q
 
 from ._base import StagingStatus, INTERNAL_FIELDS, EXCLUDE_FIELDS, TABLE_PROCESS_ORDER, convert_record_to_lowercase, generate_validation_rules_doc, get_field_map
 from .staging_models import (
@@ -14,6 +15,7 @@ from .staging_models import (
     ValidationError, TransformRule
 )
 from .staging_cleaner import StagingProcessor, DataTransformer, STAGING_TABLE_CONFIG, STAGING_MODEL_MAPPING, ensure_config_initialized
+from .config_generator import TABLE_DISPLAY_CONFIG
 from apps.io_api.utils.common import standard_response
 from apps.io_api.utils.db_operation import db_bupsert
 from core.settings import MYAPS_MAIN_DB, THIS_DB_NAME, MYAPS_DBSET_LIST
@@ -627,23 +629,26 @@ async def get_fk_options(
     query = model.all()
     if search:
         try:
-            filter_kwargs = {f"{label_field}__contains": search}
-            query = query.filter(**filter_kwargs)
+            query = query.filter(
+                Q(**{f"{value_field}__contains": search}) | 
+                Q(**{f"{label_field}__contains": search})
+            )
         except Exception as e:
             logger.warning(f"外键选项搜索失败: {e}")
 
     items = await query.limit(limit)
 
+    data = []
+    for item in items:
+        val = getattr(item, value_field)
+        label_val = getattr(item, label_field)
+        label = f"{val} - {label_val}" if label_val else val
+        data.append({"value": val, "label": label})
+
     return standard_response(
         success=1,
         message=f"查询成功，共{len(items)}条",
-        data=[
-            {
-                "value": getattr(item, value_field),
-                "label": getattr(item, label_field) or getattr(item, value_field)
-            }
-            for item in items
-        ]
+        data=data
     )
 
 
@@ -997,9 +1002,14 @@ async def list_staging(
             param_idx += 1
         
         if keyword:
-            conditions.append(f'("MaterialNo" LIKE ${param_idx} OR "Description" LIKE ${param_idx})')
-            params.append(f"%{keyword}%")
-            param_idx += 1
+            table_config = TABLE_DISPLAY_CONFIG.get(table_name, {})
+            keyword_fields = table_config.get("keyword_fields", [])
+            
+            if keyword_fields:
+                like_conditions = [f'"{field}" LIKE ${param_idx}' for field in keyword_fields]
+                conditions.append(f'({" OR ".join(like_conditions)})')
+                params.append(f"%{keyword}%")
+                param_idx += 1
         
         if advanced_filters:
             try:
