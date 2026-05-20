@@ -18,6 +18,7 @@ from .staging_cleaner import StagingProcessor, DataTransformer, STAGING_TABLE_CO
 from .config_generator import TABLE_DISPLAY_CONFIG, SYSTEM_RUNTIME_CONFIG
 from apps.io_api.utils.common import standard_response
 from apps.io_api.utils.db_operation import db_bupsert
+from apps.common.utils.db_helpers import get_db_connection_safely
 from core.settings import MYAPS_MAIN_DB, THIS_DB_NAME, MYAPS_DBSET_LIST
 from globalobjects import logger as log_config
 
@@ -161,7 +162,7 @@ async def insert_to_staging_table(
     if exclude_fields is None:
         exclude_fields = EXCLUDE_FIELDS
     
-    conn = Tortoise.get_connection(THIS_DB_NAME)
+    conn = await get_db_connection_safely(THIS_DB_NAME)
     
     # 获取字段映射：Python字段名(小写) -> 数据库字段名(大驼峰)
     field_map = {}
@@ -319,7 +320,7 @@ async def sync_to_production(
         if reset_retry:
             staging_model = STAGING_MODEL_MAPPING.get(table_name)
             if staging_model:
-                conn = Tortoise.get_connection(THIS_DB_NAME)
+                conn = await get_db_connection_safely(THIS_DB_NAME)
                 staging_table_name = staging_model._meta.db_table
                 reset_query = f'UPDATE "{staging_table_name}" SET "_retry_count" = 0 WHERE "_status" = $1'
                 await conn.execute_query(reset_query, ("relation_pass",))
@@ -360,7 +361,7 @@ async def sync_to_production(
                 
                 staging_model = STAGING_MODEL_MAPPING.get(table_name)
                 if staging_model:
-                    conn = Tortoise.get_connection(THIS_DB_NAME)
+                    conn = await get_db_connection_safely(THIS_DB_NAME)
                     staging_table_name = staging_model._meta.db_table
                     synced_time = datetime.now(timezone.utc)
                     
@@ -726,7 +727,7 @@ async def get_staging_status(
             raise ValueError(f"未知的缓冲表: {table_name}")
         
         # 使用原生SQL查询，确保与同步查询条件一致
-        conn = Tortoise.get_connection(THIS_DB_NAME)
+        conn = await get_db_connection_safely(THIS_DB_NAME)
         table_name_staging = staging_model._meta.db_table
         
         stats = {}
@@ -790,7 +791,7 @@ async def get_monitor_summary(request: Request):
         from tortoise import Tortoise
         from core.settings import THIS_DB_NAME
         
-        conn = Tortoise.get_connection(THIS_DB_NAME)
+        conn = await get_db_connection_safely(THIS_DB_NAME)
         
         tables = [
             "t_material_staging",
@@ -858,7 +859,7 @@ async def cleanup_old_data(
         from datetime import timedelta
         from core.settings import THIS_DB_NAME
         
-        conn = Tortoise.get_connection(THIS_DB_NAME)
+        conn = await get_db_connection_safely(THIS_DB_NAME)
         
         cutoff_date = datetime.now() - timedelta(days=days)
         
@@ -1045,7 +1046,7 @@ async def list_staging(
             raise ValueError(f"未知的缓冲表: {table_name}")
         
         table_name_staging = f"{table_name}_staging"
-        conn = Tortoise.get_connection(THIS_DB_NAME)
+        conn = await get_db_connection_safely(THIS_DB_NAME)
         
         conditions = []
         params = []
@@ -1197,7 +1198,7 @@ async def batch_update_staging(
             raise ValueError("缺少必要参数: ids或updates")
         
         table_name_staging = f"{table_name}_staging"
-        conn = Tortoise.get_connection(THIS_DB_NAME)
+        conn = await get_db_connection_safely(THIS_DB_NAME)
         
         field_mapping = {}
         field_types = {}
@@ -1270,7 +1271,7 @@ async def get_staging_detail(
             raise ValueError(f"未知的缓冲表: {table_name}")
         
         table_name_staging = f"{table_name}_staging"
-        conn = Tortoise.get_connection(THIS_DB_NAME)
+        conn = await get_db_connection_safely(THIS_DB_NAME)
         
         query = f'SELECT * FROM "{table_name_staging}" WHERE "_staging_id" = $1'
         result = await conn.execute_query(query, (staging_id,))
@@ -1313,7 +1314,7 @@ async def update_staging(
             raise ValueError(f"未知的缓冲表: {table_name}")
         
         table_name_staging = f"{table_name}_staging"
-        conn = Tortoise.get_connection(THIS_DB_NAME)
+        conn = await get_db_connection_safely(THIS_DB_NAME)
         
         field_map = {}
         field_types = {}
@@ -1389,7 +1390,7 @@ async def delete_staging(
             raise ValueError(f"未知的缓冲表: {table_name}")
         
         table_name_staging = f"{table_name}_staging"
-        conn = Tortoise.get_connection(THIS_DB_NAME)
+        conn = await get_db_connection_safely(THIS_DB_NAME)
         
         query = f'DELETE FROM "{table_name_staging}" WHERE "_staging_id" = $1'
         await conn.execute_query(query, (staging_id,))
@@ -1418,7 +1419,7 @@ async def batch_delete_staging(
             raise ValueError("staging_ids不能为空")
         
         table_name_staging = f"{table_name}_staging"
-        conn = Tortoise.get_connection(THIS_DB_NAME)
+        conn = await get_db_connection_safely(THIS_DB_NAME)
         
         placeholders = ", ".join([f"${i+1}" for i in range(len(staging_ids))])
         query = f'DELETE FROM "{table_name_staging}" WHERE "_staging_id" IN ({placeholders})'

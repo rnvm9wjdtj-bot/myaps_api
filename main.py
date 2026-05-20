@@ -77,7 +77,7 @@ init_registered_routes(app)
 app.websocket("/")(websocket_root)
 app.websocket("/ws/{path:path}")(websocket_endpoint)
 
-# 注册数据库
+# 注册数据库（通过 register_tortoise 管理 context）
 register_database(app)
 
 # 启动说明：

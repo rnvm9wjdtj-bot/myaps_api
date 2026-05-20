@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, WebSocket
 from fastapi.responses import JSONResponse, StreamingResponse
 from typing import Dict, Any, List, Optional
+from tortoise import Tortoise
 from .service import monitor_service
 from .log_stream_service import log_stream_service
 from .storage import request_storage, outbound_request_storage, system_log_storage
@@ -41,6 +42,91 @@ async def health_check():
     返回系统整体健康状态和各组件检查详情
     """
     return await monitor_service.get_health_status()
+
+
+@router.get("/health/database")
+async def check_database_health() -> Dict[str, Any]:
+    """
+    检查所有数据库连接状态
+    
+    Returns:
+        {
+            "status": "healthy" | "degraded" | "unhealthy",
+            "connections": {...},
+            "tortoise_initialized": bool
+        }
+    """
+    result = {
+        "status": "healthy",
+        "connections": {},
+        "tortoise_initialized": Tortoise._inited
+    }
+    
+    if not Tortoise._inited:
+        result["status"] = "unhealthy"
+        result["error"] = "Tortoise ORM 未初始化"
+        return result
+    
+    unhealthy_count = 0
+    for db_name in Tortoise._connections.keys():
+        try:
+            conn = Tortoise.get_connection(db_name)
+            start_time = time.time()
+            
+            await conn.execute_query("SELECT 1")
+            
+            response_time_ms = (time.time() - start_time) * 1000
+            
+            result["connections"][db_name] = {
+                "status": "healthy",
+                "response_time_ms": round(response_time_ms, 2),
+                "error": None
+            }
+            
+        except Exception as e:
+            unhealthy_count += 1
+            result["connections"][db_name] = {
+                "status": "unhealthy",
+                "response_time_ms": None,
+                "error": str(e)
+            }
+    
+    total = len(result["connections"])
+    if total == 0:
+        result["status"] = "unhealthy"
+        result["error"] = "无可用连接"
+    elif unhealthy_count == total:
+        result["status"] = "unhealthy"
+    elif unhealthy_count > 0:
+        result["status"] = "degraded"
+    
+    return result
+
+
+@router.get("/health/database/{db_name}")
+async def check_specific_database(db_name: str) -> Dict[str, Any]:
+    """检查指定数据库连接状态"""
+    if not Tortoise._inited:
+        raise HTTPException(status_code=503, detail="数据库服务初始化中")
+    
+    try:
+        conn = Tortoise.get_connection(db_name)
+        start_time = time.time()
+        
+        await conn.execute_query("SELECT 1")
+        
+        response_time_ms = (time.time() - start_time) * 1000
+        
+        return {
+            "db_name": db_name,
+            "status": "healthy",
+            "response_time_ms": round(response_time_ms, 2)
+        }
+        
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"连接 '{db_name}' 不存在")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"数据库连接失败: {e}")
 
 
 @router.get("/resource", response_model=ResourceMetrics)

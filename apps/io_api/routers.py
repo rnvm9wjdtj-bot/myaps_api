@@ -271,7 +271,7 @@ async def post_material(
         
         async def run_matver_task():
             try:
-                await post_mat_ver(data=matver_data, db_name=db_name, x_api_key=x_api_key)
+                await post_mat_ver(request=request, data=matver_data, db_name=db_name, x_api_key=x_api_key)
             except Exception as e:
                 logger.error(f"Error in post_mat_ver background task: {e}")
         

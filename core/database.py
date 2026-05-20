@@ -87,6 +87,14 @@ TORTOISE_ORM_CONFIG = {
 }
 
 if THIS_DB_NAME:
+    model_path = "apps.data_opt.mds.staging_models"
+    try:
+        __import__(model_path)
+        log_config.info(f"✅ 模型模块导入成功: {model_path}")
+    except ImportError as e:
+        log_config.error(f"❌ 模型模块导入失败: {model_path} - {e}")
+        raise
+    
     connections[THIS_DB_NAME] = {
         "engine": "tortoise.backends.asyncpg",
         "credentials": {
@@ -95,16 +103,106 @@ if THIS_DB_NAME:
             "user": THIS_DB_USER,
             "password": THIS_DB_PASSWORD,
             "database": THIS_DB_NAME,
-            "server_settings": {"TimeZone": TIMEZONE_NAME},
+            "server_settings": {
+                "TimeZone": TIMEZONE_NAME,
+                "application_name": "myaps_api",
+            },
+            "command_timeout": 60,
+            "timeout": 30,
         },
         "min_size": 3,
         "max_size": 10,
         "use_tz": True,
+        "pool_recycle": 1800,
     }
+    
+    log_config.info(f"✅ PostgreSQL连接配置完成: {THIS_DB_NAME}@{THIS_DB_HOST}:{THIS_DB_PORT}")
+    
     TORTOISE_ORM_CONFIG["apps"]["data_opt_models"] = {
-        "models": ["apps.data_opt.mds.staging_models"],
+        "models": [model_path],
         "default_connection": THIS_DB_NAME,
     }
+    
+    log_config.info(f"✅ 模型注册完成: data_opt_models -> {THIS_DB_NAME}")
+
+
+def validate_database_config() -> Dict[str, Any]:
+    """
+    验证数据库配置完整性和一致性
+    
+    多租户场景说明：
+    - THIS_DB_* 为空是正常情况，表示该租户不使用自有数据库
+    - 仅当 THIS_DB_NAME 有值时，才验证配套参数的完整性
+    
+    Returns:
+        配置摘要字典
+    
+    Raises:
+        ValueError: 配置验证失败时抛出（仅在 THIS_DB_NAME 有值时）
+    """
+    import json
+    
+    issues = []
+    warnings = []
+    
+    if not THIS_DB_NAME:
+        log_config.info("ℹ️ 该租户未配置自有数据库(THIS_DB_NAME为空)，跳过 PostgreSQL 配置验证")
+        config_summary = {
+            "has_own_database": False,
+            "timezone": TIMEZONE_NAME,
+            "connections": list(connections.keys()),
+            "apps": list(TORTOISE_ORM_CONFIG["apps"].keys()),
+        }
+        log_config.info(f"配置摘要: {json.dumps(config_summary, indent=2, ensure_ascii=False)}")
+        return config_summary
+    
+    log_config.info(f"✓ 检测到自有数据库配置: THIS_DB_NAME={THIS_DB_NAME}")
+    
+    required_vars = {
+        "THIS_DB_HOST": THIS_DB_HOST,
+        "THIS_DB_PORT": THIS_DB_PORT,
+        "THIS_DB_USER": THIS_DB_USER,
+        "THIS_DB_PASSWORD": THIS_DB_PASSWORD,
+    }
+    
+    for var_name, var_value in required_vars.items():
+        if not var_value:
+            issues.append(f"{var_name} 环境变量未设置")
+    
+    if THIS_DB_PORT and not (1 <= THIS_DB_PORT <= 65535):
+        issues.append(f"THIS_DB_PORT={THIS_DB_PORT} 超出有效范围(1-65535)")
+    
+    if THIS_DB_NAME not in connections:
+        issues.append(f"THIS_DB_NAME='{THIS_DB_NAME}' 未在connections配置中找到")
+    
+    try:
+        __import__("apps.data_opt.mds.staging_models")
+    except ImportError as e:
+        warnings.append(f"模型路径导入警告: apps.data_opt.mds.staging_models - {e}")
+    
+    if issues:
+        error_msg = "自有数据库配置验证失败:\n" + "\n".join(f"  ❌ {issue}" for issue in issues)
+        log_config.error(error_msg)
+        raise ValueError(error_msg)
+    
+    if warnings:
+        for warning in warnings:
+            log_config.warning(warning)
+    
+    config_summary = {
+        "has_own_database": True,
+        "db_name": THIS_DB_NAME,
+        "db_host": THIS_DB_HOST,
+        "db_port": THIS_DB_PORT,
+        "timezone": TIMEZONE_NAME,
+        "connections": list(connections.keys()),
+        "apps": list(TORTOISE_ORM_CONFIG["apps"].keys()),
+    }
+    
+    log_config.info("✅ 数据库配置验证通过")
+    log_config.info(f"配置摘要: {json.dumps(config_summary, indent=2, ensure_ascii=False)}")
+    
+    return config_summary
 
 
 class ConnectionLeakDetector:
@@ -308,32 +406,49 @@ smart_pool_manager = SmartConnectionPoolManager()
 
 
 def register_database(app):
+    """
+    注册Tortoise ORM到FastAPI应用（兼容接口）
+    
+    注意：此函数作为兼容接口保留，实际初始化已移到 lifespan 中
+    """
+    
+    validate_database_config()
+    
     register_tortoise(
         app=app,
         config=TORTOISE_ORM_CONFIG,
+        generate_schemas=False,
+        add_exception_handlers=True,
     )
     
-    # 标记数据库已初始化，允许日志写入数据库
-    # 使用统一函数，同时设置 V1 和 V2
+    log_config.info("✅ Tortoise ORM 已注册到FastAPI应用")
+    log_config.info(f"连接配置: {list(TORTOISE_ORM_CONFIG['connections'].keys())}")
+    log_config.info(f"应用配置: {list(TORTOISE_ORM_CONFIG['apps'].keys())}")
+    
     from globalobjects.logger import set_db_initialized_unified
     set_db_initialized_unified(True)
     
-    # 启动监控服务（使用现有的监控架构）
     from apps.common.monitor.service import monitor_service
     log_config.info("✅ 系统监控服务已集成")
 
 
 async def warmup_connections():
-    """预热数据库连接"""
+    """
+    预热数据库连接，增强容错处理
+    MySQL 连接失败不阻止应用启动
+    """
     if not MYAPS_MAIN_DB:
         return
     try:
         from globalobjects.db_manager import get_db_managers
         db_managers = get_db_managers()
         for db_name, manager in db_managers.items():
+            conn_config = TORTOISE_ORM_CONFIG["connections"].get(db_name, {})
+            engine = conn_config.get("engine", "")
+            is_mysql = "mysql" in engine
+            
             try:
                 start_time = time.time()
-                # 使用较短的超时时间，避免启动时被阻塞
                 is_healthy = await asyncio.wait_for(
                     manager.check_connection_health(timeout=5, fast_mode=True),
                     timeout=10
@@ -342,16 +457,24 @@ async def warmup_connections():
                 if is_healthy:
                     log_config.info(f"连接预热成功: {db_name} - 响应时间: {response_time:.3f}秒")
                 else:
-                    log_config.warning(f"连接预热失败: {db_name}")
-                    # 尝试刷新连接（使用快速模式）
-                    await asyncio.wait_for(
-                        manager.refresh_connection(fast_mode=True),
-                        timeout=15
-                    )
+                    if is_mysql:
+                        log_config.warning(f"⚠️ MySQL连接预热失败: {db_name}（不影响启动）")
+                    else:
+                        log_config.warning(f"连接预热失败: {db_name}")
+                        await asyncio.wait_for(
+                            manager.refresh_connection(fast_mode=True),
+                            timeout=15
+                        )
             except asyncio.TimeoutError:
-                log_config.warning(f"连接预热超时: {db_name}，跳过预热")
+                if is_mysql:
+                    log_config.warning(f"⚠️ MySQL连接预热超时: {db_name}，跳过（不影响启动）")
+                else:
+                    log_config.warning(f"连接预热超时: {db_name}，跳过预热")
             except Exception as e:
-                log_config.error(f"连接预热异常: {db_name} - {str(e)}")
+                if is_mysql:
+                    log_config.warning(f"⚠️ MySQL连接预热异常: {db_name} - {str(e)}（不影响启动）")
+                else:
+                    log_config.error(f"❌ 连接预热异常: {db_name} - {str(e)}")
         log_config.info("数据库连接预热完成")
     except Exception as e:
         log_config.error(f"连接预热异常: {str(e)}")

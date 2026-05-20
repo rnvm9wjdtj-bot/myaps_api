@@ -22,18 +22,17 @@ from core.database import check_db_connections, warmup_connections, start_pool_m
 @asynccontextmanager
 async def lifespan(app):
     """应用生命周期管理器"""
-    # 应用启动时执行的操作
     log_config.initialize_logging_unified()
     
-    # 将主应用事件循环传递给调度器
     main_loop = asyncio.get_running_loop()
     scheduler_manager.set_main_loop(main_loop)
     log_config.info(f"已将主应用事件循环传递给调度器: {main_loop}")
     
-    # 预热数据库连接（在启动其他服务之前）
+    from core.database import validate_database_config
+    validate_database_config()
+    
     log_config.info("开始预热数据库连接...")
     try:
-        # 添加超时保护，避免启动时被阻塞
         await asyncio.wait_for(warmup_connections(), timeout=60)
         log_config.info("数据库连接预热完成")
     except asyncio.TimeoutError:
@@ -41,12 +40,10 @@ async def lifespan(app):
     except Exception as e:
         log_config.error(f"❌ 数据库连接预热失败: {e}")
     
-    # 启动资源监控
     log_config.info("开始启动资源监控...")
     resource_monitor.start_monitoring(interval=30)
     log_config.info("系统资源监控已启动")
     
-    # 等待服务器完全就绪，确保客户端可以正常连接
     log_config.info("等待服务器完全就绪...")
     await asyncio.sleep(1)
     log_config.info("服务器已就绪")
@@ -347,6 +344,15 @@ async def lifespan(app):
     
     # 应用关闭时执行的操作
     log_config.info("应用关闭中...")
+    
+    # 0. 关闭数据库连接
+    log_config.info("正在关闭数据库连接...")
+    try:
+        from tortoise import Tortoise
+        await Tortoise.close_connections()
+        log_config.info("✅ 数据库连接已关闭")
+    except Exception as e:
+        log_config.warning(f"⚠️ 关闭数据库连接时出错: {e}")
     
     # 1. 先停止 MySQL Binlog 监控（最依赖数据库）
     if TURNON_BINLOG_LISTENER:

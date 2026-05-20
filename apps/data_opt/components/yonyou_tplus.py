@@ -203,7 +203,7 @@ class MoPushModel(PydanticModel):
     """
     整理推送T+MO数据
     """
-    ExternalCode: str = Field(None)
+    ExternalCode: Optional[str] = Field(None)
     BusiType: dict = Field(None)
     Department: dict = Field(None)
     Customer: dict = Field(None)
@@ -332,9 +332,9 @@ class PrPushModel(PydanticModel):
     """
     整理推送T+请购单数据
     """
-    ExternalCode: str = Field(None)
-    Code: str = Field(None)
-    VoucherDate: str = Field(None)
+    ExternalCode: Optional[str] = Field(None)
+    Code: Optional[str] = Field(None)
+    VoucherDate: Optional[str] = Field(None)
     RequisitionPerson: dict = Field(...)
     PurchaseRequisitionDetails: list[dict] = Field(...)
 
