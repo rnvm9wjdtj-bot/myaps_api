@@ -17,6 +17,7 @@
 - [步骤五：实现校验器](#步骤五实现校验器可选)
 - [配置字段说明](#配置字段说明)
 - [外键配置说明](#外键配置说明)
+- [钩子配置说明](#钩子配置说明)
 - [业务主键配置注意事项](#业务主键配置注意事项)
 - [完整示例](#完整示例)
 
@@ -330,6 +331,99 @@ async def validate_xxx_rules(cleaner, data, staging_id):
 1. **自动校验**：系统自动检查外键值是否在引用表中存在
 2. **选项 API**：配置 `value_field` 和 `label_field` 后，可通过 `/fk-options/{table_key}/{field_name}` 获取下拉选项
 3. **复合外键**：需要通过 `business_rules` 自定义校验函数
+
+---
+
+## 钩子配置说明
+
+STAGING_TABLE_CONFIG 支持 4 种钩子配置，分为**表级别**和**行级别**两类。
+
+### 表级别钩子（一个校验周期执行一次）
+
+| 钩子 | 执行时机 | 函数签名 | 用途 |
+|------|----------|----------|------|
+| `pre_batch_hook` | `process_staging` 开始前 | `async (cleaner, table_name, context) -> Dict` | 统计记录总数、数据预加载、前置条件检查 |
+| `post_batch_hook` | `process_staging` 完成后 | `async (cleaner, table_name, context, stats) -> Dict` | 生成汇总报告、后置处理、清理临时数据 |
+
+### 行级别钩子（每条记录执行一次）
+
+| 钩子 | 执行时机 | 函数签名 | 用途 |
+|------|----------|----------|------|
+| `pre_validate_hook` | 单条记录校验前 | `async (cleaner, data, staging_id) -> List[Dict]` | 数据预处理、字段修正 |
+| `post_validate_hook` | 单条记录校验后 | `async (cleaner, data, staging_id, errors) -> List[Dict]` | 根据错误做额外处理 |
+
+### 配置方式
+
+支持**单个函数**或**函数列表**（多个函数按顺序执行）：
+
+```python
+# 单个函数
+"pre_batch_hook": my_hook,
+
+# 多个函数（按顺序执行，前一个的返回值传递给下一个）
+"pre_batch_hook": [hook1, hook2, hook3],
+```
+
+### 示例配置
+
+```python
+"t_mat_wc_bom": {
+    ...
+    "pre_batch_hook": [count_total_hook, preload_data_hook],        # 多个表级别前置钩子
+    "post_batch_hook": generate_report_hook,                         # 单个表级别后置钩子
+    "pre_validate_hook": [normalize_data_hook, check_condition_hook], # 多个行级别前置钩子
+    "post_validate_hook": cleanup_hook,                              # 单个行级别后置钩子
+}
+```
+
+### 示例：统计记录总数
+
+```python
+async def count_total_hook(cleaner, table_name, context):
+    """统计待处理记录总数"""
+    from tortoise import Tortoise
+    conn = Tortoise.get_connection(cleaner.db_name)
+    
+    result = await conn.execute_query(
+        f'SELECT COUNT(*) as cnt FROM "{table_name}_staging" WHERE "_status" = $1',
+        ("pending",)
+    )
+    total_count = result[1][0]["cnt"]
+    
+    logger.info(f"表 {table_name} 待校验记录总数: {total_count}")
+    return {"total_count": total_count}
+
+
+async def generate_report_hook(cleaner, table_name, context, stats):
+    """生成处理报告"""
+    total_count = context.get("total_count", 0)
+    pass_rate = stats["relation_pass"] / total_count * 100 if total_count > 0 else 0
+    
+    logger.info(f"表 {table_name} 处理完成: 总数={total_count}, 通过={stats['relation_pass']}, 通过率={pass_rate:.1f}%")
+    return {"pass_rate": pass_rate}
+```
+
+### context 传递流程
+
+```
+pre_batch_hook → context.update(result1)
+       ↓
+   批次循环处理（context 保持不变）
+       ↓
+post_batch_hook(context, stats)
+```
+
+### 校验执行顺序
+
+| 步骤 | 内容 |
+|------|------|
+| 0 | `pre_batch_hook` **表级别前置** |
+| 1 | 批次循环开始 |
+| 2 | `pre_validate_hook` **行级别前置** |
+| 3-8 | 标准校验（必填、枚举、范围、外键、重复、业务规则） |
+| 9 | `post_validate_hook` **行级别后置** |
+| 10 | 批次循环结束 |
+| 11 | `post_batch_hook` **表级别后置** |
 
 ---
 

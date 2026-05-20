@@ -39,6 +39,8 @@ class TMatWcStaging(StagingBaseModel, pm.ProtoMatWc):
 
 class TMatWcBomStaging(StagingBaseModel, pm.ProtoMatWcBom):
     """物料清单缓冲表"""
+    productunit = fields.CharField(source_field='ProductUnit', max_length=16, null=True, description="父件单位")
+    materialunit = fields.CharField(source_field='MaterialUnit', max_length=16, null=True, description="子件单位")
     class Meta:
         table = "t_mat_wc_bom_staging"
         table_description = "物料清单数据缓冲表"

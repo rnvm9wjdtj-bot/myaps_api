@@ -377,12 +377,13 @@ _PAGE_COLUMNS_CONFIG = {
     
     "t_mat_wc_bom": SYSTEM_COMMON_COLUMNS_PREFIX + [
         {"field": "productno", "title": "父件号", "sortable": True},
+        {"field": "productunit", "title": "父件单位"},
         {"field": "matver", "title": "版本号"},
         {"field": "itemno", "title": "工序号"},
         {"field": "materialno", "title": "子件号"},
+        {"field": "materialunit", "title": "子件单位"},
         {"field": "qty", "title": "用量"},
         {"field": "offsethour", "title": "偏置小时"},
-        # {"field": "treeno", "title": "BOM层级"},
         {"field": "mto", "title": "MTO"},
         {"field": "scrap", "title": "损耗率"},
         {"field": "alt", "title": "替代组"},

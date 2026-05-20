@@ -199,9 +199,11 @@ CREATE TABLE IF NOT EXISTS t_mat_wc_bom_staging (
     
     -- ProtoMatWcBom 字段
     "ProductNo" VARCHAR(64) NOT NULL,
+    "ProductUnit" VARCHAR(16)  NULL,
     "MatVer" VARCHAR(4) NOT NULL,
     "ItemNo" VARCHAR(6) NOT NULL,
     "MaterialNo" VARCHAR(64) NOT NULL,
+    "MaterialUnit" VARCHAR(16)  NULL,
     "Qty" DOUBLE PRECISION NOT NULL,
     "OffsetHour" INT NOT NULL,
     "TreeNo" INT NULL,

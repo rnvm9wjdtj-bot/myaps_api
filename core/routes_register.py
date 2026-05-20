@@ -108,7 +108,7 @@ router = APIRouter()
 def register_routes(app):
     app.include_router(io_rt, prefix="/api", tags=[])
     app.include_router(do_rt, prefix="/do", tags=[], include_in_schema=False)
-    app.include_router(mds_rt, prefix="/api", tags=["数据清洗"])
+    app.include_router(mds_rt, prefix="/api", tags=["数据清洗"], include_in_schema=False)
     app.include_router(monitor_rt, tags=["monitor"], include_in_schema=False)
     app.include_router(help_rt, tags=["help"], include_in_schema=False)
 
