@@ -11,7 +11,7 @@ from tortoise import Tortoise
 from tortoise.models import Model
 
 from ._base import (
-    StagingStatus, ErrorType, NONE_AND_EMPTY,
+    StagingStatus, ErrorType,
     get_field_map, extract_defaults_from_schema, extract_required_fields,
     extract_enum_fields, extract_range_fields, extract_max_length_fields,
     extract_business_keys_from_model, extract_display_name_from_model,
@@ -28,7 +28,7 @@ from apps.io_api.models import (
 )
 from apps.io_api.schemas import AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom, AcceptMold, AcceptMatWcMold
 from globalobjects import logger as log_config, globalconst as gc, ProjectDefaultValues as pdv
-from .validators import validate_material_type_e_rules
+from .validators import validate_material_type_e_rules, bom_structure_check_hook
 
 
 logger = log_config.get_logger(__name__)
@@ -169,6 +169,7 @@ STAGING_TABLE_CONFIG = {
             create_positive_rule("qty", "用量必须大于0"),
             create_range_rule("scrap", 0, 100, "损耗率必须在0-100之间"),
         ],
+        "pre_batch_hook": [bom_structure_check_hook],
     },
 
     "t_mold": {
@@ -290,7 +291,7 @@ def fill_defaults(table_name: str, data: Dict[str, Any]) -> Dict[str, Any]:
         current_value = result.get(field_name)
         
         # 如果当前值是 None 或空字符串
-        if current_value in NONE_AND_EMPTY:
+        if current_value in gc.NONE_AND_EMPTY:
             # 优先使用 SCHEMA_DEFAULTS 中的默认值
             if field_name in defaults and defaults[field_name] is not None:
                 result[field_name] = defaults[field_name]
@@ -872,6 +873,9 @@ class StagingProcessor:
                     context.update(hook_result)
             logger.debug(f"表级别前置钩子执行完成: {context}")
         
+        # 获取前置钩子的批量错误（用于后续合并）
+        batch_errors = context.get('batch_errors', {})
+        
         batch_count = 0
         while batch_count < max_batches:
             try:
@@ -915,14 +919,33 @@ class StagingProcessor:
                     
                     logger.info(f"[校验] staging_id={staging_id}, 结果: is_valid={is_valid}, errors={len(errors)}")
                     
+                    # ========== 合并前置钩子错误 ==========
+                    all_errors = []
+                    has_batch_error = False
+                    
+                    # 先添加前置钩子错误
+                    if staging_id in batch_errors:
+                        all_errors.extend(batch_errors[staging_id])
+                        # 检查是否有严重的前置错误
+                        has_batch_error = any(
+                            e.get('error_type') == 'bom_structure_error' 
+                            for e in batch_errors[staging_id]
+                        )
+                    
+                    # 再添加本次校验错误
+                    all_errors.extend(errors)
+                    
                     # 检查是否有填充的字段（与原始数据不同）
                     filled_fields = []
                     for key, filled_value in filled_data.items():
                         original_value = data.get(key)
-                        if original_value in NONE_AND_EMPTY and filled_value not in NONE_AND_EMPTY:
+                        if original_value in gc.NONE_AND_EMPTY and filled_value not in gc.NONE_AND_EMPTY:
                             filled_fields.append(key)
                     
-                    if is_valid:
+                    # ========== 统一判断最终状态 ==========
+                    final_is_valid = is_valid and not has_batch_error
+                    
+                    if final_is_valid:
                         # 构建更新语句：更新状态和填充后的字段
                         if filled_fields:
                             set_clauses = ['"_status" = $1']
@@ -942,17 +965,29 @@ class StagingProcessor:
                             await conn.execute_query(update_query, ("relation_pass", staging_id))
                         stats["relation_pass"] += 1
                     else:
-                        error_json = json.dumps(errors, ensure_ascii=False)
+                        error_json = json.dumps(all_errors, ensure_ascii=False)
                         
-                        # 区分错误类型：检查是否包含外键关联错误
-                        has_fk_error = any(error.get("error_type") == "fk_not_found" for error in errors)
-                        if has_fk_error:
+                        # 区分错误类型：优先显示合规错误，避免被外键错误覆盖
+                        # 合规错误包括：bom_structure_error、required_field、invalid_range 等
+                        # 联检错误主要是：fk_not_found
+                        
+                        has_fk_error = any(error.get("error_type") == "fk_not_found" for error in all_errors)
+                        has_compliance_error = any(
+                            error.get("error_type") not in ["fk_not_found", "bom_structure_warning"]
+                            for error in all_errors
+                        )
+                        
+                        # 状态优先级：compliance_error > relation_error
+                        if has_compliance_error:
+                            status = "compliance_error"
+                            stats["compliance_error"] = (stats.get("compliance_error") or 0) + 1
+                        elif has_fk_error:
                             status = "relation_error"
                             stats["relation_error"] += 1
                         else:
-                            # 其他错误都是合规错误
-                            status = "compliance_error"
-                            stats["compliance_error"] = (stats.get("compliance_error") or 0) + 1
+                            # 只有警告的情况
+                            status = "relation_pass"
+                            stats["relation_pass"] += 1
                         
                         # 更新状态、错误信息，以及填充的字段
                         if filled_fields:
@@ -970,7 +1005,7 @@ class StagingProcessor:
                         else:
                             update_query = f'UPDATE "{table_name_staging}" SET "_status" = $1, "_error_msg" = $2 WHERE "_staging_id" = $3'
                             await conn.execute_query(update_query, (status, error_json, staging_id))
-                        await self.cleaner.save_errors(table_name, errors)
+                        await self.cleaner.save_errors(table_name, all_errors)
                         
                 except Exception as e:
                     import traceback

@@ -156,6 +156,14 @@ class TConfirm(pm.ProtoConfirm):
         table = "t_confirm"
 
 
+class TBatchLog(pm.ProtoBatchLog):
+    
+    class Meta:
+        managed = False
+        abstract = False
+        table = "t_batchlog"
+
+
 
 def get_table_model_mapping():
     """

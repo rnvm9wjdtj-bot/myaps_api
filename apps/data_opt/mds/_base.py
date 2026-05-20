@@ -88,9 +88,6 @@ class StagingBaseModel(TortoiseBaseModel):
 # 工具函数
 # ==============================================
 
-NONE_AND_EMPTY = {None, ""}
-
-
 def get_field_map(model_class: Type[TortoiseBaseModel]) -> Dict[str, str]:
     """
     获取模型的字段映射：Python字段名(小写) -> 数据库字段名(大驼峰)

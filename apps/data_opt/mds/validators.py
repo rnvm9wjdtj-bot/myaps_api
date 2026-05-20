@@ -1,28 +1,13 @@
-import json
-from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional, Tuple, Type
-from enum import Enum
-
-from tortoise import Tortoise
-from tortoise.models import Model
-
-from ._base import (
-    StagingStatus, ErrorType, NONE_AND_EMPTY,
-    get_field_map, extract_defaults_from_schema, extract_required_fields,
-    extract_enum_fields, extract_range_fields, extract_max_length_fields,
-    extract_business_keys_from_model, extract_display_name_from_model,
-    BusinessRule, create_comparison_rule, create_range_rule, 
-    create_positive_rule, create_not_equal_rule,
-)
+from ._base import ErrorType
 from .staging_models import (
     ValidationError, TransformRule,
     TMaterialStaging, TWorkcenterStaging, TMatVerStaging,
     TMatWcStaging, TMatWcBomStaging, TMoldStaging, TMatWcMoldStaging,
 )
-from apps.io_api.models import (
-    TMaterial, TWorkcenter, TMatVer, TMatWc, TMatWcBom, TMold, TMatWcMold
-)
-from apps.io_api.schemas import AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom, AcceptMold, AcceptMatWcMold
+# from apps.io_api.models import (
+#     TMaterial, TWorkcenter, TMatVer, TMatWc, TMatWcBom, TMold, TMatWcMold
+# )
+# from apps.io_api.schemas import AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom, AcceptMold, AcceptMatWcMold
 
 from globalobjects import logger as log_config, globalconst as gc, ProjectDefaultValues as pdv
 
@@ -134,3 +119,189 @@ async def validate_material_type_e_rules(cleaner, data, staging_id):
 #             ))
 #     return errors
 
+async def bom_structure_check_hook(processor, table_name: str, context: dict) -> dict:
+    """
+    BOM结构完整性校验钩子
+    使用 bomchecker 对 BOM 数据进行结构校验和单位一致性检查
+    
+    校验内容:
+    - 循环引用检测
+    - 父子同号检查
+    - 孤立项目检测
+    - 多父项检查
+    - 单位一致性检查
+    
+    Args:
+        processor: StagingProcessor实例
+        table_name: 表名
+        context: 上下文字典
+    
+    Returns:
+        更新后的context
+    """
+    from apps.data_opt.utils.bomchecker import BOMChecker
+    from tortoise import Tortoise
+    
+    conn = Tortoise.get_connection(processor.db_name)
+    
+    logger.info(f"[BOM校验钩子] 开始加载 {table_name} 数据")
+    
+    query = '''
+        SELECT "_staging_id", "ProductNo", "MaterialNo", "Qty", "MatVer", "ItemNo",
+               "ProductUnit", "MaterialUnit"
+        FROM t_mat_wc_bom_staging 
+        WHERE "_status" IN ('pending', 'relation_pass')
+    '''
+    result = await conn.execute_query(query)
+    records = result[1] if result[1] else []
+    
+    if not records:
+        logger.info(f"[BOM校验钩子] 无待校验数据")
+        return context
+    
+    logger.info(f"[BOM校验钩子] 加载 {len(records)} 条数据")
+    
+    staging_id_map = {}
+    bom_data = []
+    
+    for row in records:
+        row_dict = dict(row)
+        staging_id = row_dict['_staging_id']
+        business_key = (
+            str(row_dict['ProductNo'] or ''),
+            str(row_dict['MaterialNo'] or ''),
+            str(row_dict['MatVer'] or ''),
+            str(row_dict.get('ItemNo', '') or '')
+        )
+        staging_id_map[business_key] = staging_id
+        
+        bom_data.append({
+            'productno': row_dict['ProductNo'],
+            'materialno': row_dict['MaterialNo'],
+            'qty': row_dict['Qty'] or 0,
+            'matver': row_dict['MatVer'],
+            'itemno': row_dict.get('ItemNo', ''),
+            'productunit': row_dict.get('ProductUnit'),
+            'materialunit': row_dict.get('MaterialUnit'),
+        })
+    
+    checker = BOMChecker(
+        parent_col="productno",
+        child_col="materialno",
+        numerator_col="qty",
+        parentversion_col="matver",
+        parentunit_col="productunit",
+        childunit_col="materialunit"
+    )
+    
+    logger.info(f"[BOM校验钩子] 开始执行BOM结构校验")
+    check_result = checker.start_check(bom_data)
+    
+    if not check_result.get('success'):
+        logger.error(f"[BOM校验钩子] 校验执行失败: {check_result.get('message')}")
+        context['bom_check_error'] = check_result.get('message')
+        return context
+    
+    marked_data = check_result.get('marked_data', [])
+    statistics = check_result.get('statistics', {})
+    
+    logger.info(f"[BOM校验钩子] 校验完成 - 总计:{statistics.get('total_records', 0)}, "
+                f"错误:{statistics.get('error_records', 0)}, "
+                f"警告:{statistics.get('warning_records', 0)}")
+    
+    batch_errors = {}
+    error_count = 0
+    warning_count = 0
+    
+    for item in marked_data:
+        business_key = (
+            str(item.get('productno') or ''),
+            str(item.get('materialno') or ''),
+            str(item.get('matver') or ''),
+            str(item.get('itemno', '') or '')
+        )
+        staging_id = staging_id_map.get(business_key)
+        
+        if not staging_id:
+            continue
+        
+        errors = item.get('E', '')
+        warnings = item.get('W', '')
+        
+        if not errors and not warnings:
+            continue
+        
+        batch_errors[staging_id] = []
+        
+        if errors:
+            batch_errors[staging_id].append({
+                'staging_id': staging_id,
+                'error_type': 'bom_structure_error',
+                'error_field': 'bom_structure',
+                'error_value': None,
+                'error_message': errors
+            })
+            error_count += 1
+        
+        if warnings:
+            batch_errors[staging_id].append({
+                'staging_id': staging_id,
+                'error_type': 'bom_structure_warning',
+                'error_field': 'bom_structure',
+                'error_value': None,
+                'error_message': warnings
+            })
+            warning_count += 1
+    
+    logger.info(f"[BOM校验钩子] 发现问题 - 错误:{error_count}条, 警告:{warning_count}条 (未写入数据库，将在后续校验中合并)")
+    
+    # 处理单位不一致问题
+    unit_result = checker.unit_result
+    unit_stats = {}
+    if unit_result and unit_result.get('exec_success'):
+        unit_summary = unit_result.get('summary', {})
+        unit_stats = {
+            'total_materials': unit_summary.get('total_unique_materials', 0),
+            'unified_materials': unit_summary.get('unified_materials_count', 0),
+            'problematic_materials': unit_summary.get('problematic_materials_count', 0),
+            'pass_rate': unit_summary.get('pass_rate_percent', 0)
+        }
+        logger.info(f"[BOM校验钩子] 单位校验 - 总计:{unit_stats['total_materials']}, "
+                    f"通过率:{unit_stats['pass_rate']}%")
+        
+        # 将单位不一致问题写入 batch_errors
+        problematic_details = unit_result.get('problematic_details', [])
+        for detail in problematic_details:
+            material_number = detail.get('material_number', '')
+            unit_distribution = detail.get('unit_distribution', {})
+            
+            # 找到所有涉及该物料的记录
+            for business_key, sid in staging_id_map.items():
+                productno, materialno, matver, itemno = business_key
+                if productno == material_number or materialno == material_number:
+                    if sid not in batch_errors:
+                        batch_errors[sid] = []
+                    
+                    # 避免重复添加同一物料的单位警告
+                    existing_msg = [e.get('error_message', '') for e in batch_errors[sid]]
+                    unit_msg = f"物料 {material_number} 单位不一致: {dict(unit_distribution)}"
+                    
+                    if not any('单位不一致' in msg for msg in existing_msg):
+                        batch_errors[sid].append({
+                            'staging_id': sid,
+                            'error_type': 'unit_inconsistency',
+                            'error_field': 'productunit' if productno == material_number else 'materialunit',
+                            'error_value': str(unit_distribution),
+                            'error_message': unit_msg
+                        })
+                        warning_count += 1
+    
+    context['batch_errors'] = batch_errors
+    context['bom_check_result'] = {
+        'total': statistics.get('total_records', 0),
+        'errors': error_count,
+        'warnings': warning_count,
+        'unit_stats': unit_stats
+    }
+    
+    return context

@@ -18,11 +18,13 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from pydantic import BaseModel as PydanticModel
 import uuid
+
+
+from globalobjects import logger as log_config, ProjectDefaultValues as pdv, StaticString as ce
 from dataclasses import dataclass, field
 from core.settings import THIS_BASE_URL, MYAPS_MAIN_DB, MYAPS_DB_SET
-from apps.io_api.utils.db_operation import db_exec_sql, DbResult, MultiDbResult
-from apps.io_api.utils.db_operation import db_query, db_update_by_index, db_query, db_delete, db_bupsert, call_dbprocdure
-from globalobjects import logger as log_config, ProjectDefaultValues as pdv, StaticString as ce
+from apps.io_api.utils.db_operation import db_exec_sql, db_query, db_update_by_index, db_query, db_delete, db_bupsert, call_dbprocdure, DbResult, MultiDbResult
+from apps.io_api.models import TBatchLog 
 
 
 
@@ -1756,6 +1758,28 @@ class ApsPayloadSponsor:
             result.append(record)
         
         return result
+
+
+    @classmethod
+    async def add_batchlog(cls, pidno: str, strategy: str, target: Literal['RECE', 'PROC', 'SUCC', 'FAIL'], memo: str=""):
+
+        memo = {
+            "RECE": "Received已接收",
+            "PROC": "Processing处理中",
+            "SUCC": "Success 成功",
+            "FALI": f"Failed {memo}"
+        }.get(target)
+
+        await TBatchLog.create(
+            systime=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            pidno=pidno,
+            task="API",
+            strategy=strategy,
+            target=target,
+            memo=memo
+        )
+
+
 
 
 @dataclass

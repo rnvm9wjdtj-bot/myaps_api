@@ -148,7 +148,7 @@ async def refresh_stock(dbs: str=MYAPS_DB_SET):
             df_sap_st['itemno'] = pdv.ITEMNO
         except Exception as e:
             CLIENT_LOGGER.fail("SAP库存获取", "", str(e))
-            df_sap_st = None
+            raise
         return df_sap_st
 
     CLIENT_LOGGER.start("刷新库存任务")
@@ -206,7 +206,10 @@ async def push_monthpr_to_srm():
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(), description="刷新库存数据")
 async def task_refresh_stock():
-    await refresh_stock()
+    try:
+        await refresh_stock()
+    except Exception as e:
+        pass
 
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2), description="确认报工")
@@ -229,7 +232,6 @@ async def task_push_seasonpr_to_srm():
 # ⬇️APS事件
 #################################################################################
 from .remind import ops_reminder, bus_reminder
-
 
 
 @event_batch_handler(reminder=bus_reminder)
@@ -319,3 +321,17 @@ async def batch_handle_pl_status_a2e(event_data_list: List[Dict], _erp: EventRes
     cache = await _aps.establish_production_cache(supplynos=supply_nos)
     tasks = [handle_pl_status_a2e(event_data=item, _aps=_aps) for item in event_data_list]
     await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def batch_handle_new_batchlog(event_data_list: List[Dict]):
+
+    batchlog = event_data_list[0]
+    pidno = batchlog['pidno']
+    strategy = batchlog['strategy']
+    await ApsPayloadSponsor.add_batchlog(pidno=pidno, strategy=strategy, target='RECE')
+    try:
+        if strategy == '库存':
+            await refresh_stock()
+        await ApsPayloadSponsor.add_batchlog(pidno=pidno, strategy=strategy, target='SUCC')
+    except Exception as e:
+        await ApsPayloadSponsor.add_batchlog(pidno=pidno, strategy=strategy, target='FAIL', memo=str(e))

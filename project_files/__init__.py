@@ -17,11 +17,11 @@ load_dotenv(env_file)
 # 导入模块
 from core.settings import MYAPS_MAIN_DB, THIS_BASE_URL, MYAPS_DB_SET, MYAPS_DBSET_LIST, PROJECT_DIR
 from globalobjects.globalconst import OrderStatusEnum
-from apps.io_api.utils.common import dict_to_lower_keys
 from globalobjects import logger as log_config
+from apps.io_api.utils.common import dict_to_lower_keys
 from apps.data_opt.utils.scheduler import cron_task
-from apps.data_opt.components import ApsPayloadSponsor
 from apps.data_opt.utils.common import get_optimized_session
+from apps.data_opt.components import ApsPayloadSponsor
 from apps.common.utils.redis_pool_manager import get_redis_pool_manager
 
 
@@ -66,6 +66,7 @@ class DbEventType(Enum):
     PL_TYPETO_MO = "pl_to_mo"  # PL类型变为 MO
     PR_STATUS_A2E = "pr_status_a2e"  # PR状态变为 A2E
     PR_DELETED = "pr_deleted"  # PR 删除
+    NEW_BATCHLOG = "new_batchlog"  # 新的 一键通排 记录
 
 
 # 模块级变量，用于跟踪事件是否已经注册
@@ -160,6 +161,7 @@ if not _events_registered:
     aps_pr_status_a2e_event = ApsEvent(event_type=DbEventType.PR_STATUS_A2E, description="PR 单据 下达")
     aps_pl_typeto_mo_event = ApsEvent(event_type=DbEventType.PL_TYPETO_MO, description="PL 变更为 MO")
     aps_pr_deleted_event = ApsEvent(event_type=DbEventType.PR_DELETED, description="PR 单据 删除")
+    aps_new_batchlog_event = ApsEvent(event_type=DbEventType.NEW_BATCHLOG, description="新的 一键通排 记录", batch_size=1, quiet_window=1)
 
     _events_registered = True
     logger.success("数据库事件注册", "", "所有事件已成功注册")
@@ -197,6 +199,17 @@ def handle_update_supply(database: str, table: str, data: dict, data_diff: dict)
     except Exception as e:
         logger.fail("处理t_supply更新事件", "", str(e))
 
+
+@binlog_listener.on_insert_for_table("t_batchlog", database=MYAPS_MAIN_DB)
+def handle_insert_batchlog(database: str, table: str, data: dict):
+    """处理t_batchlog表的插入事件"""
+    try:
+        new_data = dict_to_lower_keys(data['new'])
+        task = new_data['task']
+        if task == 'API':
+            aps_new_batchlog_event.add_event(new_data)
+    except Exception as e:
+        logger.fail("处理t_batchlog插入事件", "", str(e))
 
 # @binlog_listener.on_insert_for_table("t_supply", database=MYAPS_MAIN_DB)
 # def handle_insert_supply(database: str, table: str, data: dict):

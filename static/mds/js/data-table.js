@@ -805,22 +805,59 @@ class DataTable {
         
         try {
             const errors = JSON.parse(errorJson);
-            tooltip.innerHTML = errors.map(err => {
-                // 支持多字段显示
-                let fieldHtml = '';
-                if (err.error_fields && Array.isArray(err.error_fields)) {
-                    fieldHtml = `<div class="error-tooltip-field">字段: ${err.error_fields.join(', ')}</div>`;
-                } else if (err.error_field) {
-                    fieldHtml = `<div class="error-tooltip-field">字段: ${err.error_field}</div>`;
+            
+            // 按错误类型分组
+            const groupedErrors = {};
+            errors.forEach(err => {
+                const type = err.error_type || 'unknown';
+                if (!groupedErrors[type]) {
+                    groupedErrors[type] = [];
                 }
-                return `
-                    <div class="error-tooltip-item">
-                        <div class="error-tooltip-type">${err.error_type || 'unknown'}</div>
-                        ${fieldHtml}
-                        <div class="error-tooltip-msg">${escapeHtml(err.error_message || '')}</div>
+                groupedErrors[type].push(err);
+            });
+            
+            // 生成分组后的HTML - 错误类型横向排列
+            let html = '<div class="error-groups-container">';
+            
+            Object.keys(groupedErrors).forEach((type, index) => {
+                const typeErrors = groupedErrors[type];
+                const count = typeErrors.length;
+                
+                // 错误类型标题（带数量）
+                html += `
+                    <div class="error-group">
+                        <div class="error-group-header">
+                            <span class="error-group-type">${type}</span>
+                            <span class="error-group-badge">${count}处</span>
+                        </div>
+                        <div class="error-group-items">
+                `;
+                
+                // 该类型下的具体错误（纵向排列）
+                typeErrors.forEach(err => {
+                    let fieldHtml = '';
+                    if (err.error_fields && Array.isArray(err.error_fields)) {
+                        fieldHtml = `<span class="error-field-tag">${err.error_fields.join(', ')}</span>`;
+                    } else if (err.error_field) {
+                        fieldHtml = `<span class="error-field-tag">${err.error_field}</span>`;
+                    }
+                    
+                    html += `
+                        <div class="error-group-item">
+                            ${fieldHtml}
+                            <span class="error-msg-text">${escapeHtml(err.error_message || '')}</span>
+                        </div>
+                    `;
+                });
+                
+                html += `
+                        </div>
                     </div>
                 `;
-            }).join('<hr class="error-tooltip-divider">');
+            });
+            
+            html += '</div>';
+            tooltip.innerHTML = html;
         } catch (ex) {
             tooltip.innerHTML = `<pre class="error-tooltip-json">${escapeHtml(errorJson)}</pre>`;
         }
@@ -828,11 +865,64 @@ class DataTable {
         document.body.appendChild(tooltip);
         e.target._tooltip = tooltip;
         
+        // 智能定位逻辑
         const rect = e.target.getBoundingClientRect();
-        tooltip.style.left = Math.min(rect.left, window.innerWidth - 410) + 'px';
-        tooltip.style.top = rect.bottom + 5 + 'px';
+        const tooltipRect = tooltip.getBoundingClientRect();
+        const tooltipWidth = 520; // 加宽以容纳横向排列的错误类型
+        const tooltipHeight = tooltipRect.height || 200;
+        const gap = 5; // 与触发元素的间距
+        
+        // 计算水平位置
+        let left = rect.left;
+        // 如果右侧空间不足，向左展开
+        if (left + tooltipWidth > window.innerWidth - 10) {
+            left = Math.max(10, window.innerWidth - tooltipWidth - 10);
+        }
+        
+        // 计算垂直位置
+        let top;
+        const spaceBelow = window.innerHeight - rect.bottom - gap;
+        const spaceAbove = rect.top - gap;
+        
+        // 判断应该向上还是向下展开
+        if (spaceBelow >= tooltipHeight || spaceBelow >= spaceAbove) {
+            // 向下展开：提示框上缘对齐到触发元素下缘
+            top = rect.bottom + gap;
+        } else {
+            // 向上展开：提示框下缘对齐到触发元素上缘
+            top = rect.top - tooltipHeight - 2; // 留2px间隙
+        }
+        
+        // 最终边界检查
+        top = Math.max(10, Math.min(top, window.innerHeight - tooltipHeight - 10));
+        
+        tooltip.style.left = left + 'px';
+        tooltip.style.top = top + 'px';
         tooltip.style.display = 'block';
     }
+    
+    /**
+     * 获取错误类型的中文标签
+     * @param {string} type - 错误类型
+     * @returns {string} 中文标签
+     */
+        getErrorTypeLabel(type) {
+            const labels = {
+                'bom_structure_error': 'BOM结构错误',
+                'bom_structure_warning': 'BOM结构警告',
+                'unit_inconsistency': '单位不一致',
+                'fk_not_found': '外键引用缺失',
+                'required_field': '必填字段缺失',
+                'invalid_enum': '枚举值非法',
+                'invalid_type': '类型错误',
+                'invalid_range': '数值范围错误',
+                'invalid_length': '字符串长度超限',
+                'duplicate_key': '主键重复',
+                'business_rule': '业务规则违反',
+                'process_error': '处理异常'
+            };
+            return labels[type] || type;
+        }
     
     /**
      * 隐藏状态错误提示框

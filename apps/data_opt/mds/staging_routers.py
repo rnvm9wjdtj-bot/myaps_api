@@ -53,7 +53,7 @@ def create_staging_endpoint(table_key: str, config: Dict):
     ):
         """接收外部系统的{config['display_name']}数据，支持去重"""
         try:
-            from apps.data_opt.utils.duplicate_checker import apply_dedup_strategy, DedupStrategy
+            from .utils.duplicate_checker import apply_dedup_strategy, DedupStrategy
             
             # 应用去重策略
             strategy = DedupStrategy(dedup_strategy)
@@ -955,8 +955,8 @@ async def upload_excel(
 ):
     """上传Excel文件并导入缓冲表，支持去重"""
     try:
-        from apps.data_opt.utils.excel_parser import get_parser_for_table
-        from apps.data_opt.utils.duplicate_checker import apply_dedup_strategy, DedupStrategy
+        from .utils.excel_parser import get_parser_for_table
+        from .utils.duplicate_checker import apply_dedup_strategy, DedupStrategy
         
         staging_model = STAGING_MODEL_MAPPING.get(table_name)
         if not staging_model:

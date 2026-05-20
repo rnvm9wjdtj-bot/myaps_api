@@ -3,6 +3,21 @@ from tortoise.models import Model as TortoiseBaseModel
 from tortoise import fields
 
 
+class ProtoBatchLog(TortoiseBaseModel):
+    id = fields.IntField(source_field='ID', pk=True)
+    systime = fields.DatetimeField(source_field='SysTime', null=True)  # Field name made lowercase.
+    pidno = fields.CharField(source_field='PIDNO', max_length=32, null=True, description="ProfileNo")  # Field name made lowercase.
+    task = fields.CharField(source_field='Task', max_length=1000, null=True, description="任务")  # Field name made lowercase.
+    strategy = fields.CharField(source_field='Strategy', max_length=32, null=True, description="策略")  # Field name made lowercase.
+    target = fields.CharField(source_field='Target', max_length=1000, null=True, description="对象")  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+
+    class Meta:
+        abstract = True
+        table = 't_batchlog'
+
+
+
 class ProtoCalendar(TortoiseBaseModel):
     shiftdate = fields.DateField(source_field='ShiftDate', unique=True)  # Field name made lowercase.
     shiftno = fields.CharField(source_field='ShiftNo', max_length=4)  # Field name made lowercase.
@@ -12,7 +27,7 @@ class ProtoCalendar(TortoiseBaseModel):
     class Meta:
         abstract = True
         table = 't_calendar'
-        # abstract = True  # 设置为抽象模型，不直接关联特定数据库
+
 
 
 class ProtoCapReport(TortoiseBaseModel):
