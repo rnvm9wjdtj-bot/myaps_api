@@ -469,7 +469,7 @@ async def get_live_logs_status():
     """
     获取日志流服务状态（调试用）
     """
-    from apps.common.monitor.log_stream_service import _log_stream_manager
+    from globalobjects.logger.handlers import _log_stream_manager
     return {
         "is_running": log_stream_service._is_running,
         "queue_size": len(log_stream_service._log_queue),

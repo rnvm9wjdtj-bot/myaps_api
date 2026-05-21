@@ -22,7 +22,9 @@ from core.database import check_db_connections, warmup_connections, start_pool_m
 @asynccontextmanager
 async def lifespan(app):
     """应用生命周期管理器"""
-    log_config.initialize_logging_unified()
+    from globalobjects.logger.lifespan import initialize_logging
+    await initialize_logging()
+    log_config.info("✅ 统一日志系统初始化完成")
     
     main_loop = asyncio.get_running_loop()
     scheduler_manager.set_main_loop(main_loop)
@@ -55,6 +57,9 @@ async def lifespan(app):
         log_config.info(f"✅ Tortoise ORM 初始化完成，耗时: {result['elapsed']:.2f}秒")
     else:
         log_config.info("✅ Tortoise ORM 已初始化")
+    
+    log_config.set_db_initialized(True)
+    log_config.info("✅ 日志数据库写入已启用")
     
     log_config.info("开始预热数据库连接...")
     try:
@@ -118,6 +123,28 @@ async def lifespan(app):
     log_config.info("启动连接池监控任务...")
     pool_monitor_task = asyncio.create_task(start_pool_monitoring())
     log_config.info("连接池监控任务已启动")
+    
+    # 启动日志数据库批次刷新任务
+    async def schedule_log_db_flush():
+        """定期刷新日志数据库批次"""
+        from globalobjects.logger.core import SmartLogger
+        logger_instance = SmartLogger._instance
+        while True:
+            try:
+                await asyncio.sleep(5)
+                if logger_instance and logger_instance._database_handler:
+                    handler = logger_instance._database_handler
+                    batch_size = len(handler._batch)
+                    if batch_size > 0:
+                        await handler.flush()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                pass
+    
+    log_config.info("启动日志数据库批次刷新任务...")
+    log_db_flush_task = asyncio.create_task(schedule_log_db_flush())
+    log_config.info("日志数据库批次刷新任务已启动")
 
     # 启动数据库健康检查器（独立后台任务，不依赖前端访问）
     log_config.info("启动数据库健康检查器...")
@@ -464,6 +491,15 @@ async def lifespan(app):
         except asyncio.CancelledError:
             pass
         log_config.info("==================数据库连接检查任务已取消==================")
+    
+    if 'log_db_flush_task' in locals():
+        log_config.info("正在取消日志数据库批次刷新任务...")
+        log_db_flush_task.cancel()
+        try:
+            await log_db_flush_task
+        except asyncio.CancelledError:
+            pass
+        log_config.info("==================日志数据库批次刷新任务已取消==================")
 
     if 'pool_monitor_task' in locals():
         log_config.info("正在取消连接池监控任务...")

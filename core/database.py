@@ -654,9 +654,6 @@ def register_database(app):
     log_config.info(f"连接配置: {connection_names}")
     log_config.info(f"应用配置: {list(TORTOISE_ORM_CONFIG['apps'].keys())}")
     
-    from globalobjects.logger import set_db_initialized_unified
-    set_db_initialized_unified(True)
-    
     from apps.common.monitor.service import monitor_service
     log_config.info("✅ 系统监控服务已集成")
 

@@ -13,6 +13,55 @@ MyAPS API 是一个基于FastAPI的企业级数据操作平台，支持数据清
 - **数据验证**: Pydantic (>=2.0.0)
 - **前端**: 原生HTML/JS + Bootstrap CSS
 
+## 统一日志系统
+
+项目使用统一的日志系统（`globalobjects/logger/`），替代原有的logger.py和logger_v2.py。
+
+### 特性
+- 异步写入，不阻塞业务线程
+- 多目标输出（控制台、文件、数据库、WebSocket）
+- 敏感信息自动脱敏
+- 日期前缀文件轮转
+- API完全向后兼容
+
+### 使用方法
+```python
+from globalobjects import logger
+
+# 基本日志
+logger.debug("调试信息")
+logger.info("普通信息")
+logger.warning("警告信息")
+logger.error("错误信息")
+logger.exception("异常信息")  # 自动捕获异常堆栈
+
+# 业务便捷方法
+logger.success("推送数据", "单号001", "共5条")
+logger.fail("查询失败", "表A", "连接超时")
+logger.start("同步任务", "账套A01")
+logger.stop("同步任务", "账套A01")
+logger.query("用户表", count=100)
+logger.insert("日志表", count=50)
+
+# 配置
+logger.set_level("DEBUG")
+logger.set_db_initialized(True)
+```
+
+### 环境变量配置
+```bash
+LOG_LEVEL=INFO              # 日志级别
+LOG_DIR=logs               # 日志目录
+TO_CONSOLE=true            # 输出到控制台
+TO_FILE=true               # 输出到文件
+TO_DATABASE=true           # 写入数据库
+LOG_STACK_TRACE=false      # 是否启用调用栈追踪
+```
+
+### 旧版本备份
+- `logger_v1_backup.py` - 原logger.py备份
+- `logger_v2_backup.py` - 原logger_v2.py备份
+
 ## 构建和运行命令
 
 ### 开发环境运行

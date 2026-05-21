@@ -15,6 +15,12 @@ def _get_logger():
     return log_config.get_logger(__name__)
 
 
+def _get_log_stream_manager():
+    """获取统一的日志流管理器（来自logger系统）"""
+    from globalobjects.logger.handlers import _log_stream_manager
+    return _log_stream_manager
+
+
 class LogStreamManager:
     """全局日志流管理器 - 单例模式，确保所有模块使用同一个实例"""
     _instance = None
@@ -95,43 +101,36 @@ class LogStreamService:
         """添加自定义日志处理器（不影响现有处理器）"""
         if self._handler is None:
             self._handler = _LogStreamHandler(self)
-            # 设置 handler 的级别为 DEBUG，确保能捕获所有级别
             self._handler.setLevel(logging.DEBUG)
-
-            # 注意：不添加到 root logger，避免影响现有日志系统
-            # 日志收集依赖 SmartLogger 的 _send_to_log_stream 方法
-
-            # 使用全局日志流管理器替代模块级变量
-            global _log_stream_manager
-            _log_stream_manager.add_handler(self._handler)
-
-            # 使用 print 避免递归调用 logging
-            # print("[日志流] 日志处理器已注册", flush=True)
+            
+            manager = _get_log_stream_manager()
+            manager.add_handler(self._handler)
 
     def _remove_log_handler(self):
         """移除日志处理器"""
         if self._handler:
-            # 使用全局日志流管理器
-            global _log_stream_manager
-            _log_stream_manager.remove_handler(self._handler)
-
+            manager = _get_log_stream_manager()
+            manager.remove_handler(self._handler)
+            
             self._registered_loggers.clear()
             self._handler = None
-            # print("[日志流] 日志处理器已移除", flush=True)
 
     def enqueue_log(self, record: logging.LogRecord):
         """将日志加入队列"""
-        log_data = {
-            "timestamp": record.created,
-            "level": record.levelname,
-            "module": record.module,
-            "function": record.funcName,
-            "line": record.lineno,
-            "message": record.getMessage(),
-            "logger_name": record.name
-        }
-        self._log_queue.append(log_data)
-        self._history_logs.append(log_data)  # 同时保存到历史日志
+        try:
+            log_data = {
+                "timestamp": record.created,
+                "level": record.levelname,
+                "module": record.module,
+                "function": record.funcName,
+                "line": record.lineno,
+                "message": record.getMessage(),
+                "logger_name": record.name
+            }
+            self._log_queue.append(log_data)
+            self._history_logs.append(log_data)
+        except Exception:
+            pass
 
     def enqueue_log_dict(self, log_data: dict):
         """直接将日志字典加入队列"""
@@ -191,7 +190,10 @@ class _LogStreamHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord):
         """处理日志记录 - 只是收集，不输出"""
-        self._service.enqueue_log(record)
+        try:
+            self._service.enqueue_log(record)
+        except Exception:
+            pass
 
 
 # 创建全局实例
