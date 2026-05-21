@@ -256,22 +256,25 @@ async def validate_staging(
 async def validate_all_staging(
     request: Request,
     batch_size: int = Query(None, description="每批处理数量"),
-    db_name: str = Query(THIS_DB_NAME, description="账套")
+    db_name: str = Query(THIS_DB_NAME, description="账套"),
+    table_name: Optional[str] = Query(None, description="指定模块表名，为空则处理全部")
 ):
-    """按依赖顺序校验所有缓冲表数据"""
+    """按依赖顺序校验所有缓冲表数据，支持指定单个模块"""
     try:
         if batch_size is None:
             batch_size = SYSTEM_RUNTIME_CONFIG["validateBatchSize"]
         processor = StagingProcessor(db_name)
         all_stats = {}
         
-        for table_name in TABLE_PROCESS_ORDER:
-            stats = await processor.process_staging(table_name, batch_size)
-            all_stats[table_name] = stats
+        tables_to_process = [table_name] if table_name else TABLE_PROCESS_ORDER
+        
+        for tbl in tables_to_process:
+            stats = await processor.process_staging(tbl, batch_size)
+            all_stats[tbl] = stats
         
         return standard_response(
             success=1,
-            message="所有缓冲表校验完成",
+            message="校验完成",
             data=all_stats
         )
     except Exception as e:
@@ -441,22 +444,25 @@ async def sync_all_to_production(
     request: Request,
     batch_size: int = Query(None, description="每批同步数量"),
     max_retries: int = Query(3, description="最大重试次数"),
-    db_name: str = Query(THIS_DB_NAME, description="账套")
+    db_name: str = Query(THIS_DB_NAME, description="账套"),
+    table_name: Optional[str] = Query(None, description="指定模块表名，为空则处理全部")
 ):
-    """按依赖顺序同步所有缓冲表数据到正式表"""
+    """按依赖顺序同步所有缓冲表数据到正式表，支持指定单个模块"""
     try:
         if batch_size is None:
             batch_size = SYSTEM_RUNTIME_CONFIG["syncBatchSize"]
         processor = StagingProcessor(db_name)
         all_stats = {}
         
-        for table_name in TABLE_PROCESS_ORDER:
-            stats = await processor.sync_to_production(table_name, batch_size, max_retries)
-            all_stats[table_name] = stats
+        tables_to_process = [table_name] if table_name else TABLE_PROCESS_ORDER
+        
+        for tbl in tables_to_process:
+            stats = await processor.sync_to_production(tbl, batch_size, max_retries)
+            all_stats[tbl] = stats
         
         return standard_response(
             success=1,
-            message="所有缓冲表同步完成",
+            message="同步完成",
             data=all_stats
         )
     except Exception as e:
@@ -1432,4 +1438,110 @@ async def batch_delete_staging(
         )
     except Exception as e:
         logger.error(f"批量删除失败: {str(e)}")
+        return standard_response(success=0, message=str(e))
+
+
+@rt.get("/index-config", summary="获取首页模块配置")
+async def get_index_config(request: Request):
+    """
+    获取首页卡片布局所需的模块配置
+    复用 TABLE_DISPLAY_CONFIG 配置，避免硬编码
+    """
+    try:
+        modules_config = []
+        for table_key, config in TABLE_DISPLAY_CONFIG.items():
+            modules_config.append({
+                "table_key": table_key,
+                "table_name": f"{table_key}_staging",
+                "title": config.get("route", table_key).replace("-", " ").title(),
+                "route": config.get("route", ""),
+                "icon": config.get("icon", "bi-folder"),
+                "description": config.get("description", ""),
+                "gradient": list(config.get("gradient", ("#6c757d", "#6c757d"))),
+            })
+        
+        return standard_response(
+            success=1,
+            message="查询成功",
+            data=modules_config
+        )
+        
+    except Exception as e:
+        logger.error(f"获取模块配置失败: {str(e)}")
+        return standard_response(success=0, message=str(e))
+
+
+@rt.get("/index-stats", summary="获取首页统计数据")
+async def get_index_stats(request: Request):
+    """
+    获取首页卡片布局所需的统计数据
+    使用FastAPI异步特性，并发查询多个表
+    """
+    try:
+        import asyncio
+        
+        conn = await get_db_connection_safely(THIS_DB_NAME)
+        
+        async def query_table_stats(table_key: str, table_name: str):
+            """异步查询单表统计"""
+            display_config = TABLE_DISPLAY_CONFIG.get(table_key, {})
+            
+            query = f'''
+                SELECT 
+                    COUNT(*) as total,
+                    COUNT(*) FILTER (WHERE "_status" = $1) as pending,
+                    COUNT(*) FILTER (WHERE "_status" = $2) as compliance_pass,
+                    COUNT(*) FILTER (WHERE "_status" = $3) as compliance_error,
+                    COUNT(*) FILTER (WHERE "_status" = $4) as relation_pass,
+                    COUNT(*) FILTER (WHERE "_status" = $5) as relation_error,
+                    COUNT(*) FILTER (WHERE "_status" = $6) as sync_error,
+                    COUNT(*) FILTER (WHERE "_status" = $7) as synced,
+                    MAX("_createtime") as last_created,
+                    MAX("_synced_time") as last_synced
+                FROM "{table_name}"
+            '''
+            result = await conn.execute_query(query, (
+                StagingStatus.PENDING.value,
+                StagingStatus.COMPLIANCE_PASS.value,
+                StagingStatus.COMPLIANCE_ERROR.value,
+                StagingStatus.RELATION_PASS.value,
+                StagingStatus.RELATION_ERROR.value,
+                StagingStatus.SYNC_ERROR.value,
+                StagingStatus.SYNCED.value,
+            ))
+            row = result[1][0] if result[1] else {}
+            
+            return {
+                "table": table_name,
+                "title": display_config.get("route", table_key).replace("-", " ").title(),
+                "route": display_config.get("route", ""),
+                "icon": display_config.get("icon", "bi-folder"),
+                "description": display_config.get("description", ""),
+                "gradient": list(display_config.get("gradient", ("#6c757d", "#6c757d"))),
+                "total": row.get("total", 0),
+                "pending": row.get("pending", 0),
+                "compliance_pass": row.get("compliance_pass", 0),
+                "compliance_error": row.get("compliance_error", 0),
+                "relation_pass": row.get("relation_pass", 0),
+                "relation_error": row.get("relation_error", 0),
+                "sync_error": row.get("sync_error", 0),
+                "synced": row.get("synced", 0),
+                "last_created": row.get("last_created").isoformat() if row.get("last_created") else None,
+                "last_synced": row.get("last_synced").isoformat() if row.get("last_synced") else None,
+            }
+        
+        tasks = [
+            query_table_stats(table_key, f"{table_key}_staging")
+            for table_key in TABLE_DISPLAY_CONFIG.keys()
+        ]
+        stats_list = await asyncio.gather(*tasks)
+        
+        return standard_response(
+            success=1,
+            message="查询成功",
+            data=stats_list
+        )
+        
+    except Exception as e:
+        logger.error(f"获取首页统计失败: {str(e)}")
         return standard_response(success=0, message=str(e))

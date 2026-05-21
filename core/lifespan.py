@@ -29,7 +29,25 @@ async def lifespan(app):
     log_config.info(f"已将主应用事件循环传递给调度器: {main_loop}")
     
     from core.database import validate_database_config
-    validate_database_config()
+    from tortoise import Tortoise
+    
+    try:
+        validate_database_config()
+    except Exception as e:
+        log_config.error(f"❌ 数据库配置验证失败: {e}")
+        raise
+    
+    if not Tortoise._inited:
+        log_config.warning("⚠️ Tortoise ORM 尚未初始化，等待 register_tortoise 完成...")
+        for _ in range(10):
+            await asyncio.sleep(0.5)
+            if Tortoise._inited:
+                break
+        if not Tortoise._inited:
+            log_config.error("❌ Tortoise ORM 初始化超时")
+            raise RuntimeError("Tortoise ORM 初始化超时")
+    
+    log_config.info("✅ Tortoise ORM 初始化确认完成")
     
     log_config.info("开始预热数据库连接...")
     try:

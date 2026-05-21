@@ -5,80 +5,315 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>数据清洗管理系统</title>
     <link rel="icon" type="image/png" href="/static/swagger/favicon.png">
-    <link href="/static/mds/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/lib/bootstrap/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/static/mds/css/bootstrap-icons.css">
-    <script src="/static/mds/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/lib/bootstrap/bootstrap.bundle.min.js"></script>
     <style>
         body {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Courier New", monospace;
         }
-        .card {
-            border: none;
+        .card-nav {
+            background: white;
             border-radius: 16px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-        }
-        .card-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 16px 16px 0 0 !important;
-            padding: 2rem;
-        }
-        .table-link {
-            display: block;
-            padding: 1.5rem;
-            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
             transition: all 0.3s ease;
-            text-decoration: none;
-            color: #333;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem 1.5rem;
+            position: relative;
         }
-        .table-link:hover {
-            background-color: #f8f9fa;
-            transform: translateX(5px);
-            text-decoration: none;
+        .card-nav:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
         }
-        .table-icon {
-            width: 48px;
-            height: 48px;
-            border-radius: 12px;
+        .card-nav-icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.5rem;
+            font-size: 1.75rem;
             color: white;
+            margin-bottom: 1rem;
         }
-        .table-info {
+        .card-nav-body {
+            text-align: center;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .card-nav-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 0.5rem;
+        }
+        .card-nav-desc {
+            font-size: 0.875rem;
+            color: #718096;
+            line-height: 1.4;
+            margin-bottom: 1rem;
             flex: 1;
         }
-        .table-title {
-            font-weight: 600;
-            font-size: 1.1rem;
-            margin-bottom: 0.25rem;
-        }
-        .table-desc {
-            color: #666;
+        .card-nav-stats {
             font-size: 0.875rem;
+            color: #667eea;
+            font-weight: 500;
+        }
+        .card-nav-link {
+            text-decoration: none;
+            display: block;
+            height: 100%;
+        }
+        .card-nav-badge {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            width: 12px;
+            height: 12px;
+            background: #dc3545;
+            border-radius: 50%;
+            display: none;
+        }
+        .card-nav-badge.show {
+            display: block;
+            animation: badge-pulse 1.5s ease-in-out infinite;
+        }
+        @keyframes badge-pulse {
+            0%, 100% { 
+                opacity: 1;
+                transform: scale(1);
+            }
+            50% { 
+                opacity: 0.5;
+                transform: scale(1.2);
+            }
+        }
+        .stats-loading {
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .header-link {
+            color: rgba(255, 255, 255, 0.75);
+            text-decoration: none;
+            font-size: 0.875rem;
+            transition: color 0.2s;
+        }
+        .header-link:hover {
+            color: white;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="card" style="max-width: 800px; margin: 0 auto;">
-            <div class="card-header text-center text-white">
-                <h1 class="mb-2">数据清洗管理系统</h1>
-                <p class="mb-0 opacity-75">主数据管理与数据质量控制平台</p>
+    <div class="container py-5">
+        <div class="text-center text-white mb-5">
+            <h1 class="mb-2">数据清洗管理系统</h1>
+            <!-- <p class="mb-2 opacity-75">主数据管理与数据质量控制平台</p> -->
+            <div class="mt-2">
+                <a href="/mds/user-guide" class="header-link me-3" target="_blank">
+                    <i class="bi bi-book"></i> 操作指引
+                </a>
+                <a href="/docs" class="header-link">
+                    <i class="bi bi-code-slash"></i> API文档
+                </a>
             </div>
-            <div class="card-body p-0">
-                <div class="list-group list-group-flush">
-{nav_items}
+        </div>
+        
+        <div class="text-center mb-4">
+            <button class="btn btn-light btn-lg shadow-sm me-3" id="globalValidateBtn">
+                <i class="bi bi-shield-check"></i> 校验全部
+            </button>
+            <button class="btn btn-light btn-lg shadow-sm" id="globalSyncBtn">
+                <i class="bi bi-cloud-upload"></i> 推送全部
+            </button>
+        </div>
+        
+        <div class="row g-4" id="cardsContainer">
+{cards}
+        </div>
+        
+        <div class="text-center mt-5">
+            <!-- <small class="text-white opacity-50">数据清洗管理系统 v1.0</small> -->
+        </div>
+    </div>
+
+    <script>
+        var MODULES_CONFIG = {modules_config};
+
+        async function loadStats() {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(function() { controller.abort(); }, 5000);
+                
+                const response = await fetch('/api/mds/index-stats', {
+                    signal: controller.signal,
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                });
+                
+                clearTimeout(timeoutId);
+                
+                if (!response.ok) {
+                    throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+                }
+                
+                const result = await response.json();
+                
+                if (result.success === 1) {
+                    updateAllCards(result.data);
+                } else {
+                    throw new Error(result.message || '查询失败');
+                }
+                
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    console.error('请求超时');
+                } else {
+                    console.error('加载统计数据失败:', error);
+                }
+                showDefaultStats();
+            }
+        }
+
+        function updateAllCards(statsData) {
+            if (!Array.isArray(statsData)) {
+                console.error('统计数据格式错误: 期望数组');
+                return;
+            }
+            
+            statsData.forEach(function(item) {
+                if (!item.table || typeof item.pending !== 'number') {
+                    console.warn('跳过无效统计项:', item);
+                    return;
+                }
+                
+                const statsEl = document.querySelector('[data-table="' + item.table + '"]');
+                const badgeEl = document.querySelector('[data-badge-table="' + item.table + '"]');
+                
+                if (statsEl) {
+                    const pending = formatNumber(item.pending || 0);
+                    const error = (item.compliance_error || 0) + (item.relation_error || 0);
+                    statsEl.innerHTML = '待处理: ' + pending + '条' + (error > 0 ? ' | 异常: ' + error + '条' : '');
+                    
+                    if (badgeEl) {
+                        if (item.pending > 0 || error > 0) {
+                            badgeEl.classList.add('show');
+                        } else {
+                            badgeEl.classList.remove('show');
+                        }
+                    }
+                }
+            });
+        }
+
+        function formatNumber(num) {
+            if (num > 9999) return '9,999+';
+            return num.toLocaleString('zh-CN');
+        }
+
+        function showDefaultStats() {
+            document.querySelectorAll('.card-nav-stats').forEach(function(el) {
+                el.innerHTML = '<span class="text-muted">--</span>';
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            loadStats();
+        });
+    </script>
+
+    <div class="modal fade" id="globalOpsDialog" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="globalOpsDialogTitle">操作确认</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-            </div>
-            <div class="card-footer text-center py-3 bg-light">
-                <small class="text-muted">数据清洗管理系统 v1.0 | <a href="/docs" class="text-decoration-none">API文档</a></small>
+                <div class="modal-body">
+                    <div class="alert alert-info mb-3">
+                        <i class="bi bi-info-circle"></i> <span id="globalOpsDesc">操作将按依赖顺序处理以下模块</span>
+                    </div>
+                    <div class="mb-3" id="dependencyFlow"></div>
+                    <table class="table table-sm table-hover mb-3">
+                        <thead>
+                            <tr>
+                                <th style="width:40px">#</th>
+                                <th>模块</th>
+                                <th style="width:100px">待处理</th>
+                            </tr>
+                        </thead>
+                        <tbody id="moduleListBody"></tbody>
+                    </table>
+                    <div class="alert alert-warning mb-0">
+                        <i class="bi bi-exclamation-triangle"></i> 预估处理: <strong id="totalPending">0</strong> 条数据
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" id="confirmGlobalOps">确认执行</button>
+                </div>
             </div>
         </div>
     </div>
+
+    <div class="modal fade" id="globalOpsProgress" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-hourglass-split" id="progressIcon"></i>
+                        <span id="progressTitle">执行中...</span>
+                    </h5>
+                </div>
+                <div class="modal-body">
+                    <div class="progress mb-3" style="height: 25px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" id="overallProgress" style="width: 0%">0%</div>
+                    </div>
+                    <div class="row g-2 mb-3" id="moduleStatusCards"></div>
+                    <div class="bg-dark text-light p-2 rounded mb-3" style="max-height: 150px; overflow-y: auto; font-family: monospace; font-size: 0.85rem;">
+                        <div id="execLog"></div>
+                    </div>
+                    <div id="summaryReport" style="display: none;">
+                        <div class="alert alert-success mb-3">
+                            <i class="bi bi-check-circle"></i> 执行完成
+                        </div>
+                        <div class="row text-center mb-3">
+                            <div class="col">
+                                <h4 class="text-success" id="totalSuccess">0</h4>
+                                <small class="text-muted">成功</small>
+                            </div>
+                            <div class="col">
+                                <h4 class="text-danger" id="totalFailed">0</h4>
+                                <small class="text-muted">失败</small>
+                            </div>
+                            <div class="col">
+                                <h4 class="text-primary" id="totalTime">0s</h4>
+                                <small class="text-muted">耗时</small>
+                            </div>
+                        </div>
+                        <table class="table table-sm">
+                            <thead><tr><th>模块</th><th>成功</th><th>失败</th><th>状态</th></tr></thead>
+                            <tbody id="detailResultBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-danger" id="cancelExecutionBtn">取消执行</button>
+                    <button type="button" class="btn btn-primary d-none" id="viewDetailBtn">查看详情</button>
+                    <button type="button" class="btn btn-secondary d-none" id="closeProgressBtn" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/mds/js/global-ops-controller.js"></script>
 </body>
 </html>

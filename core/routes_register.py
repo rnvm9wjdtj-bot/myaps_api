@@ -29,41 +29,57 @@ MDS_PAGE_CONFIG = get_mds_page_config()
 
 
 def render_mds_index():
-    """动态渲染 MDS 首页导航"""
+    """动态渲染 MDS 首页卡片布局"""
     template_path = os.path.join(BASE_DIR, "static", "mds", "index.html")
     with open(template_path, "r", encoding="utf-8") as f:
         template = f.read()
     
-    # 生成导航列表 HTML
-    nav_items = []
+    # 生成模块配置JSON（注入到前端）
+    modules_config = []
     for table_key, display_config in TABLE_DISPLAY_CONFIG.items():
         route = display_config["route"]
         gradient = display_config["gradient"]
         icon = display_config.get("icon", "bi-folder")
-        # 从 STAGING_TABLE_CONFIG 获取 display_name
         display_name = STAGING_TABLE_CONFIG.get(table_key, {}).get("display_name", table_key)
-        nav_item = f'''
-                    <a href="/mds/{route}" class="table-link border-bottom">
-                        <div class="d-flex align-items-center">
-                            <div class="table-icon" style="background: linear-gradient(135deg, {gradient[0]}, {gradient[1]});">
-                                <i class="bi {icon}"></i>
+        
+        modules_config.append({
+            "table_key": table_key,
+            "table_name": f"{table_key}_staging",
+            "title": display_name,
+            "route": route,
+            "icon": icon,
+            "description": display_config["description"],
+            "gradient": list(gradient),
+        })
+    
+    # 生成卡片HTML
+    cards_html = []
+    for module in modules_config:
+        card = f'''
+                <div class="col-12 col-sm-6 col-md-4 col-lg-3">
+                    <a href="/mds/{module["route"]}" class="card-nav-link" target="_blank">
+                        <div class="card-nav">
+                            <div class="card-nav-badge" data-badge-table="{module["table_name"]}"></div>
+                            <div class="card-nav-icon" style="background: linear-gradient(135deg, {module["gradient"][0]}, {module["gradient"][1]});">
+                                <i class="bi {module["icon"]}"></i>
                             </div>
-                            <div class="table-info ms-3">
-                                <div class="table-title">{display_name}</div>
-                                <div class="table-desc">{display_config["description"]}</div>
+                            <div class="card-nav-body">
+                                <h5 class="card-nav-title">{module["title"]}</h5>
+                                <p class="card-nav-desc">{module["description"]}</p>
+                                <div class="card-nav-stats" data-table="{module["table_name"]}">
+                                    <span class="stats-loading text-muted">加载中...</span>
+                                </div>
                             </div>
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="#ccc" viewBox="0 0 16 16">
-                                <path fill-rule="evenodd" d="M4 8a.5.5 0 0 1 .5-.5h5.793L8.146 5.354a.5.5 0 1 1 .708-.708l3 3a.5.5 0 0 1 0 .708l-3 3a.5.5 0 0 1-.708-.708L10.293 8.5H4.5A.5.5 0 0 1 4 8"/>
-                            </svg>
                         </div>
-                    </a>'''
-        nav_items.append(nav_item)
+                    </a>
+                </div>'''
+        cards_html.append(card)
     
-    # 最后一个移除 border-bottom
-    nav_items[-1] = nav_items[-1].replace('class="table-link border-bottom"', 'class="table-link"')
+    cards_html_str = '\n'.join(cards_html)
+    modules_config_json = json.dumps(modules_config, ensure_ascii=False)
     
-    nav_html = '\n'.join(nav_items)
-    html = template.replace('{nav_items}', nav_html)
+    html = template.replace('{cards}', cards_html_str)
+    html = html.replace('{modules_config}', modules_config_json)
     return html
 
 
@@ -171,3 +187,9 @@ def register_routes(app):
     @app.get("/mds/mat-wc-mold", response_class=HTMLResponse, include_in_schema=False)
     async def mds_mat_wc_mold():
         return render_mds_page("mat-wc-mold")
+    
+    @app.get("/mds/user-guide", response_class=HTMLResponse, include_in_schema=False)
+    async def mds_user_guide():
+        file_path = os.path.join(BASE_DIR, "static", "mds", "user-guide.html")
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()

@@ -141,68 +141,77 @@ def validate_database_config() -> Dict[str, Any]:
         ValueError: 配置验证失败时抛出（仅在 THIS_DB_NAME 有值时）
     """
     import json
+    import traceback
     
-    issues = []
-    warnings = []
-    
-    if not THIS_DB_NAME:
-        log_config.info("ℹ️ 该租户未配置自有数据库(THIS_DB_NAME为空)，跳过 PostgreSQL 配置验证")
+    try:
+        issues = []
+        warnings = []
+        
+        if not THIS_DB_NAME:
+            log_config.info("ℹ️ 该租户未配置自有数据库(THIS_DB_NAME为空)，跳过 PostgreSQL 配置验证")
+            config_summary = {
+                "has_own_database": False,
+                "timezone": TIMEZONE_NAME,
+                "connections": list(connections.keys()),
+                "apps": list(TORTOISE_ORM_CONFIG["apps"].keys()),
+            }
+            log_config.info(f"配置摘要: {json.dumps(config_summary, indent=2, ensure_ascii=False)}")
+            return config_summary
+        
+        log_config.info(f"✓ 检测到自有数据库配置: THIS_DB_NAME={THIS_DB_NAME}")
+        
+        required_vars = {
+            "THIS_DB_HOST": THIS_DB_HOST,
+            "THIS_DB_PORT": THIS_DB_PORT,
+            "THIS_DB_USER": THIS_DB_USER,
+            "THIS_DB_PASSWORD": THIS_DB_PASSWORD,
+        }
+        
+        for var_name, var_value in required_vars.items():
+            if not var_value:
+                issues.append(f"{var_name} 环境变量未设置")
+        
+        if THIS_DB_PORT and not (1 <= THIS_DB_PORT <= 65535):
+            issues.append(f"THIS_DB_PORT={THIS_DB_PORT} 超出有效范围(1-65535)")
+        
+        if THIS_DB_NAME not in connections:
+            issues.append(f"THIS_DB_NAME='{THIS_DB_NAME}' 未在connections配置中找到")
+        
+        try:
+            __import__("apps.data_opt.mds.staging_models")
+        except ImportError as e:
+            warnings.append(f"模型路径导入警告: apps.data_opt.mds.staging_models - {e}")
+        
+        if issues:
+            error_msg = "自有数据库配置验证失败:\n" + "\n".join(f"  ❌ {issue}" for issue in issues)
+            log_config.error(error_msg)
+            raise ValueError(error_msg)
+        
+        if warnings:
+            for warning in warnings:
+                log_config.warning(warning)
+        
         config_summary = {
-            "has_own_database": False,
+            "has_own_database": True,
+            "db_name": THIS_DB_NAME,
+            "db_host": THIS_DB_HOST,
+            "db_port": THIS_DB_PORT,
             "timezone": TIMEZONE_NAME,
             "connections": list(connections.keys()),
             "apps": list(TORTOISE_ORM_CONFIG["apps"].keys()),
         }
+        
+        log_config.info("✅ 数据库配置验证通过")
         log_config.info(f"配置摘要: {json.dumps(config_summary, indent=2, ensure_ascii=False)}")
+        
         return config_summary
-    
-    log_config.info(f"✓ 检测到自有数据库配置: THIS_DB_NAME={THIS_DB_NAME}")
-    
-    required_vars = {
-        "THIS_DB_HOST": THIS_DB_HOST,
-        "THIS_DB_PORT": THIS_DB_PORT,
-        "THIS_DB_USER": THIS_DB_USER,
-        "THIS_DB_PASSWORD": THIS_DB_PASSWORD,
-    }
-    
-    for var_name, var_value in required_vars.items():
-        if not var_value:
-            issues.append(f"{var_name} 环境变量未设置")
-    
-    if THIS_DB_PORT and not (1 <= THIS_DB_PORT <= 65535):
-        issues.append(f"THIS_DB_PORT={THIS_DB_PORT} 超出有效范围(1-65535)")
-    
-    if THIS_DB_NAME not in connections:
-        issues.append(f"THIS_DB_NAME='{THIS_DB_NAME}' 未在connections配置中找到")
-    
-    try:
-        __import__("apps.data_opt.mds.staging_models")
-    except ImportError as e:
-        warnings.append(f"模型路径导入警告: apps.data_opt.mds.staging_models - {e}")
-    
-    if issues:
-        error_msg = "自有数据库配置验证失败:\n" + "\n".join(f"  ❌ {issue}" for issue in issues)
-        log_config.error(error_msg)
-        raise ValueError(error_msg)
-    
-    if warnings:
-        for warning in warnings:
-            log_config.warning(warning)
-    
-    config_summary = {
-        "has_own_database": True,
-        "db_name": THIS_DB_NAME,
-        "db_host": THIS_DB_HOST,
-        "db_port": THIS_DB_PORT,
-        "timezone": TIMEZONE_NAME,
-        "connections": list(connections.keys()),
-        "apps": list(TORTOISE_ORM_CONFIG["apps"].keys()),
-    }
-    
-    log_config.info("✅ 数据库配置验证通过")
-    log_config.info(f"配置摘要: {json.dumps(config_summary, indent=2, ensure_ascii=False)}")
-    
-    return config_summary
+        
+    except ValueError:
+        raise
+    except Exception as e:
+        log_config.error(f"❌ 数据库配置验证异常: {type(e).__name__}: {e}")
+        log_config.error(f"堆栈追踪:\n{traceback.format_exc()}")
+        raise
 
 
 class ConnectionLeakDetector:
