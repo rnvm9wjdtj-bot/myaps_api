@@ -68,6 +68,21 @@ from globalobjects.reminder import remind_manager, RemindType
 
 from apps.common.utils.thread_pool_manager import global_pool_manager
 
+# ========== HA Module Integration ==========
+try:
+    from apps.data_opt.utils.binlog_ha import (
+        prometheus_metrics,
+        backpressure_controller,
+        event_deduplicator,
+        failover_manager,
+        retry_policy,
+        ListenerRole,
+    )
+    HA_MODULES_AVAILABLE = True
+except ImportError as e:
+    log_config.get_logger(__name__).warning(f"⚠️ HA模块导入失败: {e}，使用基础功能")
+    HA_MODULES_AVAILABLE = False
+
 
 class DistributedLock:
     """基于 Redis 的分布式锁，确保只有一个 worker 能启动 binlog 监听器"""
@@ -630,6 +645,16 @@ class MySQLBinlogListener:
         with self.__class__._lock:
             self._initialized = True
         
+        # ========== HA Module Initialization ==========
+        if HA_MODULES_AVAILABLE:
+            self._role = ListenerRole.STANDALONE
+            self._failover_count = 0
+            self._event_count_since_check = 0
+            logger.info("✅ HA模块已集成：背压控制、事件去重、故障转移")
+        else:
+            self._role = None
+            self._failover_count = 0
+            self._event_count_since_check = 0
 
     def _validate_config(self):
         """验证MySQL配置"""
@@ -1008,8 +1033,8 @@ class MySQLBinlogListener:
         logger.info("✅ 提示提醒器已注册到全局 RemindManager")
 
     def get_status(self) -> Dict[str, Any]:
-        """获取监控状态信息"""
-        return {
+        """获取监控状态信息（HA增强版）"""
+        base_status = {
             "running": self.running,
             "healthy": self._health_checker.is_healthy() if hasattr(self, '_health_checker') else None,
             "event_loop_healthy": self._event_loop_health_checker.is_healthy() if hasattr(self, '_event_loop_health_checker') else None,
@@ -1020,6 +1045,27 @@ class MySQLBinlogListener:
             "backpressure_threshold": self._backpressure_threshold,
             "backpressure_percent": round(self.get_pending_events_count() / self._backpressure_threshold * 100, 2),
         }
+        
+        # ========== HA: 增强返回值 ==========
+        if HA_MODULES_AVAILABLE:
+            base_status["role"] = self._role.value if self._role else "standalone"
+            base_status["failover_count"] = failover_manager.get_failover_count()
+            
+            bp_metrics = backpressure_controller.get_queue_metrics()
+            base_status["backpressure"] = {
+                "state": backpressure_controller.get_state().value,
+                "queue_size": bp_metrics.current_size,
+                "throttle_count": bp_metrics.throttle_count,
+            }
+            
+            dedup_stats = event_deduplicator.get_stats()
+            base_status["dedup_stats"] = {
+                "total_checked": dedup_stats["total_checked"],
+                "total_duplicates": dedup_stats["total_duplicates"],
+                "duplicate_rate": dedup_stats["duplicate_rate"],
+            }
+        
+        return base_status
 
     def _increment_pending(self):
         """增加待处理事件计数"""
@@ -1111,12 +1157,21 @@ class MySQLBinlogListener:
                 time.sleep(1)
 
     def start_monitoring(self):
-        """开始监控Binlog"""
+        """开始监控Binlog（HA增强版）"""
         if not self.running:
-            # 首先尝试获取分布式锁
-            if not distributed_lock.acquire():
-                logger.info("⏳ 未获取到分布式锁，不启动 binlog 监听")
-                return
+            # ========== HA: 故障转移管理 ==========
+            if HA_MODULES_AVAILABLE:
+                is_master = failover_manager.acquire_master_role()
+                if not is_master:
+                    logger.info("⏳ 未获取到主节点角色，降级为备节点等待")
+                    self._role = failover_manager.get_role()
+                    return
+                self._role = ListenerRole.MASTER
+            else:
+                # 原有逻辑：分布式锁
+                if not distributed_lock.acquire():
+                    logger.info("⏳ 未获取到分布式锁，不启动 binlog 监听")
+                    return
                 
             self.running = True
             # 重新创建线程池
@@ -1136,6 +1191,12 @@ class MySQLBinlogListener:
             
             # 启动事件循环健康检查器
             self._event_loop_health_checker.start()
+            
+            # ========== HA: Prometheus指标注册 ==========
+            if HA_MODULES_AVAILABLE:
+                prometheus_metrics.set_listener_status(True)
+                prometheus_metrics.set_listener_role("master" if self._role == ListenerRole.MASTER else "slave")
+                logger.info("✅ Prometheus指标已注册")
             
             # 启动Binlog监控线程
             monitoring_thread = threading.Thread(target=self._monitor_binlog_with_retry, daemon=True, name='mysql-monitor-binlog')
@@ -1267,8 +1328,42 @@ class MySQLBinlogListener:
                 if not self.running:
                     break
                 
+                # ========== HA: 背压控制检测 ==========
+                self._event_count_since_check += 1
+                if HA_MODULES_AVAILABLE and self._event_count_since_check >= 10:
+                    self._event_count_since_check = 0
+                    bp_state = backpressure_controller.check_pressure(
+                        queue_size=self.get_pending_events_count()
+                    )
+                    if backpressure_controller.apply_throttling(bp_state):
+                        # 触发限流，暂停拉取
+                        pause_duration = backpressure_controller.pause_duration
+                        logger.warning(f"⏸️ 背压限流中，暂停 {pause_duration}秒...")
+                        time.sleep(pause_duration)
+                
+                # ========== HA: 事件去重检查 ==========
+                if HA_MODULES_AVAILABLE:
+                    event_id = event_deduplicator.generate_event_id_from_event(binlogevent)
+                    if event_deduplicator.is_duplicate(event_id):
+                        logger.debug(f"🔄 跳过重复事件: {event_id[:16]}...")
+                        prometheus_metrics.inc_events_dropped("duplicate")
+                        continue
+                
                 # 提交事件处理
                 self._run_async_event(binlogevent)
+                
+                # ========== HA: 标记事件已处理 ==========
+                if HA_MODULES_AVAILABLE:
+                    event_type = type(binlogevent).__name__.replace("RowsEvent", "").upper()
+                    event_deduplicator.mark_processed(
+                        event_id=event_id,
+                        event_type=event_type,
+                        table_name=getattr(binlogevent, 'table', 'unknown'),
+                        database_name=getattr(binlogevent, 'schema', 'unknown'),
+                        log_file=getattr(stream, 'log_file', ''),
+                        log_pos=getattr(stream, 'log_pos', 0)
+                    )
+                    prometheus_metrics.inc_events_processed(event_type)
                 
                 # 定期保存 binlog 位置
                 event_count += 1
@@ -1371,12 +1466,27 @@ class MySQLBinlogListener:
                     self._add_to_dead_letter_queue(event, str(e))
 
     def _process_with_counter(self, event):
-        """处理事件并维护待处理计数"""
+        """处理事件并维护待处理计数（HA增强版）"""
+        start_time = time.time()
         try:
             self.process_binlog_event(event)
+            
+            # ========== HA: 更新处理延迟指标 ==========
+            if HA_MODULES_AVAILABLE:
+                processing_delay = time.time() - start_time
+                prometheus_metrics.observe_processing_delay(processing_delay)
+                
+                # 主节点更新心跳
+                if self._role == ListenerRole.MASTER:
+                    failover_manager.update_heartbeat()
+                    
         finally:
             # 无论成功或失败，都减少待处理计数
             self._decrement_pending()
+            
+            # ========== HA: 更新队列大小指标 ==========
+            if HA_MODULES_AVAILABLE:
+                prometheus_metrics.set_queue_size(self.get_pending_events_count())
     
     def _run_handler(self, handler, *args, **kwargs):
         """运行处理器函数，支持同步和异步函数，带重试机制"""
@@ -1660,7 +1770,7 @@ class MySQLBinlogListener:
 
     def stop_monitoring(self, graceful_timeout=30):
         """
-        停止监控（优雅停止）
+        停止监控（优雅停止，HA增强版）
         
         Args:
             graceful_timeout: 优雅停止最大等待时间（秒）
@@ -1671,6 +1781,14 @@ class MySQLBinlogListener:
         
         logger.info("🛑 开始停止binlog监听...")
         self.running = False
+        
+        # ========== HA: 停止故障转移管理器 ==========
+        if HA_MODULES_AVAILABLE:
+            try:
+                failover_manager.stop()
+                logger.info("✅ 故障转移管理器已停止")
+            except Exception as e:
+                logger.warning(f"⚠️ 故障转移管理器停止失败: {e}")
         
         # 0. 释放分布式锁
         try:
@@ -1694,6 +1812,10 @@ class MySQLBinlogListener:
                 logger.info("✅ 事件循环健康检查器已停止")
             except Exception as e:
                 logger.warning(f"⚠️ 事件循环健康检查器停止失败: {e}")
+        
+        # ========== HA: 更新Prometheus指标 ==========
+        if HA_MODULES_AVAILABLE:
+            prometheus_metrics.set_listener_status(False)
         
         # 2. 等待待处理事件完成（优雅停止）
         pending = self.get_pending_events_count()
