@@ -81,7 +81,7 @@ def map_staging_response_to_direct(staging_response: dict) -> dict:
 async def dispatch_to_staging(
     table_key: str,
     data: List,
-    source_system: str = "unknown",
+    source_system: str = "API",
     dedup_strategy: DedupStrategyEnum = DedupStrategyEnum.OVERWRITE,
     update_mode: UpdateModeEnum = UpdateModeEnum.PARTIAL
 ) -> dict:

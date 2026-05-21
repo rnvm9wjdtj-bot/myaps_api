@@ -168,12 +168,12 @@ class DataTable {
         if (defaultValue !== undefined && defaultValue !== null) {
             titleParts.push(`默认: ${defaultValue}`);
         }
-        if (col.sortable) titleParts.push('点击排序');
-        if (col.readOnly) titleParts.push('只读');
-        if (isEnum) titleParts.push('枚举');
-        if (isForeignKey) titleParts.push('外键');
-        if (isPrimaryKey) titleParts.push(isCompositeKey ? '联合主键' : '主键');
         if (isRequired) titleParts.push('必填');
+        if (isPrimaryKey) titleParts.push(isCompositeKey ? '联合主键' : '主键');
+        if (isForeignKey) titleParts.push('外键');
+        if (isEnum) titleParts.push('枚举');
+        if (col.readOnly) titleParts.push('只读');
+        if (col.sortable) titleParts.push('点击排序');
         
         return `
             <th 

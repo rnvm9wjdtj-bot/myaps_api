@@ -26,7 +26,7 @@ async def get_db_connection_safely(db_name: Optional[str] = None, max_wait: floa
     try:
         if not Tortoise._inited:
             # 使用智能等待管理器
-            from core.db_init_manager import db_init_manager
+            from core.database import db_init_manager
             
             log_config.info(f"⏳ 等待数据库初始化完成: {db_name}")
             result = await db_init_manager.wait_for_init(max_wait=max_wait)

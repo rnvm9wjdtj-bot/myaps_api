@@ -16,8 +16,7 @@ from apps.common.monitor import (
 from apps.common.monitor.log_stream_service import start_log_stream, stop_log_stream
 from globalobjects import EVENT_AGGREGATOR
 from core.settings import TURNON_BINLOG_LISTENER, TRUNON_SCHEDULER, MAX_EVENTS_BATCH_SIZE
-from core.database import check_db_connections, warmup_connections, start_pool_monitoring
-from core.db_init_manager import db_init_manager
+from core.database import check_db_connections, warmup_connections, start_pool_monitoring, db_init_manager
 
 
 @asynccontextmanager
