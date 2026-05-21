@@ -305,3 +305,136 @@ async def bom_structure_check_hook(processor, table_name: str, context: dict) ->
     }
     
     return context
+
+
+async def mat_wc_route_check_hook(processor, table_name: str, context: dict) -> dict:
+    """
+    工艺路线结构完整性校验钩子
+    使用 RouteChecker 对工序数据进行结构校验
+    
+    校验内容:
+    - 工序项重复检测
+    - 顺序号非整数检测
+    - 物料号为空检测
+    - 工作中心为空检测
+    - 顺序号重复检测
+    - 工作中心重复检测
+    
+    Args:
+        processor: StagingProcessor实例
+        table_name: 表名
+        context: 上下文字典
+    
+    Returns:
+        更新后的context
+    """
+    from apps.data_opt.utils.routechecker import RouteChecker
+    from tortoise import Tortoise
+    
+    conn = Tortoise.get_connection(processor.db_name)
+    
+    logger.info(f"[工序路线校验钩子] 开始加载 {table_name} 数据")
+    
+    query = '''
+        SELECT "_staging_id", "MaterialNo", "MatVer", "ItemNo", "SortNo", "WorkCenter"
+        FROM t_mat_wc_staging 
+        WHERE "_status" IN ('pending', 'relation_pass')
+    '''
+    result = await conn.execute_query(query)
+    records = result[1] if result[1] else []
+    
+    if not records:
+        logger.info(f"[工序路线校验钩子] 无待校验数据")
+        return context
+    
+    logger.info(f"[工序路线校验钩子] 加载 {len(records)} 条数据")
+    
+    staging_ids = []
+    route_data = []
+    
+    for row in records:
+        row_dict = dict(row)
+        staging_ids.append(row_dict['_staging_id'])
+        
+        route_data.append({
+            'pn': row_dict['MaterialNo'],
+            'pv': row_dict['MatVer'],
+            'in': row_dict.get('ItemNo', ''),
+            'sn': row_dict['SortNo'],
+            'wc': row_dict.get('WorkCenter', ''),
+        })
+    
+    checker = RouteChecker(
+        product_col='pn',
+        productversion_col='pv',
+        sortno_col='sn',
+        itemno_col='in',
+        workcenter_col='wc'
+    )
+    
+    logger.info(f"[工序路线校验钩子] 开始执行工序结构校验")
+    check_result = checker.start_check(route_data)
+    
+    if not check_result.get('success'):
+        logger.error(f"[工序路线校验钩子] 校验执行失败: {check_result.get('message')}")
+        context['route_check_error'] = check_result.get('message')
+        return context
+    
+    marked_data = check_result.get('marked_data', [])
+    statistics = check_result.get('statistics', {})
+    
+    logger.info(f"[工序路线校验钩子] 校验完成 - 总计:{statistics.get('total_records', 0)}, "
+                f"错误:{statistics.get('error_records', 0)}, "
+                f"警告:{statistics.get('warning_records', 0)}")
+    
+    batch_errors = {}
+    error_count = 0
+    warning_count = 0
+    
+    for idx, item in enumerate(marked_data):
+        if idx >= len(staging_ids):
+            logger.warning(f"[工序路线校验钩子] 索引越界: idx={idx}, staging_ids长度={len(staging_ids)}")
+            break
+        
+        staging_id = staging_ids[idx]
+        
+        errors = item.get('E', '')
+        warnings = item.get('W', '')
+        
+        if not errors and not warnings:
+            continue
+        
+        batch_errors[staging_id] = []
+        
+        if errors:
+            batch_errors[staging_id].append({
+                'staging_id': staging_id,
+                'error_type': 'route_structure_error',
+                'error_field': 'route_structure',
+                'error_value': None,
+                'error_message': errors
+            })
+            error_count += 1
+        
+        if warnings:
+            batch_errors[staging_id].append({
+                'staging_id': staging_id,
+                'error_type': 'route_structure_warning',
+                'error_field': 'route_structure',
+                'error_value': None,
+                'error_message': warnings
+            })
+            warning_count += 1
+    
+    logger.info(f"[工序路线校验钩子] 发现问题 - 错误:{error_count}条, 警告:{warning_count}条")
+    
+    context['batch_errors'] = batch_errors
+    context['route_check_result'] = {
+        'total': statistics.get('total_records', 0),
+        'errors': error_count,
+        'warnings': warning_count,
+        'error_counts': statistics.get('error_counts', {}),
+        'warning_counts': statistics.get('warning_counts', {})
+    }
+    
+    return context

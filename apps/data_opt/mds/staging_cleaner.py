@@ -28,7 +28,7 @@ from apps.io_api.models import (
 )
 from apps.io_api.schemas import AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom, AcceptMold, AcceptMatWcMold
 from globalobjects import logger as log_config, globalconst as gc, ProjectDefaultValues as pdv
-from .validators import validate_material_type_e_rules, bom_structure_check_hook
+from .validators import validate_material_type_e_rules, bom_structure_check_hook, mat_wc_route_check_hook
 
 
 logger = log_config.get_logger(__name__)
@@ -121,6 +121,7 @@ STAGING_TABLE_CONFIG = {
             #     "validator": validate_mat_wc_rules,
             # }
         ],
+        "pre_batch_hook": [mat_wc_route_check_hook]
     },
 
     "t_mat_wc_bom": {

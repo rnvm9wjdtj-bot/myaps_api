@@ -533,8 +533,8 @@ class DataTable {
             return `<span class="font-mono">${formatDate(value, true)}</span>`;
         }
         
-        // 空值处理
-        if (value === null || value === undefined) {
+        // 空值处理（包括 null、undefined 和空字符串）
+        if (value === null || value === undefined || value === '') {
             return this.renderNullCell(col, errorMap);
         }
         
@@ -588,13 +588,17 @@ class DataTable {
                     class="error-cell null-cell" 
                     data-error-type="${errorInfo.type}" 
                     data-error-msg="${escapeHtml(errorInfo.message)}"
-                ><i class="bi bi-slash-square-fill" style="color:#bdbdbd"></i></span>
+                ><i class="bi bi-slash-square-fill" style="color:#dc3545"></i></span>
             `;
         }
         
-        return showNullBg 
-            ? '<span class="null-cell"><i class="bi bi-slash-square-fill" style="color:#bdbdbd"></i></span>' 
-            : '<span class="text-muted"><i class="bi bi-slash-square-fill" style="color:#bdbdbd"></i></span>';
+        // 必填字段缺失时使用醒目的红色图标
+        if (showNullBg) {
+            return '<span class="null-cell"><i class="bi bi-slash-square-fill" style="color:#ff9800"></i></span>';
+        }
+        
+        // 非必填字段使用浅灰色
+        return '<span class="text-muted"><i class="bi bi-slash-square-fill" style="color:#bdbdbd"></i></span>';
     }
     
     /**
