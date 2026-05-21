@@ -20,7 +20,46 @@ class MDSPageController {
         // 外键选项缓存
         this.fkOptionsCache = new Map();
         
+        // 页面卸载时清理资源
+        this.setupCleanup();
+        
         this.init();
+    }
+    
+    /**
+     * 设置页面卸载清理
+     */
+    setupCleanup() {
+        window.addEventListener('beforeunload', () => {
+            this.destroy();
+        });
+    }
+    
+    /**
+     * 销毁控制器，清理所有资源
+     */
+    destroy() {
+        // 清理 DataTable
+        if (this.dataTable) {
+            this.dataTable.destroy();
+            this.dataTable = null;
+        }
+        
+        // 清理 StatusCard
+        if (this.statusCard) {
+            this.statusCard.destroy();
+            this.statusCard = null;
+        }
+        
+        // 清理外键缓存
+        this.fkOptionsCache.clear();
+        
+        // 清理字段值缓存
+        this.fieldValues = {};
+        this.nullFields.clear();
+        
+        // 清理待上传文件
+        this.pendingFile = null;
     }
     
     async init() {

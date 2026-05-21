@@ -50,8 +50,8 @@ STAGING_TABLE_CONFIG = {
         ],
         "business_rules": [
             {
-                "name": "E类型物料校验",
-                "description": "E类型物料必须存在工艺路线和BOM",
+                "name": "E类物料（自制件）校验",
+                "description": "自制件必须有产线版本、工艺路线和BOM",
                 "validator": validate_material_type_e_rules,
             }
         ],

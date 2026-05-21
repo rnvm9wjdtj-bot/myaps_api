@@ -669,6 +669,16 @@ span.badge.status-badge.status-badge-sync_error {
     animation: row-rejected-breathe 4s ease-in-out infinite;
 }
 
+/* 表头单元格 - 使用默认光标避免等宽字体的插入光标 */
+th {
+    cursor: default;
+}
+
+/* 可排序列 - 保持手型光标表示可交互 */
+th.sortable {
+    cursor: pointer;
+}
+
 @keyframes row-rejected-breathe {
     0%, 100% {
         background-color: #fff8f8;

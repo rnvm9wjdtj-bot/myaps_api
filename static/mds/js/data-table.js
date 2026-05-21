@@ -151,7 +151,7 @@ class DataTable {
         const readOnlyIcon = col.readOnly ? '<i class="bi bi-lock ms-1 text-muted" style="font-size: 0.8rem;"></i>' : '';
         const enumIcon = isEnum ? '<i class="bi bi-list-ul ms-1" style="font-size: 0.8rem; color: #08c9c9;" title="枚举字段"></i>' : '';
         const foreignKeyIcon = isForeignKey ? '<i class="bi bi-link-45deg ms-1" style="font-size: 0.8rem; color: #08c9c9;" title="外键字段"></i>' : '';
-        const requiredIcon = isRequired ? '<span class="ms-1" style="color: #f52222; font-weight: bold;">*</span>' : '';
+        const requiredIcon = isRequired ? '<span style="color: #f52222; font-weight: bold; margin-left: 2px;">*</span>' : '';
         
         let sortIcon = '';
         if (col.sortable) {
@@ -177,12 +177,12 @@ class DataTable {
         
         return `
             <th 
-                style="${col.width ? 'width: ' + col.width + '; min-width: ' + col.width + ';' : 'white-space: nowrap;'}${col.sortable ? ' cursor: pointer;' : ''}" 
+                style="${col.width ? 'width: ' + col.width + '; min-width: ' + col.width + ';' : 'white-space: nowrap;'}" 
                 data-field="${col.field}" 
                 class="${col.sortable ? 'sortable' : ''}"
                 title="${titleParts.join(' | ')}"
             >
-                ${col.title}${primaryKeyIcon}${requiredIcon}${readOnlyIcon}${enumIcon}${foreignKeyIcon}${sortIcon}
+                ${col.title}${requiredIcon}${primaryKeyIcon}${foreignKeyIcon}${enumIcon}${readOnlyIcon}${sortIcon}
             </th>
         `;
     }
@@ -799,6 +799,12 @@ class DataTable {
     showStatusErrorTooltip(e) {
         const errorJson = e.target.dataset.errorJson;
         if (!errorJson) return;
+        
+        // 如果已存在 tooltip，先移除避免重复
+        if (e.target._tooltip) {
+            e.target._tooltip.remove();
+            e.target._tooltip = null;
+        }
         
         const tooltip = document.createElement('div');
         tooltip.className = 'error-tooltip error-tooltip-wide';
@@ -1460,7 +1466,17 @@ class DataTable {
      * 销毁组件
      */
     destroy() {
+        // 清除所有 tooltip
+        document.querySelectorAll('.error-tooltip, .error-tooltip-wide').forEach(el => el.remove());
+        
+        // 清除选中状态
         this.selectedIds.clear();
+        
+        // 清空容器（会自动移除大部分事件监听器）
         this.container.innerHTML = '';
+        
+        // 清空数据引用
+        this.data = [];
+        this.columns = [];
     }
 }

@@ -303,7 +303,7 @@ async function getValidationRules(tableKey) {
 }
 
 /**
- * 渲染校验规则HTML
+ * 渲染校验规则HTML - 横版布局
  * @param {Object} rules - 校验规则数据
  * @returns {string} HTML字符串
  */
@@ -317,36 +317,27 @@ function renderValidationRulesHtml(rules) {
         `;
     }
 
-    let html = `
-        <div class="validation-rules">
-    `;
+    let html = `<div class="validation-rules"><div class="row g-3">`;
 
     // 必填字段卡片
     if (rules.required_fields && rules.required_fields.length > 0) {
         html += `
-            <div class="card rule-card mb-4 border-0 shadow-sm">
-                <div class="card-header bg-white border-bottom-0 py-3">
-                    <h6 class="mb-0 d-flex align-items-center text-primary">
-                        <span class="rule-icon bg-primary bg-opacity-10 text-primary rounded-circle d-inline-flex align-items-center justify-content-center me-3">
-                            <i class="bi bi-asterisk fs-5"></i>
-                        </span>
-                        <span class="fw-bold">必填字段</span>
-                        <span class="ms-auto badge bg-primary bg-opacity-10 text-primary rounded-pill">${rules.required_fields.length}</span>
-                    </h6>
-                </div>
-                <div class="card-body pt-0">
-                    <div class="row g-2">
+            <div class="col-md-4">
+                <div class="card rule-card h-100 border-0 shadow-sm">
+                    <div class="card-header bg-white border-bottom py-2">
+                        <h6 class="mb-0 d-flex align-items-center text-primary">
+                            <i class="bi bi-asterisk me-2"></i>
+                            <span class="fw-bold">必填字段</span>
+                            <span class="ms-auto badge bg-primary bg-opacity-10 text-primary rounded-pill">${rules.required_fields.length}</span>
+                        </h6>
+                    </div>
+                    <div class="card-body py-2" style="max-height: 500px; overflow-y: auto;">
         `;
         rules.required_fields.forEach(field => {
             html += `
-                <div class="col-md-6">
-                    <div class="d-flex align-items-start p-2 rounded bg-light bg-opacity-50">
-                        <span class="field-badge bg-primary text-white rounded-circle d-inline-flex align-items-center justify-content-center me-2 flex-shrink-0" style="width: 28px; height: 28px; font-size: 0.7rem;">R</span>
-                        <div class="flex-grow-1">
-                            <div class="fw-semibold text-primary">${escapeHtml(field.field)}</div>
-                            <div class="text-muted small">${escapeHtml(field.description)}</div>
-                        </div>
-                    </div>
+                <div class="d-flex align-items-center py-1 border-bottom border-light">
+                    <span class="text-primary fw-semibold me-2" style="min-width: 80px;">${escapeHtml(field.field)}</span>
+                    <span class="text-muted small">${escapeHtml(field.description)}</span>
                 </div>
             `;
         });
@@ -356,134 +347,26 @@ function renderValidationRulesHtml(rules) {
     // 枚举字段卡片
     if (rules.enum_fields && rules.enum_fields.length > 0) {
         html += `
-            <div class="card rule-card mb-4 border-0 shadow-sm">
-                <div class="card-header bg-white border-bottom-0 py-3">
-                    <h6 class="mb-0 d-flex align-items-center text-info">
-                        <span class="rule-icon bg-info bg-opacity-10 text-info rounded-circle d-inline-flex align-items-center justify-content-center me-3">
-                            <i class="bi bi-list-check fs-5"></i>
-                        </span>
-                        <span class="fw-bold">枚举字段</span>
-                        <span class="ms-auto badge bg-info bg-opacity-10 text-info rounded-pill">${rules.enum_fields.length}</span>
-                    </h6>
-                </div>
-                <div class="card-body pt-0">
+            <div class="col-md-4">
+                <div class="card rule-card h-100 border-0 shadow-sm">
+                    <div class="card-header bg-white border-bottom py-2">
+                        <h6 class="mb-0 d-flex align-items-center text-info">
+                            <i class="bi bi-list-check me-2"></i>
+                            <span class="fw-bold">枚举字段</span>
+                            <span class="ms-auto badge bg-info bg-opacity-10 text-info rounded-pill">${rules.enum_fields.length}</span>
+                        </h6>
+                    </div>
+                    <div class="card-body py-2" style="max-height: 500px; overflow-y: auto;">
         `;
         rules.enum_fields.forEach(field => {
             const allowedValues = Array.isArray(field.allowed_values) 
-                ? field.allowed_values.map(v => `<span class="badge bg-info bg-opacity-10 text-info me-1 px-3 py-1">${escapeHtml(v)}</span>`).join(' ') 
+                ? field.allowed_values.map(v => `<span class="badge bg-info bg-opacity-10 text-info me-1">${escapeHtml(v)}</span>`).join(' ') 
                 : '';
             html += `
-                <div class="mb-3 pb-2 border-bottom border-light last-child-border-0">
-                    <div class="d-flex align-items-center mb-2">
-                        <span class="field-badge bg-info text-white rounded-circle d-inline-flex align-items-center justify-content-center me-2 flex-shrink-0" style="width: 28px; height: 28px; font-size: 0.7rem;">E</span>
-                        <strong class="text-info">${escapeHtml(field.field)}</strong>
-                        <span class="text-muted small ms-2">${escapeHtml(field.description)}</span>
-                    </div>
-                    <div class="ms-5">
-                        <div class="d-flex flex-wrap gap-2">${allowedValues}</div>
-                    </div>
-                </div>
-            `;
-        });
-        html += `</div></div>`;
-    }
-
-    // 数值范围卡片
-    if (rules.range_fields && rules.range_fields.length > 0) {
-        html += `
-            <div class="card rule-card mb-4 border-0 shadow-sm">
-                <div class="card-header bg-white border-bottom-0 py-3">
-                    <h6 class="mb-0 d-flex align-items-center text-warning">
-                        <span class="rule-icon bg-warning bg-opacity-10 text-warning rounded-circle d-inline-flex align-items-center justify-content-center me-3">
-                            <i class="bi bi-rulers fs-5"></i>
-                        </span>
-                        <span class="fw-bold">数值范围</span>
-                        <span class="ms-auto badge bg-warning bg-opacity-10 text-warning rounded-pill">${rules.range_fields.length}</span>
-                    </h6>
-                </div>
-                <div class="card-body pt-0">
-        `;
-        rules.range_fields.forEach(field => {
-            let constraints = [];
-            if (field.ge !== null && field.ge !== undefined) constraints.push(`≥ <strong>${field.ge}</strong>`);
-            if (field.gt !== null && field.gt !== undefined) constraints.push(`> <strong>${field.gt}</strong>`);
-            if (field.le !== null && field.le !== undefined) constraints.push(`≤ <strong>${field.le}</strong>`);
-            if (field.lt !== null && field.lt !== undefined) constraints.push(`< <strong>${field.lt}</strong>`);
-            
-            html += `
-                <div class="mb-3 pb-2 border-bottom border-light">
-                    <div class="d-flex align-items-center mb-2">
-                        <span class="field-badge bg-warning text-white rounded-circle d-inline-flex align-items-center justify-content-center me-2 flex-shrink-0" style="width: 28px; height: 28px; font-size: 0.7rem;">N</span>
-                        <strong class="text-warning">${escapeHtml(field.field)}</strong>
-                        <span class="text-muted small ms-2">${escapeHtml(field.description)}</span>
-                    </div>
-                    <div class="ms-5">
-                        <div class="d-flex gap-3">${constraints.join('<span class="text-muted">•</span>')}</div>
-                    </div>
-                </div>
-            `;
-        });
-        html += `</div></div>`;
-    }
-
-    // 长度限制卡片
-    if (rules.max_length_fields && rules.max_length_fields.length > 0) {
-        html += `
-            <div class="card rule-card mb-4 border-0 shadow-sm">
-                <div class="card-header bg-white border-bottom-0 py-3">
-                    <h6 class="mb-0 d-flex align-items-center text-success">
-                        <span class="rule-icon bg-success bg-opacity-10 text-success rounded-circle d-inline-flex align-items-center justify-content-center me-3">
-                            <i class="bi bi-text-paragraph fs-5"></i>
-                        </span>
-                        <span class="fw-bold">长度限制</span>
-                        <span class="ms-auto badge bg-success bg-opacity-10 text-success rounded-pill">${rules.max_length_fields.length}</span>
-                    </h6>
-                </div>
-                <div class="card-body pt-0">
-                    <div class="row g-2">
-        `;
-        rules.max_length_fields.forEach(field => {
-            html += `
-                <div class="col-md-6">
-                    <div class="d-flex align-items-center p-2 rounded bg-light bg-opacity-50">
-                        <span class="field-badge bg-success text-white rounded-circle d-inline-flex align-items-center justify-content-center me-2 flex-shrink-0" style="width: 28px; height: 28px; font-size: 0.7rem;">L</span>
-                        <div class="flex-grow-1">
-                            <div class="fw-semibold text-success">${escapeHtml(field.field)}</div>
-                            <div class="text-muted small">${escapeHtml(field.description)} · 最大 ${field.max_length} 字符</div>
-                        </div>
-                    </div>
-                </div>
-            `;
-        });
-        html += `</div></div></div>`;
-    }
-
-    // 外键约束卡片
-    if (rules.foreign_keys && rules.foreign_keys.length > 0) {
-        html += `
-            <div class="card rule-card mb-4 border-0 shadow-sm">
-                <div class="card-header bg-white border-bottom-0 py-3">
-                    <h6 class="mb-0 d-flex align-items-center text-secondary">
-                        <span class="rule-icon bg-secondary bg-opacity-10 text-secondary rounded-circle d-inline-flex align-items-center justify-content-center me-3">
-                            <i class="bi bi-link-45deg fs-5"></i>
-                        </span>
-                        <span class="fw-bold">外键约束</span>
-                        <span class="ms-auto badge bg-secondary bg-opacity-10 text-secondary rounded-pill">${rules.foreign_keys.length}</span>
-                    </h6>
-                </div>
-                <div class="card-body pt-0">
-                    <div class="row g-2">
-        `;
-        rules.foreign_keys.forEach(field => {
-            html += `
-                <div class="col-md-6">
-                    <div class="d-flex align-items-center p-2 rounded bg-light bg-opacity-50">
-                        <span class="field-badge bg-secondary text-white rounded-circle d-inline-flex align-items-center justify-content-center me-2 flex-shrink-0" style="width: 28px; height: 28px; font-size: 0.7rem;">F</span>
-                        <div class="flex-grow-1">
-                            <div class="fw-semibold text-secondary">${escapeHtml(field.field)}</div>
-                            <div class="text-muted small">${escapeHtml(field.description)}</div>
-                        </div>
-                    </div>
+                <div class="py-2 border-bottom border-light">
+                    <div class="fw-semibold text-info">${escapeHtml(field.field)}</div>
+                    <div class="text-muted small mb-1">${escapeHtml(field.description)}</div>
+                    <div class="d-flex flex-wrap">${allowedValues}</div>
                 </div>
             `;
         });
@@ -493,35 +376,119 @@ function renderValidationRulesHtml(rules) {
     // 业务规则卡片
     if (rules.business_rules && rules.business_rules.length > 0) {
         html += `
-            <div class="card rule-card border-0 shadow-sm">
-                <div class="card-header bg-white border-bottom-0 py-3">
-                    <h6 class="mb-0 d-flex align-items-center text-purple">
-                        <span class="rule-icon bg-purple bg-opacity-10 text-purple rounded-circle d-inline-flex align-items-center justify-content-center me-3">
-                            <i class="bi bi-lightning-charge-fill fs-5"></i>
-                        </span>
-                        <span class="fw-bold">业务规则</span>
-                        <span class="ms-auto badge bg-purple bg-opacity-10 text-purple rounded-pill">${rules.business_rules.length}</span>
-                    </h6>
-                </div>
-                <div class="card-body pt-0">
+            <div class="col-md-4">
+                <div class="card rule-card h-100 border-0 shadow-sm">
+                    <div class="card-header bg-white border-bottom py-2">
+                        <h6 class="mb-0 d-flex align-items-center text-purple">
+                            <i class="bi bi-lightning-charge-fill me-2"></i>
+                            <span class="fw-bold">业务规则</span>
+                            <span class="ms-auto badge bg-purple bg-opacity-10 text-purple rounded-pill">${rules.business_rules.length}</span>
+                        </h6>
+                    </div>
+                    <div class="card-body py-2" style="max-height: 500px; overflow-y: auto;">
         `;
         rules.business_rules.forEach((rule, idx) => {
             html += `
-                <div class="mb-3 pb-3 border-bottom border-light last-child-border-0">
-                    <div class="d-flex align-items-start">
-                        <span class="rule-number bg-purple text-white rounded-circle d-inline-flex align-items-center justify-content-center me-3 flex-shrink-0" style="width: 32px; height: 32px; font-size: 0.8rem;">${idx+1}</span>
-                        <div class="flex-grow-1">
-                            <div class="fw-bold text-purple mb-1">${rule.name ? escapeHtml(rule.name) : `规则 ${idx+1}`}</div>
-                            ${rule.description ? `<div class="text-muted small">${escapeHtml(rule.description)}</div>` : ''}
-                        </div>
-                    </div>
+                <div class="py-2 border-bottom border-light">
+                    <div class="fw-bold text-purple">${rule.name ? escapeHtml(rule.name) : `规则 ${idx+1}`}</div>
+                    ${rule.description ? `<div class="text-muted small">${escapeHtml(rule.description)}</div>` : ''}
                 </div>
             `;
         });
-        html += `</div></div>`;
+        html += `</div></div></div>`;
     }
 
-    html += `</div>`;
+    html += `</div></div>`;
+
+    // 其他规则（数值范围、长度限制、外键约束）保持垂直布局在下方
+    let otherRulesHtml = '<div class="validation-rules mt-3">';
+    
+    // 数值范围卡片
+    if (rules.range_fields && rules.range_fields.length > 0) {
+        otherRulesHtml += `
+            <div class="card rule-card mb-3 border-0 shadow-sm">
+                <div class="card-header bg-white border-bottom py-2">
+                    <h6 class="mb-0 d-flex align-items-center text-warning">
+                        <i class="bi bi-rulers me-2"></i>
+                        <span class="fw-bold">数值范围</span>
+                        <span class="ms-auto badge bg-warning bg-opacity-10 text-warning rounded-pill">${rules.range_fields.length}</span>
+                    </h6>
+                </div>
+                <div class="card-body py-2">
+        `;
+        rules.range_fields.forEach(field => {
+            let constraints = [];
+            if (field.ge !== null && field.ge !== undefined) constraints.push(`≥ ${field.ge}`);
+            if (field.gt !== null && field.gt !== undefined) constraints.push(`> ${field.gt}`);
+            if (field.le !== null && field.le !== undefined) constraints.push(`≤ ${field.le}`);
+            if (field.lt !== null && field.lt !== undefined) constraints.push(`< ${field.lt}`);
+            
+            otherRulesHtml += `
+                <div class="d-flex align-items-center py-1 border-bottom border-light">
+                    <span class="text-warning fw-semibold me-2" style="min-width: 80px;">${escapeHtml(field.field)}</span>
+                    <span class="text-muted small me-2">${escapeHtml(field.description)}</span>
+                    <span class="small">${constraints.join(' · ')}</span>
+                </div>
+            `;
+        });
+        otherRulesHtml += `</div></div>`;
+    }
+
+    // 长度限制卡片
+    if (rules.max_length_fields && rules.max_length_fields.length > 0) {
+        otherRulesHtml += `
+            <div class="card rule-card mb-3 border-0 shadow-sm">
+                <div class="card-header bg-white border-bottom py-2">
+                    <h6 class="mb-0 d-flex align-items-center text-success">
+                        <i class="bi bi-text-paragraph me-2"></i>
+                        <span class="fw-bold">长度限制</span>
+                        <span class="ms-auto badge bg-success bg-opacity-10 text-success rounded-pill">${rules.max_length_fields.length}</span>
+                    </h6>
+                </div>
+                <div class="card-body py-2">
+        `;
+        rules.max_length_fields.forEach(field => {
+            otherRulesHtml += `
+                <div class="d-flex align-items-center py-1 border-bottom border-light">
+                    <span class="text-success fw-semibold me-2" style="min-width: 80px;">${escapeHtml(field.field)}</span>
+                    <span class="text-muted small">${escapeHtml(field.description)} · 最大 ${field.max_length} 字符</span>
+                </div>
+            `;
+        });
+        otherRulesHtml += `</div></div>`;
+    }
+
+    // 外键约束卡片
+    if (rules.foreign_keys && rules.foreign_keys.length > 0) {
+        otherRulesHtml += `
+            <div class="card rule-card border-0 shadow-sm">
+                <div class="card-header bg-white border-bottom py-2">
+                    <h6 class="mb-0 d-flex align-items-center text-secondary">
+                        <i class="bi bi-link-45deg me-2"></i>
+                        <span class="fw-bold">外键约束</span>
+                        <span class="ms-auto badge bg-secondary bg-opacity-10 text-secondary rounded-pill">${rules.foreign_keys.length}</span>
+                    </h6>
+                </div>
+                <div class="card-body py-2">
+        `;
+        rules.foreign_keys.forEach(field => {
+            otherRulesHtml += `
+                <div class="d-flex align-items-center py-1 border-bottom border-light">
+                    <span class="text-secondary fw-semibold me-2" style="min-width: 80px;">${escapeHtml(field.field)}</span>
+                    <span class="text-muted small">${escapeHtml(field.description)}</span>
+                </div>
+            `;
+        });
+        otherRulesHtml += `</div></div>`;
+    }
+
+    otherRulesHtml += `</div>`;
+
+    // 合并两部分HTML
+    if (otherRulesHtml.includes('rule-card')) {
+        html += otherRulesHtml;
+    }
+
     return html;
 }
 
@@ -537,7 +504,7 @@ async function showValidationRulesModal(tableKey, tableName) {
         modalManager.register('validationRules', {
             id: 'validationRulesModal',
             title: `${tableName || tableKey} 校验规则`,
-            size: 'lg',
+            size: 'xl',
             body: (data) => {
                 if (!data.rules) {
                     return '<div class="text-center py-4"><div class="spinner-border text-primary"></div><p class="mt-2 text-muted">加载中...</p></div>';
@@ -549,6 +516,18 @@ async function showValidationRulesModal(tableKey, tableName) {
                 if (data.rules) {
                     const bodyEl = modalElement.querySelector('#validationRulesModal_body');
                     bodyEl.innerHTML = renderValidationRulesHtml(data.rules);
+                    
+                    // 调整弹窗尺寸，充分利用屏幕空间
+                    const dialog = modalElement.querySelector('.modal-dialog');
+                    if (dialog) {
+                        dialog.style.maxWidth = '95%';
+                        dialog.style.margin = '1rem auto';
+                    }
+                    
+                    const content = modalElement.querySelector('.modal-content');
+                    if (content) {
+                        content.style.maxHeight = '90vh';
+                    }
                 }
             }
         });

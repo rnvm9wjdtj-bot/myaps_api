@@ -392,7 +392,7 @@ _PAGE_COLUMNS_CONFIG = {
 
     "t_mold": SYSTEM_COMMON_COLUMNS_PREFIX + [
         {"field": "moldno", "title": "模具号", "sortable": True, "readOnly": True},
-        {"field": "moldname", "title": "描述"},
+        {"field": "moldname", "title": "模具名称"},
         {"field": "type", "title": "类型"},
         {"field": "status", "title": "状态"},
         {"field": "moldnum", "title": "穴数"},
