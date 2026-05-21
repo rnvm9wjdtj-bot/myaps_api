@@ -17,6 +17,7 @@ from apps.common.monitor.log_stream_service import start_log_stream, stop_log_st
 from globalobjects import EVENT_AGGREGATOR
 from core.settings import TURNON_BINLOG_LISTENER, TRUNON_SCHEDULER, MAX_EVENTS_BATCH_SIZE
 from core.database import check_db_connections, warmup_connections, start_pool_monitoring
+from core.db_init_manager import db_init_manager
 
 
 @asynccontextmanager
@@ -37,17 +38,24 @@ async def lifespan(app):
         log_config.error(f"❌ 数据库配置验证失败: {e}")
         raise
     
+    # 使用智能等待管理器
     if not Tortoise._inited:
-        log_config.warning("⚠️ Tortoise ORM 尚未初始化，等待 register_tortoise 完成...")
-        for _ in range(10):
-            await asyncio.sleep(0.5)
-            if Tortoise._inited:
-                break
-        if not Tortoise._inited:
-            log_config.error("❌ Tortoise ORM 初始化超时")
-            raise RuntimeError("Tortoise ORM 初始化超时")
-    
-    log_config.info("✅ Tortoise ORM 初始化确认完成")
+        log_config.info("⏳ 等待 Tortoise ORM 初始化...")
+        
+        # 等待初始化完成（事件驱动，最多30秒）
+        result = await db_init_manager.wait_for_init(
+            max_wait=30.0,
+            early_exit_check=lambda: asyncio.sleep(0)  # 可添加实际连接检查
+        )
+        
+        if not result["success"]:
+            error_msg = f"数据库初始化失败: {result.get('error', '未知错误')}"
+            log_config.error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg)
+        
+        log_config.info(f"✅ Tortoise ORM 初始化完成，耗时: {result['elapsed']:.2f}秒")
+    else:
+        log_config.info("✅ Tortoise ORM 已初始化")
     
     log_config.info("开始预热数据库连接...")
     try:

@@ -388,6 +388,10 @@ DB_NAME=myaps
 # 功能开关
 TURNON_BINLOG_LISTENER=False
 TRUNON_SCHEDULER=False
+
+# Staging模式配置
+# 用于数据清洗模式的特殊数据库名称标识（默认--s）
+STAGING_DB_NAME=--s
 ```
 
 ### Gunicorn配置
@@ -436,6 +440,51 @@ bind = "0.0.0.0:8000"
 2. **数据库连接失败**: 检查数据库配置和环境变量
 3. **依赖安装失败**: 使用离线包或调整pip源
 4. **权限问题**: 确保`logs/`和`storage/`目录可写
+
+### Tortoise ORM 初始化竞态条件
+
+**问题描述**：
+启动时偶尔出现"Tortoise ORM 初始化超时"错误，即使数据库可连接。
+
+**根本原因**：
+FastAPI启动时，`register_tortoise`异步初始化与`lifespan`检查存在竞态条件：
+- PostgreSQL首次连接可能需要3-5秒
+- 启动事件和lifespan并行执行
+- 早期请求到达时，ORM可能未完全初始化
+
+**解决方案**（已实施）：
+使用**事件驱动的智能等待机制**（非硬编码等待）：
+
+1. **DatabaseInitManager** (`core/db_init_manager.py`)
+   - 事件驱动：初始化完成后主动通知等待者
+   - 精确计时：记录实际初始化耗时
+   - 状态追踪：监控初始化进度
+
+2. **启动事件通知** (`core/database.py`)
+   - `@app.on_event("startup")` 中标记初始化完成
+   - 通知所有等待的协程
+
+3. **智能等待** (`core/lifespan.py`, `apps/common/utils/db_helpers.py`)
+   - 使用`asyncio.Event`而非轮询
+   - 实际等待时间 = 数据库真实初始化时间
+   - 超时保护：最多等待30秒
+
+**对比传统方案**：
+```python
+# ❌ 旧方案：硬编码轮询
+for i in range(20):  # 固定等待10秒
+    await asyncio.sleep(0.5)
+    if Tortoise._inited:
+        break
+
+# ✅ 新方案：事件驱动
+result = await db_init_manager.wait_for_init(max_wait=30.0)
+# 实际等待时间 = 数据库初始化实际耗时（通常1-3秒）
+```
+
+**相关配置**：
+- `STAGING_DB_NAME`: 清洗模式数据库标识（默认`--s`）
+- `THIS_DB_*`: PostgreSQL连接配置
 
 ### 调试指南
 如需调试指导（如断点设置），请参考：

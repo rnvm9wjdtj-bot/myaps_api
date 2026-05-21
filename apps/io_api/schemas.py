@@ -439,7 +439,7 @@ class AcceptMatWcBom(BaseModel):
     
     class Config:
         title = "验证规则 - BOM"
-        extra = "ignore"
+        extra = "allow"
         json_schema_extra = {
             "example": {
                 "productno": "P001",

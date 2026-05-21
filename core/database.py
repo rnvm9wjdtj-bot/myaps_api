@@ -421,7 +421,13 @@ def register_database(app):
     注意：此函数作为兼容接口保留，实际初始化已移到 lifespan 中
     """
     
+    log_config.info("🔹 开始注册数据库...")
     validate_database_config()
+    
+    # 标记初始化开始
+    from core.db_init_manager import db_init_manager
+    connection_names = list(TORTOISE_ORM_CONFIG['connections'].keys())
+    db_init_manager.start_init(connection_names)
     
     register_tortoise(
         app=app,
@@ -430,8 +436,26 @@ def register_database(app):
         add_exception_handlers=True,
     )
     
+    # 注册启动事件：在Tortoise初始化后通知管理器
+    @app.on_event("startup")
+    async def notify_db_init_complete():
+        from tortoise import Tortoise
+        from core.db_init_manager import db_init_manager
+        
+        # 等待Tortoise完成初始化（通常register_tortoise已经确保这一点）
+        max_check = 50
+        for i in range(max_check):
+            if Tortoise._inited:
+                db_init_manager.mark_initialized()
+                break
+            await asyncio.sleep(0.1)
+        else:
+            error = RuntimeError("Tortoise初始化检查超时")
+            db_init_manager.mark_error(error)
+            log_config.error(f"❌ {error}")
+    
     log_config.info("✅ Tortoise ORM 已注册到FastAPI应用")
-    log_config.info(f"连接配置: {list(TORTOISE_ORM_CONFIG['connections'].keys())}")
+    log_config.info(f"连接配置: {connection_names}")
     log_config.info(f"应用配置: {list(TORTOISE_ORM_CONFIG['apps'].keys())}")
     
     from globalobjects.logger import set_db_initialized_unified

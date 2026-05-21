@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta
 # from re import S
 # from this import d
 from typing import List, Dict, Optional, Literal#, Any
+from enum import Enum
 import inspect, functools, pandas as pd, asyncio
 # import httpx
 from fastapi import APIRouter, Path, Query, Body, Header, status, Request, HTTPException, Depends
@@ -26,15 +27,39 @@ from apps.data_opt.components import ApsPayloadSponsor
 logger = log_config.get_logger(__name__)
 
 
-TABLE_KEY_MAPPING = {
-    "t_material": "t_material",
-    "t_workcenter": "t_workcenter",
-    "t_mat_wc": "t_mat_wc",
-    "t_mat_ver": "t_mat_ver",
-    "t_mat_wc_bom": "t_mat_wc_bom",
-    "t_mold": "t_mold",
-    "t_mat_wc_mold": "t_mat_wc_mold",
-}
+class DedupStrategyEnum(str, Enum):
+    """去重策略枚举"""
+    OVERWRITE = "overwrite"
+    SKIP = "skip"
+    REJECT = "reject"
+
+
+class UpdateModeEnum(str, Enum):
+    """更新模式枚举"""
+    PARTIAL = "partial"
+    FULL = "full"
+
+
+STAGING_MODULES_AVAILABLE = False
+try:
+    from apps.data_opt.mds.staging_cleaner import STAGING_TABLE_CONFIG, ensure_config_initialized
+    from apps.data_opt.mds.staging_routers import insert_to_staging_table, delete_existing_records
+    from apps.data_opt.mds.utils.duplicate_checker import apply_dedup_strategy, DedupStrategy
+    STAGING_MODULES_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Staging modules not available: {e}")
+
+
+# TABLE_KEY_MAPPING = {
+#     "t_material": "t_material",
+#     "t_workcenter": "t_workcenter",
+#     "t_mat_wc": "t_mat_wc",
+#     "t_mat_ver": "t_mat_ver",
+#     "t_mat_wc_bom": "t_mat_wc_bom",
+#     "t_mold": "t_mold",
+#     "t_mat_wc_mold": "t_mat_wc_mold",
+# }
+# 注意：TABLE_KEY_MAPPING 当前未使用，保留用于未来扩展
 
 
 def is_staging_mode(db_name: str) -> bool:
@@ -43,6 +68,8 @@ def is_staging_mode(db_name: str) -> bool:
 
 def map_staging_response_to_direct(staging_response: dict) -> dict:
     staging_data = staging_response.get("data", {})
+    if staging_data is None:
+        staging_data = staging_response.get("meta", {})
     return {
         "success": staging_response.get("success", 1),
         "message": staging_response.get("message", ""),
@@ -55,55 +82,94 @@ async def dispatch_to_staging(
     table_key: str,
     data: List,
     source_system: str = "unknown",
-    dedup_strategy: str = "overwrite",
-    update_mode: str = "partial"
+    dedup_strategy: DedupStrategyEnum = DedupStrategyEnum.OVERWRITE,
+    update_mode: UpdateModeEnum = UpdateModeEnum.PARTIAL
 ) -> dict:
-    from apps.data_opt.mds.staging_cleaner import STAGING_TABLE_CONFIG, ensure_config_initialized
-    from apps.data_opt.mds.staging_routers import insert_to_staging_table, delete_existing_records
-    from apps.data_opt.mds.utils.duplicate_checker import apply_dedup_strategy, DedupStrategy
-    
-    ensure_config_initialized()
-    
-    config = STAGING_TABLE_CONFIG.get(table_key)
-    if not config:
-        raise ValueError(f"未知的表: {table_key}")
-    
-    model = config["model"]
-    table_name = f"{table_key}_staging"
-    
-    data_list = [item.model_dump() if hasattr(item, "model_dump") else dict(item) for item in data]
-    
-    strategy = DedupStrategy(dedup_strategy)
-    processed_data, handled_data = await apply_dedup_strategy(
-        table_key, data_list, strategy, update_mode
-    )
-    
-    inserted_count = 0
-    
-    if processed_data:
-        if strategy == DedupStrategy.OVERWRITE:
-            overwrite_records = [h for h in handled_data if h.get("action") == "overwrite"]
-            if overwrite_records:
-                await delete_existing_records(model, table_name, overwrite_records)
-        
-        inserted_count = await insert_to_staging_table(
-            model, table_name, processed_data, source_system
-        )
-    
-    overwrite_count = len([h for h in handled_data if h.get("action") == "overwrite"])
-    skip_count = len(handled_data) - overwrite_count
-    
-    return {
-        "success": 1,
-        "message": f"导入完成: 新增{inserted_count - overwrite_count}条, 覆盖{overwrite_count}条, 跳过{skip_count}条",
-        "data": {
-            "total": len(data_list),
-            "inserted": inserted_count,
-            "overwritten": overwrite_count,
-            "skipped": skip_count,
-            "handled_details": handled_data[:20]
+    if not STAGING_MODULES_AVAILABLE:
+        return {
+            "success": 0,
+            "message": "清洗模块未安装，请检查依赖配置",
+            "data": None,
+            "meta": {}
         }
-    }
+    
+    try:
+        ensure_config_initialized()
+        
+        config = STAGING_TABLE_CONFIG.get(table_key)
+        if not config:
+            return {
+                "success": 0,
+                "message": f"未知的表: {table_key}",
+                "data": None,
+                "meta": {}
+            }
+        
+        model = config["model"]
+        table_name = f"{table_key}_staging"
+        
+        try:
+            data_list = []
+            for item in data:
+                if hasattr(item, "model_dump"):
+                    data_list.append(item.model_dump())
+                elif isinstance(item, dict):
+                    data_list.append(item)
+                else:
+                    raise ValueError(f"不支持的数据类型: {type(item).__name__}")
+        except Exception as e:
+            logger.error(f"数据转换失败: {str(e)}", exc_info=True)
+            return {
+                "success": 0,
+                "message": f"数据转换失败: {str(e)}",
+                "data": None,
+                "meta": {}
+            }
+        
+        strategy = DedupStrategy(dedup_strategy.value)
+        processed_data, handled_data = await apply_dedup_strategy(
+            table_key, data_list, strategy, update_mode.value
+        )
+        
+        inserted_count = 0
+        
+        if processed_data:
+            if strategy == DedupStrategy.OVERWRITE:
+                overwrite_records = [h for h in handled_data if isinstance(h, dict) and h.get("action") == DedupStrategy.OVERWRITE.value]
+                if overwrite_records:
+                    await delete_existing_records(model, table_name, overwrite_records)
+            
+            inserted_count = await insert_to_staging_table(
+                model, table_name, processed_data, source_system
+            )
+        
+        if not isinstance(handled_data, list):
+            logger.warning(f"handled_data类型异常: {type(handled_data).__name__}，重置为空列表")
+            handled_data = []
+        
+        overwrite_count = len([h for h in handled_data if isinstance(h, dict) and h.get("action") == DedupStrategy.OVERWRITE.value])
+        skip_count = len(handled_data) - overwrite_count
+        
+        return {
+            "success": 1,
+            "message": f"导入完成: 新增{inserted_count - overwrite_count}条, 覆盖{overwrite_count}条, 跳过{skip_count}条",
+            "data": None,
+            "meta": {
+                "total": len(data_list),
+                "inserted": inserted_count,
+                "overwritten": overwrite_count,
+                "skipped": skip_count,
+                "handled_details": handled_data[:20] if handled_data else []
+            }
+        }
+    except Exception as e:
+        logger.error(f"清洗模式处理失败: {str(e)}", exc_info=True)
+        return {
+            "success": 0,
+            "message": f"清洗模式处理失败: {str(e)}",
+            "data": None,
+            "meta": {}
+        }
 
 
 def log_api_request(request: Request):
@@ -338,8 +404,8 @@ async def post_material(
     return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥"),
     source_system: str = Query("unknown", description="来源系统"),
-    dedup_strategy: str = Query("overwrite", description="去重策略: overwrite/skip/reject"),
-    update_mode: str = Query("partial", description="更新模式: partial-部分更新/full-完整更新"),
+    dedup_strategy: DedupStrategyEnum = Query(DedupStrategyEnum.OVERWRITE, description="去重策略"),
+    update_mode: UpdateModeEnum = Query(UpdateModeEnum.PARTIAL, description="更新模式"),
     ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
@@ -408,8 +474,8 @@ async def post_workcenter(
     return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥"),
     source_system: str = Query("unknown", description="来源系统"),
-    dedup_strategy: str = Query("overwrite", description="去重策略: overwrite/skip/reject"),
-    update_mode: str = Query("partial", description="更新模式: partial-部分更新/full-完整更新"),
+    dedup_strategy: DedupStrategyEnum = Query(DedupStrategyEnum.OVERWRITE, description="去重策略"),
+    update_mode: UpdateModeEnum = Query(UpdateModeEnum.PARTIAL, description="更新模式"),
     ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
@@ -461,8 +527,8 @@ async def post_mat_wc(
     return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥"),
     source_system: str = Query("unknown", description="来源系统"),
-    dedup_strategy: str = Query("overwrite", description="去重策略: overwrite/skip/reject"),
-    update_mode: str = Query("partial", description="更新模式: partial-部分更新/full-完整更新"),
+    dedup_strategy: DedupStrategyEnum = Query(DedupStrategyEnum.OVERWRITE, description="去重策略"),
+    update_mode: UpdateModeEnum = Query(UpdateModeEnum.PARTIAL, description="更新模式"),
 ):
     log_api_request(request)
     db_table = "t_mat_wc"
@@ -523,8 +589,8 @@ async def post_mat_ver(
     return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥"),
     source_system: str = Query("unknown", description="来源系统"),
-    dedup_strategy: str = Query("overwrite", description="去重策略: overwrite/skip/reject"),
-    update_mode: str = Query("partial", description="更新模式: partial-部分更新/full-完整更新"),
+    dedup_strategy: DedupStrategyEnum = Query(DedupStrategyEnum.OVERWRITE, description="去重策略"),
+    update_mode: UpdateModeEnum = Query(UpdateModeEnum.PARTIAL, description="更新模式"),
 ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
@@ -575,8 +641,8 @@ async def post_mat_wc_bom(
     return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥"),
     source_system: str = Query("unknown", description="来源系统"),
-    dedup_strategy: str = Query("overwrite", description="去重策略: overwrite/skip/reject"),
-    update_mode: str = Query("partial", description="更新模式: partial-部分更新/full-完整更新"),
+    dedup_strategy: DedupStrategyEnum = Query(DedupStrategyEnum.OVERWRITE, description="去重策略"),
+    update_mode: UpdateModeEnum = Query(UpdateModeEnum.PARTIAL, description="更新模式"),
 ):
     log_api_request(request)
     db_table = "t_mat_wc_bom"
@@ -637,8 +703,8 @@ async def post_mold(
     return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥"),
     source_system: str = Query("unknown", description="来源系统"),
-    dedup_strategy: str = Query("overwrite", description="去重策略: overwrite/skip/reject"),
-    update_mode: str = Query("partial", description="更新模式: partial-部分更新/full-完整更新"),
+    dedup_strategy: DedupStrategyEnum = Query(DedupStrategyEnum.OVERWRITE, description="去重策略"),
+    update_mode: UpdateModeEnum = Query(UpdateModeEnum.PARTIAL, description="更新模式"),
 ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
@@ -689,8 +755,8 @@ async def post_mat_wc_mold(
     return_data: bool = Query(False, description="是否返回数据"),
     x_api_key: str = Header(None, description="API密钥"),
     source_system: str = Query("unknown", description="来源系统"),
-    dedup_strategy: str = Query("overwrite", description="去重策略: overwrite/skip/reject"),
-    update_mode: str = Query("partial", description="更新模式: partial-部分更新/full-完整更新"),
+    dedup_strategy: DedupStrategyEnum = Query(DedupStrategyEnum.OVERWRITE, description="去重策略"),
+    update_mode: UpdateModeEnum = Query(UpdateModeEnum.PARTIAL, description="更新模式"),
 ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
