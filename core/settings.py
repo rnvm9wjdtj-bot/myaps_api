@@ -161,6 +161,8 @@ MYAPS_MAIN_DB = os.getenv("MYAPS_MAIN_DB") or json_env_config.get("MYAPS_MAIN_DB
 if MYAPS_MAIN_DB is None:
     MYAPS_MAIN_DB = MYAPS_DBSET_LIST[0]
 
+STAGING_DB_NAME = "--s"
+
 
 # 本API数据库配置<postgreSQL>
 THIS_DB_HOST = os.getenv("THIS_DB_HOST") or json_env_config.get("THIS_DB_HOST")

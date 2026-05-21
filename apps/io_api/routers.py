@@ -7,7 +7,7 @@ import inspect, functools, pandas as pd, asyncio
 from fastapi import APIRouter, Path, Query, Body, Header, status, Request, HTTPException, Depends
 # from tortoise import Tortoise
 
-from core.settings import MYAPS_DB_SET, MYAPS_DBSET_LIST, MYAPS_MAIN_DB, THIS_BASE_URL
+from core.settings import MYAPS_DB_SET, MYAPS_DBSET_LIST, MYAPS_MAIN_DB, THIS_BASE_URL, STAGING_DB_NAME
 from globalobjects import globalconst as gc, logger as log_config, ProjectDefaultValues as pdv
 # from .models import TMaterial, TWorkcenter, TMatWc, TMatVer, TMatWcBom, TSupply, TDemand, TMold, TMatWcMold, TConfirm#,TortoiseBaseModel
 from .schemas import (
@@ -24,6 +24,87 @@ from apps.data_opt.components import ApsPayloadSponsor
 
 
 logger = log_config.get_logger(__name__)
+
+
+TABLE_KEY_MAPPING = {
+    "t_material": "t_material",
+    "t_workcenter": "t_workcenter",
+    "t_mat_wc": "t_mat_wc",
+    "t_mat_ver": "t_mat_ver",
+    "t_mat_wc_bom": "t_mat_wc_bom",
+    "t_mold": "t_mold",
+    "t_mat_wc_mold": "t_mat_wc_mold",
+}
+
+
+def is_staging_mode(db_name: str) -> bool:
+    return db_name == STAGING_DB_NAME
+
+
+def map_staging_response_to_direct(staging_response: dict) -> dict:
+    staging_data = staging_response.get("data", {})
+    return {
+        "success": staging_response.get("success", 1),
+        "message": staging_response.get("message", ""),
+        "data": None,
+        "meta": staging_data if isinstance(staging_data, dict) else {}
+    }
+
+
+async def dispatch_to_staging(
+    table_key: str,
+    data: List,
+    source_system: str = "unknown",
+    dedup_strategy: str = "overwrite",
+    update_mode: str = "partial"
+) -> dict:
+    from apps.data_opt.mds.staging_cleaner import STAGING_TABLE_CONFIG, ensure_config_initialized
+    from apps.data_opt.mds.staging_routers import insert_to_staging_table, delete_existing_records
+    from apps.data_opt.mds.utils.duplicate_checker import apply_dedup_strategy, DedupStrategy
+    
+    ensure_config_initialized()
+    
+    config = STAGING_TABLE_CONFIG.get(table_key)
+    if not config:
+        raise ValueError(f"未知的表: {table_key}")
+    
+    model = config["model"]
+    table_name = f"{table_key}_staging"
+    
+    data_list = [item.model_dump() if hasattr(item, "model_dump") else dict(item) for item in data]
+    
+    strategy = DedupStrategy(dedup_strategy)
+    processed_data, handled_data = await apply_dedup_strategy(
+        table_key, data_list, strategy, update_mode
+    )
+    
+    inserted_count = 0
+    
+    if processed_data:
+        if strategy == DedupStrategy.OVERWRITE:
+            overwrite_records = [h for h in handled_data if h.get("action") == "overwrite"]
+            if overwrite_records:
+                await delete_existing_records(model, table_name, overwrite_records)
+        
+        inserted_count = await insert_to_staging_table(
+            model, table_name, processed_data, source_system
+        )
+    
+    overwrite_count = len([h for h in handled_data if h.get("action") == "overwrite"])
+    skip_count = len(handled_data) - overwrite_count
+    
+    return {
+        "success": 1,
+        "message": f"导入完成: 新增{inserted_count - overwrite_count}条, 覆盖{overwrite_count}条, 跳过{skip_count}条",
+        "data": {
+            "total": len(data_list),
+            "inserted": inserted_count,
+            "overwritten": overwrite_count,
+            "skipped": skip_count,
+            "handled_details": handled_data[:20]
+        }
+    }
+
 
 def log_api_request(request: Request):
     """记录请求日志，动态获取路径和查询参数"""
@@ -255,10 +336,26 @@ async def post_material(
     data: List[AcceptMaterial] = Body(..., description="新增或修改的物料数据"),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     return_data: bool = Query(False, description="是否返回数据"),
-    x_api_key: str = Header(None, description="API密钥")
+    x_api_key: str = Header(None, description="API密钥"),
+    source_system: str = Query("unknown", description="来源系统"),
+    dedup_strategy: str = Query("overwrite", description="去重策略: overwrite/skip/reject"),
+    update_mode: str = Query("partial", description="更新模式: partial-部分更新/full-完整更新"),
     ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
+    
+    if is_staging_mode(db_name):
+        logger.info(f"路由分发: post_material -> 清洗模式 (db_name={db_name})")
+        staging_response = await dispatch_to_staging(
+            table_key="t_material",
+            data=data,
+            source_system=source_system,
+            dedup_strategy=dedup_strategy,
+            update_mode=update_mode
+        )
+        return map_staging_response_to_direct(staging_response)
+    
+    logger.info(f"路由分发: post_material -> 直接模式 (db_name={db_name})")
 
     if pdv.auto_matver:
         matver_data = [{
@@ -309,10 +406,26 @@ async def post_workcenter(
     data: List[AcceptWorkcenter] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     return_data: bool = Query(False, description="是否返回数据"),
-    x_api_key: str = Header(None, description="API密钥")
+    x_api_key: str = Header(None, description="API密钥"),
+    source_system: str = Query("unknown", description="来源系统"),
+    dedup_strategy: str = Query("overwrite", description="去重策略: overwrite/skip/reject"),
+    update_mode: str = Query("partial", description="更新模式: partial-部分更新/full-完整更新"),
     ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
+    
+    if is_staging_mode(db_name):
+        logger.info(f"路由分发: post_workcenter -> 清洗模式 (db_name={db_name})")
+        staging_response = await dispatch_to_staging(
+            table_key="t_workcenter",
+            data=data,
+            source_system=source_system,
+            dedup_strategy=dedup_strategy,
+            update_mode=update_mode
+        )
+        return map_staging_response_to_direct(staging_response)
+    
+    logger.info(f"路由分发: post_workcenter -> 直接模式 (db_name={db_name})")
     try:
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_workcenter", data_list=data)
         return standard_response(
@@ -346,11 +459,27 @@ async def post_mat_wc(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     drop: Literal["all", "matched"] = Query(None, description="丢弃旧数据的方式"),
     return_data: bool = Query(False, description="是否返回数据"),
-    x_api_key: str = Header(None, description="API密钥")
+    x_api_key: str = Header(None, description="API密钥"),
+    source_system: str = Query("unknown", description="来源系统"),
+    dedup_strategy: str = Query("overwrite", description="去重策略: overwrite/skip/reject"),
+    update_mode: str = Query("partial", description="更新模式: partial-部分更新/full-完整更新"),
 ):
     log_api_request(request)
     db_table = "t_mat_wc"
     db_name = db_name.replace(" ", "")
+    
+    if is_staging_mode(db_name):
+        logger.info(f"路由分发: post_mat_wc -> 清洗模式 (db_name={db_name})")
+        staging_response = await dispatch_to_staging(
+            table_key="t_mat_wc",
+            data=data,
+            source_system=source_system,
+            dedup_strategy=dedup_strategy,
+            update_mode=update_mode
+        )
+        return map_staging_response_to_direct(staging_response)
+    
+    logger.info(f"路由分发: post_mat_wc -> 直接模式 (db_name={db_name})")
     try:
         if drop == "all":
             await db_delete(db_names=db_name, model_or_tablename=db_table)
@@ -392,10 +521,26 @@ async def post_mat_ver(
     data: List[AcceptMatVer] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     return_data: bool = Query(False, description="是否返回数据"),
-    x_api_key: str = Header(None, description="API密钥")
+    x_api_key: str = Header(None, description="API密钥"),
+    source_system: str = Query("unknown", description="来源系统"),
+    dedup_strategy: str = Query("overwrite", description="去重策略: overwrite/skip/reject"),
+    update_mode: str = Query("partial", description="更新模式: partial-部分更新/full-完整更新"),
 ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
+    
+    if is_staging_mode(db_name):
+        logger.info(f"路由分发: post_mat_ver -> 清洗模式 (db_name={db_name})")
+        staging_response = await dispatch_to_staging(
+            table_key="t_mat_ver",
+            data=data,
+            source_system=source_system,
+            dedup_strategy=dedup_strategy,
+            update_mode=update_mode
+        )
+        return map_staging_response_to_direct(staging_response)
+    
+    logger.info(f"路由分发: post_mat_ver -> 直接模式 (db_name={db_name})")
     try:
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_mat_ver", data_list=data)
         return standard_response(
@@ -428,11 +573,27 @@ async def post_mat_wc_bom(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     drop: Literal["all", "matched"] = Query(None, description="丢弃旧数据的方式"),
     return_data: bool = Query(False, description="是否返回数据"),
-    x_api_key: str = Header(None, description="API密钥")
+    x_api_key: str = Header(None, description="API密钥"),
+    source_system: str = Query("unknown", description="来源系统"),
+    dedup_strategy: str = Query("overwrite", description="去重策略: overwrite/skip/reject"),
+    update_mode: str = Query("partial", description="更新模式: partial-部分更新/full-完整更新"),
 ):
     log_api_request(request)
     db_table = "t_mat_wc_bom"
     db_name = db_name.replace(" ", "")
+    
+    if is_staging_mode(db_name):
+        logger.info(f"路由分发: post_mat_wc_bom -> 清洗模式 (db_name={db_name})")
+        staging_response = await dispatch_to_staging(
+            table_key="t_mat_wc_bom",
+            data=data,
+            source_system=source_system,
+            dedup_strategy=dedup_strategy,
+            update_mode=update_mode
+        )
+        return map_staging_response_to_direct(staging_response)
+    
+    logger.info(f"路由分发: post_mat_wc_bom -> 直接模式 (db_name={db_name})")
     try:
         if drop == "all":
             await db_delete(db_names=db_name, model_or_tablename=db_table)
@@ -474,10 +635,26 @@ async def post_mold(
     data: List[AcceptMold] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     return_data: bool = Query(False, description="是否返回数据"),
-    x_api_key: str = Header(None, description="API密钥")
+    x_api_key: str = Header(None, description="API密钥"),
+    source_system: str = Query("unknown", description="来源系统"),
+    dedup_strategy: str = Query("overwrite", description="去重策略: overwrite/skip/reject"),
+    update_mode: str = Query("partial", description="更新模式: partial-部分更新/full-完整更新"),
 ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
+    
+    if is_staging_mode(db_name):
+        logger.info(f"路由分发: post_mold -> 清洗模式 (db_name={db_name})")
+        staging_response = await dispatch_to_staging(
+            table_key="t_mold",
+            data=data,
+            source_system=source_system,
+            dedup_strategy=dedup_strategy,
+            update_mode=update_mode
+        )
+        return map_staging_response_to_direct(staging_response)
+    
+    logger.info(f"路由分发: post_mold -> 直接模式 (db_name={db_name})")
     try:
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_mold", data_list=data)
         return standard_response(
@@ -510,11 +687,27 @@ async def post_mat_wc_mold(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     drop: Literal["all", "matched"] = Query(None, description="丢弃旧数据的方式"),
     return_data: bool = Query(False, description="是否返回数据"),
-    x_api_key: str = Header(None, description="API密钥")
+    x_api_key: str = Header(None, description="API密钥"),
+    source_system: str = Query("unknown", description="来源系统"),
+    dedup_strategy: str = Query("overwrite", description="去重策略: overwrite/skip/reject"),
+    update_mode: str = Query("partial", description="更新模式: partial-部分更新/full-完整更新"),
 ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
     db_table = "t_mat_wc_mold"
+    
+    if is_staging_mode(db_name):
+        logger.info(f"路由分发: post_mat_wc_mold -> 清洗模式 (db_name={db_name})")
+        staging_response = await dispatch_to_staging(
+            table_key="t_mat_wc_mold",
+            data=data,
+            source_system=source_system,
+            dedup_strategy=dedup_strategy,
+            update_mode=update_mode
+        )
+        return map_staging_response_to_direct(staging_response)
+    
+    logger.info(f"路由分发: post_mat_wc_mold -> 直接模式 (db_name={db_name})")
     try:
         if drop == "all":
             await db_delete(db_names=db_name, model_or_tablename=db_table)
