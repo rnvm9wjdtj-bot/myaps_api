@@ -1242,6 +1242,31 @@ async def batch_update_staging(
         table_name_staging = f"{table_name}_staging"
         conn = await get_db_connection_safely(THIS_DB_NAME)
         
+        # 检查哪些记录是removing状态，需要跳过
+        placeholders = ", ".join([f"${i+1}" for i in range(len(ids))])
+        check_query = f'SELECT "_staging_id", "_status" FROM "{table_name_staging}" WHERE "_staging_id" IN ({placeholders})'
+        check_result = await conn.execute_query(check_query, tuple(ids))
+        
+        removing_ids = []
+        valid_ids = []
+        for row in (check_result[1] or []):
+            if row["_status"] == StagingStatus.REMOVING:
+                removing_ids.append(row["_staging_id"])
+            else:
+                valid_ids.append(row["_staging_id"])
+        
+        if not valid_ids:
+            # 全部都是removing状态
+            return standard_response(
+                success=1,
+                message=f"已跳过{len(removing_ids)}条待删除记录，无有效记录可编辑",
+                data={
+                    "updated": 0,
+                    "skipped": len(removing_ids),
+                    "skipped_ids": removing_ids
+                }
+            )
+        
         field_mapping = {}
         field_types = {}
         for field in staging_model._meta.fields_map.values():
@@ -1279,7 +1304,7 @@ async def batch_update_staging(
                 params.append(value)
                 param_idx += 1
         
-        params.append(ids)
+        params.append(valid_ids)
         
         update_query = f'''
             UPDATE "{table_name_staging}"
@@ -1289,9 +1314,20 @@ async def batch_update_staging(
         
         await conn.execute_query(update_query, tuple(params))
         
+        # 构建返回消息
+        message_parts = [f"成功更新{len(valid_ids)}条记录"]
+        if removing_ids:
+            message_parts.append(f"跳过{len(removing_ids)}条待删除记录")
+        message = "，".join(message_parts)
+        
         return standard_response(
             success=1,
-            message=f"成功更新{len(ids)}条记录，状态已重置为待处理"
+            message=message,
+            data={
+                "updated": len(valid_ids),
+                "skipped": len(removing_ids),
+                "skipped_ids": removing_ids
+            }
         )
     except Exception as e:
         logger.error(f"批量更新失败: {str(e)}")
@@ -1357,6 +1393,20 @@ async def update_staging(
         
         table_name_staging = f"{table_name}_staging"
         conn = await get_db_connection_safely(THIS_DB_NAME)
+        
+        # 检查记录状态，禁止编辑removing状态的数据
+        check_query = f'SELECT "_status" FROM "{table_name_staging}" WHERE "_staging_id" = $1'
+        check_result = await conn.execute_query(check_query, (staging_id,))
+        
+        if not check_result[1]:
+            raise ValueError(f"记录不存在: staging_id={staging_id}")
+        
+        current_status = check_result[1][0]["_status"]
+        if current_status == StagingStatus.REMOVING:
+            return standard_response(
+                success=0,
+                message="禁止编辑：当前记录处于待删除状态，请先取消删除标记"
+            )
         
         field_map = {}
         field_types = {}

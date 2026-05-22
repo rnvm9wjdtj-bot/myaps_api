@@ -893,11 +893,11 @@ class MDSPageController {
         }
     }
     
-    generateEditField(col, row) {
+    generateEditField(col, row, isRemoving = false) {
         const fieldName = col.field;
         const fieldValue = row[fieldName] !== null && row[fieldName] !== undefined ? row[fieldName] : '';
         const isRequired = this.isRequiredField(fieldName);
-        const isReadOnly = this.isReadOnlyField(fieldName);
+        const isReadOnly = this.isReadOnlyField(fieldName) || isRemoving;  // removing状态强制只读
         const isForeignKey = this.isForeignKeyField(fieldName);
         
         const errorFields = this.getErrorFields(row);
@@ -986,6 +986,9 @@ class MDSPageController {
     showEditModal(row) {
         const modal = new bootstrap.Modal(document.getElementById('editModal'));
         
+        // 检查是否为removing状态
+        const isRemoving = row._status === 'removing';
+        
         const columns = this.getColumns();
         const businessFields = columns.filter(col => !col.field.startsWith('_'));
         const totalFields = businessFields.length;
@@ -994,21 +997,38 @@ class MDSPageController {
         const leftFields = businessFields.slice(0, halfCount);
         const rightFields = businessFields.slice(halfCount);
         
+        // 如果是removing状态，添加提示信息
+        let alertHtml = '';
+        if (isRemoving) {
+            alertHtml = `
+                <div class="alert alert-warning mb-3">
+                    <i class="bi bi-exclamation-triangle"></i> 当前记录处于<strong>待删除状态</strong>，禁止编辑。请先取消删除标记后再进行编辑。
+                </div>
+            `;
+        }
+        
         const editForm = document.getElementById('editForm');
         editForm.innerHTML = `
+            ${alertHtml}
             <div class="row">
                 <div class="col-6">
-                    ${leftFields.map(col => this.generateEditField(col, row)).join('')}
+                    ${leftFields.map(col => this.generateEditField(col, row, isRemoving)).join('')}
                 </div>
                 <div class="col-6">
-                    ${rightFields.map(col => this.generateEditField(col, row)).join('')}
+                    ${rightFields.map(col => this.generateEditField(col, row, isRemoving)).join('')}
                 </div>
             </div>
         `;
         
         const saveBtn = document.getElementById('saveBtn');
         if (saveBtn) {
-            saveBtn.onclick = () => this.saveRecord(row._staging_id);
+            // removing状态隐藏保存按钮
+            if (isRemoving) {
+                saveBtn.style.display = 'none';
+            } else {
+                saveBtn.style.display = '';
+                saveBtn.onclick = () => this.saveRecord(row._staging_id);
+            }
         }
         
         // 绑定删除按钮
@@ -1030,8 +1050,10 @@ class MDSPageController {
         
         modal.show();
         
-        // 异步加载外键选项
-        this.loadFkOptionsInForm(row);
+        // 非removing状态才加载外键选项
+        if (!isRemoving) {
+            this.loadFkOptionsInForm(row);
+        }
     }
     
     /**
@@ -1846,7 +1868,16 @@ class MDSPageController {
                 hideLoading();
                 
                 handleResponse(response, () => {
-                    showMessage(`成功更新 ${ids.length} 条记录`, 'success');
+                    // 显示编辑结果，包含跳过的removing记录数
+                    const updated = response.data?.updated || ids.length;
+                    const skipped = response.data?.skipped || 0;
+                    
+                    let message = `成功更新 ${updated} 条记录`;
+                    if (skipped > 0) {
+                        message += `，跳过 ${skipped} 条待删除记录`;
+                    }
+                    showMessage(message, 'success');
+                    
                     bootstrap.Modal.getInstance(document.getElementById('batchEditModal')).hide();
                     this.dataTable.selectedIds.clear();
                     this.dataTable.updateSelectedCount();
