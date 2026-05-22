@@ -539,12 +539,9 @@ class DbManager:
         # 尝试获取连接，最多尝试3次
         for attempt in range(3):
             try:
-                # 检查Tortoise是否已初始化
+                # Tortoise ORM已由lifespan初始化，禁止运行时重新初始化
                 if not hasattr(Tortoise, '_inited') or not Tortoise._inited:
-                    logger.warning(f"Tortoise未初始化，尝试重新初始化: {self.connection_name}")
-                    from core.database import TORTOISE_ORM_CONFIG
-                    await Tortoise.init(config=TORTOISE_ORM_CONFIG)
-                    logger.info(f"Tortoise重新初始化成功")
+                    raise RuntimeError("Tortoise ORM未初始化，请等待应用启动完成")
                 
                 # 获取数据库连接
                 conn = Tortoise.get_connection(self.connection_name)
@@ -1864,38 +1861,11 @@ class DbManager:
                 except Exception as discard_error:
                     logger.warning(f"移除连接时出错: {discard_error}")
                 
-                # 3. 尝试重新初始化 Tortoise，解决连接池关闭的问题
-                try:
-                    from core.database import TORTOISE_ORM_CONFIG
-                    if hasattr(Tortoise, '_inited') and Tortoise._inited:
-                        # 尝试关闭所有连接
-                        try:
-                            # 安全检查：确保connections对象和_connections属性存在
-                            if hasattr(connections, '_connections'):
-                                for conn_name in connections._connections.keys():
-                                    try:
-                                        conn = connections.get(conn_name)
-                                        if conn and hasattr(conn, 'close'):
-                                            try:
-                                                await conn.close()
-                                            except Exception as close_error:
-                                                logger.warning(f"关闭连接 {conn_name} 时出错: {close_error}")
-                                    except Exception as get_conn_error:
-                                        logger.warning(f"获取连接 {conn_name} 时出错: {get_conn_error}")
-                            else:
-                                logger.info("连接池未初始化，跳过关闭操作")
-                        except Exception as close_all_error:
-                            logger.warning(f"关闭所有连接时出错: {close_all_error}")
-                        
-                        # 尝试重新初始化 Tortoise
-                        try:
-                            logger.info(f"尝试重新初始化 Tortoise")
-                            await Tortoise.init(config=TORTOISE_ORM_CONFIG)
-                            logger.info(f"Tortoise 重新初始化成功")
-                        except Exception as init_error:
-                            logger.warning(f"重新初始化 Tortoise 时出错: {init_error}")
-                except Exception as init_error:
-                    logger.warning(f"重新初始化 Tortoise 时出错: {init_error}")
+                # 3. Tortoise ORM已由lifespan初始化，禁止运行时重新初始化
+                # 运行时重新初始化会破坏TortoiseContext导致所有请求失败
+                if not hasattr(Tortoise, '_inited') or not Tortoise._inited:
+                    logger.error(f"Tortoise未初始化，无法刷新连接。请等待应用启动完成")
+                    raise RuntimeError("Tortoise ORM未初始化，请等待应用启动完成")
                 
                 # 3. 等待一段时间，确保连接完全关闭
                 if fast_mode:

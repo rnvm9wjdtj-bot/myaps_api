@@ -258,37 +258,45 @@ class DuplicateChecker:
         
         # 批量查询已存在记录（优化：一次查询替代N次查询）
         if unique_indices and self.pk_fields:
-            pk_field = self.pk_fields[0]  # 主键字段
-            pk_values_to_query = []
             idx_to_pk_map = {}
             
             for idx in unique_indices:
                 data = data_list[idx]
                 pk_value = self._get_pk_value(data)
                 if pk_value:
-                    pk_values_to_query.append(pk_value)
                     idx_to_pk_map[idx] = pk_value
             
-            # 去重后批量查询
-            unique_pk_values = list(set(pk_values_to_query))
-            
-            # logger.info(f"去重检测: 表={self.table_name}, 主键字段={pk_field}, 待查询主键值数量={len(unique_pk_values)}, 示例={unique_pk_values[:3]}...")
-            
-            if unique_pk_values:
+            if idx_to_pk_map:
                 try:
-                    # 一次性查询所有已存在的记录
-                    existing_records = await self.staging_model.filter(
-                        **{f"{pk_field}__in": unique_pk_values}
-                    ).all()
+                    # 对于复合主键，需要查询所有可能的记录后在内存中匹配
+                    # 步骤1：收集每个主键字段的所有可能值
+                    pk_field_values = {pk: set() for pk in self.pk_fields}
+                    for idx, pk_value in idx_to_pk_map.items():
+                        data = data_list[idx]
+                        for pk in self.pk_fields:
+                            val = data.get(pk)
+                            if val is not None and val != '':
+                                pk_field_values[pk].add(val)
                     
-                    # 构建主键 -> 记录的映射
+                    # 步骤2：构建查询条件（每个字段用 __in）
+                    query = self.staging_model.all()
+                    for pk, values in pk_field_values.items():
+                        if values:
+                            query = query.filter(**{f"{pk}__in": list(values)})
+                    
+                    # 步骤3：执行查询
+                    existing_records = await query.all()
+                    
+                    # 步骤4：构建复合主键 -> 记录列表的映射（注意：可能有多条相同主键的记录）
                     existing_map = {}
                     for record in existing_records:
-                        pk_val = getattr(record, pk_field)
-                        # 统一转换为字符串进行比较
-                        existing_map[str(pk_val)] = record
+                        pk_val = self._get_pk_value_from_record(record)
+                        if pk_val:
+                            if pk_val not in existing_map:
+                                existing_map[pk_val] = []
+                            existing_map[pk_val].append(record)
                     
-                    # logger.info(f"批量查询已存在记录: 找到{len(existing_map)}条, 映射键={list(existing_map.keys())[:3]}")
+                    logger.debug(f"批量查询已存在记录: 表={self.table_name}, 主键字段={self.pk_fields}, 查询返回{len(existing_records)}条, 唯一主键数={len(existing_map)}")
                 except Exception as e:
                     logger.error(f"批量查询已存在记录失败: {str(e)}")
                     import traceback
@@ -303,18 +311,13 @@ class DuplicateChecker:
                 data = data_list[idx]
                 pk_value = idx_to_pk_map.get(idx)
                 
-                # 详细日志：显示主键值和匹配情况
-                # if pk_value:
-                #     in_map = pk_value in existing_map
-                #     logger.info(f"分类处理: idx={idx}, pk_value={pk_value}, in_existing_map={in_map}")
-                
                 if pk_value and pk_value in existing_map:
                     # 已存在于缓冲表
                     existing_in_db.append({
                         "index": idx,
                         "data": data,
                         "pk_value": pk_value,
-                        "existing_record": existing_map[pk_value]  # 完整记录
+                        "existing_records": existing_map[pk_value]  # 所有已存在记录列表
                     })
                 else:
                     # 新数据
@@ -363,6 +366,17 @@ class DuplicateChecker:
         values = []
         for pk in self.pk_fields:
             value = data.get(pk)
+            if value is not None and value != '':
+                values.append(str(value))
+            else:
+                return None
+        return "/".join(values) if values else None
+    
+    def _get_pk_value_from_record(self, record) -> Optional[str]:
+        """从ORM记录对象获取主键值"""
+        values = []
+        for pk in self.pk_fields:
+            value = getattr(record, pk, None)
             if value is not None and value != '':
                 values.append(str(value))
             else:
@@ -454,7 +468,7 @@ async def apply_dedup_strategy(
             else:
                 processed_data.append(item["data"])
         
-        # 处理内部重复：保留每组最后一条
+        # 处理内部重复：保留每组最后一条，但需要检查数据库是否已存在
         internal_dup_groups = {}
         for item in result["duplicates"]:
             pk_value = item["pk_value"]
@@ -465,9 +479,56 @@ async def apply_dedup_strategy(
         for pk_value, items in internal_dup_groups.items():
             # 按索引排序，保留最后一条
             items_sorted = sorted(items, key=lambda x: x["index"])
-            # 最后一条：导入
-            processed_data.append(items_sorted[-1]["data"])
-            # 其他条：跳过
+            last_item = items_sorted[-1]
+            
+            # 检查该主键是否在数据库中已存在（从existing中查找）
+            existing_item = None
+            for ex_item in result["existing"]:
+                if ex_item["pk_value"] == pk_value:
+                    existing_item = ex_item
+                    break
+            
+            if existing_item:
+                # 数据库中已存在，进行内容比对
+                existing_records = existing_item.get("existing_records", [])
+                new_data = last_item["data"]
+                
+                all_same = True
+                diff_info = ""
+                if existing_records:
+                    for existing_record in existing_records:
+                        is_same, diff = compare_content(existing_record, new_data, update_mode=update_mode)
+                        if not is_same:
+                            all_same = False
+                            diff_info = diff
+                            break
+                else:
+                    all_same = False
+                
+                if all_same:
+                    # 内容相同，跳过
+                    handled_data.append({
+                        "data": new_data,
+                        "reason": "内部重复+内容相同，跳过",
+                        "pk_value": pk_value,
+                        "action": "skip"
+                    })
+                    skip_unchanged_count += 1
+                else:
+                    # 内容不同，覆盖
+                    processed_data.append(new_data)
+                    handled_data.append({
+                        "data": new_data,
+                        "reason": f"内部重复+覆盖已存在记录 ({diff_info})",
+                        "pk_value": pk_value,
+                        "action": "overwrite",
+                        "existing_count": len(existing_records)
+                    })
+            else:
+                # 数据库中不存在，直接导入
+                processed_data.append(last_item["data"])
+            
+            # 其他内部重复条：跳过
             for item in items_sorted[:-1]:
                 handled_data.append({
                     "data": item["data"],
@@ -478,14 +539,36 @@ async def apply_dedup_strategy(
         # 处理缓冲表已存在的记录（添加内容比对）
         skip_unchanged_count = 0
         for item in result["existing"]:
-            existing_record = item.get("existing_record")
+            pk_value = item["pk_value"]
+            
+            # 如果该主键在内部重复组中，跳过（已由duplicates逻辑处理）
+            if pk_value in internal_dup_pk_values:
+                handled_data.append({
+                    "data": item["data"],
+                    "reason": "内部重复（已在duplicates中处理）",
+                    "pk_value": pk_value,
+                    "action": "skip"
+                })
+                continue
+            
+            existing_records = item.get("existing_records", [])
             new_data = item["data"]
             
-            # 内容比对（传入update_mode）
-            is_same, diff_info = compare_content(existing_record, new_data, update_mode=update_mode)
+            # 对所有已存在记录进行内容比对
+            all_same = True
+            diff_info = ""
+            if existing_records:
+                for existing_record in existing_records:
+                    is_same, diff = compare_content(existing_record, new_data, update_mode=update_mode)
+                    if not is_same:
+                        all_same = False
+                        diff_info = diff
+                        break
+            else:
+                all_same = False
             
-            if is_same:
-                # 内容相同，跳过覆盖
+            if all_same:
+                # 所有已存在记录内容都相同，跳过覆盖
                 handled_data.append({
                     "data": new_data,
                     "reason": f"内容相同，跳过覆盖",
@@ -500,7 +583,8 @@ async def apply_dedup_strategy(
                     "data": new_data,
                     "reason": f"覆盖已存在记录 ({diff_info})",
                     "pk_value": item["pk_value"],
-                    "action": "overwrite"
+                    "action": "overwrite",
+                    "existing_count": len(existing_records)  # 标记要删除的记录数
                 })
         
         # 日志记录跳过数量

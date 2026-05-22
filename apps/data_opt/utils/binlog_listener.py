@@ -205,13 +205,32 @@ class BinlogPositionManager:
             return {}
     
     def _write_json_file(self, file_path, data):
-        """写入 JSON 文件"""
+        """写入 JSON 文件（原子操作）
+        
+        使用临时文件 + os.replace() 确保写入原子性：
+        1. 先写入临时文件
+        2. 原子替换目标文件
+        3. 失败时清理临时文件
+        
+        这样可以防止写入过程中断导致文件损坏
+        """
+        temp_path = f"{file_path}.tmp"
         try:
-            with open(file_path, 'w', encoding='utf-8') as f:
+            # 先写入临时文件
+            with open(temp_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+            
+            # 原子替换（os.replace 在 POSIX 系统上是原子操作）
+            os.replace(temp_path, file_path)
             return True
         except Exception as e:
             logger.error(f"❌ 写入文件 {file_path} 失败: {e}")
+            # 清理临时文件
+            try:
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+            except:
+                pass
             return False
     
     def load_position(self) -> Optional[Dict[str, Any]]:
@@ -1247,25 +1266,61 @@ class MySQLBinlogListener:
                 retry_count = 0
                 self._consecutive_errors = 0
                 
-            except Exception as e:
+            except pymysql.Error as e:
+                # MySQL连接/协议错误 → 重试
                 self._consecutive_errors += 1
                 retry_count += 1
                 
                 if not self.running:
                     break
                 
-                # 计算等待时间（指数退避，但不超过最大值）
                 wait_time = min(2 ** min(retry_count, 8), self._max_retry_wait)
                 
-                # 记录错误（但避免日志过多）
                 if retry_count <= 5 or retry_count % 10 == 0:
-                    logger.error(f"❌ Binlog 连接失败 ({retry_count}次): {e}")
+                    logger.error(f"❌ MySQL连接错误 ({retry_count}次): {type(e).__name__}: {e}")
                     logger.info(f"⏳ {wait_time}秒后重试...")
                 
-                # 发送告警（限制频率）
                 current_time = time.time()
                 if current_time - last_alert_time > alert_interval:
-                    self._send_alert(f"binlog监听连接失败: {e}，已重试 {retry_count} 次", "error")
+                    self._send_alert(f"MySQL连接错误: {e}，已重试 {retry_count} 次", "error")
+                    last_alert_time = current_time
+                
+            except (ConnectionError, ConnectionResetError, BrokenPipeError, OSError) as e:
+                # 网络连接错误 → 重试
+                self._consecutive_errors += 1
+                retry_count += 1
+                
+                if not self.running:
+                    break
+                
+                wait_time = min(2 ** min(retry_count, 8), self._max_retry_wait)
+                
+                if retry_count <= 5 or retry_count % 10 == 0:
+                    logger.warning(f"⚠️ 网络连接中断 ({retry_count}次): {type(e).__name__}")
+                    logger.info(f"⏳ {wait_time}秒后重试...")
+                
+                current_time = time.time()
+                if current_time - last_alert_time > alert_interval:
+                    self._send_alert(f"网络连接中断，已重试 {retry_count} 次", "warning")
+                    last_alert_time = current_time
+                
+            except Exception as e:
+                # 其他未知错误 → 记录详细堆栈
+                self._consecutive_errors += 1
+                retry_count += 1
+                
+                if not self.running:
+                    break
+                
+                wait_time = min(2 ** min(retry_count, 8), self._max_retry_wait)
+                
+                if retry_count <= 5 or retry_count % 10 == 0:
+                    logger.error(f"❌ Binlog监听未知错误 ({retry_count}次): {type(e).__name__}: {e}")
+                    logger.info(f"⏳ {wait_time}秒后重试...")
+                
+                current_time = time.time()
+                if current_time - last_alert_time > alert_interval:
+                    self._send_alert(f"Binlog监听未知错误: {type(e).__name__}: {e}，已重试 {retry_count} 次", "error")
                     last_alert_time = current_time
                 
                 # 等待后重试
@@ -1453,16 +1508,42 @@ class MySQLBinlogListener:
             try:
                 self._thread_pool.submit(self._process_with_counter, event)
                 return
+            except concurrent.futures.ThreadPoolExecutor.shutdown as e:
+                # 线程池已关闭 → 正常退出，不重试
+                logger.debug(f"binlog监听线程池已关闭，跳过事件处理")
+                self._decrement_pending()
+                return
+            except RuntimeError as e:
+                # 线程池运行时错误（如队列满）
+                if "queue" in str(e).lower() or "full" in str(e).lower():
+                    # 队列满 → 触发背压告警
+                    if retry < max_retries - 1:
+                        delay = self._get_retry_delay(retry) * 2  # 倍增等待
+                        logger.warning(f"⚠️ 线程池队列满，{retry+1}/{max_retries} 重试 ({delay:.2f}s后)")
+                        time.sleep(delay)
+                    else:
+                        logger.error(f"❌ 线程池队列持续满载，事件转入DLQ")
+                        self._decrement_pending()
+                        self._add_to_dead_letter_queue(event, f"ThreadPool queue full: {e}")
+                else:
+                    # 其他运行时错误
+                    if retry < max_retries - 1:
+                        delay = self._get_retry_delay(retry)
+                        logger.warning(f"⚠️ 线程池运行时错误，{retry+1}/{max_retries} 重试: {e}")
+                        time.sleep(delay)
+                    else:
+                        logger.error(f"❌ 线程池运行时错误，已达最大重试: {e}")
+                        self._decrement_pending()
+                        self._add_to_dead_letter_queue(event, str(e))
             except Exception as e:
+                # 其他未知错误
                 if retry < max_retries - 1:
                     delay = self._get_retry_delay(retry)
-                    logger.warning(f"⚠️ binlog监听线程池任务提交失败，{retry+1}/{max_retries} 重试 ({delay:.2f}s后): {e}")
+                    logger.warning(f"⚠️ 线程池任务提交失败，{retry+1}/{max_retries} 重试 ({delay:.2f}s后): {e}")
                     time.sleep(delay)
                 else:
-                    logger.error(f"❌ binlog监听事件处理失败，已达到最大重试次数: {e}")
-                    # 减少待处理计数（因为最终失败了）
+                    logger.error(f"❌ 事件处理失败，已达最大重试次数: {e}")
                     self._decrement_pending()
-                    # 添加到DeadLetter队列
                     self._add_to_dead_letter_queue(event, str(e))
 
     def _process_with_counter(self, event):
@@ -1542,11 +1623,18 @@ class MySQLBinlogListener:
                                 elif exec_time > 1.0:
                                     logger.debug(f"binlog监听异步处理器 {handler_name} 执行时间: {exec_time:.2f}秒")
                             except Exception as e:
-                                # 检查是否是连接池关闭错误
-                                if "pool" in str(e).lower() and "close" in str(e).lower():
+                                # 细化异常类型
+                                error_str = str(e).lower()
+                                if "pool" in error_str and "close" in error_str:
                                     logger.warning(f"binlog监听连接池已关闭，跳过事件处理: {handler_name}")
+                                elif isinstance(e, asyncio.CancelledError):
+                                    logger.debug(f"binlog监听异步任务被取消: {handler_name}")
+                                elif isinstance(e, (TimeoutError, asyncio.TimeoutError)):
+                                    logger.warning(f"⚠️ 异步处理器 {handler_name} 执行超时")
+                                elif isinstance(e, (ConnectionError, ConnectionResetError, BrokenPipeError)):
+                                    logger.warning(f"⚠️ 异步处理器 {handler_name} 网络错误: {type(e).__name__}")
                                 else:
-                                    logger.fail(f"binlog监听异步处理器 {handler_name} 执行", "", str(e))
+                                    logger.fail(f"binlog监听异步处理器 {handler_name} 执行", "", f"{type(e).__name__}: {e}")
                         future.add_done_callback(callback)
                     except Exception as e:
                         # 检查是否是连接池关闭错误
@@ -1568,17 +1656,37 @@ class MySQLBinlogListener:
                     elif exec_time > 1.0:
                         logger.debug(f"binlog监听同步处理器 {handler_name} 执行时间: {exec_time:.2f}秒")
                 return
+            except (ConnectionError, ConnectionResetError, BrokenPipeError) as e:
+                # 网络连接错误 → 重试
+                if retry < max_retries - 1:
+                    delay = self._get_retry_delay(retry)
+                    logger.warning(f"⚠️ 处理器网络错误，{retry+1}/{max_retries} 重试: {type(e).__name__}")
+                    time.sleep(delay)
+                else:
+                    logger.error(f"❌ 处理器 {handler_name} 网络错误，已达最大重试: {type(e).__name__}")
+                    
+            except (TimeoutError, asyncio.TimeoutError) as e:
+                # 超时错误 → 不重试（可能是业务逻辑慢）
+                logger.warning(f"⚠️ 处理器 {handler_name} 执行超时，跳过重试")
+                return
+                
+            except asyncio.CancelledError as e:
+                # 任务被取消 → 正常退出
+                logger.debug(f"binlog监听任务被取消: {handler_name}")
+                return
+                
             except Exception as e:
-                # 检查是否是连接池关闭错误
-                if "pool" in str(e).lower() and "close" in str(e).lower():
+                # 其他错误 → 按错误类型处理
+                error_str = str(e).lower()
+                if "pool" in error_str and "close" in error_str:
                     logger.warning(f"binlog监听连接池已关闭，跳过事件处理: {handler_name}")
                     return
                 elif retry < max_retries - 1:
                     delay = self._get_retry_delay(retry)
-                    logger.warning(f"⚠️ binlog监听同步处理器执行失败，{retry+1}/{max_retries} 重试 ({delay:.2f}s后): {e}")
+                    logger.warning(f"⚠️ 处理器执行失败，{retry+1}/{max_retries} 重试 ({delay:.2f}s后): {type(e).__name__}: {e}")
                     time.sleep(delay)
                 else:
-                    logger.fail(f"binlog监听同步处理器 {handler_name} 执行", "", str(e))
+                    logger.fail(f"binlog监听处理器 {handler_name} 执行", "", f"{type(e).__name__}: {e}")
         
 
     def process_binlog_event(self, event):

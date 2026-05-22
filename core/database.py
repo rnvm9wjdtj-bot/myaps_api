@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 
 from tortoise.contrib.fastapi import register_tortoise
+from tortoise import Tortoise
 from core.settings import (
     BASE_DIR, SQLITE_FILE,
     MYAPS_MAIN_DB, MYAPS_DBSET_LIST, MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD,
@@ -633,23 +634,6 @@ def register_database(app):
         add_exception_handlers=True,
     )
     
-    # 注册启动事件：在Tortoise初始化后通知管理器
-    @app.on_event("startup")
-    async def notify_db_init_complete():
-        from tortoise import Tortoise
-        
-        # 等待Tortoise完成初始化（通常register_tortoise已经确保这一点）
-        max_check = 50
-        for i in range(max_check):
-            if Tortoise._inited:
-                db_init_manager.mark_initialized()
-                break
-            await asyncio.sleep(0.1)
-        else:
-            error = RuntimeError("Tortoise初始化检查超时")
-            db_init_manager.mark_error(error)
-            log_config.error(f"❌ {error}")
-    
     log_config.info("✅ Tortoise ORM 已注册到FastAPI应用")
     log_config.info(f"连接配置: {connection_names}")
     log_config.info(f"应用配置: {list(TORTOISE_ORM_CONFIG['apps'].keys())}")
@@ -763,4 +747,58 @@ async def start_pool_monitoring():
             log_config.error(f"连接池监控任务异常: {e}")
         # 每5分钟执行一次
         await asyncio.sleep(300)
+
+
+async def get_db_connection_safely(db_name: Optional[str] = None, max_wait: float = 15.0):
+    """
+    安全获取数据库连接，包含异常处理和友好提示
+    
+    Args:
+        db_name: 数据库连接名称，默认使用THIS_DB_NAME
+        max_wait: 最大等待时间（秒），用于等待ORM初始化
+    
+    Returns:
+        数据库连接对象
+    
+    Raises:
+        HTTPException: 数据库连接失败时返回500错误
+    """
+    from fastapi import HTTPException
+    from core.settings import THIS_DB_NAME
+    
+    if db_name is None:
+        db_name = THIS_DB_NAME
+    
+    try:
+        if not Tortoise._inited:
+            log_config.info(f"⏳ 等待数据库初始化完成: {db_name}")
+            result = await db_init_manager.wait_for_init(max_wait=max_wait)
+            
+            if not result["success"]:
+                error_msg = f"数据库初始化失败({result['elapsed']:.1f}秒)"
+                log_config.error(f"❌ {error_msg}: {result.get('error')}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"数据库服务初始化失败，请稍后重试"
+                )
+            
+            log_config.info(f"✅ 数据库就绪，获取连接: {db_name}")
+        
+        conn = Tortoise.get_connection(db_name)
+        return conn
+        
+    except KeyError:
+        log_config.error(f"❌ 数据库连接不存在: {db_name}")
+        raise HTTPException(
+            status_code=500,
+            detail="数据库连接配置错误，请联系管理员"
+        )
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        log_config.error(f"❌ 获取数据库连接异常: {db_name} - {type(e).__name__}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="数据库连接失败，请检查服务配置或稍后重试"
+        )
 

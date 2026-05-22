@@ -1011,6 +1011,18 @@ class MDSPageController {
             saveBtn.onclick = () => this.saveRecord(row._staging_id);
         }
         
+        // 绑定删除按钮
+        const deleteBtn = document.getElementById('deleteBtn');
+        if (deleteBtn) {
+            // 检查删除权限
+            if (this.dataTable && this.dataTable.removeAllowed === false) {
+                deleteBtn.style.display = 'none';
+            } else {
+                deleteBtn.style.display = '';
+                deleteBtn.onclick = () => this.deleteRecord(row._staging_id);
+            }
+        }
+        
         const detailModal = document.getElementById('detailModal');
         if (detailModal && bootstrap.Modal.getInstance(detailModal)) {
             bootstrap.Modal.getInstance(detailModal).hide();

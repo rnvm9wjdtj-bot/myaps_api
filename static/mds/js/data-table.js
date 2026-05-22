@@ -242,6 +242,9 @@ class DataTable {
             });
         }
         
+        // 检查删除权限
+        this.checkRemovePermission();
+        
         // 排序点击
         this.container.querySelectorAll('th.sortable').forEach(th => {
             th.addEventListener('click', () => {
@@ -1464,6 +1467,34 @@ class DataTable {
         if (selectAll) selectAll.checked = false;
         document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = false);
         this.updateSelectedCount();
+    }
+    
+    /**
+     * 检查删除权限并控制按钮显示
+     */
+    checkRemovePermission() {
+        // 从全局配置中获取删除模式（由后端模板注入）
+        if (typeof MDS_PAGE_CONFIG !== 'undefined' && MDS_PAGE_CONFIG) {
+            const { removeMode, removeAllowed } = MDS_PAGE_CONFIG;
+            
+            // 控制批量删除按钮
+            const batchDeleteBtn = document.getElementById('batchDeleteBtn');
+            if (batchDeleteBtn) {
+                if (removeAllowed === false) {
+                    batchDeleteBtn.style.display = 'none';
+                } else {
+                    batchDeleteBtn.style.display = '';
+                }
+            }
+            
+            // 保存删除模式到实例
+            this.removeMode = removeMode;
+            this.removeAllowed = removeAllowed;
+        } else {
+            // 配置未注入时的默认行为
+            console.warn('MDS_PAGE_CONFIG未定义，删除权限检查失败');
+            this.removeAllowed = true;  // 默认允许
+        }
     }
     
     /**

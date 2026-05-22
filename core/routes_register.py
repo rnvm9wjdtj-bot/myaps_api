@@ -7,6 +7,7 @@ from apps.common.monitor.routers import router as monitor_rt
 from apps.common.help.routers import router as help_rt
 from apps.data_opt.mds.config_generator import TABLE_DISPLAY_CONFIG
 from apps.data_opt.mds.staging_cleaner import STAGING_TABLE_CONFIG
+from core.settings import MDS_MANUAL_REMOVE
 import os
 import json
 
@@ -95,6 +96,11 @@ def render_mds_page(page_key):
     frontend_config = None
     from apps.data_opt.mds.config_generator import get_cached_config
     frontend_config = get_cached_config(page_key)
+    
+    # 注入删除模式配置到前端
+    if frontend_config:
+        frontend_config["removeMode"] = MDS_MANUAL_REMOVE
+        frontend_config["removeAllowed"] = MDS_MANUAL_REMOVE != "never"
     
     # 准备替换变量
     replacements = {

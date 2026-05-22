@@ -26,6 +26,7 @@ class StagingStatus(str, Enum):
     RELATION_ERROR = ("relation_error", "联检错误", "warning")
     SYNC_ERROR = ("sync_error", "推送失败", "warning")
     SYNCED = ("synced", "已推送", "secondary")
+    REMOVING = ("removing", "待删除", "secondary")
 
     def __new__(cls, value, label, color):
         obj = str.__new__(cls, value)
@@ -48,6 +49,13 @@ class StagingStatus(str, Enum):
                     "color": status.color
                 }
         return None
+
+
+class ManualRemoveMode(str, Enum):
+    """手动删除模式"""
+    NEVER = "never"  # 禁止手动删除
+    NOW = "now"      # 立即删除
+    NEXT = "next"    # 下次推送时删除
 
 
 class ErrorType(str, Enum):

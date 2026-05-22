@@ -6,6 +6,7 @@ import json
 import inspect
 import redis
 from globalobjects import logger as log_config
+from globalobjects.logger import shutdown_logging
 from apps.data_opt.utils.scheduler import scheduler_manager, get_scheduler_status, initialize_scheduler
 from apps.data_opt.utils.binlog_listener import binlog_listener
 from apps.common.utils.resource_monitor import resource_monitor
@@ -39,24 +40,25 @@ async def lifespan(app):
         log_config.error(f"❌ 数据库配置验证失败: {e}")
         raise
     
-    # 使用智能等待管理器
-    if not Tortoise._inited:
-        log_config.info("⏳ 等待 Tortoise ORM 初始化...")
-        
-        # 等待初始化完成（事件驱动，最多30秒）
-        result = await db_init_manager.wait_for_init(
-            max_wait=30.0,
-            early_exit_check=lambda: asyncio.sleep(0)  # 可添加实际连接检查
-        )
-        
-        if not result["success"]:
-            error_msg = f"数据库初始化失败: {result.get('error', '未知错误')}"
+    # register_tortoise已经通过_merge_lifespan_context确保Tortoise先初始化
+    # 这里只需检查状态并等待连接建立完成
+    max_wait = 30.0
+    start_wait = time.time()
+    
+    while not Tortoise._inited:
+        elapsed = time.time() - start_wait
+        if elapsed > max_wait:
+            error_msg = f"Tortoise ORM 初始化超时（{elapsed:.1f}秒）"
             log_config.error(f"❌ {error_msg}")
             raise RuntimeError(error_msg)
-        
-        log_config.info(f"✅ Tortoise ORM 初始化完成，耗时: {result['elapsed']:.2f}秒")
-    else:
-        log_config.info("✅ Tortoise ORM 已初始化")
+        log_config.debug(f"⏳ 等待 Tortoise ORM 初始化... ({elapsed:.1f}s)")
+        await asyncio.sleep(0.1)
+    
+    elapsed = time.time() - start_wait
+    log_config.info(f"✅ Tortoise ORM 已初始化（等待{elapsed:.2f}秒）")
+    
+    # 标记初始化完成
+    db_init_manager.mark_initialized()
     
     log_config.set_db_initialized(True)
     log_config.info("✅ 日志数据库写入已启用")
@@ -527,7 +529,7 @@ async def lifespan(app):
     log_config.info("==================应用关闭完成==================")
 
     # 12. 关闭统一日志系统
-    log_config.shutdown_logging()
+    await shutdown_logging()
 
     # 13. 停止实时日志流服务
     await stop_log_stream()

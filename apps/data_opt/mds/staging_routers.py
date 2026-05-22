@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Query, Body, HTTPException, status, Request, UploadFile, File
 from tortoise.models import Q
 
-from ._base import StagingStatus, INTERNAL_FIELDS, EXCLUDE_FIELDS, TABLE_PROCESS_ORDER, convert_record_to_lowercase, generate_validation_rules_doc, get_field_map
+from ._base import StagingStatus, ManualRemoveMode, INTERNAL_FIELDS, EXCLUDE_FIELDS, TABLE_PROCESS_ORDER, convert_record_to_lowercase, generate_validation_rules_doc, get_field_map
 from .staging_models import (
     TMaterialStaging, TWorkcenterStaging, TMatVerStaging,
     TMatWcStaging, TMatWcBomStaging, TMoldStaging, TMatWcMoldStaging,
@@ -18,8 +18,8 @@ from .staging_cleaner import StagingProcessor, DataTransformer, STAGING_TABLE_CO
 from .config_generator import TABLE_DISPLAY_CONFIG, SYSTEM_RUNTIME_CONFIG
 from apps.io_api.utils.common import standard_response
 from apps.io_api.utils.db_operation import db_bupsert
-from apps.common.utils.db_helpers import get_db_connection_safely
-from core.settings import MYAPS_MAIN_DB, THIS_DB_NAME, MYAPS_DBSET_LIST
+from core.database import get_db_connection_safely
+from core.settings import MYAPS_MAIN_DB, THIS_DB_NAME, MYAPS_DBSET_LIST, MDS_MANUAL_REMOVE
 from globalobjects import logger as log_config
 
 logger = log_config.get_logger(__name__)
@@ -131,8 +131,11 @@ async def delete_existing_records(model_class, table_name: str, records: List[Di
                 conditions[pk] = value
         
         if conditions:
+            # 删除所有匹配的记录（而非只删一条）
             deleted = await model_class.filter(**conditions).delete()
             count += deleted
+            if deleted > 1:
+                logger.warning(f"删除重复记录: {table_name} {conditions} 删除了{deleted}条")
     
     return count
 
@@ -772,19 +775,47 @@ async def clear_staging(
 ):
     """清空缓冲表数据"""
     try:
+        # 检查删除权限
+        if MDS_MANUAL_REMOVE == ManualRemoveMode.NEVER:
+            return standard_response(
+                success=0,
+                message="禁止手动删除数据（MDS_MANUAL_REMOVE=never）"
+            )
+        
         staging_model = STAGING_MODEL_MAPPING.get(table_name)
         if not staging_model:
             raise ValueError(f"未知的缓冲表: {table_name}")
         
-        if status_filter:
-            deleted = await staging_model.filter(_status=status_filter).delete()
-        else:
-            deleted = await staging_model.all().delete()
+        if MDS_MANUAL_REMOVE == ManualRemoveMode.NOW:
+            # 立即删除
+            if status_filter:
+                deleted = await staging_model.filter(_status=status_filter).delete()
+            else:
+                deleted = await staging_model.all().delete()
+            
+            return standard_response(
+                success=1,
+                message=f"已删除 {deleted} 条记录"
+            )
         
-        return standard_response(
-            success=1,
-            message=f"已删除 {deleted} 条记录"
-        )
+        elif MDS_MANUAL_REMOVE == ManualRemoveMode.NEXT:
+            # 标记为待删除状态
+            if status_filter:
+                marked = await staging_model.filter(_status=status_filter).update(_status=StagingStatus.REMOVING)
+            else:
+                marked = await staging_model.all().update(_status=StagingStatus.REMOVING)
+            
+            return standard_response(
+                success=1,
+                message=f"已标记 {marked} 条记录为待删除状态，将在下次推送时统一删除"
+            )
+        
+        else:
+            return standard_response(
+                success=0,
+                message=f"未知的删除模式: {MDS_MANUAL_REMOVE}"
+            )
+            
     except Exception as e:
         logger.error(f"清空缓冲表失败: {str(e)}")
         return standard_response(success=0, message=str(e))
@@ -852,67 +883,74 @@ async def get_monitor_summary(request: Request):
         return standard_response(success=0, message=str(e))
 
 
-@rt.post("/cleanup/old_data", summary="清理历史数据")
-async def cleanup_old_data(
-    request: Request,
-    days: int = Query(30, description="保留最近N天的数据"),
-    status_filter: Optional[StagingStatus] = Query(StagingStatus.SYNCED, description="清理的状态类型"),
-    dry_run: bool = Query(True, description="仅统计不删除")
-):
-    """清理已同步的历史数据"""
-    try:
-        from tortoise import Tortoise
-        from datetime import timedelta
-        from core.settings import THIS_DB_NAME
+# @rt.post("/cleanup/old_data", summary="清理历史数据")
+# async def cleanup_old_data(
+#     request: Request,
+#     days: int = Query(30, description="保留最近N天的数据"),
+#     status_filter: Optional[StagingStatus] = Query(StagingStatus.SYNCED, description="清理的状态类型"),
+#     dry_run: bool = Query(True, description="仅统计不删除")
+# ):
+#     """清理已同步的历史数据"""
+#     try:
+#         # 检查删除权限（清理历史数据属于删除操作）
+#         if MDS_MANUAL_REMOVE == ManualRemoveMode.NEVER:
+#             return standard_response(
+#                 success=0,
+#                 message="禁止清理历史数据（MDS_MANUAL_REMOVE=never）"
+#             )
         
-        conn = await get_db_connection_safely(THIS_DB_NAME)
+#         from tortoise import Tortoise
+#         from datetime import timedelta
+#         from core.settings import THIS_DB_NAME
         
-        cutoff_date = datetime.now() - timedelta(days=days)
+#         conn = await get_db_connection_safely(THIS_DB_NAME)
         
-        tables = [
-            "t_material_staging",
-            "t_workcenter_staging",
-            "t_mat_ver_staging",
-            "t_mat_wc_staging",
-            "t_mat_wc_bom_staging",
-            "t_mold_staging",
-            "t_mat_wc_mold_staging",
-        ]
+#         cutoff_date = datetime.now() - timedelta(days=days)
         
-        results = []
-        for table in tables:
-            count_query = f'''
-                SELECT COUNT(*) as cnt FROM "{table}"
-                WHERE "_status" = $1 AND "_synced_time" < $2
-            '''
-            result = await conn.execute_query(count_query, (status_filter.value, cutoff_date))
-            count = result[1][0]['cnt'] if result[1] else 0
+#         tables = [
+#             "t_material_staging",
+#             "t_workcenter_staging",
+#             "t_mat_ver_staging",
+#             "t_mat_wc_staging",
+#             "t_mat_wc_bom_staging",
+#             "t_mold_staging",
+#             "t_mat_wc_mold_staging",
+#         ]
+        
+#         results = []
+#         for table in tables:
+#             count_query = f'''
+#                 SELECT COUNT(*) as cnt FROM "{table}"
+#                 WHERE "_status" = $1 AND "_synced_time" < $2
+#             '''
+#             result = await conn.execute_query(count_query, (status_filter.value, cutoff_date))
+#             count = result[1][0]['cnt'] if result[1] else 0
             
-            if not dry_run and count > 0:
-                delete_query = f'''
-                    DELETE FROM "{table}"
-                    WHERE "_status" = $1 AND "_synced_time" < $2
-                '''
-                await conn.execute_query(delete_query, (status_filter.value, cutoff_date))
+#             if not dry_run and count > 0:
+#                 delete_query = f'''
+#                     DELETE FROM "{table}"
+#                     WHERE "_status" = $1 AND "_synced_time" < $2
+#                 '''
+#                 await conn.execute_query(delete_query, (status_filter.value, cutoff_date))
             
-            results.append({
-                "table": table,
-                "would_delete": count,
-                "deleted": count if not dry_run else 0
-            })
+#             results.append({
+#                 "table": table,
+#                 "would_delete": count,
+#                 "deleted": count if not dry_run else 0
+#             })
         
-        return standard_response(
-            success=1,
-            message=f"{'统计完成（未删除）' if dry_run else '清理完成'}",
-            data={
-                "cutoff_date": cutoff_date.isoformat(),
-                "dry_run": dry_run,
-                "tables": results
-            }
-        )
-    except Exception as e:
-        logger.error(f"清理历史数据失败: {str(e)}")
-        return standard_response(success=0, message=str(e))
+#         return standard_response(
+#             success=1,
+#             message=f"{'统计完成（未删除）' if dry_run else '清理完成'}",
+#             data={
+#                 "cutoff_date": cutoff_date.isoformat(),
+#                 "dry_run": dry_run,
+#                 "tables": results
+#             }
+#         )
+#     except Exception as e:
+#         logger.error(f"清理历史数据失败: {str(e)}")
+#         return standard_response(success=0, message=str(e))
 
 
 @rt.post("/retry_failed/{table_name}", summary="重试失败的记录")
@@ -983,11 +1021,6 @@ async def upload_excel(
         strategy = DedupStrategy(dedup_strategy)
         processed_data, handled_data = await apply_dedup_strategy(
             table_name, data_list, strategy, update_mode
-        )
-        
-        strategy = DedupStrategy(dedup_strategy)
-        processed_data, handled_data = await apply_dedup_strategy(
-            table_name, data_list, strategy
         )
         
         table_name_staging = f"{table_name}_staging"
@@ -1389,19 +1422,42 @@ async def delete_staging(
 ):
     """删除单条缓冲表记录"""
     try:
-        from tortoise import Tortoise
+        # 检查删除权限
+        if MDS_MANUAL_REMOVE == ManualRemoveMode.NEVER:
+            return standard_response(
+                success=0,
+                message="禁止手动删除数据（MDS_MANUAL_REMOVE=never）"
+            )
         
         staging_model = STAGING_MODEL_MAPPING.get(table_name)
         if not staging_model:
             raise ValueError(f"未知的缓冲表: {table_name}")
         
-        table_name_staging = f"{table_name}_staging"
-        conn = await get_db_connection_safely(THIS_DB_NAME)
+        if MDS_MANUAL_REMOVE == ManualRemoveMode.NOW:
+            # 立即删除
+            table_name_staging = f"{table_name}_staging"
+            conn = await get_db_connection_safely(THIS_DB_NAME)
+            
+            query = f'DELETE FROM "{table_name_staging}" WHERE "_staging_id" = $1'
+            await conn.execute_query(query, (staging_id,))
+            
+            return standard_response(success=1, message="删除成功")
         
-        query = f'DELETE FROM "{table_name_staging}" WHERE "_staging_id" = $1'
-        await conn.execute_query(query, (staging_id,))
+        elif MDS_MANUAL_REMOVE == ManualRemoveMode.NEXT:
+            # 标记为待删除状态
+            marked = await staging_model.filter(_staging_id=staging_id).update(_status=StagingStatus.REMOVING)
+            
+            if marked > 0:
+                return standard_response(success=1, message="已标记为待删除状态，将在下次推送时统一删除")
+            else:
+                return standard_response(success=0, message="记录不存在")
         
-        return standard_response(success=1, message="删除成功")
+        else:
+            return standard_response(
+                success=0,
+                message=f"未知的删除模式: {MDS_MANUAL_REMOVE}"
+            )
+            
     except Exception as e:
         logger.error(f"删除记录失败: {str(e)}")
         return standard_response(success=0, message=str(e))
@@ -1415,7 +1471,12 @@ async def batch_delete_staging(
 ):
     """批量删除缓冲表记录"""
     try:
-        from tortoise import Tortoise
+        # 检查删除权限
+        if MDS_MANUAL_REMOVE == ManualRemoveMode.NEVER:
+            return standard_response(
+                success=0,
+                message="禁止手动删除数据（MDS_MANUAL_REMOVE=never）"
+            )
         
         staging_model = STAGING_MODEL_MAPPING.get(table_name)
         if not staging_model:
@@ -1424,18 +1485,33 @@ async def batch_delete_staging(
         if not staging_ids:
             raise ValueError("staging_ids不能为空")
         
-        table_name_staging = f"{table_name}_staging"
-        conn = await get_db_connection_safely(THIS_DB_NAME)
+        if MDS_MANUAL_REMOVE == ManualRemoveMode.NOW:
+            # 立即删除
+            table_name_staging = f"{table_name}_staging"
+            conn = await get_db_connection_safely(THIS_DB_NAME)
+            
+            placeholders = ", ".join([f"${i+1}" for i in range(len(staging_ids))])
+            query = f'DELETE FROM "{table_name_staging}" WHERE "_staging_id" IN ({placeholders})'
+            
+            await conn.execute_query(query, tuple(staging_ids))
+            
+            return standard_response(success=1, message=f"已删除 {len(staging_ids)} 条记录")
         
-        placeholders = ", ".join([f"${i+1}" for i in range(len(staging_ids))])
-        query = f'DELETE FROM "{table_name_staging}" WHERE "_staging_id" IN ({placeholders})'
+        elif MDS_MANUAL_REMOVE == ManualRemoveMode.NEXT:
+            # 标记为待删除状态
+            marked = await staging_model.filter(_staging_id__in=staging_ids).update(_status=StagingStatus.REMOVING)
+            
+            return standard_response(
+                success=1,
+                message=f"已标记 {marked} 条记录为待删除状态，将在下次推送时统一删除"
+            )
         
-        await conn.execute_query(query, tuple(staging_ids))
-        
-        return standard_response(
-            success=1,
-            message=f"成功删除 {len(staging_ids)} 条记录"
-        )
+        else:
+            return standard_response(
+                success=0,
+                message=f"未知的删除模式: {MDS_MANUAL_REMOVE}"
+            )
+            
     except Exception as e:
         logger.error(f"批量删除失败: {str(e)}")
         return standard_response(success=0, message=str(e))
