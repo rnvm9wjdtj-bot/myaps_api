@@ -17,7 +17,7 @@ from .schemas import (
     #DeleteSupply
 )
 
-from .utils.common import standard_response, drop_matched_data
+from .utils.common import standard_response, drop_matched_data, mark_as_removing
 from .utils.db_operation import db_exec_sql, db_managers, db_query, db_supsert, db_bupsert, db_delete, call_dbprocdure, db_update_by_index
 # from project_files import hap_conn
 from apps.data_opt.utils.data_processor import DataProcessor
@@ -83,7 +83,8 @@ async def dispatch_to_staging(
     data: List,
     source_system: str = "API",
     dedup_strategy: DedupStrategyEnum = DedupStrategyEnum.OVERWRITE,
-    update_mode: UpdateModeEnum = UpdateModeEnum.PARTIAL
+    update_mode: UpdateModeEnum = UpdateModeEnum.PARTIAL,
+    drop: Literal["all", "matched"] = None
 ) -> dict:
     if not STAGING_MODULES_AVAILABLE:
         return {
@@ -107,6 +108,16 @@ async def dispatch_to_staging(
         
         model = config["model"]
         table_name = f"{table_key}_staging"
+        
+        if drop:
+            drop_fields = config.get("drop_fields")
+            await mark_as_removing(
+                model_class=model,
+                table_name=table_name,
+                drop=drop,
+                data_list=[item.model_dump() if hasattr(item, "model_dump") else item for item in data],
+                drop_fields=drop_fields
+            )
         
         try:
             data_list = []
@@ -541,7 +552,8 @@ async def post_mat_wc(
             data=data,
             source_system=source_system,
             dedup_strategy=dedup_strategy,
-            update_mode=update_mode
+            update_mode=update_mode,
+            drop=drop
         )
         return map_staging_response_to_direct(staging_response)
     
@@ -655,7 +667,8 @@ async def post_mat_wc_bom(
             data=data,
             source_system=source_system,
             dedup_strategy=dedup_strategy,
-            update_mode=update_mode
+            update_mode=update_mode,
+            drop=drop
         )
         return map_staging_response_to_direct(staging_response)
     
@@ -769,7 +782,8 @@ async def post_mat_wc_mold(
             data=data,
             source_system=source_system,
             dedup_strategy=dedup_strategy,
-            update_mode=update_mode
+            update_mode=update_mode,
+            drop=drop
         )
         return map_staging_response_to_direct(staging_response)
     

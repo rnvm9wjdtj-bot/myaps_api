@@ -254,3 +254,72 @@ async def drop_matched_data(data: List[Any], db_names: str, table_name: str, mat
             except Exception as e:
                 logger.error(f"删除数据失败: {str(e)}")
                 raise e
+
+
+async def mark_as_removing(
+    model_class,
+    table_name: str,
+    drop: Literal["all", "matched"],
+    data_list: List[Dict] = None,
+    drop_fields: List[str] = None
+) -> int:
+    """
+    将缓冲表数据标记为removing状态（用于staging模式drop功能）
+    
+    Args:
+        model_class: Tortoise ORM模型类
+        table_name: 表名
+        drop: 标记方式，"all"或"matched"
+        data_list: 新数据列表（drop="matched"时需要）
+        drop_fields: 匹配字段列表（drop="matched"时需要）
+    
+    Returns:
+        标记的记录数
+    """
+    from globalobjects import logger as log_config
+    from apps.data_opt.mds._base import StagingStatus
+    logger = log_config.get_logger(__name__)
+    
+    if drop == "all":
+        count = await model_class.all().update(_status=StagingStatus.REMOVING)
+        logger.info(f"drop=all: 已将 {table_name} 全部 {count} 条记录标记为removing")
+        return count
+    
+    elif drop == "matched":
+        if not data_list or not drop_fields:
+            logger.warning(f"drop=matched: 缺少data_list或drop_fields，跳过")
+            return 0
+        
+        unique_combinations = set()
+        for item in data_list:
+            field_values = []
+            for field in drop_fields:
+                value = item.get(field)
+                if value is not None and value != '':
+                    field_values.append(value)
+                else:
+                    break
+            
+            if len(field_values) == len(drop_fields):
+                unique_combinations.add(tuple(field_values))
+        
+        if not unique_combinations:
+            logger.info(f"drop=matched: 无有效匹配值，跳过")
+            return 0
+        
+        total_marked = 0
+        batch_size = 100
+        combinations_list = list(unique_combinations)
+        
+        for i in range(0, len(combinations_list), batch_size):
+            batch = combinations_list[i:i+batch_size]
+            
+            for values in batch:
+                condition = {f: v for f, v in zip(drop_fields, values)}
+                count = await model_class.filter(**condition).update(_status=StagingStatus.REMOVING)
+                total_marked += count
+        
+        logger.info(f"drop=matched: 已将 {table_name} 的 {total_marked} 条记录标记为removing (匹配{len(unique_combinations)}组)")
+        return total_marked
+    
+    return 0

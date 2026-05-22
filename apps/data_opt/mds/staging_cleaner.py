@@ -121,7 +121,8 @@ STAGING_TABLE_CONFIG = {
             #     "validator": validate_mat_wc_rules,
             # }
         ],
-        "pre_batch_hook": [mat_wc_route_check_hook]
+        "pre_batch_hook": [mat_wc_route_check_hook],
+        "drop_fields": ["materialno", "matver"],
     },
 
     "t_mat_wc_bom": {
@@ -171,6 +172,7 @@ STAGING_TABLE_CONFIG = {
             create_range_rule("scrap", 0, 100, "损耗率必须在0-100之间"),
         ],
         "pre_batch_hook": [bom_structure_check_hook],
+        "drop_fields": ["productno", "matver"],
     },
 
     "t_mold": {
@@ -229,6 +231,7 @@ STAGING_TABLE_CONFIG = {
             #     "validator": validate_mat_wc_mold_rules,
             # }
         ],
+        "drop_fields": ["materialno", "itemno"],
     },
 }
 
