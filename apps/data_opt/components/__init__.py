@@ -791,7 +791,7 @@ class _ProductionDataCache:
     
 
     def get_peg_by_demand(self, demand_no: str) -> List[str]:
-        """根据 DemandNo 获取对应的 S_SupplyNo 列表"""
+        """根据 DemandNo 获取对应的 S_SupplyNo 列表，也可用于获取前置工单号"""
         if self._is_cache_expired(CacheItem.PEG.value):
             self._stats['total_misses'] += 1
             return []
@@ -806,7 +806,7 @@ class _ProductionDataCache:
     
 
     def get_peg_by_supply(self, supply_no: str) -> List[str]:
-        """根据 S_SupplyNo 获取对应的 DemandNo 列表"""
+        """根据 S_SupplyNo 获取对应的 DemandNo 列表，也可用于获取后续工单号"""
         if self._is_cache_expired(CacheItem.PEG.value):
             self._stats['total_misses'] += 1
             return []
@@ -1601,13 +1601,12 @@ class ApsPayloadSponsor:
                 filter_string=f"`SupplyNo`='{supplyno}'"
             )
             
-            if result.success and result.meta.get('total') == 1:  # 筛选到唯一的工单，则补充工序信息（v_orderwc）
+            if result.success and result.meta.get('affected_rows') == 1:  # 筛选到唯一的工单，则补充工序信息（v_orderwc）
                 result.data[0]['orderwc'] = await get_orderwc(mono=supplyno)
 
                 vendorno = result.data[0].get('vendorno')
                 if origin_so and result.data[0].get('category') == 'MTO' and vendorno:
                     result.data[0]['so'] = await get_so(vendorno)
-                        
                 if prev_mo:
                     result.data[0]['prev_mo'] = await get_prev_mo(supplyno)
                 if next_mo:

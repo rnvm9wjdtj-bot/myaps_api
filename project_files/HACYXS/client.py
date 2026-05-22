@@ -139,9 +139,9 @@ def create_custom_mo_push_model(_aps: ApsPayloadSponsor):
             mo_details['DynamicPropertyKeys'] = []
             mo_details['DynamicPropertyValues'] = []
             # 构建后续工单关系
-            next_mos: list[dict] = values.get('next_mo')
+            next_mos: list[str] = _aps._production_cache.get_peg_by_supply(values['supplyno'])
             if next_mos:
-                next_mo_sn = ','.join([_['supplyno'] for _ in next_mos])
+                next_mo_sn = ','.join(next_mos)
                 if next_mo_sn:
                     mo_details['DynamicPropertyKeys'].append('priuserdefnvc1')  # 存入自定义字段
                     mo_details['DynamicPropertyValues'].append(next_mo_sn)

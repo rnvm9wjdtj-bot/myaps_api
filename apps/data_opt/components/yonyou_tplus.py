@@ -227,7 +227,6 @@ class MoPushModel(PydanticModel):
         mopd = []
         
         if orderwc_list:
-            i = 1
             for orderwc in orderwc_list:
                 mopd.append({
                     'Inventory': {'Code': orderwc['materialno']},
@@ -236,9 +235,8 @@ class MoPushModel(PydanticModel):
                     'Quantity': orderwc['orderqty'],
                     'ProcessingType': {"Code": ""},
                     'Process': {"Code": orderwc['itemno']},
-                    'SequenceNumber': i,
+                    'SequenceNumber': orderwc['sortno'],
                 })
-                i += 1
 
         momd = []
         if demand_list:
