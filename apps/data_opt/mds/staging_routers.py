@@ -412,6 +412,7 @@ async def sync_to_production(
         total_failed = sum(s.get("failed") or 0 for s in all_stats.values())
         total_skipped = sum(s.get("skipped") or 0 for s in all_stats.values())
         total_dedup = sum(len(s.get("dedup_staging_ids", [])) for s in all_stats.values())
+        total_removed = sum(s.get("removed") or 0 for s in all_stats.values())
         
         # 将details转为数组格式
         details_list = [
@@ -420,20 +421,22 @@ async def sync_to_production(
                 "synced": len(stats.get("synced_staging_ids", [])),
                 "failed": stats.get("failed") or 0,
                 "skipped": stats.get("skipped") or 0,
-                "dedup": len(stats.get("dedup_staging_ids", []))
+                "dedup": len(stats.get("dedup_staging_ids", [])),
+                "removed": stats.get("removed") or 0
             }
             for db_name, stats in all_stats.items()
         ]
         
         return standard_response(
             success=1,
-            message=f"同步完成: {len(target_db_list)}个账套, 成功{total_synced}条, 去重失败{total_dedup}条, 其他失败{total_failed}条",
+            message=f"同步完成: {len(target_db_list)}个账套, 成功{total_synced}条, 删除{total_removed}条, 去重失败{total_dedup}条, 其他失败{total_failed}条",
             data={
                 "target_dbs": target_db_list,
                 "total_synced": total_synced,
                 "total_failed": total_failed,
                 "total_skipped": total_skipped,
                 "total_dedup": total_dedup,
+                "total_removed": total_removed,
                 "details": details_list
             }
         )

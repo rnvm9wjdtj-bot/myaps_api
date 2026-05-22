@@ -1078,11 +1078,68 @@ class StagingProcessor:
             raise ValueError(f"表配置不完整: {table_name}")
         
         target_db_name = target_db if target_db else MYAPS_MAIN_DB
-        stats = {"synced": 0, "failed": 0, "skipped": 0, "target_db": target_db_name, "synced_staging_ids": []}
+        stats = {"synced": 0, "failed": 0, "skipped": 0, "target_db": target_db_name, "synced_staging_ids": [], "removed": 0}
 
         pg_conn = Tortoise.get_connection(THIS_DB_NAME)
         staging_table_name = staging_model._meta.db_table
         target_table_name = target_model._meta.db_table
+        
+        # ========== 步骤1：处理removing状态的数据 ==========
+        # removing状态的数据只能在推送时删除，确保缓冲表和正式表数据一致
+        removing_query = f'SELECT * FROM "{staging_table_name}" WHERE "_status" = $1'
+        removing_result = await pg_conn.execute_query(removing_query, ("removing",))
+        removing_records = removing_result[1] if removing_result[1] else []
+        
+        if removing_records:
+            logger.info(f"处理待删除数据 [{table_name}]: 找到{len(removing_records)}条removing状态记录")
+            
+            # 获取业务主键字段
+            business_keys = config.get("business_keys", [])
+            
+            if mode == "refresh":
+                # 刷新模式：正式表已被TRUNCATE，直接删除缓冲表记录
+                delete_ids = [r["_staging_id"] for r in removing_records]
+                placeholders = ", ".join([f"${i+1}" for i in range(len(delete_ids))])
+                delete_query = f'DELETE FROM "{staging_table_name}" WHERE "_staging_id" IN ({placeholders})'
+                await pg_conn.execute_query(delete_query, tuple(delete_ids))
+                stats["removed"] = len(delete_ids)
+                logger.info(f"刷新模式：已删除缓冲表removing记录 {len(delete_ids)}条")
+            else:
+                # 增量模式：需要删除正式表中对应的记录
+                mysql_conn = Tortoise.get_connection(target_db_name)
+                
+                # 构建删除条件：根据business_keys批量删除
+                for record in removing_records:
+                    if business_keys:
+                        # 构建WHERE条件
+                        conditions = []
+                        values = []
+                        for pk in business_keys:
+                            # 获取字段对应的数据库列名
+                            field_obj = target_model._meta.fields_map.get(pk)
+                            db_col = field_obj.source_field if field_obj and hasattr(field_obj, 'source_field') and field_obj.source_field else pk
+                            value = record.get(db_col)
+                            if value is not None:
+                                conditions.append(f"`{db_col}` = %s")
+                                values.append(value)
+                        
+                        if conditions:
+                            delete_sql = f"DELETE FROM `{target_table_name}` WHERE {' AND '.join(conditions)}"
+                            try:
+                                await mysql_conn.execute_query(delete_sql, tuple(values))
+                            except Exception as e:
+                                logger.error(f"删除正式表记录失败 [{table_name}]: {str(e)}, 条件={conditions}")
+                    
+                    # 删除缓冲表记录
+                    await pg_conn.execute_query(
+                        f'DELETE FROM "{staging_table_name}" WHERE "_staging_id" = $1',
+                        (record["_staging_id"],)
+                    )
+                    stats["removed"] += 1
+                
+                logger.info(f"增量模式：已删除正式表+缓冲表removing记录 {stats['removed']}条")
+        
+        # ========== 步骤2：处理同步逻辑 ==========
         
         if mode == "refresh" and not skip_truncate:
             mysql_conn = Tortoise.get_connection(target_db_name)
