@@ -41,7 +41,7 @@
 3. 拖拽或点击上传文件（支持 `.xlsx`, `.xls`, `.csv`）
 
 **方式二：API接口调用**
-- 调用 `POST /api/mds/{table_key}` 接口
+- 调用 `POST /api/mds/{table}` 或 `POST /api/{table}?db_name=--s`接口
 - 适用于系统对接场景（ERP、MES、PLM等）
 
 ### 2. 数据校验

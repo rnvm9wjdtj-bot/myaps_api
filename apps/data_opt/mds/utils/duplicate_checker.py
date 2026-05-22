@@ -493,6 +493,16 @@ async def apply_dedup_strategy(
                 existing_records = existing_item.get("existing_records", [])
                 new_data = last_item["data"]
                 
+                # 检查是否有removing状态的记录需要恢复
+                removing_records = [r for r in existing_records if getattr(r, '_status', None) == 'removing']
+                if removing_records:
+                    # 将removing记录恢复为pending状态
+                    for record in removing_records:
+                        await record.update_from_dict({_status: StagingStatus.PENDING}).save()
+                    logger.info(f"removing状态恢复为pending: {pk_value}, 共{len(removing_records)}条")
+                    # 从existing_records中移除removing记录
+                    existing_records = [r for r in existing_records if getattr(r, '_status', None) != 'removing']
+                
                 all_same = True
                 diff_info = ""
                 if existing_records:
@@ -553,6 +563,16 @@ async def apply_dedup_strategy(
             
             existing_records = item.get("existing_records", [])
             new_data = item["data"]
+            
+            # 检查是否有removing状态的记录需要恢复
+            removing_records = [r for r in existing_records if getattr(r, '_status', None) == 'removing']
+            if removing_records:
+                # 将removing记录恢复为pending状态
+                for record in removing_records:
+                    await record.update_from_dict({_status: StagingStatus.PENDING}).save()
+                logger.info(f"removing状态恢复为pending: {pk_value}, 共{len(removing_records)}条")
+                # 从existing_records中移除removing记录（已恢复为pending，会被覆盖）
+                existing_records = [r for r in existing_records if getattr(r, '_status', None) != 'removing']
             
             # 对所有已存在记录进行内容比对
             all_same = True

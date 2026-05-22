@@ -510,8 +510,8 @@ class DataCleaner:
                     condition_values[cond["foreign"]] = local_value
 
                 if all_fields_present:
-                    # 构建查询条件
-                    exists = await model_class.filter(**condition_values).exists()
+                    # 构建查询条件，排除removing状态的数据
+                    exists = await model_class.filter(**condition_values).exclude(_status=StagingStatus.REMOVING).exists()
                     if not exists:
                         # 构建错误信息，显示所有条件值
                         error_value_parts = [f"{data.get(cond['local'])}" for cond in conditions]
@@ -526,7 +526,8 @@ class DataCleaner:
                 value_field = fk_config.get("value_field", field_name)
                 value = data.get(field_name)
                 if value:
-                    exists = await model_class.filter(**{value_field: value}).exists()
+                    # 排除removing状态的数据
+                    exists = await model_class.filter(**{value_field: value}).exclude(_status=StagingStatus.REMOVING).exists()
                     if not exists:
                         errors.append(self._create_error(
                             staging_id, ErrorType.FK_NOT_FOUND,
