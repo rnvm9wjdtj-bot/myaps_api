@@ -122,7 +122,9 @@ async def dispatch_to_staging(
         try:
             data_list = []
             for item in data:
-                if hasattr(item, "model_dump"):
+                if hasattr(item, "_raw_input_data") and item._raw_input_data:
+                    data_list.append(item._raw_input_data)
+                elif hasattr(item, "model_dump"):
                     data_list.append(item.model_dump())
                 elif isinstance(item, dict):
                     data_list.append(item)
