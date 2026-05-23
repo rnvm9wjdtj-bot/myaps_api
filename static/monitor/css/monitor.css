@@ -2382,10 +2382,41 @@ td {
 
 .datetime-input {
     padding: 6px 12px;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    font-size: 14px;
-    font-family: var(--mono-font);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    background: rgba(255, 255, 255, 0.95);
+    color: #333;
+    transition: all 0.2s;
+}
+
+.datetime-input:focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.6);
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1);
+}
+
+.datetime-input::-webkit-datetime-edit {
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+}
+
+.datetime-input::-webkit-datetime-edit-fields-wrapper {
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+}
+
+.datetime-input::-webkit-datetime-edit-text {
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+}
+
+.datetime-input::-webkit-datetime-edit-month-field,
+.datetime-input::-webkit-datetime-edit-day-field,
+.datetime-input::-webkit-datetime-edit-year-field,
+.datetime-input::-webkit-datetime-edit-hour-field,
+.datetime-input::-webkit-datetime-edit-minute-field,
+.datetime-input::-webkit-datetime-edit-second-field,
+.datetime-input::-webkit-datetime-edit-ampm-field {
+    font-family: Consolas, Monaco, 'Courier New', monospace;
 }
 
 .query-filters {
@@ -2395,11 +2426,24 @@ td {
 
 .filter-select {
     padding: 6px 12px;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    font-size: 14px;
-    background: white;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    background: rgba(255, 255, 255, 0.95);
+    color: #333;
     cursor: pointer;
+    transition: all 0.2s;
+}
+
+.filter-select:focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.6);
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1);
+}
+
+.filter-select option {
+    font-family: Consolas, Monaco, 'Courier New', monospace;
 }
 
 .query-actions {
@@ -2469,6 +2513,8 @@ td {
 
 .result-tab-content {
     display: none;
+    max-height: calc(100vh - 220px);
+    overflow-y: auto;
 }
 
 .result-tab-content.active {

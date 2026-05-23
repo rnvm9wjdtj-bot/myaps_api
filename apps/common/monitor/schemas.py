@@ -146,3 +146,29 @@ class EventMetrics(BaseModel):
     timestamp: float = Field(description="时间戳")
     event_stats: Dict[str, EventTypeStats] = Field(default_factory=dict, description="各事件类型统计")
     summary: Dict[str, Any] = Field(default_factory=dict, description="汇总信息")
+
+
+class PaginationMeta(BaseModel):
+    """分页元数据"""
+    page: int = Field(description="当前页码（从1开始）")
+    page_size: int = Field(description="每页条数")
+    total_count: int = Field(description="总记录数")
+    total_pages: int = Field(description="总页数")
+    has_next: bool = Field(description="是否有下一页")
+    has_prev: bool = Field(description="是否有上一页")
+    start_index: int = Field(description="当前页起始索引")
+    end_index: int = Field(description="当前页结束索引")
+
+
+class QueryResponse(BaseModel):
+    """查询响应基类（包含分页）"""
+    pagination: Optional[PaginationMeta] = Field(None, description="分页元数据")
+    time_range: Optional[Dict[str, Any]] = Field(None, description="时间范围")
+    filter_params: Optional[Dict[str, Any]] = Field(None, description="过滤条件")
+
+
+class HistoryQueryResponse(QueryResponse):
+    """历史查询响应"""
+    http_requests: List[Dict[str, Any]] = Field(default_factory=list, description="接收请求列表")
+    outbound_requests: List[Dict[str, Any]] = Field(default_factory=list, description="发送请求列表")
+    logs: List[Dict[str, Any]] = Field(default_factory=list, description="系统日志列表")

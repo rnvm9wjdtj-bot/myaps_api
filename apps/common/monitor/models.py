@@ -136,6 +136,9 @@ class APIRequest(Model):
             ("is_error",),
             ("is_internal",),
             ("request_id",),
+            ("client_ip",),
+            ("method",),
+            ("timestamp", "status_code"),
         ]
 
 
@@ -167,6 +170,8 @@ class OutboundAPIRequest(Model):
             ("is_error",),
             ("is_slow",),
             ("is_internal",),
+            ("method",),
+            ("timestamp", "status_code"),
         ]
 
 
@@ -193,6 +198,7 @@ class SystemLog(Model):
             ("level",),
             ("module",),
             ("function",),
+            ("timestamp", "level"),
         ]
 
 

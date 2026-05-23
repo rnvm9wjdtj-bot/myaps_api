@@ -15,6 +15,7 @@ from tortoise import Tortoise
 from .service import monitor_service
 from .log_stream_service import log_stream_service
 from .storage import request_storage, outbound_request_storage, system_log_storage
+from .models import APIRequest, OutboundAPIRequest, SystemLog
 from core.settings import TIMEZONE
 from globalobjects import logger as log_config
 
@@ -895,25 +896,49 @@ async def get_logs_by_time_range(
 
 @router.get("/history/query")
 async def get_history_by_time_range(
-    start_time: str,
-    end_time: str,
+    start_time: str = None,
+    end_time: str = None,
     timezone_offset: int = None,
     level: str = None,
     type: str = None,
-    limit: int = 1000
+    limit: int = 1000,
+    module: str = None,
+    keyword: str = None,
+    status_code_min: int = None,
+    status_code_max: int = None,
+    duration_min: float = None,
+    duration_max: float = None,
+    client_ip: str = None,
+    method: str = None,
+    page: int = 1,
+    page_size: int = 50,
+    sort_by: str = None,
+    sort_order: str = "desc"
 ):
     """
     统一的历史查询端点（用于日志联动功能）
     
-    按时间范围查询接收请求、发送请求和系统日志，并支持数据类型过滤
+    按时间范围查询接收请求、发送请求和系统日志，并支持数据类型过滤和高级过滤条件
     
     Args:
-        start_time: 开始时间（本地时间，ISO格式，如 "2024-01-15T18:30:00"）
-        end_time: 结束时间（本地时间，ISO格式，如 "2024-01-15T18:35:00"）
+        start_time: 开始时间（本地时间，ISO格式，如 "2024-01-15T18:30:00"），不传则查询全部
+        end_time: 结束时间（本地时间，ISO格式，如 "2024-01-15T18:35:00"），不传则查询全部
         timezone_offset: 时区偏移分钟数（默认从配置读取，UTC+8 = 480）
         level: 日志级别过滤（DEBUG/INFO/WARNING/ERROR/CRITICAL）
         type: 数据类型过滤（http/outbound/logs，不传则返回全部）
-        limit: 每种数据类型返回数量限制
+        limit: 每种数据类型返回数量限制（用于无分页场景）
+        module: 模块名过滤（支持多选，逗号分隔，如 "order_service,payment"）
+        keyword: 关键词全文搜索（匹配message、path、url等文本字段）
+        status_code_min: 状态码范围下限
+        status_code_max: 状态码范围上限
+        duration_min: 响应时间范围下限（毫秒）
+        duration_max: 响应时间范围上限（毫秒）
+        client_ip: 客户端IP过滤
+        method: HTTP请求方法过滤（GET/POST/PUT/DELETE等）
+        page: 页码（从1开始）
+        page_size: 每页条数（50/100/200/500）
+        sort_by: 排序字段（timestamp/duration/status_code）
+        sort_order: 排序方向（asc/desc）
     
     Returns:
         包含接收请求、发送请求和系统日志的查询结果
@@ -931,9 +956,58 @@ async def get_history_by_time_range(
         except (ValueError, TypeError):
             timezone_offset = 480  # 默认 UTC+8
     
-    # 转换为UTC时间
-    utc_start = local_to_utc(start_time, timezone_offset)
-    utc_end = local_to_utc(end_time, timezone_offset)
+    # 转换为UTC时间（如果提供了时间范围）
+    utc_start = local_to_utc(start_time, timezone_offset) if start_time else None
+    utc_end = local_to_utc(end_time, timezone_offset) if end_time else None
+    
+    # 参数验证
+    if status_code_min is not None and status_code_max is not None and status_code_min > status_code_max:
+        raise HTTPException(status_code=400, detail="status_code_min 不能大于 status_code_max")
+    
+    if duration_min is not None and duration_max is not None and duration_min > duration_max:
+        raise HTTPException(status_code=400, detail="duration_min 不能大于 duration_max")
+    
+    if status_code_min is not None and (status_code_min < 100 or status_code_min > 599):
+        raise HTTPException(status_code=400, detail="status_code_min 必须在 100-599 范围内")
+    
+    if status_code_max is not None and (status_code_max < 100 or status_code_max > 599):
+        raise HTTPException(status_code=400, detail="status_code_max 必须在 100-599 范围内")
+    
+    if duration_min is not None and duration_min < 0:
+        raise HTTPException(status_code=400, detail="duration_min 不能为负数")
+    
+    if duration_max is not None and duration_max < 0:
+        raise HTTPException(status_code=400, detail="duration_max 不能为负数")
+    
+    # 分页参数验证
+    if page < 1:
+        raise HTTPException(status_code=400, detail="page 必须 >= 1")
+    
+    valid_page_sizes = [50, 100, 200, 500]
+    if page_size not in valid_page_sizes:
+        raise HTTPException(status_code=400, detail=f"page_size 必须是 {valid_page_sizes} 之一")
+    
+    if sort_order not in ["asc", "desc"]:
+        raise HTTPException(status_code=400, detail="sort_order 必须是 asc 或 desc")
+    
+    if sort_by and sort_by not in ["timestamp", "duration", "status_code"]:
+        raise HTTPException(status_code=400, detail="sort_by 必须是 timestamp/duration/status_code 之一")
+    
+    # 构建过滤条件字典（传递给storage层）
+    filter_params = {
+        "module": module.split(',') if module else None,
+        "keyword": keyword,
+        "status_code_min": status_code_min,
+        "status_code_max": status_code_max,
+        "duration_min": duration_min,
+        "duration_max": duration_max,
+        "client_ip": client_ip,
+        "method": method,
+        "page": page,
+        "page_size": page_size,
+        "sort_by": sort_by,
+        "sort_order": sort_order
+    }
     
     result = {
         "http_requests": [],
@@ -941,8 +1015,9 @@ async def get_history_by_time_range(
         "logs": [],
         "time_range": {
             "original": {"start": start_time, "end": end_time},
-            "converted": {"start": utc_start.isoformat(), "end": utc_end.isoformat()}
-        }
+            "converted": {"start": utc_start.isoformat() if utc_start else None, "end": utc_end.isoformat() if utc_end else None}
+        },
+        "filter_params": {k: v for k, v in filter_params.items() if v is not None}
     }
     
     # 根据类型参数决定查询哪些数据
@@ -952,7 +1027,9 @@ async def get_history_by_time_range(
     
     # 查询接收请求
     if should_query_http:
-        http_requests = await request_storage.get_requests_by_time_range(utc_start, utc_end, limit)
+        http_requests = await request_storage.get_requests_with_filters(
+            utc_start, utc_end, limit, filter_params
+        )
         result["http_requests"] = [{
             "id": req.id,
             "timestamp": req.timestamp.isoformat(),
@@ -974,7 +1051,9 @@ async def get_history_by_time_range(
     
     # 查询发送请求
     if should_query_outbound:
-        outbound_requests = await outbound_request_storage.get_requests_by_time_range(utc_start, utc_end, limit)
+        outbound_requests = await outbound_request_storage.get_requests_with_filters(
+            utc_start, utc_end, limit, filter_params
+        )
         result["outbound_requests"] = [{
             "id": req.id,
             "timestamp": req.timestamp.isoformat(),
@@ -994,7 +1073,9 @@ async def get_history_by_time_range(
     
     # 查询系统日志
     if should_query_logs:
-        logs = await system_log_storage.get_logs_by_time_range(utc_start, utc_end, level, limit)
+        logs = await system_log_storage.get_logs_with_filters(
+            utc_start, utc_end, level, limit, filter_params
+        )
         result["logs"] = [{
             "id": log.id,
             "timestamp": log.timestamp.isoformat(),
@@ -1006,4 +1087,492 @@ async def get_history_by_time_range(
             "stack_trace": log.stack_trace
         } for log in logs]
     
+    # 计算分页元数据
+    total_count = 0
+    if should_query_http:
+        total_count = await request_storage.count_requests_with_filters(utc_start, utc_end, filter_params)
+    elif should_query_outbound:
+        total_count = await outbound_request_storage.count_requests_with_filters(utc_start, utc_end, filter_params)
+    elif should_query_logs:
+        total_count = await system_log_storage.count_logs_with_filters(utc_start, utc_end, level, filter_params)
+    
+    if total_count > 0:
+        total_pages = (total_count + page_size - 1) // page_size
+        result["pagination"] = {
+            "page": page,
+            "page_size": page_size,
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_prev": page > 1,
+            "start_index": (page - 1) * page_size + 1,
+            "end_index": min(page * page_size, total_count)
+        }
+    
+    # 统计总数（用于结果摘要显示）
+    result["stats"] = {
+        "http_count": await request_storage.count_requests_with_filters(utc_start, utc_end, filter_params) if should_query_http else 0,
+        "outbound_count": await outbound_request_storage.count_requests_with_filters(utc_start, utc_end, filter_params) if should_query_outbound else 0,
+        "logs_count": await system_log_storage.count_logs_with_filters(utc_start, utc_end, level, filter_params) if should_query_logs else 0
+    }
+    
+    # 统计日志级别分布（仅查询系统日志时）
+    if should_query_logs and result["stats"]["logs_count"] > 0:
+        level_stats = {}
+        for lv in ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']:
+            count = await system_log_storage.count_logs_with_filters(utc_start, utc_end, lv, filter_params)
+            if count > 0:
+                level_stats[lv] = count
+        result["stats"]["level_distribution"] = level_stats
+    
     return result
+
+
+# ========== 统计数据端点 ==========
+
+@router.get("/history/stats")
+async def get_history_stats(
+    start_time: str,
+    end_time: str,
+    timezone_offset: int = None
+):
+    """
+    统计数据端点 - 用于图表分析
+    
+    Returns:
+        - 时序趋势数据
+        - 日志级别分布
+        - 状态码分布
+        - 慢请求TOP10
+    """
+    if timezone_offset is None or timezone_offset == 0:
+        try:
+            tz_str = str(TIMEZONE).strip()
+            tz_hours = float(tz_str) if tz_str.startswith(('+', '-')) else float(tz_str)
+            timezone_offset = int(tz_hours * 60)
+        except (ValueError, TypeError):
+            timezone_offset = 480
+    
+    utc_start = local_to_utc(start_time, timezone_offset)
+    utc_end = local_to_utc(end_time, timezone_offset)
+    
+    # 统计日志级别分布
+    logs = await system_log_storage.get_logs_by_time_range(utc_start, utc_end, None, 10000)
+    level_dist = {}
+    for log in logs:
+        level = log.level or "INFO"
+        level_dist[level] = level_dist.get(level, 0) + 1
+    
+    # 统计HTTP状态码分布
+    http_requests = await request_storage.get_requests_by_time_range(utc_start, utc_end, 10000)
+    status_dist = {}
+    slow_requests = []
+    for req in http_requests:
+        code_range = f"{req.status_code // 100}xx"
+        status_dist[code_range] = status_dist.get(code_range, 0) + 1
+        if req.is_slow:
+            slow_requests.append({
+                "path": req.path,
+                "method": req.method,
+                "duration": req.response_time
+            })
+    
+    slow_requests.sort(key=lambda x: x["duration"], reverse=True)
+    slow_top10 = slow_requests[:10]
+    
+    from collections import defaultdict
+    hourly_counts = defaultdict(lambda: {"requests": 0, "errors": 0})
+    
+    for req in http_requests:
+        hour = req.timestamp.strftime("%Y-%m-%d %H:00")
+        hourly_counts[hour]["requests"] += 1
+        if req.is_error:
+            hourly_counts[hour]["errors"] += 1
+    
+    trend_data = [
+        {"time": k, "requests": v["requests"], "errors": v["errors"]}
+        for k, v in sorted(hourly_counts.items())
+    ]
+    
+    return {
+        "trend": trend_data,
+        "level_distribution": level_dist,
+        "status_distribution": status_dist,
+        "slow_requests": slow_top10,
+        "summary": {
+            "total_logs": len(logs),
+            "total_requests": len(http_requests),
+            "error_count": sum(1 for r in http_requests if r.is_error),
+            "slow_count": len(slow_requests)
+        }
+    }
+
+
+# ========== 时间线端点 ==========
+
+@router.get("/history/timeline")
+async def get_history_timeline(
+    start_time: str,
+    end_time: str,
+    timezone_offset: int = None,
+    level: str = None,
+    limit: int = 500,
+    module: str = None,
+    keyword: str = None,
+    status_code_min: int = None,
+    status_code_max: int = None,
+    duration_min: float = None,
+    duration_max: float = None,
+    client_ip: str = None,
+    method: str = None
+):
+    """
+    时间线查询端点 - 合并三源数据并按时间排序
+    
+    Args:
+        start_time: 开始时间（本地时间）
+        end_time: 结束时间（本地时间）
+        timezone_offset: 时区偏移分钟数
+        level: 日志级别过滤
+        limit: 返回数量限制
+        其他过滤参数同history/query
+    
+    Returns:
+        按时间排序的混合事件列表
+    """
+    # 时区处理
+    if timezone_offset is None or timezone_offset == 0:
+        try:
+            tz_str = str(TIMEZONE).strip()
+            if tz_str.startswith(('+', '-')):
+                tz_hours = float(tz_str)
+            else:
+                tz_hours = float(tz_str)
+            timezone_offset = int(tz_hours * 60)
+        except (ValueError, TypeError):
+            timezone_offset = 480
+    
+    utc_start = local_to_utc(start_time, timezone_offset)
+    utc_end = local_to_utc(end_time, timezone_offset)
+    
+    filter_params = {
+        "module": module.split(',') if module else None,
+        "keyword": keyword,
+        "status_code_min": status_code_min,
+        "status_code_max": status_code_max,
+        "duration_min": duration_min,
+        "duration_max": duration_max,
+        "client_ip": client_ip,
+        "method": method
+    }
+    
+    # 并发查询三源数据
+    http_task = request_storage.get_requests_with_filters(utc_start, utc_end, limit, filter_params)
+    outbound_task = outbound_request_storage.get_requests_with_filters(utc_start, utc_end, limit, filter_params)
+    logs_task = system_log_storage.get_logs_with_filters(utc_start, utc_end, level, limit, filter_params)
+    
+    http_requests, outbound_requests, logs = await asyncio.gather(
+        http_task, outbound_task, logs_task
+    )
+    
+    # 转换为统一事件格式
+    events = []
+    
+    # HTTP请求事件
+    for req in http_requests:
+        events.append({
+            "id": f"http_{req.id}",
+            "timestamp": req.timestamp.isoformat(),
+            "type": "http",
+            "icon": "📥",
+            "level": "INFO" if req.status_code < 400 else "ERROR",
+            "summary": f"{req.method} {req.path}",
+            "detail": {
+                "method": req.method,
+                "path": req.path,
+                "status_code": req.status_code,
+                "duration": req.response_time,
+                "client_ip": req.client_ip,
+                "is_error": req.is_error,
+                "is_slow": req.is_slow
+            }
+        })
+    
+    # 发送请求事件
+    for req in outbound_requests:
+        events.append({
+            "id": f"outbound_{req.id}",
+            "timestamp": req.timestamp.isoformat(),
+            "type": "outbound",
+            "icon": "📤",
+            "level": "INFO" if req.status_code < 400 else "ERROR",
+            "summary": f"{req.method} {req.url[:80]}",
+            "detail": {
+                "method": req.method,
+                "url": req.url,
+                "status_code": req.status_code,
+                "duration": req.duration * 1000,
+                "module": req.module,
+                "is_error": req.is_error,
+                "is_slow": req.is_slow
+            }
+        })
+    
+    # 系统日志事件
+    for log in logs:
+        icon_map = {
+            "DEBUG": "🔍",
+            "INFO": "📝",
+            "WARNING": "⚠️",
+            "ERROR": "❌",
+            "CRITICAL": "🔥"
+        }
+        events.append({
+            "id": f"log_{log.id}",
+            "timestamp": log.timestamp.isoformat(),
+            "type": "log",
+            "icon": icon_map.get(log.level, "📝"),
+            "level": log.level,
+            "summary": log.message[:100] if log.message else "",
+            "detail": {
+                "level": log.level,
+                "module": log.module,
+                "function": log.function,
+                "line_number": log.line_number,
+                "message": log.message,
+                "stack_trace": log.stack_trace
+            }
+        })
+    
+    # 按时间戳排序（降序）
+    events.sort(key=lambda x: x["timestamp"], reverse=True)
+    
+    # 应用限制
+    if len(events) > limit:
+        events = events[:limit]
+    
+    return {
+        "events": events,
+        "count": len(events),
+        "time_range": {
+            "original": {"start": start_time, "end": end_time},
+            "converted": {"start": utc_start.isoformat(), "end": utc_end.isoformat()}
+        }
+    }
+
+
+# ========== 增量拉取端点 ==========
+
+@router.get("/history/recent")
+async def get_recent_data(
+    since_timestamp: str = None,
+    data_type: str = "logs",
+    limit: int = 100
+):
+    """
+    增量拉取端点 - 用于实时追踪
+    
+    Args:
+        since_timestamp: 上次拉取的时间戳（ISO格式），拉取此时间之后的数据
+        data_type: 数据类型（http/outbound/logs）
+        limit: 返回数量限制
+    
+    Returns:
+        新增数据和最新时间戳
+    """
+    if not since_timestamp:
+        # 无时间戳时返回最近数据
+        since = datetime.now(timezone.utc) - timedelta(minutes=5)
+    else:
+        since = datetime.fromisoformat(since_timestamp.replace('Z', '+00:00'))
+    
+    latest_timestamp = since.isoformat()
+    
+    result = {"events": [], "latest_timestamp": latest_timestamp}
+    
+    if data_type == "logs":
+        logs = await SystemLog.filter(timestamp__gt=since).limit(limit).order_by('-timestamp').all()
+        if logs:
+            latest_timestamp = logs[0].timestamp.isoformat()
+        result["events"] = [{
+            "id": log.id,
+            "timestamp": log.timestamp.isoformat(),
+            "level": log.level,
+            "module": log.module,
+            "message": log.message
+        } for log in logs]
+    
+    elif data_type == "http":
+        requests = await APIRequest.filter(timestamp__gt=since).limit(limit).order_by('-timestamp').all()
+        if requests:
+            latest_timestamp = requests[0].timestamp.isoformat()
+        result["events"] = [{
+            "id": req.id,
+            "timestamp": req.timestamp.isoformat(),
+            "method": req.method,
+            "path": req.path,
+            "status_code": req.status_code,
+            "duration": req.response_time
+        } for req in requests]
+    
+    elif data_type == "outbound":
+        requests = await OutboundAPIRequest.filter(timestamp__gt=since).limit(limit).order_by('-timestamp').all()
+        if requests:
+            latest_timestamp = requests[0].timestamp.isoformat()
+        result["events"] = [{
+            "id": req.id,
+            "timestamp": req.timestamp.isoformat(),
+            "method": req.method,
+            "url": req.url,
+            "status_code": req.status_code,
+            "duration": req.duration * 1000
+        } for req in requests]
+    
+    result["latest_timestamp"] = latest_timestamp
+    result["count"] = len(result["events"])
+    
+    return result
+
+
+# ========== 导出端点 ==========
+
+import csv
+import io
+
+
+@router.get("/history/export")
+async def export_history_data(
+    start_time: str,
+    end_time: str,
+    timezone_offset: int = None,
+    level: str = None,
+    type: str = "logs",
+    format: str = "csv",
+    module: str = None,
+    keyword: str = None,
+    status_code_min: int = None,
+    status_code_max: int = None,
+    duration_min: float = None,
+    duration_max: float = None,
+    client_ip: str = None,
+    method: str = None
+):
+    """
+    导出历史查询数据（CSV或JSON格式）
+    
+    Args:
+        start_time: 开始时间
+        end_time: 结束时间
+        timezone_offset: 时区偏移
+        level: 日志级别
+        type: 数据类型（http/outbound/logs）
+        format: 导出格式（csv/json）
+        其他过滤参数同查询接口
+    
+    Returns:
+        StreamingResponse: 文件流
+    """
+    # 时区处理
+    if timezone_offset is None or timezone_offset == 0:
+        try:
+            tz_str = str(TIMEZONE).strip()
+            if tz_str.startswith(('+', '-')):
+                tz_hours = float(tz_str)
+            else:
+                tz_hours = float(tz_str)
+            timezone_offset = int(tz_hours * 60)
+        except (ValueError, TypeError):
+            timezone_offset = 480
+    
+    utc_start = local_to_utc(start_time, timezone_offset)
+    utc_end = local_to_utc(end_time, timezone_offset)
+    
+    filter_params = {
+        "module": module.split(',') if module else None,
+        "keyword": keyword,
+        "status_code_min": status_code_min,
+        "status_code_max": status_code_max,
+        "duration_min": duration_min,
+        "duration_max": duration_max,
+        "client_ip": client_ip,
+        "method": method
+    }
+    
+    limit = 10000  # 导出最大条数
+    
+    # 查询数据
+    if type == "http":
+        data = await request_storage.get_requests_with_filters(utc_start, utc_end, limit, filter_params)
+        records = [{
+            "时间": req.timestamp.isoformat(),
+            "方法": req.method,
+            "路径": req.path,
+            "状态码": req.status_code,
+            "响应时间(ms)": req.response_time,
+            "客户端IP": req.client_ip or "",
+            "是否慢请求": "是" if req.is_slow else "否",
+            "是否错误": "是" if req.is_error else "否",
+            "错误信息": req.error_message or ""
+        } for req in data]
+        filename_prefix = "http_requests"
+        
+    elif type == "outbound":
+        data = await outbound_request_storage.get_requests_with_filters(utc_start, utc_end, limit, filter_params)
+        records = [{
+            "时间": req.timestamp.isoformat(),
+            "方法": req.method,
+            "URL": req.url,
+            "状态码": req.status_code,
+            "响应时间(ms)": req.duration * 1000,
+            "模块": req.module or "",
+            "是否慢请求": "是" if req.is_slow else "否",
+            "是否错误": "是" if req.is_error else "否",
+            "错误信息": req.error_message or ""
+        } for req in data]
+        filename_prefix = "outbound_requests"
+        
+    else:  # logs
+        data = await system_log_storage.get_logs_with_filters(utc_start, utc_end, level, limit, filter_params)
+        records = [{
+            "时间": log.timestamp.isoformat(),
+            "级别": log.level,
+            "模块": log.module,
+            "函数": log.function,
+            "行号": log.line_number,
+            "消息": log.message
+        } for log in data]
+        filename_prefix = "system_logs"
+    
+    if not records:
+        raise HTTPException(status_code=404, detail="无数据可导出")
+    
+    # 生成文件名
+    time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{filename_prefix}_{time_str}.{format}"
+    
+    # 流式生成响应
+    if format == "csv":
+        async def generate_csv():
+            output = io.StringIO()
+            if records:
+                writer = csv.DictWriter(output, fieldnames=records[0].keys())
+                writer.writeheader()
+                for record in records:
+                    writer.writerow(record)
+            yield output.getvalue()
+        
+        return StreamingResponse(
+            generate_csv(),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    
+    else:  # json
+        async def generate_json():
+            yield json.dumps(records, ensure_ascii=False, indent=2)
+        
+        return StreamingResponse(
+            generate_json(),
+            media_type="application/json",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )

@@ -150,7 +150,7 @@ class LoggerConfig(BaseModel):
             queue_size=get_int('LOG_QUEUE_SIZE', 10000),
             batch_size=get_int('LOG_BATCH_SIZE', 100),
             flush_interval=get_float('LOG_FLUSH_INTERVAL', 1.0),
-            stack_trace=get_bool('LOG_STACK_TRACE', False)
+            stack_trace=get_bool('LOG_STACK_TRACE', True)
         )
     
     def get_level_int(self) -> int:

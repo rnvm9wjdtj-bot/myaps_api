@@ -33,7 +33,7 @@ def should_record_to_db(required_level: str) -> bool:
 class RequestStorage:
     """请求数据存储服务"""
 
-    async def get_requests_by_time_range(self, start_time: datetime, end_time: datetime, limit: int = 1000) -> List[APIRequest]:
+    async def get_requests_by_time_range(self, start_time: datetime = None, end_time: datetime = None, limit: int = 1000) -> List[APIRequest]:
         """
         按时间范围查询请求记录
         
@@ -46,14 +46,154 @@ class RequestStorage:
             请求记录列表
         """
         try:
-            requests = await APIRequest.filter(
-                timestamp__gte=start_time,
-                timestamp__lte=end_time
-            ).limit(limit).order_by('-timestamp').all()
+            query = APIRequest.filter()
+            
+            if start_time and end_time:
+                query = query.filter(
+                    timestamp__gte=start_time,
+                    timestamp__lte=end_time
+                )
+            
+            requests = await query.limit(limit).order_by('-timestamp').all()
             return requests
         except Exception as e:
             print(f"按时间范围获取请求数据失败: {e}")
             return []
+    
+    async def get_requests_with_filters(
+        self,
+        start_time: datetime = None,
+        end_time: datetime = None,
+        limit: int = 1000,
+        filter_params: Dict[str, Any] = None
+    ) -> List[APIRequest]:
+        """
+        按时间范围和多维度过滤条件查询请求记录（支持分页）
+        
+        Args:
+            start_time: 开始时间（UTC datetime）
+            end_time: 结束时间（UTC datetime）
+            limit: 返回数量限制（无分页时使用）
+            filter_params: 过滤条件字典，包含：
+                - module: 模块名列表（对API请求不适用，忽略）
+                - keyword: 关键词搜索（匹配path）
+                - status_code_min/max: 状态码范围
+                - duration_min/max: 响应时间范围（毫秒）
+                - client_ip: 客户端IP
+                - method: HTTP方法
+                - page: 页码（从1开始）
+                - page_size: 每页条数
+                - sort_by: 排序字段
+                - sort_order: 排序方向
+        
+        Returns:
+            请求记录列表
+        """
+        try:
+            query = APIRequest.filter()
+            
+            if start_time and end_time:
+                query = query.filter(
+                    timestamp__gte=start_time,
+                    timestamp__lte=end_time
+                )
+            
+            if filter_params:
+                # 状态码范围过滤
+                if filter_params.get('status_code_min'):
+                    query = query.filter(status_code__gte=filter_params['status_code_min'])
+                if filter_params.get('status_code_max'):
+                    query = query.filter(status_code__lte=filter_params['status_code_max'])
+                
+                # 响应时间范围过滤（毫秒）
+                if filter_params.get('duration_min'):
+                    query = query.filter(response_time__gte=filter_params['duration_min'])
+                if filter_params.get('duration_max'):
+                    query = query.filter(response_time__lte=filter_params['duration_max'])
+                
+                # 客户端IP过滤
+                if filter_params.get('client_ip'):
+                    query = query.filter(client_ip=filter_params['client_ip'])
+                
+                # HTTP方法过滤
+                if filter_params.get('method'):
+                    query = query.filter(method=filter_params['method'].upper())
+                
+                # 关键词搜索（匹配path、request_body、response_body）
+                if filter_params.get('keyword'):
+                    keyword = filter_params['keyword']
+                    from tortoise.expressions import Q
+                    query = query.filter(
+                        Q(path__icontains=keyword) | 
+                        Q(request_body__icontains=keyword) | 
+                        Q(response_body__icontains=keyword)
+                    )
+            
+            # 排序
+            sort_by = (filter_params.get('sort_by') if filter_params else None) or 'timestamp'
+            sort_order = (filter_params.get('sort_order') if filter_params else None) or 'desc'
+            
+            if sort_by == 'duration':
+                sort_field = 'response_time'
+            elif sort_by == 'status_code':
+                sort_field = 'status_code'
+            else:
+                sort_field = 'timestamp'
+            
+            order_str = f"-{sort_field}" if sort_order == 'desc' else sort_field
+            query = query.order_by(order_str)
+            
+            # 分页
+            page = filter_params.get('page') if filter_params else None
+            page_size = filter_params.get('page_size') if filter_params else None
+            
+            if page and page_size:
+                offset = (page - 1) * page_size
+                requests = await query.offset(offset).limit(page_size).all()
+            else:
+                requests = await query.limit(limit).all()
+            
+            return requests
+        except Exception as e:
+            print(f"多条件过滤查询请求数据失败: {e}")
+            return []
+    
+    async def count_requests_with_filters(
+        self,
+        start_time: datetime = None,
+        end_time: datetime = None,
+        filter_params: Dict[str, Any] = None
+    ) -> int:
+        """计数查询（用于分页）"""
+        try:
+            query = APIRequest.filter()
+            
+            if start_time and end_time:
+                query = query.filter(
+                    timestamp__gte=start_time,
+                    timestamp__lte=end_time
+                )
+            
+            if filter_params:
+                if filter_params.get('status_code_min'):
+                    query = query.filter(status_code__gte=filter_params['status_code_min'])
+                if filter_params.get('status_code_max'):
+                    query = query.filter(status_code__lte=filter_params['status_code_max'])
+                if filter_params.get('duration_min'):
+                    query = query.filter(response_time__gte=filter_params['duration_min'])
+                if filter_params.get('duration_max'):
+                    query = query.filter(response_time__lte=filter_params['duration_max'])
+                if filter_params.get('client_ip'):
+                    query = query.filter(client_ip=filter_params['client_ip'])
+                if filter_params.get('method'):
+                    query = query.filter(method=filter_params['method'].upper())
+                if filter_params.get('keyword'):
+                    query = query.filter(path__icontains=filter_params['keyword'])
+            
+            return await query.count()
+        except Exception as e:
+            print(f"计数查询失败: {e}")
+            return 0
 
     async def save_request(self, request_data: Dict[str, Any]) -> APIRequest:
         """
@@ -172,7 +312,7 @@ class RequestStorage:
 class OutboundRequestStorage:
     """对外请求数据存储服务"""
 
-    async def get_requests_by_time_range(self, start_time: datetime, end_time: datetime, limit: int = 1000) -> List[OutboundAPIRequest]:
+    async def get_requests_by_time_range(self, start_time: datetime = None, end_time: datetime = None, limit: int = 1000) -> List[OutboundAPIRequest]:
         """
         按时间范围查询对外请求记录
         
@@ -193,6 +333,125 @@ class OutboundRequestStorage:
         except Exception as e:
             print(f"按时间范围获取对外请求数据失败: {e}")
             return []
+    
+    async def get_requests_with_filters(
+        self,
+        start_time: datetime,
+        end_time: datetime,
+        limit: int = 1000,
+        filter_params: Dict[str, Any] = None
+    ) -> List[OutboundAPIRequest]:
+        """
+        按时间范围和多维度过滤条件查询对外请求记录
+        
+        Args:
+            start_time: 开始时间（UTC datetime）
+            end_time: 结束时间（UTC datetime）
+            limit: 返回数量限制
+            filter_params: 过滤条件字典
+        
+        Returns:
+            对外请求记录列表
+        """
+        try:
+            query = OutboundAPIRequest.filter(
+                timestamp__gte=start_time,
+                timestamp__lte=end_time
+            )
+            
+            if filter_params:
+                # 模块过滤（IN查询）
+                if filter_params.get('module'):
+                    query = query.filter(module__in=filter_params['module'])
+                
+                # 状态码范围过滤
+                if filter_params.get('status_code_min'):
+                    query = query.filter(status_code__gte=filter_params['status_code_min'])
+                if filter_params.get('status_code_max'):
+                    query = query.filter(status_code__lte=filter_params['status_code_max'])
+                
+                # 响应时间范围过滤（毫秒转秒）
+                if filter_params.get('duration_min'):
+                    query = query.filter(duration__gte=filter_params['duration_min'] / 1000)
+                if filter_params.get('duration_max'):
+                    query = query.filter(duration__lte=filter_params['duration_max'] / 1000)
+                
+                # HTTP方法过滤
+                if filter_params.get('method'):
+                    query = query.filter(method=filter_params['method'].upper())
+                
+                # 关键词搜索（匹配url、request_body、response_body）
+                if filter_params.get('keyword'):
+                    keyword = filter_params['keyword']
+                    from tortoise.expressions import Q
+                    query = query.filter(
+                        Q(url__icontains=keyword) | 
+                        Q(request_body__icontains=keyword) | 
+                        Q(response_body__icontains=keyword)
+                    )
+            
+            # 排序
+            sort_by = filter_params.get('sort_by', 'timestamp') if filter_params else 'timestamp'
+            sort_order = filter_params.get('sort_order', 'desc') if filter_params else 'desc'
+            
+            if sort_by == 'duration':
+                sort_field = 'duration'
+            elif sort_by == 'status_code':
+                sort_field = 'status_code'
+            else:
+                sort_field = 'timestamp'
+            
+            order_str = f"-{sort_field}" if sort_order == 'desc' else sort_field
+            query = query.order_by(order_str)
+            
+            # 分页
+            page = filter_params.get('page') if filter_params else None
+            page_size = filter_params.get('page_size') if filter_params else None
+            
+            if page and page_size:
+                offset = (page - 1) * page_size
+                requests = await query.offset(offset).limit(page_size).all()
+            else:
+                requests = await query.limit(limit).all()
+            
+            return requests
+        except Exception as e:
+            print(f"多条件过滤查询对外请求数据失败: {e}")
+            return []
+    
+    async def count_requests_with_filters(
+        self,
+        start_time: datetime,
+        end_time: datetime,
+        filter_params: Dict[str, Any] = None
+    ) -> int:
+        """计数查询（用于分页）"""
+        try:
+            query = OutboundAPIRequest.filter(
+                timestamp__gte=start_time,
+                timestamp__lte=end_time
+            )
+            
+            if filter_params:
+                if filter_params.get('module'):
+                    query = query.filter(module__in=filter_params['module'])
+                if filter_params.get('status_code_min'):
+                    query = query.filter(status_code__gte=filter_params['status_code_min'])
+                if filter_params.get('status_code_max'):
+                    query = query.filter(status_code__lte=filter_params['status_code_max'])
+                if filter_params.get('duration_min'):
+                    query = query.filter(duration__gte=filter_params['duration_min'] / 1000)
+                if filter_params.get('duration_max'):
+                    query = query.filter(duration__lte=filter_params['duration_max'] / 1000)
+                if filter_params.get('method'):
+                    query = query.filter(method=filter_params['method'].upper())
+                if filter_params.get('keyword'):
+                    query = query.filter(url__icontains=filter_params['keyword'])
+            
+            return await query.count()
+        except Exception as e:
+            print(f"计数查询失败: {e}")
+            return 0
 
     async def save_request(self, request_data: Dict[str, Any]) -> OutboundAPIRequest:
         """
@@ -295,7 +554,7 @@ class OutboundRequestStorage:
 class SystemLogStorage:
     """系统日志存储服务"""
     
-    async def get_logs_by_time_range(self, start_time: datetime, end_time: datetime, level: str = None, limit: int = 1000) -> List[SystemLog]:
+    async def get_logs_by_time_range(self, start_time: datetime = None, end_time: datetime = None, level: str = None, limit: int = 1000) -> List[SystemLog]:
         """
         按时间范围查询系统日志记录
         
@@ -309,19 +568,128 @@ class SystemLogStorage:
             系统日志记录列表
         """
         try:
-            query = SystemLog.filter(
-                timestamp__gte=start_time,
-                timestamp__lte=end_time
-            )
+            query = SystemLog.filter()
+            
+            if start_time and end_time:
+                query = query.filter(
+                    timestamp__gte=start_time,
+                    timestamp__lte=end_time
+                )
             
             if level:
-                query = query.filter(level=level.upper())
+                level_order = {'DEBUG': 10, 'INFO': 20, 'WARNING': 30, 'ERROR': 40, 'CRITICAL': 50}
+                min_level = level_order.get(level.upper(), 0)
+                valid_levels = [lv for lv, num in level_order.items() if num >= min_level]
+                if valid_levels:
+                    query = query.filter(level__in=valid_levels)
             
             logs = await query.limit(limit).order_by('-timestamp').all()
             return logs
         except Exception as e:
             print(f"按时间范围获取系统日志数据失败: {e}")
             return []
+    
+    async def get_logs_with_filters(
+        self,
+        start_time: datetime,
+        end_time: datetime,
+        level: str = None,
+        limit: int = 1000,
+        filter_params: Dict[str, Any] = None
+    ) -> List[SystemLog]:
+        """
+        按时间范围和多维度过滤条件查询系统日志记录
+        
+        Args:
+            start_time: 开始时间（UTC datetime）
+            end_time: 结束时间（UTC datetime）
+            level: 日志级别过滤（可选）
+            limit: 返回数量限制
+            filter_params: 过滤条件字典
+        
+        Returns:
+            系统日志记录列表
+        """
+        try:
+            query = SystemLog.filter()
+            
+            if start_time and end_time:
+                query = query.filter(
+                    timestamp__gte=start_time,
+                    timestamp__lte=end_time
+                )
+            
+            if level:
+                level_order = {'DEBUG': 10, 'INFO': 20, 'WARNING': 30, 'ERROR': 40, 'CRITICAL': 50}
+                min_level = level_order.get(level.upper(), 0)
+                valid_levels = [lv for lv, num in level_order.items() if num >= min_level]
+                if valid_levels:
+                    query = query.filter(level__in=valid_levels)
+            
+            if filter_params:
+                # 模块过滤（IN查询）
+                if filter_params.get('module'):
+                    query = query.filter(module__in=filter_params['module'])
+                
+                # 关键词搜索（匹配message）
+                if filter_params.get('keyword'):
+                    query = query.filter(message__icontains=filter_params['keyword'])
+            
+            # 排序
+            sort_by = (filter_params.get('sort_by') if filter_params else None) or 'timestamp'
+            sort_order = (filter_params.get('sort_order') if filter_params else None) or 'desc'
+            order_str = f"-{sort_by}" if sort_order == 'desc' else sort_by
+            query = query.order_by(order_str)
+            
+            # 分页
+            page = filter_params.get('page') if filter_params else None
+            page_size = filter_params.get('page_size') if filter_params else None
+            
+            if page and page_size:
+                offset = (page - 1) * page_size
+                logs = await query.offset(offset).limit(page_size).all()
+            else:
+                logs = await query.limit(limit).all()
+            
+            return logs
+        except Exception as e:
+            print(f"多条件过滤查询系统日志数据失败: {e}")
+            return []
+    
+    async def count_logs_with_filters(
+        self,
+        start_time: datetime,
+        end_time: datetime,
+        level: str = None,
+        filter_params: Dict[str, Any] = None
+    ) -> int:
+        """计数查询（用于分页）"""
+        try:
+            query = SystemLog.filter()
+            
+            if start_time and end_time:
+                query = query.filter(
+                    timestamp__gte=start_time,
+                    timestamp__lte=end_time
+                )
+            
+            if level:
+                level_order = {'DEBUG': 10, 'INFO': 20, 'WARNING': 30, 'ERROR': 40, 'CRITICAL': 50}
+                min_level = level_order.get(level.upper(), 0)
+                valid_levels = [lv for lv, num in level_order.items() if num >= min_level]
+                if valid_levels:
+                    query = query.filter(level__in=valid_levels)
+            
+            if filter_params:
+                if filter_params.get('module'):
+                    query = query.filter(module__in=filter_params['module'])
+                if filter_params.get('keyword'):
+                    query = query.filter(message__icontains=filter_params['keyword'])
+            
+            return await query.count()
+        except Exception as e:
+            print(f"计数查询失败: {e}")
+            return 0
     
     async def clean_old_data(self, days: int = LOG_RETENTION):
         """清理指定天数前的系统日志数据"""

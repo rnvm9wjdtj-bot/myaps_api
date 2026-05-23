@@ -64,6 +64,9 @@ show_menu() {
     echo "    [3] Reset migrations"
     echo "        - Delete all migrations and re-init"
     echo ""
+    echo "    [4] Add log query indexes"
+    echo "        - Optimize log query performance"
+    echo ""
     echo "    [5] Backup only"
     echo "        - Just backup database"
     echo ""
@@ -168,6 +171,20 @@ reset_migrations() {
     echo "========================================"
 }
 
+# 添加日志查询索引
+add_log_indexes() {
+    echo ""
+    echo "========================================"
+    echo "  Add Log Query Indexes"
+    echo "========================================"
+    
+    echo ""
+    echo "[INFO] Creating indexes for log query optimization..."
+    echo ""
+    
+    $PYTHON_CMD scripts/migrate/add_log_query_indexes.py --action migrate
+}
+
 # 主函数
 main() {
     local choice="${1:-}"
@@ -187,6 +204,9 @@ main() {
             ;;
         3)
             reset_migrations
+            ;;
+        4)
+            add_log_indexes
             ;;
         5)
             backup_db

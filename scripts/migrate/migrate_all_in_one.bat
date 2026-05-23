@@ -55,6 +55,9 @@ echo.
 echo    [3] Reset migrations
 echo        - Delete all migrations and re-init
 echo.
+echo    [4] Add log query indexes
+echo        - Optimize log query performance
+echo.
 echo    [5] Backup only
 echo        - Just backup database
 echo.
@@ -67,6 +70,7 @@ if /i "%choice%"=="" goto :auto_migrate
 if /i "%choice%"=="1" goto :auto_migrate
 if /i "%choice%"=="2" goto :tortoise
 if /i "%choice%"=="3" goto :reset
+if /i "%choice%"=="4" goto :add_indexes
 if /i "%choice%"=="5" goto :backup_only
 if /i "%choice%"=="Q" goto :end
 if /i "%choice%"=="q" goto :end
@@ -190,6 +194,22 @@ echo ========================================
 echo  Migrations reset!
 echo ========================================
 goto :end
+
+:add_indexes
+echo.
+echo ========================================
+echo  [4] Add Log Query Indexes
+echo ========================================
+call :setup_env
+if errorlevel 1 goto :end
+
+echo.
+echo [INFO] Creating indexes for log query optimization...
+echo.
+
+%PYTHON_VENV_DIR%\Scripts\python.exe scripts\migrate\add_log_query_indexes.py --action migrate
+if errorlevel 1 goto :error
+goto :success
 
 :setup_env
 cd /d "%~dp0\..\.."
