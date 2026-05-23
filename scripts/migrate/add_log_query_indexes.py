@@ -124,6 +124,13 @@ async def migrate():
     
     for table, indexes in INDEX_DEFINITIONS.items():
         logger.info(f"处理表: {table}")
+        
+        # 检查表是否存在
+        if not await check_table_exists(client, table):
+            logger.info(f"表不存在，跳过所有索引: {table}")
+            skipped_count += len(indexes)
+            continue
+            
         for index_name, columns in indexes.items():
             result = await create_index(client, table, index_name, columns)
             if result:
