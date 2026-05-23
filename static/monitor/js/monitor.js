@@ -1393,6 +1393,26 @@ function updateAlertsDisplay(alerts) {
         return;
     }
 
+    // 翻译后端告警消息
+    const translateAlertMessage = (message) => {
+        if (typeof i18n === 'undefined') return message;
+        
+        // 告警消息映射表
+        const alertMessageMap = {
+            '调度器未运行': 'alert.scheduler_not_running',
+            '数据库连接失败': 'alert.db_connection_failed',
+            'Redis连接失败': 'alert.redis_connection_failed',
+            '事件监听器已停止': 'alert.event_listener_stopped',
+            'Binlog监听器已停止': 'alert.binlog_listener_stopped',
+            '错误率过高': 'alert.high_error_rate',
+            '内存使用警告': 'alert.memory_warning',
+            'CPU使用警告': 'alert.cpu_warning'
+        };
+        
+        const key = alertMessageMap[message];
+        return key ? (i18n.t(key) || message) : message;
+    };
+
     // 生成告警类型标识
     const getAlertType = (alert) => {
         return `${alert.source}_${alert.message.split(':')[0]}`;
@@ -1406,10 +1426,11 @@ function updateAlertsDisplay(alerts) {
             return getAlertType(prevAlert) === alertType && prevAlert.timestamp !== alert.timestamp;
         });
         const updatedClass = isUpdated ? 'alert-updated' : '';
+        const translatedMessage = translateAlertMessage(alert.message);
         
         return `
             <div class="alert-item ${alert.level} ${updatedClass}">
-                <span class="alert-message">${alert.message}</span>
+                <span class="alert-message">${translatedMessage}</span>
                 <span class="alert-time">${formatDateTime(alert.timestamp, 'date')}</span>
             </div>
         `;

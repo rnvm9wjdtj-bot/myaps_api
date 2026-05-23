@@ -483,5 +483,15 @@ window.__i18n_en_US__ = {
     // ============ DeadLetter ============
     'dl.reprocess': 'Reprocess',
     'dl.reprocess_success': 'DeadLetter reprocessed successfully',
-    'dl.reprocess_failed': 'DeadLetter reprocess failed'
+    'dl.reprocess_failed': 'DeadLetter reprocess failed',
+    
+    // ============ Backend Alert Message Mapping ============
+    'alert.scheduler_not_running': 'Scheduler not running',
+    'alert.db_connection_failed': 'Database connection failed',
+    'alert.redis_connection_failed': 'Redis connection failed',
+    'alert.event_listener_stopped': 'Event listener stopped',
+    'alert.binlog_listener_stopped': 'Binlog listener stopped',
+    'alert.high_error_rate': 'High error rate',
+    'alert.memory_warning': 'Memory usage warning',
+    'alert.cpu_warning': 'CPU usage warning'
 };

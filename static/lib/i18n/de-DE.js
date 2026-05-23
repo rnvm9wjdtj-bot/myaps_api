@@ -484,5 +484,15 @@ window.__i18n_de_DE__ = {
     // ============ DeadLetter ============
     'dl.reprocess': 'Neu verarbeiten',
     'dl.reprocess_success': 'DeadLetter erfolgreich neu verarbeitet',
-    'dl.reprocess_failed': 'DeadLetter Neuverarbeitung fehlgeschlagen'
+    'dl.reprocess_failed': 'DeadLetter Neuverarbeitung fehlgeschlagen',
+    
+    // ============ Backend-Warnmeldungen-Zuordnung ============
+    'alert.scheduler_not_running': 'Planer läuft nicht',
+    'alert.db_connection_failed': 'Datenbankverbindung fehlgeschlagen',
+    'alert.redis_connection_failed': 'Redis-Verbindung fehlgeschlagen',
+    'alert.event_listener_stopped': 'Ereignis-Listener gestoppt',
+    'alert.binlog_listener_stopped': 'Binlog-Listener gestoppt',
+    'alert.high_error_rate': 'Hohe Fehlerrate',
+    'alert.memory_warning': 'Speichernutzung-Warnung',
+    'alert.cpu_warning': 'CPU-Nutzung-Warnung'
 };

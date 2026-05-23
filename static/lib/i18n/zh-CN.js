@@ -484,5 +484,15 @@ window.__i18n_zh_CN__ = {
     // ============ DeadLetter ============
     'dl.reprocess': '重新处理',
     'dl.reprocess_success': 'DeadLetter重新处理成功',
-    'dl.reprocess_failed': 'DeadLetter重新处理失败'
+    'dl.reprocess_failed': 'DeadLetter重新处理失败',
+    
+    // ============ 后端告警消息映射 ============
+    'alert.scheduler_not_running': '调度器未运行',
+    'alert.db_connection_failed': '数据库连接失败',
+    'alert.redis_connection_failed': 'Redis连接失败',
+    'alert.event_listener_stopped': '事件监听器已停止',
+    'alert.binlog_listener_stopped': 'Binlog监听器已停止',
+    'alert.high_error_rate': '错误率过高',
+    'alert.memory_warning': '内存使用警告',
+    'alert.cpu_warning': 'CPU使用警告'
 };
