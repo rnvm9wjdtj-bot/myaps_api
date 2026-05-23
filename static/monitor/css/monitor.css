@@ -2996,3 +2996,31 @@ td {
     font-size: 12px;
     margin-right: 8px;
 }
+
+/* 语言选择器 */
+.lang-selector {
+    padding: 6px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 13px;
+    cursor: pointer;
+    background: white;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    transition: all 0.2s;
+}
+
+.lang-selector:hover {
+    border-color: var(--primary-color);
+    box-shadow: 0 2px 4px rgba(24, 144, 255, 0.2);
+}
+
+.lang-selector:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(24, 144, 255, 0.1);
+}
+
+.lang-selector option {
+    padding: 8px 12px;
+    font-size: 13px;
+}

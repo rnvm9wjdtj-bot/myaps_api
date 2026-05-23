@@ -3,30 +3,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MyAPI 系统监控面板</title>
+    <title data-i18n-page-title="page.title">MyAPI 系统监控面板</title>
     <link rel="icon" href="/static/swagger/favicon.png" type="image/png">
     <link rel="stylesheet" href="/static/monitor/css/monitor.css">
     <link rel="stylesheet" href="/static/monitor/lib/prism.min.css">
     <script src="/static/monitor/lib/chart.min.js"></script>
     <script src="/static/monitor/lib/prism.min.js"></script>
     <script src="/static/monitor/lib/prism-json.min.js"></script>
+    <script src="/static/lib/i18n/i18n.js"></script>
 </head>
 <body>
     <div class="container">
         <header class="header">
             <nav class="nav-menu">
-                <a href="#" class="nav-item active" data-page="overview">📊 Overview</a>
-                <a href="#" class="nav-item" data-page="database">🗃️ 数据库<span id="database-badge" class="nav-badge" style="display: none;"></span></a>
-                <a href="#" class="nav-item" data-page="event-helpers">☎️ 事件处理</a>
-                <a href="#" class="nav-item" data-page="scheduler">⏰ 定时任务</a>
-                <a href="#" class="nav-item" data-page="api-requests">📥 接收请求<span id="api-requests-badge" class="nav-badge" style="display: none;"></span></a>
-                <a href="#" class="nav-item" data-page="outbound-requests">📤 发送请求<span id="outbound-requests-badge" class="nav-badge" style="display: none;"></span></a>
-                <a href="#" class="nav-item" data-page="logs">📋 日志<span id="logs-badge" class="nav-badge" style="display: none;"></span></a>
+                <a href="#" class="nav-item active" data-page="overview" data-i18n="nav.overview">📊 Overview</a>
+                <a href="#" class="nav-item" data-page="database" data-i18n="nav.database">🗃️ 数据库<span id="database-badge" class="nav-badge" style="display: none;"></span></a>
+                <a href="#" class="nav-item" data-page="event-helpers" data-i18n="nav.events">☎️ 事件处理</a>
+                <a href="#" class="nav-item" data-page="scheduler" data-i18n="nav.scheduler">⏰ 定时任务</a>
+                <a href="#" class="nav-item" data-page="api-requests" data-i18n="nav.http_requests">📥 接收请求<span id="api-requests-badge" class="nav-badge" style="display: none;"></span></a>
+                <a href="#" class="nav-item" data-page="outbound-requests" data-i18n="nav.outbound_requests">📤 发送请求<span id="outbound-requests-badge" class="nav-badge" style="display: none;"></span></a>
+                <a href="#" class="nav-item" data-page="logs" data-i18n="nav.logs">📋 日志<span id="logs-badge" class="nav-badge" style="display: none;"></span></a>
             </nav>
             <div class="header-info">
-                <span id="status-indicator" class="status healthy">● 系统正常</span>
-                <span id="last-update">最后更新&nbsp;&nbsp;--</span>
-                <button id="refresh-btn" class="btn btn-primary" onclick="refreshAll()">刷新</button>
+                <select id="lang-selector" class="lang-selector" onchange="i18n.switchLanguage(this.value)">
+                    <option value="zh-CN">🇨🇳 中文</option>
+                    <option value="en-US">🇺🇸 English</option>
+                    <option value="de-DE">🇩🇪 Deutsch</option>
+                </select>
+                <span id="status-indicator" class="status healthy" data-i18n="status.healthy">● 系统正常</span>
+                <span id="last-update"><span data-i18n="other.last_update">最后更新</span>&nbsp;&nbsp;--</span>
+                <button id="refresh-btn" class="btn btn-primary" onclick="refreshAll()" data-i18n="btn.refresh">刷新</button>
             </div>
         </header>
 
@@ -35,20 +41,20 @@
             <!-- 资源监控卡片 -->
             <section class="card">
                 <div class="card-header">
-                    <h2>资源使用</h2>
-                    <span class="badge" id="resource-badge">运行中</span>
+                    <h2 data-i18n="card.resource">资源使用</h2>
+                    <span class="badge" id="resource-badge" data-i18n="status.running">运行中</span>
                 </div>
                 <div class="card-body">
                     <div class="metrics-grid">
                         <div class="metric-item">
-                            <div class="metric-label">CPU 使用率</div>
+                            <div class="metric-label" data-i18n="metric.cpu">CPU 使用率</div>
                             <div class="metric-value" id="cpu-value">--%</div>
                             <div class="progress-bar">
                                 <div class="progress-fill" id="cpu-bar"></div>
                             </div>
                         </div>
                         <div class="metric-item">
-                            <div class="metric-label">内存使用</div>
+                            <div class="metric-label" data-i18n="metric.memory">内存使用</div>
                             <div class="metric-value" id="memory-value">
                                 <span id="memory-usage">-- MB</span>
                                 <span id="memory-percent" class="memory-percent">--%</span>
@@ -58,11 +64,11 @@
                             </div>
                         </div>
                         <div class="metric-item">
-                            <div class="metric-label">线程数</div>
+                            <div class="metric-label" data-i18n="metric.threads">线程数</div>
                             <div class="metric-value" id="threads-value">--</div>
                         </div>
                         <div class="metric-item">
-                            <div class="metric-label">运行时间</div>
+                            <div class="metric-label" data-i18n="metric.uptime">运行时间</div>
                             <div class="metric-value" id="uptime-value">--</div>
                         </div>
                     </div>
@@ -75,21 +81,21 @@
             <!-- 数据库状态卡片 -->
             <section class="card">
                 <div class="card-header">
-                    <h2>账套状态</h2>
-                    <span class="badge" id="db-badge">检查中</span>
+                    <h2 data-i18n="card.db_status">账套状态</h2>
+                    <span class="badge" id="db-badge" data-i18n="status.checking">检查中</span>
                 </div>
                 <div class="card-body">
                     <div class="db-summary" id="db-summary">
                         <div class="summary-item">
-                            <span class="summary-label">总连接数</span>
+                            <span class="summary-label" data-i18n="metric.total_connections">总连接数</span>
                             <span class="summary-value" id="db-total">--</span>
                         </div>
                         <div class="summary-item">
-                            <span class="summary-label">健康</span>
+                            <span class="summary-label" data-i18n="metric.healthy">健康</span>
                             <span class="summary-value healthy" id="db-healthy">--</span>
                         </div>
                         <div class="summary-item">
-                            <span class="summary-label">异常</span>
+                            <span class="summary-label" data-i18n="metric.unhealthy">异常</span>
                             <span class="summary-value error" id="db-unhealthy">--</span>
                         </div>
                     </div>
@@ -102,8 +108,8 @@
             <!-- 提醒信息卡片 -->
             <section class="card">
                 <div class="card-header">
-                    <h2>最近告警</h2>
-                    <button class="btn btn-small" onclick="clearAlerts()">清空</button>
+                    <h2 data-i18n="card.recent_alerts">最近告警</h2>
+                    <button class="btn btn-small" onclick="clearAlerts()" data-i18n="btn.clear">清空</button>
                 </div>
                 <div class="card-body">
                     <div class="alert-list" id="alert-list">
@@ -115,21 +121,21 @@
             <!-- 接收请求卡片 -->
             <section class="card">
                 <div class="card-header">
-                    <h2>接收请求 <span style="font-size: 12px; color: #888; font-weight: normal;">(最近24小时)</span></h2>
-                    <span class="badge" id="http-badge">监控中</span>
+                    <h2 data-i18n="card.api_requests">接收请求</h2>
+                    <span class="badge" id="http-badge" data-i18n="status.running">监控中</span>
                 </div>
                 <div class="card-body">
                     <div class="http-summary" id="http-summary">
                         <div class="summary-item">
-                            <span class="summary-label">总请求数</span>
+                            <span class="summary-label" data-i18n="metric.requests_total">总请求数</span>
                             <span class="summary-value" id="http-total">--</span>
                         </div>
                         <div class="summary-item">
-                            <span class="summary-label">错误率</span>
+                            <span class="summary-label" data-i18n="metric.error_rate">错误率</span>
                             <span class="summary-value" id="http-error-rate">--%</span>
                         </div>
                         <div class="summary-item">
-                            <span class="summary-label">平均响应</span>
+                            <span class="summary-label" data-i18n="metric.avg_time">平均响应</span>
                             <span class="summary-value" id="http-avg-time">--ms</span>
                         </div>
                         <div class="summary-item">
@@ -143,21 +149,21 @@
             <!-- 发送请求卡片 -->
             <section class="card">
                 <div class="card-header">
-                    <h2>发送请求 <span style="font-size: 12px; color: #888; font-weight: normal;">(最近24小时)</span></h2>
-                    <span class="badge" id="outbound-badge">监控中</span>
+                    <h2 data-i18n="card.outbound_requests">发送请求</h2>
+                    <span class="badge" id="outbound-badge" data-i18n="status.running">监控中</span>
                 </div>
                 <div class="card-body">
                     <div class="outbound-summary" id="outbound-summary">
                         <div class="summary-item">
-                            <span class="summary-label">总请求数</span>
+                            <span class="summary-label" data-i18n="metric.requests_total">总请求数</span>
                             <span class="summary-value" id="outbound-total">--</span>
                         </div>
                         <div class="summary-item">
-                            <span class="summary-label">错误率</span>
+                            <span class="summary-label" data-i18n="metric.error_rate">错误率</span>
                             <span class="summary-value" id="outbound-error-rate">--%</span>
                         </div>
                         <div class="summary-item">
-                            <span class="summary-label">平均响应</span>
+                            <span class="summary-label" data-i18n="metric.avg_time">平均响应</span>
                             <span class="summary-value" id="outbound-avg">--ms</span>
                         </div>
                     </div>
@@ -167,17 +173,17 @@
             <!-- 定时任务监控卡片 -->
             <section class="card">
                 <div class="card-header">
-                    <h2>定时任务</h2>
-                    <span class="badge" id="scheduler-badge">检查中</span>
+                    <h2 data-i18n="card.scheduler">定时任务</h2>
+                    <span class="badge" id="scheduler-badge" data-i18n="status.checking">检查中</span>
                 </div>
                 <div class="card-body">
                     <div class="scheduler-info" id="scheduler-info">
                         <div class="info-item">
-                            <span class="info-label">调度器状态</span>
+                            <span class="info-label" data-i18n="metric.scheduler_status">调度器状态</span>
                             <span class="info-value" id="scheduler-status">--</span>
                         </div>
                         <div class="info-item">
-                            <span class="info-label">任务数量</span>
+                            <span class="info-label" data-i18n="metric.job_count">任务数量</span>
                             <span class="info-value" id="job-count">--</span>
                         </div>
                     </div>
@@ -190,8 +196,8 @@
             <!-- 数据库详细信息卡片 -->
             <section class="card full-width">
                 <div class="card-header">
-                    <h2>MySQL</h2>
-                    <span class="badge" id="db-detail-badge">检查中</span>
+                    <h2 data-i18n="card.mysql">MySQL</h2>
+                    <span class="badge" id="db-detail-badge" data-i18n="status.checking">检查中</span>
                 </div>
                 <div class="card-body">
                     <!-- 数据库详细信息 -->
@@ -199,17 +205,17 @@
                         <table class="db-detail-table" id="db-detail-table">
                             <thead>
                                 <tr>
-                                    <th>账套名称</th>
-                                    <th>连接状态</th>
-                                    <th>最后检查</th>
-                                    <th>当前连接</th>
-                                    <th>最大连接</th>
-                                    <th>最小连接</th>
-                                    <th>空闲连接</th>
-                                    <th>使用中连接</th>
-                                    <th>使用率</th>
-                                    <th>处理记录</th>
-                                    <th>次数</th>
+                                    <th data-i18n="col.db_name">账套名称</th>
+                                    <th data-i18n="metric.connection_status">连接状态</th>
+                                    <th data-i18n="col.last_check">最后检查</th>
+                                    <th data-i18n="col.current_connections">当前连接</th>
+                                    <th data-i18n="col.max_connections">最大连接</th>
+                                    <th data-i18n="col.min_connections">最小连接</th>
+                                    <th data-i18n="col.idle_connections">空闲连接</th>
+                                    <th data-i18n="col.used_connections">使用中连接</th>
+                                    <th data-i18n="col.usage">使用率</th>
+                                    <th data-i18n="col.processed_records">处理记录</th>
+                                    <th data-i18n="col.count">次数</th>
                                 </tr>
                             </thead>
                             <tbody id="db-detail-tbody">
@@ -223,62 +229,62 @@
             <!-- Redis 监控卡片 -->
             <section class="card full-width">
                 <div class="card-header">
-                    <h2>Redis</h2>
-                    <span class="badge" id="redis-badge">检查中</span>
+                    <h2 data-i18n="card.redis">Redis</h2>
+                    <span class="badge" id="redis-badge" data-i18n="status.checking">检查中</span>
                 </div>
                 <div class="card-body">
                     <div class="redis-metrics-grid">
                         <div class="metric-item">
-                            <div class="metric-label">连接状态</div>
+                            <div class="metric-label" data-i18n="metric.connection_status">连接状态</div>
                             <div class="metric-value" id="redis-status">--</div>
                         </div>
                         <div class="metric-item">
-                            <div class="metric-label">主机</div>
+                            <div class="metric-label" data-i18n="metric.host">主机</div>
                             <div class="metric-value" id="redis-host">--</div>
                         </div>
                         <div class="metric-item">
-                            <div class="metric-label">端口</div>
+                            <div class="metric-label" data-i18n="metric.port">端口</div>
                             <div class="metric-value" id="redis-port">--</div>
                         </div>
                         <div class="metric-item">
-                            <div class="metric-label">数据库</div>
+                            <div class="metric-label" data-i18n="metric.database">数据库</div>
                             <div class="metric-value" id="redis-db">--</div>
                         </div>
                     </div>
                     <div class="redis-pool-metrics">
                         <div class="metric-item">
-                            <div class="metric-label">使用连接数</div>
+                            <div class="metric-label" data-i18n="metric.used_connections">使用连接数</div>
                             <div class="metric-value" id="redis-connections-used">0</div>
                         </div>
                         <div class="metric-item">
-                            <div class="metric-label">最大连接数</div>
+                            <div class="metric-label" data-i18n="metric.max_connections">最大连接数</div>
                             <div class="metric-value" id="redis-connections-max">0</div>
                         </div>
                         <div class="metric-item">
-                            <div class="metric-label">连接使用率</div>
+                            <div class="metric-label" data-i18n="metric.connection_usage">连接使用率</div>
                             <div class="metric-value" id="redis-connection-usage">0%</div>
                         </div>
                     </div>
                     <div class="redis-buffer-metrics">
                         <div class="metric-item">
-                            <div class="metric-label">缓冲大小</div>
+                            <div class="metric-label" data-i18n="metric.buffer_size">缓冲大小</div>
                             <div class="metric-value" id="redis-buffer-size">0</div>
                         </div>
                         <div class="metric-item">
-                            <div class="metric-label">缓冲阈值</div>
+                            <div class="metric-label" data-i18n="metric.buffer_threshold">缓冲阈值</div>
                             <div class="metric-value" id="redis-buffer-threshold">0</div>
                         </div>
                         <div class="metric-item">
-                            <div class="metric-label">缓冲使用率</div>
+                            <div class="metric-label" data-i18n="metric.buffer_usage">缓冲使用率</div>
                             <div class="metric-value" id="redis-buffer-usage">0%</div>
                         </div>
                     </div>
                     <div class="chart-container">
-                        <h3>Redis 连接池使用情况</h3>
+                        <h3 data-i18n="chart.redis_connections">Redis 连接池使用情况</h3>
                         <canvas id="redis-connections-chart"></canvas>
                     </div>
                     <div class="chart-container">
-                        <h3>Redis 缓冲大小变化</h3>
+                        <h3 data-i18n="chart.redis_buffer">Redis 缓冲大小变化</h3>
                         <canvas id="redis-buffer-chart"></canvas>
                     </div>
                 </div>
@@ -289,7 +295,7 @@
         <main class="main-content page-content" id="page-api-requests">
             <section class="card full-width">
                 <div class="card-header">
-                    <h2>接收请求记录</h2>
+                    <h2 data-i18n="card.http_requests_log">接收请求记录</h2>
                     <div class="card-actions">
                         <div class="date-selector" style="display: none;">
                             <label for="api-date-picker">选择日期：</label>
@@ -300,11 +306,11 @@
                             <label>
                                 <input type="checkbox" id="show-api-internal-requests" onchange="toggleAPIIntternalRequests()">
                                 <span class="toggle-slider"></span>
-                                显示内部请求
+                                <span data-i18n="other.show_internal">显示内部请求</span>
                             </label>
                         </div>
-                        <button class="btn btn-sm" onclick="refreshAPIRequests()">刷新</button>
-                        <button class="btn btn-sm btn-secondary" onclick="resetAPIStats()">重置统计</button>
+                        <button class="btn btn-sm" onclick="refreshAPIRequests()" data-i18n="btn.refresh">刷新</button>
+                        <button class="btn btn-sm btn-secondary" onclick="resetAPIStats()" data-i18n="btn.reset_stats">重置统计</button>
                     </div>
                 </div>
                 <div class="card-body">
@@ -312,15 +318,15 @@
                         <table class="api-requests-table" id="api-requests-table">
                             <thead>
                                 <tr>
-                                    <th>序号</th>
-                                    <th>时间戳</th>
-                                    <th>方法</th>
-                                    <th>端点</th>
-                                    <th>查询参数</th>
-                                    <th>状态码</th>
-                                    <th>响应时间</th>
-                                    <th>客户端IP</th>
-                                    <th>错误信息</th>
+                                    <th data-i18n="col.index">序号</th>
+                                    <th data-i18n="col.timestamp">时间戳</th>
+                                    <th data-i18n="col.method">方法</th>
+                                    <th data-i18n="col.path">端点</th>
+                                    <th data-i18n="col.query_params">查询参数</th>
+                                    <th data-i18n="col.status">状态码</th>
+                                    <th data-i18n="col.duration">响应时间</th>
+                                    <th data-i18n="col.client_ip">客户端IP</th>
+                                    <th data-i18n="col.error_message">错误信息</th>
                                 </tr>
                             </thead>
                             <tbody id="api-requests-tbody">
@@ -375,9 +381,9 @@
         <main class="main-content page-content" id="page-scheduler">
             <section class="card full-width">
                 <div class="card-header">
-                    <h2>定时任务详情</h2>
-                    <span class="badge" id="scheduler-detail-badge">检查中</span>
-                    <button class="btn btn-small" onclick="refreshSchedulerPage()">刷新</button>
+                    <h2 data-i18n="card.scheduler_detail">定时任务详情</h2>
+                    <span class="badge" id="scheduler-detail-badge" data-i18n="status.checking">检查中</span>
+                    <button class="btn btn-small" onclick="refreshSchedulerPage()" data-i18n="btn.refresh">刷新</button>
                 </div>
                 <div class="card-body">
                     <div class="scheduler-detail-grid" id="scheduler-detail-grid">
@@ -391,7 +397,7 @@
         <main class="main-content page-content" id="page-outbound-requests">
             <section class="card full-width">
                 <div class="card-header">
-                    <h2>发送请求记录</h2>
+                    <h2 data-i18n="card.outbound_requests_log">发送请求记录</h2>
                     <div class="card-actions">
                         <div class="date-selector" style="display: none;">
                             <label for="outbound-date-picker">选择日期：</label>
@@ -402,11 +408,11 @@
                             <label>
                                 <input type="checkbox" id="show-internal-requests" onchange="toggleInternalRequests()">
                                 <span class="toggle-slider"></span>
-                                显示内部请求
+                                <span data-i18n="other.show_internal">显示内部请求</span>
                             </label>
                         </div>
-                        <button class="btn btn-sm" onclick="refreshOutboundRequests()">刷新</button>
-                        <button class="btn btn-sm btn-secondary" onclick="resetOutboundStats()">重置统计</button>
+                        <button class="btn btn-sm" onclick="refreshOutboundRequests()" data-i18n="btn.refresh">刷新</button>
+                        <button class="btn btn-sm btn-secondary" onclick="resetOutboundStats()" data-i18n="btn.reset_stats">重置统计</button>
                     </div>
                 </div>
                 <div class="card-body">
@@ -415,14 +421,14 @@
                         <table class="outbound-requests-table">
                             <thead>
                                 <tr>
-                                    <th>序号</th>
-                                    <th>时间戳</th>
-                                    <th>方法</th>
-                                    <th>URL</th>
-                                    <th>状态码</th>
-                                    <th>响应时间</th>
-                                    <th>模块</th>
-                                    <th>错误信息</th>
+                                    <th data-i18n="col.index">序号</th>
+                                    <th data-i18n="col.timestamp">时间戳</th>
+                                    <th data-i18n="col.method">方法</th>
+                                    <th data-i18n="col.url">URL</th>
+                                    <th data-i18n="col.status">状态码</th>
+                                    <th data-i18n="col.duration">响应时间</th>
+                                    <th data-i18n="col.module">模块</th>
+                                    <th data-i18n="col.error_message">错误信息</th>
                                 </tr>
                             </thead>
                             <tbody id="outbound-requests-table">
@@ -441,23 +447,23 @@
                 <div class="card-header">
                     <h2>Warning & Error</h2>
                     <div class="log-page-controls">
-                        <button class="btn btn-primary" onclick="window.open('/monitor/live-logs', '_blank')">实时日志</button>
-                        <button class="btn btn-primary" onclick="window.open('/monitor/history-logs', '_blank')">历史查询</button>
+                        <button class="btn btn-primary" onclick="window.open('/monitor/live-logs', '_blank')" data-i18n="btn.live_logs">实时日志</button>
+                        <button class="btn btn-primary" onclick="window.open('/monitor/history-logs', '_blank')" data-i18n="btn.history_query">历史查询</button>
                         <div class="toggle-switch">
                             <label>
                                 <input type="checkbox" id="show-read-logs" onchange="toggleReadLogs()">
                                 <span class="toggle-slider"></span>
-                                显示已读
+                                <span data-i18n="other.show_read">显示已读</span>
                             </label>
                         </div>
                         <select id="log-page-level" onchange="fetchLogsPage()">
-                            <option value="">全部日志</option>
+                            <option value="" data-i18n="filter.all_logs">全部日志</option>
                             <option value="error">错误日志</option>
                             <option value="warning">警告日志</option>
                         </select>
-                        <button class="btn btn-small" onclick="markAllLogsAsRead()">标记全部已读</button>
-                        <button class="btn btn-small" onclick="clearReadStatus()">清空已读状态</button>
-                        <button class="btn btn-small" onclick="refreshLogsPage()">刷新</button>
+                        <button class="btn btn-small" onclick="markAllLogsAsRead()" data-i18n="btn.mark_all_read">标记全部已读</button>
+                        <button class="btn btn-small" onclick="clearReadStatus()" data-i18n="btn.clear_read_status">清空已读状态</button>
+                        <button class="btn btn-small" onclick="refreshLogsPage()" data-i18n="btn.refresh">刷新</button>
                     </div>
                 </div>
                 <div class="card-body">
@@ -465,12 +471,12 @@
                         <table class="logs-table" id="logs-table">
                             <thead>
                                 <tr>
-                                    <th>序号</th>
-                                    <th>时间</th>
-                                    <th>级别</th>
-                                    <th>模块</th>
-                                    <th>消息</th>
-                                    <th>已读</th>
+                                    <th data-i18n="col.index">序号</th>
+                                    <th data-i18n="col.time">时间</th>
+                                    <th data-i18n="col.level">级别</th>
+                                    <th data-i18n="col.module">模块</th>
+                                    <th data-i18n="col.message">消息</th>
+                                    <th data-i18n="col.is_read">已读</th>
                                 </tr>
                             </thead>
                             <tbody id="logs-tbody">
@@ -487,55 +493,55 @@
             <!-- 事件监听卡片 -->
             <section class="card full-width">
                 <div class="card-header">
-                    <h2>事件监听</h2>
+                    <h2 data-i18n="card.event_listener">事件监听</h2>
                     <div class="events-actions">
-                        <button class="btn btn-small" onclick="refreshEventStats()">刷新</button>
-                        <button class="btn btn-small" onclick="flushAllEvents()">立即刷新所有</button>
-                        <button class="btn btn-small btn-secondary" onclick="resetEventStats()">重置统计</button>
+                        <button class="btn btn-small" onclick="refreshEventStats()" data-i18n="btn.refresh">刷新</button>
+                        <button class="btn btn-small" onclick="flushAllEvents()" data-i18n="btn.flush_all">立即刷新所有</button>
+                        <button class="btn btn-small btn-secondary" onclick="resetEventStats()" data-i18n="btn.reset_stats">重置统计</button>
                     </div>
                 </div>
                 <div class="card-body">
                     <div class="events-summary" id="events-summary">
                         <div class="summary-item">
-                            <span class="summary-label">总接收事件</span>
+                            <span class="summary-label" data-i18n="metric.events_received">总接收事件</span>
                             <span class="summary-value" id="events-total-received">--</span>
                         </div>
                         <div class="summary-item">
-                            <span class="summary-label">已处理事件</span>
+                            <span class="summary-label" data-i18n="metric.events_processed">已处理事件</span>
                             <span class="summary-value healthy" id="events-total-processed">--</span>
                         </div>
                         <div class="summary-item">
-                            <span class="summary-label">中断处理</span>
+                            <span class="summary-label" data-i18n="metric.events_interrupted">中断处理</span>
                             <span class="summary-value error" id="events-total-failed">--</span>
                         </div>
                         <div class="summary-item">
-                            <span class="summary-label">待处理</span>
+                            <span class="summary-label" data-i18n="metric.pending">待处理</span>
                             <span class="summary-value" id="events-total-pending">--</span>
                         </div>
                         <div class="summary-item">
-                            <span class="summary-label">整体成功率</span>
+                            <span class="summary-label" data-i18n="metric.overall_success_rate">整体成功率</span>
                             <span class="summary-value" id="events-success-rate">--%</span>
                         </div>
                         <div class="summary-item">
-                            <span class="summary-label">活跃事件类型</span>
+                            <span class="summary-label" data-i18n="metric.active_event_types">活跃事件类型</span>
                             <span class="summary-value" id="events-active-types">--</span>
                         </div>
                         <!-- 背压监控 -->
                         <div class="summary-item" id="backpressure-summary" style="display: none;">
-                            <span class="summary-label">背压状态</span>
+                            <span class="summary-label" data-i18n="metric.backpressure_status">背压状态</span>
                             <span class="summary-value" id="backpressure-status">正常</span>
                         </div>
                         <div class="summary-item" id="backpressure-pending" style="display: none;">
-                            <span class="summary-label">待处理事件</span>
+                            <span class="summary-label" data-i18n="metric.backpressure_pending">待处理事件</span>
                             <span class="summary-value" id="backpressure-pending-count">--</span>
                         </div>
                         <div class="summary-item" id="backpressure-percent" style="display: none;">
-                            <span class="summary-label">背压使用率</span>
+                            <span class="summary-label" data-i18n="metric.backpressure_usage">背压使用率</span>
                             <span class="summary-value" id="backpressure-usage">--%</span>
                         </div>
                         <!-- 事件循环健康状态 -->
                         <div class="summary-item" id="event-loop-status" style="display: none;">
-                            <span class="summary-label">事件循环状态</span>
+                            <span class="summary-label" data-i18n="metric.event_loop_status">事件循环状态</span>
                             <span class="summary-value" id="event-loop-health">正常</span>
                         </div>
                     </div>
@@ -543,17 +549,17 @@
                         <table class="events-table" id="events-table">
                             <thead>
                                 <tr>
-                                    <th>描述</th>
-                                    <th>总接收</th>
-                                    <th>待处理</th>
-                                    <th>已处理</th>
-                                    <th>中断</th>
-                                    <th>完成率</th>
-                                    <th>平均延迟</th>
-                                    <th>操作</th>
-                                    <th>最后动作</th>
-                                    <th>状态</th>
-                                    <th>操作</th>
+                                    <th data-i18n="col.description">描述</th>
+                                    <th data-i18n="col.total_received">总接收</th>
+                                    <th data-i18n="col.pending">待处理</th>
+                                    <th data-i18n="col.processed">已处理</th>
+                                    <th data-i18n="col.interrupted">中断</th>
+                                    <th data-i18n="col.completion_rate">完成率</th>
+                                    <th data-i18n="col.avg_latency">平均延迟</th>
+                                    <th data-i18n="col.operation">操作</th>
+                                    <th data-i18n="col.last_action">最后动作</th>
+                                    <th data-i18n="col.status">状态</th>
+                                    <th data-i18n="col.operation">操作</th>
                                 </tr>
                             </thead>
                             <tbody id="events-tbody">
@@ -571,21 +577,21 @@
                     <!-- 回调跟踪器卡片 -->
                     <section class="card">
                         <div class="card-header">
-                            <h2>回调跟踪器</h2>
-                            <span class="badge" id="callback-badge">监控中</span>
+                            <h2 data-i18n="card.callback_tracker">回调跟踪器</h2>
+                            <span class="badge" id="callback-badge" data-i18n="status.monitoring">监控中</span>
                         </div>
                         <div class="card-body">
                             <div class="metrics-grid">
                                 <div class="metric-item">
-                                    <div class="metric-label">待处理回调</div>
+                                    <div class="metric-label" data-i18n="metric.pending_callbacks">待处理回调</div>
                                     <div class="metric-value" id="callback-pending">--</div>
                                 </div>
                                 <div class="metric-item">
-                                    <div class="metric-label">最大重试次数</div>
+                                    <div class="metric-label" data-i18n="metric.max_retries">最大重试次数</div>
                                     <div class="metric-value" id="callback-max-retries">--</div>
                                 </div>
                                 <div class="metric-item">
-                                    <div class="metric-label">待处理重试</div>
+                                    <div class="metric-label" data-i18n="metric.pending_retries">待处理重试</div>
                                     <div class="metric-value" id="callback-pending-retries">--</div>
                                 </div>
                             </div>
@@ -595,25 +601,25 @@
                     <!-- 事件去重器卡片 -->
                     <section class="card">
                         <div class="card-header">
-                            <h2>事件去重器</h2>
-                            <span class="badge" id="deduplicator-badge">监控中</span>
+                            <h2 data-i18n="card.event_deduplicator">事件去重器</h2>
+                            <span class="badge" id="deduplicator-badge" data-i18n="status.monitoring">监控中</span>
                         </div>
                         <div class="card-body">
                             <div class="metrics-grid">
                                 <div class="metric-item">
-                                    <div class="metric-label">总存储条目</div>
+                                    <div class="metric-label" data-i18n="metric.total_entries">总存储条目</div>
                                     <div class="metric-value" id="deduplicator-total">--</div>
                                 </div>
                                 <div class="metric-item">
-                                    <div class="metric-label">活跃项目</div>
+                                    <div class="metric-label" data-i18n="metric.active_items">活跃项目</div>
                                     <div class="metric-value" id="deduplicator-active">--</div>
                                 </div>
                                 <div class="metric-item">
-                                    <div class="metric-label">TTL (秒)</div>
+                                    <div class="metric-label" data-i18n="metric.ttl_seconds">TTL (秒)</div>
                                     <div class="metric-value" id="deduplicator-ttl">--</div>
                                 </div>
                                 <div class="metric-item">
-                                    <div class="metric-label">最大条目</div>
+                                    <div class="metric-label" data-i18n="metric.max_entries">最大条目</div>
                                     <div class="metric-value" id="deduplicator-max">--</div>
                                 </div>
                             </div>
@@ -627,40 +633,40 @@
                         <div class="card-header">
                             <h2>Dead Letter Queue</h2>
                             <div class="dead-letter-actions">
-                                <button class="btn btn-small" onclick="refreshDeadLetterStats()">刷新</button>
-                                <button class="btn btn-small btn-secondary" onclick="clearDeadLetters()">清空</button>
+                                <button class="btn btn-small" onclick="refreshDeadLetterStats()" data-i18n="btn.refresh">刷新</button>
+                                <button class="btn btn-small btn-secondary" onclick="clearDeadLetters()" data-i18n="btn.clear">清空</button>
                             </div>
                         </div>
                         <div class="card-body">
                             <div class="metrics-grid">
                                 <div class="metric-item">
-                                    <div class="metric-label">待写入事件</div>
+                                    <div class="metric-label" data-i18n="metric.pending_events">待写入事件</div>
                                     <div class="metric-value" id="dlq-pending">--</div>
                                 </div>
                                 <div class="metric-item">
-                                    <div class="metric-label">总事件数</div>
+                                    <div class="metric-label" data-i18n="metric.total_events">总事件数</div>
                                     <div class="metric-value" id="dlq-total">--</div>
                                 </div>
                                 <div class="metric-item">
-                                    <div class="metric-label">文件大小</div>
+                                    <div class="metric-label" data-i18n="metric.file_size">文件大小</div>
                                     <div class="metric-value" id="dlq-file-size">--</div>
                                 </div>
                                 <div class="metric-item">
-                                    <div class="metric-label">运行状态</div>
+                                    <div class="metric-label" data-i18n="metric.running_status">运行状态</div>
                                     <div class="metric-value" id="dlq-running">--</div>
                                 </div>
                             </div>
                             <div class="dead-letter-summary" id="dead-letter-summary" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e2e8f0;">
                                 <div class="summary-item">
-                                    <span class="summary-label">DL总数</span>
+                                    <span class="summary-label" data-i18n="metric.dl_total">DL总数</span>
                                     <span class="summary-value" id="dead-letter-total">--</span>
                                 </div>
                                 <div class="summary-item">
-                                    <span class="summary-label">最近DL</span>
+                                    <span class="summary-label" data-i18n="metric.recent_dl">最近DL</span>
                                     <span class="summary-value" id="dead-letter-recent">--</span>
                                 </div>
                                 <div class="summary-item">
-                                    <span class="summary-label">处理成功率</span>
+                                    <span class="summary-label" data-i18n="metric.process_success_rate">处理成功率</span>
                                     <span class="summary-value" id="dead-letter-success-rate">--%</span>
                                 </div>
                             </div>
@@ -668,13 +674,13 @@
                                 <table class="dead-letter-table" id="dead-letter-table">
                                     <thead>
                                         <tr>
-                                            <th>ID</th>
-                                            <th>事件类型</th>
-                                            <th>时间</th>
-                                            <th>数据库</th>
-                                            <th>表</th>
-                                            <th>错误信息</th>
-                                            <th>操作</th>
+                                            <th data-i18n="col.id">ID</th>
+                                            <th data-i18n="col.event_type">事件类型</th>
+                                            <th data-i18n="col.time">时间</th>
+                                            <th data-i18n="col.database">数据库</th>
+                                            <th data-i18n="col.table">表</th>
+                                            <th data-i18n="col.error_message">错误信息</th>
+                                            <th data-i18n="col.operation">操作</th>
                                         </tr>
                                     </thead>
                                     <tbody id="dead-letter-tbody">

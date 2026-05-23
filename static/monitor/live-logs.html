@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>实时日志 - 系统监控</title>
+    <title data-i18n-page-title="page.live_logs">实时日志 - 系统监控</title>
     <link rel="icon" href="/static/swagger/favicon.png" type="image/png">
     <link rel="stylesheet" href="/static/monitor/css/monitor.css">
+    <script src="/static/lib/i18n/i18n.js"></script>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -330,19 +331,23 @@
     <div class="live-logs-container">
         <div class="live-logs-header">
             <div class="live-logs-header-left">
-                <h3>实时日志流</h3>
+                <h3 data-i18n="page.live_logs">实时日志流</h3>
                 <div class="connection-status">
                     <div class="status-dot connecting" id="statusDot"></div>
-                    <span id="statusText">连接中...</span>
+                    <span id="statusText" data-i18n="status.connecting">连接中...</span>
                 </div>
             </div>
             
             <div class="header-controls">
+                <select id="lang-selector" class="lang-selector" onchange="i18n.switchLanguage(this.value)" style="margin-right: 12px;">
+                    <option value="zh-CN">🇨🇳 中文</option>
+                    <option value="en-US">🇺🇸 English</option>
+                    <option value="de-DE">🇩🇪 Deutsch</option>
+                </select>
                 <div class="header-control-group">
-                    <label>级别:</label>
+                    <label data-i18n="filter.level">级别:</label>
                     <select id="levelFilter" onchange="applyFilters()">
-                        <option value="">全部</option>
-                        <!-- <option value="DEBUG">DEBUG</option> -->
+                        <option value="" data-i18n="filter.level">全部</option>
                         <option value="INFO" selected>INFO</option>
                         <option value="WARNING">WARNING</option>
                         <option value="ERROR">ERROR</option>
@@ -351,11 +356,11 @@
                 </div>
                 
                 <div class="header-control-group">
-                    <input type="text" id="searchInput" placeholder="搜索日志..." onkeyup="handleSearch(event)">
+                    <input type="text" id="searchInput" data-i18n-placeholder="filter.keyword_placeholder" placeholder="搜索日志..." onkeyup="handleSearch(event)">
                 </div>
                 
                 <div class="header-control-group">
-                    <label>自动滚动</label>
+                    <label data-i18n="other.auto_scroll">自动滚动</label>
                     <label class="toggle-switch">
                         <input type="checkbox" id="autoScroll" checked onchange="toggleAutoScroll()">
                         <span class="toggle-slider"></span>
@@ -363,17 +368,17 @@
                 </div>
                 
                 <button class="btn btn-secondary" onclick="togglePause()">
-                    <span id="pauseBtnText">暂停</span>
+                    <span id="pauseBtnText" data-i18n="btn.pause">暂停</span>
                 </button>
                 
-                <button class="btn btn-danger" onclick="clearLogs()">清空</button>
+                <button class="btn btn-danger" onclick="clearLogs()" data-i18n="btn.clear">清空</button>
                 
-                <button class="btn btn-primary" onclick="openInNewWindow()">新窗口</button>
+                <button class="btn btn-primary" onclick="openInNewWindow()" data-i18n="btn.new_window">新窗口</button>
             </div>
         </div>
         
         <div class="log-stats">
-            <span>总日志: <strong id="totalCount">0</strong></span>
+            <span data-i18n="metric.total">总日志: <strong id="totalCount">0</strong></span>
             <span>DEBUG: <span class="level-count DEBUG" id="debugCount">0</span></span>
             <span>INFO: <span class="level-count INFO" id="infoCount">0</span></span>
             <span>WARNING: <span class="level-count WARNING" id="warningCount">0</span></span>
@@ -382,7 +387,7 @@
         </div>
         
         <div class="logs-container" id="logsContainer">
-            <div class="no-logs" id="noLogs">
+            <div class="no-logs" id="noLogs" data-i18n="other.waiting_logs">
                 正在等待日志数据...
             </div>
         </div>
@@ -544,7 +549,7 @@
                 if (isDomReady) {
                     const statusText = document.getElementById('statusText');
                     if (statusText) {
-                        statusText.textContent = '连接失败，请刷新页面';
+                        statusText.textContent = i18n.t('error.connection_failed');
                     }
                 }
                 return;
@@ -600,14 +605,14 @@
             switch (status) {
                 case 'connected':
                     dot.classList.add('connected');
-                    text.textContent = '已连接';
+                    text.textContent = i18n.t('status.connected');
                     break;
                 case 'connecting':
                     dot.classList.add('connecting');
-                    text.textContent = '连接中...';
+                    text.textContent = i18n.t('status.connecting');
                     break;
                 case 'disconnected':
-                    text.textContent = '已断开 (5秒后重连)';
+                    text.textContent = i18n.t('status.disconnected') + ' (' + i18n.t('other.auto_reconnect') + ')';
                     break;
             }
         }
@@ -722,7 +727,7 @@
             }
             
             if (logs.length === 0) {
-                container.innerHTML = '<div class="no-logs" id="noLogs">正在等待日志数据...</div>';
+                container.innerHTML = '<div class="no-logs" id="noLogs">' + i18n.t('other.waiting_logs') + '</div>';
                 lastRenderIndex = 0;
                 return;
             }
@@ -738,7 +743,7 @@
                 });
                 
                 if (filteredLogs.length === 0) {
-                    container.innerHTML = '<div class="no-logs" id="noLogs">没有匹配的日志</div>';
+                    container.innerHTML = '<div class="no-logs" id="noLogs">' + i18n.t('other.no_matching_logs') + '</div>';
                     lastRenderIndex = 0;
                     return;
                 }
@@ -811,7 +816,7 @@
             const autoScrollIndicator = document.getElementById('autoScrollIndicator');
             
             if (pauseBtnText) {
-                pauseBtnText.textContent = isPaused ? '继续' : '暂停';
+                pauseBtnText.textContent = isPaused ? i18n.t('btn.resume') : i18n.t('btn.pause');
             }
             if (autoScrollIndicator) {
                 autoScrollIndicator.classList.toggle('show', isPaused);
@@ -856,7 +861,7 @@
             updateStats();
             const logsContainer = document.getElementById('logsContainer');
             if (logsContainer) {
-                logsContainer.innerHTML = '<div class="no-logs">日志已清空</div>';
+                logsContainer.innerHTML = '<div class="no-logs">' + i18n.t('success.logs_cleared') + '</div>';
             }
         }
         

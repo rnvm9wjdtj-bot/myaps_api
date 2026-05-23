@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>日志历史查询 - 系统监控</title>
+    <title data-i18n-page-title="page.history_logs">日志历史查询 - 系统监控</title>
     <link rel="icon" href="/static/swagger/favicon.png" type="image/png">
     <link rel="stylesheet" href="/static/monitor/css/monitor.css">
+    <script src="/static/lib/i18n/i18n.js"></script>
     <link rel="stylesheet" href="/static/mds/css/bootstrap-icons.css">
     <style>
         body {
@@ -841,19 +842,23 @@
     <div class="history-logs-container">
         <div class="history-logs-header">
             <div class="history-logs-header-left">
-                <h1>📊 日志历史查询</h1>
-                <span class="badge" id="history-query-badge">联动查询</span>
+                <h1 data-i18n="page.history_logs">📊 日志历史查询</h1>
+                <span class="badge" id="history-query-badge" data-i18n="other.linked_query">联动查询</span>
             </div>
             <div class="history-logs-header-right">
+                <select id="lang-selector" class="lang-selector" onchange="i18n.switchLanguage(this.value)">
+                    <option value="zh-CN">🇨🇳 中文</option>
+                    <option value="en-US">🇺🇸 English</option>
+                    <option value="de-DE">🇩🇪 Deutsch</option>
+                </select>
                 <div class="header-query-controls">
                     <div class="time-range-selector">
-                        <!-- <label>起止时间：</label> -->
                         <input type="datetime-local" id="history-start-time" class="datetime-input" step="1">
                         <input type="datetime-local" id="history-end-time" class="datetime-input" step="1">
                     </div>
                     <div class="query-filters">
                         <select id="history-log-level" class="filter-select">
-                            <option value="">全部级别</option>
+                            <option value="" data-i18n="filter.level">全部级别</option>
                             <option value="DEBUG">≥ DEBUG</option>
                             <option value="INFO">≥ INFO</option>
                             <option value="WARNING">≥ WARNING</option>
@@ -861,19 +866,19 @@
                             <option value="CRITICAL">≥ CRITICAL</option>
                         </select>
                         <select id="history-query-type" class="filter-select">
-                            <option value="all">全部数据</option>
-                            <option value="http">接收请求</option>
-                            <option value="outbound">发送请求</option>
-                            <option value="logs">系统日志</option>
+                            <option value="all" data-i18n="filter.type">全部数据</option>
+                            <option value="http" data-i18n="tab.http">接收请求</option>
+                            <option value="outbound" data-i18n="tab.outbound">发送请求</option>
+                            <option value="logs" data-i18n="tab.logs">系统日志</option>
                         </select>
                     </div>
-                    <button class="btn btn-secondary header-btn" onclick="quickTimeRange('10m')">10分钟</button>
-                    <button class="btn btn-secondary header-btn" onclick="quickTimeRange('30m')">30分钟</button>
-                    <button class="btn btn-secondary header-btn" onclick="quickTimeRange('1h')">1小时</button>
-                    <button class="btn btn-secondary header-btn" onclick="quickTimeRange('6h')">6小时</button>
-                    <button class="btn btn-secondary header-btn" onclick="quickTimeRange('24h')">24小时</button>
-                    <button class="btn btn-secondary header-btn header-btn-reset" onclick="resetHistoryQuery()">重置</button>
-                    <button class="btn btn-primary header-btn" id="query-btn" onclick="executeHistoryQuery()">查询</button>
+                    <button class="btn btn-secondary header-btn" onclick="quickTimeRange('10m')" data-i18n="time.last_10m">10分钟</button>
+                    <button class="btn btn-secondary header-btn" onclick="quickTimeRange('30m')" data-i18n="time.last_30m">30分钟</button>
+                    <button class="btn btn-secondary header-btn" onclick="quickTimeRange('1h')" data-i18n="time.last_1h">1小时</button>
+                    <button class="btn btn-secondary header-btn" onclick="quickTimeRange('6h')" data-i18n="time.last_6h">6小时</button>
+                    <button class="btn btn-secondary header-btn" onclick="quickTimeRange('24h')" data-i18n="time.last_24h">24小时</button>
+                    <button class="btn btn-secondary header-btn header-btn-reset" onclick="resetHistoryQuery()" data-i18n="btn.reset">重置</button>
+                    <button class="btn btn-primary header-btn" id="query-btn" onclick="executeHistoryQuery()" data-i18n="btn.query">查询</button>
                 </div>
                 <div id="precise-mode-container"></div>
             </div>
@@ -882,11 +887,11 @@
         <div class="history-logs-body">
             <div class="result-tabs" id="result-tabs" style="display: none;">
                 <div class="result-tabs-left">
-                    <button class="tab-btn active" data-tab="logs" onclick="switchResultTab('logs')"><i class="bi bi-journal-text"></i> 系统日志</button>
-                    <button class="tab-btn" data-tab="http" onclick="switchResultTab('http')"><i class="bi bi-box-arrow-in-right"></i> 接收请求</button>
-                    <button class="tab-btn" data-tab="outbound" onclick="switchResultTab('outbound')"><i class="bi bi-box-arrow-right"></i> 发送请求</button>
-                    <button class="tab-btn" data-tab="timeline" onclick="switchResultTab('timeline')"><i class="bi bi-clock-history"></i> 时间线</button>
-                    <button class="tab-btn" data-tab="chart" onclick="switchResultTab('chart')"><i class="bi bi-bar-chart-line"></i> 图表分析</button>
+                    <button class="tab-btn active" data-tab="logs" onclick="switchResultTab('logs')"><i class="bi bi-journal-text"></i> <span data-i18n="tab.logs">系统日志</span></button>
+                    <button class="tab-btn" data-tab="http" onclick="switchResultTab('http')"><i class="bi bi-box-arrow-in-right"></i> <span data-i18n="tab.http">接收请求</span></button>
+                    <button class="tab-btn" data-tab="outbound" onclick="switchResultTab('outbound')"><i class="bi bi-box-arrow-right"></i> <span data-i18n="tab.outbound">发送请求</span></button>
+                    <button class="tab-btn" data-tab="timeline" onclick="switchResultTab('timeline')"><i class="bi bi-clock-history"></i> <span data-i18n="tab.timeline">时间线</span></button>
+                    <button class="tab-btn" data-tab="chart" onclick="switchResultTab('chart')"><i class="bi bi-bar-chart-line"></i> <span data-i18n="tab.chart">图表分析</span></button>
                 </div>
                 <div class="result-tabs-right">
                     <div class="result-summary-inline">
@@ -1000,7 +1005,7 @@
                     </div>
                     <div class="filter-item">
                         <select id="saved-templates" class="filter-select" onchange="loadQueryTemplate()" style="max-width:120px;">
-                            <option value="">已保存查询...</option>
+                            <option value="" data-i18n="template.saved_queries">已保存查询...</option>
                         </select>
                     </div>
                 </div>
@@ -1018,7 +1023,7 @@
                         </tr>
                     </thead>
                     <tbody id="http-results-body">
-                        <tr><td colspan="8" class="no-data">暂无数据</td></tr>
+                        <tr><td colspan="8" class="no-data" data-i18n="status.no_data">暂无数据</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -1071,7 +1076,7 @@
                         </tr>
                     </thead>
                     <tbody id="outbound-results-body">
-                        <tr><td colspan="8" class="no-data">暂无数据</td></tr>
+                        <tr><td colspan="8" class="no-data" data-i18n="status.no_data">暂无数据</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -1099,7 +1104,7 @@
                         </tr>
                     </thead>
                     <tbody id="logs-results-body">
-                        <tr><td colspan="6" class="no-data">暂无数据</td></tr>
+                        <tr><td colspan="6" class="no-data" data-i18n="status.no_data">暂无数据</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -1107,7 +1112,7 @@
             <!-- 时间线标签页 -->
             <div class="result-tab-content" id="tab-timeline">
                 <div class="timeline-container" id="timeline-container">
-                    <div class="timeline-empty">暂无数据，请先执行查询</div>
+                    <div class="timeline-empty" data-i18n="timeline.no_data">暂无数据，请先执行查询</div>
                 </div>
             </div>
             
@@ -1176,7 +1181,7 @@
                 const endDate = new Date(endTime);
                 
                 if (startDate >= endDate) {
-                    alert('开始时间不能大于结束时间');
+                    alert(i18n.t('error.time_range_invalid'));
                     return;
                 }
             }
@@ -1189,14 +1194,14 @@
             try {
                 const badge = document.getElementById('history-query-badge');
                 if (badge) {
-                    badge.textContent = '查询中...';
+                    badge.textContent = i18n.t('status.querying');
                     badge.className = 'badge warning';
                 }
                 
                 const queryBtn = document.getElementById('query-btn');
                 if (queryBtn) {
                     queryBtn.disabled = true;
-                    queryBtn.textContent = '查询中...';
+                    queryBtn.textContent = i18n.t('status.querying');
                 }
                 
                 let url = `${API_BASE}/history/query?timezone_offset=${timezoneOffset}`;
@@ -1301,29 +1306,29 @@
                 switchResultTab(currentTab);
                 
                 if (badge) {
-                    badge.textContent = '查询完成';
+                    badge.textContent = i18n.t('success.query_complete');
                     badge.className = 'badge healthy';
                 }
                 
                 if (queryBtn) {
                     queryBtn.disabled = false;
-                    queryBtn.textContent = '查询';
+                    queryBtn.textContent = i18n.t('btn.query');
                 }
                 
             } catch (error) {
                 console.error('执行历史查询失败:', error);
-                alert('查询失败，请稍后重试');
+                alert(i18n.t('error.query_failed'));
                 
                 const badge = document.getElementById('history-query-badge');
                 if (badge) {
-                    badge.textContent = '查询失败';
+                    badge.textContent = i18n.t('error.query_failed');
                     badge.className = 'badge error';
                 }
                 
                 const queryBtn = document.getElementById('query-btn');
                 if (queryBtn) {
                     queryBtn.disabled = false;
-                    queryBtn.textContent = '查询';
+                    queryBtn.textContent = i18n.t('btn.query');
                 }
             }
         }
@@ -1348,9 +1353,9 @@
             
             document.getElementById('result-tabs').style.display = 'none';
             
-            document.getElementById('http-results-body').innerHTML = '<tr><td colspan="8" class="no-data">暂无数据</td></tr>';
-            document.getElementById('outbound-results-body').innerHTML = '<tr><td colspan="8" class="no-data">暂无数据</td></tr>';
-            document.getElementById('logs-results-body').innerHTML = '<tr><td colspan="6" class="no-data">暂无数据</td></tr>';
+            document.getElementById('http-results-body').innerHTML = '<tr><td colspan="8" class="no-data">' + i18n.t('status.no_data') + '</td></tr>';
+            document.getElementById('outbound-results-body').innerHTML = '<tr><td colspan="8" class="no-data">' + i18n.t('status.no_data') + '</td></tr>';
+            document.getElementById('logs-results-body').innerHTML = '<tr><td colspan="6" class="no-data">' + i18n.t('status.no_data') + '</td></tr>';
             
             historyQueryData = { http: [], outbound: [], logs: [] };
             // 清理缓存的排序数据
@@ -1360,7 +1365,7 @@
             
             const badge = document.getElementById('history-query-badge');
             if (badge) {
-                badge.textContent = '联动查询';
+                badge.textContent = i18n.t('other.linked_query');
                 badge.className = '';
             }
         }
@@ -1548,7 +1553,7 @@
             const endTime = document.getElementById('history-end-time').value;
             
             if (!startTime || !endTime) {
-                alert('请先选择时间范围');
+                alert(i18n.t('error.time_range_required'));
                 return;
             }
             
@@ -1651,7 +1656,7 @@
             if (!container) return;
             
             if (timelineData.length === 0) {
-                container.innerHTML = '<div class="timeline-empty">暂无数据</div>';
+                container.innerHTML = '<div class="timeline-empty">' + i18n.t('status.no_data') + '</div>';
                 return;
             }
             
@@ -1764,7 +1769,7 @@
             const endTime = document.getElementById('history-end-time').value;
             
             if (!startTime || !endTime) {
-                document.getElementById('tab-chart').innerHTML = '<div style="padding:40px;text-align:center;color:#999;">请先执行查询</div>';
+                document.getElementById('tab-chart').innerHTML = '<div style="padding:40px;text-align:center;color:#999;">' + i18n.t('chart.query_required') + '</div>';
                 return;
             }
             
@@ -1861,7 +1866,7 @@
                 console.error('渲染图表失败:', error);
                 const chartContainer = document.querySelector('.chart-container');
                 if (chartContainer) {
-                    chartContainer.innerHTML = '<div style="padding:40px;text-align:center;color:#ef4444;">❌ 图表数据加载失败，请重试</div>';
+                    chartContainer.innerHTML = '<div style="padding:40px;text-align:center;color:#ef4444;">' + i18n.t('chart.load_failed') + '</div>';
                 }
             }
         }
@@ -1877,11 +1882,11 @@
             const btn = document.getElementById('realtime-btn');
             
             if (realtimeTracking) {
-                btn.textContent = '实时追踪: 开';
+                btn.textContent = i18n.t('btn.realtime_on');
                 btn.className = 'btn btn-primary';
                 startRealtimeTracking();
             } else {
-                btn.textContent = '实时追踪: 关';
+                btn.textContent = i18n.t('btn.realtime_off');
                 btn.className = 'btn btn-secondary';
                 stopRealtimeTracking();
             }
@@ -1894,12 +1899,12 @@
             realtimeInterval = setInterval(async () => {
                 trackingDuration += 5;
                 
-                // 10分钟自动暂停
-                if (trackingDuration >= 600) {
-                    stopRealtimeTracking();
-                    alert('实时追踪已自动暂停（超过10分钟）');
-                    return;
-                }
+                    // 10分钟自动暂停
+                    if (trackingDuration >= 600) {
+                        stopRealtimeTracking();
+                        alert(i18n.t('error.auto_pause'));
+                        return;
+                    }
                 
                 try {
                     const url = `${API_BASE}/history/recent?since_timestamp=${encodeURIComponent(lastTimestamp)}&data_type=logs&limit=50`;
@@ -1933,7 +1938,7 @@
             }
             realtimeTracking = false;
             const btn = document.getElementById('realtime-btn');
-            btn.textContent = '实时追踪: 关';
+            btn.textContent = i18n.t('btn.realtime_off');
             btn.className = 'btn btn-secondary';
         }
         
@@ -1959,14 +1964,14 @@
             if (!select) return;
             
             const templates = getTemplates();
-            select.innerHTML = '<option value="">已保存查询...</option>' +
+            select.innerHTML = '<option value="">' + i18n.t('template.saved_queries') + '</option>' +
                 templates.map((t, i) => `<option value="${i}">${t.name}</option>`).join('');
         }
         
         function saveQueryTemplate() {
             const templates = getTemplates();
             if (templates.length >= 10) {
-                alert('最多保存10个模板，请先删除部分模板');
+                alert(i18n.t('error.max_templates'));
                 return;
             }
             
@@ -1992,7 +1997,7 @@
             
             templates.push(template);
             saveTemplates(templates);
-            alert(`模板"${name}"已保存`);
+                alert(i18n.t('success.template_saved', {name: name}));
         }
         
         function loadQueryTemplate() {
@@ -2128,7 +2133,7 @@
             if (!tbody) return;
             
             if (historyQueryData.http.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" class="no-data">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" class="no-data">' + i18n.t('status.no_data') + '</td></tr>';
                 sortedHttpData = [];
                 return;
             }
@@ -2165,7 +2170,7 @@
             if (!tbody) return;
             
             if (historyQueryData.outbound.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" class="no-data">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" class="no-data">' + i18n.t('status.no_data') + '</td></tr>';
                 sortedOutboundData = [];
                 return;
             }
@@ -2202,7 +2207,7 @@
             if (!tbody) return;
             
             if (historyQueryData.logs.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="no-data">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="no-data">' + i18n.t('status.no_data') + '</td></tr>';
                 sortedLogsData = [];
                 return;
             }

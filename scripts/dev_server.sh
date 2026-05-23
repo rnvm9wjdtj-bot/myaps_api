@@ -1,13 +1,22 @@
 #!/bin/bash
 # =====================================================
-# 开发环境服务启停脚本
+# 开发环境服务启停脚本（智能版）
 # 用法:
-#   ./dev_server.sh start   - 启动服务
+#   ./dev_server.sh start   - 智能启动（自动检测并启动所需服务）
 #   ./dev_server.sh stop    - 停止服务
 #   ./dev_server.sh restart - 重启服务
 #   ./dev_server.sh status  - 查看状态
 #   ./dev_server.sh logs    - 查看日志
 # =====================================================
+
+set -e
+
+# 颜色定义
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
 
 # 项目根目录
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -15,17 +24,14 @@ cd "$PROJECT_DIR"
 
 # 查找Python解释器
 find_python() {
-    # 优先使用虚拟环境
     if [ -f "$PROJECT_DIR/venv/bin/python" ]; then
         echo "$PROJECT_DIR/venv/bin/python"
         return
     fi
-    # 尝试python3
     if command -v python3 &> /dev/null; then
         echo "python3"
         return
     fi
-    # 尝试python
     if command -v python &> /dev/null; then
         echo "python"
         return
@@ -42,20 +48,33 @@ LOG_FILE="$PROJECT_DIR/logs/dev_server.log"
 HOST="0.0.0.0"
 PORT="8001"
 
-# 创建日志目录
+# 创建必要目录
 mkdir -p "$PROJECT_DIR/logs"
+mkdir -p "$PROJECT_DIR/storage"
 
-# 获取进程ID
-get_pid() {
-    if [ -f "$PID_FILE" ]; then
-        cat "$PID_FILE"
-    else
-        pgrep -f "python.*main\.py" | head -1 || pgrep -f "python3.*main\.py" | head -1
+# =====================================================
+# 智能服务检测与管理
+# =====================================================
+
+check_redis() {
+    if pgrep -x "redis-server" > /dev/null 2>&1; then
+        if redis-cli ping > /dev/null 2>&1; then
+            return 0
+        fi
     fi
+    return 1
 }
 
-# 检查服务是否运行
-is_running() {
+check_postgresql() {
+    if pgrep -x "postgres" > /dev/null 2>&1; then
+        if pg_isready > /dev/null 2>&1; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+check_app() {
     local pid=$(get_pid)
     if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
         return 0
@@ -63,152 +82,298 @@ is_running() {
     return 1
 }
 
-# 启动服务
-start() {
-    if is_running; then
-        echo "服务已在运行中 (PID: $(get_pid))"
+start_redis() {
+    echo -e "${BLUE}[Redis]${NC} 检查服务状态..."
+    
+    if check_redis; then
+        echo -e "${GREEN}[Redis]${NC} ✓ 已在运行"
+        return 0
+    fi
+    
+    echo -e "${YELLOW}[Redis]${NC} 服务未运行，正在启动..."
+    
+    if ! command -v redis-server &> /dev/null; then
+        echo -e "${RED}[Redis]${NC} ✗ 未安装 redis-server"
+        echo -e "${YELLOW}[Redis]${NC}   请执行: sudo apt install redis-server"
         return 1
     fi
     
-    echo "正在启动服务..."
-    echo "项目目录: $PROJECT_DIR"
-    echo "Python解释器: $PYTHON_CMD"
-    echo "访问地址: http://localhost:$PORT"
-    echo "API文档: http://localhost:$PORT/docs"
+    redis-server --daemonize yes 2>/dev/null
     
-    # 启动服务
+    local count=0
+    while ! check_redis && [ $count -lt 10 ]; do
+        sleep 0.5
+        count=$((count + 1))
+    done
+    
+    if check_redis; then
+        echo -e "${GREEN}[Redis]${NC} ✓ 启动成功"
+        return 0
+    else
+        echo -e "${RED}[Redis]${NC} ✗ 启动失败"
+        return 1
+    fi
+}
+
+start_postgresql() {
+    echo -e "${BLUE}[PostgreSQL]${NC} 检查服务状态..."
+    
+    if check_postgresql; then
+        echo -e "${GREEN}[PostgreSQL]${NC} ✓ 已在运行"
+        return 0
+    fi
+    
+    echo -e "${YELLOW}[PostgreSQL]${NC} 服务未运行，正在启动..."
+    
+    if ! command -v pg_isready &> /dev/null; then
+        echo -e "${RED}[PostgreSQL]${NC} ✗ 未安装 PostgreSQL"
+        echo -e "${YELLOW}[PostgreSQL]${NC}   请执行: sudo apt install postgresql postgresql-contrib"
+        return 1
+    fi
+    
+    sudo service postgresql start 2>/dev/null || true
+    
+    local count=0
+    while ! check_postgresql && [ $count -lt 15 ]; do
+        sleep 1
+        count=$((count + 1))
+    done
+    
+    if check_postgresql; then
+        echo -e "${GREEN}[PostgreSQL]${NC} ✓ 启动成功"
+        return 0
+    else
+        echo -e "${RED}[PostgreSQL]${NC} ✗ 启动失败"
+        return 1
+    fi
+}
+
+ensure_services() {
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}检查基础服务...${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    local redis_ok=true
+    local pg_ok=true
+    
+    start_redis || redis_ok=false
+    start_postgresql || pg_ok=false
+    
+    echo ""
+    
+    if [ "$redis_ok" = false ] || [ "$pg_ok" = false ]; then
+        echo -e "${RED}部分基础服务启动失败，应用可能无法正常工作${NC}"
+        echo -e "${YELLOW}是否继续启动应用？[y/N]${NC}"
+        read -r response
+        if [[ ! "$response" =~ ^[Yy]$ ]]; then
+            echo "已取消启动"
+            exit 1
+        fi
+    fi
+}
+
+# =====================================================
+# 应用服务管理
+# =====================================================
+
+get_pid() {
+    if [ -f "$PID_FILE" ]; then
+        local pid=$(cat "$PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            echo "$pid"
+            return
+        fi
+    fi
+    pgrep -f "python.*main\.py" | head -1 || true
+}
+
+start_app() {
+    if check_app; then
+        echo -e "${GREEN}[应用]${NC} ✓ 已在运行 (PID: $(get_pid))"
+        echo -e "${GREEN}[应用]${NC}   访问地址: http://localhost:$PORT"
+        echo -e "${GREEN}[应用]${NC}   API文档: http://localhost:$PORT/docs"
+        return 0
+    fi
+    
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}启动应用服务...${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "  项目目录: $PROJECT_DIR"
+    echo -e "  Python: $PYTHON_CMD"
+    echo -e "  端口: $PORT"
+    echo ""
+    
     nohup env PORT=$PORT $PYTHON_CMD main.py > "$LOG_FILE" 2>&1 &
     local pid=$!
     echo $pid > "$PID_FILE"
     
     sleep 2
     
-    if is_running; then
-        echo "✓ 服务启动成功 (PID: $pid)"
-        echo "日志文件: $LOG_FILE"
+    if check_app; then
+        echo -e "${GREEN}[应用]${NC} ✓ 启动成功 (PID: $pid)"
+        echo -e "${GREEN}[应用]${NC}   访问地址: http://localhost:$PORT"
+        echo -e "${GREEN}[应用]${NC}   API文档: http://localhost:$PORT/docs"
+        echo -e "${GREEN}[应用]${NC}   日志文件: $LOG_FILE"
+        return 0
     else
-        echo "✗ 服务启动失败，请查看日志:"
+        echo -e "${RED}[应用]${NC} ✗ 启动失败"
+        echo -e "${YELLOW}[应用]${NC} 最近日志:"
         tail -20 "$LOG_FILE"
         rm -f "$PID_FILE"
         return 1
     fi
 }
 
-# 停止服务
-stop() {
-    if ! is_running; then
-        echo "服务未运行"
+stop_app() {
+    if ! check_app; then
+        echo -e "${YELLOW}[应用]${NC} 服务未运行"
         rm -f "$PID_FILE"
         return 0
     fi
     
     local pid=$(get_pid)
-    echo "正在停止服务 (PID: $pid)..."
+    echo -e "${YELLOW}[应用]${NC} 正在停止 (PID: $pid)..."
     
-    # 发送SIGTERM信号
     kill "$pid" 2>/dev/null
     
-    # 等待进程结束
     local count=0
     while kill -0 "$pid" 2>/dev/null && [ $count -lt 10 ]; do
         sleep 1
         count=$((count + 1))
     done
     
-    # 如果进程还在运行，强制结束
     if kill -0 "$pid" 2>/dev/null; then
-        echo "强制结束进程..."
+        echo -e "${YELLOW}[应用]${NC} 强制结束..."
         kill -9 "$pid" 2>/dev/null
     fi
     
     rm -f "$PID_FILE"
-    echo "✓ 服务已停止"
+    echo -e "${GREEN}[应用]${NC} ✓ 已停止"
 }
 
-# 清除Python缓存
 clear_cache() {
-    echo "清除Python缓存..."
-    find "$PROJECT_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null
-    find "$PROJECT_DIR" -name "*.pyc" -delete 2>/dev/null
-    echo "✓ 缓存已清除"
+    echo -e "${YELLOW}清除Python缓存...${NC}"
+    find "$PROJECT_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+    find "$PROJECT_DIR" -name "*.pyc" -delete 2>/dev/null || true
+    echo -e "${GREEN}✓ 缓存已清除${NC}"
 }
 
-# 重启服务
-restart() {
-    stop
+# =====================================================
+# 主命令
+# =====================================================
+
+cmd_start() {
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}MyAPS API 开发服务器${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    
+    ensure_services
+    echo ""
+    start_app
+}
+
+cmd_stop() {
+    echo -e "${BLUE}停止服务...${NC}"
+    stop_app
+}
+
+cmd_restart() {
+    cmd_stop
     clear_cache
     sleep 1
-    start
+    cmd_start
 }
 
-# 查看状态
-status() {
-    if is_running; then
+cmd_status() {
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}服务状态${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    echo ""
+    echo -e "${BLUE}[Redis]${NC}"
+    if check_redis; then
+        echo -e "  状态: ${GREEN}运行中${NC}"
+        redis-cli INFO server 2>/dev/null | grep "redis_version" | sed 's/^/  /' || true
+    else
+        echo -e "  状态: ${RED}未运行${NC}"
+    fi
+    
+    echo ""
+    echo -e "${BLUE}[PostgreSQL]${NC}"
+    if check_postgresql; then
+        echo -e "  状态: ${GREEN}运行中${NC}"
+        pg_isready 2>/dev/null | sed 's/^/  /' || true
+    else
+        echo -e "  状态: ${RED}未运行${NC}"
+    fi
+    
+    echo ""
+    echo -e "${BLUE}[应用服务]${NC}"
+    if check_app; then
         local pid=$(get_pid)
-        echo "✓ 服务运行中"
-        echo "  PID: $pid"
-        echo "  访问地址: http://localhost:$PORT"
-        echo "  API文档: http://localhost:$PORT/docs"
-        
-        # 显示进程信息
+        echo -e "  状态: ${GREEN}运行中${NC}"
+        echo -e "  PID: $pid"
+        echo -e "  访问地址: http://localhost:$PORT"
+        echo -e "  API文档: http://localhost:$PORT/docs"
         if command -v ps &> /dev/null; then
-            ps -p "$pid" -o pid,ppid,%cpu,%mem,etime,cmd 2>/dev/null || true
+            ps -p "$pid" -o pid,ppid,%cpu,%mem,etime 2>/dev/null || true
         fi
     else
-        echo "✗ 服务未运行"
+        echo -e "  状态: ${RED}未运行${NC}"
     fi
+    
+    echo ""
 }
 
-# 查看日志
-logs() {
+cmd_logs() {
     if [ ! -f "$LOG_FILE" ]; then
-        echo "日志文件不存在: $LOG_FILE"
+        echo -e "${YELLOW}日志文件不存在: $LOG_FILE${NC}"
         return 1
     fi
     
     if [ "$1" = "-f" ] || [ "$1" = "--follow" ]; then
-        echo "实时查看日志 (Ctrl+C 退出)..."
+        echo -e "${BLUE}实时查看日志 (Ctrl+C 退出)...${NC}"
         tail -f "$LOG_FILE"
     else
-        echo "最近50行日志:"
+        echo -e "${BLUE}最近50行日志:${NC}"
         tail -50 "$LOG_FILE"
     fi
 }
 
-# 帮助信息
 help() {
-    echo "用法: $0 {start|stop|restart|status|logs|clear_cache}"
+    echo -e "${BLUE}用法:${NC} $0 {start|stop|restart|status|logs|clear_cache}"
     echo ""
-    echo "命令:"
-    echo "  start       - 启动服务"
-    echo "  stop        - 停止服务"
-    echo "  restart     - 重启服务（自动清除缓存）"
-    echo "  status      - 查看服务状态"
+    echo -e "${BLUE}命令:${NC}"
+    echo "  start       - 智能启动（自动检测并启动 Redis/PostgreSQL/应用）"
+    echo "  stop        - 停止应用服务"
+    echo "  restart     - 重启应用服务（自动清除缓存）"
+    echo "  status      - 查看所有服务状态"
     echo "  logs        - 查看日志 (添加 -f 参数实时查看)"
     echo "  clear_cache - 清除Python缓存"
     echo ""
-    echo "示例:"
-    echo "  $0 start"
-    echo "  $0 restart"
-    echo "  $0 logs -f"
+    echo -e "${BLUE}示例:${NC}"
+    echo "  $0 start          # 一键启动所有服务"
+    echo "  $0 restart        # 重启应用"
+    echo "  $0 logs -f        # 实时查看日志"
+    echo "  $0 status         # 查看所有服务状态"
 }
 
-# 主入口
 case "$1" in
     start)
-        start
+        cmd_start
         ;;
     stop)
-        stop
+        cmd_stop
         ;;
     restart)
-        restart
+        cmd_restart
         ;;
     status)
-        status
+        cmd_status
         ;;
     logs)
-        logs "$2"
+        cmd_logs "$2"
         ;;
     clear_cache)
         clear_cache
@@ -217,7 +382,7 @@ case "$1" in
         help
         ;;
     *)
-        echo "错误: 未知命令 '$1'"
+        echo -e "${RED}错误: 未知命令 '$1'${NC}"
         help
         exit 1
         ;;
