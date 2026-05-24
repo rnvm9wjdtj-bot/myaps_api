@@ -372,10 +372,29 @@ cmd_status() {
             if [ -n "$redis_container" ]; then
                 echo -e "  方式: ${GREEN}Docker容器${NC} ($redis_container)"
                 docker ps --filter "name=$redis_container" --format "  镜像: {{.Image}}\n  端口: {{.Ports}}" 2>/dev/null || true
+            else
+                echo -e "  方式: ${GREEN}宿主机服务${NC}"
+                # 显示主进程信息
+                local redis_main_pid=$(pgrep -x redis-server | head -1)
+                if [ -n "$redis_main_pid" ]; then
+                    local redis_cmd=$(cat /proc/$redis_main_pid/cmdline 2>/dev/null | tr '\0' ' ')
+                    echo -e "  PID: $redis_main_pid"
+                    # 显示监听地址
+                    local redis_bind=$(echo "$redis_cmd" | grep -oP '\-\-bind\s+\K[^\s]+' | head -1)
+                    local redis_port=$(echo "$redis_cmd" | grep -oP '\-\-port\s+\K[^\s]+' | head -1)
+                    [ -z "$redis_bind" ] && redis_bind="*"
+                    [ -z "$redis_port" ] && redis_port="6379"
+                    echo -e "  监听: $redis_bind:$redis_port"
+                fi
             fi
         fi
         if command -v redis-cli &> /dev/null && redis-cli ping &> /dev/null; then
-            redis-cli INFO server 2>/dev/null | grep "redis_version" | sed 's/^/  /' || true
+            local redis_version=$(redis-cli INFO server 2>/dev/null | grep "redis_version" | cut -d: -f2 | tr -d '\r')
+            local redis_used_memory=$(redis-cli INFO memory 2>/dev/null | grep "used_memory_human" | cut -d: -f2 | tr -d '\r')
+            local redis_connected=$(redis-cli INFO clients 2>/dev/null | grep "connected_clients" | cut -d: -f2 | tr -d '\r')
+            [ -n "$redis_version" ] && echo -e "  版本: $redis_version"
+            [ -n "$redis_used_memory" ] && echo -e "  内存: $redis_used_memory"
+            [ -n "$redis_connected" ] && echo -e "  连接: $redis_connected clients"
         fi
     else
         echo -e "  状态: ${RED}未运行${NC}"
@@ -391,10 +410,33 @@ cmd_status() {
             if [ -n "$pg_container" ]; then
                 echo -e "  方式: ${GREEN}Docker容器${NC} ($pg_container)"
                 docker ps --filter "name=$pg_container" --format "  镜像: {{.Image}}\n  端口: {{.Ports}}" 2>/dev/null || true
+            else
+                echo -e "  方式: ${GREEN}宿主机服务${NC}"
+                # 显示版本和数据目录
+                if command -v psql &> /dev/null; then
+                    local pg_version=$(psql --version 2>/dev/null | grep -oE '[0-9]+' | head -1)
+                    [ -n "$pg_version" ] && echo -e "  版本: PostgreSQL $pg_version"
+                fi
+                # 显示主进程信息
+                local pg_main_pid=$(pgrep -x postgres | head -1)
+                if [ -n "$pg_main_pid" ]; then
+                    local pg_cmd=$(cat /proc/$pg_main_pid/cmdline 2>/dev/null | tr '\0' ' ')
+                    # 提取数据目录
+                    local pg_data=$(echo "$pg_cmd" | grep -oP '\-D\s+\K[^\s]+' | head -1)
+                    local pg_config=$(echo "$pg_cmd" | grep -oP 'config_file=\K[^\s]+' | head -1)
+                    [ -n "$pg_data" ] && echo -e "  数据: $pg_data"
+                    [ -n "$pg_config" ] && echo -e "  配置: $pg_config"
+                fi
+                # 显示连接数
+                if command -v psql &> /dev/null; then
+                    local pg_connections=$(psql -U postgres -t -c "SELECT count(*) FROM pg_stat_activity WHERE state='active';" 2>/dev/null | xargs)
+                    [ -n "$pg_connections" ] && echo -e "  连接: $pg_connections active"
+                fi
             fi
         fi
         if command -v pg_isready &> /dev/null; then
-            pg_isready 2>/dev/null | sed 's/^/  /' || true
+            local pg_ready=$(pg_isready 2>/dev/null)
+            echo -e "  ${GREEN}$pg_ready${NC}"
         fi
     else
         echo -e "  状态: ${RED}未运行${NC}"
