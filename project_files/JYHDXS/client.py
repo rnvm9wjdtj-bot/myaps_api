@@ -6,6 +6,7 @@ import pandas as pd
 from datetime import datetime
 from typing import List, Dict, Union
 
+from contextlib import asynccontextmanager
 from fastapi import status
 from dateutil.relativedelta import relativedelta
 
@@ -323,15 +324,18 @@ async def batch_handle_pl_status_a2e(event_data_list: List[Dict], _erp: EventRes
     await asyncio.gather(*tasks, return_exceptions=True)
 
 
+#################################################################################
+# ⬇️一键通排批次日志
+#################################################################################
+
+# strategy -> handler function 映射表
+_STRATEGY_HANDLERS: Dict[str, callable] = {
+    '库存': refresh_stock,
+    # 添加更多策略处理器...
+    # '采购': refresh_purchase,
+    # '生产': refresh_production,
+}
+
 async def batch_handle_new_batchlog(event_data_list: List[Dict]):
 
-    batchlog = event_data_list[0]
-    pidno = batchlog['pidno']
-    strategy = batchlog['strategy']
-    await ApsPayloadSponsor.add_batchlog(pidno=pidno, strategy=strategy, target='RECE')
-    try:
-        if strategy == '库存':
-            await refresh_stock()
-        await ApsPayloadSponsor.add_batchlog(pidno=pidno, strategy=strategy, target='SUCC')
-    except Exception as e:
-        await ApsPayloadSponsor.add_batchlog(pidno=pidno, strategy=strategy, target='FAIL', memo=str(e))
+    await ApsPayloadSponsor.execute_batchlog(event_data_list[0], _STRATEGY_HANDLERS)

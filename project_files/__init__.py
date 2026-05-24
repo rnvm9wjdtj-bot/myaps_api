@@ -206,7 +206,8 @@ def handle_insert_batchlog(database: str, table: str, data: dict):
     try:
         new_data = dict_to_lower_keys(data['new'])
         task = new_data['task']
-        if task == 'API':
+        target = new_data['target']
+        if task == 'API' and target == 'SENT':
             aps_new_batchlog_event.add_event(new_data)
     except Exception as e:
         logger.fail("处理t_batchlog插入事件", "", str(e))

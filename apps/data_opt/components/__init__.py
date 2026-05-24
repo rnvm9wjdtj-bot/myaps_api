@@ -13,6 +13,7 @@ import inspect
 from enum import Enum
 from typing import List, Dict, Optional, Literal, Callable, Union, Any, Type
 from collections import defaultdict
+from contextlib import asynccontextmanager
 
 
 from datetime import date, datetime, timedelta
@@ -1760,24 +1761,49 @@ class ApsPayloadSponsor:
 
 
     @classmethod
-    async def add_batchlog(cls, pidno: str, strategy: str, target: Literal['RECE', 'PROC', 'SUCC', 'FAIL'], memo: str=""):
+    async def execute_batchlog(cls, sent_batchlog: Dict[str, Any], handlers: Dict[str, callable] = None):
+        """批次日志状态执行器
 
-        memo = {
-            "RECE": "Received已接收",
-            "PROC": "Processing处理中",
-            "SUCC": "Success 成功",
-            "FALI": f"Failed {memo}"
-        }.get(target)
+        用法:
+            await ApsPayloadSponsor.execute_batchlog(sent_batchlog, STRATEGY_HANDLERS)
 
-        await TBatchLog.create(
-            systime=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            pidno=pidno,
-            task="API",
-            strategy=strategy,
-            target=target,
-            memo=memo
-        )
+        状态流转: RECE -> SUCC (正常) / FAIL (异常)
+        """
+        handlers = handlers or {}
+        
+        async def add_batchlog(pidno: str, strategy: str, target: Literal['RECE', 'PROC', 'SUCC', 'FAIL'], memo: str=""):
 
+            memo = {
+                "RECE": "Received已接收",
+                "PROC": "Processing处理中",
+                "SUCC": "Success 成功",
+                "FAIL": f"Failed {memo}"
+            }.get(target, f"Unknown target: {target}")
+
+            await TBatchLog.create(
+                systime=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                pidno=pidno,
+                task="API",
+                strategy=strategy,
+                target=target,
+                memo=memo
+            )
+        
+        pidno = sent_batchlog['pidno']
+        strategy = sent_batchlog['strategy']
+        
+        await add_batchlog(pidno=pidno, strategy=strategy, target='RECE')
+        try:
+            handler = handlers.get(strategy)
+            if handler:
+                if inspect.iscoroutinefunction(handler):
+                    await handler()
+                else:
+                    handler()
+            await add_batchlog(pidno=pidno, strategy=strategy, target='SUCC')
+        except Exception as e:
+            await add_batchlog(pidno=pidno, strategy=strategy, target='FAIL', memo=str(e))
+            raise
 
 
 

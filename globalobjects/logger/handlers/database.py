@@ -127,6 +127,19 @@ class DatabaseHandler(Handler):
         Args:
             records: 日志记录列表
         """
+        # 检查 Tortoise ORM 是否真正初始化完成
+        try:
+            from tortoise import Tortoise
+            if not Tortoise._inited:
+                # ORM 未就绪，将记录重新放入缓冲区，等待下次 flush
+                with self._lock:
+                    for r in records:
+                        if len(self._buffer) < self._buffer_size:
+                            self._buffer.append(r)
+                return
+        except ImportError:
+            pass
+        
         try:
             from apps.common.monitor.models import SystemLog
             from core.settings import SQLITE_FILE
@@ -161,7 +174,15 @@ class DatabaseHandler(Handler):
             try:
                 await SystemLog.bulk_create(logs)
             except Exception as e:
-                raise e
+                # 数据库写入失败，将记录重新放入缓冲区等待重试
+                error_msg = str(e)
+                if "not initialised" in error_msg.lower() or "configuration" in error_msg.lower():
+                    with self._lock:
+                        for r in records:
+                            if len(self._buffer) < self._buffer_size:
+                                self._buffer.append(r)
+                else:
+                    raise
     
     def get_stats(self) -> dict:
         """获取统计信息"""
