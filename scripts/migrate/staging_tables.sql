@@ -15,10 +15,10 @@ CREATE TABLE IF NOT EXISTS t_material_staging (
     _error_msg TEXT NULL,
     _transform_rules TEXT NULL,
     _retry_count INT DEFAULT 0,
-    _createtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    _updatetime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    _createtime TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    _updatetime TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     _synced_id VARCHAR(128) NULL,
-    _synced_time TIMESTAMP NULL,
+    _synced_time TIMESTAMPTZ NULL,
     
     -- ProtoMaterial 字段
     "MaterialNo" VARCHAR(64) NOT NULL,
@@ -56,8 +56,8 @@ CREATE TABLE IF NOT EXISTS t_material_staging (
     "Free3" VARCHAR(255) NULL,
     "Memo" VARCHAR(255) NULL,
     "Sys_User" VARCHAR(32) NULL,
-    "Sys_Date" TIMESTAMP NULL,
-    "Sys_Stamp" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    "Sys_Date" TIMESTAMPTZ NULL,
+    "Sys_Stamp" TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_mat_stg_status ON t_material_staging(_status);
@@ -83,10 +83,10 @@ CREATE TABLE IF NOT EXISTS t_workcenter_staging (
     _error_msg TEXT NULL,
     _transform_rules TEXT NULL,
     _retry_count INT DEFAULT 0,
-    _createtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    _updatetime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    _createtime TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    _updatetime TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     _synced_id VARCHAR(128) NULL,
-    _synced_time TIMESTAMP NULL,
+    _synced_time TIMESTAMPTZ NULL,
     
     -- ProtoWorkcenter 字段
     "WorkCenter" VARCHAR(32) NOT NULL,
@@ -122,10 +122,10 @@ CREATE TABLE IF NOT EXISTS t_mat_ver_staging (
     _error_msg TEXT NULL,
     _transform_rules TEXT NULL,
     _retry_count INT DEFAULT 0,
-    _createtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    _updatetime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    _createtime TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    _updatetime TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     _synced_id VARCHAR(128) NULL,
-    _synced_time TIMESTAMP NULL,
+    _synced_time TIMESTAMPTZ NULL,
     
     -- ProtoMatVer 字段
     "MaterialNo" VARCHAR(64) NOT NULL,
@@ -154,10 +154,10 @@ CREATE TABLE IF NOT EXISTS t_mat_wc_staging (
     _error_msg TEXT NULL,
     _transform_rules TEXT NULL,
     _retry_count INT DEFAULT 0,
-    _createtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    _updatetime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    _createtime TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    _updatetime TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     _synced_id VARCHAR(128) NULL,
-    _synced_time TIMESTAMP NULL,
+    _synced_time TIMESTAMPTZ NULL,
     
     -- ProtoMatWc 字段
     "MaterialNo" VARCHAR(64) NOT NULL,
@@ -172,7 +172,7 @@ CREATE TABLE IF NOT EXISTS t_mat_wc_staging (
     "OffSetSec" INT NULL,
     "Rate" DOUBLE PRECISION NULL,
     "Memo" VARCHAR(255) NULL,
-    "Sys_Stamp" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    "Sys_Stamp" TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_mwc_stg_status ON t_mat_wc_staging(_status);
@@ -192,10 +192,10 @@ CREATE TABLE IF NOT EXISTS t_mat_wc_bom_staging (
     _error_msg TEXT NULL,
     _transform_rules TEXT NULL,
     _retry_count INT DEFAULT 0,
-    _createtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    _updatetime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    _createtime TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    _updatetime TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     _synced_id VARCHAR(128) NULL,
-    _synced_time TIMESTAMP NULL,
+    _synced_time TIMESTAMPTZ NULL,
     
     -- ProtoMatWcBom 字段
     "ProductNo" VARCHAR(64) NOT NULL,
@@ -211,7 +211,7 @@ CREATE TABLE IF NOT EXISTS t_mat_wc_bom_staging (
     "Scrap" DOUBLE PRECISION NULL,
     "Alt" VARCHAR(1) NULL,
     "Memo" VARCHAR(255) NULL,
-    "Sys_Stamp" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    "Sys_Stamp" TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_bom_stg_status ON t_mat_wc_bom_staging(_status);
@@ -231,10 +231,10 @@ CREATE TABLE IF NOT EXISTS t_mold_staging (
     _error_msg TEXT NULL,
     _transform_rules TEXT NULL,
     _retry_count INT DEFAULT 0,
-    _createtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    _updatetime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    _createtime TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    _updatetime TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     _synced_id VARCHAR(128) NULL,
-    _synced_time TIMESTAMP NULL,
+    _synced_time TIMESTAMPTZ NULL,
     
     -- ProtoMold 字段
     "MoldNo" VARCHAR(32) NOT NULL,
@@ -264,10 +264,10 @@ CREATE TABLE IF NOT EXISTS t_mat_wc_mold_staging (
     _error_msg TEXT NULL,
     _transform_rules TEXT NULL,
     _retry_count INT DEFAULT 0,
-    _createtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    _updatetime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    _createtime TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    _updatetime TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     _synced_id VARCHAR(128) NULL,
-    _synced_time TIMESTAMP NULL,
+    _synced_time TIMESTAMPTZ NULL,
     
     -- ProtoMatWcMold 字段
     "MaterialNo" VARCHAR(64) NOT NULL,
@@ -298,7 +298,7 @@ CREATE TABLE IF NOT EXISTS t_validation_error (
     error_value TEXT NULL,
     error_message TEXT NOT NULL,
     suggestion TEXT NULL,
-    createtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    createtime TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_err_staging ON t_validation_error(staging_table, staging_id);
@@ -322,8 +322,8 @@ CREATE TABLE IF NOT EXISTS t_transform_rule (
     is_active BOOLEAN DEFAULT TRUE,
     priority INT DEFAULT 0,
     description TEXT NULL,
-    createtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updatetime TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    createtime TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updatetime TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_rule_source ON t_transform_rule(source_system);
