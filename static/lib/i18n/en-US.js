@@ -493,5 +493,170 @@ window.__i18n_en_US__ = {
     'alert.binlog_listener_stopped': 'Binlog listener stopped',
     'alert.high_error_rate': 'High error rate',
     'alert.memory_warning': 'Memory usage warning',
-    'alert.cpu_warning': 'CPU usage warning'
+    'alert.cpu_warning': 'CPU usage warning',
+    
+    // ================================================================================
+    // MDS Module (Data Staging System)
+    // ================================================================================
+    
+    // ============ App Title ============
+    'mds.app.title': 'Data Staging System',
+    'mds.app.guide': 'User Guide',
+    'mds.app.apiDoc': 'API Docs',
+    
+    // ============ Navigation ============
+    'mds.nav.material': 'Material',
+    'mds.nav.matVer': 'Mat Version',
+    'mds.nav.workcenter': 'Work Center',
+    'mds.nav.matWc': 'Routing',
+    'mds.nav.bom': 'BOM',
+    'mds.nav.mold': 'Mold',
+    'mds.nav.matWcMold': 'Mat-Wc-Mold',
+    'mds.nav.all': 'All',
+    
+    // ============ Status Labels (P0) ============
+    'mds.status.pending': 'Pending',
+    'mds.status.compliancePass': 'Compliance Pass',
+    'mds.status.complianceError': 'Compliance Error',
+    'mds.status.relationPass': 'Relation Pass',
+    'mds.status.relationError': 'Relation Error',
+    'mds.status.syncError': 'Sync Failed',
+    'mds.status.synced': 'Synced',
+    'mds.status.all': 'All',
+    
+    // ============ Action Buttons (P1) ============
+    'mds.action.import': 'Import',
+    'mds.action.validate': 'Validate',
+    'mds.action.sync': 'Sync',
+    'mds.action.query': 'Query',
+    'mds.action.reset': 'Reset',
+    'mds.action.save': 'Save',
+    'mds.action.delete': 'Delete',
+    'mds.action.cancel': 'Cancel',
+    'mds.action.confirm': 'Confirm',
+    'mds.action.close': 'Close',
+    'mds.action.clear': 'Clear',
+    'mds.action.export': 'Export',
+    'mds.action.exportTemplate': 'Export Template',
+    'mds.action.refresh': 'Refresh',
+    'mds.action.filter': 'Filter',
+    'mds.action.edit': 'Edit',
+    'mds.action.view': 'View',
+    'mds.action.selectAll': 'Select All',
+    'mds.action.deselectAll': 'Deselect All',
+    'mds.action.batchDelete': 'Batch Delete',
+    'mds.action.batchSync': 'Batch Sync',
+    'mds.action.showRules': 'View Rules',
+    'mds.action.preciseFilter': 'Precise Filter',
+    'mds.action.clearFilter': 'Clear Filter',
+    
+    // ============ Validation ============
+    'mds.validation.title': 'Validation',
+    'mds.validation.complete': 'Validation complete: {pass} passed, {fail} failed',
+    'mds.validation.noPending': 'No pending records',
+    'mds.validation.confirmStart': 'Missing fields will be filled with default values. Proceed?',
+    'mds.validation.processing': 'Validating',
+    'mds.validation.failed': 'Validation failed',
+    'mds.validation.progress': 'Processed {current}/{total}',
+    'mds.validation.rulesTitle': 'Validation Rules',
+    'mds.validation.noRules': 'No validation rules',
+    
+    // ============ Sync ============
+    'mds.sync.title': 'Sync',
+    'mds.sync.complete': 'Sync complete: {accounts} accounts, {synced} synced, {dedup} dedup failed, {failed} other failed',
+    'mds.sync.noData': 'No [Relation Pass] or [Sync Failed] records to sync',
+    'mds.sync.selectTarget': 'Please select at least one target account',
+    'mds.sync.selectMode': 'Select sync mode',
+    'mds.sync.incremental': 'Incremental Sync',
+    'mds.sync.refresh': 'Refresh Sync',
+    'mds.sync.confirmRefresh': 'Refresh sync will delete all data in target table. Proceed with caution!',
+    'mds.sync.processing': 'Syncing',
+    'mds.sync.progress': 'Sync Progress',
+    
+    // ============ Upload ============
+    'mds.upload.title': 'Import Excel Data',
+    'mds.upload.success': 'Import complete: {inserted} inserted, {skipped} skipped',
+    'mds.upload.invalidType': 'Please upload Excel or CSV file',
+    'mds.upload.noFile': 'Please select a file first',
+    'mds.upload.dragDrop': 'Click or drag to upload (.xlsx, .xls, .csv)',
+    'mds.upload.processing': 'Importing',
+    'mds.upload.dedupStrategy': 'Dedup Strategy',
+    'mds.upload.overwrite': 'Overwrite',
+    'mds.upload.skip': 'Skip',
+    
+    // ============ Table ============
+    'mds.table.noData': 'No data',
+    'mds.table.loading': 'Loading...',
+    'mds.table.selectAll': 'Select All',
+    'mds.table.perPage': '/ page',
+    'mds.table.total': 'Total {count}',
+    'mds.table.edit': 'Edit',
+    'mds.table.delete': 'Delete',
+    'mds.table.export': 'Export Template',
+    'mds.table.selected': '{count} selected',
+    'mds.table.actions': 'Actions',
+    'mds.table.status': 'Status',
+    'mds.table.columns': 'Columns',
+    
+    // ============ Modal ============
+    'mds.modal.confirm': 'Confirm',
+    'mds.modal.cancel': 'Cancel',
+    'mds.modal.close': 'Close',
+    'mds.modal.importTitle': 'Import Excel Data',
+    'mds.modal.filterTitle': 'Precise Filter',
+    'mds.modal.editTitle': 'Edit Record',
+    'mds.modal.validationRules': 'Validation Rules',
+    'mds.modal.syncTitle': 'Sync Data',
+    'mds.modal.deleteConfirm': 'Delete this record?',
+    'mds.modal.batchDeleteConfirm': 'Delete {count} selected records?',
+    
+    // ============ Errors ============
+    'mds.error.queryFailed': 'Query failed',
+    'mds.error.uploadFailed': 'Upload failed',
+    'mds.error.timeout': 'Request timeout',
+    'mds.error.loadFailed': 'Load failed, please retry',
+    'mds.error.validateFailed': 'Validation failed',
+    'mds.error.syncFailed': 'Sync failed',
+    'mds.error.noPermission': 'No permission',
+    'mds.error.invalidData': 'Invalid data format',
+    'mds.error.duplicateKey': 'Duplicate data: {field}={value} already exists',
+    'mds.error.foreignKeyViolation': 'Foreign key violation: {field} reference not found',
+    'mds.error.validationFailed': 'Validation failed: {reason}',
+    
+    // ============ Success ============
+    'mds.success.queryComplete': 'Query complete',
+    'mds.success.uploadComplete': 'Import complete',
+    'mds.success.validateComplete': 'Validation complete',
+    'mds.success.syncComplete': 'Sync complete',
+    'mds.success.deleteComplete': 'Delete complete',
+    'mds.success.saveComplete': 'Save complete',
+    'mds.success.exportComplete': 'Export complete',
+    
+    // ============ Stats ============
+    'mds.stats.total': 'Total',
+    'mds.stats.pending': 'Pending',
+    'mds.stats.passed': 'Passed',
+    'mds.stats.failed': 'Failed',
+    'mds.stats.synced': 'Synced',
+    'mds.stats.today': 'Today',
+    'mds.stats.week': 'This Week',
+    'mds.stats.month': 'This Month',
+    
+    // ============ Form ============
+    'mds.form.required': 'Required',
+    'mds.form.optional': 'Optional',
+    'mds.form.defaultValue': 'Default',
+    'mds.form.placeholder': 'Enter value',
+    'mds.form.selectPlaceholder': 'Select',
+    
+    // ============ Other ============
+    'mds.other.loading': 'Loading...',
+    'mds.other.processing': 'Processing...',
+    'mds.other.noData': 'No data',
+    'mds.other.confirm': 'Confirm',
+    'mds.other.cancel': 'Cancel',
+    'mds.other.tip': 'Tip',
+    'mds.other.warning': 'Warning',
+    'mds.other.error': 'Error',
+    'mds.other.success': 'Success'
 };

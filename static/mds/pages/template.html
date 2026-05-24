@@ -13,32 +13,41 @@
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-2">
         <div class="container-fluid">
-            <a class="navbar-brand" href="/mds"><i class="bi bi-clipboard-data"></i> 数据清洗管理系统</a>
+            <a class="navbar-brand" href="/mds"><i class="bi bi-clipboard-data"></i> <span data-i18n="mds.app.title">数据清洗管理系统</span></a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
-                        <a class="nav-link {material_active}" href="/mds/material"><i class="bi {material_icon}"></i> 物料</a>
+                        <a class="nav-link {material_active}" href="/mds/material"><i class="bi {material_icon}"></i> <span data-i18n="mds.nav.material">物料</span></a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {mat_ver_active}" href="/mds/mat-ver"><i class="bi {mat_ver_icon}"></i> 产线版本</a>
+                        <a class="nav-link {mat_ver_active}" href="/mds/mat-ver"><i class="bi {mat_ver_icon}"></i> <span data-i18n="mds.nav.matVer">产线版本</span></a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {workcenter_active}" href="/mds/workcenter"><i class="bi {workcenter_icon}"></i> 工作中心</a>
+                        <a class="nav-link {workcenter_active}" href="/mds/workcenter"><i class="bi {workcenter_icon}"></i> <span data-i18n="mds.nav.workcenter">工作中心</span></a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {mat_wc_active}" href="/mds/mat-wc"><i class="bi {mat_wc_icon}"></i> 工艺路线</a>
+                        <a class="nav-link {mat_wc_active}" href="/mds/mat-wc"><i class="bi {mat_wc_icon}"></i> <span data-i18n="mds.nav.matWc">工艺路线</span></a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {mat_wc_bom_active}" href="/mds/mat-wc-bom"><i class="bi {mat_wc_bom_icon}"></i> BOM</a>
+                        <a class="nav-link {mat_wc_bom_active}" href="/mds/mat-wc-bom"><i class="bi {mat_wc_bom_icon}"></i> <span data-i18n="mds.nav.bom">BOM</span></a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {mold_active}" href="/mds/mold"><i class="bi {mold_icon}"></i> 模具</a>
+                        <a class="nav-link {mold_active}" href="/mds/mold"><i class="bi {mold_icon}"></i> <span data-i18n="mds.nav.mold">模具</span></a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {mat_wc_mold_active}" href="/mds/mat-wc-mold"><i class="bi {mat_wc_mold_icon}"></i> 机台模具</a>
+                        <a class="nav-link {mat_wc_mold_active}" href="/mds/mat-wc-mold"><i class="bi {mat_wc_mold_icon}"></i> <span data-i18n="mds.nav.matWcMold">机台模具</span></a>
+                    </li>
+                </ul>
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <select id="lang-selector" class="form-select form-select-sm" style="width: auto; background-color: rgba(255,255,255,0.9); border: none;">
+                            <option value="zh-CN">🇨🇳 中文</option>
+                            <option value="en-US">🇺🇸 English</option>
+                            <option value="de-DE">🇩🇪 Deutsch</option>
+                        </select>
                     </li>
                 </ul>
             </div>
@@ -54,26 +63,26 @@
             <div class="row g-2 align-items-center">
                 <div class="col-auto d-flex gap-2">
                     <button class="btn btn-primary btn-sm font-monospace" style="width:150px" data-bs-toggle="modal" data-bs-target="#uploadModal">
-                        <i class="bi bi-upload"></i> 导入
+                        <i class="bi bi-upload"></i> <span data-i18n="mds.action.import">导入</span>
                     </button>
                     <button class="btn btn-success btn-sm font-monospace" style="width:150px" id="validateBtn">
-                        <i class="bi bi-shield-check"></i> 校验
+                        <i class="bi bi-shield-check"></i> <span data-i18n="mds.action.validate">校验</span>
                     </button>
                     <button class="btn btn-info btn-sm font-monospace" style="width:150px" id="syncBtn">
-                        <i class="bi bi-cloud-upload"></i> 推送
+                        <i class="bi bi-cloud-upload"></i> <span data-i18n="mds.action.sync">推送</span>
                     </button>
                     <button class="btn btn-outline-warning btn-sm font-monospace" style="width:150px" id="rulesBtn">
-                        <i class="bi bi-sliders"></i> 校验规则
+                        <i class="bi bi-sliders"></i> <span data-i18n="mds.validation.rulesTitle">校验规则</span>
                     </button>
                 </div>
                 <div class="col-auto">
                     <select class="form-select form-select-sm" id="statusFilter" style="width:100px">
-                        <option value="">全部状态</option>
-                        <option value="pending">待处理</option>
-                        <option value="relation_pass">校验通过</option>
-                        <option value="compliance_error">校验失败</option>
-                        <option value="sync_error">推送失败</option>
-                        <option value="synced">已推送</option>
+                        <option value="" data-i18n="mds.status.all">全部状态</option>
+                        <option value="pending" data-i18n="mds.status.pending">待处理</option>
+                        <option value="relation_pass" data-i18n="mds.status.relationPass">校验通过</option>
+                        <option value="compliance_error" data-i18n="mds.status.complianceError">校验失败</option>
+                        <option value="sync_error" data-i18n="mds.status.syncError">推送失败</option>
+                        <option value="synced" data-i18n="mds.status.synced">已推送</option>
                     </select>
                 </div>
                 <div class="col-auto">
@@ -90,13 +99,13 @@
                 </div>
                 <div class="col-auto d-flex gap-2">
                     <button class="btn btn-primary btn-sm font-monospace" style="width:150px" id="searchBtn">
-                        <i class="bi bi-search"></i> 查询
+                        <i class="bi bi-search"></i> <span data-i18n="mds.action.query">查询</span>
                     </button>
                     <button class="btn btn-outline-info btn-sm font-monospace" style="width:150px" data-bs-toggle="modal" data-bs-target="#advancedFilterModal">
-                        <i class="bi bi-funnel"></i> 精准筛选
+                        <i class="bi bi-funnel"></i> <span data-i18n="mds.action.preciseFilter">精准筛选</span>
                     </button>
                     <button class="btn btn-outline-secondary btn-sm font-monospace" style="width:150px" id="resetBtn">
-                        <i class="bi bi-arrow-counterclockwise"></i> 重置
+                        <i class="bi bi-arrow-counterclockwise"></i> <span data-i18n="mds.action.reset">重置</span>
                     </button>
                 </div>
             </div>
@@ -109,20 +118,20 @@
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">导入Excel数据</h5>
+                    <h5 class="modal-title" data-i18n="mds.modal.importTitle">导入Excel数据</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label class="form-label">去重策略</label>
+                        <label class="form-label" data-i18n="mds.upload.dedupStrategy">去重策略</label>
                         <div class="d-flex gap-3">
                             <div class="form-check">
                                 <input class="form-check-input" type="radio" name="dedupStrategy" id="dedupOverwrite" value="overwrite" checked>
-                                <label class="form-check-label" for="dedupOverwrite">覆盖重复</label>
+                                <label class="form-check-label" for="dedupOverwrite" data-i18n="mds.upload.overwrite">覆盖重复</label>
                             </div>
                             <div class="form-check">
                                 <input class="form-check-input" type="radio" name="dedupStrategy" id="dedupSkip" value="skip">
-                                <label class="form-check-label" for="dedupSkip">跳过重复</label>
+                                <label class="form-check-label" for="dedupSkip" data-i18n="mds.upload.skip">跳过重复</label>
                             </div>
                             <div class="form-check">
                                 <input class="form-check-input" type="radio" name="dedupStrategy" id="dedupReject" value="reject">
@@ -132,13 +141,13 @@
                         <small class="text-muted">覆盖重复：更新已有记录；跳过重复：保留原有记录；拒绝重复：有重复时报错</small>
                     </div>
                     <div class="file-upload-area" id="uploadArea">
-                        <p class="mb-0">点击或拖拽文件上传（支持 .xlsx, .xls, .csv）</p>
+                        <p class="mb-0" data-i18n="mds.upload.dragDrop">点击或拖拽文件上传（支持 .xlsx, .xls, .csv）</p>
                         <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display: none;">
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <button type="button" class="btn btn-primary" id="uploadBtn">上传</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="mds.modal.cancel">取消</button>
+                    <button type="button" class="btn btn-primary" id="uploadBtn" data-i18n="mds.action.import">上传</button>
                 </div>
             </div>
         </div>
@@ -148,7 +157,7 @@
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">精准筛选</h5>
+                    <h5 class="modal-title" data-i18n="mds.modal.filterTitle">精准筛选</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -187,9 +196,9 @@
                     </button>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" id="clearAllFilters">清空</button>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <button type="button" class="btn btn-primary btn-sm" id="applyAdvancedFilter">应用筛选</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="clearAllFilters" data-i18n="mds.action.clear">清空</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="mds.modal.cancel">取消</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="applyAdvancedFilter" data-i18n="mds.action.filter">应用筛选</button>
                 </div>
             </div>
         </div>
@@ -199,7 +208,7 @@
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">批量编辑记录</h5>
+                    <h5 class="modal-title" data-i18n="mds.modal.editTitle">批量编辑记录</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -213,8 +222,8 @@
                     <div id="batchEditFields"></div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <button type="button" class="btn btn-primary" id="applyBatchEdit">确定</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="mds.modal.cancel">取消</button>
+                    <button type="button" class="btn btn-primary" id="applyBatchEdit" data-i18n="mds.modal.confirm">确定</button>
                 </div>
             </div>
         </div>
@@ -224,22 +233,27 @@
         <div class="modal-dialog modal-xl">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">编辑记录</h5>
+                    <h5 class="modal-title" data-i18n="mds.modal.editTitle">编辑记录</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <form id="editForm"></form>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-danger" id="deleteBtn">删除</button>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <button type="button" class="btn btn-primary" id="saveBtn">保存</button>
+                    <button type="button" class="btn btn-danger" id="deleteBtn" data-i18n="mds.action.delete">删除</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="mds.modal.cancel">取消</button>
+                    <button type="button" class="btn btn-primary" id="saveBtn" data-i18n="mds.action.save">保存</button>
                 </div>
             </div>
         </div>
     </div>
 
     <script src="/static/lib/bootstrap/bootstrap.bundle.min.js"></script>
+    <!-- i18n国际化支持 -->
+    <script src="/static/lib/i18n/i18n.js"></script>
+    <script src="/static/lib/i18n/zh-CN.js"></script>
+    <script src="/static/lib/i18n/en-US.js"></script>
+    <script src="/static/lib/i18n/de-DE.js"></script>
     <script src="/static/mds/js/common.js"></script>
     <script src="/static/mds/js/modal-manager.js"></script>
     <script src="/static/mds/js/data-table.js"></script>
@@ -251,6 +265,27 @@
     <script src="/static/mds/js/mds-page-controller.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
+            // 初始化i18n
+            if (typeof i18n !== 'undefined') {
+                const savedLang = localStorage.getItem('i18n_lang') || 'zh-CN';
+                i18n.init(savedLang);
+            }
+            
+            // 语言切换处理
+            const langSelector = document.getElementById('lang-selector');
+            if (langSelector) {
+                const savedLang = localStorage.getItem('i18n_lang') || 'zh-CN';
+                langSelector.value = savedLang;
+                
+                langSelector.addEventListener('change', function() {
+                    const lang = this.value;
+                    if (typeof switchLanguage === 'function') {
+                        switchLanguage(lang);
+                    }
+                });
+            }
+            
+            // 初始化页面控制器
             new MDSPageController(MDS_PAGE_CONFIG);
         });
     </script>

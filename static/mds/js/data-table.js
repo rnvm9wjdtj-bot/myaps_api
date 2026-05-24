@@ -69,6 +69,17 @@ class DataTable {
     init() {
         this.render();
         this.bindEvents();
+        this.bindLanguageChangeListener();
+    }
+    
+    /**
+     * 监听语言切换事件
+     */
+    bindLanguageChangeListener() {
+        window.addEventListener('languageChanged', () => {
+            this.render();
+            this.loadData();
+        });
     }
     
     /**
@@ -91,7 +102,7 @@ class DataTable {
                             <tr>
                                 <td colspan="${this.columns.length + 1}" class="text-center text-muted py-4">
                                     <div class="spinner-border text-primary" role="status" style="width: 2rem; height: 2rem;">
-                                        <span class="visually-hidden">加载中...</span>
+                                        <span class="visually-hidden">${typeof i18n !== 'undefined' ? i18n.t('mds.table.loading') : '加载中...'}</span>
                                     </div>
                                 </td>
                             </tr>
@@ -102,16 +113,16 @@ class DataTable {
             <div class="table-footer-fixed d-flex justify-content-between align-items-center px-2 py-2 bg-white border-top" style="font-size:0.75rem">
                 <div class="d-flex align-items-center gap-2">
                     <button class="btn btn-sm btn-outline-success font-monospace" id="selectAllPagesBtn" style="width: 150px;">
-                        <i class="bi bi-check-all"></i> 全选(<span id="totalCount">0</span>)
+                        <i class="bi bi-check-all"></i> <span id="selectAllBtnText">${typeof i18n !== 'undefined' ? i18n.t('mds.action.selectAll') : '全选'}(<span id="totalCount">0</span>)</span>
                     </button>
                     <button class="btn btn-sm btn-outline-primary font-monospace" id="batchEditBtn" disabled style="width: 150px;">
-                        <i class="bi bi-pencil"></i> 编辑(<span id="selectedCount">0</span>)
+                        <i class="bi bi-pencil"></i> <span id="editBtnText">${typeof i18n !== 'undefined' ? i18n.t('mds.action.edit') : '编辑'}(<span id="selectedCount">0</span>)</span>
                     </button>
                     <button class="btn btn-sm btn-outline-danger font-monospace" id="batchDeleteBtn" disabled style="width: 150px;">
-                        <i class="bi bi-trash"></i> 删除(<span id="selectedCountDup">0</span>)
+                        <i class="bi bi-trash"></i> <span id="deleteBtnText">${typeof i18n !== 'undefined' ? i18n.t('mds.action.delete') : '删除'}(<span id="selectedCountDup">0</span>)</span>
                     </button>
                     <button class="btn btn-sm btn-outline-info font-monospace" id="templateBtn" style="width: 150px;">
-                        <i class="bi bi-download"></i> <span id="exportBtnText">导出模板</span>
+                        <i class="bi bi-download"></i> <span id="exportBtnText">${typeof i18n !== 'undefined' ? i18n.t('mds.action.exportTemplate') : '导出模板'}</span>
                     </button>
                 </div>
                 <div class="d-flex align-items-center gap-2">
@@ -122,8 +133,8 @@ class DataTable {
                         <option value="500" ${this.pageSize === 500 ? 'selected' : ''}>500</option>
                         <option value="1000" ${this.pageSize === 1000 ? 'selected' : ''}>1000</option>
                     </select>
-                    <span class="font-monospace">条/页</span>
-                    <span id="totalInfo" class="font-monospace">共 0 条</span>
+                    <span class="font-monospace">${typeof i18n !== 'undefined' ? i18n.t('mds.table.perPage') : '条/页'}</span>
+                    <span id="totalInfo" class="font-monospace">${typeof i18n !== 'undefined' ? i18n.t('mds.table.total', {count: 0}) : '共 0 条'}</span>
                     <nav>
                         <ul class="pagination pagination-sm mb-0" id="pagination"></ul>
                     </nav>
@@ -358,7 +369,9 @@ class DataTable {
         const totalInfo = document.getElementById('totalInfo');
         
         if (totalInfo) {
-            totalInfo.textContent = `共 ${this.total} 条`;
+            totalInfo.textContent = typeof i18n !== 'undefined' ? 
+                i18n.t('mds.table.total', {count: this.total}) : 
+                `共 ${this.total} 条`;
         }
         
         this.updateTotalCount();
@@ -367,7 +380,7 @@ class DataTable {
             tbody.innerHTML = `
                 <tr>
                     <td colspan="${this.columns.length + 1}" class="text-center text-muted py-4">
-                        暂无数据
+                        ${typeof i18n !== 'undefined' ? i18n.t('mds.table.noData') : '暂无数据'}
                     </td>
                 </tr>
             `;
@@ -1084,13 +1097,15 @@ class DataTable {
         if (!btn) return;
         
         const isAllSelected = this.selectedAllPages || this.selectedIds.size === this.total;
+        const selectAllText = typeof i18n !== 'undefined' ? i18n.t('mds.action.selectAll') : '全选';
+        const selectedText = typeof i18n !== 'undefined' ? i18n.t('mds.table.selected', {count: this.selectedIds.size}) : `已全选${this.selectedIds.size}条`;
         
         if (isAllSelected && this.selectedIds.size > 0) {
             btn.className = 'btn btn-sm btn-success font-monospace';
-            btn.innerHTML = `<i class="bi bi-check-all"></i> 已全选${this.selectedIds.size}条`;
+            btn.innerHTML = `<i class="bi bi-check-all"></i> ${selectedText}`;
         } else {
             btn.className = 'btn btn-sm btn-outline-success font-monospace';
-            btn.innerHTML = `<i class="bi bi-check-all"></i> 全选`;
+            btn.innerHTML = `<i class="bi bi-check-all"></i> ${selectAllText}`;
         }
     }
     
@@ -1113,7 +1128,8 @@ class DataTable {
         // 如果已全选，则取消全选
         if (this.selectedAllPages || this.selectedIds.size === this.total) {
             this.clearSelection();
-            showMessage('已取消全选', 'info');
+            const cancelMsg = typeof i18n !== 'undefined' ? i18n.t('mds.other.confirm') : '已取消全选';
+            showMessage(cancelMsg, 'info');
             return;
         }
         
@@ -1182,7 +1198,8 @@ class DataTable {
             });
         } catch (error) {
             console.error('全选失败:', error);
-            showMessage('全选失败', 'danger');
+            const errorMsg = typeof i18n !== 'undefined' ? i18n.t('mds.error.queryFailed') : '全选失败';
+            showMessage(errorMsg, 'danger');
         } finally {
             hideLoading();
         }

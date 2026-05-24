@@ -472,7 +472,10 @@ class MDSPageController {
             
             handleResponse(response, (data) => {
                 const result = data.data;
-                showMessage(`导入完成: 成功${result.inserted}条, 跳过${result.skipped}条`, 'success');
+                const msg = typeof i18n !== 'undefined' ? 
+                    i18n.t('mds.upload.success', {inserted: result.inserted, skipped: result.skipped}) : 
+                    `导入完成: 成功${result.inserted}条, 跳过${result.skipped}条`;
+                showMessage(msg, 'success');
                 
                 this.resetUploadArea();
                 this.pendingFile = null;
@@ -485,7 +488,8 @@ class MDSPageController {
             });
         } catch (error) {
             hideLoading();
-            showMessage('上传失败', 'danger');
+            const errorMsg = typeof i18n !== 'undefined' ? i18n.t('mds.error.uploadFailed') : '上传失败';
+            showMessage(errorMsg, 'danger');
         } finally {
             // 恢复上传按钮
             if (uploadBtn) {
@@ -525,11 +529,16 @@ class MDSPageController {
             return;
         }
         
-        if (!confirm('缺失的字段值将自动填充为默认值，确定开始校验吗？')) {
+        const confirmMsg = typeof i18n !== 'undefined' ? 
+            i18n.t('mds.validation.confirmStart') : 
+            '缺失的字段值将自动填充为默认值，确定开始校验吗？';
+        
+        if (!confirm(confirmMsg)) {
             return;
         }
         
-        showProgress('校验中', pendingCount);
+        const progressTitle = typeof i18n !== 'undefined' ? i18n.t('mds.validation.processing') : '校验中';
+        showProgress(progressTitle, pendingCount);
         
         let totalValidated = 0;
         let totalRejected = 0;
@@ -574,7 +583,10 @@ class MDSPageController {
         hideProgress();
         
         const filledMsg = totalFilled ? `，填充默认值${totalFilled}条` : '';
-        showMessage(`校验完成: 通过${totalValidated}条，失败${totalRejected}条${filledMsg}`, 'success');
+        const msg = typeof i18n !== 'undefined' ? 
+            i18n.t('mds.validation.complete', {pass: totalValidated, fail: totalRejected}) + filledMsg : 
+            `校验完成: 通过${totalValidated}条，失败${totalRejected}条${filledMsg}`;
+        showMessage(msg, 'success');
         this.dataTable.refresh();
         this.statusCard.refresh();
     }
@@ -603,16 +615,21 @@ class MDSPageController {
     }
     
     async validateAllData() {
-        if (!confirm('缺失的字段值将自动填充为默认值，确定校验所有待处理数据吗？')) return;
+        const confirmMsg = typeof i18n !== 'undefined' ? 
+            i18n.t('mds.validation.confirmStart') : 
+            '缺失的字段值将自动填充为默认值，确定校验所有待处理数据吗？';
+        if (!confirm(confirmMsg)) return;
         
-        showProgress('校验所有表', 100);
+        const progressTitle = typeof i18n !== 'undefined' ? i18n.t('mds.validation.processing') : '校验所有表';
+        showProgress(progressTitle, 100);
         
         const response = await callApi('/validate_all', 'POST');
         
         hideProgress();
         
         handleResponse(response, (data) => {
-            showMessage('所有表校验完成', 'success');
+            const msg = typeof i18n !== 'undefined' ? i18n.t('mds.success.validateComplete') : '所有表校验完成';
+            showMessage(msg, 'success');
             this.dataTable.refresh();
             this.statusCard.refresh();
         });
@@ -621,7 +638,8 @@ class MDSPageController {
     async syncData() {
         const response = await callApi(`/status/${this.tableKey}`);
         if (response.success !== 1) {
-            showMessage('获取状态失败', 'danger');
+            const errorMsg = typeof i18n !== 'undefined' ? i18n.t('mds.error.queryFailed') : '获取状态失败';
+            showMessage(errorMsg, 'danger');
             return;
         }
         
@@ -631,7 +649,8 @@ class MDSPageController {
         const retryExceeded = stats.retry_exceeded || 0;
         
         if (relationPassCount === 0 && syncErrorCount === 0) {
-            showMessage('没有【联合校验通过】或【同步失败】的记录可推送', 'warning');
+            const msg = typeof i18n !== 'undefined' ? i18n.t('mds.sync.noData') : '没有【联合校验通过】或【同步失败】的记录可推送';
+            showMessage(msg, 'warning');
             return;
         }
         
@@ -646,7 +665,10 @@ class MDSPageController {
         const targetDbParam = targetDbs.join(',');
         const totalCount = (relationPassCount + syncErrorCount) * targetDbs.length;
         
-        showProgress(mode === 'incremental' ? '增量推送中' : '刷新推送中', totalCount);
+        const syncModeText = mode === 'incremental' ? 
+            (typeof i18n !== 'undefined' ? i18n.t('mds.sync.incremental') : '增量推送中') :
+            (typeof i18n !== 'undefined' ? i18n.t('mds.sync.refresh') : '刷新推送中');
+        showProgress(syncModeText, totalCount);
         
         let totalSynced = 0;
         let totalFailed = 0;
@@ -686,7 +708,10 @@ class MDSPageController {
             processed += batchSynced + batchFailed + batchDedup;
             
             if (processed > 0) {
-                updateProgress(processed, totalCount, `已处理 ${processed}/${totalCount}`);
+                const progressText = typeof i18n !== 'undefined' ? 
+                    i18n.t('mds.validation.progress', {current: processed, total: totalCount}) : 
+                    `已处理 ${processed}/${totalCount}`;
+                updateProgress(processed, totalCount, progressText);
             }
             
             // 如果本批次没有处理任何记录，说明已完成
@@ -700,9 +725,15 @@ class MDSPageController {
         hideProgress();
         
         if (totalFailed > 0 || totalDedup > 0) {
-            showMessage(`推送完成: ${targetDbs.length}个账套, 成功${totalSynced}条, 去重失败${totalDedup}条, 其他失败${totalFailed}条`, 'warning');
+            const msg = typeof i18n !== 'undefined' ? 
+                i18n.t('mds.sync.complete', {accounts: targetDbs.length, synced: totalSynced, dedup: totalDedup, failed: totalFailed}) : 
+                `推送完成: ${targetDbs.length}个账套, 成功${totalSynced}条, 去重失败${totalDedup}条, 其他失败${totalFailed}条`;
+            showMessage(msg, 'warning');
         } else {
-            showMessage(`推送完成: ${targetDbs.length}个账套, 成功${totalSynced}条`, 'success');
+            const msg = typeof i18n !== 'undefined' ? 
+                i18n.t('mds.sync.complete', {accounts: targetDbs.length, synced: totalSynced, dedup: 0, failed: 0}) : 
+                `推送完成: ${targetDbs.length}个账套, 成功${totalSynced}条`;
+            showMessage(msg, 'success');
         }
         
         this.dataTable.refresh();
@@ -813,7 +844,8 @@ class MDSPageController {
         hideLoading();
         
         handleResponse(response, (data) => {
-            showMessage('所有表推送完成', 'success');
+            const msg = typeof i18n !== 'undefined' ? i18n.t('mds.success.syncComplete') : '所有表推送完成';
+            showMessage(msg, 'success');
             this.dataTable.refresh();
             this.statusCard.refresh();
         });
@@ -1403,14 +1435,16 @@ class MDSPageController {
         hideLoading();
         
         handleResponse(response, () => {
-            showMessage('保存成功', 'success');
+            const msg = typeof i18n !== 'undefined' ? i18n.t('mds.success.saveComplete') : '保存成功';
+            showMessage(msg, 'success');
             bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
             this.dataTable.refresh();
         });
     }
     
     async deleteRecord(stagingId) {
-        if (!confirm('确定删除此记录吗？')) return;
+        const confirmMsg = typeof i18n !== 'undefined' ? i18n.t('mds.modal.deleteConfirm') : '确定删除此记录吗？';
+        if (!confirm(confirmMsg)) return;
         
         showLoading();
         
@@ -1419,7 +1453,8 @@ class MDSPageController {
         hideLoading();
         
         handleResponse(response, () => {
-            showMessage('删除成功', 'success');
+            const msg = typeof i18n !== 'undefined' ? i18n.t('mds.success.deleteComplete') : '删除成功';
+            showMessage(msg, 'success');
             
             const detailModal = document.getElementById('detailModal');
             if (detailModal && bootstrap.Modal.getInstance(detailModal)) {
@@ -1889,4 +1924,55 @@ class MDSPageController {
             });
         }
     }
+}
+
+/**
+ * 无刷新语言切换功能
+ */
+async function switchLanguage(lang) {
+    if (typeof i18n === 'undefined') {
+        console.warn('i18n not initialized');
+        return;
+    }
+    
+    try {
+        await i18n.switchLanguage(lang);
+        localStorage.setItem('i18n_lang', lang);
+        
+        updateDynamicElements();
+        
+        window.dispatchEvent(new CustomEvent('languageChanged', {
+            detail: { lang: lang }
+        }));
+    } catch (error) {
+        console.error('Language switch failed:', error);
+    }
+}
+
+/**
+ * 更新动态元素翻译
+ */
+function updateDynamicElements() {
+    if (typeof i18n === 'undefined') return;
+    
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        el.textContent = i18n.t(key);
+    });
+    
+    if (window.statusCardInstance) {
+        window.statusCardInstance.refresh();
+    }
+    
+    if (window.dataTableInstance) {
+        window.dataTableInstance.refresh();
+    }
+    
+    const modals = document.querySelectorAll('.modal.show');
+    modals.forEach(modal => {
+        modal.querySelectorAll('[data-i18n]').forEach(el => {
+            const key = el.getAttribute('data-i18n');
+            el.textContent = i18n.t(key);
+        });
+    });
 }

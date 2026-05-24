@@ -11,63 +11,93 @@ const API_BASE = '/api/mds';
 /**
  * 缓冲表状态枚举定义
  * @enum {Object}
+ * 
+ * 支持国际化：label属性改为getter动态翻译
  */
 const STAGING_STATUS = {
     PENDING: {
         value: 'pending',
-        label: '待处理',
+        labelKey: 'mds.status.pending',
         colorClass: 'text-warning',
         bgClass: 'bg-warning',
         badgeClass: 'status-badge status-badge-pending',
-        icon: 'clock'
+        icon: 'clock',
+        get label() {
+            return typeof i18n !== 'undefined' ? 
+                i18n.t(this.labelKey) : '待处理';
+        }
     },
     COMPLIANCE_PASS: {
         value: 'compliance_pass',
-        label: '初检通过',
+        labelKey: 'mds.status.compliancePass',
         colorClass: 'text-info',
         bgClass: 'bg-info',
         badgeClass: 'status-badge status-badge-compliance_pass',
-        icon: 'check-circle'
+        icon: 'check-circle',
+        get label() {
+            return typeof i18n !== 'undefined' ? 
+                i18n.t(this.labelKey) : '初检通过';
+        }
     },
     COMPLIANCE_ERROR: {
         value: 'compliance_error',
-        label: '初检错误',
+        labelKey: 'mds.status.complianceError',
         colorClass: 'text-danger',
         bgClass: 'bg-danger',
         badgeClass: 'status-badge status-badge-compliance_error',
-        icon: 'x-circle'
+        icon: 'x-circle',
+        get label() {
+            return typeof i18n !== 'undefined' ? 
+                i18n.t(this.labelKey) : '初检错误';
+        }
     },
     RELATION_PASS: {
         value: 'relation_pass',
-        label: '联检通过',
+        labelKey: 'mds.status.relationPass',
         colorClass: 'text-success',
         bgClass: 'bg-success',
         badgeClass: 'status-badge status-badge-relation_pass',
-        icon: 'link'
+        icon: 'link',
+        get label() {
+            return typeof i18n !== 'undefined' ? 
+                i18n.t(this.labelKey) : '联检通过';
+        }
     },
     RELATION_ERROR: {
         value: 'relation_error',
-        label: '联检错误',
+        labelKey: 'mds.status.relationError',
         colorClass: 'text-warning',
         bgClass: 'bg-warning',
         badgeClass: 'status-badge status-badge-relation_error',
-        icon: 'alert-circle'
+        icon: 'alert-circle',
+        get label() {
+            return typeof i18n !== 'undefined' ? 
+                i18n.t(this.labelKey) : '联检错误';
+        }
     },
     SYNC_ERROR: {
         value: 'sync_error',
-        label: '推送失败',
+        labelKey: 'mds.status.syncError',
         colorClass: 'text-warning',
         bgClass: 'bg-warning',
         badgeClass: 'status-badge status-badge-sync_error',
-        icon: 'exclamation-triangle'
+        icon: 'exclamation-triangle',
+        get label() {
+            return typeof i18n !== 'undefined' ? 
+                i18n.t(this.labelKey) : '推送失败';
+        }
     },
     SYNCED: {
         value: 'synced',
-        label: '已推送',
+        labelKey: 'mds.status.synced',
         colorClass: 'text-info',
         bgClass: 'bg-info',
         badgeClass: 'status-badge status-badge-synced',
-        icon: 'send'
+        icon: 'send',
+        get label() {
+            return typeof i18n !== 'undefined' ? 
+                i18n.t(this.labelKey) : '已推送';
+        }
     }
 };
 
@@ -501,23 +531,28 @@ async function showValidationRulesModal(tableKey, tableName) {
     try {
         const rules = await getValidationRules(tableKey);
         
+        const modalTitle = typeof i18n !== 'undefined' ? 
+            `${tableName || tableKey} ${i18n.t('mds.validation.rulesTitle')}` : 
+            `${tableName || tableKey} 校验规则`;
+        const loadingText = typeof i18n !== 'undefined' ? i18n.t('mds.other.loading') : '加载中...';
+        const closeText = typeof i18n !== 'undefined' ? i18n.t('mds.modal.close') : '关闭';
+        
         modalManager.register('validationRules', {
             id: 'validationRulesModal',
-            title: `${tableName || tableKey} 校验规则`,
+            title: modalTitle,
             size: 'xl',
             body: (data) => {
                 if (!data.rules) {
-                    return '<div class="text-center py-4"><div class="spinner-border text-primary"></div><p class="mt-2 text-muted">加载中...</p></div>';
+                    return `<div class="text-center py-4"><div class="spinner-border text-primary"></div><p class="mt-2 text-muted">${loadingText}</p></div>`;
                 }
                 return renderValidationRulesHtml(data.rules);
             },
-            footer: '<button type="button" class="btn btn-primary" data-bs-dismiss="modal">关闭</button>',
+            footer: `<button type="button" class="btn btn-primary" data-bs-dismiss="modal">${closeText}</button>`,
             onOpen: (data, modalElement) => {
                 if (data.rules) {
                     const bodyEl = modalElement.querySelector('#validationRulesModal_body');
                     bodyEl.innerHTML = renderValidationRulesHtml(data.rules);
                     
-                    // 调整弹窗尺寸，充分利用屏幕空间
                     const dialog = modalElement.querySelector('.modal-dialog');
                     if (dialog) {
                         dialog.style.maxWidth = '95%';
@@ -535,6 +570,60 @@ async function showValidationRulesModal(tableKey, tableName) {
         modalManager.open('validationRules', { rules });
     } catch (error) {
         console.error('显示校验规则失败:', error);
-        showMessage('加载校验规则失败', 'danger');
+        const errorMsg = typeof i18n !== 'undefined' ? i18n.t('mds.error.loadFailed') : '加载校验规则失败';
+        showMessage(errorMsg, 'danger');
     }
+}
+
+/**
+ * 错误码常量定义
+ */
+const ERROR_CODES = {
+    DUPLICATE_KEY: 'DUPLICATE_KEY',
+    INVALID_FORMAT: 'INVALID_FORMAT',
+    FOREIGN_KEY_VIOLATION: 'FOREIGN_KEY_VIOLATION',
+    VALIDATION_FAILED: 'VALIDATION_FAILED',
+    QUERY_FAILED: 'QUERY_FAILED',
+    UPLOAD_FAILED: 'UPLOAD_FAILED',
+    TIMEOUT: 'TIMEOUT',
+    NO_PERMISSION: 'NO_PERMISSION',
+    INVALID_DATA: 'INVALID_DATA'
+};
+
+/**
+ * 错误码到翻译键的映射表
+ */
+const ERROR_CODE_MAP = {
+    DUPLICATE_KEY: 'mds.error.duplicateKey',
+    INVALID_FORMAT: 'mds.error.invalidData',
+    FOREIGN_KEY_VIOLATION: 'mds.error.foreignKeyViolation',
+    VALIDATION_FAILED: 'mds.error.validationFailed',
+    QUERY_FAILED: 'mds.error.queryFailed',
+    UPLOAD_FAILED: 'mds.error.uploadFailed',
+    TIMEOUT: 'mds.error.timeout',
+    NO_PERMISSION: 'mds.error.noPermission',
+    INVALID_DATA: 'mds.error.invalidData'
+};
+
+/**
+ * 翻译后端错误消息
+ * @param {Object} response - API响应对象
+ * @returns {string} 翻译后的错误消息
+ */
+function translateError(response) {
+    if (!response || !response.error) {
+        return response?.message || 'Unknown error';
+    }
+    
+    const { code, params = {} } = response.error;
+    const errorKey = ERROR_CODE_MAP[code] || `mds.error.${code}`;
+    
+    if (typeof i18n !== 'undefined') {
+        const translated = i18n.t(errorKey, params);
+        if (translated !== errorKey) {
+            return translated;
+        }
+    }
+    
+    return `Error: ${code}`;
 }

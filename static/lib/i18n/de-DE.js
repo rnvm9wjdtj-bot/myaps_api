@@ -494,5 +494,170 @@ window.__i18n_de_DE__ = {
     'alert.binlog_listener_stopped': 'Binlog-Listener gestoppt',
     'alert.high_error_rate': 'Hohe Fehlerrate',
     'alert.memory_warning': 'Speichernutzung-Warnung',
-    'alert.cpu_warning': 'CPU-Nutzung-Warnung'
+    'alert.cpu_warning': 'CPU-Nutzung-Warnung',
+    
+    // ================================================================================
+    // MDS-Modul (Daten-Bereitstellungssystem)
+    // ================================================================================
+    
+    // ============ App-Titel ============
+    'mds.app.title': 'Daten-Bereitstellungssystem',
+    'mds.app.guide': 'Benutzerhandbuch',
+    'mds.app.apiDoc': 'API-Doku',
+    
+    // ============ Navigation ============
+    'mds.nav.material': 'Material',
+    'mds.nav.matVer': 'Mat-Version',
+    'mds.nav.workcenter': 'Arbeitsplatz',
+    'mds.nav.matWc': 'Arbeitsplan',
+    'mds.nav.bom': 'Stückliste',
+    'mds.nav.mold': 'Werkzeug',
+    'mds.nav.matWcMold': 'Mat-Wc-Werkzeug',
+    'mds.nav.all': 'Alle',
+    
+    // ============ Status-Labels (P0) ============
+    'mds.status.pending': 'Ausstehend',
+    'mds.status.compliancePass': 'Compliance bestanden',
+    'mds.status.complianceError': 'Compliance fehlerhaft',
+    'mds.status.relationPass': 'Relation bestanden',
+    'mds.status.relationError': 'Relation fehlerhaft',
+    'mds.status.syncError': 'Sync fehlgeschlagen',
+    'mds.status.synced': 'Synchronisiert',
+    'mds.status.all': 'Alle',
+    
+    // ============ Aktion-Buttons (P1) ============
+    'mds.action.import': 'Importieren',
+    'mds.action.validate': 'Validieren',
+    'mds.action.sync': 'Synchronisieren',
+    'mds.action.query': 'Abfrage',
+    'mds.action.reset': 'Zurücksetzen',
+    'mds.action.save': 'Speichern',
+    'mds.action.delete': 'Löschen',
+    'mds.action.cancel': 'Abbrechen',
+    'mds.action.confirm': 'Bestätigen',
+    'mds.action.close': 'Schließen',
+    'mds.action.clear': 'Löschen',
+    'mds.action.export': 'Exportieren',
+    'mds.action.exportTemplate': 'Vorlage exportieren',
+    'mds.action.refresh': 'Aktualisieren',
+    'mds.action.filter': 'Filtern',
+    'mds.action.edit': 'Bearbeiten',
+    'mds.action.view': 'Anzeigen',
+    'mds.action.selectAll': 'Alle auswählen',
+    'mds.action.deselectAll': 'Auswahl aufheben',
+    'mds.action.batchDelete': 'Massenlöschung',
+    'mds.action.batchSync': 'Massensync',
+    'mds.action.showRules': 'Regeln anzeigen',
+    'mds.action.preciseFilter': 'Präziser Filter',
+    'mds.action.clearFilter': 'Filter löschen',
+    
+    // ============ Validierung ============
+    'mds.validation.title': 'Validierung',
+    'mds.validation.complete': 'Validierung abgeschlossen: {pass} bestanden, {fail} fehlgeschlagen',
+    'mds.validation.noPending': 'Keine ausstehenden Datensätze',
+    'mds.validation.confirmStart': 'Fehlende Felder werden mit Standardwerten gefüllt. Fortfahren?',
+    'mds.validation.processing': 'Validierung läuft',
+    'mds.validation.failed': 'Validierung fehlgeschlagen',
+    'mds.validation.progress': 'Verarbeitet {current}/{total}',
+    'mds.validation.rulesTitle': 'Validierungsregeln',
+    'mds.validation.noRules': 'Keine Validierungsregeln',
+    
+    // ============ Sync ============
+    'mds.sync.title': 'Synchronisation',
+    'mds.sync.complete': 'Sync abgeschlossen: {accounts} Konten, {synced} synchronisiert, {dedup} Dedup fehlgeschlagen, {failed} sonstige fehlgeschlagen',
+    'mds.sync.noData': 'Keine [Relation bestanden] oder [Sync fehlgeschlagen] Datensätze zum Synchronisieren',
+    'mds.sync.selectTarget': 'Bitte mindestens ein Zielkonto auswählen',
+    'mds.sync.selectMode': 'Sync-Modus auswählen',
+    'mds.sync.incremental': 'Inkrementelle Sync',
+    'mds.sync.refresh': 'Aktualisierungs-Sync',
+    'mds.sync.confirmRefresh': 'Aktualisierungs-Sync löscht alle Daten in der Zieltabelle. Vorsicht!',
+    'mds.sync.processing': 'Synchronisierung läuft',
+    'mds.sync.progress': 'Sync-Fortschritt',
+    
+    // ============ Upload ============
+    'mds.upload.title': 'Excel-Daten importieren',
+    'mds.upload.success': 'Import abgeschlossen: {inserted} eingefügt, {skipped} übersprungen',
+    'mds.upload.invalidType': 'Bitte Excel- oder CSV-Datei hochladen',
+    'mds.upload.noFile': 'Bitte zuerst eine Datei auswählen',
+    'mds.upload.dragDrop': 'Klicken oder ziehen zum Hochladen (.xlsx, .xls, .csv)',
+    'mds.upload.processing': 'Import läuft',
+    'mds.upload.dedupStrategy': 'Dedup-Strategie',
+    'mds.upload.overwrite': 'Überschreiben',
+    'mds.upload.skip': 'Überspringen',
+    
+    // ============ Tabelle ============
+    'mds.table.noData': 'Keine Daten',
+    'mds.table.loading': 'Laden...',
+    'mds.table.selectAll': 'Alle auswählen',
+    'mds.table.perPage': '/ Seite',
+    'mds.table.total': 'Gesamt {count}',
+    'mds.table.edit': 'Bearbeiten',
+    'mds.table.delete': 'Löschen',
+    'mds.table.export': 'Vorlage exportieren',
+    'mds.table.selected': '{count} ausgewählt',
+    'mds.table.actions': 'Aktionen',
+    'mds.table.status': 'Status',
+    'mds.table.columns': 'Spalten',
+    
+    // ============ Modal ============
+    'mds.modal.confirm': 'Bestätigen',
+    'mds.modal.cancel': 'Abbrechen',
+    'mds.modal.close': 'Schließen',
+    'mds.modal.importTitle': 'Excel-Daten importieren',
+    'mds.modal.filterTitle': 'Präziser Filter',
+    'mds.modal.editTitle': 'Datensatz bearbeiten',
+    'mds.modal.validationRules': 'Validierungsregeln',
+    'mds.modal.syncTitle': 'Daten synchronisieren',
+    'mds.modal.deleteConfirm': 'Diesen Datensatz löschen?',
+    'mds.modal.batchDeleteConfirm': '{count} ausgewählte Datensätze löschen?',
+    
+    // ============ Fehler ============
+    'mds.error.queryFailed': 'Abfrage fehlgeschlagen',
+    'mds.error.uploadFailed': 'Upload fehlgeschlagen',
+    'mds.error.timeout': 'Anfrage-Timeout',
+    'mds.error.loadFailed': 'Laden fehlgeschlagen, bitte erneut versuchen',
+    'mds.error.validateFailed': 'Validierung fehlgeschlagen',
+    'mds.error.syncFailed': 'Sync fehlgeschlagen',
+    'mds.error.noPermission': 'Keine Berechtigung',
+    'mds.error.invalidData': 'Ungültiges Datenformat',
+    'mds.error.duplicateKey': 'Duplikat: {field}={value} bereits vorhanden',
+    'mds.error.foreignKeyViolation': 'Fremdschlüsselverletzung: {field} Referenz nicht gefunden',
+    'mds.error.validationFailed': 'Validierung fehlgeschlagen: {reason}',
+    
+    // ============ Erfolg ============
+    'mds.success.queryComplete': 'Abfrage abgeschlossen',
+    'mds.success.uploadComplete': 'Import abgeschlossen',
+    'mds.success.validateComplete': 'Validierung abgeschlossen',
+    'mds.success.syncComplete': 'Sync abgeschlossen',
+    'mds.success.deleteComplete': 'Löschen abgeschlossen',
+    'mds.success.saveComplete': 'Speichern abgeschlossen',
+    'mds.success.exportComplete': 'Export abgeschlossen',
+    
+    // ============ Statistiken ============
+    'mds.stats.total': 'Gesamt',
+    'mds.stats.pending': 'Ausstehend',
+    'mds.stats.passed': 'Bestanden',
+    'mds.stats.failed': 'Fehlgeschlagen',
+    'mds.stats.synced': 'Synchronisiert',
+    'mds.stats.today': 'Heute',
+    'mds.stats.week': 'Diese Woche',
+    'mds.stats.month': 'Dieser Monat',
+    
+    // ============ Formular ============
+    'mds.form.required': 'Pflichtfeld',
+    'mds.form.optional': 'Optional',
+    'mds.form.defaultValue': 'Standardwert',
+    'mds.form.placeholder': 'Wert eingeben',
+    'mds.form.selectPlaceholder': 'Auswählen',
+    
+    // ============ Sonstiges ============
+    'mds.other.loading': 'Laden...',
+    'mds.other.processing': 'Verarbeitung...',
+    'mds.other.noData': 'Keine Daten',
+    'mds.other.confirm': 'Bestätigen',
+    'mds.other.cancel': 'Abbrechen',
+    'mds.other.tip': 'Hinweis',
+    'mds.other.warning': 'Warnung',
+    'mds.other.error': 'Fehler',
+    'mds.other.success': 'Erfolg'
 };

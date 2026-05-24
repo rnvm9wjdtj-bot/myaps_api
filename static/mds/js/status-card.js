@@ -23,19 +23,40 @@ class StatusCard {
         this.render();
         this.loadStats();
         this.startAutoRefresh();
+        this.bindLanguageChangeListener();
+    }
+    
+    /**
+     * 监听语言切换事件
+     */
+    bindLanguageChangeListener() {
+        window.addEventListener('languageChanged', () => {
+            this.render();
+        });
     }
     
     /**
      * 渲染状态卡片
      */
     render() {
+        const labels = {
+            all: typeof i18n !== 'undefined' ? i18n.t('mds.status.all') : '全部',
+            pending: STAGING_STATUS.PENDING.label,
+            compliancePass: STAGING_STATUS.COMPLIANCE_PASS.label,
+            complianceError: STAGING_STATUS.COMPLIANCE_ERROR.label,
+            relationPass: STAGING_STATUS.RELATION_PASS.label,
+            relationError: STAGING_STATUS.RELATION_ERROR.label,
+            syncError: STAGING_STATUS.SYNC_ERROR.label,
+            synced: STAGING_STATUS.SYNCED.label
+        };
+        
         this.container.innerHTML = `
             <div class="row g-2">
                 <div class="col">
                     <div class="card status-card active" data-status="">
                         <div class="card-body text-center">
                             <div class="status-number" style="color: #191919;" id="statusTotalCount">-</div>
-                            <div class="status-label">全部</div>
+                            <div class="status-label">${labels.all}</div>
                         </div>
                     </div>
                 </div>
@@ -43,7 +64,7 @@ class StatusCard {
                     <div class="card status-card" data-status="pending">
                         <div class="card-body text-center">
                             <div class="status-number" style="color: #9e9e9e;" id="pendingCount">-</div>
-                            <div class="status-label">待处理</div>
+                            <div class="status-label">${labels.pending}</div>
                         </div>
                     </div>
                 </div>
@@ -51,7 +72,7 @@ class StatusCard {
                     <div class="card status-card" data-status="compliance_pass">
                         <div class="card-body text-center">
                             <div class="status-number" style="color: #00c345;" id="compliancePassCount">-</div>
-                            <div class="status-label">初检通过</div>
+                            <div class="status-label">${labels.compliancePass}</div>
                         </div>
                     </div>
                 </div>
@@ -59,7 +80,7 @@ class StatusCard {
                     <div class="card status-card" data-status="compliance_error">
                         <div class="card-body text-center">
                             <div class="status-number" style="color: #ff9300;" id="complianceErrorCount">-</div>
-                            <div class="status-label">初检错误</div>
+                            <div class="status-label">${labels.complianceError}</div>
                         </div>
                     </div>
                 </div>
@@ -67,7 +88,7 @@ class StatusCard {
                     <div class="card status-card" data-status="relation_pass">
                         <div class="card-body text-center">
                             <div class="status-number" style="color: #1677ff;" id="relationPassCount">-</div>
-                            <div class="status-label">联检通过</div>
+                            <div class="status-label">${labels.relationPass}</div>
                         </div>
                     </div>
                 </div>
@@ -75,7 +96,7 @@ class StatusCard {
                     <div class="card status-card" data-status="relation_error">
                         <div class="card-body text-center">
                             <div class="status-number" style="color: #f52222;" id="relationErrorCount">-</div>
-                            <div class="status-label">联检错误</div>
+                            <div class="status-label">${labels.relationError}</div>
                         </div>
                     </div>
                 </div>
@@ -83,7 +104,7 @@ class StatusCard {
                     <div class="card status-card" data-status="sync_error">
                         <div class="card-body text-center">
                             <div class="status-number" style="color: #eb2f96;" id="syncErrorCount">-</div>
-                            <div class="status-label">推送失败</div>
+                            <div class="status-label">${labels.syncError}</div>
                         </div>
                     </div>
                 </div>
@@ -91,7 +112,7 @@ class StatusCard {
                     <div class="card status-card" data-status="synced">
                         <div class="card-body text-center">
                             <div class="status-number" style="color: #7500ea;" id="syncedCount">-</div>
-                            <div class="status-label">已推送</div>
+                            <div class="status-label">${labels.synced}</div>
                         </div>
                     </div>
                 </div>
@@ -245,9 +266,10 @@ class StatusCard {
     }
     
     /**
-     * 手动刷新
+     * 手动刷新（重新渲染和加载数据）
      */
     refresh() {
+        this.render();
         this.loadStats();
     }
     

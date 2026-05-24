@@ -494,5 +494,170 @@ window.__i18n_zh_CN__ = {
     'alert.binlog_listener_stopped': 'Binlog监听器已停止',
     'alert.high_error_rate': '错误率过高',
     'alert.memory_warning': '内存使用警告',
-    'alert.cpu_warning': 'CPU使用警告'
+    'alert.cpu_warning': 'CPU使用警告',
+    
+    // ================================================================================
+    // MDS模块 (数据清洗管理系统)
+    // ================================================================================
+    
+    // ============ 应用标题 ============
+    'mds.app.title': '数据清洗管理系统',
+    'mds.app.guide': '操作指引',
+    'mds.app.apiDoc': 'API文档',
+    
+    // ============ 导航菜单 ============
+    'mds.nav.material': '物料',
+    'mds.nav.matVer': '产线版本',
+    'mds.nav.workcenter': '工作中心',
+    'mds.nav.matWc': '工艺路线',
+    'mds.nav.bom': 'BOM',
+    'mds.nav.mold': '模具',
+    'mds.nav.matWcMold': '机台模具',
+    'mds.nav.all': '全部',
+    
+    // ============ 状态标签 (P0级) ============
+    'mds.status.pending': '待处理',
+    'mds.status.compliancePass': '初检通过',
+    'mds.status.complianceError': '初检错误',
+    'mds.status.relationPass': '联检通过',
+    'mds.status.relationError': '联检错误',
+    'mds.status.syncError': '推送失败',
+    'mds.status.synced': '已推送',
+    'mds.status.all': '全部',
+    
+    // ============ 操作按钮 (P1级) ============
+    'mds.action.import': '导入',
+    'mds.action.validate': '校验',
+    'mds.action.sync': '推送',
+    'mds.action.query': '查询',
+    'mds.action.reset': '重置',
+    'mds.action.save': '保存',
+    'mds.action.delete': '删除',
+    'mds.action.cancel': '取消',
+    'mds.action.confirm': '确定',
+    'mds.action.close': '关闭',
+    'mds.action.clear': '清空',
+    'mds.action.export': '导出',
+    'mds.action.exportTemplate': '导出模板',
+    'mds.action.refresh': '刷新',
+    'mds.action.filter': '筛选',
+    'mds.action.edit': '编辑',
+    'mds.action.view': '查看',
+    'mds.action.selectAll': '全选',
+    'mds.action.deselectAll': '取消全选',
+    'mds.action.batchDelete': '批量删除',
+    'mds.action.batchSync': '批量推送',
+    'mds.action.showRules': '查看规则',
+    'mds.action.preciseFilter': '精准筛选',
+    'mds.action.clearFilter': '清空筛选',
+    
+    // ============ 校验相关 ============
+    'mds.validation.title': '校验',
+    'mds.validation.complete': '校验完成: 通过{pass}条，失败{fail}条',
+    'mds.validation.noPending': '没有待处理的记录',
+    'mds.validation.confirmStart': '缺失的字段值将自动填充为默认值，确定开始校验吗？',
+    'mds.validation.processing': '校验中',
+    'mds.validation.failed': '校验失败',
+    'mds.validation.progress': '已处理 {current}/{total}',
+    'mds.validation.rulesTitle': '校验规则',
+    'mds.validation.noRules': '暂无校验规则',
+    
+    // ============ 推送相关 ============
+    'mds.sync.title': '推送',
+    'mds.sync.complete': '推送完成: {accounts}个账套, 成功{synced}条, 去重失败{dedup}条, 其他失败{failed}条',
+    'mds.sync.noData': '没有【联合校验通过】或【同步失败】的记录可推送',
+    'mds.sync.selectTarget': '请至少选择一个目标账套',
+    'mds.sync.selectMode': '选择推送模式',
+    'mds.sync.incremental': '增量推送',
+    'mds.sync.refresh': '刷新推送',
+    'mds.sync.confirmRefresh': '刷新推送将删除正式表所有数据，请谨慎操作！',
+    'mds.sync.processing': '推送中',
+    'mds.sync.progress': '推送进度',
+    
+    // ============ 上传相关 ============
+    'mds.upload.title': '导入Excel数据',
+    'mds.upload.success': '导入完成: 成功{inserted}条, 跳过{skipped}条',
+    'mds.upload.invalidType': '请上传Excel或CSV文件',
+    'mds.upload.noFile': '请先选择文件',
+    'mds.upload.dragDrop': '点击或拖拽文件上传（支持 .xlsx, .xls, .csv）',
+    'mds.upload.processing': '导入中',
+    'mds.upload.dedupStrategy': '去重策略',
+    'mds.upload.overwrite': '覆盖',
+    'mds.upload.skip': '跳过',
+    
+    // ============ 表格相关 ============
+    'mds.table.noData': '暂无数据',
+    'mds.table.loading': '加载中...',
+    'mds.table.selectAll': '全选',
+    'mds.table.perPage': '条/页',
+    'mds.table.total': '共 {count} 条',
+    'mds.table.edit': '编辑',
+    'mds.table.delete': '删除',
+    'mds.table.export': '导出模板',
+    'mds.table.selected': '已选择 {count} 条',
+    'mds.table.actions': '操作',
+    'mds.table.status': '状态',
+    'mds.table.columns': '列',
+    
+    // ============ 弹窗相关 ============
+    'mds.modal.confirm': '确认',
+    'mds.modal.cancel': '取消',
+    'mds.modal.close': '关闭',
+    'mds.modal.importTitle': '导入Excel数据',
+    'mds.modal.filterTitle': '精准筛选',
+    'mds.modal.editTitle': '编辑记录',
+    'mds.modal.validationRules': '校验规则',
+    'mds.modal.syncTitle': '推送数据',
+    'mds.modal.deleteConfirm': '确定要删除这条记录吗？',
+    'mds.modal.batchDeleteConfirm': '确定要删除选中的 {count} 条记录吗？',
+    
+    // ============ 错误消息 ============
+    'mds.error.queryFailed': '查询失败',
+    'mds.error.uploadFailed': '上传失败',
+    'mds.error.timeout': '请求超时',
+    'mds.error.loadFailed': '加载失败，请重试',
+    'mds.error.validateFailed': '校验失败',
+    'mds.error.syncFailed': '推送失败',
+    'mds.error.noPermission': '没有权限',
+    'mds.error.invalidData': '数据格式错误',
+    'mds.error.duplicateKey': '数据重复: {field}={value} 已存在',
+    'mds.error.foreignKeyViolation': '外键约束违反: {field} 引用不存在',
+    'mds.error.validationFailed': '校验失败: {reason}',
+    
+    // ============ 成功消息 ============
+    'mds.success.queryComplete': '查询完成',
+    'mds.success.uploadComplete': '导入完成',
+    'mds.success.validateComplete': '校验完成',
+    'mds.success.syncComplete': '推送完成',
+    'mds.success.deleteComplete': '删除完成',
+    'mds.success.saveComplete': '保存完成',
+    'mds.success.exportComplete': '导出完成',
+    
+    // ============ 统计信息 ============
+    'mds.stats.total': '总计',
+    'mds.stats.pending': '待处理',
+    'mds.stats.passed': '已通过',
+    'mds.stats.failed': '失败',
+    'mds.stats.synced': '已推送',
+    'mds.stats.today': '今日',
+    'mds.stats.week': '本周',
+    'mds.stats.month': '本月',
+    
+    // ============ 表单标签 ============
+    'mds.form.required': '必填',
+    'mds.form.optional': '可选',
+    'mds.form.defaultValue': '默认值',
+    'mds.form.placeholder': '请输入',
+    'mds.form.selectPlaceholder': '请选择',
+    
+    // ============ 其他提示 ============
+    'mds.other.loading': '加载中...',
+    'mds.other.processing': '处理中...',
+    'mds.other.noData': '暂无数据',
+    'mds.other.confirm': '确定',
+    'mds.other.cancel': '取消',
+    'mds.other.tip': '提示',
+    'mds.other.warning': '警告',
+    'mds.other.error': '错误',
+    'mds.other.success': '成功'
 };
