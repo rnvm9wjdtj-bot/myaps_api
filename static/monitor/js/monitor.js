@@ -330,7 +330,7 @@ function initWebSocket() {
     // 关闭现有连接
     if (ws) {
         try {
-            ws.close(1000, typeof i18n !== 'undefined' ? i18n.t('connection.reconnecting') : '重新连接');
+            ws.close(1000, typeof i18n !== 'undefined' ? i18n.t('monitor.connection.reconnecting') : '重新连接');
         } catch (error) {
             console.error('关闭 WebSocket 连接失败:', error);
         }
@@ -660,7 +660,7 @@ async function refreshAll() {
         // 检查系统状态是否为错误（只有连接失败才算是系统错误）
         const statusIndicator = getElement('status-indicator');
         const statusText = statusIndicator ? statusIndicator.textContent : '';
-        const failedText = typeof i18n !== 'undefined' ? i18n.t('connection.failed') : '连接失败';
+        const failedText = typeof i18n !== 'undefined' ? i18n.t('monitor.connection.failed') : '连接失败';
         const isSystemError = statusIndicator && statusIndicator.classList.contains('error') && statusText.includes(failedText);
         
         // 如果系统状态不是连接失败，继续获取其他数据
@@ -844,7 +844,7 @@ async function fetchHealth() {
         updateHealthStatus(data);
     } catch (error) {
         console.error('获取健康状态失败:', error);
-        setSystemStatus('error', typeof i18n !== 'undefined' ? i18n.t('connection.failed') : '连接失败');
+        setSystemStatus('error', typeof i18n !== 'undefined' ? i18n.t('monitor.connection.failed') : '连接失败');
     }
 }
 
@@ -852,9 +852,9 @@ async function fetchHealth() {
 function updateHealthStatus(data) {
     const indicator = getElement('status-indicator');
     const statusMap = {
-        'healthy': { text: typeof i18n !== 'undefined' ? i18n.t('status.healthy') : '● 系统正常', class: 'healthy' },
-        'degraded': { text: typeof i18n !== 'undefined' ? i18n.t('status.partial_warnings') : '● 部分警告', class: 'warning' },
-        'unhealthy': { text: typeof i18n !== 'undefined' ? i18n.t('status.unhealthy') : '● 系统异常', class: 'error' }
+        'healthy': { text: typeof i18n !== 'undefined' ? i18n.t('monitor.status.healthy') : '● 系统正常', class: 'healthy' },
+        'degraded': { text: typeof i18n !== 'undefined' ? i18n.t('monitor.status.partial_warnings') : '● 部分警告', class: 'warning' },
+        'unhealthy': { text: typeof i18n !== 'undefined' ? i18n.t('monitor.status.unhealthy') : '● 系统异常', class: 'error' }
     };
 
     const status = statusMap[data.status] || statusMap['unhealthy'];
@@ -897,7 +897,7 @@ async function fetchResource() {
 function updateResourceDisplay(data, networkUpload = 0, networkDownload = 0) {
     if (data.error) {
         const resourceBadge = getElement('resource-badge');
-        resourceBadge.textContent = typeof i18n !== 'undefined' ? i18n.t('metric.failed') : '错误';
+        resourceBadge.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.metric.failed') : '错误';
         resourceBadge.className = 'badge error';
         return;
     }
@@ -929,7 +929,7 @@ function updateResourceDisplay(data, networkUpload = 0, networkDownload = 0) {
 
     // 更新徽章
     const badge = getElement('resource-badge');
-    badge.textContent = typeof i18n !== 'undefined' ? i18n.t('status.running') : '运行中';
+    badge.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.status.running') : '运行中';
     badge.className = 'badge healthy';
 }
 
@@ -982,7 +982,7 @@ function initResourceChart() {
             labels: [],
             datasets: [
                 {
-                    label: typeof i18n !== 'undefined' ? i18n.t('chart.cpu') : 'CPU',
+                    label: typeof i18n !== 'undefined' ? i18n.t('monitor.chart.cpu') : 'CPU',
                     data: [],
                     borderColor: '#d39102ff',
                     backgroundColor: 'rgba(184, 134, 11, 0.1)',
@@ -991,7 +991,7 @@ function initResourceChart() {
                     yAxisID: 'y'
                 },
                 {
-                    label: typeof i18n !== 'undefined' ? i18n.t('chart.memory') : '内存',
+                    label: typeof i18n !== 'undefined' ? i18n.t('monitor.chart.memory') : '内存',
                     data: [],
                     borderColor: '#9932cc',
                     backgroundColor: 'rgba(153, 50, 204, 0.1)',
@@ -1000,7 +1000,7 @@ function initResourceChart() {
                     yAxisID: 'y'
                 },
                 {
-                    label: typeof i18n !== 'undefined' ? i18n.t('chart.upload') : '上传',
+                    label: typeof i18n !== 'undefined' ? i18n.t('monitor.chart.upload') : '上传',
                     data: [],
                     borderColor: '#87ceeb',
                     backgroundColor: 'rgba(135, 206, 235, 0.1)',
@@ -1009,7 +1009,7 @@ function initResourceChart() {
                     yAxisID: 'y1'
                 },
                 {
-                    label: typeof i18n !== 'undefined' ? i18n.t('chart.download') : '下载',
+                    label: typeof i18n !== 'undefined' ? i18n.t('monitor.chart.download') : '下载',
                     data: [],
                     borderColor: '#98fb98',
                     backgroundColor: 'rgba(152, 251, 152, 0.1)',
@@ -1031,7 +1031,7 @@ function initResourceChart() {
                     max: 100,
                     title: {
                         display: true,
-                        text: typeof i18n !== 'undefined' ? i18n.t('chart.cpu_memory_axis') : 'CPU / 内存 (%)'
+                        text: typeof i18n !== 'undefined' ? i18n.t('monitor.chart.cpu_memory_axis') : 'CPU / 内存 (%)'
                     }
                 },
                 y1: {
@@ -1041,7 +1041,7 @@ function initResourceChart() {
                     beginAtZero: true,
                     title: {
                         display: true,
-                        text: typeof i18n !== 'undefined' ? i18n.t('chart.network_axis') : '网络上传 / 下载 (KB/s)'
+                        text: typeof i18n !== 'undefined' ? i18n.t('monitor.chart.network_axis') : '网络上传 / 下载 (KB/s)'
                     },
                     grid: {
                         drawOnChartArea: false
@@ -1108,10 +1108,10 @@ function updateDatabaseDisplay(data) {
     // 更新徽章
     const badge = getElement('db-badge');
     if (summary.unhealthy === 0) {
-        badge.textContent = typeof i18n !== 'undefined' ? i18n.t('metric.healthy') : '正常';
+        badge.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.metric.healthy') : '正常';
         badge.className = 'badge healthy';
     } else {
-        badge.textContent = typeof i18n !== 'undefined' ? i18n.t('metric.unhealthy') : '异常';
+        badge.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.metric.unhealthy') : '异常';
         badge.className = 'badge warning';
     }
     
@@ -1126,7 +1126,7 @@ function updateDatabaseDisplay(data) {
     const dbConnections = connections.connections || {};
 
     if (Object.keys(dbConnections).length === 0) {
-        listEl.innerHTML = '<div class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('status.no_db_connections') : '暂无数据库连接') + '</div>';
+        listEl.innerHTML = '<div class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('monitor.status.no_db_connections') : '暂无数据库连接') + '</div>';
         checkAlertConditions();
         return;
     }
@@ -1140,7 +1140,7 @@ function updateDatabaseDisplay(data) {
             <span class="db-name">${name === mainDb ? 'Ⓜ️ ' + name : name}</span>
             <span class="db-status">
                 <span class="status-dot ${status.healthy ? 'healthy' : 'error'}"></span>
-                ${status.healthy ? (typeof i18n !== 'undefined' ? i18n.t('metric.healthy') : '正常') : (status.error || (typeof i18n !== 'undefined' ? i18n.t('metric.unhealthy') : '异常'))}
+                ${status.healthy ? (typeof i18n !== 'undefined' ? i18n.t('monitor.metric.healthy') : '正常') : (status.error || (typeof i18n !== 'undefined' ? i18n.t('monitor.metric.unhealthy') : '异常'))}
             </span>
         `;
         fragment.appendChild(dbItem);
@@ -1174,14 +1174,14 @@ function updateSchedulerDisplay(data) {
     const badge = getElement('scheduler-badge');
 
     if (scheduler.running) {
-        statusEl.textContent = typeof i18n !== 'undefined' ? i18n.t('status.running') : '运行中';
+        statusEl.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.status.running') : '运行中';
         statusEl.style.color = '#52c41a';
-        badge.textContent = typeof i18n !== 'undefined' ? i18n.t('status.running') : '运行中';
+        badge.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.status.running') : '运行中';
         badge.className = 'badge healthy';
     } else {
-        statusEl.textContent = typeof i18n !== 'undefined' ? i18n.t('status.stopped') : '已停止';
+        statusEl.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.status.stopped') : '已停止';
         statusEl.style.color = '#faad14';
-        badge.textContent = typeof i18n !== 'undefined' ? i18n.t('status.stopped') : '已停止';
+        badge.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.status.stopped') : '已停止';
         badge.className = 'badge warning';
     }
 
@@ -1192,7 +1192,7 @@ function updateSchedulerDisplay(data) {
     const listEl = getElement('job-list');
     if (listEl) {
         if (jobs.length === 0) {
-            listEl.innerHTML = '<div class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('status.no_scheduler') : '暂无定时任务') + '</div>';
+            listEl.innerHTML = '<div class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('monitor.status.no_scheduler') : '暂无定时任务') + '</div>';
             return;
         }
 
@@ -1206,7 +1206,7 @@ function updateSchedulerDisplay(data) {
                     <span class="job-name">${job.name || job.id}</span>
                     <span class="job-trigger">${job.trigger}</span>
                 </div>
-                <span class="job-next">${job.next_run_time ? formatDateTime(job.next_run_time) : (typeof i18n !== 'undefined' ? i18n.t('scheduler.not_scheduled') : '未计划')}</span>
+                <span class="job-next">${job.next_run_time ? formatDateTime(job.next_run_time) : (typeof i18n !== 'undefined' ? i18n.t('monitor.scheduler.not_scheduled') : '未计划')}</span>
             `;
             fragment.appendChild(jobItem);
         });
@@ -1219,7 +1219,7 @@ function updateSchedulerDisplay(data) {
 
 // 格式化日期时间
 function formatDateTime(dateValue) {
-    if (!dateValue) return typeof i18n !== 'undefined' ? i18n.t('scheduler.never_run') : '从未执行';
+    if (!dateValue) return typeof i18n !== 'undefined' ? i18n.t('monitor.scheduler.never_run') : '从未执行';
     
     // 检查缓存
     const cacheKey = `datetime_${dateValue}`;
@@ -1240,7 +1240,7 @@ function formatDateTime(dateValue) {
     }
     
     if (isNaN(date.getTime())) {
-        return typeof i18n !== 'undefined' ? i18n.t('scheduler.never_run') : '从未执行';
+        return typeof i18n !== 'undefined' ? i18n.t('monitor.scheduler.never_run') : '从未执行';
     }
     
     const result = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
@@ -1310,13 +1310,13 @@ function updateHTTPDisplay(data) {
     const badge = getElement('http-badge');
     const errorRateValue = summary.error_rate || 0;
     if (errorRateValue < 1) {
-        badge.textContent = typeof i18n !== 'undefined' ? i18n.t('metric.healthy') : '正常';
+        badge.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.metric.healthy') : '正常';
         badge.className = 'badge healthy';
     } else if (errorRateValue < 5) {
-        badge.textContent = typeof i18n !== 'undefined' ? i18n.t('alert.warning') : '警告';
+        badge.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.alert.warning') : '警告';
         badge.className = 'badge warning';
     } else {
-        badge.textContent = typeof i18n !== 'undefined' ? i18n.t('metric.unhealthy') : '异常';
+        badge.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.metric.unhealthy') : '异常';
         badge.className = 'badge error';
     }
     
@@ -1340,7 +1340,7 @@ function updateHTTPDisplay(data) {
         const statusCodes = data.status_codes || {};
 
         if (Object.keys(statusCodes).length === 0) {
-            statusCodesEl.innerHTML = '<div class="no-data">' + (typeof i18n !== 'undefined' ? i18n.t('status.no_http_requests') : '暂无接收请求') + '</div>';
+            statusCodesEl.innerHTML = '<div class="no-data">' + (typeof i18n !== 'undefined' ? i18n.t('monitor.status.no_http_requests') : '暂无接收请求') + '</div>';
         } else {
             statusCodesEl.innerHTML = Object.entries(statusCodes).map(([code, count]) => {
                 const codeClass = code.startsWith('2') ? 'success' : (code.startsWith('3') ? 'redirect' : 'error');
@@ -1371,9 +1371,9 @@ function updateHTTPDisplay(data) {
                     <div class="http-path-info">
                         <span class="http-path-name">${path}</span>
                         <div class="http-path-stats">
-                            <span>${typeof i18n !== 'undefined' ? i18n.t('metric.avg_time') : '平均'}: ${(stats.avg_time * 1000).toFixed(0)}ms</span>
-                            ${stats.errors > 0 ? `<span style="color: var(--error-color)">${typeof i18n !== 'undefined' ? i18n.t('metric.failed') : '错误'}: ${stats.errors}</span>` : ''}
-                            ${stats.slow_requests > 0 ? `<span style="color: var(--warning-color)">${typeof i18n !== 'undefined' ? i18n.t('metric.requests_slow') : '慢请求'}: ${stats.slow_requests}</span>` : ''}
+                            <span>${typeof i18n !== 'undefined' ? i18n.t('monitor.metric.avg_time') : '平均'}: ${(stats.avg_time * 1000).toFixed(0)}ms</span>
+                            ${stats.errors > 0 ? `<span style="color: var(--error-color)">${typeof i18n !== 'undefined' ? i18n.t('monitor.metric.failed') : '错误'}: ${stats.errors}</span>` : ''}
+                            ${stats.slow_requests > 0 ? `<span style="color: var(--warning-color)">${typeof i18n !== 'undefined' ? i18n.t('monitor.metric.requests_slow') : '慢请求'}: ${stats.slow_requests}</span>` : ''}
                         </div>
                     </div>
                     <span class="http-path-count">${stats.count}</span>
@@ -1388,7 +1388,7 @@ function updateAlertsDisplay(alerts) {
     const listEl = getElement('alert-list');
 
     if (alerts.length === 0) {
-        listEl.innerHTML = '<div class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('status.no_alerts') : '暂无告警') + '</div>';
+        listEl.innerHTML = '<div class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('monitor.status.no_alerts') : '暂无告警') + '</div>';
         previousAlerts = [];
         return;
     }
@@ -1483,16 +1483,16 @@ function formatDateTime(timestamp, format = 'relative') {
         case 'relative':
             // 相对时间格式：刚刚、X分钟前、X小时前、X天前
             if (diff < 60) {
-                result = typeof i18n !== 'undefined' ? i18n.t('time.just_now') : '刚刚';
+                result = typeof i18n !== 'undefined' ? i18n.t('monitor.time.just_now') : '刚刚';
             } else if (diff < 3600) {
                 const mins = Math.floor(diff / 60);
-                result = typeof i18n !== 'undefined' ? i18n.t('time.minutes_ago').replace('{n}', mins) : mins + '分钟前';
+                result = typeof i18n !== 'undefined' ? i18n.t('monitor.time.minutes_ago').replace('{n}', mins) : mins + '分钟前';
             } else if (diff < 86400) {
                 const hours = Math.floor(diff / 3600);
-                result = typeof i18n !== 'undefined' ? i18n.t('time.hours_ago').replace('{n}', hours) : hours + '小时前';
+                result = typeof i18n !== 'undefined' ? i18n.t('monitor.time.hours_ago').replace('{n}', hours) : hours + '小时前';
             } else {
                 const days = Math.floor(diff / 86400);
-                result = typeof i18n !== 'undefined' ? i18n.t('time.days_ago').replace('{n}', days) : days + '天前';
+                result = typeof i18n !== 'undefined' ? i18n.t('monitor.time.days_ago').replace('{n}', days) : days + '天前';
             }
             break;
             
@@ -1507,11 +1507,11 @@ function formatDateTime(timestamp, format = 'relative') {
             
             let dayLabel = '';
             if (logDate.getTime() === today.getTime()) {
-                dayLabel = typeof i18n !== 'undefined' ? i18n.t('date.today') : '今天';
+                dayLabel = typeof i18n !== 'undefined' ? i18n.t('monitor.date.today') : '今天';
             } else if (logDate.getTime() === yesterday.getTime()) {
-                dayLabel = typeof i18n !== 'undefined' ? i18n.t('date.yesterday') : '昨天';
+                dayLabel = typeof i18n !== 'undefined' ? i18n.t('monitor.date.yesterday') : '昨天';
             } else if (logDate.getTime() === dayBeforeYesterday.getTime()) {
-                dayLabel = typeof i18n !== 'undefined' ? i18n.t('time.day_before_yesterday') : '前天';
+                dayLabel = typeof i18n !== 'undefined' ? i18n.t('monitor.time.day_before_yesterday') : '前天';
             } else {
                 const month = (date.getMonth() + 1).toString().padStart(2, '0');
                 const day = date.getDate().toString().padStart(2, '0');
@@ -1534,11 +1534,11 @@ function formatDateTime(timestamp, format = 'relative') {
             
             let dayLabelFull = '';
             if (logDateFull.getTime() === todayFull.getTime()) {
-                dayLabelFull = typeof i18n !== 'undefined' ? i18n.t('date.today') : '今天';
+                dayLabelFull = typeof i18n !== 'undefined' ? i18n.t('monitor.date.today') : '今天';
             } else if (logDateFull.getTime() === yesterdayFull.getTime()) {
-                dayLabelFull = typeof i18n !== 'undefined' ? i18n.t('date.yesterday') : '昨天';
+                dayLabelFull = typeof i18n !== 'undefined' ? i18n.t('monitor.date.yesterday') : '昨天';
             } else if (logDateFull.getTime() === dayBeforeYesterdayFull.getTime()) {
-                dayLabelFull = typeof i18n !== 'undefined' ? i18n.t('time.day_before_yesterday') : '前天';
+                dayLabelFull = typeof i18n !== 'undefined' ? i18n.t('monitor.time.day_before_yesterday') : '前天';
             } else {
                 const month = (date.getMonth() + 1).toString().padStart(2, '0');
                 const day = date.getDate().toString().padStart(2, '0');
@@ -1620,7 +1620,7 @@ function initRedisCharts() {
             data: {
                 labels: [],
                 datasets: [{
-                    label: typeof i18n !== 'undefined' ? i18n.t('chart.used_connections') : '使用连接数',
+                    label: typeof i18n !== 'undefined' ? i18n.t('monitor.chart.used_connections') : '使用连接数',
                     data: [],
                     borderColor: '#1890ff',
                     backgroundColor: 'rgba(24, 144, 255, 0.1)',
@@ -1653,7 +1653,7 @@ function initRedisCharts() {
             data: {
                 labels: [],
                 datasets: [{
-                    label: typeof i18n !== 'undefined' ? i18n.t('chart.buffer_size_mb') : '缓冲大小 (MB)',
+                    label: typeof i18n !== 'undefined' ? i18n.t('monitor.chart.buffer_size_mb') : '缓冲大小 (MB)',
                     data: [],
                     borderColor: '#52c41a',
                     backgroundColor: 'rgba(82, 196, 26, 0.1)',
@@ -1686,14 +1686,14 @@ function updateRedisDisplay(data) {
     const redisBadge = document.getElementById('redis-badge');
     
     if (data.healthy) {
-        statusIndicator.textContent = typeof i18n !== 'undefined' ? i18n.t('metric.healthy') : '健康';
+        statusIndicator.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.metric.healthy') : '健康';
         statusIndicator.className = 'status healthy';
-        redisBadge.textContent = typeof i18n !== 'undefined' ? i18n.t('metric.healthy') : '正常';
+        redisBadge.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.metric.healthy') : '正常';
         redisBadge.className = 'badge healthy';
     } else {
-        statusIndicator.textContent = typeof i18n !== 'undefined' ? i18n.t('metric.unhealthy') : '异常';
+        statusIndicator.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.metric.unhealthy') : '异常';
         statusIndicator.className = 'status error';
-        redisBadge.textContent = typeof i18n !== 'undefined' ? i18n.t('metric.unhealthy') : '异常';
+        redisBadge.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.metric.unhealthy') : '异常';
         redisBadge.className = 'badge error';
     }
     
@@ -1785,7 +1785,7 @@ function updateLogsDisplay(logs) {
     const listEl = getElement('log-list');
 
     if (logs.length === 0) {
-        listEl.innerHTML = '<div class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('status.no_logs') : '暂无日志') + '</div>';
+        listEl.innerHTML = '<div class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('monitor.status.no_logs') : '暂无日志') + '</div>';
         checkAlertConditions();
         return;
     }
@@ -1793,7 +1793,7 @@ function updateLogsDisplay(logs) {
     listEl.innerHTML = logs.map(log => `
         <div class="log-item ${log.level}">
             <div class="log-header">
-                <div class="log-level ${log.level}">${log.level === 'warning' ? (typeof i18n !== 'undefined' ? i18n.t('alert.warning') : '警告') : (typeof i18n !== 'undefined' ? i18n.t('alert.error') : '错误')}</div>
+                <div class="log-level ${log.level}">${log.level === 'warning' ? (typeof i18n !== 'undefined' ? i18n.t('monitor.alert.warning') : '警告') : (typeof i18n !== 'undefined' ? i18n.t('monitor.alert.error') : '错误')}</div>
                 <div class="log-info">
                     <span class="log-module">${log.module}</span>
                     <span class="log-time">${formatDateTime(log.timestamp, 'date')}</span>
@@ -1967,14 +1967,14 @@ function updateEventStatsDisplay(data) {
     const tbodyEl = document.getElementById('events-tbody');
     
     if (Object.keys(eventStats).length === 0) {
-        tbodyEl.innerHTML = '<tr><td colspan="11" class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('status.no_events') : '暂无事件统计') + '</td></tr>';
+        tbodyEl.innerHTML = '<tr><td colspan="11" class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('monitor.status.no_events') : '暂无事件统计') + '</td></tr>';
         return;
     }
     
         tbodyEl.innerHTML = Object.entries(eventStats).map(([eventType, stats]) => {
         const status = getEventStatus(stats);
-        const normalText = typeof i18n !== 'undefined' ? i18n.t('alert.normal') : '正常';
-        const warningText = typeof i18n !== 'undefined' ? i18n.t('alert.warning') : '警告';
+        const normalText = typeof i18n !== 'undefined' ? i18n.t('monitor.alert.normal') : '正常';
+        const warningText = typeof i18n !== 'undefined' ? i18n.t('monitor.alert.warning') : '警告';
         const statusClass = status === normalText ? 'healthy' : status === warningText ? 'warning' : 'error';
         
         let lastActivity = '-';
@@ -1998,7 +1998,7 @@ function updateEventStatsDisplay(data) {
             <td>${lastActivity}</td>
             <td><span class="badge ${statusClass}">${status}</span></td>
             <td>
-                <button class="btn btn-small" onclick="flushEvent('${eventType}')">${typeof i18n !== 'undefined' ? i18n.t('btn.refresh') : '刷新'}</button>
+                <button class="btn btn-small" onclick="flushEvent('${eventType}')">${typeof i18n !== 'undefined' ? i18n.t('monitor.btn.refresh') : '刷新'}</button>
             </td>
         </tr>
         `;
@@ -2023,14 +2023,14 @@ function updateBinlogListenerDisplay(data) {
     document.getElementById('backpressure-usage').textContent = percent.toFixed(1) + '%';
     
     // 根据背压状态设置颜色
-    let statusText = typeof i18n !== 'undefined' ? i18n.t('alert.normal') : '正常';
+    let statusText = typeof i18n !== 'undefined' ? i18n.t('monitor.alert.normal') : '正常';
     let statusClass = 'healthy';
     
     if (percent >= 100) {
-        statusText = typeof i18n !== 'undefined' ? i18n.t('alert.critical') : '严重';
+        statusText = typeof i18n !== 'undefined' ? i18n.t('monitor.alert.critical') : '严重';
         statusClass = 'error';
     } else if (percent >= 75) {
-        statusText = typeof i18n !== 'undefined' ? i18n.t('alert.warning') : '警告';
+        statusText = typeof i18n !== 'undefined' ? i18n.t('monitor.alert.warning') : '警告';
         statusClass = 'warning';
     }
     
@@ -2042,13 +2042,13 @@ function updateBinlogListenerDisplay(data) {
     const eventLoopHealthy = listener.event_loop_healthy;
     const eventLoopEl = document.getElementById('event-loop-health');
     if (eventLoopHealthy === true) {
-        eventLoopEl.textContent = typeof i18n !== 'undefined' ? i18n.t('metric.healthy') : '正常';
+        eventLoopEl.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.metric.healthy') : '正常';
         eventLoopEl.className = 'summary-value healthy';
     } else if (eventLoopHealthy === false) {
-        eventLoopEl.textContent = typeof i18n !== 'undefined' ? i18n.t('metric.unhealthy') : '异常';
+        eventLoopEl.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.metric.unhealthy') : '异常';
         eventLoopEl.className = 'summary-value error';
     } else {
-        eventLoopEl.textContent = typeof i18n !== 'undefined' ? i18n.t('metric.unknown') : '未知';
+        eventLoopEl.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.metric.unknown') : '未知';
         eventLoopEl.className = 'summary-value';
     }
 }
@@ -2060,11 +2060,11 @@ function getEventStatus(stats) {
     const successRate = stats.success_rate || 100;
     
     if (pending >= batchSize * 5 || successRate < 80) {
-        return typeof i18n !== 'undefined' ? i18n.t('metric.unhealthy') : '异常';
+        return typeof i18n !== 'undefined' ? i18n.t('monitor.metric.unhealthy') : '异常';
     } else if (pending >= batchSize * 2 || successRate < 95) {
-        return typeof i18n !== 'undefined' ? i18n.t('metric.warning') : '警告';
+        return typeof i18n !== 'undefined' ? i18n.t('monitor.metric.warning') : '警告';
     }
-    return typeof i18n !== 'undefined' ? i18n.t('metric.healthy') : '正常';
+    return typeof i18n !== 'undefined' ? i18n.t('monitor.metric.healthy') : '正常';
 }
 
 // 刷新事件统计
@@ -2149,7 +2149,7 @@ function updateDatabaseDetailDisplay(data) {
     const mainDb = data.main_db;
     
     if (Object.keys(dbConnections).length === 0) {
-        tbodyEl.innerHTML = '<tr><td colspan="11" class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('status.no_db_connections') : '暂无数据库连接') + '</td></tr>';
+        tbodyEl.innerHTML = '<tr><td colspan="11" class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('monitor.status.no_db_connections') : '暂无数据库连接') + '</td></tr>';
         checkAlertConditions();
         return;
     }
@@ -2157,10 +2157,10 @@ function updateDatabaseDetailDisplay(data) {
     const badge = document.getElementById('db-detail-badge');
     const summary = connections.summary || {};
     if (summary.unhealthy === 0) {
-        badge.textContent = typeof i18n !== 'undefined' ? i18n.t('metric.healthy') : '正常';
+        badge.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.metric.healthy') : '正常';
         badge.className = 'badge healthy';
     } else {
-        badge.textContent = typeof i18n !== 'undefined' ? i18n.t('metric.unhealthy') : '异常';
+        badge.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.metric.unhealthy') : '异常';
         badge.className = 'badge error';
     }
     
@@ -2189,7 +2189,7 @@ function updateDatabaseDetailDisplay(data) {
         <tr>
             <td>${name === mainDb ? 'Ⓜ️ ' + name : name}</td>
             <td class="status-${status.healthy ? 'healthy' : 'error'}">
-                ${status.healthy ? (typeof i18n !== 'undefined' ? i18n.t('connection.connected') : '已连接') : (status.error || (typeof i18n !== 'undefined' ? i18n.t('connection.disconnected') : '断开'))}
+                ${status.healthy ? (typeof i18n !== 'undefined' ? i18n.t('monitor.connection.connected') : '已连接') : (status.error || (typeof i18n !== 'undefined' ? i18n.t('monitor.connection.disconnected') : '断开'))}
             </td>
             <td>${lastCheckTime}</td>
             <td>${pool.current_size !== undefined ? pool.current_size : '-'}</td>
@@ -2281,7 +2281,7 @@ function updateAPIRequestsDisplay(data) {
     }
     
     if (filteredRequests.length === 0) {
-        tbodyEl.innerHTML = '<tr><td colspan="9" class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('status.no_api_requests') : '暂无 API 请求记录') + '</td></tr>';
+        tbodyEl.innerHTML = '<tr><td colspan="9" class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('monitor.status.no_api_requests') : '暂无 API 请求记录') + '</td></tr>';
         return;
     }
     
@@ -2397,36 +2397,36 @@ function showRequestDetail(index) {
     // 更新请求信息
     requestInfoEl.innerHTML = `
         <div class="api-detail-info-item">
-            <span class="api-detail-info-label">${typeof i18n !== 'undefined' ? i18n.t('col.timestamp') : '时间戳'}</span>
+            <span class="api-detail-info-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.col.timestamp') : '时间戳'}</span>
             <span class="api-detail-info-value">${timeStr}</span>
         </div>
         <div class="api-detail-info-item">
-            <span class="api-detail-info-label">${typeof i18n !== 'undefined' ? i18n.t('col.method') : '方法'}</span>
+            <span class="api-detail-info-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.col.method') : '方法'}</span>
             <span class="api-detail-info-value">${req.method}</span>
         </div>
         <div class="api-detail-info-item">
-            <span class="api-detail-info-label">${typeof i18n !== 'undefined' ? i18n.t('col.path') : '路径'}</span>
+            <span class="api-detail-info-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.col.path') : '路径'}</span>
             <span class="api-detail-info-value">${req.path}</span>
         </div>
         <div class="api-detail-info-item">
-            <span class="api-detail-info-label">${typeof i18n !== 'undefined' ? i18n.t('col.query_params') : '查询参数'}</span>
+            <span class="api-detail-info-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.col.query_params') : '查询参数'}</span>
             <span class="api-detail-info-value font-mono" style="font-size: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${queryParamsDisplay}">${queryParamsDisplay || '-'}</span>
         </div>
         <div class="api-detail-info-item">
-            <span class="api-detail-info-label">${typeof i18n !== 'undefined' ? i18n.t('col.status') : '状态码'}</span>
+            <span class="api-detail-info-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.col.status') : '状态码'}</span>
             <span class="api-detail-info-value">${statusText}</span>
         </div>
         <div class="api-detail-info-item">
-            <span class="api-detail-info-label">${typeof i18n !== 'undefined' ? i18n.t('col.duration') : '响应时间'}</span>
+            <span class="api-detail-info-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.col.duration') : '响应时间'}</span>
             <span class="api-detail-info-value">${(req.duration * 1000).toFixed(0)}ms</span>
         </div>
         <div class="api-detail-info-item">
-            <span class="api-detail-info-label">${typeof i18n !== 'undefined' ? i18n.t('col.client_ip') : '客户端IP'}</span>
+            <span class="api-detail-info-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.col.client_ip') : '客户端IP'}</span>
             <span class="api-detail-info-value">${req.client_ip}</span>
         </div>
         ${req.error_message ? `
         <div class="api-detail-info-item">
-            <span class="api-detail-info-label">${typeof i18n !== 'undefined' ? i18n.t('col.error_message') : '错误信息'}</span>
+            <span class="api-detail-info-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.col.error_message') : '错误信息'}</span>
             <span class="api-detail-info-value" style="color: var(--error-color)">${req.error_message}</span>
         </div>
         ` : ''}
@@ -2450,8 +2450,8 @@ function showRequestDetail(index) {
     
     // 重置高亮按钮状态
     document.querySelectorAll('.section-actions button').forEach(btn => {
-        const highlightOn = typeof i18n !== 'undefined' ? i18n.t('highlight.on') : '已高亮';
-        const highlightOff = typeof i18n !== 'undefined' ? i18n.t('highlight.off') : '高亮';
+        const highlightOn = typeof i18n !== 'undefined' ? i18n.t('monitor.highlight.on') : '已高亮';
+        const highlightOff = typeof i18n !== 'undefined' ? i18n.t('monitor.highlight.off') : '高亮';
         if (btn.textContent === highlightOn) {
             btn.textContent = highlightOff;
         }
@@ -2486,8 +2486,8 @@ function hideRequestDetail() {
     
     // 重置高亮按钮状态
     document.querySelectorAll('.section-actions button').forEach(btn => {
-        const highlightOn = typeof i18n !== 'undefined' ? i18n.t('highlight.on') : '已高亮';
-        const highlightOff = typeof i18n !== 'undefined' ? i18n.t('highlight.off') : '高亮';
+        const highlightOn = typeof i18n !== 'undefined' ? i18n.t('monitor.highlight.on') : '已高亮';
+        const highlightOff = typeof i18n !== 'undefined' ? i18n.t('monitor.highlight.off') : '高亮';
         if (btn.textContent === highlightOn) {
             btn.textContent = highlightOff;
         }
@@ -2507,7 +2507,7 @@ function highlightRequestBody() {
         // 更新按钮状态
         const btn = document.querySelector('.section-actions button:nth-child(1)');
         if (btn) {
-            btn.textContent = typeof i18n !== 'undefined' ? i18n.t('highlight.on') : '已高亮';
+            btn.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.highlight.on') : '已高亮';
         }
     }
 }
@@ -2525,7 +2525,7 @@ function highlightResponseBody() {
         // 更新按钮状态
         const btn = document.querySelectorAll('.section-actions')[1].querySelector('button:nth-child(1)');
         if (btn) {
-            btn.textContent = typeof i18n !== 'undefined' ? i18n.t('highlight.on') : '已高亮';
+            btn.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.highlight.on') : '已高亮';
         }
     }
 }
@@ -2556,7 +2556,7 @@ function copyToClipboard(text) {
             if (successful) {
                 resolve();
             } else {
-                reject(new Error(typeof i18n !== 'undefined' ? i18n.t('copy.error') : '复制失败'));
+                reject(new Error(typeof i18n !== 'undefined' ? i18n.t('monitor.copy.error') : '复制失败'));
             }
         } catch (err) {
             reject(err);
@@ -2597,7 +2597,7 @@ function copyRequestBody() {
             const btn = sectionActions ? sectionActions.querySelector('button:nth-child(2)') : null;
             if (btn) {
                 const originalText = btn.textContent;
-                btn.textContent = typeof i18n !== 'undefined' ? i18n.t('copy.success') : '已复制';
+                btn.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.copy.success') : '已复制';
                 setTimeout(() => {
                     btn.textContent = originalText;
                 }, 2000);
@@ -2606,7 +2606,7 @@ function copyRequestBody() {
         .catch(err => {
             console.error('复制失败:', err);
             // 显示复制失败提示
-            alert(typeof i18n !== 'undefined' ? i18n.t('copy.failed') : '复制失败，请手动复制');
+            alert(typeof i18n !== 'undefined' ? i18n.t('monitor.copy.failed') : '复制失败，请手动复制');
         });
 }
 
@@ -2641,7 +2641,7 @@ function copyResponseBody() {
             const btn = sectionActions ? sectionActions.querySelector('button:nth-child(2)') : null;
             if (btn) {
                 const originalText = btn.textContent;
-                btn.textContent = typeof i18n !== 'undefined' ? i18n.t('copy.success') : '已复制';
+                btn.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.copy.success') : '已复制';
                 setTimeout(() => {
                     btn.textContent = originalText;
                 }, 2000);
@@ -2650,7 +2650,7 @@ function copyResponseBody() {
         .catch(err => {
             console.error('复制失败:', err);
             // 显示复制失败提示
-            alert(typeof i18n !== 'undefined' ? i18n.t('copy.failed') : '复制失败，请手动复制');
+            alert(typeof i18n !== 'undefined' ? i18n.t('monitor.copy.failed') : '复制失败，请手动复制');
         });
 }
 
@@ -2685,7 +2685,7 @@ async function fetchRequestsByDate() {
     const date = datePicker.value;
     
     if (!date) {
-        alert(typeof i18n !== 'undefined' ? i18n.t('prompt.select_date') : '请选择日期');
+        alert(typeof i18n !== 'undefined' ? i18n.t('monitor.prompt.select_date') : '请选择日期');
         return;
     }
     
@@ -2697,12 +2697,12 @@ async function fetchRequestsByDate() {
         // 更新页面标题，显示当前查询的日期
         const pageTitle = document.querySelector('#page-api-requests h2');
         if (pageTitle) {
-            const titleText = typeof i18n !== 'undefined' ? i18n.t('page.http_requests_log') : '接收请求记录';
+            const titleText = typeof i18n !== 'undefined' ? i18n.t('monitor.page.http_requests_log') : '接收请求记录';
             pageTitle.textContent = `${titleText} (${date})`;
         }
     } catch (error) {
         console.error('按日期获取请求记录失败:', error);
-        alert(typeof i18n !== 'undefined' ? i18n.t('prompt.fetch_failed') : '获取请求记录失败，请稍后重试');
+        alert(typeof i18n !== 'undefined' ? i18n.t('monitor.prompt.fetch_failed') : '获取请求记录失败，请稍后重试');
     }
 }
 
@@ -2714,7 +2714,7 @@ function updateAPIRequestsTable(requests) {
     const limitedRequests = requests.slice(0, 100);
     
     if (limitedRequests.length === 0) {
-        const emptyText = typeof i18n !== 'undefined' ? i18n.t('status.no_api_requests') : '暂无 API 请求记录';
+        const emptyText = typeof i18n !== 'undefined' ? i18n.t('monitor.status.no_api_requests') : '暂无 API 请求记录';
         tableBody.innerHTML = '<tr><td colspan="9" class="empty-state">' + emptyText + '</td></tr>';
         return;
     }
@@ -2800,7 +2800,7 @@ async function fetchOutboundRequestsByDate() {
     const date = datePicker.value;
     
     if (!date) {
-        alert(typeof i18n !== 'undefined' ? i18n.t('prompt.select_date') : '请选择日期');
+        alert(typeof i18n !== 'undefined' ? i18n.t('monitor.prompt.select_date') : '请选择日期');
         return;
     }
     
@@ -2812,12 +2812,12 @@ async function fetchOutboundRequestsByDate() {
         // 更新页面标题，显示当前查询的日期
         const pageTitle = document.querySelector('#page-outbound-requests h2');
         if (pageTitle) {
-            const titleText = typeof i18n !== 'undefined' ? i18n.t('page.outbound_requests_log') : '发送请求记录';
+            const titleText = typeof i18n !== 'undefined' ? i18n.t('monitor.page.outbound_requests_log') : '发送请求记录';
             pageTitle.textContent = `${titleText} (${date})`;
         }
     } catch (error) {
         console.error('按日期获取对外请求记录失败:', error);
-        alert(typeof i18n !== 'undefined' ? i18n.t('prompt.fetch_outbound_failed') : '获取对外请求记录失败，请稍后重试');
+        alert(typeof i18n !== 'undefined' ? i18n.t('monitor.prompt.fetch_outbound_failed') : '获取对外请求记录失败，请稍后重试');
     }
 }
 
@@ -2847,7 +2847,7 @@ function updateLogsPageDisplay(logs) {
     const tbodyEl = document.getElementById('logs-tbody');
     
     if (logs.length === 0) {
-        tbodyEl.innerHTML = '<tr><td colspan="5" class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('status.no_logs') : '暂无日志记录') + '</td></tr>';
+        tbodyEl.innerHTML = '<tr><td colspan="5" class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('monitor.status.no_logs') : '暂无日志记录') + '</td></tr>';
         checkAlertConditions();
         return;
     }
@@ -2865,7 +2865,7 @@ function updateLogsPageDisplay(logs) {
     });
     
     if (filteredLogs.length === 0) {
-        tbodyEl.innerHTML = '<tr><td colspan="5" class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('status.no_logs') : '暂无日志记录') + '</td></tr>';
+        tbodyEl.innerHTML = '<tr><td colspan="5" class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('monitor.status.no_logs') : '暂无日志记录') + '</td></tr>';
         checkAlertConditions();
         return;
     }
@@ -3191,15 +3191,15 @@ function updateSchedulerDetailDisplay(data) {
     // 更新徽章
     const badge = document.getElementById('scheduler-detail-badge');
     if (scheduler.running) {
-        badge.textContent = typeof i18n !== 'undefined' ? i18n.t('status.running') : '运行中';
+        badge.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.status.running') : '运行中';
         badge.className = 'badge healthy';
     } else {
-        badge.textContent = typeof i18n !== 'undefined' ? i18n.t('status.stopped') : '已停止';
+        badge.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.status.stopped') : '已停止';
         badge.className = 'badge warning';
     }
     
     if (jobs.length === 0) {
-        gridEl.innerHTML = '<div class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('status.no_scheduler') : '暂无定时任务') + '</div>';
+        gridEl.innerHTML = '<div class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('monitor.status.no_scheduler') : '暂无定时任务') + '</div>';
         return;
     }
     
@@ -3218,16 +3218,16 @@ function updateSchedulerDetailDisplay(data) {
     });
     
     gridEl.innerHTML = jobs.map(job => {
-        const lastRunTime = job.last_run_time ? formatDateTime(job.last_run_time) : (typeof i18n !== 'undefined' ? i18n.t('scheduler.never_run') : '从未执行');
-        const nextRunTime = job.next_run_time ? formatDateTime(job.next_run_time) : (typeof i18n !== 'undefined' ? i18n.t('scheduler.not_scheduled') : '未计划');
-        const maxExecutionTime = job.max_execution_time ? `${job.max_execution_time.toFixed(2)} ` + (typeof i18n !== 'undefined' ? i18n.t('other.seconds') : '秒') : (typeof i18n !== 'undefined' ? i18n.t('scheduler.default') : '默认');
+        const lastRunTime = job.last_run_time ? formatDateTime(job.last_run_time) : (typeof i18n !== 'undefined' ? i18n.t('monitor.scheduler.never_run') : '从未执行');
+        const nextRunTime = job.next_run_time ? formatDateTime(job.next_run_time) : (typeof i18n !== 'undefined' ? i18n.t('monitor.scheduler.not_scheduled') : '未计划');
+        const maxExecutionTime = job.max_execution_time ? `${job.max_execution_time.toFixed(2)} ` + (typeof i18n !== 'undefined' ? i18n.t('monitor.other.seconds') : '秒') : (typeof i18n !== 'undefined' ? i18n.t('monitor.scheduler.default') : '默认');
         const envData = getCachedData('environment');
         const projectDir = envData ? envData.project_dir : '';
         const isProjectTask = projectDir && (job.name || job.id).includes(`project_files.${projectDir}`);
         const isSystemTask = !isProjectTask;
         
         // 解析下次执行时间为日期和时间部分
-        let timeStr = typeof i18n !== 'undefined' ? i18n.t('scheduler.not_scheduled') : '未计划';
+        let timeStr = typeof i18n !== 'undefined' ? i18n.t('monitor.scheduler.not_scheduled') : '未计划';
         let dateStr = '';
         if (job.next_run_time) {
             let date;
@@ -3253,11 +3253,11 @@ function updateSchedulerDetailDisplay(data) {
                 const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
                 
                 if (diffDays === 0) {
-                    dateStr = typeof i18n !== 'undefined' ? i18n.t('date.today') : '今天';
+                    dateStr = typeof i18n !== 'undefined' ? i18n.t('monitor.date.today') : '今天';
                 } else if (diffDays === 1) {
-                    dateStr = typeof i18n !== 'undefined' ? i18n.t('time.tomorrow') : '明天';
+                    dateStr = typeof i18n !== 'undefined' ? i18n.t('monitor.time.tomorrow') : '明天';
                 } else if (diffDays === 2) {
-                    dateStr = typeof i18n !== 'undefined' ? i18n.t('time.day_after_tomorrow') : '后天';
+                    dateStr = typeof i18n !== 'undefined' ? i18n.t('monitor.time.day_after_tomorrow') : '后天';
                 } else {
                     dateStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
                 }
@@ -3279,19 +3279,19 @@ function updateSchedulerDetailDisplay(data) {
                         <span class="status-dot healthy"></span>
                         ${(() => {
                             const taskType = isSystemTask ? 
-                                (typeof i18n !== 'undefined' ? i18n.t('task.system') : '系统') : 
-                                (typeof i18n !== 'undefined' ? i18n.t('task.project') : '项目');
+                                (typeof i18n !== 'undefined' ? i18n.t('monitor.task.system') : '系统') : 
+                                (typeof i18n !== 'undefined' ? i18n.t('monitor.task.project') : '项目');
                             return typeof i18n !== 'undefined' ? taskType : taskType + '级任务';
                         })()}
                     </span>
                 </div>
                 <table class="scheduler-detail-table">
                     <tr class="scheduler-detail-row">
-                        <td class="scheduler-detail-label">${typeof i18n !== 'undefined' ? i18n.t('scheduler.rule') : '定时规则'}</td>
-                        <td class="scheduler-detail-value">${job.trigger || (typeof i18n !== 'undefined' ? i18n.t('time.unknown') : '未知')}</td>
+                        <td class="scheduler-detail-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.scheduler.rule') : '定时规则'}</td>
+                        <td class="scheduler-detail-value">${job.trigger || (typeof i18n !== 'undefined' ? i18n.t('monitor.time.unknown') : '未知')}</td>
                     </tr>
                     <tr class="scheduler-detail-row">
-                        <td class="scheduler-detail-label">${typeof i18n !== 'undefined' ? i18n.t('scheduler.last_run') : '最近执行'}</td>
+                        <td class="scheduler-detail-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.scheduler.last_run') : '最近执行'}</td>
                         <td class="scheduler-detail-value execution-history">
                             ${job.execution_history && job.execution_history.length > 0 ? 
                                 job.execution_history.slice().sort((a, b) => new Date(b.time) - new Date(a.time)).map(record => `
@@ -3299,18 +3299,18 @@ function updateSchedulerDetailDisplay(data) {
                                         ${formatRecentExecutionTime(record.time)}
                                     </span>
                                 `).join('') : 
-                                `<span class="execution-status never-executed">${typeof i18n !== 'undefined' ? i18n.t('scheduler.never_run') : '从未执行'}</span>`
+                                `<span class="execution-status never-executed">${typeof i18n !== 'undefined' ? i18n.t('monitor.scheduler.never_run') : '从未执行'}</span>`
                             }
                         </td>
                     </tr>
 
                     <tr class="scheduler-detail-row">
-                        <td class="scheduler-detail-label">${typeof i18n !== 'undefined' ? i18n.t('scheduler.max_time') : '最大执行时间'}</td>
+                        <td class="scheduler-detail-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.scheduler.max_time') : '最大执行时间'}</td>
                         <td class="scheduler-detail-value">${maxExecutionTime}</td>
                     </tr>
                     ${job.execution_time ? `
                     <tr class="scheduler-detail-row">
-                        <td class="scheduler-detail-label">${typeof i18n !== 'undefined' ? i18n.t('task.avg_time') : '平均执行时间'}</td>
+                        <td class="scheduler-detail-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.task.avg_time') : '平均执行时间'}</td>
                         <td class="scheduler-detail-value">${(job.execution_time * 1000).toFixed(0)} ms</td>
                     </tr>
                     ` : ''}
@@ -3328,7 +3328,7 @@ function refreshSchedulerPage() {
 
 // 格式化最近执行时间（相对时间）
 function formatRecentExecutionTime(timestamp) {
-    if (!timestamp) return typeof i18n !== 'undefined' ? i18n.t('scheduler.never_run') : '从未执行';
+    if (!timestamp) return typeof i18n !== 'undefined' ? i18n.t('monitor.scheduler.never_run') : '从未执行';
     
     let date;
     if (typeof timestamp === 'number') {
@@ -3340,7 +3340,7 @@ function formatRecentExecutionTime(timestamp) {
     }
     
     if (isNaN(date.getTime())) {
-        return typeof i18n !== 'undefined' ? i18n.t('scheduler.never_run') : '从未执行';
+        return typeof i18n !== 'undefined' ? i18n.t('monitor.scheduler.never_run') : '从未执行';
     }
     
     // 检查是否在最近24小时内
@@ -3348,7 +3348,7 @@ function formatRecentExecutionTime(timestamp) {
     const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     
     if (date < twentyFourHoursAgo) {
-        return typeof i18n !== 'undefined' ? i18n.t('time.over_24h') : '超过24小时';
+        return typeof i18n !== 'undefined' ? i18n.t('monitor.time.over_24h') : '超过24小时';
     }
     
     // 计算日期差值
@@ -3363,12 +3363,12 @@ function formatRecentExecutionTime(timestamp) {
     
     let dayStr = '';
     if (diffDays === 0) {
-        dayStr = typeof i18n !== 'undefined' ? i18n.t('date.today') : '今天';
+        dayStr = typeof i18n !== 'undefined' ? i18n.t('monitor.date.today') : '今天';
     } else if (diffDays === 1) {
-        dayStr = typeof i18n !== 'undefined' ? i18n.t('date.yesterday') : '昨天';
+        dayStr = typeof i18n !== 'undefined' ? i18n.t('monitor.date.yesterday') : '昨天';
     } else {
         if (typeof i18n !== 'undefined') {
-            dayStr = i18n.t('time.month_day').replace('{month}', execDate.getMonth() + 1).replace('{day}', execDate.getDate());
+            dayStr = i18n.t('monitor.time.month_day').replace('{month}', execDate.getMonth() + 1).replace('{day}', execDate.getDate());
         } else {
             dayStr = `${execDate.getMonth() + 1}月${execDate.getDate()}日`;
         }
@@ -3381,7 +3381,7 @@ function formatRecentExecutionTime(timestamp) {
 
 // 格式化下次执行时间（对于24小时内的任务显示倒计时）
 function formatNextExecutionTime(timestamp) {
-    if (!timestamp) return typeof i18n !== 'undefined' ? i18n.t('time.unknown') : '未知';
+    if (!timestamp) return typeof i18n !== 'undefined' ? i18n.t('monitor.time.unknown') : '未知';
     
     let date;
     if (typeof timestamp === 'number') {
@@ -3393,14 +3393,14 @@ function formatNextExecutionTime(timestamp) {
     }
     
     if (isNaN(date.getTime())) {
-        return typeof i18n !== 'undefined' ? i18n.t('time.unknown') : '未知';
+        return typeof i18n !== 'undefined' ? i18n.t('monitor.time.unknown') : '未知';
     }
     
     const now = new Date();
     const diffMs = date - now;
     
     if (diffMs < 0) {
-        return typeof i18n !== 'undefined' ? i18n.t('time.expired') : '已过期';
+        return typeof i18n !== 'undefined' ? i18n.t('monitor.time.expired') : '已过期';
     }
     
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
@@ -3417,7 +3417,7 @@ function formatNextExecutionTime(timestamp) {
         const remainingHours = diffHours % 24;
         
         if (typeof i18n !== 'undefined') {
-            return i18n.t('time.days_hours_later').replace('{days}', diffDays).replace('{hours}', remainingHours);
+            return i18n.t('monitor.time.days_hours_later').replace('{days}', diffDays).replace('{hours}', remainingHours);
         } else {
             return `${diffDays}天${remainingHours}小时后`;
         }
@@ -3435,7 +3435,7 @@ function updateCountdowns() {
             const diffMs = nextRunTime - now;
             
             if (diffMs < 0) {
-                element.textContent = typeof i18n !== 'undefined' ? i18n.t('scheduler.running') : '执行中';
+                element.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.scheduler.running') : '执行中';
             } else {
                 const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
                 
@@ -3451,7 +3451,7 @@ function updateCountdowns() {
                     const remainingHours = diffHours % 24;
                     
                     if (typeof i18n !== 'undefined') {
-                        element.textContent = i18n.t('time.days_hours_later').replace('{days}', diffDays).replace('{hours}', remainingHours);
+                        element.textContent = i18n.t('monitor.time.days_hours_later').replace('{days}', diffDays).replace('{hours}', remainingHours);
                     } else {
                         element.textContent = `${diffDays}天${remainingHours}小时后`;
                     }
@@ -3580,7 +3580,7 @@ function updateOutboundRequestsTable(requests) {
     console.log('outboundRequestsData:', outboundRequestsData);
     
     if (outboundRequestsData.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="6" class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('status.no_outbound_requests') : '暂无发送请求记录') + '</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="6" class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('monitor.status.no_outbound_requests') : '暂无发送请求记录') + '</td></tr>';
         return;
     }
     
@@ -3698,23 +3698,23 @@ function showOutboundRequestDetail(index) {
         <div class="modal-overlay" onclick="hideOutboundRequestDetail()"></div>
         <div class="modal-content">
             <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 15px;">
-                <h3 style="margin: 0; font-size: 18px;">${typeof i18n !== 'undefined' ? i18n.t('modal.outbound_detail') : '发送请求详情'}</h3>
+                <h3 style="margin: 0; font-size: 18px;">${typeof i18n !== 'undefined' ? i18n.t('monitor.modal.outbound_detail') : '发送请求详情'}</h3>
                 <div class="modal-actions" style="display: flex; align-items: center;">
-                    <button class="export-btn" onclick="exportOutboundRequestDetail(${index})" style="padding: 8px 16px; border: none; border-radius: 8px; background-color: #4CAF50; color: white; font-weight: bold; cursor: pointer; font-size: 14px; transition: all 0.3s ease;">${typeof i18n !== 'undefined' ? i18n.t('btn.export') : '导出'}</button>
+                    <button class="export-btn" onclick="exportOutboundRequestDetail(${index})" style="padding: 8px 16px; border: none; border-radius: 8px; background-color: #4CAF50; color: white; font-weight: bold; cursor: pointer; font-size: 14px; transition: all 0.3s ease;">${typeof i18n !== 'undefined' ? i18n.t('monitor.btn.export') : '导出'}</button>
                     <button class="close-btn" onclick="hideOutboundRequestDetail()" style="padding: 8px 16px; border: none; border-radius: 8px; background-color: #f44336; color: white; cursor: pointer; font-size: 14px; margin-left: 10px;">&times;</button>
                 </div>
             </div>
             <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
                 <div class="detail-section">
-                    <h4>${typeof i18n !== 'undefined' ? i18n.t('card.db_status') : '基本信息'}</h4>
+                    <h4>${typeof i18n !== 'undefined' ? i18n.t('monitor.card.db_status') : '基本信息'}</h4>
                     <table class="detail-table">
                         <tbody>
                             <tr>
-                                <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('modal.timestamp') : '时间戳:'}</td>
+                                <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.modal.timestamp') : '时间戳:'}</td>
                                 <td class="detail-value">${typeof request.timestamp === 'string' ? request.timestamp : new Date(request.timestamp * 1000).toLocaleString('zh-CN')}</td>
                             </tr>
                             <tr>
-                                <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('modal.method') : '方法:'}</td>
+                                <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.modal.method') : '方法:'}</td>
                                 <td class="detail-value">${request.method}</td>
                             </tr>
                             <tr>
@@ -3722,15 +3722,15 @@ function showOutboundRequestDetail(index) {
                                 <td class="detail-value">${request.url}</td>
                             </tr>
                             <tr>
-                                <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('modal.status_code') : '状态码:'}</td>
+                                <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.modal.status_code') : '状态码:'}</td>
                                 <td class="detail-value ${request.status_code >= 400 ? 'error' : 'success'}">${request.status_code}</td>
                             </tr>
                             <tr>
-                                <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('modal.response_time') : '响应时间:'}</td>
+                                <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.modal.response_time') : '响应时间:'}</td>
                                 <td class="detail-value ${request.duration > 1 ? 'slow' : ''}">${(request.duration * 1000).toFixed(0)}ms</td>
                             </tr>
                             <tr>
-                                <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('modal.module') : '模块:'}</td>
+                                <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.modal.module') : '模块:'}</td>
                                 <td class="detail-value">${request.module || 'unknown'}</td>
                             </tr>`;
     
@@ -3738,7 +3738,7 @@ function showOutboundRequestDetail(index) {
     if (request.error_message) {
         htmlContent += `
         <tr>
-            <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('modal.error_msg') : '错误信息:'}</td>
+            <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.modal.error_msg') : '错误信息:'}</td>
             <td class="detail-value error">${escapeHtml(request.error_message)}</td>
         </tr>`;
     }
@@ -3751,23 +3751,23 @@ function showOutboundRequestDetail(index) {
     // 请求头部分
     if (parsedRequestHeaders) {
         const headersStr = JSON.stringify(parsedRequestHeaders, null, 2);
-        htmlContent += createSectionWithTruncation(typeof i18n !== 'undefined' ? i18n.t('section.request_headers') : '请求头', headersStr, headersStr.length);
+        htmlContent += createSectionWithTruncation(typeof i18n !== 'undefined' ? i18n.t('monitor.section.request_headers') : '请求头', headersStr, headersStr.length);
     }
     
     // 请求体部分
     if (request.request_body) {
         const formattedBody = formatBody(request.request_body);
-        htmlContent += createSectionWithTruncation(typeof i18n !== 'undefined' ? i18n.t('section.request_body') : '请求体', formattedBody, formattedBody.length);
+        htmlContent += createSectionWithTruncation(typeof i18n !== 'undefined' ? i18n.t('monitor.section.request_body') : '请求体', formattedBody, formattedBody.length);
     }
     
     // 响应头部分
     if (parsedResponseHeaders) {
         const headersStr = JSON.stringify(parsedResponseHeaders, null, 2);
-        htmlContent += createSectionWithTruncation(typeof i18n !== 'undefined' ? i18n.t('section.response_headers') : '响应头', headersStr, headersStr.length);
+        htmlContent += createSectionWithTruncation(typeof i18n !== 'undefined' ? i18n.t('monitor.section.response_headers') : '响应头', headersStr, headersStr.length);
     }
     
     // 响应体部分
-    let responseBodyContent = typeof i18n !== 'undefined' ? i18n.t('section.no_response') : '无响应体数据';
+    let responseBodyContent = typeof i18n !== 'undefined' ? i18n.t('monitor.section.no_response') : '无响应体数据';
     let responseBodyLength = 0;
     
     if (request.response_body !== undefined && request.response_body !== null) {
@@ -3775,12 +3775,12 @@ function showOutboundRequestDetail(index) {
             responseBodyContent = formatBody(request.response_body);
             responseBodyLength = responseBodyContent.length;
         } catch (e) {
-            const failedPrefix = typeof i18n !== 'undefined' ? i18n.t('section.response_failed') : '响应体处理失败: ';
+            const failedPrefix = typeof i18n !== 'undefined' ? i18n.t('monitor.section.response_failed') : '响应体处理失败: ';
             responseBodyContent = failedPrefix + e.message;
         }
     }
     
-    htmlContent += createSectionWithTruncation(typeof i18n !== 'undefined' ? i18n.t('section.response_body') : '响应体', responseBodyContent, responseBodyLength);
+    htmlContent += createSectionWithTruncation(typeof i18n !== 'undefined' ? i18n.t('monitor.section.response_body') : '响应体', responseBodyContent, responseBodyLength);
 
     htmlContent += `
             </div>
@@ -3831,16 +3831,16 @@ function formatBody(body) {
 function createSectionWithTruncation(title, content, length) {
     const isLarge = length > WARNING_THRESHOLD;
     const isTruncated = length > MAX_CONTENT_LENGTH;
-    const truncatedText = typeof i18n !== 'undefined' ? i18n.t('section.truncated') : '[内容已截断，完整内容请导出查看]';
+    const truncatedText = typeof i18n !== 'undefined' ? i18n.t('monitor.section.truncated') : '[内容已截断，完整内容请导出查看]';
     const displayContent = isTruncated ? content.substring(0, MAX_CONTENT_LENGTH) + '...\n\n' + truncatedText : content;
-    const warningHtml = isLarge ? `<div style="color: #ff9800; margin-bottom: 8px; font-size: 12px; display: flex; align-items: center;">${typeof i18n !== 'undefined' ? i18n.t('section.large_data_warning').replace('{count}', length.toLocaleString()) : '⚠️ 数据量较大(' + length.toLocaleString() + '字符)，可能影响显示性能'}</div>` : '';
+    const warningHtml = isLarge ? `<div style="color: #ff9800; margin-bottom: 8px; font-size: 12px; display: flex; align-items: center;">${typeof i18n !== 'undefined' ? i18n.t('monitor.section.large_data_warning').replace('{count}', length.toLocaleString()) : '⚠️ 数据量较大(' + length.toLocaleString() + '字符)，可能影响显示性能'}</div>` : '';
     
     return `
         <div class="detail-section" style="margin-top: 15px;">
             <h4 style="margin: 0;">${title}</h4>
             ${warningHtml}
             <pre style="max-height: 300px; overflow-y: auto; word-wrap: break-word; white-space: pre-wrap;"><code class="language-json">${escapeHtml(displayContent)}</code></pre>
-            ${isTruncated ? `<div style="text-align: right; margin-top: 4px; font-size: 12px; color: #666;">${typeof i18n !== 'undefined' ? i18n.t('section.showing_chars').replace('{count}', MAX_CONTENT_LENGTH.toLocaleString()) : '仅显示前' + MAX_CONTENT_LENGTH.toLocaleString() + '字符'}</div>` : ''}
+            ${isTruncated ? `<div style="text-align: right; margin-top: 4px; font-size: 12px; color: #666;">${typeof i18n !== 'undefined' ? i18n.t('monitor.section.showing_chars').replace('{count}', MAX_CONTENT_LENGTH.toLocaleString()) : '仅显示前' + MAX_CONTENT_LENGTH.toLocaleString() + '字符'}</div>` : ''}
         </div>`;
 }
 
@@ -3893,7 +3893,7 @@ function hideOutboundRequestDetail() {
 // 格式化请求体/响应体用于显示（带截断）
 function formatBodyForDisplay(body) {
     if (!body) {
-        return { display: typeof i18n !== 'undefined' ? i18n.t('section.no_data') : '无数据', length: 0 };
+        return { display: typeof i18n !== 'undefined' ? i18n.t('monitor.section.no_data') : '无数据', length: 0 };
     }
     
     let formattedBody = body;
@@ -3910,7 +3910,7 @@ function formatBodyForDisplay(body) {
     
     const length = formattedBody.length;
     const isTruncated = length > MAX_CONTENT_LENGTH;
-    const truncatedText = typeof i18n !== 'undefined' ? i18n.t('section.truncated') : '[内容已截断，完整内容请复制查看]';
+    const truncatedText = typeof i18n !== 'undefined' ? i18n.t('monitor.section.truncated') : '[内容已截断，完整内容请复制查看]';
     const displayContent = isTruncated ? formattedBody.substring(0, MAX_CONTENT_LENGTH) + '...\n\n' + truncatedText : formattedBody;
     
     return { display: displayContent, length: length, truncated: isTruncated };
@@ -3922,7 +3922,7 @@ function updateBodySizeWarning(type, length) {
     if (!warningEl) return;
     
     if (length > WARNING_THRESHOLD) {
-        warningEl.textContent = typeof i18n !== 'undefined' ? i18n.t('section.large_data_warning').replace('{count}', length.toLocaleString()) : '⚠️ 数据量较大(' + length.toLocaleString() + '字符)';
+        warningEl.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.section.large_data_warning').replace('{count}', length.toLocaleString()) : '⚠️ 数据量较大(' + length.toLocaleString() + '字符)';
         warningEl.style.display = 'block';
     } else {
         warningEl.style.display = 'none';
@@ -3968,7 +3968,7 @@ function exportOutboundRequestDetail(index) {
     }
     
     // 格式化响应体
-    let formattedResponseBody = typeof i18n !== 'undefined' ? i18n.t('section.no_response') : '无响应体数据';
+    let formattedResponseBody = typeof i18n !== 'undefined' ? i18n.t('monitor.section.no_response') : '无响应体数据';
     if (request.response_body !== undefined && request.response_body !== null) {
         try {
             if (typeof request.response_body === 'string') {
@@ -3983,7 +3983,7 @@ function exportOutboundRequestDetail(index) {
                 formattedResponseBody = JSON.stringify(request.response_body, null, 2);
             }
         } catch (e) {
-            const failedPrefix = typeof i18n !== 'undefined' ? i18n.t('section.response_failed') : '响应体处理失败: ';
+            const failedPrefix = typeof i18n !== 'undefined' ? i18n.t('monitor.section.response_failed') : '响应体处理失败: ';
             formattedResponseBody = failedPrefix + e.message;
         }
     }
@@ -4087,15 +4087,15 @@ function exportOutboundRequestDetail(index) {
             </div>
             <div class="modal-body">
                 <div class="detail-section">
-                    <h4>${typeof i18n !== 'undefined' ? i18n.t('section.basic_info') : '基本信息'}</h4>
+                    <h4>${typeof i18n !== 'undefined' ? i18n.t('monitor.section.basic_info') : '基本信息'}</h4>
                     <table class="detail-table">
                         <tbody>
                             <tr>
-                                <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('modal.timestamp') : '时间戳:'}</td>
+                                <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.modal.timestamp') : '时间戳:'}</td>
                                 <td class="detail-value">${timestampDisplay}</td>
                             </tr>
                             <tr>
-                                <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('modal.method') : '方法:'}</td>
+                                <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.modal.method') : '方法:'}</td>
                                 <td class="detail-value">${request.method}</td>
                             </tr>
                             <tr>
@@ -4103,18 +4103,18 @@ function exportOutboundRequestDetail(index) {
                                 <td class="detail-value">${request.url}</td>
                             </tr>
                             <tr>
-                                <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('modal.status_code') : '状态码:'}</td>
+                                <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.modal.status_code') : '状态码:'}</td>
                                 <td class="detail-value ${request.status_code >= 400 ? 'error' : 'success'}">${request.status_code}</td>
                             </tr>
                             <tr>
-                                <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('modal.response_time') : '响应时间:'}</td>
+                                <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.modal.response_time') : '响应时间:'}</td>
                                 <td class="detail-value ${request.duration > 1 ? 'slow' : ''}">${(request.duration * 1000).toFixed(0)}ms</td>
                             </tr>`;
     
     if (request.error_message) {
         html += `
                             <tr>
-                                <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('modal.error_msg') : '错误信息:'}</td>
+                                <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.modal.error_msg') : '错误信息:'}</td>
                                 <td class="detail-value error">${request.error_message}</td>
                             </tr>`;
     }
@@ -4201,7 +4201,7 @@ async function resetOutboundStats() {
         fetchOutboundRequests();
     } catch (error) {
         console.error('重置发送请求统计失败:', error);
-        alert(typeof i18n !== 'undefined' ? i18n.t('prompt.reset_failed') : '重置失败，请重试');
+        alert(typeof i18n !== 'undefined' ? i18n.t('monitor.prompt.reset_failed') : '重置失败，请重试');
     }
 }
 
@@ -4251,7 +4251,7 @@ async function fetchOverviewOutboundRequests() {
                 const badge = document.getElementById('outbound-badge');
                 if (badge) {
                     badge.className = 'badge warning';
-                    badge.textContent = typeof i18n !== 'undefined' ? i18n.t('status.rate_limited') : '限流';
+                    badge.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.status.rate_limited') : '限流';
                 }
                 return;
             }
@@ -4304,10 +4304,10 @@ async function fetchOverviewOutboundRequests() {
         if (badge) {
             if (summary.error_rate > 0) {
                 badge.className = 'badge error';
-                badge.textContent = typeof i18n !== 'undefined' ? i18n.t('metric.unhealthy') : '异常';
+                badge.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.metric.unhealthy') : '异常';
             } else {
                 badge.className = 'badge healthy';
-                badge.textContent = typeof i18n !== 'undefined' ? i18n.t('metric.healthy') : '正常';
+                badge.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.metric.healthy') : '正常';
             }
         }
         
@@ -4343,7 +4343,7 @@ async function fetchOverviewOutboundRequests() {
         const badge = document.getElementById('outbound-badge');
         if (badge) {
             badge.className = 'badge error';
-            badge.textContent = typeof i18n !== 'undefined' ? i18n.t('metric.failed') : '错误';
+            badge.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.metric.failed') : '错误';
         }
     }
 }
@@ -4376,7 +4376,7 @@ function updateOverviewOutboundList(requests) {
     if (!listEl) return;
     
     if (requests.length === 0) {
-        listEl.innerHTML = '<div class="no-data">' + (typeof i18n !== 'undefined' ? i18n.t('status.no_outbound_requests') : '暂无发送请求') + '</div>';
+        listEl.innerHTML = '<div class="no-data">' + (typeof i18n !== 'undefined' ? i18n.t('monitor.status.no_outbound_requests') : '暂无发送请求') + '</div>';
         return;
     }
     
@@ -4486,14 +4486,14 @@ async function showLogDetail(index) {
         <div class="modal-overlay" onclick="hideLogDetail()"></div>
         <div class="modal-content">
             <div class="modal-header">
-                <h3>${typeof i18n !== 'undefined' ? i18n.t('card.scheduler_detail') : '日志详细信息'}</h3>
+                <h3>${typeof i18n !== 'undefined' ? i18n.t('monitor.card.scheduler_detail') : '日志详细信息'}</h3>
                 <div class="modal-header-actions">
                     <select id="modal-log-level" onchange="filterModalLogs(this.value, ${selectedLogIndex})" style="margin-right: 12px; padding: 4px 8px; border: 1px solid #e8e8e8; border-radius: 4px;">
-                        <option value="">${typeof i18n !== 'undefined' ? i18n.t('log_level.all_with_debug') : '全部级别 (含DEBUG)'}</option>
-                        <option value="error">${typeof i18n !== 'undefined' ? i18n.t('log_level.error') : '错误日志'}</option>
-                        <option value="warning">${typeof i18n !== 'undefined' ? i18n.t('log_level.warning') : '警告日志'}</option>
-                        <option value="info">${typeof i18n !== 'undefined' ? i18n.t('log_level.info') : '信息日志'}</option>
-                        <option value="debug">${typeof i18n !== 'undefined' ? i18n.t('log_level.debug') : '调试日志'}</option>
+                        <option value="">${typeof i18n !== 'undefined' ? i18n.t('monitor.log_level.all_with_debug') : '全部级别 (含DEBUG)'}</option>
+                        <option value="error">${typeof i18n !== 'undefined' ? i18n.t('monitor.log_level.error') : '错误日志'}</option>
+                        <option value="warning">${typeof i18n !== 'undefined' ? i18n.t('monitor.log_level.warning') : '警告日志'}</option>
+                        <option value="info">${typeof i18n !== 'undefined' ? i18n.t('monitor.log_level.info') : '信息日志'}</option>
+                        <option value="debug">${typeof i18n !== 'undefined' ? i18n.t('monitor.log_level.debug') : '调试日志'}</option>
                     </select>
                     <button class="close-btn" onclick="hideLogDetail()">&times;</button>
                 </div>
@@ -4659,13 +4659,13 @@ async function clearDeadLetters() {
         const data = await response.json();
         if (data.success) {
             refreshDeadLetterStats();
-            showNotification(typeof i18n !== 'undefined' ? i18n.t('success.dl_cleared') : 'DeadLetter队列已清空', 'success');
+            showNotification(typeof i18n !== 'undefined' ? i18n.t('monitor.success.dl_cleared') : 'DeadLetter队列已清空', 'success');
         } else {
-            showNotification(typeof i18n !== 'undefined' ? i18n.t('error.clear_dl_failed') : '清空DeadLetter队列失败', 'error');
+            showNotification(typeof i18n !== 'undefined' ? i18n.t('monitor.error.clear_dl_failed') : '清空DeadLetter队列失败', 'error');
         }
     } catch (error) {
         console.error('清空DeadLetter队列失败:', error);
-        showNotification(typeof i18n !== 'undefined' ? i18n.t('error.clear_dl_failed') : '清空DeadLetter队列失败', 'error');
+        showNotification(typeof i18n !== 'undefined' ? i18n.t('monitor.error.clear_dl_failed') : '清空DeadLetter队列失败', 'error');
     }
 }
 
@@ -4690,7 +4690,7 @@ function updateDeadLetterDisplay(data) {
     const tbody = document.getElementById('dead-letter-tbody');
     if (tbody) {
         if (deadLetters.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('status.no_dead_letters') : '暂无DL') + '</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('monitor.status.no_dead_letters') : '暂无DL') + '</td></tr>';
             return;
         }
         
@@ -4706,7 +4706,7 @@ function updateDeadLetterDisplay(data) {
                 <td>${letter.event_data.table || 'unknown'}</td>
                 <td class="error-message">${letter.error_message}</td>
                 <td>
-                    <button class="btn btn-small" onclick="reprocessDeadLetter('${letter.id}')">${typeof i18n !== 'undefined' ? i18n.t('dl.reprocess') : '重新处理'}</button>
+                    <button class="btn btn-small" onclick="reprocessDeadLetter('${letter.id}')">${typeof i18n !== 'undefined' ? i18n.t('monitor.dl.reprocess') : '重新处理'}</button>
                 </td>
             `;
             fragment.appendChild(tr);
@@ -4727,13 +4727,13 @@ async function reprocessDeadLetter(letterId) {
         const data = await response.json();
         if (data.success) {
             refreshDeadLetterStats();
-            showNotification(typeof i18n !== 'undefined' ? i18n.t('dl.reprocess_success') : 'DeadLetter重新处理成功', 'success');
+            showNotification(typeof i18n !== 'undefined' ? i18n.t('monitor.dl.reprocess_success') : 'DeadLetter重新处理成功', 'success');
         } else {
-            showNotification(typeof i18n !== 'undefined' ? i18n.t('dl.reprocess_failed') : 'DeadLetter重新处理失败', 'error');
+            showNotification(typeof i18n !== 'undefined' ? i18n.t('monitor.dl.reprocess_failed') : 'DeadLetter重新处理失败', 'error');
         }
     } catch (error) {
         console.error('重新处理DeadLetter失败:', error);
-        showNotification(typeof i18n !== 'undefined' ? i18n.t('dl.reprocess_failed') : '重新处理DeadLetter失败', 'error');
+        showNotification(typeof i18n !== 'undefined' ? i18n.t('monitor.dl.reprocess_failed') : '重新处理DeadLetter失败', 'error');
     }
 }
 
@@ -4795,7 +4795,7 @@ function updateEventHelpersDisplay(data) {
         getElement('dlq-pending').textContent = dlq.pending_count || 0;
         getElement('dlq-total').textContent = dlq.total_event_count || 0;
         getElement('dlq-file-size').textContent = formatFileSize(dlq.total_file_size || 0);
-        getElement('dlq-running').textContent = dlq.running ? (typeof i18n !== 'undefined' ? i18n.t('status.running') : '运行中') : (typeof i18n !== 'undefined' ? i18n.t('status.stopped') : '已停止');
+        getElement('dlq-running').textContent = dlq.running ? (typeof i18n !== 'undefined' ? i18n.t('monitor.status.running') : '运行中') : (typeof i18n !== 'undefined' ? i18n.t('monitor.status.stopped') : '已停止');
         
         // 更新DeadLetter队列详细信息区域
         const totalEl = document.getElementById('dead-letter-total');

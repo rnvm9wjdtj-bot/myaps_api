@@ -331,10 +331,10 @@
     <div class="live-logs-container">
         <div class="live-logs-header">
             <div class="live-logs-header-left">
-                <h3 data-i18n="page.live_logs">实时日志流</h3>
+                <h3 data-i18n="monitor.page.live_logs">实时日志流</h3>
                 <div class="connection-status">
                     <div class="status-dot connecting" id="statusDot"></div>
-                    <span id="statusText" data-i18n="status.connecting">连接中...</span>
+                    <span id="statusText" data-i18n="monitor.status.connecting">连接中...</span>
                 </div>
             </div>
             
@@ -345,9 +345,9 @@
                     <option value="de-DE">🇩🇪 Deutsch</option>
                 </select>
                 <div class="header-control-group">
-                    <label data-i18n="filter.level">级别:</label>
+                    <label data-i18n="monitor.filter.level">级别:</label>
                     <select id="levelFilter" onchange="applyFilters()">
-                        <option value="" data-i18n="filter.level">全部</option>
+                        <option value="" data-i18n="monitor.filter.level">全部</option>
                         <option value="INFO" selected>INFO</option>
                         <option value="WARNING">WARNING</option>
                         <option value="ERROR">ERROR</option>
@@ -360,7 +360,7 @@
                 </div>
                 
                 <div class="header-control-group">
-                    <label data-i18n="other.auto_scroll">自动滚动</label>
+                    <label data-i18n="monitor.other.auto_scroll">自动滚动</label>
                     <label class="toggle-switch">
                         <input type="checkbox" id="autoScroll" checked onchange="toggleAutoScroll()">
                         <span class="toggle-slider"></span>
@@ -368,17 +368,17 @@
                 </div>
                 
                 <button class="btn btn-secondary" onclick="togglePause()">
-                    <span id="pauseBtnText" data-i18n="btn.pause">暂停</span>
+                    <span id="pauseBtnText" data-i18n="monitor.btn.pause">暂停</span>
                 </button>
                 
-                <button class="btn btn-danger" onclick="clearLogs()" data-i18n="btn.clear">清空</button>
+                <button class="btn btn-danger" onclick="clearLogs()" data-i18n="monitor.btn.clear">清空</button>
                 
-                <button class="btn btn-primary" onclick="openInNewWindow()" data-i18n="btn.new_window">新窗口</button>
+                <button class="btn btn-primary" onclick="openInNewWindow()" data-i18n="monitor.btn.new_window">新窗口</button>
             </div>
         </div>
         
         <div class="log-stats">
-            <span data-i18n="metric.total">总日志: <strong id="totalCount">0</strong></span>
+            <span data-i18n="monitor.metric.total">总日志: <strong id="totalCount">0</strong></span>
             <span>DEBUG: <span class="level-count DEBUG" id="debugCount">0</span></span>
             <span>INFO: <span class="level-count INFO" id="infoCount">0</span></span>
             <span>WARNING: <span class="level-count WARNING" id="warningCount">0</span></span>
@@ -387,7 +387,7 @@
         </div>
         
         <div class="logs-container" id="logsContainer">
-            <div class="no-logs" id="noLogs" data-i18n="other.waiting_logs">
+            <div class="no-logs" id="noLogs" data-i18n="monitor.other.waiting_logs">
                 正在等待日志数据...
             </div>
         </div>
@@ -549,7 +549,7 @@
                 if (isDomReady) {
                     const statusText = document.getElementById('statusText');
                     if (statusText) {
-                        statusText.textContent = i18n.t('error.connection_failed');
+                        statusText.textContent = i18n.t('monitor.error.connection_failed');
                     }
                 }
                 return;
@@ -605,14 +605,14 @@
             switch (status) {
                 case 'connected':
                     dot.classList.add('connected');
-                    text.textContent = i18n.t('status.connected');
+                    text.textContent = i18n.t('monitor.status.connected');
                     break;
                 case 'connecting':
                     dot.classList.add('connecting');
-                    text.textContent = i18n.t('status.connecting');
+                    text.textContent = i18n.t('monitor.status.connecting');
                     break;
                 case 'disconnected':
-                    text.textContent = i18n.t('status.disconnected') + ' (' + i18n.t('other.auto_reconnect') + ')';
+                    text.textContent = i18n.t('monitor.status.disconnected') + ' (' + i18n.t('monitor.other.auto_reconnect') + ')';
                     break;
             }
         }
@@ -727,7 +727,7 @@
             }
             
             if (logs.length === 0) {
-                container.innerHTML = '<div class="no-logs" id="noLogs">' + i18n.t('other.waiting_logs') + '</div>';
+                container.innerHTML = '<div class="no-logs" id="noLogs">' + i18n.t('monitor.other.waiting_logs') + '</div>';
                 lastRenderIndex = 0;
                 return;
             }
@@ -743,7 +743,7 @@
                 });
                 
                 if (filteredLogs.length === 0) {
-                    container.innerHTML = '<div class="no-logs" id="noLogs">' + i18n.t('other.no_matching_logs') + '</div>';
+                    container.innerHTML = '<div class="no-logs" id="noLogs">' + i18n.t('monitor.other.no_matching_logs') + '</div>';
                     lastRenderIndex = 0;
                     return;
                 }
@@ -816,7 +816,7 @@
             const autoScrollIndicator = document.getElementById('autoScrollIndicator');
             
             if (pauseBtnText) {
-                pauseBtnText.textContent = isPaused ? i18n.t('btn.resume') : i18n.t('btn.pause');
+                pauseBtnText.textContent = isPaused ? i18n.t('monitor.btn.resume') : i18n.t('monitor.btn.pause');
             }
             if (autoScrollIndicator) {
                 autoScrollIndicator.classList.toggle('show', isPaused);
@@ -861,7 +861,7 @@
             updateStats();
             const logsContainer = document.getElementById('logsContainer');
             if (logsContainer) {
-                logsContainer.innerHTML = '<div class="no-logs">' + i18n.t('success.logs_cleared') + '</div>';
+                logsContainer.innerHTML = '<div class="no-logs">' + i18n.t('monitor.success.logs_cleared') + '</div>';
             }
         }
         

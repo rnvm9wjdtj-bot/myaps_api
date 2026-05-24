@@ -842,8 +842,8 @@
     <div class="history-logs-container">
         <div class="history-logs-header">
             <div class="history-logs-header-left">
-                <h1 data-i18n="page.history_logs">📊 日志历史查询</h1>
-                <span class="badge" id="history-query-badge" data-i18n="other.linked_query">联动查询</span>
+                <h1 data-i18n="monitor.page.history_logs">📊 日志历史查询</h1>
+                <span class="badge" id="history-query-badge" data-i18n="monitor.other.linked_query">联动查询</span>
             </div>
             <div class="history-logs-header-right">
                 <select id="lang-selector" class="lang-selector" onchange="i18n.switchLanguage(this.value)">
@@ -858,7 +858,7 @@
                     </div>
                     <div class="query-filters">
                         <select id="history-log-level" class="filter-select">
-                            <option value="" data-i18n="filter.level">全部级别</option>
+                            <option value="" data-i18n="monitor.filter.level">全部级别</option>
                             <option value="DEBUG">≥ DEBUG</option>
                             <option value="INFO">≥ INFO</option>
                             <option value="WARNING">≥ WARNING</option>
@@ -866,19 +866,19 @@
                             <option value="CRITICAL">≥ CRITICAL</option>
                         </select>
                         <select id="history-query-type" class="filter-select">
-                            <option value="all" data-i18n="filter.type">全部数据</option>
-                            <option value="http" data-i18n="tab.http">接收请求</option>
-                            <option value="outbound" data-i18n="tab.outbound">发送请求</option>
-                            <option value="logs" data-i18n="tab.logs">系统日志</option>
+                            <option value="all" data-i18n="monitor.filter.type">全部数据</option>
+                            <option value="http" data-i18n="monitor.tab.http">接收请求</option>
+                            <option value="outbound" data-i18n="monitor.tab.outbound">发送请求</option>
+                            <option value="logs" data-i18n="monitor.tab.logs">系统日志</option>
                         </select>
                     </div>
-                    <button class="btn btn-secondary header-btn" onclick="quickTimeRange('10m')" data-i18n="time.last_10m">10分钟</button>
-                    <button class="btn btn-secondary header-btn" onclick="quickTimeRange('30m')" data-i18n="time.last_30m">30分钟</button>
-                    <button class="btn btn-secondary header-btn" onclick="quickTimeRange('1h')" data-i18n="time.last_1h">1小时</button>
-                    <button class="btn btn-secondary header-btn" onclick="quickTimeRange('6h')" data-i18n="time.last_6h">6小时</button>
-                    <button class="btn btn-secondary header-btn" onclick="quickTimeRange('24h')" data-i18n="time.last_24h">24小时</button>
-                    <button class="btn btn-secondary header-btn header-btn-reset" onclick="resetHistoryQuery()" data-i18n="btn.reset">重置</button>
-                    <button class="btn btn-primary header-btn" id="query-btn" onclick="executeHistoryQuery()" data-i18n="btn.query">查询</button>
+                    <button class="btn btn-secondary header-btn" onclick="quickTimeRange('10m')" data-i18n="monitor.time.last_10m">10分钟</button>
+                    <button class="btn btn-secondary header-btn" onclick="quickTimeRange('30m')" data-i18n="monitor.time.last_30m">30分钟</button>
+                    <button class="btn btn-secondary header-btn" onclick="quickTimeRange('1h')" data-i18n="monitor.time.last_1h">1小时</button>
+                    <button class="btn btn-secondary header-btn" onclick="quickTimeRange('6h')" data-i18n="monitor.time.last_6h">6小时</button>
+                    <button class="btn btn-secondary header-btn" onclick="quickTimeRange('24h')" data-i18n="monitor.time.last_24h">24小时</button>
+                    <button class="btn btn-secondary header-btn header-btn-reset" onclick="resetHistoryQuery()" data-i18n="monitor.btn.reset">重置</button>
+                    <button class="btn btn-primary header-btn" id="query-btn" onclick="executeHistoryQuery()" data-i18n="monitor.btn.query">查询</button>
                 </div>
                 <div id="precise-mode-container"></div>
             </div>
@@ -887,36 +887,36 @@
         <div class="history-logs-body">
             <div class="result-tabs" id="result-tabs" style="display: none;">
                 <div class="result-tabs-left">
-                    <button class="tab-btn active" data-tab="logs" onclick="switchResultTab('logs')"><i class="bi bi-journal-text"></i> <span data-i18n="tab.logs">系统日志</span></button>
-                    <button class="tab-btn" data-tab="http" onclick="switchResultTab('http')"><i class="bi bi-box-arrow-in-right"></i> <span data-i18n="tab.http">接收请求</span></button>
-                    <button class="tab-btn" data-tab="outbound" onclick="switchResultTab('outbound')"><i class="bi bi-box-arrow-right"></i> <span data-i18n="tab.outbound">发送请求</span></button>
-                    <button class="tab-btn" data-tab="timeline" onclick="switchResultTab('timeline')"><i class="bi bi-clock-history"></i> <span data-i18n="tab.timeline">时间线</span></button>
-                    <button class="tab-btn" data-tab="chart" onclick="switchResultTab('chart')"><i class="bi bi-bar-chart-line"></i> <span data-i18n="tab.chart">图表分析</span></button>
+                    <button class="tab-btn active" data-tab="logs" onclick="switchResultTab('logs')"><i class="bi bi-journal-text"></i> <span data-i18n="monitor.tab.logs">系统日志</span></button>
+                    <button class="tab-btn" data-tab="http" onclick="switchResultTab('http')"><i class="bi bi-box-arrow-in-right"></i> <span data-i18n="monitor.tab.http">接收请求</span></button>
+                    <button class="tab-btn" data-tab="outbound" onclick="switchResultTab('outbound')"><i class="bi bi-box-arrow-right"></i> <span data-i18n="monitor.tab.outbound">发送请求</span></button>
+                    <button class="tab-btn" data-tab="timeline" onclick="switchResultTab('timeline')"><i class="bi bi-clock-history"></i> <span data-i18n="monitor.tab.timeline">时间线</span></button>
+                    <button class="tab-btn" data-tab="chart" onclick="switchResultTab('chart')"><i class="bi bi-bar-chart-line"></i> <span data-i18n="monitor.tab.chart">图表分析</span></button>
                 </div>
                 <div class="result-tabs-right">
                     <div class="result-summary-inline">
-                        <span class="summary-label">接收:</span>
+                        <span class="summary-label" data-i18n="monitor.metric.http_requests">接收:</span>
                         <span class="badge badge-info" id="http-count">0</span>
-                        <span class="summary-label">发送:</span>
+                        <span class="summary-label" data-i18n="monitor.metric.outbound_requests">发送:</span>
                         <span class="badge badge-info" id="outbound-count">0</span>
-                        <span class="summary-label">日志:</span>
+                        <span class="summary-label" data-i18n="monitor.tab.logs">日志:</span>
                         <span class="badge badge-info" id="logs-count">0</span>
                         <span class="summary-separator" id="logs-levels-separator" style="display:none;">|</span>
-                        <span class="summary-label" id="logs-levels-label" style="display:none;">级别:</span>
-                        <span class="summary-label debug" id="logs-debug-label" style="display:none;">DEBUG:</span>
+                        <span class="summary-label" id="logs-levels-label" style="display:none;" data-i18n="monitor.col.level">级别:</span>
+                        <span class="summary-label debug" id="logs-debug-label" style="display:none;" data-i18n="monitor.level.debug">DEBUG:</span>
                         <span class="badge badge-debug" id="logs-debug-count" style="display:none;">0</span>
-                        <span class="summary-label info" id="logs-info-label" style="display:none;">INFO:</span>
+                        <span class="summary-label info" id="logs-info-label" style="display:none;" data-i18n="monitor.level.info">INFO:</span>
                         <span class="badge badge-info" id="logs-info-count" style="display:none;">0</span>
-                        <span class="summary-label warning" id="logs-warning-label" style="display:none;">WARNING:</span>
+                        <span class="summary-label warning" id="logs-warning-label" style="display:none;" data-i18n="monitor.level.warning">WARNING:</span>
                         <span class="badge badge-warning" id="logs-warning-count" style="display:none;">0</span>
-                        <span class="summary-label error" id="logs-error-label" style="display:none;">ERROR:</span>
+                        <span class="summary-label error" id="logs-error-label" style="display:none;" data-i18n="monitor.level.error">ERROR:</span>
                         <span class="badge badge-error" id="logs-error-count" style="display:none;">0</span>
-                        <span class="summary-label critical" id="logs-critical-label" style="display:none;">CRITICAL:</span>
+                        <span class="summary-label critical" id="logs-critical-label" style="display:none;" data-i18n="monitor.level.critical">CRITICAL:</span>
                         <span class="badge badge-critical" id="logs-critical-count" style="display:none;">0</span>
                     </div>
                     <div class="export-dropdown">
                         <button class="btn btn-secondary dropdown-toggle" onclick="toggleExportMenu()">
-                            <i class="bi bi-download"></i> 导出
+                            <i class="bi bi-download"></i> <span data-i18n="monitor.btn.export">导出</span>
                         </button>
                         <div class="export-menu" id="export-menu" style="display:none;">
                             <a href="javascript:void(0)" onclick="exportData('logs', 'csv')">导出系统日志 CSV</a>
@@ -929,34 +929,34 @@
                     </div>
                     <div class="pagination-container-inline" id="http-pagination" style="display:none;">
                         <select id="http-page-size" class="page-size-select-small" onchange="changePageSize('http')">
-                            <option value="50">50条/页</option>
-                            <option value="100">100条/页</option>
-                            <option value="200">200条/页</option>
-                            <option value="500">500条/页</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                            <option value="200">200</option>
+                            <option value="500">500</option>
                         </select>
-                        <span class="pagination-text">第 <input type="number" id="http-page-input" class="page-input-small" min="1" onchange="goToPage('http', this.value)"> / <span id="http-total-pages">1</span> 页</span>
+                        <span class="pagination-text"><span data-i18n="monitor.pagination.page">Page</span> <input type="number" id="http-page-input" class="page-input-small" min="1" onchange="goToPage('http', this.value)"> / <span id="http-total-pages">1</span></span>
                         <button class="btn-page-small" onclick="goToPrevPage('http')" id="http-prev-btn">‹</button>
                         <button class="btn-page-small" onclick="goToNextPage('http')" id="http-next-btn">›</button>
                     </div>
                     <div class="pagination-container-inline" id="outbound-pagination" style="display:none;">
                         <select id="outbound-page-size" class="page-size-select-small" onchange="changePageSize('outbound')">
-                            <option value="50">50条/页</option>
-                            <option value="100">100条/页</option>
-                            <option value="200">200条/页</option>
-                            <option value="500">500条/页</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                            <option value="200">200</option>
+                            <option value="500">500</option>
                         </select>
-                        <span class="pagination-text">第 <input type="number" id="outbound-page-input" class="page-input-small" min="1" onchange="goToPage('outbound', this.value)"> / <span id="outbound-total-pages">1</span> 页</span>
+                        <span class="pagination-text"><span data-i18n="monitor.pagination.page">Page</span> <input type="number" id="outbound-page-input" class="page-input-small" min="1" onchange="goToPage('outbound', this.value)"> / <span id="outbound-total-pages">1</span></span>
                         <button class="btn-page-small" onclick="goToPrevPage('outbound')" id="outbound-prev-btn">‹</button>
                         <button class="btn-page-small" onclick="goToNextPage('outbound')" id="outbound-next-btn">›</button>
                     </div>
                     <div class="pagination-container-inline" id="logs-pagination" style="display:none;">
                         <select id="logs-page-size" class="page-size-select-small" onchange="changePageSize('logs')">
-                            <option value="50">50条/页</option>
-                            <option value="100">100条/页</option>
-                            <option value="200">200条/页</option>
-                            <option value="500">500条/页</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                            <option value="200">200</option>
+                            <option value="500">500</option>
                         </select>
-                        <span class="pagination-text">第 <input type="number" id="logs-page-input" class="page-input-small" min="1" onchange="goToPage('logs', this.value)"> / <span id="logs-total-pages">1</span> 页</span>
+                        <span class="pagination-text"><span data-i18n="monitor.pagination.page">Page</span> <input type="number" id="logs-page-input" class="page-input-small" min="1" onchange="goToPage('logs', this.value)"> / <span id="logs-total-pages">1</span></span>
                         <button class="btn-page-small" onclick="goToPrevPage('logs')" id="logs-prev-btn">‹</button>
                         <button class="btn-page-small" onclick="goToNextPage('logs')" id="logs-next-btn">›</button>
                     </div>
@@ -966,11 +966,11 @@
             <div class="result-tab-content" id="tab-http">
                 <div class="tab-filters">
                     <div class="filter-item">
-                        <label class="filter-label">关键词:</label>
+                        <label class="filter-label" data-i18n="monitor.filter.keyword">关键词:</label>
                         <input type="text" id="filter-keyword-http" class="filter-input" placeholder="搜索路径/请求体/响应体" style="width:300px;">
                     </div>
                     <div class="filter-item">
-                        <label class="filter-label">方法:</label>
+                        <label class="filter-label" data-i18n="monitor.filter.method">方法:</label>
                         <select id="filter-method" class="filter-select" style="width:90px;">
                             <option value="">全部</option>
                             <option value="GET">GET</option>
@@ -981,11 +981,11 @@
                         </select>
                     </div>
                     <div class="filter-item">
-                        <label class="filter-label">IP:</label>
+                        <label class="filter-label" data-i18n="monitor.filter.client_ip">IP:</label>
                         <input type="text" id="filter-client-ip" class="filter-input" placeholder="如:192.168.1.1" style="min-width:100px;">
                     </div>
                     <div class="filter-item">
-                        <label class="filter-label">状态码:</label>
+                        <label class="filter-label" data-i18n="monitor.col.status_code">状态码:</label>
                         <div class="range-input-group">
                             <input type="number" id="filter-status-min" class="filter-input-small" placeholder="最小" min="100" max="999" style="width:90px;">
                             <span class="range-separator">-</span>
@@ -993,7 +993,7 @@
                         </div>
                     </div>
                     <div class="filter-item">
-                        <label class="filter-label">耗时(ms):</label>
+                        <label class="filter-label" data-i18n="monitor.col.duration">耗时(ms):</label>
                         <div class="range-input-group">
                             <input type="number" id="filter-duration-min" class="filter-input-small" placeholder="最小" min="0" style="width:90px;">
                             <span class="range-separator">-</span>
@@ -1005,25 +1005,25 @@
                     </div>
                     <div class="filter-item">
                         <select id="saved-templates" class="filter-select" onchange="loadQueryTemplate()" style="max-width:120px;">
-                            <option value="" data-i18n="template.saved_queries">已保存查询...</option>
+                            <option value="" data-i18n="monitor.template.saved_queries">已保存查询...</option>
                         </select>
                     </div>
                 </div>
                 <table class="history-table" id="http-results-table" data-result-table>
                     <thead>
                         <tr>
-                            <th>序号</th>
-                            <th>时间</th>
-                            <th>方法</th>
-                            <th>端点</th>
-                            <th>状态码</th>
-                            <th>响应时间</th>
-                            <th>客户端IP</th>
-                            <th>操作</th>
+                            <th data-i18n="monitor.col.index">序号</th>
+                            <th data-i18n="monitor.col.time">时间</th>
+                            <th data-i18n="monitor.col.method">方法</th>
+                            <th data-i18n="monitor.col.path">端点</th>
+                            <th data-i18n="monitor.col.status_code">状态码</th>
+                            <th data-i18n="monitor.col.duration">响应时间</th>
+                            <th data-i18n="monitor.col.client_ip">客户端IP</th>
+                            <th data-i18n="monitor.col.operation">操作</th>
                         </tr>
                     </thead>
                     <tbody id="http-results-body">
-                        <tr><td colspan="8" class="no-data" data-i18n="status.no_data">暂无数据</td></tr>
+                        <tr><td colspan="8" class="no-data" data-i18n="monitor.status.no_data">暂无数据</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -1031,11 +1031,11 @@
             <div class="result-tab-content" id="tab-outbound">
                 <div class="tab-filters">
                     <div class="filter-item">
-                        <label class="filter-label">关键词:</label>
+                        <label class="filter-label" data-i18n="monitor.filter.keyword">关键词:</label>
                         <input type="text" id="filter-keyword-outbound" class="filter-input" placeholder="搜索URL/请求体/响应体" style="width:300px;">
                     </div>
                     <div class="filter-item">
-                        <label class="filter-label">方法:</label>
+                        <label class="filter-label" data-i18n="monitor.filter.method">方法:</label>
                         <select id="filter-method-outbound" class="filter-select" style="width:90px;">
                             <option value="">全部</option>
                             <option value="GET">GET</option>
@@ -1046,7 +1046,7 @@
                         </select>
                     </div>
                     <div class="filter-item">
-                        <label class="filter-label">状态码:</label>
+                        <label class="filter-label" data-i18n="monitor.col.status_code">状态码:</label>
                         <div class="range-input-group">
                             <input type="number" id="filter-status-min-outbound" class="filter-input-small" placeholder="最小" min="100" max="999" style="width:90px;">
                             <span class="range-separator">-</span>
@@ -1054,7 +1054,7 @@
                         </div>
                     </div>
                     <div class="filter-item">
-                        <label class="filter-label">耗时(ms):</label>
+                        <label class="filter-label" data-i18n="monitor.col.duration">耗时(ms):</label>
                         <div class="range-input-group">
                             <input type="number" id="filter-duration-min-outbound" class="filter-input-small" placeholder="最小" min="0" style="width:90px;">
                             <span class="range-separator">-</span>
@@ -1065,18 +1065,18 @@
                 <table class="history-table" id="outbound-results-table" data-result-table>
                     <thead>
                         <tr>
-                            <th>序号</th>
-                            <th>时间</th>
-                            <th>方法</th>
-                            <th>URL</th>
-                            <th>状态码</th>
-                            <th>响应时间</th>
-                            <th>模块</th>
-                            <th>操作</th>
+                            <th data-i18n="monitor.col.index">序号</th>
+                            <th data-i18n="monitor.col.time">时间</th>
+                            <th data-i18n="monitor.col.method">方法</th>
+                            <th data-i18n="monitor.col.URL">URL</th>
+                            <th data-i18n="monitor.col.status_code">状态码</th>
+                            <th data-i18n="monitor.col.duration">响应时间</th>
+                            <th data-i18n="monitor.col.模块">模块</th>
+                            <th data-i18n="monitor.col.operation">操作</th>
                         </tr>
                     </thead>
                     <tbody id="outbound-results-body">
-                        <tr><td colspan="8" class="no-data" data-i18n="status.no_data">暂无数据</td></tr>
+                        <tr><td colspan="8" class="no-data" data-i18n="monitor.status.no_data">暂无数据</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -1084,27 +1084,27 @@
             <div class="result-tab-content active" id="tab-logs">
                 <div class="tab-filters">
                     <div class="filter-item">
-                        <label class="filter-label">关键词:</label>
-                        <input type="text" id="filter-keyword" class="filter-input" placeholder="搜索消息内容" style="width:300px;">
+                        <label class="filter-label" data-i18n="monitor.filter.keyword">关键词:</label>
+                        <input type="text" id="filter-keyword" class="filter-input" data-i18n-placeholder="monitor.filter.keyword_placeholder" placeholder="搜索消息内容" style="width:300px;">
                     </div>
                     <div class="filter-item">
-                        <label class="filter-label">模块:</label>
-                        <input type="text" id="filter-module" class="filter-input" placeholder="多个用逗号分隔" style="min-width:300px;">
+                        <label class="filter-label" data-i18n="monitor.filter.module">模块:</label>
+                        <input type="text" id="filter-module" class="filter-input" data-i18n-placeholder="monitor.filter.module_placeholder" placeholder="多个用逗号分隔" style="min-width:300px;">
                     </div>
                 </div>
                 <table class="history-table" id="logs-results-table" data-result-table>
                     <thead>
                         <tr>
-                            <th>序号</th>
-                            <th>时间</th>
-                            <th>级别</th>
-                            <th>模块</th>
-                            <th>消息</th>
-                            <th>操作</th>
+                            <th data-i18n="monitor.col.index">序号</th>
+                            <th data-i18n="monitor.col.time">时间</th>
+                            <th data-i18n="monitor.col.level">级别</th>
+                            <th data-i18n="monitor.col.module">模块</th>
+                            <th data-i18n="monitor.col.message">消息</th>
+                            <th data-i18n="monitor.col.operation">操作</th>
                         </tr>
                     </thead>
                     <tbody id="logs-results-body">
-                        <tr><td colspan="6" class="no-data" data-i18n="status.no_data">暂无数据</td></tr>
+                        <tr><td colspan="6" class="no-data" data-i18n="monitor.status.no_data">暂无数据</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -1112,7 +1112,7 @@
             <!-- 时间线标签页 -->
             <div class="result-tab-content" id="tab-timeline">
                 <div class="timeline-container" id="timeline-container">
-                    <div class="timeline-empty" data-i18n="timeline.no_data">暂无数据，请先执行查询</div>
+                    <div class="timeline-empty" data-i18n="monitor.timeline.no_data">暂无数据，请先执行查询</div>
                 </div>
             </div>
             
@@ -1121,21 +1121,21 @@
                 <div class="chart-container">
                     <div class="chart-row">
                         <div class="chart-card">
-                            <h4>请求量趋势</h4>
+                            <h4 data-i18n="monitor.chart.request_trend">📊 请求量趋势</h4>
                             <canvas id="chart-trend"></canvas>
                         </div>
                         <div class="chart-card">
-                            <h4>日志级别分布</h4>
+                            <h4 data-i18n="monitor.chart.level_distribution">📊 日志级别分布</h4>
                             <canvas id="chart-levels"></canvas>
                         </div>
                     </div>
                     <div class="chart-row">
                         <div class="chart-card">
-                            <h4>状态码分布</h4>
+                            <h4 data-i18n="monitor.chart.status_distribution">📈 状态码分布</h4>
                             <canvas id="chart-status"></canvas>
                         </div>
                         <div class="chart-card">
-                            <h4>慢请求TOP10</h4>
+                            <h4 data-i18n="monitor.chart.slow_requests">⏱️ 慢请求TOP10</h4>
                             <canvas id="chart-slow"></canvas>
                         </div>
                     </div>
@@ -1181,7 +1181,7 @@
                 const endDate = new Date(endTime);
                 
                 if (startDate >= endDate) {
-                    alert(i18n.t('error.time_range_invalid'));
+                    alert(i18n.t('monitor.error.time_range_invalid'));
                     return;
                 }
             }
@@ -1194,14 +1194,14 @@
             try {
                 const badge = document.getElementById('history-query-badge');
                 if (badge) {
-                    badge.textContent = i18n.t('status.querying');
+                    badge.textContent = i18n.t('monitor.status.querying');
                     badge.className = 'badge warning';
                 }
                 
                 const queryBtn = document.getElementById('query-btn');
                 if (queryBtn) {
                     queryBtn.disabled = true;
-                    queryBtn.textContent = i18n.t('status.querying');
+                    queryBtn.textContent = i18n.t('monitor.status.querying');
                 }
                 
                 let url = `${API_BASE}/history/query?timezone_offset=${timezoneOffset}`;
@@ -1306,29 +1306,29 @@
                 switchResultTab(currentTab);
                 
                 if (badge) {
-                    badge.textContent = i18n.t('success.query_complete');
+                    badge.textContent = i18n.t('monitor.success.query_complete');
                     badge.className = 'badge healthy';
                 }
                 
                 if (queryBtn) {
                     queryBtn.disabled = false;
-                    queryBtn.textContent = i18n.t('btn.query');
+                    queryBtn.textContent = i18n.t('monitor.btn.query');
                 }
                 
             } catch (error) {
                 console.error('执行历史查询失败:', error);
-                alert(i18n.t('error.query_failed'));
+                alert(i18n.t('monitor.error.query_failed'));
                 
                 const badge = document.getElementById('history-query-badge');
                 if (badge) {
-                    badge.textContent = i18n.t('error.query_failed');
+                    badge.textContent = i18n.t('monitor.error.query_failed');
                     badge.className = 'badge error';
                 }
                 
                 const queryBtn = document.getElementById('query-btn');
                 if (queryBtn) {
                     queryBtn.disabled = false;
-                    queryBtn.textContent = i18n.t('btn.query');
+                    queryBtn.textContent = i18n.t('monitor.btn.query');
                 }
             }
         }
@@ -1353,9 +1353,9 @@
             
             document.getElementById('result-tabs').style.display = 'none';
             
-            document.getElementById('http-results-body').innerHTML = '<tr><td colspan="8" class="no-data">' + i18n.t('status.no_data') + '</td></tr>';
-            document.getElementById('outbound-results-body').innerHTML = '<tr><td colspan="8" class="no-data">' + i18n.t('status.no_data') + '</td></tr>';
-            document.getElementById('logs-results-body').innerHTML = '<tr><td colspan="6" class="no-data">' + i18n.t('status.no_data') + '</td></tr>';
+            document.getElementById('http-results-body').innerHTML = '<tr><td colspan="8" class="no-data">' + i18n.t('monitor.status.no_data') + '</td></tr>';
+            document.getElementById('outbound-results-body').innerHTML = '<tr><td colspan="8" class="no-data">' + i18n.t('monitor.status.no_data') + '</td></tr>';
+            document.getElementById('logs-results-body').innerHTML = '<tr><td colspan="6" class="no-data">' + i18n.t('monitor.status.no_data') + '</td></tr>';
             
             historyQueryData = { http: [], outbound: [], logs: [] };
             // 清理缓存的排序数据
@@ -1365,7 +1365,7 @@
             
             const badge = document.getElementById('history-query-badge');
             if (badge) {
-                badge.textContent = i18n.t('other.linked_query');
+                badge.textContent = i18n.t('monitor.other.linked_query');
                 badge.className = '';
             }
         }
@@ -1553,7 +1553,7 @@
             const endTime = document.getElementById('history-end-time').value;
             
             if (!startTime || !endTime) {
-                alert(i18n.t('error.time_range_required'));
+                alert(i18n.t('monitor.error.time_range_required'));
                 return;
             }
             
@@ -1630,25 +1630,93 @@
         // 时间线渲染
         let timelineData = [];
         
-        async function loadTimeline() {
-            const startTime = document.getElementById('history-start-time').value;
-            const endTime = document.getElementById('history-end-time').value;
-            
-            if (!startTime || !endTime) return;
-            
-            let url = `${API_BASE}/history/timeline?start_time=${encodeURIComponent(startTime)}&end_time=${encodeURIComponent(endTime)}&limit=200`;
-            
-            const logLevel = document.getElementById('history-log-level').value;
-            if (logLevel) url += `&level=${logLevel}`;
-            
-            try {
-                const response = await fetch(url);
-                const data = await response.json();
-                timelineData = data.events || [];
+        function loadTimeline() {
+            // 复用已查询的数据，避免重复请求
+            if (!historyQueryData || (!historyQueryData.http?.length && !historyQueryData.outbound?.length && !historyQueryData.logs?.length)) {
+                timelineData = [];
                 renderTimeline();
-            } catch (error) {
-                console.error('加载时间线失败:', error);
+                return;
             }
+            
+            // 转换为统一事件格式（与后端逻辑一致）
+            const events = [];
+            
+            // HTTP请求事件
+            for (const req of historyQueryData.http || []) {
+                events.push({
+                    id: `http_${req.id}`,
+                    timestamp: req.timestamp,
+                    type: 'http',
+                    icon: '📥',
+                    level: req.status_code < 400 ? 'INFO' : 'ERROR',
+                    summary: `${req.method} ${req.path}`,
+                    detail: {
+                        method: req.method,
+                        path: req.path,
+                        status_code: req.status_code,
+                        duration: req.response_time,
+                        client_ip: req.client_ip,
+                        is_error: req.is_error,
+                        is_slow: req.is_slow
+                    }
+                });
+            }
+            
+            // 发送请求事件
+            for (const req of historyQueryData.outbound || []) {
+                events.push({
+                    id: `outbound_${req.id}`,
+                    timestamp: req.timestamp,
+                    type: 'outbound',
+                    icon: '📤',
+                    level: req.status_code < 400 ? 'INFO' : 'ERROR',
+                    summary: `${req.method} ${req.url?.substring(0, 80) || ''}`,
+                    detail: {
+                        method: req.method,
+                        url: req.url,
+                        status_code: req.status_code,
+                        duration: req.duration * 1000,
+                        module: req.module,
+                        is_error: req.is_error,
+                        is_slow: req.is_slow
+                    }
+                });
+            }
+            
+            // 系统日志事件
+            const iconMap = {
+                'DEBUG': '🔍',
+                'INFO': '📝',
+                'WARNING': '⚠️',
+                'ERROR': '❌',
+                'CRITICAL': '🔥'
+            };
+            for (const log of historyQueryData.logs || []) {
+                events.push({
+                    id: `log_${log.id}`,
+                    timestamp: log.timestamp,
+                    type: 'log',
+                    icon: iconMap[log.level] || '📝',
+                    level: log.level,
+                    summary: log.message?.substring(0, 100) || '',
+                    detail: {
+                        level: log.level,
+                        module: log.module,
+                        function: log.function,
+                        line_number: log.line_number,
+                        message: log.message,
+                        stack_trace: log.stack_trace
+                    }
+                });
+            }
+            
+            // 按时间戳排序（降序）
+            events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            
+            // 应用限制（最多200条）
+            timelineData = events.slice(0, 200);
+            
+            renderTimeline();
         }
         
         function renderTimeline() {
@@ -1656,25 +1724,63 @@
             if (!container) return;
             
             if (timelineData.length === 0) {
-                container.innerHTML = '<div class="timeline-empty">' + i18n.t('status.no_data') + '</div>';
+                container.innerHTML = '<div class="timeline-empty">' + i18n.t('monitor.status.no_data') + '</div>';
                 return;
             }
             
             // 异常检测
             const anomalies = detectAnomalies(timelineData);
             
-            // 异常摘要
-            let summaryHtml = '';
+            // 统计摘要（一次遍历完成所有统计）
+            const stats = { total: timelineData.length, http: 0, outbound: 0, log: 0, errors: 0, warnings: 0, slow: 0 };
+            for (const e of timelineData) {
+                if (e.type === 'http') stats.http++;
+                else if (e.type === 'outbound') stats.outbound++;
+                else if (e.type === 'log') stats.log++;
+                
+                if (e.level === 'ERROR' || e.level === 'CRITICAL') stats.errors++;
+                else if (e.level === 'WARNING') stats.warnings++;
+                
+                if (e.detail?.is_slow) stats.slow++;
+            }
+            
+            // 统计摘要HTML
+            const summaryTitle = typeof i18n !== 'undefined' ? i18n.t('monitor.timeline.summary_title') : '📊 时间线统计';
+            const totalLabel = typeof i18n !== 'undefined' ? i18n.t('monitor.timeline.total_events') : '总事件';
+            const httpLabel = typeof i18n !== 'undefined' ? i18n.t('monitor.timeline.http_requests') : 'HTTP请求';
+            const outboundLabel = typeof i18n !== 'undefined' ? i18n.t('monitor.timeline.outbound_requests') : '发送请求';
+            const logLabel = typeof i18n !== 'undefined' ? i18n.t('monitor.timeline.system_logs') : '系统日志';
+            const errorLabel = typeof i18n !== 'undefined' ? i18n.t('monitor.timeline.errors') : '错误';
+            const warningLabel = typeof i18n !== 'undefined' ? i18n.t('monitor.timeline.warnings') : '警告';
+            const slowLabel = typeof i18n !== 'undefined' ? i18n.t('monitor.timeline.slow_requests') : '慢请求';
+            
+            let summaryHtml = `<div style="background:#f0f9ff;border:1px solid #bae6fd;padding:12px;margin-bottom:16px;border-radius:6px;">
+                <strong style="color:#0369a1;">${summaryTitle}</strong>
+                <div style="display:flex;gap:16px;margin-top:8px;font-size:12px;color:#0c4a6e;flex-wrap:wrap;">
+                    <span><strong>${stats.total}</strong> ${totalLabel}</span>
+                    <span>📥 <strong>${stats.http}</strong> ${httpLabel}</span>
+                    <span>📤 <strong>${stats.outbound}</strong> ${outboundLabel}</span>
+                    <span>📝 <strong>${stats.log}</strong> ${logLabel}</span>
+                    ${stats.errors > 0 ? `<span style="color:#dc2626;">❌ <strong>${stats.errors}</strong> ${errorLabel}</span>` : ''}
+                    ${stats.warnings > 0 ? `<span style="color:#f59e0b;">⚠️ <strong>${stats.warnings}</strong> ${warningLabel}</span>` : ''}
+                    ${stats.slow > 0 ? `<span style="color:#ef4444;">⏱️ <strong>${stats.slow}</strong> ${slowLabel}</span>` : ''}
+                </div>
+            </div>`;
+            
+            // 异常告警HTML（如果有异常）
             if (anomalies.length > 0) {
-                summaryHtml = `<div style="background:#fef2f2;border:1px solid #fecaca;padding:12px;margin-bottom:16px;border-radius:6px;">
-                    <strong style="color:#dc2626;">⚠️ 发现 ${anomalies.length} 处异常</strong>
+                const anomalyText = typeof i18n !== 'undefined' ? 
+                    i18n.t('monitor.timeline.anomaly_detected', {count: anomalies.length}) : 
+                    `发现 ${anomalies.length} 处异常`;
+                summaryHtml += `<div style="background:#fef2f2;border:1px solid #fecaca;padding:12px;margin-bottom:16px;border-radius:6px;">
+                    <strong style="color:#dc2626;">⚠️ ${anomalyText}</strong>
                     <div style="font-size:12px;color:#991b1b;margin-top:4px;">
                         ${anomalies.map(a => a.description).join('、')}
                     </div>
                 </div>`;
             }
             
-            container.innerHTML = summaryHtml + timelineData.map(event => {
+            const renderedHtml = timelineData.map(event => {
                 const isError = event.level === 'ERROR' || event.level === 'CRITICAL';
                 const isWarning = event.level === 'WARNING';
                 const isAnomaly = anomalies.some(a => a.eventId === event.id);
@@ -1692,6 +1798,8 @@
                     </div>
                 `;
             }).join('');
+            
+            container.innerHTML = summaryHtml + renderedHtml;
         }
         
         // 异常检测算法
@@ -1726,10 +1834,13 @@
                 const threshold = avg * 3;
                 events.forEach(e => {
                     if (e.type === 'http' && e.detail?.duration > threshold) {
+                        const slowReqText = typeof i18n !== 'undefined' ? 
+                            i18n.t('monitor.timeline.slow_anomaly', {duration: e.detail.duration.toFixed(0), avg: avg.toFixed(0)}) : 
+                            `异常慢请求(${e.detail.duration.toFixed(0)}ms > 平均${avg.toFixed(0)}ms×3)`;
                         anomalies.push({
                             eventId: e.id,
                             type: 'slow_anomaly',
-                            description: `异常慢请求(${e.detail.duration.toFixed(0)}ms > 平均${avg.toFixed(0)}ms×3)`
+                            description: slowReqText
                         });
                     }
                 });
@@ -1746,10 +1857,13 @@
             });
             Object.entries(errorMessages).forEach(([msg, ids]) => {
                 if (ids.length >= 3) {
+                    const dupErrorText = typeof i18n !== 'undefined' ? 
+                        i18n.t('monitor.timeline.duplicate_error', {msg: msg.substring(0, 20), count: ids.length}) : 
+                        `重复错误"${msg.substring(0, 20)}..."出现${ids.length}次`;
                     anomalies.push({
                         eventId: ids[ids.length - 1],
                         type: 'duplicate_error',
-                        description: `重复错误"${msg.substring(0, 20)}..."出现${ids.length}次`
+                        description: dupErrorText
                     });
                 }
             });
@@ -1769,7 +1883,7 @@
             const endTime = document.getElementById('history-end-time').value;
             
             if (!startTime || !endTime) {
-                document.getElementById('tab-chart').innerHTML = '<div style="padding:40px;text-align:center;color:#999;">' + i18n.t('chart.query_required') + '</div>';
+                document.getElementById('tab-chart').innerHTML = '<div style="padding:40px;text-align:center;color:#999;">' + i18n.t('monitor.chart.query_required') + '</div>';
                 return;
             }
             
@@ -1797,8 +1911,9 @@
                                     <div style="background:${color};width:${pct}%;height:100%;transition:width 0.3s;"></div>
                                 </div>
                             </div>`;
-                        }).join('') || '<div style="color:#999;text-align:center;">无数据</div>';
-                    levelCanvas.parentElement.innerHTML = '<h4>📊 日志级别分布</h4><div style="padding:8px 0;">' + levelHtml + '</div>';
+                        }).join('') || `<div style="color:#999;text-align:center;">${typeof i18n !== 'undefined' ? i18n.t('monitor.chart.no_data') : '无数据'}</div>`;
+                    const levelTitle = typeof i18n !== 'undefined' ? i18n.t('monitor.chart.level_distribution') : '📊 日志级别分布';
+                    levelCanvas.parentElement.innerHTML = `<h4>${levelTitle}</h4><div style="padding:8px 0;">` + levelHtml + '</div>';
                 }
                 
                 // 渲染状态码分布（饼图样式）
@@ -1815,8 +1930,9 @@
                                 <div style="width:60px;height:60px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;color:white;font-weight:bold;font-size:14px;">${pct}%</div>
                                 <div style="margin-top:4px;font-size:12px;">${k} (${v})</div>
                             </div>`;
-                        }).join('') || '<div style="color:#999;text-align:center;">无数据</div>';
-                    statusCanvas.parentElement.innerHTML = '<h4>📈 状态码分布</h4><div style="text-align:center;padding:8px 0;">' + statusHtml + '</div>';
+                        }).join('') || `<div style="color:#999;text-align:center;">${typeof i18n !== 'undefined' ? i18n.t('monitor.chart.no_data') : '无数据'}</div>`;
+                    const statusTitle = typeof i18n !== 'undefined' ? i18n.t('monitor.chart.status_distribution') : '📈 状态码分布';
+                    statusCanvas.parentElement.innerHTML = `<h4>${statusTitle}</h4><div style="text-align:center;padding:8px 0;">` + statusHtml + '</div>';
                 }
                 
                 // 渲染慢请求TOP10（表格）
@@ -1838,8 +1954,9 @@
                             </tr>`).join('')}
                             </tbody>
                         </table>`
-                        : '<div style="color:#22c55e;text-align:center;padding:20px;">✅ 无慢请求</div>';
-                    slowCanvas.parentElement.innerHTML = '<h4>⏱️ 慢请求TOP10</h4>' + slowHtml;
+                        : `<div style="color:#22c55e;text-align:center;padding:20px;">✅ ${typeof i18n !== 'undefined' ? i18n.t('monitor.chart.no_slow') : '无慢请求'}</div>`;
+                    const slowTitle = typeof i18n !== 'undefined' ? i18n.t('monitor.chart.slow_requests') : '⏱️ 慢请求TOP10';
+                    slowCanvas.parentElement.innerHTML = `<h4>${slowTitle}</h4>` + slowHtml;
                 }
                 
                 // 渲染趋势摘要
@@ -1850,23 +1967,24 @@
                     const trendHtml = trend.length > 0 
                         ? `<div style="padding:12px;">
                             <div style="display:flex;justify-content:space-around;text-align:center;">
-                                <div><div style="font-size:28px;font-weight:bold;color:#3b82f6;">${summary.total_requests || 0}</div><div style="font-size:12px;color:#6b7280;">总请求</div></div>
-                                <div><div style="font-size:28px;font-weight:bold;color:#ef4444;">${summary.error_count || 0}</div><div style="font-size:12px;color:#6b7280;">错误</div></div>
-                                <div><div style="font-size:28px;font-weight:bold;color:#f59e0b;">${summary.slow_count || 0}</div><div style="font-size:12px;color:#6b7280;">慢请求</div></div>
+                                <div><div style="font-size:28px;font-weight:bold;color:#3b82f6;">${summary.total_requests || 0}</div><div style="font-size:12px;color:#6b7280;">${typeof i18n !== 'undefined' ? i18n.t('monitor.chart.total_requests') : '总请求'}</div></div>
+                                <div><div style="font-size:28px;font-weight:bold;color:#ef4444;">${summary.error_count || 0}</div><div style="font-size:12px;color:#6b7280;">${typeof i18n !== 'undefined' ? i18n.t('monitor.chart.error_count') : '错误'}</div></div>
+                                <div><div style="font-size:28px;font-weight:bold;color:#f59e0b;">${summary.slow_count || 0}</div><div style="font-size:12px;color:#6b7280;">${typeof i18n !== 'undefined' ? i18n.t('monitor.chart.slow_count') : '慢请求'}</div></div>
                             </div>
                             <div style="margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;">
-                                时间范围: ${trend.length}个时间点 | 日志总数: ${summary.total_logs || 0}条
+                                ${typeof i18n !== 'undefined' ? i18n.t('monitor.stats.time_range') : '时间范围'}: ${trend.length}${typeof i18n !== 'undefined' ? i18n.t('monitor.other.data_points') : '个时间点'} | ${typeof i18n !== 'undefined' ? i18n.t('monitor.chart.log_count') : '日志总数'}: ${summary.total_logs || 0}${typeof i18n !== 'undefined' ? i18n.t('monitor.pagination.items') : '条'}
                             </div>
                         </div>`
-                        : '<div style="color:#999;text-align:center;padding:20px;">无趋势数据</div>';
-                    trendCanvas.parentElement.innerHTML = '<h4>📊 请求量趋势</h4>' + trendHtml;
+                        : `<div style="color:#999;text-align:center;padding:20px;">${typeof i18n !== 'undefined' ? i18n.t('monitor.chart.no_trend') : '无趋势数据'}</div>`;
+                    const trendTitle = typeof i18n !== 'undefined' ? i18n.t('monitor.chart.request_trend') : '📊 请求量趋势';
+                    trendCanvas.parentElement.innerHTML = `<h4>${trendTitle}</h4>` + trendHtml;
                 }
                 
             } catch (error) {
                 console.error('渲染图表失败:', error);
                 const chartContainer = document.querySelector('.chart-container');
                 if (chartContainer) {
-                    chartContainer.innerHTML = '<div style="padding:40px;text-align:center;color:#ef4444;">' + i18n.t('chart.load_failed') + '</div>';
+                    chartContainer.innerHTML = '<div style="padding:40px;text-align:center;color:#ef4444;">' + i18n.t('monitor.chart.load_failed') + '</div>';
                 }
             }
         }
@@ -1882,11 +2000,11 @@
             const btn = document.getElementById('realtime-btn');
             
             if (realtimeTracking) {
-                btn.textContent = i18n.t('btn.realtime_on');
+                btn.textContent = i18n.t('monitor.btn.realtime_on');
                 btn.className = 'btn btn-primary';
                 startRealtimeTracking();
             } else {
-                btn.textContent = i18n.t('btn.realtime_off');
+                btn.textContent = i18n.t('monitor.btn.realtime_off');
                 btn.className = 'btn btn-secondary';
                 stopRealtimeTracking();
             }
@@ -1902,7 +2020,7 @@
                     // 10分钟自动暂停
                     if (trackingDuration >= 600) {
                         stopRealtimeTracking();
-                        alert(i18n.t('error.auto_pause'));
+                        alert(i18n.t('monitor.error.auto_pause'));
                         return;
                     }
                 
@@ -1938,7 +2056,7 @@
             }
             realtimeTracking = false;
             const btn = document.getElementById('realtime-btn');
-            btn.textContent = i18n.t('btn.realtime_off');
+            btn.textContent = i18n.t('monitor.btn.realtime_off');
             btn.className = 'btn btn-secondary';
         }
         
@@ -1964,14 +2082,14 @@
             if (!select) return;
             
             const templates = getTemplates();
-            select.innerHTML = '<option value="">' + i18n.t('template.saved_queries') + '</option>' +
+            select.innerHTML = '<option value="">' + i18n.t('monitor.template.saved_queries') + '</option>' +
                 templates.map((t, i) => `<option value="${i}">${t.name}</option>`).join('');
         }
         
         function saveQueryTemplate() {
             const templates = getTemplates();
             if (templates.length >= 10) {
-                alert(i18n.t('error.max_templates'));
+                alert(i18n.t('monitor.error.max_templates'));
                 return;
             }
             
@@ -1997,7 +2115,7 @@
             
             templates.push(template);
             saveTemplates(templates);
-                alert(i18n.t('success.template_saved', {name: name}));
+                alert(i18n.t('monitor.success.template_saved', {name: name}));
         }
         
         function loadQueryTemplate() {
@@ -2133,7 +2251,7 @@
             if (!tbody) return;
             
             if (historyQueryData.http.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" class="no-data">' + i18n.t('status.no_data') + '</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" class="no-data">' + i18n.t('monitor.status.no_data') + '</td></tr>';
                 sortedHttpData = [];
                 return;
             }
@@ -2170,7 +2288,7 @@
             if (!tbody) return;
             
             if (historyQueryData.outbound.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" class="no-data">' + i18n.t('status.no_data') + '</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" class="no-data">' + i18n.t('monitor.status.no_data') + '</td></tr>';
                 sortedOutboundData = [];
                 return;
             }
@@ -2207,7 +2325,7 @@
             if (!tbody) return;
             
             if (historyQueryData.logs.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="no-data">' + i18n.t('status.no_data') + '</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="no-data">' + i18n.t('monitor.status.no_data') + '</td></tr>';
                 sortedLogsData = [];
                 return;
             }
@@ -2255,26 +2373,40 @@
             return pairs.length > 0 ? '?' + pairs.join('&') : '-';
         }
 
-        function showHistoryHttpDetail(index) {
+        async function showHistoryHttpDetail(index) {
             const req = sortedHttpData[index];
             if (!req) return;
+            
+            // 懒加载：如果数据不包含request_body，则从API加载完整数据
+            let detailData = req;
+            if (!req.hasOwnProperty('request_body')) {
+                try {
+                    const response = await fetch(`${API_BASE}/history/http/${req.id}`);
+                    detailData = await response.json();
+                } catch (error) {
+                    console.error('加载详情失败:', error);
+                    alert(i18n.t('monitor.error.detail_load_failed') || '加载详情失败');
+                    return;
+                }
+            }
             
             const detail = `
 <div style="max-height: 60vh; overflow-y: auto;">
     <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; width: 120px; color: #8c8c8c;">请求ID</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.id || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">时间戳</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.timestamp || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求方法</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;"><span class="api-method ${(req.method || '').toLowerCase()}">${req.method || '-'}</span></td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求路径</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.path || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">查询参数</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${formatQueryParams(req.query_params)}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">状态码</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono api-status ${(req.status_code || 0) >= 400 ? 'error' : 'success'}">${req.status_code || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">响应时间</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.duration ? req.duration.toFixed(2) + 'ms' : '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">客户端IP</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.client_ip || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">User Agent</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.user_agent || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">是否慢请求</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.is_slow ? '是' : '否'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">是否错误</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.is_error ? '是' : '否'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">错误信息</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #f5222d;" class="font-mono">${req.error_message || '-'}</td></tr>
-        <tr><td style="padding: 8px; color: #8c8c8c;">请求体</td><td style="padding: 8px;" class="font-mono">${req.request_body || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; width: 120px; color: #8c8c8c;">请求ID</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.id || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">时间戳</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.timestamp || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求方法</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;"><span class="api-method ${(detailData.method || '').toLowerCase()}">${detailData.method || '-'}</span></td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求路径</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.path || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">查询参数</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${formatQueryParams(detailData.query_params)}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">状态码</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono api-status ${(detailData.status_code || 0) >= 400 ? 'error' : 'success'}">${detailData.status_code || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">响应时间</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.duration ? detailData.duration.toFixed(2) + 'ms' : '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">客户端IP</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.client_ip || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">User Agent</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.user_agent || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">${typeof i18n !== 'undefined' ? i18n.t('monitor.col.is_slow') : '是否慢请求'}</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${detailData.is_slow ? (typeof i18n !== 'undefined' ? i18n.t('monitor.other.yes') : '是') : (typeof i18n !== 'undefined' ? i18n.t('monitor.other.no') : '否')}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">${typeof i18n !== 'undefined' ? i18n.t('monitor.col.is_error') : '是否错误'}</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${detailData.is_error ? (typeof i18n !== 'undefined' ? i18n.t('monitor.other.yes') : '是') : (typeof i18n !== 'undefined' ? i18n.t('monitor.other.no') : '否')}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">${typeof i18n !== 'undefined' ? i18n.t('monitor.col.error_message') : '错误信息'}</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #f5222d;" class="font-mono">${detailData.error_message || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求体</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono"><pre style="margin:0;white-space:pre-wrap;word-break:break-all;">${detailData.request_body || '-'}</pre></td></tr>
+        <tr><td style="padding: 8px; color: #8c8c8c;">响应体</td><td style="padding: 8px;" class="font-mono"><pre style="margin:0;white-space:pre-wrap;word-break:break-all;">${detailData.response_body || '-'}</pre></td></tr>
     </table>
 </div>
             `;
@@ -2282,25 +2414,38 @@
             showDetailModal('接收请求详情', detail);
         }
 
-        function showHistoryOutboundDetail(index) {
+        async function showHistoryOutboundDetail(index) {
             const req = sortedOutboundData[index];
             if (!req) return;
+            
+            // 懒加载：如果数据不包含request_body，则从API加载完整数据
+            let detailData = req;
+            if (!req.hasOwnProperty('request_body')) {
+                try {
+                    const response = await fetch(`${API_BASE}/history/outbound/${req.id}`);
+                    detailData = await response.json();
+                } catch (error) {
+                    console.error('加载详情失败:', error);
+                    alert(i18n.t('monitor.error.detail_load_failed') || '加载详情失败');
+                    return;
+                }
+            }
             
             const detail = `
 <div style="max-height: 60vh; overflow-y: auto;">
     <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; width: 120px; color: #8c8c8c;">请求ID</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.id || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">时间戳</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.timestamp || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求方法</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;"><span class="api-method ${(req.method || '').toLowerCase()}">${req.method || '-'}</span></td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求URL</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.url || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">状态码</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono api-status ${(req.status_code || 0) >= 400 ? 'error' : 'success'}">${req.status_code || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">响应时间</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.duration ? req.duration.toFixed(2) + 'ms' : '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">模块</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.module || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">是否慢请求</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.is_slow ? '是' : '否'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">是否错误</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${req.is_error ? '是' : '否'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">错误信息</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #f5222d;" class="font-mono">${req.error_message || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求体</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${req.request_body || '-'}</td></tr>
-        <tr><td style="padding: 8px; color: #8c8c8c;">响应体</td><td style="padding: 8px;" class="font-mono">${req.response_body || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; width: 120px; color: #8c8c8c;">请求ID</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.id || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">时间戳</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.timestamp || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求方法</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;"><span class="api-method ${(detailData.method || '').toLowerCase()}">${detailData.method || '-'}</span></td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求URL</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.url || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">状态码</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono api-status ${(detailData.status_code || 0) >= 400 ? 'error' : 'success'}">${detailData.status_code || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">响应时间</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.duration ? detailData.duration.toFixed(2) + 'ms' : '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">模块</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.module || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">${typeof i18n !== 'undefined' ? i18n.t('monitor.col.is_slow') : '是否慢请求'}</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${detailData.is_slow ? (typeof i18n !== 'undefined' ? i18n.t('monitor.other.yes') : '是') : (typeof i18n !== 'undefined' ? i18n.t('monitor.other.no') : '否')}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">${typeof i18n !== 'undefined' ? i18n.t('monitor.col.is_error') : '是否错误'}</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${detailData.is_error ? (typeof i18n !== 'undefined' ? i18n.t('monitor.other.yes') : '是') : (typeof i18n !== 'undefined' ? i18n.t('monitor.other.no') : '否')}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">${typeof i18n !== 'undefined' ? i18n.t('monitor.col.error_message') : '错误信息'}</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #f5222d;" class="font-mono">${detailData.error_message || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求体</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono"><pre style="margin:0;white-space:pre-wrap;word-break:break-all;">${detailData.request_body || '-'}</pre></td></tr>
+        <tr><td style="padding: 8px; color: #8c8c8c;">响应体</td><td style="padding: 8px;" class="font-mono"><pre style="margin:0;white-space:pre-wrap;word-break:break-all;">${detailData.response_body || '-'}</pre></td></tr>
     </table>
 </div>
             `;
@@ -2308,20 +2453,34 @@
             showDetailModal('发送请求详情', detail);
         }
 
-        function showHistoryLogDetail(index) {
+        async function showHistoryLogDetail(index) {
             const log = sortedLogsData[index];
             if (!log) return;
+            
+            // 懒加载：如果数据不包含stack_trace，则从API加载完整数据
+            let detailData = log;
+            if (!log.hasOwnProperty('stack_trace')) {
+                try {
+                    const response = await fetch(`${API_BASE}/history/log/${log.id}`);
+                    detailData = await response.json();
+                } catch (error) {
+                    console.error('加载详情失败:', error);
+                    alert(i18n.t('monitor.error.detail_load_failed') || '加载详情失败');
+                    return;
+                }
+            }
             
             const detail = `
 <div style="max-height: 60vh; overflow-y: auto;">
     <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; width: 120px; color: #8c8c8c;">日志ID</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${log.id || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">时间戳</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${log.timestamp || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">日志级别</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono"><span class="log-level-badge ${(log.level || '').toLowerCase()}">${log.level || '-'}</span></td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">模块</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${log.module || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">函数</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${log.function || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">行号</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${log.line_number || '-'}</td></tr>
-        <tr><td style="padding: 8px; color: #8c8c8c;">消息</td><td style="padding: 8px;" class="font-mono">${log.message || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; width: 120px; color: #8c8c8c;">日志ID</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.id || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">时间戳</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.timestamp || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">日志级别</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono"><span class="log-level-badge ${(detailData.level || '').toLowerCase()}">${detailData.level || '-'}</span></td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">模块</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.module || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">函数</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.function || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">行号</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.line_number || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">消息</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono"><pre style="margin:0;white-space:pre-wrap;word-break:break-all;">${detailData.message || '-'}</pre></td></tr>
+        ${detailData.stack_trace ? `<tr><td style="padding: 8px; color: #8c8c8c;">堆栈</td><td style="padding: 8px;" class="font-mono"><pre style="margin:0;white-space:pre-wrap;word-break:break-all;color:#f5222d;">${detailData.stack_trace}</pre></td></tr>` : ''}
     </table>
 </div>
             `;

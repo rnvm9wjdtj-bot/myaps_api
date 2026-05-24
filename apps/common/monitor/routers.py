@@ -18,6 +18,20 @@ from .storage import request_storage, outbound_request_storage, system_log_stora
 from .models import APIRequest, OutboundAPIRequest, SystemLog
 from core.settings import TIMEZONE
 from globalobjects import logger as log_config
+import time
+import json
+import asyncio
+from datetime import datetime, timedelta, timezone
+from fastapi import APIRouter, HTTPException, WebSocket
+from fastapi.responses import JSONResponse, StreamingResponse
+from typing import Dict, Any, List, Optional
+from tortoise import Tortoise
+from .service import monitor_service
+from .log_stream_service import log_stream_service
+from .storage import request_storage, outbound_request_storage, system_log_storage
+from .models import APIRequest, OutboundAPIRequest, SystemLog
+from core.settings import TIMEZONE
+from globalobjects import logger as log_config
 
 logger = log_config.get_logger(__name__)
 
@@ -1030,6 +1044,8 @@ async def get_history_by_time_range(
         http_requests = await request_storage.get_requests_with_filters(
             utc_start, utc_end, limit, filter_params
         )
+        print(f"[DEBUG] HTTP查询: page={page}, page_size={page_size}, 返回{len(http_requests)}条")
+        # 列表查询只返回基本字段，不返回request_body/response_body大字段（详情时懒加载）
         result["http_requests"] = [{
             "id": req.id,
             "timestamp": req.timestamp.isoformat(),
@@ -1042,11 +1058,8 @@ async def get_history_by_time_range(
             "user_agent": req.user_agent,
             "is_slow": req.is_slow,
             "is_error": req.is_error,
-            "error_message": req.error_message,
-            "request_body": req.request_body,
-            "response_body": req.response_body,
-            "request_headers": getattr(req, 'request_headers', None),
-            "response_headers": getattr(req, 'response_headers', None)
+            "error_message": req.error_message
+            # 不返回: request_body, response_body, request_headers, response_headers
         } for req in http_requests]
     
     # 查询发送请求
@@ -1054,6 +1067,8 @@ async def get_history_by_time_range(
         outbound_requests = await outbound_request_storage.get_requests_with_filters(
             utc_start, utc_end, limit, filter_params
         )
+        print(f"[DEBUG] Outbound查询: page={page}, page_size={page_size}, 返回{len(outbound_requests)}条")
+        # 列表查询只返回基本字段，不返回request_body/response_body大字段
         result["outbound_requests"] = [{
             "id": req.id,
             "timestamp": req.timestamp.isoformat(),
@@ -1064,11 +1079,8 @@ async def get_history_by_time_range(
             "module": req.module,
             "is_slow": req.is_slow,
             "is_error": req.is_error,
-            "error_message": req.error_message,
-            "request_body": req.request_body,
-            "response_body": req.response_body,
-            "request_headers": req.request_headers,
-            "response_headers": req.response_headers
+            "error_message": req.error_message
+            # 不返回: request_body, response_body, request_headers, response_headers
         } for req in outbound_requests]
     
     # 查询系统日志
@@ -1076,6 +1088,8 @@ async def get_history_by_time_range(
         logs = await system_log_storage.get_logs_with_filters(
             utc_start, utc_end, level, limit, filter_params
         )
+        print(f"[DEBUG] Logs查询: page={page}, page_size={page_size}, 返回{len(logs)}条")
+        # 列表查询不返回stack_trace大字段（详情时懒加载）
         result["logs"] = [{
             "id": log.id,
             "timestamp": log.timestamp.isoformat(),
@@ -1083,18 +1097,25 @@ async def get_history_by_time_range(
             "module": log.module,
             "function": log.function,
             "line_number": log.line_number,
-            "message": log.message,
-            "stack_trace": log.stack_trace
+            "message": log.message[:500] if log.message else None  # 截断message，避免超长日志
+            # 不返回: stack_trace
         } for log in logs]
     
-    # 计算分页元数据
+    # 统计总数（用于结果摘要显示）- 只执行一次count
+    result["stats"] = {
+        "http_count": await request_storage.count_requests_with_filters(utc_start, utc_end, filter_params) if should_query_http else 0,
+        "outbound_count": await outbound_request_storage.count_requests_with_filters(utc_start, utc_end, filter_params) if should_query_outbound else 0,
+        "logs_count": await system_log_storage.count_logs_with_filters(utc_start, utc_end, level, filter_params) if should_query_logs else 0
+    }
+    
+    # 计算分页元数据（复用stats的count结果）
     total_count = 0
     if should_query_http:
-        total_count = await request_storage.count_requests_with_filters(utc_start, utc_end, filter_params)
+        total_count = result["stats"]["http_count"]
     elif should_query_outbound:
-        total_count = await outbound_request_storage.count_requests_with_filters(utc_start, utc_end, filter_params)
+        total_count = result["stats"]["outbound_count"]
     elif should_query_logs:
-        total_count = await system_log_storage.count_logs_with_filters(utc_start, utc_end, level, filter_params)
+        total_count = result["stats"]["logs_count"]
     
     if total_count > 0:
         total_pages = (total_count + page_size - 1) // page_size
@@ -1109,21 +1130,36 @@ async def get_history_by_time_range(
             "end_index": min(page * page_size, total_count)
         }
     
-    # 统计总数（用于结果摘要显示）
-    result["stats"] = {
-        "http_count": await request_storage.count_requests_with_filters(utc_start, utc_end, filter_params) if should_query_http else 0,
-        "outbound_count": await outbound_request_storage.count_requests_with_filters(utc_start, utc_end, filter_params) if should_query_outbound else 0,
-        "logs_count": await system_log_storage.count_logs_with_filters(utc_start, utc_end, level, filter_params) if should_query_logs else 0
-    }
-    
-    # 统计日志级别分布（仅查询系统日志时）
+    # 统计日志级别分布（仅查询系统日志时）- 优化：使用GROUP BY聚合，避免查询所有记录
     if should_query_logs and result["stats"]["logs_count"] > 0:
-        level_stats = {}
-        for lv in ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']:
-            count = await system_log_storage.count_logs_with_filters(utc_start, utc_end, lv, filter_params)
-            if count > 0:
-                level_stats[lv] = count
-        result["stats"]["level_distribution"] = level_stats
+        try:
+            # 使用原生SQL的GROUP BY聚合，性能最优
+            from .models import SystemLog
+            from tortoise import connections
+            
+            conn = connections.get("default")
+            
+            # 构建SQL查询
+            sql = "SELECT level, COUNT(*) as count FROM system_logs WHERE 1=1"
+            params = []
+            
+            if utc_start and utc_end:
+                sql += " AND timestamp >= $1 AND timestamp <= $2"
+                params.extend([utc_start, utc_end])
+            
+            if filter_params and filter_params.get('module'):
+                sql += f" AND module IN ({','.join(['$'+str(i+3) for i in range(len(filter_params['module']))])})"
+                params.extend(filter_params['module'])
+            
+            sql += " GROUP BY level"
+            
+            # 执行查询
+            rows = await conn.execute_query(sql, params)
+            level_stats = {row['level']: row['count'] for row in rows[1] if row.get('level')}
+            result["stats"]["level_distribution"] = level_stats
+        except Exception as e:
+            print(f"统计级别分布失败: {e}")
+            result["stats"]["level_distribution"] = {}
     
     return result
 
@@ -1576,3 +1612,91 @@ async def export_history_data(
             media_type="application/json",
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
+
+
+# ========== 详情懒加载端点 ==========
+
+@router.get("/history/outbound/{request_id}")
+async def get_outbound_request_detail(request_id: int):
+    """
+    获取发送请求详情（懒加载，包含request_body、response_body等大字段）
+    """
+    try:
+        req = await OutboundAPIRequest.get_or_none(id=request_id)
+        if not req:
+            raise HTTPException(status_code=404, detail="请求不存在")
+        
+        return {
+            "id": req.id,
+            "timestamp": req.timestamp.isoformat(),
+            "method": req.method,
+            "url": req.url,
+            "status_code": req.status_code,
+            "duration": req.duration * 1000,
+            "module": req.module,
+            "is_slow": req.is_slow,
+            "is_error": req.is_error,
+            "error_message": req.error_message,
+            "request_body": req.request_body,
+            "response_body": req.response_body,
+            "request_headers": req.request_headers,
+            "response_headers": req.response_headers
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"查询详情失败: {str(e)}")
+
+
+@router.get("/history/http/{request_id}")
+async def get_http_request_detail(request_id: int):
+    """
+    获取HTTP请求详情（懒加载，包含request_body、response_body等大字段）
+    """
+    try:
+        req = await APIRequest.get_or_none(id=request_id)
+        if not req:
+            raise HTTPException(status_code=404, detail="请求不存在")
+        
+        return {
+            "id": req.id,
+            "timestamp": req.timestamp.isoformat(),
+            "method": req.method,
+            "path": req.path,
+            "query_params": req.query_params,
+            "status_code": req.status_code,
+            "duration": req.response_time,
+            "client_ip": req.client_ip,
+            "user_agent": req.user_agent,
+            "is_slow": req.is_slow,
+            "is_error": req.is_error,
+            "error_message": req.error_message,
+            "request_body": req.request_body,
+            "response_body": req.response_body,
+            "request_headers": getattr(req, 'request_headers', None),
+            "response_headers": getattr(req, 'response_headers', None)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"查询详情失败: {str(e)}")
+
+
+@router.get("/history/log/{log_id}")
+async def get_log_detail(log_id: int):
+    """
+    获取系统日志详情（懒加载，包含stack_trace等大字段）
+    """
+    try:
+        log = await SystemLog.get_or_none(id=log_id)
+        if not log:
+            raise HTTPException(status_code=404, detail="日志不存在")
+        
+        return {
+            "id": log.id,
+            "timestamp": log.timestamp.isoformat(),
+            "level": log.level,
+            "module": log.module,
+            "function": log.function,
+            "line_number": log.line_number,
+            "message": log.message,
+            "stack_trace": log.stack_trace
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"查询详情失败: {str(e)}")
