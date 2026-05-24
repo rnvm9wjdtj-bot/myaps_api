@@ -57,20 +57,52 @@ mkdir -p "$PROJECT_DIR/storage"
 # =====================================================
 
 check_redis() {
+    # 方式1: 检查Docker容器
+    if command -v docker &> /dev/null; then
+        if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'redis'; then
+            return 0
+        fi
+    fi
+    
+    # 方式2: 检查进程
     if pgrep -x "redis-server" > /dev/null 2>&1; then
         if redis-cli ping > /dev/null 2>&1; then
             return 0
         fi
     fi
+    
+    # 方式3: 检查端口
+    if command -v nc &> /dev/null; then
+        if nc -z localhost 6379 2>/dev/null; then
+            return 0
+        fi
+    fi
+    
     return 1
 }
 
 check_postgresql() {
+    # 方式1: 检查Docker容器
+    if command -v docker &> /dev/null; then
+        if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'postgres'; then
+            return 0
+        fi
+    fi
+    
+    # 方式2: 检查进程
     if pgrep -x "postgres" > /dev/null 2>&1; then
         if pg_isready > /dev/null 2>&1; then
             return 0
         fi
     fi
+    
+    # 方式3: 检查端口
+    if command -v nc &> /dev/null; then
+        if nc -z localhost 5432 2>/dev/null; then
+            return 0
+        fi
+    fi
+    
     return 1
 }
 
@@ -87,14 +119,34 @@ start_redis() {
     
     if check_redis; then
         echo -e "${GREEN}[Redis]${NC} ✓ 已在运行"
+        # 显示运行方式
+        if command -v docker &> /dev/null && docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'redis'; then
+            local container=$(docker ps --format '{{.Names}}' 2>/dev/null | grep 'redis' | head -1)
+            echo -e "${GREEN}[Redis]${NC}   容器: $container"
+        fi
         return 0
     fi
     
     echo -e "${YELLOW}[Redis]${NC} 服务未运行，正在启动..."
     
+    # 优先尝试Docker方式
+    if command -v docker &> /dev/null; then
+        if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q 'redis'; then
+            local container=$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep 'redis' | head -1)
+            echo -e "${BLUE}[Redis]${NC} 启动Docker容器: $container"
+            docker start "$container" 2>/dev/null && sleep 2
+            if check_redis; then
+                echo -e "${GREEN}[Redis]${NC} ✓ 启动成功 (Docker)"
+                return 0
+            fi
+        fi
+    fi
+    
+    # 尝试直接启动
     if ! command -v redis-server &> /dev/null; then
         echo -e "${RED}[Redis]${NC} ✗ 未安装 redis-server"
         echo -e "${YELLOW}[Redis]${NC}   请执行: sudo apt install redis-server"
+        echo -e "${YELLOW}[Redis]${NC}   或使用Docker: docker run -d --name redis -p 6379:6379 redis"
         return 1
     fi
     
@@ -120,14 +172,34 @@ start_postgresql() {
     
     if check_postgresql; then
         echo -e "${GREEN}[PostgreSQL]${NC} ✓ 已在运行"
+        # 显示运行方式
+        if command -v docker &> /dev/null && docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'postgres'; then
+            local container=$(docker ps --format '{{.Names}}' 2>/dev/null | grep 'postgres' | head -1)
+            echo -e "${GREEN}[PostgreSQL]${NC}   容器: $container"
+        fi
         return 0
     fi
     
     echo -e "${YELLOW}[PostgreSQL]${NC} 服务未运行，正在启动..."
     
+    # 优先尝试Docker方式
+    if command -v docker &> /dev/null; then
+        if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q 'postgres'; then
+            local container=$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep 'postgres' | head -1)
+            echo -e "${BLUE}[PostgreSQL]${NC} 启动Docker容器: $container"
+            docker start "$container" 2>/dev/null && sleep 2
+            if check_postgresql; then
+                echo -e "${GREEN}[PostgreSQL]${NC} ✓ 启动成功 (Docker)"
+                return 0
+            fi
+        fi
+    fi
+    
+    # 尝试直接启动
     if ! command -v pg_isready &> /dev/null; then
         echo -e "${RED}[PostgreSQL]${NC} ✗ 未安装 PostgreSQL"
         echo -e "${YELLOW}[PostgreSQL]${NC}   请执行: sudo apt install postgresql postgresql-contrib"
+        echo -e "${YELLOW}[PostgreSQL]${NC}   或使用Docker: docker run -d --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres"
         return 1
     fi
     
@@ -294,7 +366,17 @@ cmd_status() {
     echo -e "${BLUE}[Redis]${NC}"
     if check_redis; then
         echo -e "  状态: ${GREEN}运行中${NC}"
-        redis-cli INFO server 2>/dev/null | grep "redis_version" | sed 's/^/  /' || true
+        # 显示运行方式
+        if command -v docker &> /dev/null; then
+            local redis_container=$(docker ps --format '{{.Names}}' 2>/dev/null | grep 'redis' | head -1)
+            if [ -n "$redis_container" ]; then
+                echo -e "  方式: ${GREEN}Docker容器${NC} ($redis_container)"
+                docker ps --filter "name=$redis_container" --format "  镜像: {{.Image}}\n  端口: {{.Ports}}" 2>/dev/null || true
+            fi
+        fi
+        if command -v redis-cli &> /dev/null && redis-cli ping &> /dev/null; then
+            redis-cli INFO server 2>/dev/null | grep "redis_version" | sed 's/^/  /' || true
+        fi
     else
         echo -e "  状态: ${RED}未运行${NC}"
     fi
@@ -303,7 +385,17 @@ cmd_status() {
     echo -e "${BLUE}[PostgreSQL]${NC}"
     if check_postgresql; then
         echo -e "  状态: ${GREEN}运行中${NC}"
-        pg_isready 2>/dev/null | sed 's/^/  /' || true
+        # 显示运行方式
+        if command -v docker &> /dev/null; then
+            local pg_container=$(docker ps --format '{{.Names}}' 2>/dev/null | grep 'postgres' | head -1)
+            if [ -n "$pg_container" ]; then
+                echo -e "  方式: ${GREEN}Docker容器${NC} ($pg_container)"
+                docker ps --filter "name=$pg_container" --format "  镜像: {{.Image}}\n  端口: {{.Ports}}" 2>/dev/null || true
+            fi
+        fi
+        if command -v pg_isready &> /dev/null; then
+            pg_isready 2>/dev/null | sed 's/^/  /' || true
+        fi
     else
         echo -e "  状态: ${RED}未运行${NC}"
     fi
