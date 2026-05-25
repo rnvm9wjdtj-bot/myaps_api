@@ -132,7 +132,7 @@ def create_custom_mo_push_model(_aps: ApsPayloadSponsor):
             for md in mo_material_details:
                 materialno = md['Inventory']['Code']
                 free1 = materials.get(materialno, {}).get('free1',"")
-                if free1.upper().strip() == 'Y':    # 该物料为倒冲料
+                if True:#free1.upper().strip() == 'Y':    # 该物料为倒冲料
                     md['Warehouse'] = {'Code': back_flush_warehouse} # 倒冲料仓库
                     md.pop('IsMaterialRequest')
 
@@ -201,15 +201,15 @@ async def batch_handle_pl_status_a2e(event_data_list: list[dict], _erp: EventRes
     )
 
 
-@event_batch_handler(reminder=bus_reminder, remind_start=False)
-@batch_service_operation(module="事件处理")
-async def batch_handle_pl_to_mo(event_data_list: list[dict], _erp: EventResultPoster, description="推送领料申请至 T+"):
-    await TplusRs.create_batch(
-        event_data_list=event_data_list,
-        _erp=_erp,
-        production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL],
-        pydantic_model=create_custom_rs_push_model,
-    )
+# @event_batch_handler(reminder=bus_reminder, remind_start=False)
+# @batch_service_operation(module="事件处理")
+# async def batch_handle_pl_to_mo(event_data_list: list[dict], _erp: EventResultPoster, description="推送领料申请至 T+"):
+#     await TplusRs.create_batch(
+#         event_data_list=event_data_list,
+#         _erp=_erp,
+#         production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL],
+#         pydantic_model=create_custom_rs_push_model,
+#     )
 
 
 @event_batch_handler(reminder=bus_reminder)
