@@ -61,7 +61,7 @@ from pymysqlreplication.row_event import (
     DeleteRowsEvent,
 )
 
-from core.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_BINLOG_LISTENER, ENABLE_BINLOG_POSITION, MYAPS_ROOT_PASSWORD
+from core.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_BINLOG_LISTENER, ENABLE_BINLOG_POSITION
 
 from globalobjects import logger as log_config
 from globalobjects.reminder import remind_manager, RemindType
@@ -178,6 +178,32 @@ distributed_lock = DistributedLock()
 
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 logger = log_config.get_logger(__name__, level=LOG_LEVEL)
+
+
+def _get_binlog_db_credentials(action_name: str) -> Optional[Dict[str, Any]]:
+    """获取用于 binlog 高权限操作的数据库连接信息。"""
+    db_user = MYAPS_DB_USER
+    db_password = MYAPS_DB_PASSWORD
+    if not db_user:
+        logger.error(
+            f"{action_name}失败: 未配置 MYAPS_DB_USER。"
+            "请在 .env 或项目配置中显式提供该变量。"
+        )
+        return None
+
+    if not db_password:
+        logger.error(
+            f"{action_name}失败: 未配置 MYAPS_DB_PASSWORD。"
+            "请在 .env 或项目配置中显式提供该变量。"
+        )
+        return None
+
+    return {
+        "host": MYAPS_DB_HOST,
+        "port": MYAPS_DB_PORT,
+        "user": db_user,
+        "password": db_password,
+    }
 
 
 class BinlogPositionManager:
@@ -2028,14 +2054,12 @@ def is_mysql_config_valid() -> bool:
         bool: 当所有配置项都符合要求时返回True，其他情况返回False
     """
 
-    # 数据库连接信息
-    db_host = MYAPS_DB_HOST
-    db_port = MYAPS_DB_PORT
-    db_user = "root"
-    db_password = MYAPS_ROOT_PASSWORD
+    credentials = _get_binlog_db_credentials("验证MySQL配置")
+    if not credentials:
+        return False
 
-    logger.info("🚀 开始验证MySQL配置...")
-    logger.info(f"🔗 连接到数据库: {db_host}:{db_port}")
+    logger.debug("🚀 开始验证MySQL配置...")
+    logger.debug(f"🔗 连接到数据库: {credentials['host']}:{credentials['port']}")
 
     var_result = {
         "log_bin": "ON",
@@ -2047,10 +2071,10 @@ def is_mysql_config_valid() -> bool:
     try:
         # 连接数据库
         conn = pymysql.connect(
-            host=db_host,
-            port=int(db_port),
-            user=db_user,
-            password=db_password,
+            host=credentials["host"],
+            port=int(credentials["port"]),
+            user=credentials["user"],
+            password=credentials["password"],
             connect_timeout=5
         )
         
@@ -2087,22 +2111,20 @@ def set_binlog_params():
     3. 验证设置是否成功
     """
 
-    # 数据库连接信息
-    db_host = MYAPS_DB_HOST
-    db_port = MYAPS_DB_PORT
-    db_user = "root"
-    db_password = MYAPS_ROOT_PASSWORD
+    credentials = _get_binlog_db_credentials("设置binlog参数")
+    if not credentials:
+        exit(1)
 
     logger.info("🚀 开始设置binlog参数...")
-    logger.info(f"🔗 连接到数据库: {db_host}:{db_port}")
+    logger.info(f"🔗 连接到数据库: {credentials['host']}:{credentials['port']}")
 
     try:
         # 连接数据库
         conn = pymysql.connect(
-            host=db_host,
-            port=int(db_port),
-            user=db_user,
-            password=db_password,
+            host=credentials["host"],
+            port=int(credentials["port"]),
+            user=credentials["user"],
+            password=credentials["password"],
             connect_timeout=5
         )
         

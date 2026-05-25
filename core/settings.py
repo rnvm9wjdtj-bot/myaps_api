@@ -153,7 +153,6 @@ MYAPS_DB_HOST = os.getenv("MYAPS_DB_HOST") or json_env_config.get("MYAPS_DB_HOST
 MYAPS_DB_PORT = int(os.getenv("MYAPS_DB_PORT") or json_env_config.get("MYAPS_DB_PORT") or 3333)
 MYAPS_DB_USER = os.getenv("MYAPS_DB_USER") or json_env_config.get("MYAPS_DB_USER")
 MYAPS_DB_PASSWORD = os.getenv("MYAPS_DB_PASSWORD") or json_env_config.get("MYAPS_DB_PASSWORD")
-MYAPS_ROOT_PASSWORD = os.getenv("MYAPS_ROOT_PASSWORD") or json_env_config.get("MYAPS_ROOT_PASSWORD") or "E9damw0o@#"
 MYAPS_DB_SET = os.getenv("MYAPS_DB_SET") or json_env_config.get("MYAPS_DB_SET")
 if not MYAPS_DB_SET:
     logger.warning_msg("环境变量配置", "MYAPS_DB_SET 未设置")
@@ -179,4 +178,3 @@ REDIS_HOST = os.getenv("REDIS_HOST") or json_env_config.get("REDIS_HOST") or "12
 REDIS_PORT = int(os.getenv("REDIS_PORT") or json_env_config.get("REDIS_PORT") or 6379)
 REDIS_DB = int(os.getenv("REDIS_DB") or json_env_config.get("REDIS_DB") or 0)
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD") or json_env_config.get("REDIS_PASSWORD") or ""
-
