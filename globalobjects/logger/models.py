@@ -36,12 +36,6 @@ class LogRecord(BaseModel):
     
     extra: Optional[Dict[str, Any]] = None
     
-    model_config = {
-        "json_encoders": {
-            datetime: lambda v: v.isoformat()
-        }
-    }
-    
     @field_validator('level_name', mode='before')
     @classmethod
     def validate_level_name(cls, v: str) -> str:

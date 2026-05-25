@@ -238,17 +238,18 @@ async def drop_matched_data(data: List[Any], db_names: str, table_name: str, mat
         batch_size = 100
         combinations_list = list(unique_combinations)
         
+        from globalobjects.db_manager import build_safe_filter
+        
         for i in range(0, len(combinations_list), batch_size):
             batch = combinations_list[i:i+batch_size]
-            conditions = []
+            batch_conditions = []
             for values in batch:
                 # 构建条件，支持任意数量的字段
                 field_conditions = []
                 for db_field, value in zip(db_fields, values):
-                    field_conditions.append(f"`{db_field}`='{value}'")
-                condition = " AND ".join(field_conditions)
-                conditions.append(f"({condition})")
-            filter_string = " OR ".join(conditions)
+                    field_conditions.append((db_field, "=", value))
+                batch_conditions.append(build_safe_filter(field_conditions))
+            filter_string = " OR ".join(f"({cond})" for cond in batch_conditions)
             try:
                 await db_delete(db_names=db_names, model_or_tablename=table_name, filter_string=filter_string)
             except Exception as e:

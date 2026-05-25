@@ -15,6 +15,18 @@ DOC_PREFIXES = ["/static/swagger"]
 MDS_PATHS = ["/mds", "/mds/material", "/mds/workcenter", "/mds/mat-ver", 
              "/mds/mat-wc", "/mds/mat-wc-bom", "/mds/mold", "/mds/mat-wc-mold"]
 
+# 公开的GET接口（不需要认证）
+# 用于健康检查、静态资源等
+PUBLIC_GET_PATHS = [
+    "/health",           # K8s/负载均衡健康检查
+    "/health/database",  # 数据库健康检查
+]
+
+# 公开的路径前缀
+PUBLIC_GET_PREFIXES = [
+    "/static/",          # 静态资源
+]
+
 # 缓存已注册的路由信息，避免每次请求都重新解析
 REGISTERED_ROUTES = []
 
@@ -235,9 +247,19 @@ def create_security_middleware():
                 content={"status_code": 404, "success": 0, "meta": {}, "message": "Not Found"}
             )
         
-        # 对GET和OPTIONS方法直接放行
-        if request_method in ["GET", "OPTIONS"]:
+        # OPTIONS方法直接放行（CORS预检）
+        if request_method == "OPTIONS":
             return await call_next(request)
+        
+        # GET方法需要检查是否在公开路径列表
+        if request_method == "GET":
+            is_public_path = (
+                url_path in PUBLIC_GET_PATHS or
+                any(url_path.startswith(prefix) for prefix in PUBLIC_GET_PREFIXES)
+            )
+            if is_public_path:
+                return await call_next(request)
+            # 非公开GET路径需要继续鉴权
         
         # 检查IP是否在白名单中
         client_ip = request.client.host
@@ -248,6 +270,10 @@ def create_security_middleware():
         if not API_KEY or request.headers.get("X-API-Key") == API_KEY:
             return await call_next(request)
 
-        return JSONResponse(status_code=200, content={"status_code": 403, "success": 0, "meta": {}, "message": "Forbidden: Invalid or missing API Key"})
+        # 未授权请求返回真实HTTP 401状态码
+        return JSONResponse(
+            status_code=401,
+            content={"status_code": 401, "success": 0, "meta": {}, "message": "Unauthorized: Invalid or missing API Key"}
+        )
     
     return security_middleware

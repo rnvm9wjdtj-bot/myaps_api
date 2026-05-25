@@ -104,7 +104,7 @@ def get_host_from_url(url: str) -> Optional[str]:
 
 class APIRequest(Model):
     """API 请求记录模型"""
-    id = fields.IntField(pk=True, auto_generate=True)
+    id = fields.IntField(primary_key=True, auto_generate=True)
     request_id = fields.CharField(max_length=36, null=True, description="请求唯一标识（UUID）")
     timestamp = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="请求时间")
     method = fields.CharField(max_length=10, description="HTTP 方法")
@@ -144,7 +144,7 @@ class APIRequest(Model):
 
 class OutboundAPIRequest(Model):
     """对外 HTTP 请求记录模型"""
-    id = fields.IntField(pk=True, auto_generate=True)
+    id = fields.IntField(primary_key=True, auto_generate=True)
     timestamp = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="请求时间")
     method = fields.CharField(max_length=10, description="HTTP 方法")
     url = fields.TextField(description="请求 URL")
@@ -177,7 +177,7 @@ class OutboundAPIRequest(Model):
 
 class SystemLog(Model):
     """系统日志模型"""
-    id = fields.IntField(pk=True, auto_generate=True)
+    id = fields.IntField(primary_key=True, auto_generate=True)
     timestamp = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="日志时间")
     level = fields.CharField(max_length=10, description="日志级别：DEBUG, INFO, WARNING, ERROR, CRITICAL")
     module = fields.CharField(max_length=255, description="模块名称")
@@ -205,7 +205,7 @@ class SystemLog(Model):
 class BinlogPosition(Model):
     """Binlog 位置记录模型"""
     
-    id = fields.IntField(pk=True, auto_generate=True)
+    id = fields.IntField(primary_key=True, auto_generate=True)
     server_id = fields.CharField(max_length=255, description="MySQL 服务器标识")
     log_file = fields.CharField(max_length=255, description="Binlog 文件名")
     log_pos = fields.BigIntField(description="Binlog 位置")
@@ -223,7 +223,7 @@ class BinlogPosition(Model):
 class ProcessedEvent(Model):
     """已处理的事件记录模型（用于去重）"""
     
-    id = fields.IntField(pk=True, auto_generate=True)
+    id = fields.IntField(primary_key=True, auto_generate=True)
     event_id = fields.CharField(max_length=512, unique=True, description="事件唯一标识")
     log_file = fields.CharField(max_length=255, description="Binlog 文件名")
     log_pos = fields.BigIntField(description="Binlog 位置")
@@ -246,7 +246,7 @@ class FailedOperation(Model):
     """失败的数据库操作持久化模型"""
     
     # 基础信息
-    id = fields.IntField(pk=True, auto_generate=True)
+    id = fields.IntField(primary_key=True, auto_generate=True)
     operation_id = fields.CharField(max_length=64, unique=True, description="操作唯一ID (UUID)")
     timestamp = fields.DatetimeField(index=True, description="失败时间")
     
@@ -286,7 +286,7 @@ class FailedOperation(Model):
 
 # class APILog(Model):
 #     """API 相关日志模型"""
-#     id = fields.IntField(pk=True, auto_generate=True)
+#     id = fields.IntField(primary_key=True, auto_generate=True)
 #     timestamp = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="日志时间")
 #     level = fields.CharField(max_length=10, description="日志级别：DEBUG, INFO, WARNING, ERROR, CRITICAL")
 #     api_request = fields.ForeignKeyField("monitor_models.APIRequest", null=True, description="关联的内部API请求")
@@ -308,7 +308,7 @@ class FailedOperation(Model):
 
 # class PerformanceLog(Model):
 #     """性能日志模型"""
-#     id = fields.IntField(pk=True, auto_generate=True)
+#     id = fields.IntField(primary_key=True, auto_generate=True)
 #     timestamp = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="日志时间")
 #     operation = fields.CharField(max_length=255, description="操作名称")
 #     duration = fields.FloatField(description="执行时间（毫秒）")
@@ -332,7 +332,7 @@ class FailedOperation(Model):
 
 # class SecurityLog(Model):
 #     """安全日志模型"""
-#     id = fields.IntField(pk=True, auto_generate=True)
+#     id = fields.IntField(primary_key=True, auto_generate=True)
 #     timestamp = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="日志时间")
 #     event_type = fields.CharField(max_length=50, description="事件类型：登录、登出、权限变更等")
 #     user = fields.CharField(max_length=255, null=True, description="用户标识")

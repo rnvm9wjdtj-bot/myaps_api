@@ -4,6 +4,7 @@ from datetime import datetime
 import time
 import asyncio
 import functools
+import re
 
 from tortoise import Tortoise
 from tortoise.connection import connections
@@ -16,8 +17,267 @@ from globalobjects import logger as log_config
 import os
 
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
-# 获取统一日志器
 logger = log_config.get_logger(__name__, level=LOG_LEVEL)
+
+
+def escape_sql_value(value: Any) -> str:
+    """
+    安全转义SQL值，防止SQL注入
+    
+    Args:
+        value: 要转义的值
+        
+    Returns:
+        转义后的安全字符串
+    """
+    if value is None:
+        return "NULL"
+    
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    
+    if isinstance(value, (int, float)):
+        return str(value)
+    
+    if isinstance(value, datetime):
+        return f"'{value.strftime('%Y-%m-%d %H:%M:%S')}'"
+    
+    # 字符串处理：转义单引号
+    str_value = str(value)
+    # 将单引号转义为两个单引号（SQL标准）
+    escaped = str_value.replace("'", "''")
+    return f"'{escaped}'"
+
+
+def validate_identifier(identifier: str) -> str:
+    """
+    验证并安全化SQL标识符（表名、字段名）
+    
+    Args:
+        identifier: 标识符
+        
+    Returns:
+        安全的标识符（用反引号包裹）
+        
+    Raises:
+        ValueError: 如果标识符包含危险字符
+    """
+    # 移除首尾空格
+    identifier = identifier.strip()
+    
+    # 检查危险字符
+    dangerous_chars = ["'", '"', ';', '--', '/*', '*/', '\x00', '\n', '\r']
+    for char in dangerous_chars:
+        if char in identifier:
+            raise ValueError(f"Invalid identifier: contains dangerous character '{char}'")
+    
+    # 用反引号包裹
+    return f"`{identifier}`"
+
+
+def build_safe_condition(field: str, operator: str, value: Any) -> str:
+    """
+    构建安全的SQL条件表达式
+    
+    Args:
+        field: 字段名
+        operator: 操作符 (=, !=, >, <, >=, <=, LIKE, IN)
+        value: 值
+        
+    Returns:
+        安全的SQL条件字符串
+    """
+    safe_field = validate_identifier(field)
+    operator = operator.upper().strip()
+    
+    if operator == "IN":
+        if not isinstance(value, (list, tuple)):
+            raise ValueError("IN operator requires a list or tuple of values")
+        escaped_values = [escape_sql_value(v) for v in value]
+        return f"{safe_field} IN ({', '.join(escaped_values)})"
+    
+    if operator == "LIKE":
+        return f"{safe_field} LIKE {escape_sql_value(value)}"
+    
+    # 标准比较操作符
+    valid_operators = ['=', '!=', '<>', '>', '<', '>=', '<=', 'IS', 'IS NOT']
+    if operator not in valid_operators:
+        raise ValueError(f"Invalid operator: {operator}")
+    
+    if operator in ('IS', 'IS NOT'):
+        if value is None:
+            return f"{safe_field} {operator} NULL"
+        raise ValueError(f"{operator} operator only accepts None value")
+    
+    return f"{safe_field} {operator} {escape_sql_value(value)}"
+
+
+def build_safe_filter(conditions: List[Tuple[str, str, Any]], logic: str = "AND") -> str:
+    """
+    构建安全的WHERE条件字符串
+    
+    Args:
+        conditions: 条件列表，每个条件为 (字段名, 操作符, 值) 元组
+        logic: 逻辑连接符 (AND/OR)
+        
+    Returns:
+        安全的WHERE条件字符串
+    """
+    if not conditions:
+        return ""
+    
+    logic = logic.upper().strip()
+    if logic not in ("AND", "OR"):
+        raise ValueError(f"Invalid logic operator: {logic}")
+    
+    safe_conditions = [build_safe_condition(*cond) for cond in conditions]
+    return f" {logic} ".join(safe_conditions)
+
+
+def build_safe_order_by(fields: List[Tuple[str, str]]) -> str:
+    """
+    构建安全的ORDER BY子句
+    
+    Args:
+        fields: 排序字段列表，每个元素为 (字段名, 方向) 元组
+                方向为 'ASC' 或 'DESC'
+                
+    Returns:
+        安全的ORDER BY字符串
+    """
+    if not fields:
+        return ""
+    
+    order_parts = []
+    for field, direction in fields:
+        safe_field = validate_identifier(field)
+        direction = direction.upper().strip()
+        if direction not in ("ASC", "DESC"):
+            raise ValueError(f"Invalid order direction: {direction}")
+        order_parts.append(f"{safe_field} {direction}")
+    
+    return ", ".join(order_parts)
+
+
+def build_safe_select(fields: List[str]) -> str:
+    """
+    构建安全的SELECT字段列表
+    
+    Args:
+        fields: 字段名列表
+        
+    Returns:
+        安全的SELECT字段字符串
+    """
+    if not fields:
+        return "*"
+    
+    return ", ".join(validate_identifier(f) for f in fields)
+
+
+class SafeQueryBuilder:
+    """
+    安全SQL查询构建器
+    
+    提供链式调用的SQL构建接口，自动处理转义和验证
+    """
+    
+    def __init__(self, table_name: str):
+        """
+        初始化查询构建器
+        
+        Args:
+            table_name: 表名
+        """
+        self._table = validate_identifier(table_name)
+        self._select_fields = "*"
+        self._conditions = []
+        self._order_fields = []
+        self._limit = None
+        self._offset = None
+    
+    def select(self, *fields: str) -> 'SafeQueryBuilder':
+        """设置SELECT字段"""
+        if fields:
+            self._select_fields = build_safe_select(list(fields))
+        return self
+    
+    def where(self, field: str, operator: str, value: Any) -> 'SafeQueryBuilder':
+        """添加WHERE条件"""
+        self._conditions.append((field, operator, value))
+        return self
+    
+    def where_in(self, field: str, values: List[Any]) -> 'SafeQueryBuilder':
+        """添加IN条件"""
+        self._conditions.append((field, "IN", values))
+        return self
+    
+    def where_like(self, field: str, pattern: str) -> 'SafeQueryBuilder':
+        """添加LIKE条件"""
+        self._conditions.append((field, "LIKE", pattern))
+        return self
+    
+    def where_between(self, field: str, start: Any, end: Any) -> 'SafeQueryBuilder':
+        """添加BETWEEN条件"""
+        safe_field = validate_identifier(field)
+        self._conditions.append((f"{safe_field} >= {escape_sql_value(start)}", "=", True))
+        self._conditions.append((f"{safe_field} <= {escape_sql_value(end)}", "=", True))
+        return self
+    
+    def order_by(self, field: str, direction: str = "ASC") -> 'SafeQueryBuilder':
+        """添加排序"""
+        self._order_fields.append((field, direction))
+        return self
+    
+    def limit(self, count: int) -> 'SafeQueryBuilder':
+        """设置LIMIT"""
+        if count > 0:
+            self._limit = count
+        return self
+    
+    def offset(self, count: int) -> 'SafeQueryBuilder':
+        """设置OFFSET"""
+        if count >= 0:
+            self._offset = count
+        return self
+    
+    def build_select_sql(self) -> str:
+        """构建SELECT SQL语句"""
+        sql = f"SELECT {self._select_fields} FROM {self._table}"
+        
+        if self._conditions:
+            where_clause = build_safe_filter(self._conditions)
+            sql += f" WHERE {where_clause}"
+        
+        if self._order_fields:
+            order_clause = build_safe_order_by(self._order_fields)
+            sql += f" ORDER BY {order_clause}"
+        
+        if self._limit is not None:
+            sql += f" LIMIT {self._limit}"
+        
+        if self._offset is not None:
+            sql += f" OFFSET {self._offset}"
+        
+        return sql
+    
+    def build_count_sql(self) -> str:
+        """构建COUNT SQL语句"""
+        sql = f"SELECT COUNT(*) as total FROM {self._table}"
+        
+        if self._conditions:
+            where_clause = build_safe_filter(self._conditions)
+            sql += f" WHERE {where_clause}"
+        
+        return sql
+    
+    def build_delete_sql(self) -> str:
+        """构建DELETE SQL语句"""
+        if not self._conditions:
+            raise ValueError("DELETE operation requires WHERE conditions for safety")
+        
+        where_clause = build_safe_filter(self._conditions)
+        return f"DELETE FROM {self._table} WHERE {where_clause}"
 
 
 def dict_to_lower_keys(d: dict) -> dict:

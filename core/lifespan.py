@@ -18,6 +18,7 @@ from apps.common.monitor.log_stream_service import start_log_stream, stop_log_st
 from globalobjects import EVENT_AGGREGATOR
 from core.settings import TURNON_BINLOG_LISTENER, TRUNON_SCHEDULER, MAX_EVENTS_BATCH_SIZE
 from core.database import check_db_connections, warmup_connections, start_pool_monitoring, db_init_manager
+from core.task_manager import get_task_manager
 
 
 @asynccontextmanager
@@ -118,12 +119,19 @@ async def lifespan(app):
     
     # 启动数据库连接检查任务（从原startup_event迁移）
     log_config.info("启动数据库连接检查任务...")
-    db_check_task = asyncio.create_task(schedule_db_checks())
+    task_manager = get_task_manager()
+    db_check_task = task_manager.create_and_register(
+        "db_check_task", 
+        schedule_db_checks()
+    )
     log_config.info("数据库连接检查任务已启动")
     
     # 启动连接池监控任务
     log_config.info("启动连接池监控任务...")
-    pool_monitor_task = asyncio.create_task(start_pool_monitoring())
+    pool_monitor_task = task_manager.create_and_register(
+        "pool_monitor_task",
+        start_pool_monitoring()
+    )
     log_config.info("连接池监控任务已启动")
     
     # 启动日志数据库批次刷新任务
@@ -145,7 +153,10 @@ async def lifespan(app):
                 pass
     
     log_config.info("启动日志数据库批次刷新任务...")
-    log_db_flush_task = asyncio.create_task(schedule_log_db_flush())
+    log_db_flush_task = task_manager.create_and_register(
+        "log_db_flush_task",
+        schedule_log_db_flush()
+    )
     log_config.info("日志数据库批次刷新任务已启动")
 
     # 启动数据库健康检查器（独立后台任务，不依赖前端访问）
@@ -218,7 +229,10 @@ async def lifespan(app):
             await asyncio.sleep(90)
 
     # 创建 Redis 健康检查任务
-    redis_check_task = asyncio.create_task(schedule_redis_checks())
+    redis_check_task = task_manager.create_and_register(
+        "redis_check_task",
+        schedule_redis_checks()
+    )
     log_config.info("Redis 健康检查任务已启动")
 
     # 启动 Redis 消息消费者（处理来自数据库监听器的事件）
@@ -383,11 +397,17 @@ async def lifespan(app):
         except Exception as e:
             log_config.error(f"Redis 事件清理任务启动失败: {e}")
 
-    asyncio.create_task(start_redis_consumer())
+    task_manager.create_and_register(
+        "redis_consumer_task",
+        start_redis_consumer()
+    )
     log_config.info("Redis 消息消费者已启动")
-
+    
     # 启动 Redis 事件清理任务
-    asyncio.create_task(cleanup_expired_events())
+    task_manager.create_and_register(
+        "redis_cleanup_task",
+        cleanup_expired_events()
+    )
     log_config.info("Redis 事件清理任务已启动")
 
     # 等待一段时间，确保所有服务正常启动
@@ -396,140 +416,119 @@ async def lifespan(app):
     
     yield  # 应用运行期间
     
-    # 应用关闭时执行的操作
-    log_config.info("应用关闭中...")
+    # ============ 应用关闭阶段 ============
+    # 关闭顺序：任务 -> 服务 -> 资源
+    log_config.info("==================应用开始关闭==================")
     
-    # 0. 关闭数据库连接
-    log_config.info("正在关闭数据库连接...")
+    # 阶段1: 取消所有后台任务（优先执行）
+    log_config.info("【阶段1】取消所有后台任务...")
+    task_manager = get_task_manager()
+    await task_manager.cancel_all(timeout=10.0)
+    log_config.info("✅ 所有后台任务已取消")
+    
+    # 阶段2: 停止各服务和监控器
+    log_config.info("【阶段2】停止服务和监控器...")
+    
+    # 2.1 停止实时日志流服务
+    log_config.info("停止实时日志流服务...")
+    await stop_log_stream()
+    log_config.info("✅ 实时日志流服务已停止")
+    
+    # 2.2 停止数据库健康检查器
+    log_config.info("停止数据库健康检查器...")
+    await stop_db_health_checker()
+    log_config.info("✅ 数据库健康检查器已停止")
+    
+    # 2.3 停止失败操作恢复管理器
+    log_config.info("停止失败操作恢复管理器...")
+    await stop_failed_operation_recovery()
+    log_config.info("✅ 失败操作恢复管理器已停止")
+    
+    # 2.4 停止 MySQL Binlog 监控
+    if TURNON_BINLOG_LISTENER:
+        log_config.info("停止 MySQL Binlog 监控...")
+        binlog_listener.stop_monitoring()
+        log_config.info("✅ MySQL Binlog监控已停止")
+    
+    # 2.5 停止资源监控
+    log_config.info("停止资源监控...")
+    resource_monitor.stop_monitoring()
+    log_config.info("✅ 系统资源监控已停止")
+    
+    # 2.6 停止事件聚合器
+    log_config.info("停止事件聚合器...")
+    EVENT_AGGREGATOR.stop()
+    log_config.info("✅ 事件聚合器已停止")
+    
+    # 2.7 关闭事件线程池管理器
+    log_config.info("关闭事件线程池...")
+    from globalobjects.event_aggregator import get_event_pool_manager
+    get_event_pool_manager().shutdown_all()
+    log_config.info("✅ 事件线程池已关闭")
+    
+    # 2.8 关闭调度器
+    if TRUNON_SCHEDULER:
+        log_config.info("关闭调度器...")
+        scheduler_manager.shutdown()
+        log_config.info("✅ 定时任务管理器已关闭")
+    
+    log_config.info("✅ 所有服务已停止")
+    
+    # 阶段3: 释放资源和连接（最后执行）
+    log_config.info("【阶段3】释放资源和连接...")
+    
+    # 3.1 刷新 Redis 缓冲
+    log_config.info("刷新 Redis 缓冲...")
+    import concurrent.futures
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    loop = asyncio.get_event_loop()
+    
+    def get_buffer_size():
+        from apps.common.utils.redis_pool_manager import get_redis_pool_manager
+        return get_redis_pool_manager().get_buffer_size()
+    
+    try:
+        buffer_size = await loop.run_in_executor(executor, get_buffer_size)
+        if buffer_size > 0:
+            log_config.info(f"发现 {buffer_size} 个事件在本地缓冲中，准备刷新...")
+            
+            def flush_buffer():
+                from apps.common.utils.redis_pool_manager import flush_event_buffer
+                return flush_event_buffer('db_events')
+            
+            flushed = await loop.run_in_executor(executor, flush_buffer)
+            log_config.info(f"✅ 缓冲刷新完成，成功刷新 {flushed} 个事件")
+    except Exception as e:
+        log_config.warning(f"⚠️ 刷新Redis缓冲失败: {e}")
+    
+    # 3.2 关闭事件辅助模块
+    log_config.info("关闭事件辅助模块...")
+    try:
+        from apps.common.utils.event_helpers import shutdown_event_helpers
+        shutdown_event_helpers()
+        log_config.info("✅ 事件辅助模块已关闭")
+    except Exception as e:
+        log_config.warning(f"⚠️ 关闭事件辅助模块失败: {e}")
+    
+    # 3.3 关闭数据库连接（最后关闭）
+    log_config.info("关闭数据库连接...")
     try:
         from tortoise import Tortoise
         await Tortoise.close_connections()
         log_config.info("✅ 数据库连接已关闭")
     except Exception as e:
-        log_config.warning(f"⚠️ 关闭数据库连接时出错: {e}")
+        log_config.warning(f"⚠️ 关闭数据库连接失败: {e}")
     
-    # 1. 先停止 MySQL Binlog 监控（最依赖数据库）
-    if TURNON_BINLOG_LISTENER:
-        log_config.info("正在停止 MySQL Binlog 监控...")
-        binlog_listener.stop_monitoring()
-        log_config.info("==================MySQL Binlog监控已停止==================")
-    else:
-        log_config.debug("⚠️ MySQL Binlog监控未启动，无需停止")
-
-    # 2. 停止 Redis 相关任务
-    log_config.info("正在停止 Redis 相关任务...")
-    # 在线程池中执行缓冲刷新，避免阻塞事件循环
-    import concurrent.futures
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    loop = asyncio.get_event_loop()
-
-    def get_buffer_size():
-        from apps.common.utils.redis_pool_manager import get_redis_pool_manager
-        return get_redis_pool_manager().get_buffer_size()
-
-    buffer_size = await loop.run_in_executor(executor, get_buffer_size)
-    if buffer_size > 0:
-        log_config.info(f"发现 {buffer_size} 个事件在本地缓冲中，准备刷新...")
-
-        def flush_buffer():
-            from apps.common.utils.redis_pool_manager import flush_event_buffer
-            return flush_event_buffer('db_events')
-
-        flushed = await loop.run_in_executor(executor, flush_buffer)
-        log_config.info(f"缓冲刷新完成，成功刷新 {flushed} 个事件")
-    log_config.info("==================Redis 相关任务已停止==================")
-
-    # 2.1 关闭事件辅助模块（DeadLetter队列等）
-    log_config.info("正在关闭事件辅助模块...")
-    from apps.common.utils.event_helpers import shutdown_event_helpers
-    shutdown_event_helpers()
-    log_config.info("==================事件辅助模块已关闭==================")
-
-    # 3. 等待一段时间，确保所有任务完成
-    log_config.info("⏳ 等待所有后台任务完成...")
-    await asyncio.sleep(5)  # 等待5秒，让所有任务完成
-
-    # 4. 关闭调度器
-    if TRUNON_SCHEDULER:
-        log_config.info("正在关闭调度器...")
-        scheduler_manager.shutdown()
-        log_config.info("==================定时任务管理器已关闭==================")
-    else:
-        log_config.debug("⚠️ 定时任务管理器未启动，无需关闭")
+    # 阶段4: 关闭日志系统（最后）
+    log_config.info("【阶段4】关闭日志系统...")
     
-    # 5. 停止资源监控
-    log_config.info("正在停止资源监控...")
-    resource_monitor.stop_monitoring()
-    log_config.info("==================系统资源监控已停止==================")
-    
-    # 6. 停止事件聚合器
-    log_config.info("正在停止事件聚合器...")
-    log_config.info("==================事件聚合器已停止==================")
-    EVENT_AGGREGATOR.stop()
-    log_config.info("==================事件聚合器已停止==================")
-
-    # 6.1 关闭事件线程池管理器
-    log_config.info("正在关闭事件线程池...")
-    from globalobjects.event_aggregator import get_event_pool_manager
-    get_event_pool_manager().shutdown_all()
-    log_config.info("==================事件线程池已关闭==================")
-
-    # 7. 停止数据库健康检查器
-    log_config.info("正在停止数据库健康检查器...")
-    await stop_db_health_checker()
-    log_config.info("==================数据库健康检查器已停止==================")
-
-    # 8. 停止失败操作恢复管理器
-    log_config.info("正在停止OperationRecovery管理器...")
-    await stop_failed_operation_recovery()
-    log_config.info("==================OperationRecovery管理器已停止==================")
-
-    # 10. 取消后台任务
-    if 'db_check_task' in locals():
-        log_config.info("正在取消数据库连接检查任务...")
-        db_check_task.cancel()
-        try:
-            await db_check_task
-        except asyncio.CancelledError:
-            pass
-        log_config.info("==================数据库连接检查任务已取消==================")
-    
-    if 'log_db_flush_task' in locals():
-        log_config.info("正在取消日志数据库批次刷新任务...")
-        log_db_flush_task.cancel()
-        try:
-            await log_db_flush_task
-        except asyncio.CancelledError:
-            pass
-        log_config.info("==================日志数据库批次刷新任务已取消==================")
-
-    if 'pool_monitor_task' in locals():
-        log_config.info("正在取消连接池监控任务...")
-        pool_monitor_task.cancel()
-        try:
-            await pool_monitor_task
-        except asyncio.CancelledError:
-            pass
-        log_config.info("==================连接池监控任务已取消==================")
-
-    # 取消 Redis 健康检查任务
-    if 'redis_check_task' in locals():
-        log_config.info("正在取消 Redis 健康检查任务...")
-        redis_check_task.cancel()
-        try:
-            await redis_check_task
-        except asyncio.CancelledError:
-            pass
-        log_config.info("==================Redis 健康检查任务已取消==================")
-
-    # 11. 等待一段时间，确保所有任务真正完成
-    log_config.info("⏳ 等待所有任务彻底完成...")
-    await asyncio.sleep(3)  # 再等待3秒
-
+    # 在关闭日志系统前输出最终提示
     log_config.info("==================应用关闭完成==================")
-
-    # 12. 关闭统一日志系统
+    log_config.info("所有资源已释放，服务已完全停止")
+    
     await shutdown_logging()
-
-    # 13. 停止实时日志流服务
-    await stop_log_stream()
+    
+    # 使用print确保关闭后的提示能输出（日志系统已关闭）
+    print("=" * 50)
+    print("MyAPS API 应用已完全关闭")
+    print("=" * 50)

@@ -380,8 +380,10 @@ async def get_material(
     db_name = db_name.replace(" ", "")
     try:
         if materialnos != "...":
-            materialnos = ",".join([f"'{_}'" for _ in materialnos.split(",")])
-            filter_string = f"`MaterialNo` IN ({materialnos})"
+            # 使用安全的SQL条件构建器，防止注入
+            materialno_list = materialnos.split(",")
+            from globalobjects.db_manager import build_safe_condition
+            filter_string = build_safe_condition("MaterialNo", "IN", materialno_list)
         else:
             filter_string = ""
         result = await db_query(db_name=db_name, model_or_tablename="t_material", filter_string=filter_string)
@@ -1178,12 +1180,14 @@ async def get_mo_page(
     log_api_request(request)
     db_name = db_name.replace(" ", "")
 
-    filter = []
+    from globalobjects.db_manager import build_safe_filter
+    
+    conditions = []
     if start_time:
-        filter.append(f"`DT_OrdStart` >= '{start_time}'")
+        conditions.append(("DT_OrdStart", ">=", start_time))
     if end_time:
-        filter.append(f"`DT_OrdEnd` <= '{end_time}'")
-    filter_string = " AND ".join(filter)
+        conditions.append(("DT_OrdEnd", "<=", end_time))
+    filter_string = build_safe_filter(conditions)
     try:
         result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=filter_string, page_size=page_size, page_index=page_index)
         return standard_response(
@@ -1273,12 +1277,15 @@ async def get_orderwc_page(
 ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
-    filter = []
+    
+    from globalobjects.db_manager import build_safe_filter
+    
+    conditions = []
     if start_time:
-        filter.append(f"`DT_Start` >= '{start_time}'")
+        conditions.append(("DT_Start", ">=", start_time))
     if end_time:
-        filter.append(f"`DT_End` <= '{end_time}'")
-    filter_string = " AND ".join(filter)
+        conditions.append(("DT_End", "<=", end_time))
+    filter_string = build_safe_filter(conditions)
     try:
         result = await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=filter_string, page_size=page_size, page_index=page_index)
         return standard_response(
@@ -1313,7 +1320,9 @@ async def get_orderwc(
 ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
-    filter_string = f"`SupplyNo` = '{supplyno}'"
+    
+    from globalobjects.db_manager import build_safe_condition
+    filter_string = build_safe_condition("SupplyNo", "=", supplyno)
     try:
         result = await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=filter_string)
         return standard_response(
@@ -1478,9 +1487,13 @@ async def delete_workreport(
 ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
-    filter_string = f"`SupplyNo`='{supplyno}'"
+    
+    from globalobjects.db_manager import build_safe_filter
+    
+    conditions = [("SupplyNo", "=", supplyno)]
     if not itemno == "...":
-        filter_string += f" AND `ItemNo`='{itemno}'"
+        conditions.append(("ItemNo", "=", itemno))
+    filter_string = build_safe_filter(conditions)
     try:
         result = await db_delete(db_names=db_name, model_or_tablename="t_confirm", filter_string=filter_string)
         return standard_response(

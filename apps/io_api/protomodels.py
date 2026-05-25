@@ -4,7 +4,7 @@ from tortoise import fields
 
 
 class ProtoBatchLog(TortoiseBaseModel):
-    id = fields.IntField(source_field='ID', pk=True)
+    id = fields.IntField(source_field='ID', primary_key=True)
     systime = fields.DatetimeField(source_field='SysTime', null=True)  # Field name made lowercase.
     pidno = fields.CharField(source_field='PIDNO', max_length=32, null=True, description="ProfileNo")  # Field name made lowercase.
     task = fields.CharField(source_field='Task', max_length=1000, null=True, description="任务")  # Field name made lowercase.
