@@ -1,13 +1,30 @@
 # MyAPS API Docker Compose 配置
-# 使用方法: docker-compose up -d
+#
+# 使用方法：
+#   生产部署（从Docker Hub拉取）：
+#     DOCKER_IMAGE=qsct/myaps-api:master docker-compose up -d
+#   
+#   本地构建部署：
+#     docker-compose up -d --build
+#
+# 配置文件挂载：
+#   自动根据 .env 中的 PROJECT_DIR 挂载整个目录
+#   - ./project_files/${PROJECT_DIR}:/app/project_files/${PROJECT_DIR}
+#
+#   包含文件：
+#     - {PROJECT_JSON}.json (租户配置)
+#     - remind.py (告警配置)
+#     - client.py 等Git托管文件（覆盖无影响）
+#
+# 网络模式：
+#   全部使用host模式，统一通过localhost访问各服务
 
 services:
   redis:
     image: redis:7-alpine
     container_name: myaps_redis
     restart: unless-stopped
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
+    network_mode: host
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
@@ -16,39 +33,33 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - myaps_network
 
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    image: myaps_api:latest
+    image: ${DOCKER_IMAGE:-myaps_api:latest}
     container_name: myaps_api
     restart: unless-stopped
-    ports:
-      - "${PORT:-8000}:8000"
+    network_mode: host
     env_file:
       - .env
     environment:
-      - REDIS_HOST=redis
-      - GUNICORN_BIND=0.0.0.0:8000
+      # 覆盖.env中的配置，适配host网络模式
+      - REDIS_HOST=${REDIS_HOST:-localhost}
+      - GUNICORN_BIND=0.0.0.0:${PORT:-8000}
       - APP_ROOT=/app
-      - THIS_DB_HOST=${THIS_DB_HOST:-129.211.172.205}
-      - THIS_DB_PORT=${THIS_DB_PORT:-5432}
-      - THIS_DB_USER=${THIS_DB_USER:-n8n}
-      - THIS_DB_PASSWORD=${THIS_DB_PASSWORD:-123456}
-      - THIS_DB_NAME=${THIS_DB_NAME:-appsmith}
     volumes:
+      # 日志持久化
       - ./logs:/app/logs
-      - ./project_files:/app/project_files
-      - ./static:/app/static
+      # 存储持久化（SQLite、Binlog位置等）
       - ./storage:/app/storage
-      - ./apps:/app/apps
-      - ./core:/app/core
-      - ./globalobjects:/app/globalobjects
-      - ./scripts:/app/scripts
-      - ./main.py:/app/main.py
+      # 项目配置目录挂载（自动使用.env中的PROJECT_DIR）
+      # 挂载整个目录，自动包含：
+      #   - {PROJECT_JSON}.json (租户配置)
+      #   - remind.py (告警配置)
+      #   - client.py 等托管文件会被覆盖，但内容相同无影响
+      - ./project_files/${PROJECT_DIR}:/app/project_files/${PROJECT_DIR}
     depends_on:
       redis:
         condition: service_healthy
@@ -58,13 +69,7 @@ services:
       timeout: 10s
       start_period: 10s
       retries: 3
-    networks:
-      - myaps_network
 
 volumes:
   redis_data:
     driver: local
-
-networks:
-  myaps_network:
-    driver: bridge

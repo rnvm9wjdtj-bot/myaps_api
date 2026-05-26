@@ -5,15 +5,68 @@
 - Docker 20.10+
 - Docker Compose V2
 - Python 3.12（镜像内置）
+- PostgreSQL 15+（服务自有数据库）
+- Redis 7+（事件总线）
+
+---
 
 ## 快速开始
 
 ```bash
-# 构建镜像
-docker-compose build
+# 1. 配置环境变量（编辑.env文件）
+vim .env
+# 确保以下变量已正确配置：
+# - PROJECT_DIR=HACYXS        # 项目目录
+# - PROJECT_JSON=dev          # 配置文件名
+# - THIS_DB_*                 # 数据库连接信息（本地用localhost）
+# - REDIS_HOST=localhost      # Redis连接信息
 
-# 启动服务
-docker-compose up -d
+# 2. 部署服务（从Docker Hub拉取，统一使用host网络模式）
+DOCKER_IMAGE=qsct/myaps-api:master docker-compose up -d
+
+# 3. 验证部署
+curl http://localhost:8000/
+docker ps | grep myaps
+```
+
+---
+
+## 部署方式
+
+### 方式一：Docker Compose 部署（推荐）
+
+#### 1. 配置 GitHub Secrets
+
+在GitHub仓库中配置以下Secrets（Settings → Secrets and variables → Actions）：
+
+| Secret名称 | 说明 | 示例值 |
+|-----------|------|--------|
+| `DOCKER_USERNAME` | Docker Hub用户名 | `qsct` |
+| `DOCKER_PASSWORD` | Docker Hub访问令牌（非密码） | `dckr_pat_xxxx` |
+
+**获取Docker Hub访问令牌：**
+1. 登录 Docker Hub → Account Settings → Security → Personal access tokens
+2. 点击 "Generate new token"
+3. **权限必须勾选：Read, Write, Delete**
+4. 复制生成的令牌（只显示一次）
+
+#### 2. 触发 CI/CD 构建
+
+```bash
+# 推送代码到master分支触发自动构建
+git push origin master
+
+# 或在GitHub Actions页面手动触发
+```
+
+#### 3. 部署服务
+
+```bash
+# 从Docker Hub拉取并部署
+DOCKER_IMAGE=qsct/myaps-api:master docker-compose up -d
+
+# 或本地构建后部署
+docker-compose up -d --build
 
 # 查看状态
 docker-compose ps
@@ -21,6 +74,108 @@ docker-compose ps
 # 查看日志
 docker-compose logs -f
 ```
+
+**镜像选择说明：**
+- 默认使用本地镜像 `myaps_api:latest`
+- 通过 `DOCKER_IMAGE` 环境变量指定Docker Hub镜像
+- 自动读取 `.env` 中的 `PROJECT_DIR`，挂载对应配置目录
+
+#### 4. 使用 docker run 部署（可选）
+
+```bash
+# 拉取镜像
+docker pull qsct/myaps-api:master
+
+# 启动Redis（host网络模式）
+docker run -d \
+  --name myaps_redis \
+  --network host \
+  -v redis_data:/data \
+  redis:7-alpine \
+  redis-server --appendonly yes
+
+# 启动App（host网络模式）
+docker run -d \
+  --name myaps-api \
+  --network host \
+  -v /opt/myaps_api/myaps_api/project_files/${PROJECT_DIR}:/app/project_files/${PROJECT_DIR} \
+  -v /opt/myaps_api/myaps_api/logs:/app/logs \
+  -v /opt/myaps_api/myaps_api/storage:/app/storage \
+  -v /opt/myaps_api/myaps_api/static:/app/static \
+  -e PORT=8000 \
+  -e REDIS_HOST=localhost \
+  --env-file /opt/myaps_api/myaps_api/.env \
+  --entrypoint gunicorn \
+  qsct/myaps-api:master \
+  -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000 main:app
+```
+
+#### 5. 验证部署
+
+```bash
+# 检查容器状态
+docker ps | grep myaps-api
+
+# 验证API可访问
+curl http://localhost:8000/
+
+# 访问API文档
+# http://localhost:8000/docs
+```
+
+---
+
+## 配置文件挂载
+
+### 自动挂载机制
+
+Docker Compose 自动根据 `.env` 中的 `PROJECT_DIR` 挂载配置目录：
+
+```yaml
+# docker-compose.yml
+volumes:
+  - ./project_files/${PROJECT_DIR}:/app/project_files/${PROJECT_DIR}
+```
+
+**示例：** 当 `PROJECT_DIR=HACYXS` 时，挂载：
+- `project_files/HACYXS/` 整个目录
+
+### 敏感文件说明
+
+以下文件因包含敏感信息，已被 `.gitignore` 排除，需通过挂载注入：
+
+```
+project_files/{PROJECT_DIR}/
+├── {PROJECT_JSON}.json    # 租户配置（数据库连接等）
+└── remind.py              # 告警配置（SMTP密码）
+```
+
+**Git托管文件（覆盖无影响）：**
+- `client.py` - 客户端代码
+- 其他非敏感文件
+
+### 环境变量配置
+
+在 `.env` 中配置：
+
+```ini
+# 项目配置
+PROJECT_DIR=HACYXS        # 项目目录名
+PROJECT_JSON=dev          # 配置文件名（不含扩展名）
+
+# 数据库配置
+THIS_DB_HOST=localhost
+THIS_DB_PORT=5432
+THIS_DB_USER=myaps_user
+THIS_DB_PASSWORD=your_password
+THIS_DB_NAME=myaps_db
+
+# Redis配置
+REDIS_PORT=6379
+REDIS_PASSWORD=
+```
+
+---
 
 ## 辅助脚本
 
@@ -39,19 +194,134 @@ cd scripts/deploy_docker
 ./import_image.sh       # 导入镜像
 ```
 
+---
+
+## 数据库配置
+| `PROJECT_JSON` | 配置文件名（不含扩展名） | `dev` |
+
+**需要挂载的文件列表：**
+
+```
+project_files/
+└── {PROJECT_DIR}/              # 如 HACYXS/
+    ├── {PROJECT_JSON}.json     # 如 dev.json（租户配置）
+    └── remind.py               # 固定文件名（告警配置）
+```
+
+**示例：** 当 `PROJECT_DIR=HACYXS`，`PROJECT_JSON=dev` 时，需要挂载：
+- `project_files/HACYXS/dev.json` - 租户配置文件
+- `project_files/HACYXS/remind.py` - 告警邮件配置（SMTP密码等）
+
+### 解决方案
+
+**方案一：运行时挂载（推荐）**
+
+将本地 `project_files` 目录挂载到容器中：
+
+```bash
+-v /opt/myaps_api/myaps_api/project_files:/app/project_files
+```
+
+**优点：**
+- 敏感数据不进入镜像
+- 不提交到GitHub仓库
+- 可随时修改配置无需重新构建镜像
+
+**方案二：环境变量注入**
+
+修改代码，从环境变量读取敏感配置：
+
+```python
+# remind.py
+import os
+
+ops_reminder = QqEmailReminder(
+    smtp_user=os.getenv("SMTP_USER"),
+    smtp_password=os.getenv("SMTP_PASSWORD"),
+    # ...
+)
+```
+
+---
+
+## 网络模式
+
+当前配置统一使用 **Host模式**：
+
+```yaml
+services:
+  redis:
+    network_mode: host
+    
+  app:
+    network_mode: host
+```
+
+### Host模式特点
+
+| 特点 | 说明 |
+|-----|------|
+| **网络栈共享** | 容器直接使用宿主机网络 |
+| **localhost访问** | 容器内localhost指向宿主机 |
+| **性能最优** | 无NAT转换，网络延迟最低 |
+| **配置简单** | 无需端口映射和容器名解析 |
+
+### 访问路径
+
+```
+宿主机网络栈
+├── Redis容器 → localhost:6379
+├── App容器 → localhost:8000
+└── PostgreSQL → localhost:5432
+```
+
+### 环境变量配置
+
+```ini
+# .env 配置示例
+REDIS_HOST=localhost          # 本地Redis（默认）
+THIS_DB_HOST=localhost        # 本地PostgreSQL
+
+# 或使用远程服务
+REDIS_HOST=192.168.1.100      # 远程Redis
+THIS_DB_HOST=192.168.1.101    # 远程PostgreSQL
+```
+
+### 注意事项
+
+- ⚠️ 端口冲突风险：确保8000、6379端口未被占用
+- ⚠️ 单机单环境：不适合同一宿主机运行多套环境
+- ✅ 访问本地服务：无需额外配置即可访问宿主机PostgreSQL/Redis
+
+---
+
 ## 环境配置
 
 配置文件 `.env` 会被自动读取，以下变量会被容器环境覆盖：
 
 | 变量 | 容器内值 | 说明 |
 |-----|---------|------|
-| `REDIS_HOST` | `redis` | 容器名访问 |
-| `GUNICORN_BIND` | `0.0.0.0:8000` | 容器内监听 |
+| `REDIS_HOST` | `${REDIS_HOST:-localhost}` | 从.env读取，默认localhost |
+| `GUNICORN_BIND` | `0.0.0.0:${PORT:-8000}` | 容器内监听 |
 | `APP_ROOT` | `/app` | 容器工作目录 |
+| `PORT` | `8000` | 服务端口 |
 
-## PostgreSQL 自有数据库安装（可选）
+---
 
-项目支持自有 PostgreSQL 数据库（THIS_DB），以下为手动安装步骤。
+## PostgreSQL 自有数据库安装
+
+### Docker 方式（推荐）
+
+```bash
+docker run -d \
+  --name myaps_postgres \
+  -e POSTGRES_USER=myaps_user \
+  -e POSTGRES_PASSWORD=your_password \
+  -e POSTGRES_DB=myaps_db \
+  -p 5432:5432 \
+  -v postgres_data:/var/lib/postgresql/data \
+  postgres:15-alpine
+```
 
 ### Ubuntu/Debian 安装
 
@@ -82,40 +352,6 @@ sudo vim /etc/postgresql/*/main/pg_hba.conf
 
 # 5. 重启服务
 sudo systemctl restart postgresql
-
-# 6. 验证连接
-psql -h localhost -U myaps_user -d myaps_db
-```
-
-### CentOS/RHEL 安装
-
-```bash
-# 1. 安装 PostgreSQL
-sudo yum install -y postgresql-server postgresql-contrib
-sudo postgresql-setup initdb
-
-# 2. 启动服务
-sudo systemctl start postgresql
-sudo systemctl enable postgresql
-
-# 3-6. 创建用户和配置（同Ubuntu）
-```
-
-### Docker 方式安装 PostgreSQL
-
-```bash
-# 启动 PostgreSQL 容器
-docker run -d \
-  --name myaps_postgres \
-  -e POSTGRES_USER=myaps_user \
-  -e POSTGRES_PASSWORD=your_password \
-  -e POSTGRES_DB=myaps_db \
-  -p 5432:5432 \
-  -v postgres_data:/var/lib/postgresql/data \
-  postgres:15-alpine
-
-# 查看连接信息
-docker inspect myaps_postgres | grep IPAddress
 ```
 
 ### 配置应用连接
@@ -131,73 +367,72 @@ THIS_DB_PASSWORD=your_password
 THIS_DB_NAME=myaps_db
 ```
 
-### 不使用自有数据库
-
-如不需要自有数据库，保持 `.env` 中相关配置为空或注释即可：
-
-```ini
-# THIS_DB_HOST=
-# THIS_DB_NAME=
-```
-
-应用会自动跳过自有数据库初始化。
+---
 
 ## 数据持久化
 
 以下目录已配置持久化挂载：
 
-- `logs/` - 应用日志
-- `project_files/` - 项目配置缓存
-- `static/` - 静态文件
-- `storage/` - 存储目录（SQLite、Binlog位置等）
-- `apps/` - 应用代码（开发模式热更新）
-- `core/` - 核心配置（开发模式热更新）
-- `globalobjects/` - 全局对象（开发模式热更新）
-- `scripts/` - 脚本文件（开发模式热更新）
-- `redis_data` - Redis数据卷
+| 目录 | 说明 | 是否必需 |
+|-----|------|---------|
+| `logs/` | 应用日志 | ✓ |
+| `project_files/` | 项目配置（含敏感文件） | ✓ |
+| `storage/` | 存储目录（SQLite、Binlog位置等） | ✓ |
+| `redis_data` | Redis数据卷 | ✓ |
 
-> 注意：生产环境建议移除代码目录挂载，使用镜像内置代码以获得更好隔离性。
+---
 
 ## 常用命令
 
 ```bash
+# 查看容器状态
+docker ps | grep myaps-api
+
 # 查看应用日志
-docker-compose logs -f app
+docker logs myaps-api -f
+
+# 查看最近50行日志
+docker logs myaps-api --tail 50
 
 # 进入容器
-docker exec -it myaps_api bash
+docker exec -it myaps-api bash
 
-# 重新构建并启动
-docker-compose up -d --build
+# 重启容器
+docker restart myaps-api
 
-# 停止并清理
-docker-compose down
+# 停止并删除容器
+docker rm -f myaps-api
 
-# 停止并清理卷
-docker-compose down -v
+# 查看镜像信息
+docker images qsct/myaps-api
 ```
+
+---
 
 ## 版本更新
 
 ```bash
-# 拉取最新代码
-git pull
+# 拉取最新镜像
+docker pull qsct/myaps-api:master
 
-# 重新构建并启动（零停机）
-docker-compose up -d --build
-
-# 或使用脚本
-./build.sh v2.0
-docker-compose up -d
+# 使用docker-compose重启
+docker-compose down
+DOCKER_IMAGE=qsct/myaps-api:master docker-compose up -d
 ```
+
+---
 
 ## 回滚操作
 
 ```bash
-# 回滚到指定版本
-docker tag myaps_api:v1.0 myaps_api:latest
-docker-compose up -d
+# 拉取指定版本的镜像
+docker pull qsct/myaps-api:2c9ac38
+
+# 或使用本地镜像标签
+docker tag qsct/myaps-api:v1.0 qsct/myaps-api:master
 ```
+
+---
 
 ## 离线部署
 
@@ -212,33 +447,177 @@ docker-compose up -d
 ./start.sh
 ```
 
+---
+
 ## 健康检查
 
-- 应用健康检查: `curl http://localhost:8000/docs`
-- Redis健康检查: `docker exec myaps_redis redis-cli ping`
-- 查看容器健康状态: `docker ps --format "table {{.Names}}\t{{.Status}}"`
+```bash
+# 应用健康检查
+curl http://localhost:8000/docs
+
+# Redis健康检查
+docker exec myaps_redis redis-cli ping
+
+# 查看容器健康状态
+docker ps --format "table {{.Names}}\t{{.Status}}"
+
+# 检查应用启动状态
+curl -s http://localhost:8000/ | python3 -m json.tool
+```
+
+---
 
 ## 镜像信息
 
 | 项目 | 值 |
 |-----|-----|
-| 基础镜像 | python:3.12-slim |
-| 镜像大小 | ~460MB |
+| 镜像名称 | `qsct/myaps-api:master` |
+| 基础镜像 | `python:3.12-slim` |
+| 镜像大小 | ~405MB |
 | 多阶段构建 | 是 |
-| 国内镜像源 | 已配置（腾讯云） |
+| 镜像源 | 官方源（适配GitHub Actions） |
+
+---
 
 ## 故障排查
 
-```bash
-# 查看应用日志
-docker-compose logs -f app
+### 常见问题
 
-# 查看启动失败原因
-docker logs myaps_api 2>&1 | head -50
+#### 1. 容器启动失败：ModuleNotFoundError
+
+**现象：**
+```
+ModuleNotFoundError: No module named 'project_files.HACYXS.remind'
+```
+
+**原因：** 敏感配置文件未挂载
+
+**解决：**
+```bash
+# 添加挂载参数
+-v /opt/myaps_api/myaps_api/project_files:/app/project_files
+```
+
+---
+
+#### 2. 容器无法连接Redis/PostgreSQL
+
+**现象：**
+```
+Error 111 connecting to 127.0.0.1:6379. Connection refused.
+```
+
+**原因：** 容器内 `localhost` 指向容器自身
+
+**解决：**
+```bash
+# 方案一：使用host网络模式
+--network host
+
+# 方案二：使用host.docker.internal（Docker Desktop）
+-e REDIS_HOST=host.docker.internal
+```
+
+---
+
+#### 3. 端口冲突
+
+**现象：**
+```
+Bind for 0.0.0.0:8000 failed: port is already allocated
+```
+
+**解决：**
+```bash
+# 检查端口占用
+ss -tlnp | grep :8000
+
+# 使用其他端口
+-e PORT=8002
+# 并修改启动命令中的端口
+-b 0.0.0.0:8002
+```
+
+---
+
+#### 4. Docker镜像拉取超时
+
+**现象：**
+```
+net/http: request canceled while waiting for connection
+```
+
+**原因：** 网络问题（国内访问Docker Hub慢）
+
+**解决：**
+```bash
+# 配置镜像加速器
+sudo vim /etc/docker/daemon.json
+```
+
+```json
+{
+  "registry-mirrors": [
+    "https://mirror.ccs.tencentyun.com",
+    "https://docker.mirrors.ustc.edu.cn"
+  ]
+}
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+```
+
+---
+
+### 排查命令
+
+```bash
+# 查看容器退出原因
+docker inspect myaps-api --format '{{.State.ExitCode}}'
+
+# 查看完整启动日志
+docker logs myaps-api 2>&1
 
 # 进入容器调试
-docker exec -it myaps_api bash
+docker exec -it myaps-api bash
 
 # 检查容器内文件
-docker exec myaps_api ls -la /app/
+docker exec myaps-api ls -la /app/project_files/HACYXS/
+
+# 测试应用能否加载
+docker run --rm \
+  -v /opt/myaps_api/myaps_api/project_files:/app/project_files \
+  --env-file /opt/myaps_api/myaps_api/.env \
+  qsct/myaps-api:master \
+  python -c "from main import app; print('OK')"
 ```
+
+---
+
+## CI/CD 配置说明
+
+### GitHub Actions 工作流程
+
+1. **代码检查**：Black、isort、Ruff代码风格检查
+2. **构建与测试**：运行单元测试和覆盖率检查
+3. **安全扫描**：Bandit安全扫描、依赖漏洞检查
+4. **构建交付物**：构建Docker镜像并推送到Docker Hub
+
+### 修改记录
+
+- **镜像源**：已从腾讯云源改为官方源（适配GitHub Actions环境）
+- **镜像名称**：已修改为 `docker.io/${{ secrets.DOCKER_USERNAME }}/myaps-api`
+- **Dockerfile**：移除腾讯云镜像源配置
+
+### 注意事项
+
+- CI环境使用官方源，国内部署建议配置镜像加速器
+- 敏感文件不会进入镜像，需要运行时挂载
+- 推送镜像需要Docker Hub Token具有Write权限
+
+---
+
+**最后更新**: 2026-05-26  
+**维护者**: MyAPS开发团队
