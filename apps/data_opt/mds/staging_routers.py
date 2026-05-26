@@ -1674,3 +1674,7 @@ async def get_index_stats(request: Request):
     except Exception as e:
         logger.error(f"获取首页统计失败: {str(e)}")
         return standard_response(success=0, message=str(e))
+
+
+from .migrations.migrate_router import migrate_router
+rt.include_router(migrate_router)

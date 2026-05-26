@@ -549,6 +549,7 @@ class AcceptMatWcMold(BaseModel):
     basesec: float = Field(..., ge=0, description='节拍T/T(秒/100)', example=600)
     fixsec: int = Field(0, ge=0, description='额定时间(秒)', example=300)
     priority: int = Field(..., description='优先级', example=1)
+    worker: float = Field(0, ge=0, description='人员', example=1.0)
     memo: Optional[str] = Field(None, max_length=255, description='备注', example="标准机台模具配置")
     _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
 

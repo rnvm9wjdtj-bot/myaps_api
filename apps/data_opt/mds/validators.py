@@ -64,61 +64,6 @@ async def validate_material_type_e_rules(cleaner, data, staging_id):
     return errors
 
 
-# async def validate_mat_wc_rules(cleaner, data, staging_id):
-#     """工艺路线业务规则校验：外键存在校验"""
-#     errors = []
-#     if data.get("materialno") and data.get("matver"):
-#         exists = await TMatVer.filter(materialno=data["materialno"], matver=data["matver"]).exists()
-#         if not exists:
-#             errors.append(cleaner._create_error(
-#                 staging_id, ErrorType.FK_NOT_FOUND, "matver",
-#                 f"{data['materialno']}/{data['matver']}", "关联的产线版本不存在"
-#             ))
-#     return errors
-
-
-# async def validate_mat_wc_bom_rules(cleaner, data, staging_id):
-#     """物料清单业务规则校验：外键存在校验"""
-#     errors = []
-#     # productno/materialno 比较已用 config_rules 替代
-#     if data.get("productno") and data.get("matver"):
-#         exists = await TMatVer.filter(materialno=data["productno"], matver=data["matver"]).exists()
-#         if not exists:
-#             errors.append(cleaner._create_error(
-#                 staging_id, ErrorType.FK_NOT_FOUND, "matver",
-#                 f"{data['productno']}/{data['matver']}", "关联的产线版本不存在"
-#             ))
-#     if data.get("productno") and data.get("matver") and data.get("itemno"):
-#         exists = await TMatWc.filter(
-#             materialno=data["productno"], 
-#             matver=data["matver"], 
-#             itemno=data["itemno"]
-#         ).exists()
-#         if not exists:
-#             errors.append(cleaner._create_error(
-#                 staging_id, ErrorType.FK_NOT_FOUND, "itemno",
-#                 f"{data['productno']}/{data['matver']}/{data['itemno']}", "关联的工序不存在"
-#             ))
-#     # qty 和 scrap 范围已用 config_rules 替代
-#     return errors
-
-
-# async def validate_mat_wc_mold_rules(cleaner, data, staging_id):
-#     """机台模具关联业务规则校验：外键存在校验"""
-#     errors = []
-#     if data.get("materialno") and data.get("workcenter") and data.get("itemno"):
-#         exists = await TMatWc.filter(
-#             materialno=data["materialno"],
-#             workcenter=data["workcenter"],
-#             itemno=data["itemno"]
-#         ).exists()
-#         if not exists:
-#             errors.append(cleaner._create_error(
-#                 staging_id, ErrorType.FK_NOT_FOUND, "itemno",
-#                 f"{data['materialno']}/{data['workcenter']}/{data['itemno']}", "关联的工艺路线不存在"
-#             ))
-#     return errors
-
 async def bom_structure_check_hook(processor, table_name: str, context: dict) -> dict:
     """
     BOM结构完整性校验钩子

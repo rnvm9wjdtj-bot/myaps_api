@@ -466,6 +466,7 @@ class ProtoMatWcMold(TortoiseBaseModel):
     basesec = fields.IntField(source_field='BaseSec', blank=True, null=True, description='节拍')  # Field name made lowercase.
     fixsec = fields.IntField(source_field='FixSec', blank=True, null=True, description='额定时间(秒)')  # Field name made lowercase.
     priority = fields.IntField(source_field='Priority', blank=True, null=True, description='优先级')  # Field name made lowercase.
+    worker = fields.FloatField(source_field='Worker', blank=True, null=True, description='人员')  # Field name made lowercase.
     memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
 
     class Meta:

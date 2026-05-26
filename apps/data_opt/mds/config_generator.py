@@ -408,6 +408,7 @@ _PAGE_COLUMNS_CONFIG = {
         {"field": "basesec", "title": "基础工时"},
         {"field": "fixsec", "title": "额定时间"},
         {"field": "priority", "title": "优先级"},
+        {"field": "worker", "title": "人员"},
         {"field": "memo", "title": "备注"},
     ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
 }

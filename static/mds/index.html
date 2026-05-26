@@ -145,9 +145,13 @@
 {cards}
         </div>
         
-        <div class="text-center mt-5">
-            <!-- <small class="text-white opacity-50">数据清洗管理系统 v1.0</small> -->
-        </div>
+    </div>
+    
+    <div id="migrateTriggerZone" style="position: fixed; right: 0; bottom: 0; width: 120px; height: 120px; z-index: 1000; cursor: default;">
+        <button class="btn btn-sm" id="migrateBtn" title="数据库结构迁移" disabled 
+                style="opacity: 0; pointer-events: none; background: rgba(108, 117, 234, 0.9); color: white; border: none; border-radius: 8px 0 0 0;">
+            <i class="bi bi-database-gear"></i>
+        </button>
     </div>
 
     <script>
@@ -319,12 +323,64 @@
         </div>
     </div>
 
+    <div class="modal fade" id="migrateDialog" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-database-gear"></i> 数据库结构迁移</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="migrateDiffBody"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="closeMigrateDialogBtn">取消</button>
+                    <button type="button" class="btn btn-warning" id="confirmMigrateBtn">确认迁移</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="migrateProgress" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-arrow-repeat"></i> 迁移执行中</h5>
+                </div>
+                <div class="modal-body">
+                    <div class="progress mb-3" style="height: 20px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning" id="migrateProgressBar" style="width: 0%">0%</div>
+                    </div>
+                    <p class="text-center text-muted" id="migrateProgressText">正在检测差异...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="migrateResult" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-check-circle"></i> 迁移结果</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="migrateResultBody"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" id="closeMigrateResultBtn">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- i18n国际化支持 -->
     <script src="/static/lib/i18n/i18n.js"></script>
     <script src="/static/lib/i18n/zh-CN.js"></script>
     <script src="/static/lib/i18n/en-US.js"></script>
     <script src="/static/lib/i18n/de-DE.js"></script>
     <script src="/static/mds/js/global-ops-controller.js"></script>
+    <script src="/static/mds/js/migrate-controller.js"></script>
     <script>
         // 初始化i18n并设置语言
         document.addEventListener('DOMContentLoaded', function() {
@@ -332,6 +388,11 @@
             if (typeof i18n !== 'undefined') {
                 const savedLang = localStorage.getItem('i18n_lang') || 'zh-CN';
                 i18n.init(savedLang);
+            }
+            
+            // 初始化迁移控制器
+            if (typeof MigrateController !== 'undefined') {
+                MigrateController.init();
             }
             
             // 语言切换处理
