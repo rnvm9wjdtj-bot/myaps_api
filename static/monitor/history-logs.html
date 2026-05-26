@@ -1222,7 +1222,7 @@
                     url += `&type=${queryType}`;
                 }
                 
-                // 高级过滤参数（根据当前queryType获取对应页签的过滤条件）
+                // 高级过滤参数（根据当前活动标签页获取对应页签的过滤条件）
                 let filterModule = '';
                 let filterKeyword = '';
                 let filterMethod = '';
@@ -1232,12 +1232,12 @@
                 let filterDurationMin = '';
                 let filterDurationMax = '';
                 
-                // 只在查询特定类型时应用该类型的过滤条件
-                // 查询全部数据时不应用任何页签的过滤条件
-                if (queryType === 'logs') {
+                // 根据当前活动标签页应用对应的筛选条件
+                // 这样即使用户选择"全部数据"查询类型，当前标签页的筛选条件也会生效
+                if (currentTab === 'logs') {
                     filterModule = document.getElementById('filter-module')?.value?.trim() || '';
                     filterKeyword = document.getElementById('filter-keyword')?.value?.trim() || '';
-                } else if (queryType === 'http') {
+                } else if (currentTab === 'http') {
                     filterMethod = document.getElementById('filter-method')?.value || '';
                     filterClientIp = document.getElementById('filter-client-ip')?.value?.trim() || '';
                     filterStatusMin = document.getElementById('filter-status-min')?.value || '';
@@ -1245,7 +1245,7 @@
                     filterDurationMin = document.getElementById('filter-duration-min')?.value || '';
                     filterDurationMax = document.getElementById('filter-duration-max')?.value || '';
                     filterKeyword = document.getElementById('filter-keyword-http')?.value?.trim() || '';
-                } else if (queryType === 'outbound') {
+                } else if (currentTab === 'outbound') {
                     filterMethod = document.getElementById('filter-method-outbound')?.value || '';
                     filterStatusMin = document.getElementById('filter-status-min-outbound')?.value || '';
                     filterStatusMax = document.getElementById('filter-status-max-outbound')?.value || '';
@@ -1339,15 +1339,25 @@
             document.getElementById('history-log-level').value = '';
             document.getElementById('history-query-type').value = 'all';
             
-            // 重置高级过滤条件
+            // 重置高级过滤条件（系统日志）
             document.getElementById('filter-module').value = '';
             document.getElementById('filter-keyword').value = '';
+            
+            // 重置高级过滤条件（接收请求）
             document.getElementById('filter-method').value = '';
             document.getElementById('filter-client-ip').value = '';
             document.getElementById('filter-status-min').value = '';
             document.getElementById('filter-status-max').value = '';
             document.getElementById('filter-duration-min').value = '';
             document.getElementById('filter-duration-max').value = '';
+            
+            // 重置高级过滤条件（发送请求）
+            document.getElementById('filter-keyword-outbound').value = '';
+            document.getElementById('filter-method-outbound').value = '';
+            document.getElementById('filter-status-min-outbound').value = '';
+            document.getElementById('filter-status-max-outbound').value = '';
+            document.getElementById('filter-duration-min-outbound').value = '';
+            document.getElementById('filter-duration-max-outbound').value = '';
             
             updateFilterActiveState();
             
