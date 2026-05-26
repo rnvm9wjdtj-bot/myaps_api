@@ -33,6 +33,9 @@ logs/
 storage/*.sqlite3
 storage/binlog_position.json
 
+# Project files with sensitive data
+project_files/**/dev.json
+
 # Temporary files
 *.tmp
 *.temp
