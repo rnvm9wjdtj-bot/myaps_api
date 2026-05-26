@@ -16,7 +16,7 @@ from .service import monitor_service
 from .log_stream_service import log_stream_service
 from .storage import request_storage, outbound_request_storage, system_log_storage
 from .models import APIRequest, OutboundAPIRequest, SystemLog
-from core.settings import TIMEZONE
+from core.settings import TIMEZONE, SQLITE_FILE
 from globalobjects import logger as log_config
 import time
 import json
@@ -1137,25 +1137,35 @@ async def get_history_by_time_range(
             from .models import SystemLog
             from tortoise import connections
             
-            conn = connections.get("default")
+            conn = connections.get(SQLITE_FILE)
             
             # 构建SQL查询
             sql = "SELECT level, COUNT(*) as count FROM system_logs WHERE 1=1"
             params = []
             
             if utc_start and utc_end:
-                sql += " AND timestamp >= $1 AND timestamp <= $2"
+                sql += " AND timestamp >= ? AND timestamp <= ?"
                 params.extend([utc_start, utc_end])
             
             if filter_params and filter_params.get('module'):
-                sql += f" AND module IN ({','.join(['$'+str(i+3) for i in range(len(filter_params['module']))])})"
+                sql += f" AND module IN ({','.join(['?' for _ in filter_params['module']])})"
                 params.extend(filter_params['module'])
             
             sql += " GROUP BY level"
             
             # 执行查询
             rows = await conn.execute_query(sql, params)
-            level_stats = {row['level']: row['count'] for row in rows[1] if row.get('level')}
+            level_stats = {}
+            if rows and len(rows) > 1 and rows[1]:
+                for row in rows[1]:
+                    # SQLite返回sqlite3.Row对象，支持索引访问
+                    if isinstance(row, (tuple, list)) and len(row) >= 2:
+                        level_stats[row[0]] = row[1]
+                    elif hasattr(row, '__getitem__'):
+                        try:
+                            level_stats[row['level']] = row['count']
+                        except (KeyError, TypeError):
+                            pass
             result["stats"]["level_distribution"] = level_stats
         except Exception as e:
             print(f"统计级别分布失败: {e}")
