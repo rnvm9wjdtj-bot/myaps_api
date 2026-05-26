@@ -6,8 +6,7 @@ FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
-RUN sed -i 's/deb.debian.org/mirrors.tencentyun.com/g' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     default-libmysqlclient-dev \
@@ -15,17 +14,14 @@ RUN sed -i 's/deb.debian.org/mirrors.tencentyun.com/g' /etc/apt/sources.list.d/d
 
 COPY requirements.txt .
 
-RUN pip config set global.index-url http://mirrors.tencentyun.com/pypi/simple \
-    && pip config set install.trusted-host mirrors.tencentyun.com \
-    && pip install --no-cache-dir --user -r requirements.txt
+RUN pip install --no-cache-dir --user -r requirements.txt
 
 # 运行阶段
 FROM python:3.12-slim
 
 WORKDIR /app
 
-RUN sed -i 's/deb.debian.org/mirrors.tencentyun.com/g' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     libmariadb3 \
     curl \
