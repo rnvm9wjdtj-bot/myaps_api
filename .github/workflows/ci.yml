@@ -254,7 +254,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: docker.io/myaps-api
+          images: docker.io/${{ secrets.DOCKER_USERNAME }}/myaps-api
           tags: |
             type=sha,prefix=
             type=ref,event=branch
@@ -393,7 +393,7 @@ jobs:
           EOF
           
           # 替换占位符
-          sed -i "s|\${IMAGE_NAME}|myaps-api|g" DEPLOY.md
+          sed -i "s|\${IMAGE_NAME}|${{ secrets.DOCKER_USERNAME }}/myaps-api|g" DEPLOY.md
           sed -i "s|\${IMAGE_TAG}|${{ steps.meta.outputs.version }}|g" DEPLOY.md
           sed -i "s|\${REGISTRY}|docker.io|g" DEPLOY.md
 
@@ -411,7 +411,7 @@ jobs:
           echo "=========================================="
           echo "构建完成！交付物信息："
           echo "=========================================="
-          echo "镜像: docker.io/myaps-api:${{ steps.meta.outputs.version }}"
+          echo "镜像: docker.io/${{ secrets.DOCKER_USERNAME }}/myaps-api:${{ steps.meta.outputs.version }}"
           echo "标签: ${{ steps.meta.outputs.tags }}"
           echo "=========================================="
           echo "部署方式："
