@@ -96,8 +96,8 @@ storage/
 storage/**/
 
 
-migrations/
-migrations/**/
+# 只忽略根目录下的 migrations（通常是 Alembic/Tortoise 自动生成的迁移文件）
+/migrations/
 
 offline_packages/
 offline_packages/**/
