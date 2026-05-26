@@ -17,15 +17,15 @@ env:
 jobs:
   lint-and-format:
     name: 代码检查
-    runs-on: ${{ env.UBUNTU_VERSION }}
+    runs-on: ubuntu-latest
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 设置 Python ${{ env.PYTHON_VERSION }}
+      - name: 设置 Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: '3.12'
 
       - name: 安装 lint 工具
         run: |
@@ -52,7 +52,7 @@ jobs:
 
   build-and-test:
     name: 构建与测试
-    runs-on: ${{ env.UBUNTU_VERSION }}
+    runs-on: ubuntu-latest
     needs: lint-and-format
     
     services:
@@ -83,10 +83,10 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 设置 Python ${{ env.PYTHON_VERSION }}
+      - name: 设置 Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: '3.12'
           cache: 'pip'
 
       - name: 安装依赖
@@ -191,16 +191,16 @@ jobs:
 
   security-scan:
     name: 安全扫描
-    runs-on: ${{ env.UBUNTU_VERSION }}
+    runs-on: ubuntu-latest
     needs: lint-and-format
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 设置 Python ${{ env.PYTHON_VERSION }}
+      - name: 设置 Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: '3.12'
 
       - name: 安装安全检查工具
         run: |
@@ -229,7 +229,7 @@ jobs:
 
   build-artifacts:
     name: 构建交付物
-    runs-on: ${{ env.UBUNTU_VERSION }}
+    runs-on: ubuntu-latest
     needs: [build-and-test, security-scan]
     if: github.event_name == 'push'
     
@@ -246,7 +246,7 @@ jobs:
       - name: 登录镜像仓库
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: docker.io
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
@@ -254,7 +254,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: docker.io/myaps-api
           tags: |
             type=sha,prefix=
             type=ref,event=branch
@@ -393,9 +393,9 @@ jobs:
           EOF
           
           # 替换占位符
-          sed -i "s|\${IMAGE_NAME}|${IMAGE_NAME}|g" DEPLOY.md
+          sed -i "s|\${IMAGE_NAME}|myaps-api|g" DEPLOY.md
           sed -i "s|\${IMAGE_TAG}|${{ steps.meta.outputs.version }}|g" DEPLOY.md
-          sed -i "s|\${REGISTRY}|${REGISTRY}|g" DEPLOY.md
+          sed -i "s|\${REGISTRY}|docker.io|g" DEPLOY.md
 
       - name: 上传交付物
         uses: actions/upload-artifact@v4
@@ -411,7 +411,7 @@ jobs:
           echo "=========================================="
           echo "构建完成！交付物信息："
           echo "=========================================="
-          echo "镜像: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}"
+          echo "镜像: docker.io/myaps-api:${{ steps.meta.outputs.version }}"
           echo "标签: ${{ steps.meta.outputs.tags }}"
           echo "=========================================="
           echo "部署方式："
