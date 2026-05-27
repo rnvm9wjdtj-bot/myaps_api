@@ -16,19 +16,28 @@ logger = log_config.get_logger(__name__)
 
 
 
-# 时区，默认东八区
-TIMEZONE = os.getenv("TIMEZONE", "+8")
+# 时区，默认东八区（使用 IANA 格式）
+TIMEZONE = os.getenv("TIMEZONE", "Asia/Shanghai")
 
-def get_timezone_name(offset_str):
+def get_timezone_name(timezone_str):
     """
-    将时区偏移量字符串（如 +8, -5）转换为时区名称（如 Asia/Shanghai）
+    将时区字符串转换为标准 IANA 时区名称
+    
+    支持两种格式：
+    1. IANA 时区格式（如 Asia/Shanghai）- 直接返回
+    2. 偏移量格式（如 +8, -5）- 转换为对应的 IANA 时区名称
     
     Args:
-        offset_str: 时区偏移量字符串，格式为 "+8" 或 "-5"
+        timezone_str: 时区字符串，格式为 "Asia/Shanghai" 或 "+8" 或 "-5"
     
     Returns:
-        时区名称，如 "Asia/Shanghai"
+        标准 IANA 时区名称，如 "Asia/Shanghai"
     """
+    # 如果已经是 IANA 格式（包含 '/'），直接返回
+    if "/" in timezone_str:
+        return timezone_str
+    
+    # 偏移量格式转换映射
     offset_map = {
         "-12": "Etc/GMT+12",
         "-11": "Etc/GMT+11",
@@ -59,7 +68,7 @@ def get_timezone_name(offset_str):
         "+12": "Pacific/Fiji",
     }
     
-    return offset_map.get(offset_str, "Asia/Shanghai")
+    return offset_map.get(timezone_str, "Asia/Shanghai")
 
 TIMEZONE_NAME = get_timezone_name(TIMEZONE)
 

@@ -184,8 +184,8 @@ async def insert_to_staging_table(
     skipped_fields = set()
     
     for item in data_list:
-        columns = ["_source_system", "_status"]
-        values = [source_system, "pending"]
+        columns = ["_source_system", "_status", "_retry_count"]
+        values = [source_system, "pending", 0]
         
         for key, value in item.items():
             if value is not None and key not in exclude_fields:

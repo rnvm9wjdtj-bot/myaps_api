@@ -33,7 +33,6 @@ ehthumbs.db
 Thumbs.db
 
 # Logs
-logs
 *.log
 
 # Runtime data
@@ -92,7 +91,6 @@ project_files/**/remind.py
 .binlog_position.json
 
 *.sqlite*
-storage/
 storage/**/
 
 

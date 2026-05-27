@@ -34,6 +34,28 @@ services:
       timeout: 5s
       retries: 5
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: myaps_postgres
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      - TZ=${TIMEZONE:-Asia/Shanghai}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+      - POSTGRES_USER=${THIS_DB_USER}
+      - POSTGRES_PASSWORD=${THIS_DB_PASSWORD}
+      - POSTGRES_DB=${THIS_DB_NAME}
+      - POSTGRES_PORT=${THIS_DB_PORT:-5432}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${THIS_DB_USER} -d ${THIS_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   app:
     build:
       context: .
@@ -47,6 +69,7 @@ services:
     environment:
       # 覆盖.env中的配置，适配host网络模式
       - REDIS_HOST=${REDIS_HOST:-localhost}
+      - THIS_DB_HOST=${THIS_DB_HOST:-localhost}
       - GUNICORN_BIND=0.0.0.0:${PORT:-8000}
       - APP_ROOT=/app
     volumes:
@@ -63,6 +86,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
       interval: 30s
@@ -70,6 +95,38 @@ services:
       start_period: 10s
       retries: 3
 
+  # ============ 附加服务（默认开启）============
+  # 监控和管理工具，随基础服务一起启动
+  
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.11
+    container_name: myaps_uptime_kuma
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - uptime_kuma_data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "server/server.js", "--healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  portainer:
+    image: portainer/portainer-ce:2.21.4
+    container_name: myaps_portainer
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    command: -p 9000 --no-edge
+
 volumes:
   redis_data:
+    driver: local
+  postgres_data:
+    driver: local
+  uptime_kuma_data:
+    driver: local
+  portainer_data:
     driver: local
