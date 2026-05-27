@@ -265,6 +265,7 @@ jobs:
         with:
           context: .
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -343,27 +344,28 @@ jobs:
         run: |
           cat > DEPLOY.md << 'EOF'
           # MyAPS API 部署指南
-          
+
           ## 交付物
           - **Docker 镜像**: `${IMAGE_NAME}:${IMAGE_TAG}`
+          - **支持架构**: `linux/amd64`（Intel）和 `linux/arm64`（ARM/Apple Silicon）
           - **环境变量模板**: `.env.template`
-          
+
           ## 部署步骤
-          
+
           ### 1. 拉取镜像
           ```bash
           docker pull ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
           ```
-          
+
           ### 2. 准备环境变量
           ```bash
           # 复制模板
           cp .env.template .env
-          
+
           # 编辑配置（根据租户实际情况修改）
           vim .env
           ```
-          
+
           ### 3. 启动服务
           ```bash
           docker run -d \
@@ -372,10 +374,9 @@ jobs:
             -p 8000:8000 \
             ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
           ```
-          
+
           ### 4. 使用 Docker Compose（推荐）
           ```yaml
-          version: '3.8'
           services:
             myaps-api:
               image: ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
@@ -384,7 +385,12 @@ jobs:
                 - "8000:8000"
               restart: unless-stopped
           ```
-          
+
+          ## 架构说明
+          - 镜像已支持 `linux/amd64` 和 `linux/arm64` 双架构
+          - Docker 会自动根据部署机器的架构拉取对应版本
+          - Apple Silicon（M系列）用户无需额外配置
+
           ## 配置要点
           1. 必须配置 `THIS_DB_*`（PostgreSQL）
           2. 必须配置 `REDIS_*`
@@ -412,6 +418,7 @@ jobs:
           echo "构建完成！交付物信息："
           echo "=========================================="
           echo "镜像: docker.io/${{ secrets.DOCKER_USERNAME }}/myaps-api:${{ steps.meta.outputs.version }}"
+          echo "支持架构: linux/amd64, linux/arm64"
           echo "标签: ${{ steps.meta.outputs.tags }}"
           echo "=========================================="
           echo "部署方式："
