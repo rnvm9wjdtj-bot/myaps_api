@@ -185,8 +185,8 @@ VALUES (
 );
 
 -- =====================================================
--- 完成提示
+-- 完成提示与验证
 -- =====================================================
--- 执行完成后，可通过以下命令验证:
--- SELECT name FROM sqlite_master WHERE type='table';
--- SELECT * FROM schema_version ORDER BY applied_at DESC;
+-- 验证建表结果（执行此查询以确认所有表已创建）
+SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;
+SELECT 'Schema version applied: ' || version AS result FROM schema_version ORDER BY applied_at DESC LIMIT 1;
