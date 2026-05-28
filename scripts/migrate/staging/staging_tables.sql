@@ -77,7 +77,8 @@ CREATE TABLE IF NOT EXISTS t_material_staging (
 DO $$
 BEGIN
     -- V001 新增字段示例（演示增量模式）
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 't_material_staging' AND column_name = 'free4') THEN
+    -- 使用 pg_attribute 检查，支持大小写敏感的标识符
+    IF NOT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 't_material_staging'::regclass AND LOWER(attname) = LOWER('Free4') AND NOT attisdropped) THEN
         ALTER TABLE t_material_staging ADD COLUMN "Free4" VARCHAR(255) NULL;
     END IF;
 END $$;
@@ -347,6 +348,7 @@ CREATE TABLE IF NOT EXISTS t_mat_wc_mold_staging (
     "BaseSec" INT NULL,
     "FixSec" INT NULL,
     "Priority" INT NULL,
+    "Worker" FLOAT NULL,
     "Memo" VARCHAR(255) NULL
 );
 
