@@ -192,7 +192,112 @@ cd scripts/deploy_docker
 
 ./export_image.sh       # 导出镜像 (离线部署用)
 ./import_image.sh       # 导入镜像
+
+./setup_kuma_monitors.sh    # 配置Uptime Kuma监控项
 ```
+
+### 监控配置脚本
+
+`setup_kuma_monitors.sh` 用于一键配置 Uptime Kuma 监控项，所有配置从 `.env` 文件读取。
+
+**使用方法：**
+
+```bash
+# 查看帮助信息
+./setup_kuma_monitors.sh --help
+
+# 查看监控配置列表
+./setup_kuma_monitors.sh --list
+
+# 执行监控配置（幂等操作，可重复执行）
+./setup_kuma_monitors.sh
+
+# 模拟执行（不实际操作）
+./setup_kuma_monitors.sh --dry-run
+
+# 指定容器名称
+./setup_kuma_monitors.sh --container my_uptime_kuma
+```
+
+**配置选项：**
+
+| 选项 | 说明 |
+|-----|------|
+| `-h, --help` | 显示帮助信息 |
+| `-l, --list` | 显示监控配置列表 |
+| `-n, --dry-run` | 模拟执行，不实际操作 |
+| `-c, --container` | 指定 Uptime Kuma 容器名称 |
+
+**监控项列表（自动从 .env 读取配置）：**
+
+| 监控项 | 类型 | 配置来源 |
+|--------|------|---------|
+| MyAPI服务 | HTTP | `PORT` |
+| Redis | Port | `REDIS_PORT` |
+| PostgreSQL | Port | `THIS_DB_PORT` |
+| Portainer | HTTP | `PORTAINER_PORT` |
+| Binlog监听器 | HTTP | `PORT` |
+| Uptime Kuma | HTTP | `UPTIME_KUMA_PORT` |
+| MyAPS数据库 | Port | `MYAPS_DB_HOST:MYAPS_DB_PORT` |
+
+**环境变量配置：**
+
+在 `.env` 文件中配置以下变量：
+
+```ini
+# 应用端口
+PORT=8000
+
+# 数据库端口
+THIS_DB_PORT=5432
+MYAPS_DB_HOST=1.13.184.21
+MYAPS_DB_PORT=3333
+
+# Redis端口
+REDIS_PORT=6379
+
+# 监控服务端口
+UPTIME_KUMA_PORT=3001
+PORTAINER_PORT=9000
+PORTAINER_TUNNEL_PORT=9001
+```
+
+**执行示例：**
+
+```bash
+$ ./setup_kuma_monitors.sh
+==============================================
+  Uptime Kuma 监控配置一键安装脚本
+==============================================
+
+🔍 检查Uptime Kuma容器状态...
+✅ 容器 myaps_uptime_kuma 运行正常
+
+📝 生成SQL脚本...
+✅ SQL脚本生成成功
+
+📤 复制SQL脚本到容器...
+✅ SQL脚本已复制到容器
+
+⚙️  在容器内执行SQL导入...
+本次执行添加 7 条监控记录
+✅ SQL导入成功
+
+🧹 清理临时文件...
+✅ 清理完成
+
+📊 检查监控配置...
+✅ 当前监控数量: 7 个
+
+==============================================
+🎉 监控配置导入完成！
+==============================================
+
+💡 访问地址: http://localhost:3001
+   查看已添加的7个监控项
+```
+
+> **注意**：脚本具有幂等性，重复执行不会产生重复监控项。
 
 ---
 

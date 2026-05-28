@@ -103,6 +103,8 @@ services:
     container_name: myaps_uptime_kuma
     restart: unless-stopped
     network_mode: host
+    environment:
+      - UPTIME_KUMA_LISTEN=0.0.0.0:${UPTIME_KUMA_PORT:-3001}
     volumes:
       - uptime_kuma_data:/app/data
     healthcheck:
@@ -119,7 +121,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
-    command: -p 9000 --no-edge
+    command: --bind=:${PORTAINER_PORT:-9000} --tunnel-port ${PORTAINER_TUNNEL_PORT:-9001}
 
 volumes:
   redis_data:
