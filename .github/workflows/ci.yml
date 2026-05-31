@@ -8,23 +8,10 @@ on:
   workflow_dispatch:
 
 env:
-  PYTHON_VERSION: '3.12'
-  UBUNTU_VERSION: 'ubuntu-latest'
-  # CI执行的目标仓库（仅在此仓库执行CI流程）
-  CI_TARGET_REPO: 'rnvm9wjdtj-bot/myaps_api'
-  # 镜像仓库配置（请根据实际情况修改）
-  REGISTRY: docker.io
-  IMAGE_NAME: myaps-api
-  # 数据库配置
-  POSTGRES_VERSION: '15'
-  REDIS_VERSION: '7'
   TEST_DB_PASSWORD: 'test_password'
   TEST_DB_NAME: 'myaps_test'
   POSTGRES_PORT: '5432'
-  REDIS_PORT: '6379'
-  # Docker配置
   DOCKER_PLATFORMS: 'linux/amd64,linux/arm64'
-  # 报告保留天数
   SHORT_RETENTION_DAYS: '7'
   RELEASE_RETENTION_DAYS: '30'
 
@@ -32,7 +19,7 @@ jobs:
   lint-and-format:
     name: 代码检查
     runs-on: ubuntu-latest
-    if: github.repository == ${{ env.CI_TARGET_REPO }}
+    if: github.repository == 'rnvm9wjdtj-bot/myaps_api'
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
@@ -69,7 +56,7 @@ jobs:
     name: 构建与测试
     runs-on: ubuntu-latest
     needs: lint-and-format
-    if: github.repository == ${{ env.CI_TARGET_REPO }}
+    if: github.repository == 'rnvm9wjdtj-bot/myaps_api'
     
     services:
       postgres:
@@ -209,7 +196,7 @@ jobs:
     name: 安全扫描
     runs-on: ubuntu-latest
     needs: lint-and-format
-    if: github.repository == ${{ env.CI_TARGET_REPO }}
+    if: github.repository == 'rnvm9wjdtj-bot/myaps_api'
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
@@ -248,7 +235,7 @@ jobs:
     name: 构建交付物
     runs-on: ubuntu-latest
     needs: [build-and-test, security-scan]
-    if: github.repository == ${{ env.CI_TARGET_REPO }} && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: github.repository == 'rnvm9wjdtj-bot/myaps_api' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     
     outputs:
       image-tag: ${{ steps.meta.outputs.version }}
