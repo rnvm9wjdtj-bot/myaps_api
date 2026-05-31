@@ -275,6 +275,20 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: 添加架构标签
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          IMAGE: docker.io/${{ secrets.DOCKER_USERNAME }}/myaps-api
+        run: |
+          echo "为版本 ${VERSION} 添加架构标签..."
+          MANIFEST=$(docker buildx imagetools inspect ${IMAGE}:${VERSION} --raw)
+          AMD64_DIGEST=$(echo "$MANIFEST" | jq -r '.manifests[] | select(.platform.architecture == "amd64") | .digest')
+          ARM64_DIGEST=$(echo "$MANIFEST" | jq -r '.manifests[] | select(.platform.architecture == "arm64") | .digest')
+          docker buildx imagetools create --tag ${IMAGE}:amd64-${VERSION} ${IMAGE}@${AMD64_DIGEST}
+          docker buildx imagetools create --tag ${IMAGE}:arm64-${VERSION} ${IMAGE}@${ARM64_DIGEST}
+          echo "✅ 架构标签创建完成: amd64-${VERSION}, arm64-${VERSION}"
+
       - name: 生成环境变量模板
         run: |
           cat > .env.template << 'EOF'
@@ -421,9 +435,14 @@ jobs:
           echo "=========================================="
           echo "构建完成！交付物信息："
           echo "=========================================="
-          echo "镜像: docker.io/${{ secrets.DOCKER_USERNAME }}/myaps-api:${{ steps.meta.outputs.version }}"
+          echo "多架构镜像: docker.io/${{ secrets.DOCKER_USERNAME }}/myaps-api:${{ steps.meta.outputs.version }}"
           echo "支持架构: linux/amd64, linux/arm64"
-          echo "标签: ${{ steps.meta.outputs.tags }}"
+          echo "平台标签: ${{ steps.meta.outputs.tags }}"
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "架构专属标签:"
+            echo "  AMD64: docker.io/${{ secrets.DOCKER_USERNAME }}/myaps-api:amd64-${{ steps.meta.outputs.version }}"
+            echo "  ARM64: docker.io/${{ secrets.DOCKER_USERNAME }}/myaps-api:arm64-${{ steps.meta.outputs.version }}"
+          fi
           echo "=========================================="
           echo "部署方式："
           echo "1. 从 GitHub Artifacts 下载 .env.template 和 DEPLOY.md"
