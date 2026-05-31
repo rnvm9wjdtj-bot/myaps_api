@@ -73,12 +73,12 @@ jobs:
     
     services:
       postgres:
-        image: postgres:${{ env.POSTGRES_VERSION }}
+        image: postgres:15
         env:
-          POSTGRES_PASSWORD: ${{ env.TEST_DB_PASSWORD }}
-          POSTGRES_DB: ${{ env.TEST_DB_NAME }}
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: myaps_test
         ports:
-          - ${{ env.POSTGRES_PORT }}:${{ env.POSTGRES_PORT }}
+          - 5432:5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -86,9 +86,9 @@ jobs:
           --health-retries 5
       
       redis:
-        image: redis:${{ env.REDIS_VERSION }}
+        image: redis:7
         ports:
-          - ${{ env.REDIS_PORT }}:${{ env.REDIS_PORT }}
+          - 6379:6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 10s
