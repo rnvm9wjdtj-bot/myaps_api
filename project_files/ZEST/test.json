@@ -1,0 +1,43 @@
+{
+    "env": {
+        "THIS_DB_HOST": null,
+        "THIS_DB_PORT": null,
+        "THIS_DB_USER": null,
+        "THIS_DB_PASSWORD": null,
+        "THIS_DB_NAME": null,
+        "MYAPS_VERSION": "P",
+        "MYAPS_BASE_URL": "http://172.16.101.197:8092",
+        "MYAPS_DB_HOST": "172.16.101.197",
+        "MYAPS_DB_PORT": 3333,
+        "MYAPS_DB_USER": "root",
+        "MYAPS_DB_PASSWORD": "E9damw0o@#$",
+        "MYAPS_DB_SET": "hdtest",
+        "MYAPS_MAIN_DB": "hdtest"
+    },
+    "erp": {
+        "base_url": "http://192.168.201.2:8000",
+        "sap-client": "800",
+        "werks": "1600",
+        "username": "T058",
+        "password": "123456"
+    },
+    "mes": {
+        "base_url": "http://58.214.28.122:8851"
+    },
+    "srm": {
+        "base_url": "http://192.168.1.222:7776",
+        "Authorization": "Basic dHNpcGFkbWluOmFkbWlu"
+    },
+    "defaults": {
+        "!no_fill_defaults": ["lotmin", "lotmax"],
+        "auto_matver": true,
+        "matver_prefix": "V",
+        "matver": "V01",
+        "itemno_prefix": "A",
+        "itemno": "A01",
+        "plant": "1600",
+        "planner": "haida",
+        "leadday_e": 1,
+        "leadday_f": 1
+    }
+}
