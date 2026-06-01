@@ -17,7 +17,7 @@ from apps.common.monitor import (
 from apps.common.monitor.log_stream_service import start_log_stream, stop_log_stream
 from globalobjects import EVENT_AGGREGATOR
 from core.settings import TURNON_BINLOG_LISTENER, TRUNON_SCHEDULER, MAX_EVENTS_BATCH_SIZE
-from core.database import check_db_connections, warmup_connections, start_pool_monitoring, db_init_manager
+from core.database import check_db_connections, warmup_connections, start_pool_monitoring, db_init_manager, ensure_sqlite_monitor_tables
 from core.task_manager import get_task_manager
 
 
@@ -72,7 +72,19 @@ async def lifespan(app):
         log_config.warning("⚠️ 数据库连接预热超时，继续启动其他服务")
     except Exception as e:
         log_config.error(f"❌ 数据库连接预热失败: {e}")
-    
+
+    log_config.info("检查 SQLite 监控表...")
+    try:
+        tables_ready = await asyncio.wait_for(ensure_sqlite_monitor_tables(), timeout=30)
+        if tables_ready:
+            log_config.info("✅ SQLite 监控表检查完成")
+        else:
+            log_config.warning("⚠️ SQLite 监控表检查未通过，部分功能可能受影响")
+    except asyncio.TimeoutError:
+        log_config.warning("⚠️ SQLite 监控表检查超时")
+    except Exception as e:
+        log_config.error(f"❌ SQLite 监控表检查异常: {e}")
+
     log_config.info("开始启动资源监控...")
     resource_monitor.start_monitoring(interval=30)
     log_config.info("系统资源监控已启动")

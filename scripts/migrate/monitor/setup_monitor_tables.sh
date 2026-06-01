@@ -147,50 +147,64 @@ else
     # 2. 检查容器是否存在
     echo -e "\n${YELLOW}🔍 检查MyAPS API容器状态...${NC}"
     if ! docker inspect "$CONTAINER_NAME" &>/dev/null; then
-        echo -e "${RED}❌ 错误: 容器 $CONTAINER_NAME 不存在${NC}"
-        echo -e "${RED}   请先启动MyAPS API容器${NC}"
-        exit 1
-    fi
-
-    # 检查容器是否运行
-    CONTAINER_STATUS=$(docker inspect -f '{{.State.Status}}' "$CONTAINER_NAME")
-    if [ "$CONTAINER_STATUS" != "running" ]; then
-        if $DRY_RUN; then
-            echo -e "${YELLOW}⚠️  [模拟] 容器未运行，将启动...${NC}"
-        else
-            echo -e "${YELLOW}⚠️  容器未运行，正在启动...${NC}"
-            docker start "$CONTAINER_NAME"
-            sleep 5
-        fi
-    fi
-    echo -e "${GREEN}✅ 容器 $CONTAINER_NAME 运行正常${NC}"
-
-    # 3. 执行建表
-    echo -e "\n${YELLOW}⚙️  执行建表脚本...${NC}"
-    echo -e "${BLUE}   数据库文件: ${STORAGE_DIR}/${SQLITE_FILE}.sqlite3${NC}"
-
-    if $DRY_RUN; then
-        echo -e "${YELLOW}   [模拟] docker cp ${SQL_FILE} ${CONTAINER_NAME}:/tmp/monitor_tables.sql${NC}"
-        echo -e "${YELLOW}   [模拟] docker exec ${CONTAINER_NAME} sqlite3 ${STORAGE_DIR}/${SQLITE_FILE}.sqlite3 < /tmp/monitor_tables.sql${NC}"
+        echo -e "${YELLOW}⚠️  容器 $CONTAINER_NAME 不存在，自动切换到本地模式${NC}"
+        LOCAL_MODE=true
     else
-        # 复制SQL文件到容器
-        echo -e "${YELLOW}   复制SQL文件到容器...${NC}"
-        docker cp "$SQL_FILE" "$CONTAINER_NAME":/tmp/monitor_tables.sql
-        
-        # 执行建表脚本
-        echo -e "${YELLOW}   执行SQL脚本...${NC}"
-        docker exec "$CONTAINER_NAME" sqlite3 "${STORAGE_DIR}/${SQLITE_FILE}.sqlite3" < /tmp/monitor_tables.sql
-        
-        EXIT_CODE=$?
-        if [ $EXIT_CODE -eq 0 ]; then
-            echo -e "${GREEN}✅ 建表成功${NC}"
-        else
-            echo -e "${RED}❌ 建表失败 (退出码: $EXIT_CODE)${NC}"
-            exit 1
+        CONTAINER_STATUS=$(docker inspect -f '{{.State.Status}}' "$CONTAINER_NAME")
+        if [ "$CONTAINER_STATUS" != "running" ]; then
+            echo -e "${YELLOW}⚠️  容器 $CONTAINER_NAME 未运行，自动切换到本地模式${NC}"
+            LOCAL_MODE=true
         fi
-        
-        # 清理容器内的临时文件
-        docker exec "$CONTAINER_NAME" rm -f /tmp/monitor_tables.sql
+    fi
+
+    if [ "$LOCAL_MODE" = true ]; then
+        echo -e "\n${YELLOW}⚙️  本地模式执行...${NC}"
+
+        DB_PATH="${SCRIPT_DIR}/../../../storage/${SQLITE_FILE}.sqlite3"
+        echo -e "${BLUE}   数据库文件: ${DB_PATH}${NC}"
+
+        if $DRY_RUN; then
+            echo -e "${YELLOW}   [模拟] sqlite3 ${DB_PATH} < ${SQL_FILE}${NC}"
+        else
+            mkdir -p "$(dirname "$DB_PATH")"
+            echo -e "${YELLOW}   执行SQL脚本...${NC}"
+            sqlite3 "$DB_PATH" < "$SQL_FILE"
+
+            EXIT_CODE=$?
+            if [ $EXIT_CODE -eq 0 ]; then
+                echo -e "${GREEN}✅ 建表成功${NC}"
+            else
+                echo -e "${RED}❌ 建表失败 (退出码: $EXIT_CODE)${NC}"
+                exit 1
+            fi
+        fi
+    else
+        echo -e "${GREEN}✅ 容器 $CONTAINER_NAME 运行正常${NC}"
+
+        # 3. 执行建表
+        echo -e "\n${YELLOW}⚙️  执行建表脚本...${NC}"
+        echo -e "${BLUE}   数据库文件: ${STORAGE_DIR}/${SQLITE_FILE}.sqlite3${NC}"
+
+        if $DRY_RUN; then
+            echo -e "${YELLOW}   [模拟] docker cp ${SQL_FILE} ${CONTAINER_NAME}:/tmp/monitor_tables.sql${NC}"
+            echo -e "${YELLOW}   [模拟] docker exec ${CONTAINER_NAME} sqlite3 ${STORAGE_DIR}/${SQLITE_FILE}.sqlite3 < /tmp/monitor_tables.sql${NC}"
+        else
+            echo -e "${YELLOW}   复制SQL文件到容器...${NC}"
+            docker cp "$SQL_FILE" "$CONTAINER_NAME":/tmp/monitor_tables.sql
+
+            echo -e "${YELLOW}   执行SQL脚本...${NC}"
+            docker exec "$CONTAINER_NAME" sqlite3 "${STORAGE_DIR}/${SQLITE_FILE}.sqlite3" < /tmp/monitor_tables.sql
+
+            EXIT_CODE=$?
+            if [ $EXIT_CODE -eq 0 ]; then
+                echo -e "${GREEN}✅ 建表成功${NC}"
+            else
+                echo -e "${RED}❌ 建表失败 (退出码: $EXIT_CODE)${NC}"
+                exit 1
+            fi
+
+            docker exec "$CONTAINER_NAME" rm -f /tmp/monitor_tables.sql
+        fi
     fi
 fi
 

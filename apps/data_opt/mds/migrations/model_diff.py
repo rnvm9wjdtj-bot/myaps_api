@@ -208,18 +208,207 @@ class ModelDiffer:
             default_value=default_value if has_default else None
         )
     
-    async def diff(self, model_class) -> List[AlterStmt]:
+    async def table_exists(self, table_name: str) -> bool:
         """
-        对比单个模型与数据库表的差异
+        检查表是否存在于数据库中
+        
+        Args:
+            table_name: 表名
+            
+        Returns:
+            表是否存在
+        """
+        conn = await get_db_connection_safely(self.db_name)
+        
+        query = """
+            SELECT EXISTS (
+                SELECT 1 
+                FROM information_schema.tables 
+                WHERE table_name = $1 AND table_schema = 'public'
+            )
+        """
+        
+        result = await conn.execute_query(query, (table_name,))
+        
+        if result and result[1]:
+            return result[1][0].get('exists', False)
+        return False
+
+    def _generate_create_table_sql(self, model_class) -> str:
+        """
+        生成 CREATE TABLE 语句
         
         Args:
             model_class: Tortoise ORM 模型类
             
         Returns:
-            差异列表（需要新增的字段）
+            CREATE TABLE SQL 语句
+        """
+        table_name = model_class._meta.db_table
+        model_fields = self.get_model_fields(model_class)
+        
+        columns = []
+        primary_key = None
+        
+        for field_name, field in model_fields.items():
+            db_field_name = getattr(field, 'source_field', None) or field_name
+            _, sql_type_def = self._map_field_type_to_sql(field)
+            
+            is_nullable = getattr(field, 'null', True)
+            default_value = getattr(field, 'default', None)
+            has_default = default_value is not None and str(default_value) != 'PydanticUndefined'
+            
+            # 检查主键
+            if getattr(field, 'pk', False) or field_name == 'id':
+                primary_key = db_field_name
+                # 处理主键字段
+                if isinstance(field, IntField) and getattr(field, 'generated', False):
+                    columns.append(f'"{db_field_name}" SERIAL PRIMARY KEY')
+                else:
+                    columns.append(f'"{db_field_name}" {sql_type_def} PRIMARY KEY')
+                continue
+            
+            parts = [f'"{db_field_name}" {sql_type_def}']
+            
+            if not is_nullable:
+                parts.append('NOT NULL')
+            
+            if has_default:
+                if isinstance(default_value, str):
+                    parts.append(f"DEFAULT '{default_value}'")
+                elif isinstance(default_value, bool):
+                    parts.append(f"DEFAULT {'TRUE' if default_value else 'FALSE'}")
+                else:
+                    parts.append(f'DEFAULT {default_value}')
+            
+            columns.append(' '.join(parts))
+        
+        # 添加主键约束（如果没有自动主键）
+        if primary_key is None and '_staging_id' in [getattr(f, 'source_field', None) or fn for fn, f in model_fields.items()]:
+            columns.append(f'PRIMARY KEY ("_staging_id")')
+        
+        sql_statement = f'CREATE TABLE IF NOT EXISTS "{table_name}" (\n    ' + ',\n    '.join(columns) + '\n)'
+        
+        return sql_statement
+
+    def _load_staging_sql_script(self, table_name: str) -> Optional[str]:
+        """
+        从 SQL 文件加载指定表的创建脚本
+        
+        Args:
+            table_name: 表名
+            
+        Returns:
+            SQL 脚本内容，如果找不到返回 None
+        """
+        import os
+        from pathlib import Path
+        
+        # 定位 SQL 文件
+        sql_file = Path(__file__).resolve().parent.parent.parent.parent.parent / "scripts" / "migrate" / "staging" / "staging_tables.sql"
+        
+        if not sql_file.exists():
+            logger.warning(f"SQL迁移脚本不存在: {sql_file}")
+            return None
+            
+        try:
+            with open(sql_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # 解析 SQL 文件，提取指定表的创建脚本
+            # SQL 文件结构: 以 "-- =====================================================" 分隔不同表的定义
+            sections = content.split('-- =====================================================')
+            
+            for section in sections:
+                # 查找包含 CREATE TABLE 且表名匹配的部分
+                if f'CREATE TABLE IF NOT EXISTS {table_name}' in section or f'CREATE TABLE IF NOT EXISTS "{table_name}"' in section:
+                    # 提取从 CREATE TABLE 到下一个分隔符或文件结束的内容
+                    lines = []
+                    in_comment_block = False
+                    
+                    for line in section.split('\n'):
+                        # 跳过空行和注释行，但保留 DO $$ ... END $$ 块内的注释
+                        stripped = line.strip()
+                        
+                        # 处理 DO $$ 块
+                        if stripped.startswith('DO $$'):
+                            in_comment_block = True
+                            lines.append(line)
+                            continue
+                        if stripped.startswith('END $$;') and in_comment_block:
+                            lines.append(line)
+                            in_comment_block = False
+                            continue
+                        if in_comment_block:
+                            lines.append(line)
+                            continue
+                            
+                        # 跳过普通注释行
+                        if stripped.startswith('--'):
+                            continue
+                        if not stripped:
+                            continue
+                            
+                        lines.append(line)
+                    
+                    return '\n'.join(lines)
+            
+            logger.warning(f"在SQL文件中未找到表 {table_name} 的定义")
+            return None
+            
+        except Exception as e:
+            logger.error(f"读取SQL文件失败: {str(e)}")
+            return None
+
+    async def diff(self, model_class) -> List[AlterStmt]:
+        """
+        对比单个模型与数据库表的差异
+        
+        优化策略：
+        - 表不存在时：使用 SQL 文件创建（包含索引、注释、触发器等完整功能）
+        - 表已存在时：进行字段差异检测，动态生成 ALTER TABLE 语句
+        
+        Args:
+            model_class: Tortoise ORM 模型类
+            
+        Returns:
+            差异列表（需要新增的字段或表）
         """
         table_name = model_class._meta.db_table
         
+        # 检查表是否存在
+        if not await self.table_exists(table_name):
+            # 如果表不存在，优先使用 SQL 文件
+            sql_script = self._load_staging_sql_script(table_name)
+            
+            if sql_script:
+                logger.info(f"检测到表不存在，将使用SQL文件创建: {table_name}")
+                create_stmt = AlterStmt(
+                    table_name=table_name,
+                    field_name='__table__',
+                    db_field_name='__table__',
+                    sql_type='TABLE',
+                    sql_statement=sql_script,
+                    is_nullable=False,
+                    default_value=None
+                )
+                return [create_stmt]
+            else:
+                # SQL 文件不可用，降级到动态生成
+                logger.warning(f"SQL文件不可用，将动态生成创建语句: {table_name}")
+                create_sql = self._generate_create_table_sql(model_class)
+                create_stmt = AlterStmt(
+                    table_name=table_name,
+                    field_name='__table__',
+                    db_field_name='__table__',
+                    sql_type='TABLE',
+                    sql_statement=create_sql,
+                    is_nullable=False,
+                    default_value=None
+                )
+                return [create_stmt]
+        
+        # 表已存在，检测字段差异
         db_columns = await self.get_db_columns(table_name)
         model_fields = self.get_model_fields(model_class)
         

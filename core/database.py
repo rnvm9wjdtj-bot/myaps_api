@@ -642,6 +642,85 @@ def register_database(app):
     log_config.info("✅ 系统监控服务已集成")
 
 
+REQUIRED_SQLITE_TABLES = [
+    "api_requests",
+    "outbound_api_requests",
+    "system_logs",
+    "binlog_positions",
+    "processed_events",
+    "failed_operations",
+    "schema_version",
+]
+
+
+async def ensure_sqlite_monitor_tables() -> bool:
+    """
+    确保 SQLite 监控模块表存在
+
+    在启动时检查必需的表是否存在于 SQLite 数据库中，
+    如果不存在则执行迁移脚本创建表。
+
+    Returns:
+        bool: 所有表都存在或创建成功返回 True
+    """
+    import sqlite3
+    from pathlib import Path
+
+    db_path = BASE_DIR / "storage" / f"{SQLITE_FILE}.sqlite3"
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;")
+        existing_tables = {row[0] for row in cursor.fetchall()}
+
+        missing_tables = [table for table in REQUIRED_SQLITE_TABLES if table not in existing_tables]
+
+        if not missing_tables:
+            log_config.debug("✅ SQLite 监控表检查通过，所有表已存在")
+            conn.close()
+            return True
+
+        log_config.warning(f"⚠️ SQLite 监控表缺失: {missing_tables}")
+
+        migration_script = BASE_DIR / "scripts" / "migrate" / "monitor" / "monitor_tables.sql"
+        if migration_script.exists():
+            log_config.info(f"📦 正在执行数据库迁移脚本: {migration_script}")
+
+            with open(migration_script, 'r', encoding='utf-8') as f:
+                sql_content = f.read()
+
+            cursor.executescript(sql_content)
+            conn.commit()
+
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;")
+            created_tables = {row[0] for row in cursor.fetchall()}
+
+            still_missing = [table for table in REQUIRED_SQLITE_TABLES if table not in created_tables]
+            if still_missing:
+                log_config.error(f"❌ 迁移后仍有表缺失: {still_missing}")
+                conn.close()
+                return False
+
+            log_config.info("✅ SQLite 监控表迁移完成")
+            conn.close()
+            return True
+        else:
+            log_config.error(f"❌ 迁移脚本不存在: {migration_script}")
+            conn.close()
+            return False
+
+    except Exception as e:
+        log_config.error(f"❌ SQLite 监控表初始化失败: {e}")
+        try:
+            if 'conn' in locals():
+                conn.close()
+        except Exception:
+            pass
+        return False
+
+
 async def warmup_connections():
     """
     预热数据库连接，增强容错处理
