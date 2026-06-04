@@ -22,7 +22,6 @@ read_env_config() {
                 MYAPS_DB_PORT) MYAPS_DB_PORT="$value" ;;
                 REDIS_PORT) REDIS_PORT="$value" ;;
                 THIS_DB_PORT) THIS_DB_PORT="$value" ;;
-                PORTAINER_PORT) PORTAINER_PORT="$value" ;;
                 UPTIME_KUMA_PORT) UPTIME_KUMA_PORT="$value" ;;
                 PORT) APP_PORT="$value" ;;
             esac
@@ -33,7 +32,6 @@ read_env_config() {
     MYAPS_DB_PORT=${MYAPS_DB_PORT:-3333}
     REDIS_PORT=${REDIS_PORT:-6379}
     THIS_DB_PORT=${THIS_DB_PORT:-5432}
-    PORTAINER_PORT=${PORTAINER_PORT:-9000}
     UPTIME_KUMA_PORT=${UPTIME_KUMA_PORT:-3001}
     APP_PORT=${APP_PORT:-8000}
 }
@@ -71,17 +69,16 @@ show_help() {
     echo "  1. MyAPI服务        - HTTP http://localhost:${APP_PORT}/docs"
     echo "  2. Redis            - Port localhost:${REDIS_PORT}"
     echo "  3. PostgreSQL       - Port localhost:${THIS_DB_PORT}"
-    echo "  4. Portainer        - HTTP http://localhost:${PORTAINER_PORT}"
-    echo "  5. Binlog监听器     - HTTP http://localhost:${APP_PORT}/monitor/api/binlog-listener"
-    echo "  6. Uptime Kuma      - HTTP http://localhost:${UPTIME_KUMA_PORT}"
-    echo "  7. MyAPS数据库      - Port ${MYAPS_DB_HOST}:${MYAPS_DB_PORT} (从.env读取)"
+    echo "  4. Binlog监听器     - HTTP http://localhost:${APP_PORT}/monitor/api/binlog-listener"
+    echo "  5. Uptime Kuma      - HTTP http://localhost:${UPTIME_KUMA_PORT}"
+    echo "  6. MyAPS数据库      - Port ${MYAPS_DB_HOST}:${MYAPS_DB_PORT} (从.env读取)"
 }
 
 # 生成SQL内容（幂等性保证）
 generate_sql() {
     cat > "$TEMP_SQL" << EOF
 -- 先删除已存在的同名监控（幂等性保证）
-DELETE FROM monitor WHERE name IN ('MyAPI服务', 'Redis', 'PostgreSQL', 'Portainer', 'Binlog监听器', 'Uptime Kuma', 'MyAPS数据库');
+DELETE FROM monitor WHERE name IN ('MyAPI服务', 'Redis', 'PostgreSQL', 'Binlog监听器', 'Uptime Kuma', 'MyAPS数据库');
 
 -- 插入监控配置
 INSERT INTO monitor (name, type, url, interval, maxretries, active, user_id, created_date, keyword)
@@ -93,8 +90,9 @@ SELECT 'Redis', 'port', 'localhost', ${REDIS_PORT}, 60, 3, 1, (SELECT id FROM us
 INSERT INTO monitor (name, type, hostname, port, interval, maxretries, active, user_id, created_date)
 SELECT 'PostgreSQL', 'port', 'localhost', ${THIS_DB_PORT}, 60, 3, 1, (SELECT id FROM user LIMIT 1), datetime('now');
 
-INSERT INTO monitor (name, type, url, interval, maxretries, active, user_id, created_date, keyword)
-SELECT 'Portainer', 'http', 'http://localhost:${PORTAINER_PORT}', 60, 3, 1, (SELECT id FROM user LIMIT 1), datetime('now'), NULL;
+-- Portainer 已在生产环境禁用，移除监控项
+-- INSERT INTO monitor (name, type, url, interval, maxretries, active, user_id, created_date, keyword)
+-- SELECT 'Portainer', 'http', 'http://localhost:${PORTAINER_PORT}', 60, 3, 1, (SELECT id FROM user LIMIT 1), datetime('now'), NULL;
 
 INSERT INTO monitor (name, type, url, interval, maxretries, active, user_id, created_date, keyword)
 SELECT 'Binlog监听器', 'http', 'http://localhost:${APP_PORT}/monitor/api/binlog-listener', 60, 3, 1, (SELECT id FROM user LIMIT 1), datetime('now'), '"healthy": true';

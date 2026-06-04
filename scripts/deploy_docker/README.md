@@ -235,10 +235,11 @@ cd scripts/deploy_docker
 | MyAPI服务 | HTTP | `PORT` |
 | Redis | Port | `REDIS_PORT` |
 | PostgreSQL | Port | `THIS_DB_PORT` |
-| Portainer | HTTP | `PORTAINER_PORT` |
 | Binlog监听器 | HTTP | `PORT` |
 | Uptime Kuma | HTTP | `UPTIME_KUMA_PORT` |
 | MyAPS数据库 | Port | `MYAPS_DB_HOST:MYAPS_DB_PORT` |
+
+> **注意**：Portainer 监控项已移除，该服务在生产环境默认禁用。
 
 **环境变量配置：**
 
@@ -258,8 +259,7 @@ REDIS_PORT=6379
 
 # 监控服务端口
 UPTIME_KUMA_PORT=3001
-PORTAINER_PORT=9000
-PORTAINER_TUNNEL_PORT=9001
+# PORTAINER_PORT 和 PORTAINER_TUNNEL_PORT 已移除（Portainer在生产环境禁用）
 ```
 
 **执行示例：**

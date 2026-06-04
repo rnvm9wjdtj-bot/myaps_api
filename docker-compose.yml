@@ -99,7 +99,7 @@ services:
   # 监控和管理工具，随基础服务一起启动
   
   uptime-kuma:
-    image: louislam/uptime-kuma:1.23.11
+    image: louislam/uptime-kuma:1.23.13
     container_name: myaps_uptime_kuma
     restart: unless-stopped
     network_mode: host
@@ -113,15 +113,19 @@ services:
       timeout: 10s
       retries: 3
 
-  portainer:
-    image: portainer/portainer-ce:2.21.4
-    container_name: myaps_portainer
-    restart: unless-stopped
-    network_mode: host
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
-    command: --bind=:${PORTAINER_PORT:-9000} --tunnel-port ${PORTAINER_TUNNEL_PORT:-9001}
+  # Portainer 已在生产环境禁用（安全考虑）
+  # 如需临时使用，取消注释并执行: docker-compose up -d portainer
+  # 使用完成后执行: docker-compose stop portainer
+  #
+  # portainer:
+  #   image: portainer/portainer-ce:2.21.4
+  #   container_name: myaps_portainer
+  #   restart: unless-stopped
+  #   network_mode: host
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #     - portainer_data:/data
+  #   command: --bind=:${PORTAINER_PORT:-9000} --tunnel-port ${PORTAINER_TUNNEL_PORT:-9001}
 
 volumes:
   redis_data:
@@ -130,5 +134,5 @@ volumes:
     driver: local
   uptime_kuma_data:
     driver: local
-  portainer_data:
-    driver: local
+  # portainer_data:
+  #   driver: local
