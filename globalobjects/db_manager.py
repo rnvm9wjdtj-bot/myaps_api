@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Tuple, Optional, Union, Literal
+from typing import List, Dict, Any, Tuple, Optional, Union, Literal, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime
 import time
