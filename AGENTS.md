@@ -95,13 +95,79 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### Docker运行
-```bash
-# 使用Docker Compose（包含Redis）
-docker-compose up -d
+### Docker 运行
 
-# 单独构建
+#### 方式一：Docker Compose 部署（推荐）
+
+**生产部署（从 Docker Hub 拉取）：**
+```bash
+# 使用 Docker Hub 镜像（host 网络模式）
+DOCKER_IMAGE=qsct/myaps-api:master docker-compose up -d
+
+# 查看状态
+docker-compose ps
+
+# 查看日志
+docker-compose logs -f
+
+# 停止服务
+docker-compose down
+```
+
+**本地构建部署：**
+```bash
+# 本地构建并部署
+docker-compose up -d --build
+
+# 重新构建特定服务
+docker-compose build app
+docker-compose up -d app
+```
+
+**镜像说明：**
+- Docker Hub 镜像：`qsct/myaps-api:master`
+- 本地镜像：`myaps_api:latest`
+- 网络模式：全部使用 `host` 模式，统一通过 `localhost` 访问各服务
+- 配置文件挂载：自动根据 `.env` 中的 `PROJECT_DIR` 挂载对应租户配置目录
+
+#### 方式二：Docker Run 部署
+
+```bash
+# 启动 Redis（host 网络模式）
+docker run -d \
+  --name myaps_redis \
+  --network host \
+  -v redis_data:/data \
+  redis:7-alpine \
+  redis-server --appendonly yes
+
+# 启动 PostgreSQL（host 网络模式）
+docker run -d \
+  --name myaps_postgres \
+  --network host \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=your_password \
+  -e POSTGRES_DB=appsmith \
+  -v postgres_data:/var/lib/postgresql/data \
+  postgres:16-alpine
+
+# 启动 App（host 网络模式）
+docker run -d \
+  --name myaps-api \
+  --network host \
+  -v $(pwd)/logs:/app/logs \
+  -v $(pwd)/storage:/app/storage \
+  -v $(pwd)/project_files/${PROJECT_DIR}:/app/project_files/${PROJECT_DIR} \
+  --env-file .env \
+  qsct/myaps-api:master
+```
+
+#### 方式三：单独构建
+```bash
+# 构建镜像
 docker build -t myaps-api .
+
+# 运行容器（不推荐，缺少依赖服务）
 docker run -p 8000:8000 myaps-api
 ```
 
@@ -420,27 +486,62 @@ class MaterialStaging(Model):
 ## 部署配置
 
 ### 环境变量
-复制`.env.example`（如存在）或创建`.env`文件：
+复制`.env.example` 文件并按实际环境配置：
 ```bash
-# 应用配置
-PORT=8000
+cp .env.example .env
+```
+
+#### 应用配置
+```bash
+PORT=8000                    # 生产环境端口（开发环境默认 8001）
 HOST=0.0.0.0
 LOG_LEVEL=INFO
+TIMEZONE=Asia/Shanghai
+```
 
-# 数据库配置
-DB_HOST=localhost
-DB_PORT=3306
-DB_USER=root
-DB_PASSWORD=password
-DB_NAME=myaps
+#### 数据库配置
+**MySQL（业务数据库 - 多账套支持）：**
+```bash
+MYAPS_DB_HOST=localhost
+MYAPS_DB_PORT=3333
+MYAPS_DB_USER=your_db_user
+MYAPS_DB_PASSWORD=your_db_password
+MYAPS_DB_SET=db1,db2         # 多账套数据库列表，逗号分隔
+MYAPS_MAIN_DB=db1            # 主账套数据库
+```
 
-# 功能开关
-TURNON_BINLOG_LISTENER=False
-TRUNON_SCHEDULER=False
+**PostgreSQL（Staging 清洗数据库）：**
+```bash
+THIS_DB_HOST=localhost
+THIS_DB_PORT=5432
+THIS_DB_USER=postgres
+THIS_DB_PASSWORD=your_password
+THIS_DB_NAME=appsmith        # Staging 数据库名
+```
 
-# Staging模式配置
-# 用于数据清洗模式的特殊数据库名称标识（默认--s）
-STAGING_DB_NAME=--s
+#### Redis 配置
+```bash
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=              # 可选
+```
+
+#### 功能开关
+```bash
+TURNON_BINLOG_LISTENER=False  # 是否启用 binlog 监听
+TRUNON_SCHEDULER=False        # 是否启用定时任务调度
+```
+
+#### Staging 模式配置
+```bash
+STAGING_DB_NAME=--s           # 用于数据清洗模式的特殊数据库标识（默认--s）
+                              # 当 db_name 参数为此值时，启用 PostgreSQL 清洗流程
+```
+
+#### 项目配置
+```bash
+PROJECT_DIR=HACYXS            # 租户项目目录名（对应 project_files/ 下的子目录）
+PROJECT_JSON=dev              # 配置文件名（不含.json 后缀）
 ```
 
 ### Gunicorn配置
@@ -485,10 +586,50 @@ bind = "0.0.0.0:8000"
 ## 故障排除
 
 ### 常见问题
-1. **端口占用**: 修改`.env`中的`PORT`配置
-2. **数据库连接失败**: 检查数据库配置和环境变量
-3. **依赖安装失败**: 使用离线包或调整pip源
-4. **权限问题**: 确保`logs/`和`storage/`目录可写
+
+#### 1. 端口占用
+**症状**：启动时提示 `Address already in use`
+**解决**：修改 `.env` 中的 `PORT` 配置，或停止占用端口的进程
+```bash
+# 查看端口占用
+lsof -i :8000
+
+# 停止占用进程
+kill -9 <PID>
+```
+
+#### 2. 数据库连接失败
+**症状**：启动时提示数据库连接超时或认证失败
+**解决**：
+- 检查 `.env` 中的数据库配置是否正确
+- 确认数据库服务已启动
+- 检查防火墙规则
+- MySQL 和 PostgreSQL 需分别配置
+
+#### 3. 依赖安装失败
+**症状**：`pip install` 时下载失败或编译错误
+**解决**：
+- 使用国内 pip 源（阿里云、清华源）
+- 使用项目提供的离线包（如配置）
+- 确保系统依赖已安装（gcc, libpq-dev 等）
+
+#### 4. 权限问题
+**症状**：日志或存储目录写入失败
+**解决**：
+```bash
+# 确保目录可写
+chmod -R 755 logs/ storage/
+chown -R $(whoami) logs/ storage/
+```
+
+#### 5. Docker 部署问题
+**症状**：容器启动失败或无法访问
+**解决**：
+- 确认 Docker 和 Docker Compose 版本（Docker 20.10+, Docker Compose V2）
+- 检查 `.env` 文件配置是否完整
+- 查看容器日志：`docker-compose logs -f app`
+- 确认 host 网络模式未与其他服务冲突
+- 验证配置文件挂载：`docker exec myaps-api ls /app/project_files/`
 
 ### Tortoise ORM 初始化竞态条件
 
@@ -543,6 +684,34 @@ result = await db_init_manager.wait_for_init(max_wait=30.0)
 
 ---
 
-**最后更新**: 2026-05-21  
-**维护者**: MyAPS开发团队  
-**版本**: 1.0.0
+**最后更新**: 2026-06-04  
+**维护者**: MyAPS 开发团队  
+**版本**: 2.0.0
+
+## 附录：快速参考
+
+### 核心目录
+- `/opt/myaps_api/scripts/deploy_docker/` - Docker 部署脚本
+- `/opt/myaps_api/project_files/` - 租户配置目录
+- `/opt/myaps_api/static/` - 前端静态资源
+
+### 常用命令速查
+```bash
+# 开发环境
+./scripts/dev_server.sh start|stop|restart|status|logs
+
+# Docker 部署
+DOCKER_IMAGE=qsct/myaps-api:master docker-compose up -d
+docker-compose logs -f app
+
+# 测试
+pytest tests/ -v
+pytest tests/test_unified_router.py::TestIsStagingMode -v
+```
+
+### 关键配置
+- **开发端口**: 8001
+- **生产端口**: 8000
+- **Staging 标识**: `--s`
+- **Docker Hub**: `qsct/myaps-api:master`
+- **网络模式**: host

@@ -516,25 +516,78 @@ docker images qsct/myaps-api
 
 ## 版本更新
 
+### 方式一：滚动更新（零停机，推荐生产环境）
+
+项目提供蓝绿部署策略实现零停机滚动更新：
+
 ```bash
-# 拉取最新镜像
+# 进入部署脚本目录
+cd scripts/deploy_docker
+
+# 执行滚动更新（自动拉取镜像并切换环境）
+./rolling_update.sh qsct/myaps-api:master
+
+# 查看更新日志
+docker logs myaps_api_blue -f    # 或 myaps_api_green
+```
+
+**滚动更新流程：**
+1. 拉取新版本镜像
+2. 启动新容器（蓝/绿环境）
+3. 健康检查验证服务可用
+4. 切换流量（新容器接管端口）
+5. 停止旧容器
+
+**回滚（如需）：**
+```bash
+./rollback.sh
+```
+
+### 方式二：传统停机更新
+
+```bash
+# 1. 停止服务
+docker-compose down
+
+# 2. 拉取最新镜像
 docker pull qsct/myaps-api:master
 
-# 使用docker-compose重启
-docker-compose down
+# 3. 启动服务
 DOCKER_IMAGE=qsct/myaps-api:master docker-compose up -d
 ```
+
+> ⚠️ 停机更新期间服务不可用，建议仅在测试环境使用。
 
 ---
 
 ## 回滚操作
 
+### 方式一：使用回滚脚本（推荐）
+
+```bash
+cd scripts/deploy_docker
+./rollback.sh
+```
+
+### 方式二：手动回滚到指定版本
+
 ```bash
 # 拉取指定版本的镜像
 docker pull qsct/myaps-api:2c9ac38
 
-# 或使用本地镜像标签
+# 启动指定版本
+docker-compose down
+DOCKER_IMAGE=qsct/myaps-api:2c9ac38 docker-compose up -d
+```
+
+### 方式三：使用本地镜像标签
+
+```bash
+# 标记本地镜像
 docker tag qsct/myaps-api:v1.0 qsct/myaps-api:master
+
+# 重启服务
+docker-compose restart
 ```
 
 ---
