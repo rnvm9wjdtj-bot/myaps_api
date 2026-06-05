@@ -1,5 +1,6 @@
 from typing import List, Dict, Any
 from datetime import datetime
+from tortoise.expressions import Q
 from core.settings import LOG_RETENTION, LOG_LEVEL
 from .models import APIRequest, OutboundAPIRequest, SystemLog
 
@@ -122,7 +123,6 @@ class RequestStorage:
                 # 关键词搜索（匹配path、request_body、response_body）
                 if filter_params.get('keyword'):
                     keyword = filter_params['keyword']
-                    from tortoise.expressions import Q
                     query = query.filter(
                         Q(path__icontains=keyword) | 
                         Q(request_body__icontains=keyword) | 
@@ -188,7 +188,12 @@ class RequestStorage:
                 if filter_params.get('method'):
                     query = query.filter(method=filter_params['method'].upper())
                 if filter_params.get('keyword'):
-                    query = query.filter(path__icontains=filter_params['keyword'])
+                    keyword = filter_params['keyword']
+                    query = query.filter(
+                        Q(path__icontains=keyword) | 
+                        Q(request_body__icontains=keyword) | 
+                        Q(response_body__icontains=keyword)
+                    )
             
             return await query.count()
         except Exception as e:
@@ -383,7 +388,6 @@ class OutboundRequestStorage:
                 # 关键词搜索（匹配url、request_body、response_body）
                 if filter_params.get('keyword'):
                     keyword = filter_params['keyword']
-                    from tortoise.expressions import Q
                     query = query.filter(
                         Q(url__icontains=keyword) | 
                         Q(request_body__icontains=keyword) | 
@@ -446,7 +450,12 @@ class OutboundRequestStorage:
                 if filter_params.get('method'):
                     query = query.filter(method=filter_params['method'].upper())
                 if filter_params.get('keyword'):
-                    query = query.filter(url__icontains=filter_params['keyword'])
+                    keyword = filter_params['keyword']
+                    query = query.filter(
+                        Q(url__icontains=keyword) | 
+                        Q(request_body__icontains=keyword) | 
+                        Q(response_body__icontains=keyword)
+                    )
             
             return await query.count()
         except Exception as e:
