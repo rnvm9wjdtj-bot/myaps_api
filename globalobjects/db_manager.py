@@ -15,6 +15,7 @@ from tortoise.exceptions import IntegrityError
 from core.settings import MYAPS_DBSET_LIST
 from globalobjects import logger as log_config
 import os
+import uuid
 
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 logger = log_config.get_logger(__name__, level=LOG_LEVEL)
@@ -450,6 +451,15 @@ class DeadlockCircuitBreaker:
         if self._state == self.STATE_CLOSED:
             self._deadlock_count += 1
             
+            # 死锁预警：当达到阈值的80%时发出警告
+            warning_threshold = int(self.threshold * 0.8)
+            if self._deadlock_count == warning_threshold:
+                logger.warning(
+                    "CircuitBreaker",
+                    "WARNING",
+                    f"死锁预警：当前死锁次数({self._deadlock_count})已达到阈值({self.threshold})的80%，请关注系统状态"
+                )
+            
             # 检查是否超过阈值
             if self._deadlock_count >= self.threshold:
                 self._transition_to_open()
@@ -675,7 +685,7 @@ def handle_db_errors(max_retries: int = 3):
                         if is_connection_closed:
                             base_delay = 3.0
                         elif is_deadlock:
-                            base_delay = 2.0
+                            base_delay = 4.0  # 增加死锁重试延迟，减少熔断器频繁触发
                         else:
                             base_delay = 1.0
                         
@@ -742,6 +752,9 @@ class DbManager:
     # 类级别的熔断器，每个数据库连接共享一个熔断器
     _circuit_breakers: Dict[str, DeadlockCircuitBreaker] = {}
     
+    # 类级别的并发执行跟踪器，用于检测同一存储过程的并发调用
+    _active_procedures: Dict[str, int] = {}  # {procedure_name@connection: count}
+    
     def __init__(self, connection_name: str, batch_size: int = 1000, use_transaction: bool = True):
         """
         初始化管理器
@@ -783,6 +796,39 @@ class DbManager:
     def circuit_breaker(self) -> DeadlockCircuitBreaker:
         """获取熔断器实例"""
         return DbManager._circuit_breakers.get(self.connection_name)
+    
+    def _get_procedure_key(self, procedure_name: str) -> str:
+        """获取存储过程的唯一标识键"""
+        return f"{procedure_name}@{self.connection_name}"
+    
+    def _check_concurrent_procedure(self, procedure_name: str, max_concurrent: int = 3) -> bool:
+        """
+        检查存储过程是否超过最大并发数
+        
+        Args:
+            procedure_name: 存储过程名称
+            max_concurrent: 最大并发数，默认3
+        
+        Returns:
+            True: 可以执行（未超过限制）
+            False: 超过并发限制
+        """
+        key = self._get_procedure_key(procedure_name)
+        current_count = DbManager._active_procedures.get(key, 0)
+        return current_count < max_concurrent
+    
+    def _increment_procedure_count(self, procedure_name: str):
+        """增加存储过程执行计数"""
+        key = self._get_procedure_key(procedure_name)
+        DbManager._active_procedures[key] = DbManager._active_procedures.get(key, 0) + 1
+    
+    def _decrement_procedure_count(self, procedure_name: str):
+        """减少存储过程执行计数"""
+        key = self._get_procedure_key(procedure_name)
+        if key in DbManager._active_procedures:
+            DbManager._active_procedures[key] -= 1
+            if DbManager._active_procedures[key] <= 0:
+                del DbManager._active_procedures[key]
 
     async def _get_valid_connection(self):
         """
@@ -886,21 +932,25 @@ class DbManager:
         return conflict_fields
     
 
-    @with_transaction
-    @handle_db_errors(max_retries=5)
     async def call_stored_procedure(
         self, 
         procedure_name: str, 
         params_list: List[List[Any]] = None, 
-        use_transaction: Optional[bool] = None
+        use_transaction: Optional[bool] = None,
+        max_concurrent: int = 3,
+        wait_timeout: float = 10.0,
+        use_queue: bool = None
     ) -> Dict[str, Any]:
         """
-        调用数据库存储过程（支持死锁自动重试）
+        调用数据库存储过程（支持死锁自动重试、并发控制和请求排队）
         
         Args:
             procedure_name: 存储过程名称
             params_list: 存储过程参数列表，每个元素是一个参数列表（可选，默认[[]]）
             use_transaction: 是否使用事务（可选，默认使用实例配置的use_transaction）
+            max_concurrent: 最大并发数，超过此限制将等待或拒绝（默认3）
+            wait_timeout: 等待并发资源的超时时间（默认10秒）
+            use_queue: 是否使用队列执行（默认None，表示高风险存储过程自动使用队列）
             
         Returns:
             包含执行结果的字典，包括成功状态、执行时间、影响记录数等
@@ -910,40 +960,118 @@ class DbManager:
         """
         if params_list is None:
             params_list = [[]]
-            
-        start_time = datetime.now()
         
-        # 优化：在获取连接前先检查连接池状态
-        conn = await self._get_valid_connection()
-        affect_count = 0
-        results = []
+        # 判断是否使用队列
+        if use_queue is None:
+            use_queue = is_high_risk_procedure(procedure_name)
         
-        for params in params_list:
-            result = await conn.execute_query(
-                f'CALL `{procedure_name}`({", ".join(["%s"] * len(params))})', 
-                params
+        if use_queue:
+            # 高风险存储过程使用队列串行化执行
+            logger.debug(
+                "存储过程调用",
+                f"{procedure_name}@{self.connection_name}",
+                "使用队列串行化执行"
             )
-            count = result[0] if result else 0
-            affect_count += count
-            results.append(result)
+            # 创建实际执行的回调函数
+            async def _execute_procedure():
+                return await self._call_stored_procedure_inner(
+                    procedure_name=procedure_name,
+                    params_list=params_list,
+                    use_transaction=use_transaction,
+                    max_concurrent=max_concurrent,
+                    wait_timeout=wait_timeout
+                )
+            
+            # 获取队列并执行
+            queue = ProcedureQueueManager.get_queue(procedure_name)
+            return await queue.enqueue(_execute_procedure)
+        else:
+            # 普通存储过程直接执行
+            return await self._call_stored_procedure_inner(
+                procedure_name=procedure_name,
+                params_list=params_list,
+                use_transaction=use_transaction,
+                max_concurrent=max_concurrent,
+                wait_timeout=wait_timeout
+            )
+    
+    @with_transaction
+    @handle_db_errors(max_retries=5)
+    async def _call_stored_procedure_inner(
+        self,
+        procedure_name: str,
+        params_list: List[List[Any]],
+        use_transaction: Optional[bool] = None,
+        max_concurrent: int = 3,
+        wait_timeout: float = 10.0
+    ) -> Dict[str, Any]:
+        """
+        存储过程调用的内部实现
         
-        execution_time = (datetime.now() - start_time).total_seconds()
+        Args:
+            procedure_name: 存储过程名称
+            params_list: 存储过程参数列表
+            use_transaction: 是否使用事务
+            max_concurrent: 最大并发数
+            wait_timeout: 等待并发资源的超时时间
+            
+        Returns:
+            包含执行结果的字典
+        """
+        # 并发检测：等待可用的执行槽位
+        start_wait = datetime.now()
+        while not self._check_concurrent_procedure(procedure_name, max_concurrent):
+            wait_elapsed = (datetime.now() - start_wait).total_seconds()
+            if wait_elapsed >= wait_timeout:
+                logger.warning(
+                    "存储过程调用",
+                    f"{procedure_name}@{self.connection_name}",
+                    f"等待并发槽位超时（{wait_timeout}秒），当前并发数: {DbManager._active_procedures.get(self._get_procedure_key(procedure_name), 0)}"
+                )
+                # 不强制拒绝，继续尝试执行但记录警告
+                break
+            await asyncio.sleep(0.5)
         
-        self.stats['total_processed'] += len(params_list)
-        self.stats['batches_executed'] += len(params_list)
-        self.stats['last_execution_time'] = execution_time
+        # 增加执行计数
+        self._increment_procedure_count(procedure_name)
         
-        response = {
-            "success": True,
-            "procedure_name": procedure_name,
-            "execution_time": execution_time,
-            "total_calls": len(params_list),
-            "affected_rows": affect_count,
-            "results": results
-        }
+        try:
+            start_time = datetime.now()
+            
+            # 优化：在获取连接前先检查连接池状态
+            conn = await self._get_valid_connection()
+            affect_count = 0
+            results = []
+            
+            for params in params_list:
+                result = await conn.execute_query(
+                    f'CALL `{procedure_name}`({", ".join(["%s"] * len(params))})', 
+                    params
+                )
+                count = result[0] if result else 0
+                affect_count += count
+                results.append(result)
         
-        logger.success("存储过程调用", f"{procedure_name}@{self.connection_name}", f"执行时间{execution_time:.3f}秒，影响记录数{affect_count}条")
-        return response
+            execution_time = (datetime.now() - start_time).total_seconds()
+            
+            self.stats['total_processed'] += len(params_list)
+            self.stats['batches_executed'] += len(params_list)
+            self.stats['last_execution_time'] = execution_time
+            
+            response = {
+                "success": True,
+                "procedure_name": procedure_name,
+                "execution_time": execution_time,
+                "total_calls": len(params_list),
+                "affected_rows": affect_count,
+                "results": results
+            }
+            
+            logger.success("存储过程调用", f"{procedure_name}@{self.connection_name}", f"执行时间{execution_time:.3f}秒，影响记录数{affect_count}条")
+            return response
+        finally:
+            # 确保无论成功还是失败都减少执行计数
+            self._decrement_procedure_count(procedure_name)
     
 
     @handle_db_errors(max_retries=3)
@@ -2333,3 +2461,268 @@ def db_managers():
     每次调用都会返回最新的实例字典，确保使用当前事件循环的连接
     """
     return get_db_managers()
+
+
+# ==================== 存储过程请求队列管理器 ====================
+
+class ProcedureQueueManager:
+    """
+    存储过程请求队列管理器
+    
+    为高风险存储过程提供串行化执行能力，同一存储过程的请求会按顺序执行，
+    不同存储过程可以并行执行。
+    """
+    
+    # 类级别队列存储
+    _queues: Dict[str, 'ProcedureQueue'] = {}
+    
+    @classmethod
+    def get_queue(cls, procedure_name: str) -> 'ProcedureQueue':
+        """
+        获取指定存储过程的执行队列
+        
+        Args:
+            procedure_name: 存储过程名称
+            
+        Returns:
+            对应的执行队列实例
+        """
+        if procedure_name not in cls._queues:
+            cls._queues[procedure_name] = ProcedureQueue(procedure_name)
+        return cls._queues[procedure_name]
+    
+    @classmethod
+    def get_all_queues(cls) -> List[Tuple[str, 'ProcedureQueue']]:
+        """获取所有队列信息"""
+        return list(cls._queues.items())
+    
+    @classmethod
+    def get_queue_stats(cls) -> Dict[str, Dict[str, Any]]:
+        """获取所有队列的统计信息"""
+        stats = {}
+        for name, queue in cls._queues.items():
+            stats[name] = queue.get_stats()
+        return stats
+
+
+class ProcedureQueue:
+    """
+    单个存储过程的执行队列
+    
+    使用FIFO队列保证请求顺序执行，避免并发导致的死锁。
+    """
+    
+    def __init__(self, procedure_name: str):
+        """
+        初始化队列
+        
+        Args:
+            procedure_name: 存储过程名称
+        """
+        self.procedure_name = procedure_name
+        self._queue: asyncio.Queue = asyncio.Queue()
+        self._is_running = False
+        self._task: Optional[asyncio.Task] = None
+        
+        # 统计信息
+        self._total_requests = 0
+        self._completed_requests = 0
+        self._failed_requests = 0
+        self._avg_wait_time = 0.0
+        self._avg_exec_time = 0.0
+        self._wait_time_history: List[float] = []
+        self._exec_time_history: List[float] = []
+    
+    def _start_consumer(self):
+        """启动队列消费者任务"""
+        if self._task is None or self._task.done():
+            self._is_running = True
+            self._task = asyncio.create_task(self._consume())
+    
+    async def _consume(self):
+        """队列消费者主循环"""
+        while self._is_running:
+            try:
+                # 获取队列中的请求（无超时，持续等待）
+                request = await self._queue.get()
+                
+                request_id = request['request_id']
+                callback = request['callback']
+                args = request['args']
+                kwargs = request['kwargs']
+                start_wait_time = request['start_time']
+                
+                # 计算等待时间
+                wait_time = (datetime.now() - start_wait_time).total_seconds()
+                self._wait_time_history.append(wait_time)
+                if len(self._wait_time_history) > 100:
+                    self._wait_time_history.pop(0)
+                
+                try:
+                    # 执行回调函数
+                    exec_start = datetime.now()
+                    result = await callback(*args, **kwargs)
+                    exec_time = (datetime.now() - exec_start).total_seconds()
+                    
+                    self._exec_time_history.append(exec_time)
+                    if len(self._exec_time_history) > 100:
+                        self._exec_time_history.pop(0)
+                    
+                    # 设置成功结果
+                    request['future'].set_result(result)
+                    self._completed_requests += 1
+                    logger.debug(
+                        "QueueConsumer",
+                        f"{self.procedure_name}",
+                        f"请求{request_id}执行成功，等待{wait_time:.2f}秒，执行{exec_time:.2f}秒"
+                    )
+                except Exception as e:
+                    # 设置异常结果
+                    request['future'].set_exception(e)
+                    self._failed_requests += 1
+                    logger.error(
+                        "QueueConsumer",
+                        f"{self.procedure_name}",
+                        f"请求{request_id}执行失败: {str(e)}"
+                    )
+                finally:
+                    self._queue.task_done()
+            except asyncio.CancelledError:
+                logger.info("QueueConsumer", f"{self.procedure_name}", "消费者任务已取消")
+                break
+            except Exception as e:
+                logger.error("QueueConsumer", f"{self.procedure_name}", f"消费者异常: {str(e)}")
+        
+        self._is_running = False
+    
+    async def enqueue(self, callback: Callable, *args, **kwargs) -> Any:
+        """
+        将请求加入队列并等待执行结果
+        
+        Args:
+            callback: 要执行的异步函数
+            *args: 位置参数
+            **kwargs: 关键字参数
+            
+        Returns:
+            回调函数的执行结果
+        """
+        # 创建唯一请求ID
+        request_id = str(uuid.uuid4())[:8]
+        start_time = datetime.now()
+        
+        # 创建Future用于获取结果
+        loop = asyncio.get_event_loop()
+        future = loop.create_future()
+        
+        # 构建请求对象
+        request = {
+            'request_id': request_id,
+            'callback': callback,
+            'args': args,
+            'kwargs': kwargs,
+            'future': future,
+            'start_time': start_time
+        }
+        
+        # 加入队列
+        await self._queue.put(request)
+        self._total_requests += 1
+        
+        # 确保消费者运行
+        self._start_consumer()
+        
+        # 记录入队日志
+        logger.debug(
+            "QueueEnqueue",
+            f"{self.procedure_name}",
+            f"请求{request_id}已入队，当前队列长度: {self._queue.qsize()}"
+        )
+        
+        # 等待执行结果（带超时保护）
+        try:
+            return await asyncio.wait_for(future, timeout=300.0)
+        except asyncio.TimeoutError:
+            # 超时后取消 future，避免消费者最终返回时悬空
+            if not future.done():
+                future.cancel()
+            raise DbDeadlockError(
+                f"存储过程 {self.procedure_name} 排队超时（300秒）",
+                operation="call_stored_procedure",
+                connection="queue"
+            ) from None
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """获取队列统计信息"""
+        wait_times = self._wait_time_history
+        exec_times = self._exec_time_history
+        
+        return {
+            'procedure_name': self.procedure_name,
+            'queue_size': self._queue.qsize(),
+            'is_running': self._is_running,
+            'total_requests': self._total_requests,
+            'completed_requests': self._completed_requests,
+            'failed_requests': self._failed_requests,
+            'avg_wait_time': sum(wait_times) / len(wait_times) if wait_times else 0.0,
+            'max_wait_time': max(wait_times) if wait_times else 0.0,
+            'avg_exec_time': sum(exec_times) / len(exec_times) if exec_times else 0.0,
+            'max_exec_time': max(exec_times) if exec_times else 0.0
+        }
+    
+    async def close(self):
+        """关闭队列，停止消费者"""
+        self._is_running = False
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+
+
+# 高风险存储过程列表（需要串行化执行的存储过程）
+HIGH_RISK_PROCEDURES = {
+    'SupplyConvertMOByE2A',
+}
+
+
+def is_high_risk_procedure(procedure_name: str) -> bool:
+    """
+    判断存储过程是否为高风险（需要串行化执行）
+    
+    Args:
+        procedure_name: 存储过程名称
+        
+    Returns:
+        True: 高风险，需要串行化
+        False: 普通存储过程，可以并行执行
+    """
+    return procedure_name in HIGH_RISK_PROCEDURES
+
+
+def add_high_risk_procedure(procedure_name: str):
+    """
+    将存储过程标记为高风险
+    
+    Args:
+        procedure_name: 存储过程名称
+    """
+    HIGH_RISK_PROCEDURES.add(procedure_name)
+    logger.info("RiskProcedure", "ADD", f"已将{procedure_name}标记为高风险存储过程")
+
+
+def remove_high_risk_procedure(procedure_name: str):
+    """
+    移除存储过程的高风险标记
+    
+    Args:
+        procedure_name: 存储过程名称
+    """
+    HIGH_RISK_PROCEDURES.discard(procedure_name)
+    logger.info("RiskProcedure", "REMOVE", f"已移除{procedure_name}的高风险标记")
+
+
+def get_high_risk_procedures() -> list:
+    """获取所有高风险存储过程列表"""
+    return list(HIGH_RISK_PROCEDURES)
