@@ -58,6 +58,19 @@ build/
 .DS_Store
 Thumbs.db
 
+# Offline development
+.offline_dev/
+
+# Scripts - 只保留部署所需文件，排除其他
+scripts/*.bat
+scripts/*.ps1
+scripts/*.sh
+scripts/nssm.exe
+scripts/migrate/
+
+# Documentation - 开发文档，不需要在容器中
+docs/
+
 # Other
 .arts/
 *.md
