@@ -807,6 +807,50 @@ class DbManager:
         """获取熔断器实例"""
         return DbManager._circuit_breakers.get(self.connection_name)
     
+    @property
+    def enhanced_pool_manager(self):
+        """获取增强连接池管理器实例"""
+        return self._enhanced_pool_manager
+    
+    async def get_pool_status(self):
+        """
+        获取连接池状态（增强功能）
+        
+        Returns:
+            ConnectionPoolStatus: 连接池状态信息
+        """
+        if self._enhanced_pool_manager:
+            try:
+                return await self._enhanced_pool_manager.get_connection_pool_status()
+            except Exception as e:
+                logger.warning(f"获取连接池状态失败: {e}")
+        return None
+    
+    async def record_pool_usage(self):
+        """
+        记录连接池使用情况（增强功能）
+        用于泄漏检测
+        """
+        if self._enhanced_pool_manager:
+            try:
+                await self._enhanced_pool_manager.record_usage()
+            except Exception as e:
+                logger.warning(f"记录连接池使用情况失败: {e}")
+    
+    async def detect_pool_leak(self):
+        """
+        检测连接池泄漏（增强功能）
+        
+        Returns:
+            LeakDetectionResult: 泄漏检测结果
+        """
+        if self._enhanced_pool_manager:
+            try:
+                return await self._enhanced_pool_manager.detect_leak()
+            except Exception as e:
+                logger.warning(f"检测连接池泄漏失败: {e}")
+        return None
+    
     def _get_procedure_key(self, procedure_name: str) -> str:
         """获取存储过程的唯一标识键"""
         return f"{procedure_name}@{self.connection_name}"
@@ -907,9 +951,36 @@ class DbManager:
         异步上下文管理器，用于安全地获取Tortoise ORM的数据库连接
         注意：Tortoise会自动管理连接的获取和释放，不需要手动关闭连接
         
+        增强功能：
+        - 检查连接池状态，不可用时抛出异常
+        - 记录连接使用情况（用于泄漏检测）
+        
         Yields:
             Tortoise数据库连接对象
+            
+        Raises:
+            ConnectionPoolUnavailableError: 连接池不可用
         """
+        # 使用增强管理器检查连接池状态
+        if self._enhanced_pool_manager:
+            try:
+                async with self._enhanced_pool_manager.get_connection() as conn:
+                    # 记录使用情况
+                    try:
+                        await self._enhanced_pool_manager.record_usage()
+                    except Exception:
+                        pass  # 记录失败不影响业务
+                    
+                    yield conn
+                    return
+            except Exception as e:
+                # 如果增强管理器失败，回退到原有逻辑
+                if "ConnectionPoolUnavailableError" in str(type(e).__name__):
+                    # 连接池不可用，向上抛出
+                    raise
+                logger.warning(f"增强管理器获取连接失败: {e}，使用原有逻辑")
+        
+        # 原有逻辑
         connection = Tortoise.get_connection(self.connection_name)
         yield connection
 
@@ -2024,9 +2095,58 @@ class DbManager:
         """
         获取连接池状态（增强版）
         
+        增强功能：
+        - 优先使用增强管理器的状态信息
+        - 包含连接池生命周期状态
+        - 包含泄漏检测结果
+        
         Returns:
             连接池状态信息
         """
+        # 优先使用增强管理器
+        if self._enhanced_pool_manager:
+            try:
+                pool_status = await self._enhanced_pool_manager.get_connection_pool_status()
+                state_info = self._enhanced_pool_manager.get_state_info()
+                
+                status = {
+                    'connection_name': self.connection_name,
+                    'pool_available': pool_status.pool_available,
+                    'total_connections': pool_status.total_connections,
+                    'used_connections': pool_status.used_connections,
+                    'idle_connections': pool_status.idle_connections,
+                    'usage_rate': pool_status.usage_rate,
+                    'timestamp': time.time(),
+                    'warnings': [],
+                    'alerts': [],
+                    # 增强信息
+                    'enhanced': {
+                        'state': state_info.state.value,
+                        'is_available': state_info.is_available,
+                        'update_reason': state_info.update_reason,
+                        'last_update_time': state_info.last_update_time.isoformat() if state_info.last_update_time else None
+                    }
+                }
+                
+                # 使用率预警
+                if status['usage_rate'] >= 90:
+                    status['alerts'].append(f"连接池使用率过高: {status['usage_rate']:.1f}%")
+                elif status['usage_rate'] >= 80:
+                    status['warnings'].append(f"连接池使用率较高: {status['usage_rate']:.1f}%")
+                
+                # 空闲连接预警
+                if status['idle_connections'] == 0:
+                    status['warnings'].append("连接池没有空闲连接")
+                
+                # 状态预警
+                if not state_info.is_available:
+                    status['alerts'].append(f"连接池不可用: {state_info.state.value}")
+                
+                return status
+            except Exception as e:
+                logger.warning(f"增强管理器获取连接池状态失败: {e}，使用原有逻辑")
+        
+        # 原有逻辑作为后备
         try:
             conn = Tortoise.get_connection(self.connection_name)
             pool = conn._pool if hasattr(conn, '_pool') else None
