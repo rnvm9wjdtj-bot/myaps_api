@@ -815,17 +815,47 @@ async def check_db_connections():
 
 
 async def start_pool_monitoring():
-    """启动连接池监控任务"""
-    while True:
+    """启动连接池监控任务（使用增强的连接池管理）"""
+    import os
+    from core.settings import MYAPS_DBSET_LIST
+    
+    # 检查是否启用增强连接池管理
+    use_enhanced_pool = os.getenv("USE_ENHANCED_POOL", "true").lower() == "true"
+    
+    if use_enhanced_pool:
         try:
-            # 添加超时控制，避免任务阻塞
-            await asyncio.wait_for(smart_pool_manager.monitor_and_adjust(), timeout=60)
-        except asyncio.TimeoutError:
-            log_config.warning("连接池监控任务执行超时")
+            from globalobjects.db_pool import start_pool_monitoring as start_enhanced_monitoring
+            
+            # 获取要监控的连接名称列表
+            connection_names = MYAPS_DBSET_LIST if MYAPS_DBSET_LIST else []
+            
+            log_config.info(f"启动增强连接池监控，监控连接: {connection_names}")
+            
+            # 启动增强监控
+            await start_enhanced_monitoring(connection_names)
+            
         except Exception as e:
-            log_config.error(f"连接池监控任务异常: {e}")
-        # 每5分钟执行一次
-        await asyncio.sleep(300)
+            log_config.error(f"增强连接池监控启动失败: {e}，使用原有监控")
+            # 回退到原有监控
+            while True:
+                try:
+                    await asyncio.wait_for(smart_pool_manager.monitor_and_adjust(), timeout=60)
+                except asyncio.TimeoutError:
+                    log_config.warning("连接池监控任务执行超时")
+                except Exception as e:
+                    log_config.error(f"连接池监控任务异常: {e}")
+                await asyncio.sleep(300)
+    else:
+        # 使用原有监控
+        log_config.info("使用原有连接池监控")
+        while True:
+            try:
+                await asyncio.wait_for(smart_pool_manager.monitor_and_adjust(), timeout=60)
+            except asyncio.TimeoutError:
+                log_config.warning("连接池监控任务执行超时")
+            except Exception as e:
+                log_config.error(f"连接池监控任务异常: {e}")
+            await asyncio.sleep(300)
 
 
 async def get_db_connection_safely(db_name: Optional[str] = None, max_wait: float = 15.0):

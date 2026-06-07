@@ -100,6 +100,7 @@ storage/
 
 
 .offline_dev/packages/
+.offline_dev/tools/
 
 docker_images/
 docker_images/**/

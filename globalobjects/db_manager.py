@@ -781,6 +781,16 @@ class DbManager:
         
         # 获取或创建熔断器实例（每个连接共享）
         self._get_or_create_circuit_breaker()
+        
+        # 集成增强的连接池管理器（可选，默认启用）
+        self._use_enhanced_pool = os.getenv("USE_ENHANCED_POOL", "true").lower() == "true"
+        self._enhanced_pool_manager = None
+        if self._use_enhanced_pool:
+            try:
+                from globalobjects.db_pool import get_enhanced_db_manager
+                self._enhanced_pool_manager = get_enhanced_db_manager(connection_name)
+            except Exception as e:
+                logger.warning(f"初始化增强连接池管理器失败: {e}，将使用原有逻辑")
     
     def _get_or_create_circuit_breaker(self):
         """获取或创建熔断器实例"""
@@ -2143,6 +2153,18 @@ class DbManager:
         Returns:
             bool: 连接是否健康
         """
+        # 优先使用增强管理器
+        if self._enhanced_pool_manager:
+            try:
+                result = await self._enhanced_pool_manager.check_health(timeout=timeout)
+                if not result.is_healthy and fast_mode:
+                    await self.refresh_connection(fast_mode=True)
+                    result = await self._enhanced_pool_manager.check_health(timeout=timeout)
+                return result.is_healthy
+            except Exception as e:
+                logger.warning(f"增强管理器健康检查失败: {e}，使用原有逻辑")
+        
+        # 原有逻辑作为后备
         try:
             import asyncio
             conn = Tortoise.get_connection(self.connection_name)
@@ -2182,6 +2204,17 @@ class DbManager:
         Args:
             fast_mode: 是否使用快速模式，快速模式下使用较少的重试次数和较短的等待时间
         """
+        # 优先使用增强管理器
+        if self._enhanced_pool_manager:
+            try:
+                success = await self._enhanced_pool_manager.refresh_connection(fast_mode=fast_mode)
+                if success:
+                    return
+                logger.warning("增强管理器刷新失败，使用原有逻辑")
+            except Exception as e:
+                logger.warning(f"增强管理器刷新异常: {e}，使用原有逻辑")
+        
+        # 原有逻辑作为后备
         import asyncio
         import time
         from tortoise.connection import connections

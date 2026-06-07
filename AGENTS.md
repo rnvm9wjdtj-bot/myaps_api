@@ -573,6 +573,70 @@ bind = "0.0.0.0:8000"
 - 技能配置在`.codeartsdoer/skills/`
 - 规范配置在`.codeartsdoer/specs/`
 
+## 数据库连接池管理
+
+项目实现了增强的数据库连接池管理功能，解决连接泄漏问题。
+
+### 功能特性
+
+- **状态管理**：连接池生命周期状态管理（OPEN/CLOSED/REFRESHING）
+- **健康检查**：定期检查连接健康状态，支持超时控制和重试机制
+- **安全刷新**：刷新前标记状态，刷新后健康验证，失败时回滚
+- **泄漏检测**：基于历史数据分析使用趋势，分级告警（WARNING/CRITICAL/EMERGENCY）
+- **后台清理**：定期清理异常连接，处理事件循环冲突
+
+### 使用方法
+
+```python
+from globalobjects.db_pool import get_enhanced_db_manager
+
+# 获取增强管理器
+manager = get_enhanced_db_manager("my_connection")
+
+# 检查健康状态
+health_result = await manager.check_health()
+if health_result.is_healthy:
+    print("连接健康")
+
+# 获取连接（自动检查状态）
+async with manager.get_connection() as conn:
+    result = await conn.execute_query("SELECT * FROM users")
+
+# 刷新连接
+success = await manager.refresh_connection(fast_mode=True)
+
+# 获取连接池状态
+status = await manager.get_connection_pool_status()
+print(f"使用率: {status.usage_rate}%")
+```
+
+### 启动监控
+
+```python
+from globalobjects.db_pool import start_pool_monitoring
+
+# 启动连接池监控
+await start_pool_monitoring(["db1", "db2", "db3"])
+```
+
+### 环境变量配置
+
+```bash
+USE_ENHANCED_POOL=true            # 是否使用增强的连接池管理
+POOL_STATE_LOCK_TIMEOUT=10.0      # 状态锁超时时间（秒）
+HEALTH_CHECK_TIMEOUT=5.0          # 健康检查超时时间（秒）
+CLEANUP_INTERVAL=300              # 后台清理任务间隔（秒）
+LEAK_WARNING_THRESHOLD=80         # 泄漏警告阈值（百分比）
+LEAK_CRITICAL_THRESHOLD=90        # 泄漏严重阈值（百分比）
+LEAK_EMERGENCY_THRESHOLD=95       # 泄漏紧急阈值（百分比）
+```
+
+### 相关文档
+
+- 模块文档：`globalobjects/db_pool/README.md`
+- 使用示例：`globalobjects/db_pool/examples.py`
+- 部署指南：`docs/db_pool_deployment_guide.md`
+
 ## 注意事项
 
 1. **代码质量**: 确保新代码遵循项目现有模式
