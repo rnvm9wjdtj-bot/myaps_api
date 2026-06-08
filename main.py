@@ -131,6 +131,11 @@ if __name__ == "__main__":
             'uvicorn.error': {'handlers': [], 'level': 'CRITICAL', 'propagate': False},
         }
         
+        # Windows上需要预先设置事件循环，解决socket资源不足问题
+        if os.name == 'nt':
+            loop = create_event_loop()
+            asyncio.set_event_loop(loop)
+
         print("Starting application...")
         uvicorn.run(
             app,
@@ -139,7 +144,6 @@ if __name__ == "__main__":
             log_level="info",
             access_log=True,
             log_config=LOGGING_CONFIG,
-            loop_factory=create_event_loop
         )
     except Exception as e:
         print(f"Application failed to start: {e}")
