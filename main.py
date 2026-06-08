@@ -11,10 +11,43 @@ env_file = os.path.join(BASE_DIR, '.env')
 os.environ.setdefault('ENV_FILE', env_file)
 load_dotenv(env_file)
 
-# 设置Windows事件循环为SelectorEventLoop，提高网络稳定性
-if os.name == 'nt':
-    loop = asyncio.SelectorEventLoop()
-    asyncio.set_event_loop(loop)
+# 自定义事件循环工厂，处理Windows socket资源不足的问题
+def create_event_loop():
+    if os.name == 'nt':
+        # 在Windows上，socket.socketpair()可能因系统缓冲区不足而失败
+        # 需要使用替代方案
+        errors = []
+        try:
+            # 尝试创建ProactorEventLoop（Windows推荐）
+            loop = asyncio.ProactorEventLoop()
+            return loop
+        except OSError as e:
+            errors.append(f"ProactorEventLoop: {e}")
+        except Exception as e:
+            errors.append(f"ProactorEventLoop (unknown): {e}")
+        
+        try:
+            # 尝试创建SelectorEventLoop
+            loop = asyncio.SelectorEventLoop()
+            return loop
+        except OSError as e:
+            errors.append(f"SelectorEventLoop: {e}")
+        except Exception as e:
+            errors.append(f"SelectorEventLoop (unknown): {e}")
+        
+        # 如果所有事件循环都创建失败，抛出带有详细信息的异常
+        raise RuntimeError(
+            f"无法创建事件循环。Windows套接字资源可能已耗尽。\n"
+            f"错误详情: {'; '.join(errors)}\n\n"
+            f"建议解决方法:\n"
+            f"1. 重启计算机以释放系统资源\n"
+            f"2. 关闭其他占用大量网络连接的程序\n"
+            f"3. 检查是否有程序泄漏socket连接\n"
+            f"4. 增加Windows系统的TCP缓冲区设置"
+        )
+    
+    # 默认使用asyncio的新事件循环
+    return asyncio.new_event_loop()
 
 # 导入模块
 from core.app import create_app
@@ -105,7 +138,8 @@ if __name__ == "__main__":
             port=PORT,
             log_level="info",
             access_log=True,
-            log_config=LOGGING_CONFIG
+            log_config=LOGGING_CONFIG,
+            loop_factory=create_event_loop
         )
     except Exception as e:
         print(f"Application failed to start: {e}")

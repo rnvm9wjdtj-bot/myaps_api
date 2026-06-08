@@ -44,6 +44,12 @@ from globalobjects.db_pool.db_pool_monitor import (
     stop_pool_monitoring,
     get_pool_monitor_status
 )
+from globalobjects.db_pool.config import (
+    get_pool_config,
+    is_enhanced_pool_enabled,
+    get_cached_config,
+    clear_config_cache
+)
 
 __all__ = [
     # 数据模型
@@ -83,5 +89,10 @@ __all__ = [
     "get_enhanced_db_manager",
     "start_pool_monitoring",
     "stop_pool_monitoring",
-    "get_pool_monitor_status"
+    "get_pool_monitor_status",
+    # 配置函数
+    "get_pool_config",
+    "is_enhanced_pool_enabled",
+    "get_cached_config",
+    "clear_config_cache"
 ]
