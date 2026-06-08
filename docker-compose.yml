@@ -26,7 +26,7 @@ services:
     restart: unless-stopped
     network_mode: host
     volumes:
-      - redis_data:/data
+      - ./storage/redis_data:/data
     command: redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -128,8 +128,6 @@ services:
   #   command: --bind=:${PORTAINER_PORT:-9000} --tunnel-port ${PORTAINER_TUNNEL_PORT:-9001}
 
 volumes:
-  redis_data:
-    driver: local
   postgres_data:
     driver: local
   uptime_kuma_data:

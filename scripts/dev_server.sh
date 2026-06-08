@@ -150,7 +150,8 @@ start_redis() {
         return 1
     fi
     
-    redis-server --daemonize yes 2>/dev/null
+    mkdir -p "$PROJECT_DIR/storage/redis_data"
+    redis-server --daemonize yes --dir "$PROJECT_DIR/storage/redis_data" 2>/dev/null
     
     local count=0
     while ! check_redis && [ $count -lt 10 ]; do
