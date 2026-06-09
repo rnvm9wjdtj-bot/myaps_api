@@ -55,6 +55,22 @@ class FailoverManager:
         self._failover_count = 0
         self._last_heartbeat = 0.0
         self._promoted_time: Optional[float] = None
+        
+        # 升级为主节点时的回调（由 MySQLBinlogListener 注册）
+        self._on_promoted_callback = None
+    
+    def register_on_promoted_callback(self, callback):
+        """注册升级为主节点时的回调函数"""
+        self._on_promoted_callback = callback
+    
+    def is_master(self) -> bool:
+        """
+        检查当前节点是否仍是主节点
+        
+        通过检查分布式锁的持有状态来判断。
+        如果锁被其他节点抢占（网络分区后恢复），返回 False。
+        """
+        return self._role == ListenerRole.MASTER and self._lock.is_holder
     
     def _get_redis_client(self):
         """获取Redis客户端"""
@@ -272,6 +288,13 @@ class FailoverManager:
         self._stop_event.clear()
         
         self._start_heartbeat_thread()
+        
+        # 执行升级回调（启动 binlog 监听）
+        if self._on_promoted_callback:
+            try:
+                self._on_promoted_callback()
+            except Exception as e:
+                logger.error(f"主节点升级回调执行失败: {e}")
         
         logger.success(
             "故障转移",

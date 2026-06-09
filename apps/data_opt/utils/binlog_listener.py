@@ -506,6 +506,8 @@ class _EventLoopHealthChecker:
     
     def start(self):
         """启动事件循环健康检查器"""
+        if self._check_thread is not None and self._check_thread.is_alive():
+            return
         self._stop_event.clear()
         self._check_thread = threading.Thread(
             target=self._check_loop,
@@ -1206,6 +1208,9 @@ class MySQLBinlogListener:
         if not self.running:
             # ========== HA: 故障转移管理 ==========
             if HA_MODULES_AVAILABLE:
+                # 注册升级回调：备节点被提升为主节点时自动启动监听
+                failover_manager.register_on_promoted_callback(self._on_promoted_to_master)
+                
                 is_master = failover_manager.acquire_master_role()
                 if not is_master:
                     logger.info("⏳ 未获取到主节点角色，降级为备节点等待")
@@ -1217,44 +1222,57 @@ class MySQLBinlogListener:
                 if not distributed_lock.acquire():
                     logger.info("⏳ 未获取到分布式锁，不启动 binlog 监听")
                     return
-                
-            self.running = True
-            # 重新创建线程池
-            try:
-                import concurrent.futures
-                if hasattr(self, '_thread_pool') and getattr(self._thread_pool, '_shutdown', False):
-                    self._thread_pool = concurrent.futures.ThreadPoolExecutor(
-                        max_workers=self._min_workers, 
-                        thread_name_prefix='mysql-monitor-'
-                    )
-                    logger.success("binlog监听线程池", "", "已重新创建")
-            except Exception as e:
-                logger.fail("binlog监听线程池创建", "", str(e))
             
-            # 启动健康检查器
-            self._health_checker.start()
-            
-            # 启动事件循环健康检查器
-            self._event_loop_health_checker.start()
-            
-            # ========== HA: Prometheus指标注册 ==========
-            if HA_MODULES_AVAILABLE:
-                prometheus_metrics.set_listener_status(True)
-                prometheus_metrics.set_listener_role("master" if self._role == ListenerRole.MASTER else "slave")
-                logger.info("✅ Prometheus指标已注册")
-            
-            # 启动Binlog监控线程
-            monitoring_thread = threading.Thread(target=self._monitor_binlog_with_retry, daemon=True, name='mysql-monitor-binlog')
-            monitoring_thread.start()
-            
-            # 启动线程池监控线程
-            pool_monitor_thread = threading.Thread(target=self._monitor_thread_pool, daemon=True, name='mysql-monitor-pool')
-            pool_monitor_thread.start()
-            
-            logger.info("✅ Binlog监听线程已启动")
-            logger.info("✅ binlog监听线程池监控线程已启动")
+            self._start_listening()
         else:
             logger.info("⚠️ Binlog监听已经在运行")
+    
+    def _on_promoted_to_master(self):
+        """故障转移回调：备节点升级为主节点时由 FailoverManager 调用"""
+        if self.running:
+            logger.warning("⚠️ 故障转移回调触发时监听已在运行，跳过")
+            return
+        logger.success("故障转移", "Binlog监听", "备节点已升级为主节点，正在启动binlog监听...")
+        self._role = ListenerRole.MASTER
+        self._start_listening()
+    
+    def _start_listening(self):
+        """启动 binlog 监听（主节点专属）"""
+        self.running = True
+        # 重新创建线程池
+        try:
+            import concurrent.futures
+            if hasattr(self, '_thread_pool') and getattr(self._thread_pool, '_shutdown', False):
+                self._thread_pool = concurrent.futures.ThreadPoolExecutor(
+                    max_workers=self._min_workers, 
+                    thread_name_prefix='mysql-monitor-'
+                )
+                logger.success("Binlog监听线程池", "", "已重新创建")
+        except Exception as e:
+            logger.fail("Binlog监听线程池创建", "", str(e))
+        
+        # 启动健康检查器
+        self._health_checker.start()
+        
+        # 启动事件循环健康检查器
+        self._event_loop_health_checker.start()
+        
+        # ========== HA: Prometheus指标注册 ==========
+        if HA_MODULES_AVAILABLE:
+            prometheus_metrics.set_listener_status(True)
+            prometheus_metrics.set_listener_role("master" if self._role == ListenerRole.MASTER else "slave")
+            logger.info("✅ Prometheus指标已注册")
+        
+        # 启动Binlog监控线程
+        monitoring_thread = threading.Thread(target=self._monitor_binlog_with_retry, daemon=True, name='mysql-monitor-binlog')
+        monitoring_thread.start()
+        
+        # 启动线程池监控线程
+        pool_monitor_thread = threading.Thread(target=self._monitor_thread_pool, daemon=True, name='mysql-monitor-pool')
+        pool_monitor_thread.start()
+        
+        logger.info("✅ Binlog监听线程已启动")
+        logger.info("✅ Binlog监听线程池监控线程已启动")
 
     def _monitor_binlog_with_retry(self):
         """增强版重试机制 - 无限重试 + 持久化位置 + 健康检查"""
@@ -1262,11 +1280,14 @@ class MySQLBinlogListener:
         last_alert_time = 0
         alert_interval = 300  # 告警间隔（5分钟）
         
-        # 启动健康检查器
-        self._health_checker.start()
-        
         while self.running:
             try:
+                # ========== HA: 检查是否仍是主节点（防脑裂）==========
+                if HA_MODULES_AVAILABLE and not failover_manager.is_master():
+                    logger.warning("⚠️ 已不再是主节点（锁被抢占），停止binlog监听")
+                    self.running = False
+                    break
+                
                 # 检查 MySQL 健康状态
                 if not self._health_checker.is_healthy():
                     wait_time = min(2 ** min(retry_count, 8), self._max_retry_wait)
@@ -1408,6 +1429,13 @@ class MySQLBinlogListener:
             for binlogevent in stream:
                 if not self.running:
                     break
+                
+                # ========== HA: 检查主节点身份（防脑裂）==========
+                if HA_MODULES_AVAILABLE:
+                    if not failover_manager.is_master():
+                        logger.warning("⚠️ 主节点身份已丢失（锁被抢占），停止binlog流")
+                        self.running = False
+                        break
                 
                 # ========== HA: 背压控制检测 ==========
                 self._event_count_since_check += 1
@@ -1924,12 +1952,13 @@ class MySQLBinlogListener:
             except Exception as e:
                 logger.warning(f"⚠️ 故障转移管理器停止失败: {e}")
         
-        # 0. 释放分布式锁
-        try:
-            distributed_lock.release()
-            logger.info("✅ 分布式锁已释放")
-        except Exception as e:
-            logger.warning(f"⚠️ 释放分布式锁失败: {e}")
+        # 0. 释放分布式锁（非HA模式下使用旧锁）
+        if not HA_MODULES_AVAILABLE:
+            try:
+                distributed_lock.release()
+                logger.info("✅ 分布式锁已释放")
+            except Exception as e:
+                logger.warning(f"⚠️ 释放分布式锁失败: {e}")
         
         # 1. 停止健康检查器
         if hasattr(self, '_health_checker'):
