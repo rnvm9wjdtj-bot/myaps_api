@@ -39,7 +39,8 @@ class EnhancedDistributedLock:
         self,
         lock_name: str = "binlog_listener_lock",
         ttl: int = 30,
-        environment_mode: EnvMode = EnvMode.SINGLE_NODE
+        environment_mode: EnvMode = EnvMode.SINGLE_NODE,
+        redis_failure_threshold: int = 3
     ):
         """
         初始化增强分布式锁
@@ -48,6 +49,7 @@ class EnhancedDistributedLock:
             lock_name: 锁名称
             ttl: 锁TTL（秒）
             environment_mode: 运行环境模式
+            redis_failure_threshold: Redis连续失败阈值，超过此值触发告警
         """
         self.lock_name = lock_name
         self.ttl = ttl
@@ -61,6 +63,10 @@ class EnhancedDistributedLock:
         self._redis_health = True
         self._last_redis_check = 0.0
         self._redis_check_interval = 10.0
+        
+        # P3优化：Redis连续失败计数器
+        self._redis_failure_count = 0
+        self._redis_failure_threshold = redis_failure_threshold
     
     def _get_redis_client(self):
         """获取Redis客户端"""
@@ -250,8 +256,18 @@ class EnhancedDistributedLock:
         try:
             client = self._get_redis_client()
             if not client:
-                # Redis 不可达，信任内存状态（避免误伤）
+                # P3优化：Redis不可达，增加失败计数
+                self._redis_failure_count += 1
+                if self._redis_failure_count >= self._redis_failure_threshold:
+                    logger.error(
+                        f"❌ Redis连续失败{self._redis_failure_count}次，"
+                        f"可能存在网络故障或脑裂风险"
+                    )
+                # 信任内存状态（避免误伤）
                 return self._lock_holder
+            
+            # Redis可达，重置失败计数
+            self._redis_failure_count = 0
             
             current_value = client.get(self.lock_name)
             if current_value is None:
@@ -267,6 +283,8 @@ class EnhancedDistributedLock:
             return True
             
         except Exception as e:
+            # P3优化：异常时增加失败计数
+            self._redis_failure_count += 1
             logger.warning(f"⚠️ 锁状态校验失败（信任内存状态）: {e}")
             return self._lock_holder
     
@@ -274,6 +292,11 @@ class EnhancedDistributedLock:
     def is_holder(self) -> bool:
         """当前节点是否是锁持有者（内存状态，可能有滞后）"""
         return self._lock_holder
+    
+    @property
+    def redis_failure_count(self) -> int:
+        """当前 Redis 连续失败次数"""
+        return self._redis_failure_count
 
 
 enhanced_distributed_lock = EnhancedDistributedLock()

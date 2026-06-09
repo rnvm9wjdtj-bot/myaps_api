@@ -58,6 +58,10 @@ class FailoverManager:
         
         # 升级为主节点时的回调（由 MySQLBinlogListener 注册）
         self._on_promoted_callback = None
+        
+        # P1修复：线程安全锁 + 关闭标志
+        self._state_lock = threading.Lock()
+        self._shutdown_requested = False
     
     def register_on_promoted_callback(self, callback):
         """注册升级为主节点时的回调函数"""
@@ -294,8 +298,21 @@ class FailoverManager:
         
         self._start_heartbeat_thread()
         
-        # 执行升级回调（启动 binlog 监听），失败时重试
+        # 执行升级回调（启动 binlog 监听），异步重试避免阻塞心跳线程
         if self._on_promoted_callback:
+            self._execute_callback_async()
+        
+        logger.success(
+            "故障转移",
+            "FailoverManager",
+            f"已成功升级为主节点 (failover_count={self._failover_count})"
+        )
+        
+        return True
+    
+    def _execute_callback_async(self):
+        """异步执行升级回调（独立线程，避免阻塞心跳）"""
+        def _retry_callback():
             callback_max_retries = 3
             callback_ok = False
             
@@ -320,28 +337,35 @@ class FailoverManager:
             
             if not callback_ok:
                 logger.error("❌ 升级回调全部失败，降级为备节点")
-                # 清理主节点状态
-                self._stop_event.set()
-                if self._heartbeat_thread and self._heartbeat_thread.is_alive():
-                    self._heartbeat_thread.join(timeout=5)
-                    self._heartbeat_thread = None
-                self._stop_event.clear()
-                self._lock.release()
+                # P1修复：加锁保护降级逻辑，防止与 stop() 竞态
+                with self._state_lock:
+                    self._stop_event.set()
+                    if self._heartbeat_thread and self._heartbeat_thread.is_alive():
+                        self._heartbeat_thread.join(timeout=5)
+                        self._heartbeat_thread = None
+                    
+                    # 仅在未请求关闭时清除 stop_event，避免覆盖 stop() 的关闭信号
+                    if not self._shutdown_requested:
+                        self._stop_event.clear()
+                    
+                    # 释放锁前检查是否仍持有
+                    if self._lock.is_holder:
+                        self._lock.release()
+                    
+                    self._role = ListenerRole.SLAVE
                 
-                self._role = ListenerRole.SLAVE
                 prometheus_metrics.set_listener_role("slave")
                 self._start_monitor_thread()
                 
                 logger.info("⏳ 已降级为备节点，继续监控主节点心跳")
-                return False
         
-        logger.success(
-            "故障转移",
-            "FailoverManager",
-            f"已成功升级为主节点 (failover_count={self._failover_count})"
+        callback_thread = threading.Thread(
+            target=_retry_callback,
+            daemon=True,
+            name='binlog-callback-retry'
         )
-        
-        return True
+        callback_thread.start()
+        logger.info("✅ 升级回调线程已启动（异步重试）")
     
     def get_role(self) -> ListenerRole:
         """获取当前角色"""
@@ -373,7 +397,9 @@ class FailoverManager:
     
     def stop(self):
         """停止故障转移管理器"""
-        self._stop_event.set()
+        with self._state_lock:
+            self._shutdown_requested = True
+            self._stop_event.set()
         
         if self._heartbeat_thread and self._heartbeat_thread.is_alive():
             self._heartbeat_thread.join(timeout=5)
@@ -381,7 +407,9 @@ class FailoverManager:
         if self._monitor_thread and self._monitor_thread.is_alive():
             self._monitor_thread.join(timeout=5)
         
-        self._lock.release()
+        # P1修复：释放锁前检查是否仍持有
+        if self._lock.is_holder:
+            self._lock.release()
         
         logger.info("🛑 故障转移管理器已停止")
 
