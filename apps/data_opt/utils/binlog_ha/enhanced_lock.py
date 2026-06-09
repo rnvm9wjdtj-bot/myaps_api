@@ -234,9 +234,45 @@ class EnhancedDistributedLock:
             self._lock_holder = False
             self._lock_value = None
     
+    def verify_hold(self) -> bool:
+        """
+        主动向 Redis 校验锁是否仍由本节点持有
+        
+        与 is_holder 不同，此方法会实际查询 Redis，
+        消除内存状态滞后窗口（如网络分区后锁已被抢占）。
+        
+        Returns:
+            是否仍持有锁（Redis 不可达时信任内存状态）
+        """
+        if not self._lock_holder or not self._lock_value:
+            return False
+        
+        try:
+            client = self._get_redis_client()
+            if not client:
+                # Redis 不可达，信任内存状态（避免误伤）
+                return self._lock_holder
+            
+            current_value = client.get(self.lock_name)
+            if current_value is None:
+                # 锁已过期/被删除
+                self._lock_holder = False
+                return False
+            
+            if current_value.decode() != self._lock_value:
+                # 锁已被其他节点抢占
+                self._lock_holder = False
+                return False
+            
+            return True
+            
+        except Exception as e:
+            logger.warning(f"⚠️ 锁状态校验失败（信任内存状态）: {e}")
+            return self._lock_holder
+    
     @property
     def is_holder(self) -> bool:
-        """当前节点是否是锁持有者"""
+        """当前节点是否是锁持有者（内存状态，可能有滞后）"""
         return self._lock_holder
 
 

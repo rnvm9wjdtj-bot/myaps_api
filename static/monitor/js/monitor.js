@@ -1922,7 +1922,7 @@ async function fetchEventStats() {
 async function fetchBinlogListenerStatus() {
     // 如果用户不活动，不发送请求
     if (isInactive) {
-        console.log('用户不活动，跳过binlog listener状态获取');
+        console.log('用户不活动，跳过Binlog listener状态获取');
         return;
     }
     
@@ -1931,7 +1931,7 @@ async function fetchBinlogListenerStatus() {
         const data = await response.json();
         updateBinlogListenerDisplay(data);
     } catch (error) {
-        console.error('获取binlog listener状态失败:', error);
+        console.error('获取Binlog listener状态失败:', error);
     }
 }
 

@@ -67,10 +67,15 @@ class FailoverManager:
         """
         检查当前节点是否仍是主节点
         
-        通过检查分布式锁的持有状态来判断。
-        如果锁被其他节点抢占（网络分区后恢复），返回 False。
+        先快速过内存状态，再主动向 Redis 校验锁持有状态，
+        消除网络分区后锁被抢占但内存尚未感知的误判窗口。
+        Redis 不可达时信任内存状态，避免误伤。
         """
-        return self._role == ListenerRole.MASTER and self._lock.is_holder
+        if self._role != ListenerRole.MASTER:
+            return False
+        
+        # 主动向 Redis 验证锁仍由本节点持有
+        return self._lock.verify_hold()
     
     def _get_redis_client(self):
         """获取Redis客户端"""
@@ -289,12 +294,46 @@ class FailoverManager:
         
         self._start_heartbeat_thread()
         
-        # 执行升级回调（启动 binlog 监听）
+        # 执行升级回调（启动 binlog 监听），失败时重试
         if self._on_promoted_callback:
-            try:
-                self._on_promoted_callback()
-            except Exception as e:
-                logger.error(f"主节点升级回调执行失败: {e}")
+            callback_max_retries = 3
+            callback_ok = False
+            
+            for attempt in range(1, callback_max_retries + 1):
+                try:
+                    self._on_promoted_callback()
+                    callback_ok = True
+                    break
+                except Exception as e:
+                    if attempt < callback_max_retries:
+                        wait = attempt * 2  # 2s, 4s
+                        logger.warning(
+                            f"⚠️ 主节点升级回调执行失败 (attempt={attempt}/{callback_max_retries})，"
+                            f"{wait}s 后重试: {e}"
+                        )
+                        time.sleep(wait)
+                    else:
+                        logger.error(
+                            f"❌ 主节点升级回调执行失败 (attempt={attempt}/{callback_max_retries})，"
+                            f"已耗尽重试次数: {e}"
+                        )
+            
+            if not callback_ok:
+                logger.error("❌ 升级回调全部失败，降级为备节点")
+                # 清理主节点状态
+                self._stop_event.set()
+                if self._heartbeat_thread and self._heartbeat_thread.is_alive():
+                    self._heartbeat_thread.join(timeout=5)
+                    self._heartbeat_thread = None
+                self._stop_event.clear()
+                self._lock.release()
+                
+                self._role = ListenerRole.SLAVE
+                prometheus_metrics.set_listener_role("slave")
+                self._start_monitor_thread()
+                
+                logger.info("⏳ 已降级为备节点，继续监控主节点心跳")
+                return False
         
         logger.success(
             "故障转移",

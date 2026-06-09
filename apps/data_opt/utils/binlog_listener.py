@@ -2,9 +2,9 @@
 MySQL Binlog 实时监控模块
 
 功能特性：
-1. 实时监听 MySQL binlog，捕获 INSERT/UPDATE/DELETE 事件
+1. 实时监听 MySQL Binlog，捕获 INSERT/UPDATE/DELETE 事件
 2. 无限重试机制 - 连接断开后自动重连，永不放弃
-3. 位置持久化 - 自动保存 binlog 位置，重启后从断点续传
+3. 位置持久化 - 自动保存 Binlog 位置，重启后从断点续传
 4. 健康检查 - 定期检查 MySQL 连接状态
 5. 告警通知 - 支持自定义告警回调（企业微信、钉钉、邮件等）
 
@@ -85,7 +85,7 @@ except ImportError as e:
 
 
 class DistributedLock:
-    """基于 Redis 的分布式锁，确保只有一个 worker 能启动 binlog 监听器"""
+    """基于 Redis 的分布式锁，确保只有一个 worker 能启动 Binlog 监听器"""
     
     def __init__(self, lock_name: str = "binlog_listener_lock", ttl: int = 30):
         self.lock_name = lock_name
@@ -181,7 +181,7 @@ logger = log_config.get_logger(__name__, level=LOG_LEVEL)
 
 
 def _get_binlog_db_credentials(action_name: str) -> Optional[Dict[str, Any]]:
-    """获取用于 binlog 高权限操作的数据库连接信息。"""
+    """获取用于 Binlog 高权限操作的数据库连接信息。"""
     db_user = MYAPS_DB_USER
     db_password = MYAPS_DB_PASSWORD
     if not db_user:
@@ -207,7 +207,7 @@ def _get_binlog_db_credentials(action_name: str) -> Optional[Dict[str, Any]]:
 
 
 class BinlogPositionManager:
-    """Binlog 位置管理器 - 负责持久化和恢复 binlog 位置（基于文件存储）"""
+    """Binlog 位置管理器 - 负责持久化和恢复 Binlog 位置（基于文件存储）"""
     
     def __init__(self):
         self._lock = threading.RLock()
@@ -260,19 +260,19 @@ class BinlogPositionManager:
             return False
     
     def load_position(self) -> Optional[Dict[str, Any]]:
-        """加载保存的 binlog 位置"""
+        """加载保存的 Binlog 位置"""
         try:
             data = self._read_json_file(self._position_file)
             position = data.get(self._server_id)
             if position and position.get('log_file'):
-                logger.info(f"📂 已加载 binlog 位置: {position['log_file']}:{position['log_pos']}")
+                logger.info(f"📂 已加载 Binlog 位置: {position['log_file']}:{position['log_pos']}")
                 return position
         except Exception as e:
-            logger.warning(f"⚠️ 加载 binlog 位置失败: {e}")
+            logger.warning(f"⚠️ 加载 Binlog 位置失败: {e}")
         return None
     
     def save_position(self, log_file: str, log_pos: int, timestamp: Optional[float] = None):
-        """保存 binlog 位置到文件"""
+        """保存 Binlog 位置到文件"""
         current_time = time.time()
         
         # 限制保存频率
@@ -290,7 +290,7 @@ class BinlogPositionManager:
                 self._last_save_time = current_time
                 logger.debug(f"💾 Binlog 位置已保存: {log_file}:{log_pos}")
         except Exception as e:
-            logger.error(f"❌ 保存 binlog 位置失败: {e}")
+            logger.error(f"❌ 保存 Binlog 位置失败: {e}")
     
     def clear_position(self):
         """清除保存的位置（通常在手动重置时使用）"""
@@ -301,7 +301,7 @@ class BinlogPositionManager:
                 self._write_json_file(self._position_file, data)
                 logger.info("🗑️ Binlog 位置已清除")
         except Exception as e:
-            logger.warning(f"⚠️ 清除 binlog 位置失败: {e}")
+            logger.warning(f"⚠️ 清除 Binlog 位置失败: {e}")
     
     def is_event_processed(self, event_id: str) -> bool:
         """检查事件是否已处理"""
@@ -451,7 +451,7 @@ class ConnectionHealthChecker:
                 elif self._is_config_valid and not is_valid:
                     self._is_config_valid = False
                     logger.warning("⚠️ 配置检查失败: MySQL 配置不符合要求")
-                    self._send_alert("MySQL 配置检查失败，请检查 binlog 配置", "warning")
+                    self._send_alert("MySQL 配置检查失败，请检查 Binlog 配置", "warning")
             
             return is_valid
             
@@ -628,7 +628,7 @@ class MySQLBinlogListener:
         self._event_loop = None
         self._loop_thread = None
         
-        # 初始化 binlog 位置管理器
+        # 初始化 Binlog 位置管理器
         if ENABLE_BINLOG_POSITION:
             self._position_manager = BinlogPositionManager()
             logger.info("✅ Binlog 位置管理器已启用")
@@ -637,12 +637,12 @@ class MySQLBinlogListener:
             try:
                 position_manager = BinlogPositionManager()
                 position_manager.clear_position()
-                logger.info("🗑️ 已清除现有的 binlog 位置记录")
+                logger.info("🗑️ 已清除现有的 Binlog 位置记录")
             except Exception as e:
-                logger.warning(f"⚠️ 清除 binlog 位置记录失败: {e}")
+                logger.warning(f"⚠️ 清除 Binlog 位置记录失败: {e}")
             self._position_manager = None
             logger.info("⚠️ Binlog 位置管理器已禁用")
-        self._current_position = None  # 当前 binlog 位置
+        self._current_position = None  # 当前 Binlog 位置
         
         # 初始化健康检查器
         self._health_checker = ConnectionHealthChecker(
@@ -691,6 +691,9 @@ class MySQLBinlogListener:
         # 标记初始化完成
         with self.__class__._lock:
             self._initialized = True
+        
+        # 启动互斥锁，防止 start_monitoring / _on_promoted_to_master 并发进入
+        self._startup_lock = threading.Lock()
         
         # ========== HA Module Initialization ==========
         if HA_MODULES_AVAILABLE:
@@ -752,7 +755,7 @@ class MySQLBinlogListener:
             logger.info("✅ MySQL连接测试成功")
             self._initialized = True  # 标记初始化完成
             
-            # 验证 binlog 位置（如果位置管理器已启用）
+            # 验证 Binlog 位置（如果位置管理器已启用）
             self._validate_binlog_position()
                     
         except Exception as e:
@@ -818,7 +821,7 @@ class MySQLBinlogListener:
         return table_name
     
     def _validate_binlog_position(self):
-        """验证 binlog 位置是否有效"""
+        """验证 Binlog 位置是否有效"""
         if not ENABLE_BINLOG_POSITION or not self._position_manager:
             return
         
@@ -827,8 +830,8 @@ class MySQLBinlogListener:
             return
         
         try:
-            # 验证保存的位置是否在当前的 binlog 文件中
-            # 连接 MySQL 检查 binlog 文件是否存在
+            # 验证保存的位置是否在当前的 Binlog 文件中
+            # 连接 MySQL 检查 Binlog 文件是否存在
             conn_params = {
                 "host": self.mysql_settings["host"],
                 "port": int(self.mysql_settings["port"]),
@@ -840,26 +843,26 @@ class MySQLBinlogListener:
             
             with conn.cursor() as cursor:
                 log_file = saved_position.get('log_file')
-                # 检查 binlog 文件是否存在
+                # 检查 Binlog 文件是否存在
                 cursor.execute("SHOW BINARY LOGS")
                 logs = [row[0] for row in cursor.fetchall()]
                 
                 if log_file not in logs:
-                    logger.warning(f"⚠️ 保存的 binlog 文件不存在: {log_file}，将重新开始监控")
+                    logger.warning(f"⚠️ 保存的 Binlog 文件不存在: {log_file}，将重新开始监控")
                     self._position_manager.clear_position()
                     
-                    # 获取当前的 binlog 文件和位置
+                    # 获取当前的 Binlog 文件和位置
                     cursor.execute("SHOW MASTER STATUS")
                     master_status = cursor.fetchone()
                     if master_status:
                         current_log_file = master_status[0]
                         current_log_pos = master_status[1]
-                        logger.info(f"📍 当前 binlog 位置: {current_log_file}:{current_log_pos}")
+                        logger.info(f"📍 当前 Binlog 位置: {current_log_file}:{current_log_pos}")
                         self._position_manager.save_position(current_log_file, current_log_pos)
             
             conn.close()
         except Exception as e:
-            logger.warning(f"⚠️ 验证 binlog 位置失败: {e}")
+            logger.warning(f"⚠️ 验证 Binlog 位置失败: {e}")
             # 如果验证失败，清除旧的位置
             self._position_manager.clear_position()
     
@@ -1161,7 +1164,7 @@ class MySQLBinlogListener:
         return pending_count
 
     def reset_position(self):
-        """重置 binlog 位置（下次启动时从头开始）"""
+        """重置 Binlog 位置（下次启动时从头开始）"""
         if ENABLE_BINLOG_POSITION and self._position_manager:
             self._position_manager.clear_position()
             logger.info("🔄 Binlog 位置已重置，下次启动将从最新位置开始")
@@ -1205,7 +1208,11 @@ class MySQLBinlogListener:
 
     def start_monitoring(self):
         """开始监控Binlog（HA增强版）"""
-        if not self.running:
+        with self._startup_lock:
+            if self.running:
+                logger.info("⚠️ Binlog监听已经在运行")
+                return
+            
             # ========== HA: 故障转移管理 ==========
             if HA_MODULES_AVAILABLE:
                 # 注册升级回调：备节点被提升为主节点时自动启动监听
@@ -1220,28 +1227,26 @@ class MySQLBinlogListener:
             else:
                 # 原有逻辑：分布式锁
                 if not distributed_lock.acquire():
-                    logger.info("⏳ 未获取到分布式锁，不启动 binlog 监听")
+                    logger.info("⏳ 未获取到分布式锁，不启动 Binlog 监听")
                     return
             
             self._start_listening()
-        else:
-            logger.info("⚠️ Binlog监听已经在运行")
     
     def _on_promoted_to_master(self):
         """故障转移回调：备节点升级为主节点时由 FailoverManager 调用"""
-        if self.running:
-            logger.warning("⚠️ 故障转移回调触发时监听已在运行，跳过")
-            return
-        logger.success("故障转移", "Binlog监听", "备节点已升级为主节点，正在启动binlog监听...")
-        self._role = ListenerRole.MASTER
-        self._start_listening()
+        with self._startup_lock:
+            if self.running:
+                logger.warning("⚠️ 故障转移回调触发时监听已在运行，跳过")
+                return
+            logger.success("故障转移", "Binlog监听", "备节点已升级为主节点，正在启动binlog监听...")
+            self._role = ListenerRole.MASTER
+            self._start_listening()
     
     def _start_listening(self):
-        """启动 binlog 监听（主节点专属）"""
+        """启动 Binlog 监听（主节点专属）"""
         self.running = True
-        # 重新创建线程池
+        # 重新创建线程池（如果之前已 shutdown）
         try:
-            import concurrent.futures
             if hasattr(self, '_thread_pool') and getattr(self._thread_pool, '_shutdown', False):
                 self._thread_pool = concurrent.futures.ThreadPoolExecutor(
                     max_workers=self._min_workers, 
@@ -1303,13 +1308,13 @@ class MySQLBinlogListener:
                     retry_count += 1
                     continue
                 
-                # 尝试启动 binlog 流
+                # 尝试启动 Binlog 流
                 self._start_binlog_stream()
                 
                 # 成功连接后重置计数
                 if retry_count > 0:
-                    logger.success("binlog监听", "", f"连接已恢复，共重试 {retry_count} 次")
-                    self._send_alert(f"binlog监听已恢复，共重试 {retry_count} 次", "info")
+                    logger.success("Binlog监听", "", f"连接已恢复，共重试 {retry_count} 次")
+                    self._send_alert(f"Binlog监听已恢复，共重试 {retry_count} 次", "info")
                 retry_count = 0
                 self._consecutive_errors = 0
                 
@@ -1474,7 +1479,7 @@ class MySQLBinlogListener:
                     )
                     prometheus_metrics.inc_events_processed(event_type)
                 
-                # 定期保存 binlog 位置
+                # 定期保存 Binlog 位置
                 event_count += 1
                 current_time = time.time()
                 if ENABLE_BINLOG_POSITION and self._position_manager and current_time - last_position_save >= 5:  # 每5秒保存一次位置
@@ -1487,11 +1492,11 @@ class MySQLBinlogListener:
                             self._current_position = {"log_file": log_file, "log_pos": log_pos}
                             last_position_save = current_time
                     except Exception as e:
-                        logger.debug(f"保存 binlog 位置失败: {e}")
+                        logger.debug(f"保存 Binlog 位置失败: {e}")
                 
                 # 每处理1000个事件输出一次进度
                 if event_count % 1000 == 0:
-                    logger.debug(f"📊 已处理 {event_count} 个 binlog 事件")
+                    logger.debug(f"📊 已处理 {event_count} 个 Binlog 事件")
 
         except Exception as e:
             # 异常前尝试保存当前位置
@@ -1501,7 +1506,7 @@ class MySQLBinlogListener:
                     logger.info(f"💾 异常前保存位置: {stream.log_file}:{stream.log_pos}")
                 except:
                     pass
-            logger.fail("binlog监听处理", "", str(e))
+            logger.fail("Binlog监听处理", "", str(e))
             raise
         finally:
             if stream:
@@ -1513,7 +1518,7 @@ class MySQLBinlogListener:
                     except:
                         pass
                 stream.close()
-                logger.success("binlog监听", "", "已关闭")
+                logger.success("Binlog监听", "", "已关闭")
 
     def _add_to_dead_letter_queue(self, event, error_message):
         """将失败的事件添加到DeadLetter队列（异步写入）"""

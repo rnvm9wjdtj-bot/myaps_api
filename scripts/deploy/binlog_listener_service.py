@@ -29,12 +29,12 @@ def main():
     
     try:
         # 启动监听器
-        print("Starting binlog listener...")
+        print("Starting Binlog listener...")
         binlog_listener.start()
     except KeyboardInterrupt:
-        print("Stopping binlog listener...")
+        print("Stopping Binlog listener...")
     except Exception as e:
-        print(f"Error starting binlog listener: {e}")
+        print(f"Error starting Binlog listener: {e}")
 
 if __name__ == "__main__":
     main()

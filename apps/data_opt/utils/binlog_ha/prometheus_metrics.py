@@ -159,7 +159,7 @@ class PrometheusMetrics:
         self.connection_status.set(1 if connected else 0)
     
     def set_binlog_position(self, log_file: str, log_pos: int):
-        """设置 binlog 位置"""
+        """设置 Binlog 位置"""
         self.binlog_position.labels(file=log_file).set(log_pos)
     
     def inc_events_processed(self, event_type: str, count: int = 1):
