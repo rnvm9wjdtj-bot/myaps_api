@@ -1,5 +1,5 @@
 from typing import List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from tortoise.expressions import Q
 from core.settings import LOG_RETENTION, LOG_LEVEL
 from .models import APIRequest, OutboundAPIRequest, SystemLog
@@ -311,8 +311,7 @@ class RequestStorage:
         Returns:
             int: 删除的记录数
         """
-        from datetime import timedelta
-        cutoff_date = datetime.now(datetime.timezone.utc) - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
         
         # 直接删除主表数据
         deleted_count = await APIRequest.filter(timestamp__lt=cutoff_date).delete()
@@ -567,8 +566,7 @@ class OutboundRequestStorage:
         Returns:
             int: 删除的记录数
         """
-        from datetime import timedelta
-        cutoff_date = datetime.now(datetime.timezone.utc) - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
         deleted_count = await OutboundAPIRequest.filter(timestamp__lt=cutoff_date).delete()
         return deleted_count
 
@@ -719,8 +717,7 @@ class SystemLogStorage:
         Returns:
             int: 删除的记录数
         """
-        from datetime import timedelta
-        cutoff_date = datetime.now(datetime.timezone.utc) - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
         deleted_count = await SystemLog.filter(timestamp__lt=cutoff_date).delete()
         return deleted_count
 
@@ -785,17 +782,17 @@ async def clean_all_old_data(days: int = LOG_RETENTION):
 
 async def vacuum_sqlite_database():
     """执行 SQLite VACUUM 命令回收磁盘空间"""
-    from core.settings import SQLITE_FILE
-    from tortoise.backends.sqlite.client import SqliteClient
+    from core.settings import SQLITE_DB_PATH
     
     try:
-        # 获取 SQLite 连接并执行 VACUUM
-        client = SqliteClient(db_url=f"sqlite://{SQLITE_FILE}")
+        # 尝试使用 tortoise 连接
+        from tortoise.backends.sqlite.client import SqliteClient
+        client = SqliteClient(db_url=f"sqlite://{SQLITE_DB_PATH}")
         await client.execute_query("VACUUM")
         await client.close()
     except Exception as e:
-        # 尝试使用其他方式执行 VACUUM
+        # 降级使用 sqlite3 标准库
         import sqlite3
-        conn = sqlite3.connect(SQLITE_FILE)
+        conn = sqlite3.connect(str(SQLITE_DB_PATH))
         conn.execute("VACUUM")
         conn.close()

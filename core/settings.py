@@ -96,6 +96,9 @@ USE_LOGURU = os.getenv("USE_LOGURU", "true").lower().strip() == "true"
 # 本地 SQLite 数据库名称
 SQLITE_FILE = os.getenv("SQLITE_FILE", "").replace(".sqlite3", "").strip() or "local_data"
 
+# SQLite 数据库完整路径（公共变量，供其他模块复用）
+SQLITE_DB_PATH = BASE_DIR / "storage" / f"{SQLITE_FILE}.sqlite3"
+
 
 PROTOCOL = os.getenv("PROTOCOL", "http://")
 HOST = os.getenv("HOST", "0.0.0.0")

@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from tortoise.contrib.fastapi import register_tortoise
 from tortoise import Tortoise
 from core.settings import (
-    BASE_DIR, SQLITE_FILE,
+    BASE_DIR, SQLITE_FILE, SQLITE_DB_PATH,
     MYAPS_MAIN_DB, MYAPS_DBSET_LIST, MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD,
     THIS_DB_NAME, THIS_DB_HOST, THIS_DB_PORT, THIS_DB_USER, THIS_DB_PASSWORD,
     TIMEZONE_NAME
@@ -252,7 +252,7 @@ for db in MYAPS_DBSET_LIST:
 connections[SQLITE_FILE] = {
     "engine": "tortoise.backends.sqlite",
     "credentials": {
-        "file_path": BASE_DIR / "storage" / f"{SQLITE_FILE}.sqlite3",  # 统一管理数据文件
+        "file_path": SQLITE_DB_PATH,  # 使用公共变量
         "journal_mode": "WAL",  # 写前日志，提升并发性能
         "synchronous": "NORMAL",  # 性能与安全的平衡
         "cache_size": -100000,  # 100MB 内存缓存
@@ -664,9 +664,8 @@ async def ensure_sqlite_monitor_tables() -> bool:
         bool: 所有表都存在或创建成功返回 True
     """
     import sqlite3
-    from pathlib import Path
 
-    db_path = BASE_DIR / "storage" / f"{SQLITE_FILE}.sqlite3"
+    db_path = SQLITE_DB_PATH
 
     try:
         conn = sqlite3.connect(str(db_path))
