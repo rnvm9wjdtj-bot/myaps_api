@@ -359,10 +359,13 @@ class OutboundRequestStorage:
             对外请求记录列表
         """
         try:
-            query = OutboundAPIRequest.filter(
-                timestamp__gte=start_time,
-                timestamp__lte=end_time
-            )
+            # 修复：当时间范围为 None 时，不添加时间过滤条件
+            query = OutboundAPIRequest.select()
+            
+            if start_time:
+                query = query.where(OutboundAPIRequest.timestamp >= start_time)
+            if end_time:
+                query = query.where(OutboundAPIRequest.timestamp <= end_time)
             
             if filter_params:
                 # 模块过滤（IN查询）
