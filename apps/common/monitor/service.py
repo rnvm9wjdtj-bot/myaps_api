@@ -744,23 +744,49 @@ class MonitorService:
                 timestamp_str = full_log_entry[:23]
                 timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S,%f').timestamp()
                 
+                # 提取时间戳后的内容，去掉开头的 ' - '
+                # 日志格式：2026-06-11 04:31:19,274 - WARNING - module - function:line - message
+                content_after_timestamp = full_log_entry[24:].lstrip('- ')
+                
                 # 提取模块、函数、行号和日志级别
-                # 格式：2026-04-15 10:59:43,123 - module - function:line - LEVEL - message
-                parts = full_log_entry[24:].split(' - ')
+                # 实际格式：WARNING - apps.common.utils.resource_monitor - _monitor_loop:185 - 消息
+                parts = content_after_timestamp.split(' - ')
+                
+                # 定义已知的日志级别
+                known_levels = {'debug', 'info', 'warning', 'error', 'critical'}
+                
                 if len(parts) >= 4:
-                    module = parts[0].strip()
-                    # 提取函数:行号部分
-                    function_line = parts[1].strip()
-                    log_level_str = parts[2].strip()
-                    message = ' - '.join(parts[3:]).strip()
-                    # 将函数名和行号添加到模块字段
-                    module_with_location = f"{module} - {function_line}"
+                    # 检查第一位是否为日志级别（实际格式）
+                    first_part = parts[0].strip().lower()
+                    if first_part in known_levels:
+                        # 实际格式：LEVEL 在第一位
+                        log_level_str = parts[0].strip()
+                        module = parts[1].strip()
+                        function_line = parts[2].strip() if len(parts) > 2 else ''
+                        message = ' - '.join(parts[3:]).strip() if len(parts) > 3 else ''
+                        module_with_location = f"{module} - {function_line}" if function_line else module
+                    else:
+                        # 旧格式：2026-04-15 10:59:43,123 - module - function:line - LEVEL - message
+                        module = parts[0].strip()
+                        function_line = parts[1].strip()
+                        log_level_str = parts[2].strip()
+                        message = ' - '.join(parts[3:]).strip()
+                        module_with_location = f"{module} - {function_line}"
                 elif len(parts) >= 3:
-                    # 兼容旧格式：2026-04-15 10:59:43,123 - module - LEVEL - message
-                    module = parts[0].strip()
-                    log_level_str = parts[1].strip()
-                    message = ' - '.join(parts[2:]).strip()
-                    module_with_location = module
+                    # 检查第一位是否为日志级别
+                    first_part = parts[0].strip().lower()
+                    if first_part in known_levels:
+                        # 格式：WARNING - module - message
+                        log_level_str = parts[0].strip()
+                        module = parts[1].strip()
+                        message = ' - '.join(parts[2:]).strip() if len(parts) > 2 else ''
+                        module_with_location = module
+                    else:
+                        # 兼容旧格式：module - LEVEL - message
+                        module = parts[0].strip()
+                        log_level_str = parts[1].strip()
+                        message = ' - '.join(parts[2:]).strip()
+                        module_with_location = module
                 else:
                     continue
                 
@@ -809,10 +835,23 @@ class MonitorService:
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
         log_dir = os.path.join(project_root, "logs")
 
-        log_file = os.path.join(log_dir, "app.log")
+        # 支持按日期命名的日志文件格式：YYYYMMDD_app.log 和 YYYYMMDD_error.log
+        import glob
+        app_log_files = glob.glob(os.path.join(log_dir, "*_app.log"))
+        error_log_files = glob.glob(os.path.join(log_dir, "*_error.log"))
+        
+        # 合并日志文件
+        log_files = app_log_files + error_log_files
+        
+        # 按修改时间从新到旧排序
+        log_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
 
-        if os.path.exists(log_file):
-            logs = self._read_logs_reverse(log_file, limit, level)
+        # 读取日志文件
+        for log_file in log_files:
+            if len(logs) >= limit:
+                break
+            if os.path.exists(log_file):
+                logs.extend(self._read_logs_reverse(log_file, limit - len(logs), level))
 
         logs.sort(key=lambda x: x["timestamp"], reverse=True)
         result = logs[:limit]
