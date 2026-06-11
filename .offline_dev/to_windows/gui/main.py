@@ -29,7 +29,7 @@ class OfflineMigrationTool:
         self.root.geometry("900x700")
         self.root.minsize(800, 600)
 
-        self.project_root = Path(__file__).parent.parent.parent
+        self.project_root = Path(__file__).parent.parent.parent.parent
         self.log_queue = queue.Queue()
 
         self.setup_ui()

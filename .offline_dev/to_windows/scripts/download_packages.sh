@@ -28,7 +28,7 @@ NC='\033[0m' # No Color
 
 # 配置
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+PROJECT_ROOT="$(dirname "$(dirname "$(dirname "$SCRIPT_DIR")")")"
 PACKAGES_DIR="${SCRIPT_DIR}/../packages"
 REQUIREMENTS_FILE="${PROJECT_ROOT}/requirements.txt"
 PYTHON_VERSION="${PYTHON_VERSION:-3.12}"

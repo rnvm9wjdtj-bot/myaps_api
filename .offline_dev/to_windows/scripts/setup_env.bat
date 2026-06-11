@@ -9,7 +9,7 @@ REM ============================================================
 setlocal EnableDelayedExpansion
 
 set "SCRIPT_DIR=%~dp0"
-set "PROJECT_ROOT=%SCRIPT_DIR%..\.."
+set "PROJECT_ROOT=%SCRIPT_DIR%..\..\.."
 cd /d "%PROJECT_ROOT%"
 
 set "ENV_FILE=%PROJECT_ROOT%\.env"

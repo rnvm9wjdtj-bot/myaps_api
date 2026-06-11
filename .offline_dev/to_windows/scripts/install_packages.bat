@@ -14,7 +14,7 @@ setlocal EnableDelayedExpansion
 
 REM 配置
 set "SCRIPT_DIR=%~dp0"
-set "PROJECT_ROOT=%SCRIPT_DIR%..\.."
+set "PROJECT_ROOT=%SCRIPT_DIR%..\..\.."
 cd /d "%PROJECT_ROOT%"
 
 set "VENV_DIR=%PROJECT_ROOT%\venv"

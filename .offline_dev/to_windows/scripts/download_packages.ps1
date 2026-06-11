@@ -36,7 +36,7 @@ function Write-ColorOutput($ForegroundColor) {
 
 # 配置
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ProjectRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
+$ProjectRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $ScriptDir))
 $PackagesDir = Join-Path $ScriptDir "..\packages"
 $RequirementsFile = Join-Path $ProjectRoot "requirements.txt"
 
