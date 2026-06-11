@@ -28,7 +28,7 @@ class LogRecord(BaseModel):
     
     exception_type: Optional[str] = None
     exception_message: Optional[str] = None
-    stack_trace: Optional[str] = None
+    stack_trace: Optional[str] = Field(default=None, max_length=65535)
     
     process_id: Optional[int] = None
     thread_id: Optional[int] = None

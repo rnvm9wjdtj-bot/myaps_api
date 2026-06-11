@@ -191,6 +191,8 @@ class SmartLogger:
             import traceback
             try:
                 stack_trace = ''.join(traceback.format_stack())
+                if stack_trace and len(stack_trace) > 65535:
+                    stack_trace = stack_trace[:65530] + '\n[TRUNCATED]'
             except Exception:
                 pass
         
