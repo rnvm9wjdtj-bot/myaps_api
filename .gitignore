@@ -99,8 +99,9 @@ storage/
 /migrations/
 
 
-.offline_dev/to_windows/packages/
-.offline_dev/to_windows/tools/
+.offline_dev/**/packages/
+.offline_dev/**/tools/
+
 
 docker_images/
 docker_images/**/
