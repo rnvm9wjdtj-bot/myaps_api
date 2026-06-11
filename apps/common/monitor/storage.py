@@ -305,13 +305,18 @@ class RequestStorage:
         ).limit(limit).order_by('-timestamp').all()
         return error_requests
 
-    async def clean_old_data(self, days: int = LOG_RETENTION):
-        """清理指定天数前的数据"""
+    async def clean_old_data(self, days: int = LOG_RETENTION) -> int:
+        """清理指定天数前的数据
+        
+        Returns:
+            int: 删除的记录数
+        """
         from datetime import timedelta
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now(datetime.timezone.utc) - timedelta(days=days)
         
         # 直接删除主表数据
-        await APIRequest.filter(timestamp__lt=cutoff_date).delete()
+        deleted_count = await APIRequest.filter(timestamp__lt=cutoff_date).delete()
+        return deleted_count
 
 
 class OutboundRequestStorage:
@@ -556,11 +561,16 @@ class OutboundRequestStorage:
         ).limit(limit).order_by('-timestamp').all()
         return requests
 
-    async def clean_old_data(self, days: int = LOG_RETENTION):
-        """清理指定天数前的对外请求数据"""
+    async def clean_old_data(self, days: int = LOG_RETENTION) -> int:
+        """清理指定天数前的对外请求数据
+        
+        Returns:
+            int: 删除的记录数
+        """
         from datetime import timedelta
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
-        await OutboundAPIRequest.filter(timestamp__lt=cutoff_date).delete()
+        cutoff_date = datetime.now(datetime.timezone.utc) - timedelta(days=days)
+        deleted_count = await OutboundAPIRequest.filter(timestamp__lt=cutoff_date).delete()
+        return deleted_count
 
 
 class SystemLogStorage:
@@ -703,11 +713,16 @@ class SystemLogStorage:
             print(f"计数查询失败: {e}")
             return 0
     
-    async def clean_old_data(self, days: int = LOG_RETENTION):
-        """清理指定天数前的系统日志数据"""
+    async def clean_old_data(self, days: int = LOG_RETENTION) -> int:
+        """清理指定天数前的系统日志数据
+        
+        Returns:
+            int: 删除的记录数
+        """
         from datetime import timedelta
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
-        await SystemLog.filter(timestamp__lt=cutoff_date).delete()
+        cutoff_date = datetime.now(datetime.timezone.utc) - timedelta(days=days)
+        deleted_count = await SystemLog.filter(timestamp__lt=cutoff_date).delete()
+        return deleted_count
 
 
 # 全局存储实例
@@ -727,28 +742,60 @@ async def clean_all_old_data(days: int = LOG_RETENTION):
     
     logger.start("清理旧请求记录")
     
+    deleted_count = 0
+    
     # 清理接收请求记录
     try:
         logger.info("开始清理接收请求记录...")
-        await request_storage.clean_old_data(days=days)
-        logger.success("接收请求记录清理")
+        count = await request_storage.clean_old_data(days=days)
+        deleted_count += count if count else 0
+        logger.success(f"接收请求记录清理（删除 {count or 0} 条）")
     except Exception as e:
         logger.fail("接收请求记录清理", "", str(e))
     
     # 清理发送请求记录
     try:
         logger.info("开始清理发送请求记录...")
-        await outbound_request_storage.clean_old_data(days=days)
-        logger.success("发送请求记录清理")
+        count = await outbound_request_storage.clean_old_data(days=days)
+        deleted_count += count if count else 0
+        logger.success(f"发送请求记录清理（删除 {count or 0} 条）")
     except Exception as e:
         logger.fail("发送请求记录清理", "", str(e))
     
     # 清理系统日志记录
     try:
         logger.info("开始清理系统日志记录...")
-        await system_log_storage.clean_old_data(days=days)
-        logger.success("系统日志记录清理")
+        count = await system_log_storage.clean_old_data(days=days)
+        deleted_count += count if count else 0
+        logger.success(f"系统日志记录清理（删除 {count or 0} 条）")
     except Exception as e:
         logger.fail("系统日志记录清理", "", str(e))
     
-    logger.success("清理旧请求记录", "任务完成")
+    # SQLite 优化：执行 VACUUM 回收磁盘空间
+    if deleted_count > 0:
+        try:
+            logger.info("执行 SQLite VACUUM 回收磁盘空间...")
+            await vacuum_sqlite_database()
+            logger.success("SQLite VACUUM 完成")
+        except Exception as e:
+            logger.fail("SQLite VACUUM", "", str(e))
+    
+    logger.success("清理旧请求记录", f"任务完成（共删除 {deleted_count} 条记录）")
+
+
+async def vacuum_sqlite_database():
+    """执行 SQLite VACUUM 命令回收磁盘空间"""
+    from core.settings import SQLITE_FILE
+    from tortoise.backends.sqlite.client import SqliteClient
+    
+    try:
+        # 获取 SQLite 连接并执行 VACUUM
+        client = SqliteClient(db_url=f"sqlite://{SQLITE_FILE}")
+        await client.execute_query("VACUUM")
+        await client.close()
+    except Exception as e:
+        # 尝试使用其他方式执行 VACUUM
+        import sqlite3
+        conn = sqlite3.connect(SQLITE_FILE)
+        conn.execute("VACUUM")
+        conn.close()

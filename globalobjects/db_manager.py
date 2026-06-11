@@ -1369,6 +1369,27 @@ class DbManager:
             all_fields_set.update(data.keys())
         all_fields = [field for field in all_fields_set if field not in exclude_fields]
         
+        # 获取数据库表的实际字段列表
+        db = await self._get_valid_connection()
+        # 使用SHOW COLUMNS获取表的实际字段
+        columns_result = await db.execute_query(f"SHOW COLUMNS FROM `{table_name}`", [])
+        db_field_names = set()
+        for column in columns_result[1]:
+            # 字段名可能是大写或小写，统一转换为小写
+            field_name = column.get('Field', column.get('field', '')).lower()
+            if field_name:
+                db_field_names.add(field_name)
+        
+        # 检测并记录数据字段与数据库表字段的差异
+        original_fields_set = set(all_fields)
+        filtered_fields_set = set([field for field in all_fields if field.lower() in db_field_names])
+        missing_fields = original_fields_set - filtered_fields_set
+        if missing_fields:
+            logger.warning(f"批量upsert检测到数据字段与数据库表字段存在差异: 表={table_name}, 数据中存在但表中不存在的字段={missing_fields}, 这些字段将被忽略")
+        
+        # 过滤掉数据库表中不存在的字段
+        all_fields = [field for field in all_fields if field.lower() in db_field_names]
+        
         if not all_fields:
             raise ValueError("没有可插入的字段")
         
@@ -1422,8 +1443,8 @@ class DbManager:
                 batch_fields_set = set()
                 for data in batch:
                     batch_fields_set.update(data.keys())
-                # 只更新在当前批次中实际存在的字段
-                batch_update_fields = [field for field in update_fields if field in batch_fields_set]
+                # 只更新在当前批次中实际存在且数据库表中存在的字段
+                batch_update_fields = [field for field in update_fields if field in batch_fields_set and field.lower() in db_field_names]
                 
                 if batch_update_fields:
                     # 构建 ON DUPLICATE KEY UPDATE 部分
@@ -1482,8 +1503,9 @@ class DbManager:
                 await asyncio.sleep(0.1)
             except Exception as e:
                 # 记录错误并继续处理下一批次
-                logger.error(f"执行批量upsert批次失败: {e}")
-                logger.error(f"SQL语句: {sql}")
+                # 注意：底层的 _execute_native_sql 已经通过 @handle_db_errors 装饰器记录了错误日志
+                # 这里只记录 SQL 语句以便调试，避免重复记录错误信息
+                logger.error(f"执行批量upsert批次失败，SQL语句: {sql}")
                 # 跳过当前批次，继续处理下一批次
                 continue
         
