@@ -1,6 +1,7 @@
 import json
 # 兼容旧版本 NumPy
 import numpy as np
+import math
 
 from apps.data_opt.components._base import ExternalDataSet
 istitle = np.char.istitle
@@ -1756,6 +1757,12 @@ class ApsPayloadSponsor:
             })
             material_balances[mat_no] = closing_balance
             result.append(record)
+        
+        # Fix: Convert NaN values to None for JSON serialization
+        for record in result:
+            for key, value in list(record.items()):
+                if isinstance(value, float) and math.isnan(value):
+                    record[key] = None
         
         return result
 

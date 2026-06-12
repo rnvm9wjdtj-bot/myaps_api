@@ -44,6 +44,20 @@ class LogRecord(BaseModel):
             return 'INFO'
         return v.upper()
     
+    @field_validator('message', mode='before')
+    @classmethod
+    def truncate_message(cls, v: str) -> str:
+        if len(v) > 65535:
+            return v[:65520] + ' [TRUNCATED]'
+        return v
+    
+    @field_validator('stack_trace', mode='before')
+    @classmethod
+    def truncate_stack_trace(cls, v: str) -> str:
+        if v and len(v) > 65535:
+            return v[:65520] + ' [TRUNCATED]'
+        return v
+    
     def to_dict(self) -> Dict[str, Any]:
         return {
             'timestamp': self.timestamp.isoformat(),
