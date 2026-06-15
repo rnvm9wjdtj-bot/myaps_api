@@ -847,7 +847,7 @@ async def db_bupsert(
     
     # 检查upsert_data_list是否为空
     if not upsert_data_list:
-        logger.warning("批量upsert", mdl._meta.db_table, "没有可处理的数据")
+        logger.info_console(f"批量upsert {mdl._meta.db_table} 没有可处理的数据")
         return MultiDbResult(
             success=1,
             data=data_list,

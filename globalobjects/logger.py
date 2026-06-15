@@ -108,6 +108,16 @@ def warning(msg: Any, *args, **kwargs) -> None:
     logger.warning(msg, *args, **kwargs)
 
 
+def warning_console(msg: Any) -> None:
+    """仅输出到控制台的警告（不写入文件，不发送到前端监控）"""
+    logger.warning_console(msg)
+
+
+def info_console(msg: Any) -> None:
+    """仅输出到控制台的信息（不写入文件，不发送到前端监控）"""
+    logger.info_console(msg)
+
+
 def error(msg: Any, *args, **kwargs) -> None:
     """记录ERROR级别日志"""
     logger.error(msg, *args, **kwargs)

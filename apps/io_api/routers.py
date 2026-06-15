@@ -426,7 +426,7 @@ async def post_material(
     db_name = db_name.replace(" ", "")
     
     if is_staging_mode(db_name):
-        logger.info(f"路由分发: post_material -> 清洗模式 (db_name={db_name})")
+        logger.info_console(f"路由分发: post_material -> 清洗模式 (db_name={db_name})")
         staging_response = await dispatch_to_staging(
             table_key="t_material",
             data=data,
@@ -436,7 +436,7 @@ async def post_material(
         )
         return map_staging_response_to_direct(staging_response)
     
-    logger.info(f"路由分发: post_material -> 直接模式 (db_name={db_name})")
+    logger.info_console(f"路由分发: post_material -> 直接模式 (db_name={db_name})")
 
     if pdv.auto_matver:
         matver_data = [{
@@ -496,7 +496,7 @@ async def post_workcenter(
     db_name = db_name.replace(" ", "")
     
     if is_staging_mode(db_name):
-        logger.info(f"路由分发: post_workcenter -> 清洗模式 (db_name={db_name})")
+        logger.info_console(f"路由分发: post_workcenter -> 清洗模式 (db_name={db_name})")
         staging_response = await dispatch_to_staging(
             table_key="t_workcenter",
             data=data,
@@ -506,7 +506,7 @@ async def post_workcenter(
         )
         return map_staging_response_to_direct(staging_response)
     
-    logger.info(f"路由分发: post_workcenter -> 直接模式 (db_name={db_name})")
+    logger.info_console(f"路由分发: post_workcenter -> 直接模式 (db_name={db_name})")
     try:
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_workcenter", data_list=data)
         return standard_response(
@@ -550,7 +550,7 @@ async def post_mat_wc(
     db_name = db_name.replace(" ", "")
     
     if is_staging_mode(db_name):
-        logger.info(f"路由分发: post_mat_wc -> 清洗模式 (db_name={db_name})")
+        logger.info_console(f"路由分发: post_mat_wc -> 清洗模式 (db_name={db_name})")
         staging_response = await dispatch_to_staging(
             table_key="t_mat_wc",
             data=data,
@@ -561,7 +561,7 @@ async def post_mat_wc(
         )
         return map_staging_response_to_direct(staging_response)
     
-    logger.info(f"路由分发: post_mat_wc -> 直接模式 (db_name={db_name})")
+    logger.info_console(f"路由分发: post_mat_wc -> 直接模式 (db_name={db_name})")
     try:
         if drop == "all":
             await db_delete(db_names=db_name, model_or_tablename=db_table)
@@ -612,7 +612,7 @@ async def post_mat_ver(
     db_name = db_name.replace(" ", "")
     
     if is_staging_mode(db_name):
-        logger.info(f"路由分发: post_mat_ver -> 清洗模式 (db_name={db_name})")
+        logger.info_console(f"路由分发: post_mat_ver -> 清洗模式 (db_name={db_name})")
         staging_response = await dispatch_to_staging(
             table_key="t_mat_ver",
             data=data,
@@ -622,7 +622,7 @@ async def post_mat_ver(
         )
         return map_staging_response_to_direct(staging_response)
     
-    logger.info(f"路由分发: post_mat_ver -> 直接模式 (db_name={db_name})")
+    logger.info_console(f"路由分发: post_mat_ver -> 直接模式 (db_name={db_name})")
     try:
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_mat_ver", data_list=data)
         return standard_response(
@@ -665,7 +665,7 @@ async def post_mat_wc_bom(
     db_name = db_name.replace(" ", "")
     
     if is_staging_mode(db_name):
-        logger.info(f"路由分发: post_mat_wc_bom -> 清洗模式 (db_name={db_name})")
+        logger.info_console(f"路由分发: post_mat_wc_bom -> 清洗模式 (db_name={db_name})")
         staging_response = await dispatch_to_staging(
             table_key="t_mat_wc_bom",
             data=data,
@@ -676,7 +676,7 @@ async def post_mat_wc_bom(
         )
         return map_staging_response_to_direct(staging_response)
     
-    logger.info(f"路由分发: post_mat_wc_bom -> 直接模式 (db_name={db_name})")
+    logger.info_console(f"路由分发: post_mat_wc_bom -> 直接模式 (db_name={db_name})")
     try:
         if drop == "all":
             await db_delete(db_names=db_name, model_or_tablename=db_table)
@@ -727,7 +727,7 @@ async def post_mold(
     db_name = db_name.replace(" ", "")
     
     if is_staging_mode(db_name):
-        logger.info(f"路由分发: post_mold -> 清洗模式 (db_name={db_name})")
+        logger.info_console(f"路由分发: post_mold -> 清洗模式 (db_name={db_name})")
         staging_response = await dispatch_to_staging(
             table_key="t_mold",
             data=data,
@@ -737,7 +737,7 @@ async def post_mold(
         )
         return map_staging_response_to_direct(staging_response)
     
-    logger.info(f"路由分发: post_mold -> 直接模式 (db_name={db_name})")
+    logger.info_console(f"路由分发: post_mold -> 直接模式 (db_name={db_name})")
     try:
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_mold", data_list=data)
         return standard_response(
@@ -780,7 +780,7 @@ async def post_mat_wc_mold(
     db_table = "t_mat_wc_mold"
     
     if is_staging_mode(db_name):
-        logger.info(f"路由分发: post_mat_wc_mold -> 清洗模式 (db_name={db_name})")
+        logger.info_console(f"路由分发: post_mat_wc_mold -> 清洗模式 (db_name={db_name})")
         staging_response = await dispatch_to_staging(
             table_key="t_mat_wc_mold",
             data=data,
@@ -791,7 +791,7 @@ async def post_mat_wc_mold(
         )
         return map_staging_response_to_direct(staging_response)
     
-    logger.info(f"路由分发: post_mat_wc_mold -> 直接模式 (db_name={db_name})")
+    logger.info_console(f"路由分发: post_mat_wc_mold -> 直接模式 (db_name={db_name})")
     try:
         if drop == "all":
             await db_delete(db_names=db_name, model_or_tablename=db_table)

@@ -269,7 +269,7 @@ class RedisPoolManager:
                     if len(lines) > BUFFER_MAX_SIZE // 2:
                         with open(BUFFER_FILE, 'w', encoding='utf-8') as f:
                             f.writelines(lines[-BUFFER_MAX_SIZE // 2:])
-                        logger.info(f"🗑️ 缓冲文件已清理，保留最近 {BUFFER_MAX_SIZE // 2} 条记录")
+                        logger.info_console(f"🗑️ 缓冲文件已清理，保留最近 {BUFFER_MAX_SIZE // 2} 条记录")
                     
                     # 重新计算缓冲大小
                     self._buffer_size = len(lines[-BUFFER_MAX_SIZE // 2:]) if len(lines) > BUFFER_MAX_SIZE // 2 else len(lines)

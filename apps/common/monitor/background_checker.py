@@ -56,7 +56,7 @@ class DatabaseHealthChecker:
     async def start(self):
         """启动后台检查任务"""
         if not self._enabled:
-            logger.info("数据库健康检查器未启用（DB_HEALTH_CHECK_ENABLED=false）")
+            logger.info_console("数据库健康检查器未启用（DB_HEALTH_CHECK_ENABLED=false）")
             return
 
         if self._running:

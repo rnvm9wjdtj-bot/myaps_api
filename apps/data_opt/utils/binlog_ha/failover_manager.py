@@ -152,7 +152,7 @@ class FailoverManager:
             name='binlog-heartbeat'
         )
         self._heartbeat_thread.start()
-        logger.info("✅ 心跳线程已启动（主节点）")
+        logger.info_console("✅ 心跳线程已启动（主节点）")
     
     def _start_monitor_thread(self):
         """启动监控线程（备节点专用）"""

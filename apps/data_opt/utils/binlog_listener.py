@@ -117,12 +117,12 @@ class DistributedLock:
             lock_value = f"{os.getpid()}_{int(time.time())}_{uuid.uuid4().hex[:8]}"
             
             if redis_client.set(self.lock_name, lock_value, nx=True, ex=self.ttl):
-                logger.info(f"✅ 成功获取分布式锁: {self.lock_name}")
+                logger.info_console(f"✅ 成功获取分布式锁: {self.lock_name}")
                 self._lock_holder = True
                 self._start_refresh_thread()
                 return True
             else:
-                logger.info(f"⏳ 分布式锁已被其他 worker 持有: {self.lock_name}")
+                logger.info_console(f"⏳ 分布式锁已被其他 worker 持有: {self.lock_name}")
                 self._lock_holder = False
                 return False
         except Exception as e:
@@ -148,7 +148,7 @@ class DistributedLock:
         
         self._refresh_thread = threading.Thread(target=refresh_loop, daemon=True)
         self._refresh_thread.start()
-        logger.info("✅ 分布式锁刷新线程已启动")
+        logger.info_console("✅ 分布式锁刷新线程已启动")
     
     def release(self):
         """释放分布式锁"""
@@ -161,7 +161,7 @@ class DistributedLock:
                 redis_client = self._get_redis_client()
                 if redis_client:
                     redis_client.delete(self.lock_name)
-                    logger.info(f"✅ 已释放分布式锁: {self.lock_name}")
+                    logger.info_console(f"✅ 已释放分布式锁: {self.lock_name}")
         except Exception as e:
             logger.error(f"❌ 释放分布式锁失败: {e}")
         finally:

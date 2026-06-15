@@ -279,7 +279,7 @@ class EventDeduplicator:
             if expired_keys:
                 with open(self._fallback_file, 'w') as f:
                     json.dump(data, f)
-                logger.info(f"🗑️ 已清理 {len(expired_keys)} 条过期去重记录")
+                logger.info_console(f"🗑️ 已清理 {len(expired_keys)} 条过期去重记录")
                 
         except Exception as e:
             logger.warning(f"⚠️ 清理过期记录失败: {e}")

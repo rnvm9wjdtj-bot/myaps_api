@@ -352,6 +352,46 @@ class SmartLogger:
         msg = LogHelper.warning(subject, message)
         self.warning(msg)
     
+    def warning_console(self, message: str) -> None:
+        """
+        输出到控制台的警告（不发送到前端监控）
+        
+        使用场景：
+        1. 开发调试临时输出
+        2. 敏感信息调试（如密码、token）
+        3. 高频调试日志（避免污染前端监控）
+        """
+        import sys
+        from datetime import datetime
+        
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        module = self._name if hasattr(self, '_name') else 'unknown'
+        
+        print(
+            f"{timestamp} - WARNING - CONSOLE_ONLY - [{module}] {message}",
+            file=sys.stderr
+        )
+    
+    def info_console(self, message: str) -> None:
+        """
+        输出到控制台的信息（不发送到前端监控）
+        
+        使用场景：
+        1. 开发调试临时输出
+        2. 敏感信息调试（如密码、token）
+        3. 高频调试日志（避免污染前端监控）
+        """
+        import sys
+        from datetime import datetime
+        
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        module = self._name if hasattr(self, '_name') else 'unknown'
+        
+        print(
+            f"{timestamp} - INFO - CONSOLE_ONLY - [{module}] {message}",
+            file=sys.stderr
+        )
+    
     def sync(self, action: str, subject: str = "", details: str = "", to_file: bool = False) -> None:
         """记录同步消息"""
         msg = LogHelper.sync(action, subject, details)

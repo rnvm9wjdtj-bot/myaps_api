@@ -157,7 +157,7 @@ class EnhancedDistributedLock:
             self._lock_value = f"{os.getpid()}_{int(time.time())}_{uuid.uuid4().hex[:8]}"
             
             if client.set(self.lock_name, self._lock_value, nx=True, ex=self.ttl):
-                logger.info(f"✅ 成功获取分布式锁: {self.lock_name}")
+                logger.info_console(f"✅ 成功获取分布式锁: {self.lock_name}")
                 self._lock_holder = True
                 self._start_refresh_thread()
                 return LockResult(

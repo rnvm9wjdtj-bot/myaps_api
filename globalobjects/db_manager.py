@@ -1237,7 +1237,7 @@ class DbManager:
         
         logger.success("数据查询", f"{table_name}@{self.connection_name}", f"执行时间{execution_time:.3f}秒，返回{len(all_data)}条记录")
         if execution_time > 1.0:
-            logger.warning("数据查询", f"{table_name}@{self.connection_name}", f"查询执行时间较长: {execution_time:.3f}秒")
+            logger.warning_console(f"数据查询 {table_name}@{self.connection_name} 查询执行时间较长: {execution_time:.3f}秒")
         logger.debug(f"数据查询完成：{response}")
         return response
     
