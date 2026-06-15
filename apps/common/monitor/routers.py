@@ -958,7 +958,7 @@ async def get_history_by_time_range(
         包含接收请求、发送请求和系统日志的查询结果
     """
     # 获取时区偏移 - 添加防御性检查
-    if timezone_offset is None or timezone_offset == 0:
+    if timezone_offset is None:
         try:
             # 移除可能的符号前缀（如 "+8" 或 "-5"）
             tz_str = str(TIMEZONE).strip()
@@ -1108,27 +1108,53 @@ async def get_history_by_time_range(
         "logs_count": await system_log_storage.count_logs_with_filters(utc_start, utc_end, level, filter_params) if should_query_logs else 0
     }
     
-    # 计算分页元数据（复用stats的count结果）
-    total_count = 0
+    # 计算分页元数据（为每种数据类型独立计算）
+    result["pagination"] = {}
+
     if should_query_http:
-        total_count = result["stats"]["http_count"]
-    elif should_query_outbound:
-        total_count = result["stats"]["outbound_count"]
-    elif should_query_logs:
-        total_count = result["stats"]["logs_count"]
-    
-    if total_count > 0:
-        total_pages = (total_count + page_size - 1) // page_size
-        result["pagination"] = {
-            "page": page,
-            "page_size": page_size,
-            "total_count": total_count,
-            "total_pages": total_pages,
-            "has_next": page < total_pages,
-            "has_prev": page > 1,
-            "start_index": (page - 1) * page_size + 1,
-            "end_index": min(page * page_size, total_count)
-        }
+        http_count = result["stats"]["http_count"]
+        if http_count > 0:
+            http_pages = (http_count + page_size - 1) // page_size
+            result["pagination"]["http"] = {
+                "page": page,
+                "page_size": page_size,
+                "total_count": http_count,
+                "total_pages": http_pages,
+                "has_next": page < http_pages,
+                "has_prev": page > 1,
+                "start_index": (page - 1) * page_size + 1,
+                "end_index": min(page * page_size, http_count)
+            }
+
+    if should_query_outbound:
+        outbound_count = result["stats"]["outbound_count"]
+        if outbound_count > 0:
+            outbound_pages = (outbound_count + page_size - 1) // page_size
+            result["pagination"]["outbound"] = {
+                "page": page,
+                "page_size": page_size,
+                "total_count": outbound_count,
+                "total_pages": outbound_pages,
+                "has_next": page < outbound_pages,
+                "has_prev": page > 1,
+                "start_index": (page - 1) * page_size + 1,
+                "end_index": min(page * page_size, outbound_count)
+            }
+
+    if should_query_logs:
+        logs_count = result["stats"]["logs_count"]
+        if logs_count > 0:
+            logs_pages = (logs_count + page_size - 1) // page_size
+            result["pagination"]["logs"] = {
+                "page": page,
+                "page_size": page_size,
+                "total_count": logs_count,
+                "total_pages": logs_pages,
+                "has_next": page < logs_pages,
+                "has_prev": page > 1,
+                "start_index": (page - 1) * page_size + 1,
+                "end_index": min(page * page_size, logs_count)
+            }
     
     # 统计日志级别分布（仅查询系统日志时）- 优化：使用GROUP BY聚合，避免查询所有记录
     if should_query_logs and result["stats"]["logs_count"] > 0:
@@ -1191,7 +1217,7 @@ async def get_history_stats(
         - 状态码分布
         - 慢请求TOP10
     """
-    if timezone_offset is None or timezone_offset == 0:
+    if timezone_offset is None:
         try:
             tz_str = str(TIMEZONE).strip()
             tz_hours = float(tz_str) if tz_str.startswith(('+', '-')) else float(tz_str)
@@ -1287,7 +1313,7 @@ async def get_history_timeline(
         按时间排序的混合事件列表
     """
     # 时区处理
-    if timezone_offset is None or timezone_offset == 0:
+    if timezone_offset is None:
         try:
             tz_str = str(TIMEZONE).strip()
             if tz_str.startswith(('+', '-')):
@@ -1519,7 +1545,7 @@ async def export_history_data(
         StreamingResponse: 文件流
     """
     # 时区处理
-    if timezone_offset is None or timezone_offset == 0:
+    if timezone_offset is None:
         try:
             tz_str = str(TIMEZONE).strip()
             if tz_str.startswith(('+', '-')):

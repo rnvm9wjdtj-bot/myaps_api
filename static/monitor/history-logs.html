@@ -1280,21 +1280,32 @@
                 // 保存统计数据
                 queryStats = data.stats || {};
                 
-                // 更新分页元数据
+                // 更新分页元数据（按数据类型分别读取）
                 if (data.pagination) {
-                    const p = data.pagination;
-                    paginationState.http.totalCount = p.total_count || 0;
-                    paginationState.http.totalPages = p.total_pages || 0;
-                    paginationState.outbound.totalCount = p.total_count || 0;
-                    paginationState.outbound.totalPages = p.total_pages || 0;
-                    paginationState.logs.totalCount = p.total_count || 0;
-                    paginationState.logs.totalPages = p.total_pages || 0;
+                    if (data.pagination.http) {
+                        const p = data.pagination.http;
+                        paginationState.http.totalCount = p.total_count || 0;
+                        paginationState.http.totalPages = p.total_pages || 0;
+                    }
+                    if (data.pagination.outbound) {
+                        const p = data.pagination.outbound;
+                        paginationState.outbound.totalCount = p.total_count || 0;
+                        paginationState.outbound.totalPages = p.total_pages || 0;
+                    }
+                    if (data.pagination.logs) {
+                        const p = data.pagination.logs;
+                        paginationState.logs.totalCount = p.total_count || 0;
+                        paginationState.logs.totalPages = p.total_pages || 0;
+                    }
                 } else {
-                    // 无分页数据时根据当前数据计算
-                    ['http', 'outbound', 'logs'].forEach(t => {
-                        paginationState[t].totalCount = historyQueryData[t].length;
-                        paginationState[t].totalPages = Math.ceil(historyQueryData[t].length / currentPageSize) || 1;
-                    });
+                    // 无分页数据时根据 stats 总数量计算
+                    const stats = data.stats || {};
+                    paginationState.http.totalCount = stats.http_count || 0;
+                    paginationState.http.totalPages = Math.ceil((stats.http_count || 0) / currentPageSize) || 1;
+                    paginationState.outbound.totalCount = stats.outbound_count || 0;
+                    paginationState.outbound.totalPages = Math.ceil((stats.outbound_count || 0) / currentPageSize) || 1;
+                    paginationState.logs.totalCount = stats.logs_count || 0;
+                    paginationState.logs.totalPages = Math.ceil((stats.logs_count || 0) / currentPageSize) || 1;
                 }
                 
                 updateQuerySummary(startTime, endTime);
