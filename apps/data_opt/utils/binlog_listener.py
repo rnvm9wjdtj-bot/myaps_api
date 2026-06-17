@@ -77,104 +77,31 @@ try:
         failover_manager,
         retry_policy,
         ListenerRole,
+        EnhancedDistributedLock,
     )
     HA_MODULES_AVAILABLE = True
 except ImportError as e:
     log_config.get_logger(__name__).warning(f"⚠️ HA模块导入失败: {e}，使用基础功能")
-    HA_MODULES_AVAILABLE = False
 
-
-class DistributedLock:
-    """基于 Redis 的分布式锁，确保只有一个 worker 能启动 Binlog 监听器"""
-    
-    def __init__(self, lock_name: str = "binlog_listener_lock", ttl: int = 30):
-        self.lock_name = lock_name
-        self.ttl = ttl  # 锁的过期时间（秒）
-        self._lock_holder = False
-        self._refresh_thread = None
-        self._stop_event = threading.Event()
-        
-    def _get_redis_client(self):
-        """获取 Redis 客户端"""
-        try:
-            from apps.common.utils.redis_pool_manager import get_redis_pool_manager
-            pool_manager = get_redis_pool_manager()
-            return pool_manager.get_client()
-        except Exception as e:
-            logger.warning(f"⚠️ 获取 Redis 客户端失败: {e}")
-            return None
-    
-    def acquire(self) -> bool:
-        """尝试获取分布式锁"""
-        try:
-            redis_client = self._get_redis_client()
-            if not redis_client:
-                logger.warning("⚠️ Redis 不可用，跳过分布式锁检查")
-                return True  # Redis 不可用时，假设自己能获取锁
-                
-            # 使用 SETNX 尝试获取锁，同时设置过期时间
-            # 锁的唯一值：进程 ID + 时间戳 + 随机数
-            lock_value = f"{os.getpid()}_{int(time.time())}_{uuid.uuid4().hex[:8]}"
-            
-            if redis_client.set(self.lock_name, lock_value, nx=True, ex=self.ttl):
-                logger.info_console(f"✅ 成功获取分布式锁: {self.lock_name}")
-                self._lock_holder = True
-                self._start_refresh_thread()
+    class _FallbackDistributedLock:
+        """非 HA 模式下的兜底锁，始终返回获取成功"""
+        class _Result:
+            def __init__(self):
+                self.success = True
+            def __bool__(self):
                 return True
-            else:
-                logger.info_console(f"⏳ 分布式锁已被其他 worker 持有: {self.lock_name}")
-                self._lock_holder = False
-                return False
-        except Exception as e:
-            logger.error(f"❌ 获取分布式锁失败: {e}")
-            return True  # 出错时，假设自己能获取锁（降级方案）
-    
-    def _start_refresh_thread(self):
-        """启动锁刷新线程，定期延长锁的过期时间"""
-        if self._refresh_thread is not None:
-            return
-            
-        def refresh_loop():
-            while not self._stop_event.is_set():
-                try:
-                    time.sleep(self.ttl // 2)  # 在锁过期前一半时间刷新
-                    if self._lock_holder:
-                        redis_client = self._get_redis_client()
-                        if redis_client:
-                            redis_client.expire(self.lock_name, self.ttl)
-                            logger.debug(f"🔄 已刷新分布式锁: {self.lock_name}")
-                except Exception as e:
-                    logger.debug(f"刷新分布式锁失败: {e}")
-        
-        self._refresh_thread = threading.Thread(target=refresh_loop, daemon=True)
-        self._refresh_thread.start()
-        logger.info_console("✅ 分布式锁刷新线程已启动")
-    
-    def release(self):
-        """释放分布式锁"""
-        try:
-            self._stop_event.set()
-            if self._refresh_thread and self._refresh_thread.is_alive():
-                self._refresh_thread.join(timeout=1)
-                
-            if self._lock_holder:
-                redis_client = self._get_redis_client()
-                if redis_client:
-                    redis_client.delete(self.lock_name)
-                    logger.info_console(f"✅ 已释放分布式锁: {self.lock_name}")
-        except Exception as e:
-            logger.error(f"❌ 释放分布式锁失败: {e}")
-        finally:
-            self._lock_holder = False
-    
-    @property
-    def is_holder(self) -> bool:
-        """当前进程是否是锁的持有者"""
-        return self._lock_holder
 
+        def acquire(self):
+            return self._Result()
+
+        def release(self):
+            pass
+
+    HA_MODULES_AVAILABLE = False
+    EnhancedDistributedLock = _FallbackDistributedLock  # type: ignore
 
 # 创建全局分布式锁实例
-distributed_lock = DistributedLock()
+distributed_lock = EnhancedDistributedLock(lock_name="binlog_listener_lock", ttl=60)
 
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 logger = log_config.get_logger(__name__, level=LOG_LEVEL)
@@ -1226,7 +1153,7 @@ class MySQLBinlogListener:
                 self._role = ListenerRole.MASTER
             else:
                 # 原有逻辑：分布式锁
-                if not distributed_lock.acquire():
+                if not distributed_lock.acquire().success:
                     logger.info("⏳ 未获取到分布式锁，不启动 Binlog 监听")
                     return
             
@@ -1289,9 +1216,20 @@ class MySQLBinlogListener:
             try:
                 # ========== HA: 检查是否仍是主节点（防脑裂）==========
                 if HA_MODULES_AVAILABLE and not failover_manager.is_master():
-                    logger.warning("⚠️ 已不再是主节点（锁被抢占），停止binlog监听")
-                    self.running = False
-                    break
+                    logger.warning("⚠️ 已不再是主节点（锁被抢占），暂停binlog监听")
+                    self._consecutive_errors += 1
+                    retry_count += 1
+                    
+                    wait_time = min(2 ** min(retry_count, 8), self._max_retry_wait)
+                    logger.info(f"⏳ {wait_time}秒后检查是否重新获取主节点身份...")
+                    
+                    current_time = time.time()
+                    if current_time - last_alert_time > alert_interval:
+                        self._send_alert(f"已不再是主节点（锁被抢占），暂停binlog监听，已重试 {retry_count} 次", "warning")
+                        last_alert_time = current_time
+                    
+                    time.sleep(wait_time)
+                    continue
                 
                 # 检查 MySQL 健康状态
                 if not self._health_checker.is_healthy():
@@ -1309,7 +1247,8 @@ class MySQLBinlogListener:
                     continue
                 
                 # 尝试启动 Binlog 流
-                self._start_binlog_stream()
+                if self.running:
+                    self._start_binlog_stream()
                 
                 # 成功连接后重置计数
                 if retry_count > 0:
@@ -1438,8 +1377,7 @@ class MySQLBinlogListener:
                 # ========== HA: 检查主节点身份（防脑裂）==========
                 if HA_MODULES_AVAILABLE:
                     if not failover_manager.is_master():
-                        logger.warning("⚠️ 主节点身份已丢失（锁被抢占），停止binlog流")
-                        self.running = False
+                        logger.warning("⚠️ 主节点身份已丢失（锁被抢占），暂停binlog流")
                         break
                 
                 # ========== HA: 背压控制检测 ==========

@@ -196,23 +196,39 @@ class EnhancedDistributedLock:
             return
         
         def refresh_loop():
+            consecutive_failures = 0
+            max_consecutive_failures = 3
             while not self._stop_event.is_set():
                 try:
                     time.sleep(self.ttl // 2)
                     
                     if self._lock_holder and self._lock_value:
                         client = self._get_redis_client()
-                        if client:
-                            current_value = client.get(self.lock_name)
-                            if current_value and current_value.decode() == self._lock_value:
-                                client.expire(self.lock_name, self.ttl)
-                                logger.debug(f"🔄 已刷新分布式锁: {self.lock_name}")
-                            else:
-                                logger.warning(f"⚠️ 锁已被其他节点抢占: {self.lock_name}")
+                        if not client:
+                            consecutive_failures += 1
+                            logger.warning(f"⚠️ 获取 Redis 客户端失败，第 {consecutive_failures} 次重试")
+                            if consecutive_failures >= max_consecutive_failures:
+                                logger.error(f"❌ 连续 {max_consecutive_failures} 次获取 Redis 客户端失败，放弃锁")
                                 self._lock_holder = False
                                 break
+                            continue
+                        
+                        consecutive_failures = 0
+                        current_value = client.get(self.lock_name)
+                        if current_value and current_value.decode() == self._lock_value:
+                            client.expire(self.lock_name, self.ttl)
+                            logger.debug(f"🔄 已刷新分布式锁: {self.lock_name}")
+                        else:
+                            logger.warning(f"⚠️ 锁已被其他节点抢占: {self.lock_name}")
+                            self._lock_holder = False
+                            break
                 except Exception as e:
+                    consecutive_failures += 1
                     logger.debug(f"刷新分布式锁失败: {e}")
+                    if consecutive_failures >= max_consecutive_failures:
+                        logger.error(f"❌ 连续 {max_consecutive_failures} 次刷新分布式锁失败，放弃锁")
+                        self._lock_holder = False
+                        break
         
         self._refresh_thread = threading.Thread(target=refresh_loop, daemon=True)
         self._refresh_thread.start()
