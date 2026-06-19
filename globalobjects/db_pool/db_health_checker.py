@@ -5,7 +5,7 @@
 """
 import asyncio
 import time
-from typing import Optional
+from typing import Dict, Optional
 from tortoise import Tortoise
 from globalobjects.db_pool.db_pool_models import (
     HealthCheckResult,
@@ -24,8 +24,14 @@ class HealthChecker:
     健康检查器
     
     负责执行数据库连接健康检查，仅检查不修复。
-    支持超时控制和异常隔离。
+    支持超时控制和异常隔离，支持告警冷却机制避免重复告警。
     """
+    
+    # 类变量：每个连接的上次告警时间（时间戳）
+    _warning_timestamps: Dict[str, float] = {}
+    
+    # 告警冷却时间（秒）：同一连接的重复告警在此时长内不会重复记录
+    WARNING_COOLDOWN = 60
     
     def __init__(
         self,
@@ -44,6 +50,29 @@ class HealthChecker:
         self._connection_name = connection_name
         self._state_manager = state_manager
         self._config = config or PoolManagerConfig()
+    
+    def _should_log_warning(self) -> bool:
+        """
+        检查是否应该记录警告日志（基于冷却机制）
+        
+        Returns:
+            True 如果应该记录，False 如果在冷却期内
+        """
+        current_time = time.time()
+        last_time = self._warning_timestamps.get(self._connection_name, 0)
+        
+        if current_time - last_time >= self.WARNING_COOLDOWN:
+            # 冷却期已过，更新时间戳并允许记录
+            self._warning_timestamps[self._connection_name] = current_time
+            return True
+        return False
+    
+    def _reset_warning_cooldown(self) -> None:
+        """
+        重置指定连接的告警冷却时间（当健康检查成功时调用）
+        """
+        if self._connection_name in self._warning_timestamps:
+            del self._warning_timestamps[self._connection_name]
         
     async def check(self, timeout: Optional[float] = None) -> HealthCheckResult:
         """
@@ -86,6 +115,9 @@ class HealthChecker:
                 f"健康检查成功，响应时间: {response_time:.3f}秒"
             )
             
+            # 健康检查成功时，重置告警冷却时间
+            self._reset_warning_cooldown()
+            
             return HealthCheckResult(
                 is_healthy=True,
                 response_time=response_time,
@@ -96,11 +128,13 @@ class HealthChecker:
             response_time = time.time() - start_time
             error_msg = f"健康检查超时（{timeout}秒）"
             
-            logger.warning(
-                "HealthChecker",
-                f"@{self._connection_name}",
-                error_msg
-            )
+            # 使用冷却机制，避免重复告警
+            if self._should_log_warning():
+                logger.warning(
+                    "HealthChecker",
+                    f"@{self._connection_name}",
+                    error_msg
+                )
             
             return HealthCheckResult(
                 is_healthy=False,
@@ -113,11 +147,13 @@ class HealthChecker:
             response_time = time.time() - start_time
             error_msg = f"健康检查失败: {str(e)}"
             
-            logger.warning(
-                "HealthChecker",
-                f"@{self._connection_name}",
-                error_msg
-            )
+            # 使用冷却机制，避免重复告警
+            if self._should_log_warning():
+                logger.warning(
+                    "HealthChecker",
+                    f"@{self._connection_name}",
+                    error_msg
+                )
             
             return HealthCheckResult(
                 is_healthy=False,
