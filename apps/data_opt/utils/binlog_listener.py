@@ -1172,16 +1172,26 @@ class MySQLBinlogListener:
     def _start_listening(self):
         """启动 Binlog 监听（主节点专属）"""
         self.running = True
-        # 重新创建线程池（如果之前已 shutdown）
+        # 验证线程池是否可用（故障转移后原线程池可能已关闭）
+        pool = global_pool_manager.get_pool(
+            'binlog_listener', 
+            max_workers=self._max_workers,
+            thread_name_prefix='mysql-monitor-'
+        )
         try:
-            if hasattr(self, '_thread_pool') and getattr(self._thread_pool, '_shutdown', False):
-                self._thread_pool = concurrent.futures.ThreadPoolExecutor(
-                    max_workers=self._min_workers, 
-                    thread_name_prefix='mysql-monitor-'
-                )
-                logger.success("Binlog监听线程池", "", "已重新创建")
-        except Exception as e:
-            logger.fail("Binlog监听线程池创建", "", str(e))
+            future = pool.submit(lambda: None)
+            future.result(timeout=5)
+            logger.info("Binlog监听线程池", "", "线程池可用，复用现有实例")
+        except Exception:
+            # 池已关闭/不可用，通过全局管理器销毁重建
+            global_pool_manager.shutdown_pool('binlog_listener', wait=False)
+            pool = global_pool_manager.get_pool(
+                'binlog_listener', 
+                max_workers=self._max_workers,
+                thread_name_prefix='mysql-monitor-'
+            )
+            logger.success("Binlog监听线程池", "", "已重建（原池不可用）")
+        self._thread_pool = pool
         
         # 启动健康检查器
         self._health_checker.start()
@@ -1225,7 +1235,7 @@ class MySQLBinlogListener:
                     
                     current_time = time.time()
                     if current_time - last_alert_time > alert_interval:
-                        self._send_alert(f"已不再是主节点（锁被抢占），暂停binlog监听，已重试 {retry_count} 次", "warning")
+                        self._health_checker._send_alert(f"已不再是主节点（锁被抢占），暂停binlog监听，已重试 {retry_count} 次", "warning")
                         last_alert_time = current_time
                     
                     time.sleep(wait_time)
@@ -1239,7 +1249,7 @@ class MySQLBinlogListener:
                     # 发送告警（限制频率）
                     current_time = time.time()
                     if current_time - last_alert_time > alert_interval:
-                        self._send_alert(f"binlog监听等待 MySQL 连接恢复，已重试 {retry_count} 次", "warning")
+                        self._health_checker._send_alert(f"binlog监听等待 MySQL 连接恢复，已重试 {retry_count} 次", "warning")
                         last_alert_time = current_time
                     
                     time.sleep(wait_time)
@@ -1253,7 +1263,7 @@ class MySQLBinlogListener:
                 # 成功连接后重置计数
                 if retry_count > 0:
                     logger.success("Binlog监听", "", f"连接已恢复，共重试 {retry_count} 次")
-                    self._send_alert(f"Binlog监听已恢复，共重试 {retry_count} 次", "info")
+                    self._health_checker._send_alert(f"Binlog监听已恢复，共重试 {retry_count} 次", "info")
                 retry_count = 0
                 self._consecutive_errors = 0
                 
@@ -1273,7 +1283,7 @@ class MySQLBinlogListener:
                 
                 current_time = time.time()
                 if current_time - last_alert_time > alert_interval:
-                    self._send_alert(f"MySQL连接错误: {e}，已重试 {retry_count} 次", "error")
+                    self._health_checker._send_alert(f"MySQL连接错误: {e}，已重试 {retry_count} 次", "error")
                     last_alert_time = current_time
                 
             except (ConnectionError, ConnectionResetError, BrokenPipeError, OSError) as e:
@@ -1292,7 +1302,7 @@ class MySQLBinlogListener:
                 
                 current_time = time.time()
                 if current_time - last_alert_time > alert_interval:
-                    self._send_alert(f"网络连接中断，已重试 {retry_count} 次", "warning")
+                    self._health_checker._send_alert(f"网络连接中断，已重试 {retry_count} 次", "warning")
                     last_alert_time = current_time
                 
             except Exception as e:
@@ -1311,7 +1321,7 @@ class MySQLBinlogListener:
                 
                 current_time = time.time()
                 if current_time - last_alert_time > alert_interval:
-                    self._send_alert(f"Binlog监听未知错误: {type(e).__name__}: {e}，已重试 {retry_count} 次", "error")
+                    self._health_checker._send_alert(f"Binlog监听未知错误: {type(e).__name__}: {e}，已重试 {retry_count} 次", "error")
                     last_alert_time = current_time
                 
                 # 等待后重试
@@ -1505,14 +1515,14 @@ class MySQLBinlogListener:
             try:
                 self._thread_pool.submit(self._process_with_counter, event)
                 return
-            except concurrent.futures.ThreadPoolExecutor.shutdown as e:
-                # 线程池已关闭 → 正常退出，不重试
-                logger.debug(f"binlog监听线程池已关闭，跳过事件处理")
-                self._decrement_pending()
-                return
             except RuntimeError as e:
-                # 线程池运行时错误（如队列满）
-                if "queue" in str(e).lower() or "full" in str(e).lower():
+                msg = str(e).lower()
+                if "shutdown" in msg:
+                    # 线程池已关闭 → 正常退出，不重试
+                    logger.debug(f"binlog监听线程池已关闭，跳过事件处理")
+                    self._decrement_pending()
+                    return
+                elif "queue" in msg or "full" in msg:
                     # 队列满 → 触发背压告警
                     if retry < max_retries - 1:
                         delay = self._get_retry_delay(retry) * 2  # 倍增等待
