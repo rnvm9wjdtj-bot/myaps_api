@@ -456,7 +456,6 @@ class _ProductionDataCache:
         
         # 执行 SQL 查询
         try:
-            logger.info("生产数据缓存", "", f"开始执行 PEG SQL 查询，{'全量' if not supplynos else f'按需({len(supplynos)}个)'}模式")
             result: DbResult = await db_exec_sql(
                 db_name=db_name,
                 sql=sql,
@@ -484,7 +483,6 @@ class _ProductionDataCache:
             # 更新缓存
             self._cache[CacheItem.PEG.value] = peg_cache
             self._update_cache_timestamp(CacheItem.PEG.value)  # 更新缓存时间戳
-            logger.success("生产数据缓存", "", f"PEG 缓存加载: {len(peg_cache[self.PEG_DEMAND_TO_SUPPLY_KEY])} 条 DemandNo")
             
         except Exception as e:
             logger.fail("生产数据缓存", "", f"PEG 缓存构建失败: {e}")
@@ -2015,7 +2013,7 @@ class EventResultPoster:
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         memo = f"{now} {ce.RELEASE_SUCCESS.value} {msg_from}: '{msg}' @ {native_plno}"
         
-        logger.update("PL状态", native_plno, f"目标状态{to_status}，MO单号{mono}")
+        logger.update("PL状态", f"目标状态{to_status}，MO单号{native_plno} -> {mono}", 1)
         
         response_json: MultiDbResult = await call_dbprocdure(
             db_names=self.db_name,

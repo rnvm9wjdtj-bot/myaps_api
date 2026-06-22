@@ -89,6 +89,7 @@ class RedisPoolManager:
                 max_connections=MAX_CONNECTIONS,
                 socket_connect_timeout=SOCKET_CONNECT_TIMEOUT,
                 socket_timeout=SOCKET_TIMEOUT,
+                health_check_interval=30,  # 每30秒检测连接有效性，防止复用僵尸连接
                 decode_responses=False
             )
             logger.success("Redis 连接池", "", f"已初始化 (max_connections={MAX_CONNECTIONS})")
