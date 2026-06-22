@@ -2062,9 +2062,9 @@ function getEventStatus(stats) {
     if (pending >= batchSize * 5 || successRate < 80) {
         return typeof i18n !== 'undefined' ? i18n.t('monitor.metric.unhealthy') : '异常';
     } else if (pending >= batchSize * 2 || successRate < 95) {
-        return typeof i18n !== 'undefined' ? i18n.t('monitor.metric.warning') : '警告';
+        return typeof i18n !== 'undefined' ? i18n.t('monitor.alert.warning') : '警告';
     }
-    return typeof i18n !== 'undefined' ? i18n.t('monitor.metric.healthy') : '正常';
+    return typeof i18n !== 'undefined' ? i18n.t('monitor.alert.normal') : '正常';
 }
 
 // 刷新事件统计
