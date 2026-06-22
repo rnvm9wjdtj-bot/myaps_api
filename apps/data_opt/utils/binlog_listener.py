@@ -68,40 +68,18 @@ from globalobjects.reminder import remind_manager, RemindType
 
 from apps.common.utils.thread_pool_manager import global_pool_manager
 
-# ========== HA Module Integration ==========
+# ========== Simplified HA Module Integration ==========
 try:
     from apps.data_opt.utils.binlog_ha import (
         prometheus_metrics,
         backpressure_controller,
         event_deduplicator,
-        failover_manager,
         retry_policy,
-        ListenerRole,
-        EnhancedDistributedLock,
     )
     HA_MODULES_AVAILABLE = True
 except ImportError as e:
-    log_config.get_logger(__name__).warning(f"⚠️ HA模块导入失败: {e}，使用基础功能")
-
-    class _FallbackDistributedLock:
-        """非 HA 模式下的兜底锁，始终返回获取成功"""
-        class _Result:
-            def __init__(self):
-                self.success = True
-            def __bool__(self):
-                return True
-
-        def acquire(self):
-            return self._Result()
-
-        def release(self):
-            pass
-
+    log_config.get_logger(__name__).warning(f"⚠️ 简化版HA模块导入失败: {e}，使用基础功能")
     HA_MODULES_AVAILABLE = False
-    EnhancedDistributedLock = _FallbackDistributedLock  # type: ignore
-
-# 创建全局分布式锁实例
-distributed_lock = EnhancedDistributedLock(lock_name="binlog_listener_lock", ttl=60)
 
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 logger = log_config.get_logger(__name__, level=LOG_LEVEL)
@@ -619,19 +597,12 @@ class MySQLBinlogListener:
         with self.__class__._lock:
             self._initialized = True
         
-        # 启动互斥锁，防止 start_monitoring / _on_promoted_to_master 并发进入
+        # 启动互斥锁，防止并发启动
         self._startup_lock = threading.Lock()
         
-        # ========== HA Module Initialization ==========
+        # ========== Simplified HA Module Initialization ==========
         if HA_MODULES_AVAILABLE:
-            self._role = ListenerRole.STANDALONE
-            self._failover_count = 0
-            self._event_count_since_check = 0
-            logger.info("✅ HA模块已集成：背压控制、事件去重、故障转移")
-        else:
-            self._role = None
-            self._failover_count = 0
-            self._event_count_since_check = 0
+            logger.info("✅ 简化版HA模块已集成：背压控制、事件去重、重试策略")
 
     def _validate_config(self):
         """验证MySQL配置"""
@@ -1010,7 +981,7 @@ class MySQLBinlogListener:
         logger.info("✅ 提示提醒器已注册到全局 RemindManager")
 
     def get_status(self) -> Dict[str, Any]:
-        """获取监控状态信息（HA增强版）"""
+        """获取监控状态信息（简化版）"""
         base_status = {
             "running": self.running,
             "healthy": self._health_checker.is_healthy() if hasattr(self, '_health_checker') else None,
@@ -1023,11 +994,8 @@ class MySQLBinlogListener:
             "backpressure_percent": round(self.get_pending_events_count() / self._backpressure_threshold * 100, 2),
         }
         
-        # ========== HA: 增强返回值 ==========
+        # ========== Simplified HA: 增强返回值 ==========
         if HA_MODULES_AVAILABLE:
-            base_status["role"] = self._role.value if self._role else "standalone"
-            base_status["failover_count"] = failover_manager.get_failover_count()
-            
             bp_metrics = backpressure_controller.get_queue_metrics()
             base_status["backpressure"] = {
                 "state": backpressure_controller.get_state().value,
@@ -1134,45 +1102,19 @@ class MySQLBinlogListener:
                 time.sleep(1)
 
     def start_monitoring(self):
-        """开始监控Binlog（HA增强版）"""
+        """开始监控Binlog（简化版）"""
         with self._startup_lock:
             if self.running:
                 logger.info("⚠️ Binlog监听已经在运行")
                 return
             
-            # ========== HA: 故障转移管理 ==========
-            if HA_MODULES_AVAILABLE:
-                # 注册升级回调：备节点被提升为主节点时自动启动监听
-                failover_manager.register_on_promoted_callback(self._on_promoted_to_master)
-                
-                is_master = failover_manager.acquire_master_role()
-                if not is_master:
-                    logger.info("⏳ 未获取到主节点角色，降级为备节点等待")
-                    self._role = failover_manager.get_role()
-                    return
-                self._role = ListenerRole.MASTER
-            else:
-                # 原有逻辑：分布式锁
-                if not distributed_lock.acquire().success:
-                    logger.info("⏳ 未获取到分布式锁，不启动 Binlog 监听")
-                    return
-            
-            self._start_listening()
-    
-    def _on_promoted_to_master(self):
-        """故障转移回调：备节点升级为主节点时由 FailoverManager 调用"""
-        with self._startup_lock:
-            if self.running:
-                logger.warning("⚠️ 故障转移回调触发时监听已在运行，跳过")
-                return
-            logger.success("故障转移", "Binlog监听", "备节点已升级为主节点，正在启动binlog监听...")
-            self._role = ListenerRole.MASTER
+            logger.info("🚀 启动Binlog监听器（单进程模式）")
             self._start_listening()
     
     def _start_listening(self):
-        """启动 Binlog 监听（主节点专属）"""
+        """启动 Binlog 监听"""
         self.running = True
-        # 验证线程池是否可用（故障转移后原线程池可能已关闭）
+        # 验证线程池是否可用
         pool = global_pool_manager.get_pool(
             'binlog_listener', 
             max_workers=self._max_workers,
@@ -1199,10 +1141,9 @@ class MySQLBinlogListener:
         # 启动事件循环健康检查器
         self._event_loop_health_checker.start()
         
-        # ========== HA: Prometheus指标注册 ==========
+        # ========== Simplified HA: Prometheus指标注册 ==========
         if HA_MODULES_AVAILABLE:
             prometheus_metrics.set_listener_status(True)
-            prometheus_metrics.set_listener_role("master" if self._role == ListenerRole.MASTER else "slave")
             logger.info("✅ Prometheus指标已注册")
         
         # 启动Binlog监控线程
@@ -1224,23 +1165,7 @@ class MySQLBinlogListener:
         
         while self.running:
             try:
-                # ========== HA: 检查是否仍是主节点（防脑裂）==========
-                if HA_MODULES_AVAILABLE and not failover_manager.is_master():
-                    logger.warning("⚠️ 已不再是主节点（锁被抢占），暂停binlog监听")
-                    self._consecutive_errors += 1
-                    retry_count += 1
-                    
-                    wait_time = min(2 ** min(retry_count, 8), self._max_retry_wait)
-                    logger.info(f"⏳ {wait_time}秒后检查是否重新获取主节点身份...")
-                    
-                    current_time = time.time()
-                    if current_time - last_alert_time > alert_interval:
-                        self._health_checker._send_alert(f"已不再是主节点（锁被抢占），暂停binlog监听，已重试 {retry_count} 次", "warning")
-                        last_alert_time = current_time
-                    
-                    time.sleep(wait_time)
-                    continue
-                
+
                 # 检查 MySQL 健康状态
                 if not self._health_checker.is_healthy():
                     wait_time = min(2 ** min(retry_count, 8), self._max_retry_wait)
@@ -1384,13 +1309,7 @@ class MySQLBinlogListener:
                 if not self.running:
                     break
                 
-                # ========== HA: 检查主节点身份（防脑裂）==========
-                if HA_MODULES_AVAILABLE:
-                    if not failover_manager.is_master():
-                        logger.warning("⚠️ 主节点身份已丢失（锁被抢占），暂停binlog流")
-                        break
-                
-                # ========== HA: 背压控制检测 ==========
+                # ========== Simplified HA: 背压控制检测 ==========
                 self._event_count_since_check += 1
                 if HA_MODULES_AVAILABLE and self._event_count_since_check >= 10:
                     self._event_count_since_check = 0
@@ -1403,7 +1322,7 @@ class MySQLBinlogListener:
                         logger.warning(f"⏸️ 背压限流中，暂停 {pause_duration}秒...")
                         time.sleep(pause_duration)
                 
-                # ========== HA: 事件去重检查 ==========
+                # ========== Simplified HA: 事件去重检查 ==========
                 if HA_MODULES_AVAILABLE:
                     event_id = event_deduplicator.generate_event_id_from_event(binlogevent)
                     if event_deduplicator.is_duplicate(event_id):
@@ -1554,25 +1473,21 @@ class MySQLBinlogListener:
                     self._add_to_dead_letter_queue(event, str(e))
 
     def _process_with_counter(self, event):
-        """处理事件并维护待处理计数（HA增强版）"""
+        """处理事件并维护待处理计数（简化版）"""
         start_time = time.time()
         try:
             self.process_binlog_event(event)
             
-            # ========== HA: 更新处理延迟指标 ==========
+            # ========== Simplified HA: 更新处理延迟指标 ==========
             if HA_MODULES_AVAILABLE:
                 processing_delay = time.time() - start_time
                 prometheus_metrics.observe_processing_delay(processing_delay)
-                
-                # 主节点更新心跳
-                if self._role == ListenerRole.MASTER:
-                    failover_manager.update_heartbeat()
                     
         finally:
             # 无论成功或失败，都减少待处理计数
             self._decrement_pending()
             
-            # ========== HA: 更新队列大小指标 ==========
+            # ========== Simplified HA: 更新队列大小指标 ==========
             if HA_MODULES_AVAILABLE:
                 prometheus_metrics.set_queue_size(self.get_pending_events_count())
     
@@ -1897,22 +1812,7 @@ class MySQLBinlogListener:
         logger.info("🛑 开始停止binlog监听...")
         self.running = False
         
-        # ========== HA: 停止故障转移管理器 ==========
-        if HA_MODULES_AVAILABLE:
-            try:
-                failover_manager.stop()
-                logger.info("✅ 故障转移管理器已停止")
-            except Exception as e:
-                logger.warning(f"⚠️ 故障转移管理器停止失败: {e}")
-        
-        # 0. 释放分布式锁（非HA模式下使用旧锁）
-        if not HA_MODULES_AVAILABLE:
-            try:
-                distributed_lock.release()
-                logger.info("✅ 分布式锁已释放")
-            except Exception as e:
-                logger.warning(f"⚠️ 释放分布式锁失败: {e}")
-        
+
         # 1. 停止健康检查器
         if hasattr(self, '_health_checker'):
             try:
@@ -1929,7 +1829,7 @@ class MySQLBinlogListener:
             except Exception as e:
                 logger.warning(f"⚠️ 事件循环健康检查器停止失败: {e}")
         
-        # ========== HA: 更新Prometheus指标 ==========
+        # ========== Simplified HA: 更新Prometheus指标 ==========
         if HA_MODULES_AVAILABLE:
             prometheus_metrics.set_listener_status(False)
         

@@ -120,24 +120,7 @@ class PrometheusMetrics:
             registry=self._registry
         )
         
-        self.listener_role = Gauge(
-            'binlog_listener_role',
-            'Listener role (1=master, 2=slave, 3=standalone)',
-            registry=self._registry
-        )
-        
-        self.heartbeat_delay = Gauge(
-            'binlog_heartbeat_delay_seconds',
-            'Heartbeat delay in seconds',
-            registry=self._registry
-        )
-        
-        self.failover_count = Counter(
-            'binlog_failover_count_total',
-            'Total number of failovers',
-            registry=self._registry
-        )
-        
+
         self.dedup_hits = Counter(
             'binlog_dedup_hits_total',
             'Total number of duplicate events detected',
@@ -202,19 +185,7 @@ class PrometheusMetrics:
         """增加限流时长"""
         self.throttle_duration.inc(duration)
     
-    def set_listener_role(self, role: str):
-        """设置监听器角色"""
-        role_value = {"master": 1, "slave": 2, "standalone": 3}.get(role, 3)
-        self.listener_role.set(role_value)
-    
-    def set_heartbeat_delay(self, delay: float):
-        """设置心跳延迟"""
-        self.heartbeat_delay.set(delay)
-    
-    def inc_failover_count(self):
-        """增加故障转移次数"""
-        self.failover_count.inc()
-    
+
     def inc_dedup_hits(self):
         """增加去重命中次数"""
         self.dedup_hits.inc()

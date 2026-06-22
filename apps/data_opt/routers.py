@@ -71,18 +71,14 @@ async def generate_qrcode_api(
         )
 
 
-# ========== Binlog Listener HA Enhancement ==========
-# 以下接口为 Binlog 监听器高可用增强模块新增
+# ========== Binlog Listener Simplified HA Enhancement ==========
+# 以下接口为 Binlog 监听器简化版增强模块
 # 与现有监控模块 (apps.common.monitor) 接口互不影响，向后兼容
 
 from apps.data_opt.utils.binlog_ha import (
     prometheus_metrics,
-    health_checker,
-    HealthResponse,
     backpressure_controller,
     event_deduplicator,
-    config_manager,
-    failover_manager,
 )
 
 
@@ -99,56 +95,28 @@ async def prometheus_metrics_endpoint():
     - binlog_events_processed_total: 已处理事件总数 (Counter)
     - binlog_queue_size: 当前队列大小 (Gauge)
     - binlog_processing_delay_seconds: 处理延迟分布 (Histogram)
-    - binlog_listener_role: 监听器角色 (Gauge: 1=master, 2=slave, 3=standalone)
     """
     return await prometheus_metrics.expose_endpoint()
 
 
-@rt.get("/health",
-    tags=["Binlog HA - 健康检查"],
-    summary="增强健康检查",
-    description="返回全面的健康检查结果，包含 MySQL、Redis、Binlog 位置、背压状态等",
-    response_model=HealthResponse
-)
-async def health_check_endpoint():
-    """
-    增强健康检查端点
-    
-    检查项：
-    - mysql_connection: MySQL 连接状态
-    - redis_connection: Redis 连接状态
-    - binlog_position: Binlog 位置同步状态
-    - listener_role: 监听器角色状态
-    - backpressure: 背压状态
-    - event_loop: 事件循环状态
-    - connection_pool: 连接池状态
-    
-    响应状态：
-    - healthy: 所有检查项通过
-    - degraded: 存在警告项
-    - unhealthy: 存在失败项
-    """
-    return await health_checker.check_all()
-
-
 @rt.get("/binlog/status",
     tags=["Binlog HA - 状态查询"],
-    summary="Binlog 监听器状态查询（增强）",
-    description="返回监听器详细状态，包含角色、背压、故障转移等信息"
+    summary="Binlog 监听器状态查询（简化版）",
+    description="返回监听器详细状态，包含背压等信息"
 )
 async def binlog_status_endpoint():
     """
-    Binlog 监听器状态查询（增强版）
+    Binlog 监听器状态查询（简化版）
     
     说明：
     - 此接口为新增接口，与现有 /monitor/binlog-listener 接口并存
     - /monitor/binlog-listener 保持原有实现，向后兼容
-    - 本接口提供增强的状态信息
+    - 本接口提供简化版的状态信息
     
     返回字段：
     - 基础状态：is_running, connection_status, current_position
     - 性能指标：events_processed, queue_size
-    - 高可用信息：role, failover_count, backpressure
+    - 背压信息：backpressure
     """
     from apps.data_opt.utils.binlog_listener import binlog_listener
     
@@ -162,8 +130,6 @@ async def binlog_status_endpoint():
                 "connection_status": "connected" if status.get("healthy") else "disconnected",
                 "current_position": status.get("current_position"),
                 "events_processed": status.get("pending_events", 0),
-                "role": status.get("role", "standalone"),
-                "failover_count": status.get("failover_count", 0),
                 "backpressure": {
                     "state": "normal",
                     "queue_size": status.get("pending_events", 0),
@@ -227,69 +193,6 @@ async def backpressure_status_endpoint():
         }
 
 
-@rt.post("/binlog/config/update",
-    tags=["Binlog HA - 配置管理"],
-    summary="配置热更新",
-    description="更新 Binlog 监听器配置，支持热更新和需重启项区分"
-)
-async def config_update_endpoint(
-    config: dict = Body(..., description="配置项字典"),
-    operator: str = Body(..., description="操作者"),
-    reason: str = Body(None, description="操作原因")
-):
-    """
-    配置热更新端点
-    
-    热更新配置项（立即生效）：
-    - max_retry_attempts: 最大重试次数
-    - base_retry_delay_seconds: 基础重试延迟
-    - heartbeat_interval_seconds: 心跳间隔
-    - backpressure_warning_threshold: 背压告警阈值
-    - backpressure_limit_threshold: 背压限流阈值
-    - dedup_ttl_hours: 去重TTL
-    
-    需重启配置项：
-    - turnon_binlog_listener: 监听器开关
-    - enable_binlog_position: 位置持久化开关
-    - redis_host, redis_port: Redis连接配置
-    
-    返回字段：
-    - applied: 已应用的配置项
-    - requires_restart: 需重启才能生效的配置项
-    - audit_id: 审计ID
-    """
-    result = config_manager.apply_config(config, operator, reason)
-    return result
-
-
-@rt.get("/binlog/config/audit",
-    tags=["Binlog HA - 配置管理"],
-    summary="获取审计日志",
-    description="返回配置变更审计日志"
-)
-async def config_audit_endpoint(
-    limit: int = Query(100, ge=1, le=1000, description="返回条数限制")
-):
-    """
-    审计日志查询端点
-    
-    返回字段：
-    - audit_id: 审计ID
-    - timestamp: 操作时间
-    - operator: 操作者
-    - action: 操作类型
-    - changes: 变更内容
-    - result: 操作结果
-    - reason: 操作原因
-    """
-    entries = config_manager.get_audit_log(limit)
-    
-    return {
-        "success": True,
-        "data": [entry.model_dump() for entry in entries],
-        "total_count": len(entries)
-    }
-
 
 @rt.get("/binlog/dedup/stats",
     tags=["Binlog HA - 事件去重"],
@@ -314,47 +217,6 @@ async def dedup_stats_endpoint():
         "data": stats
     }
 
-
-@rt.get("/binlog/failover/status",
-    tags=["Binlog HA - 主备故障转移"],
-    summary="主备状态查询",
-    description="返回主备角色、心跳信息、故障转移统计"
-)
-async def failover_status_endpoint():
-    """
-    主备状态查询端点
-    
-    返回字段：
-    - role: 当前角色 (master/slave/standalone)
-    - master_info: 主节点信息（备节点视角）
-    - failover_count: 故障转移次数
-    - last_failover_time: 上次故障转移时间
-    """
-    try:
-        role = failover_manager.get_role()
-        failover_count = failover_manager.get_failover_count()
-        
-        master_info = None
-        if role.value == "slave":
-            master_info = failover_manager.get_master_info()
-        
-        return {
-            "success": True,
-            "data": {
-                "role": role.value,
-                "master_info": master_info,
-                "failover_count": failover_count,
-                "last_failover_time": failover_manager._promoted_time,
-                "heartbeat_interval": failover_manager.heartbeat_interval,
-                "heartbeat_timeout": failover_manager.heartbeat_timeout,
-            }
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "data": None
-        }
 
 
 @rt.post("/generate/barcode",

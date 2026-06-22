@@ -107,3 +107,6 @@ docker_images/
 docker_images/**/
 
 entrypoint.sh
+
+
+backup/**
