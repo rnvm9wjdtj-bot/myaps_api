@@ -601,6 +601,7 @@ class MySQLBinlogListener:
         self._startup_lock = threading.Lock()
         
         # ========== Simplified HA Module Initialization ==========
+        self._event_count_since_check = 0  # 事件计数器（用于背压控制检测）
         if HA_MODULES_AVAILABLE:
             logger.info("✅ 简化版HA模块已集成：背压控制、事件去重、重试策略")
 
