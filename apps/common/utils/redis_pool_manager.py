@@ -39,8 +39,8 @@ logger = log_config.get_logger(__name__, level=LOG_LEVEL)
 # Redis 连接池配置
 # 根据系统负载和网络环境调整
 MAX_CONNECTIONS = 50  # 调整最大连接数，避免过度占用资源
-SOCKET_CONNECT_TIMEOUT = 5  # 调整连接超时时间，避免长时间阻塞
-SOCKET_TIMEOUT = 5  # 调整读取超时时间，避免长时间阻塞
+SOCKET_CONNECT_TIMEOUT = 10  # 连接超时时间（秒）
+SOCKET_TIMEOUT = 10  # 读取超时时间（秒），需大于心跳间隔
 
 STORAGE_DIR = Path(__file__).resolve().parent.parent.parent.parent / 'storage'
 BUFFER_DIR = STORAGE_DIR / 'event_buffer'

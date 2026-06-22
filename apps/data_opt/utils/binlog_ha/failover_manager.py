@@ -26,7 +26,7 @@ class FailoverManager:
     
     def __init__(
         self,
-        heartbeat_interval: int = 5,
+        heartbeat_interval: int = 10,
         heartbeat_timeout: int = 60,
         lock_ttl: int = 60
     ):
