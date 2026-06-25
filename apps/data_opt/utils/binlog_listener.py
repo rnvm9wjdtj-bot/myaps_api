@@ -720,7 +720,12 @@ class MySQLBinlogListener:
         return table_name
     
     def _validate_binlog_position(self):
-        """验证 Binlog 位置是否有效"""
+        """验证 Binlog 位置是否有效
+        
+        检查两个维度：
+        1. 文件名是否存在于当前的 Binlog 列表中
+        2. 位置是否在文件大小范围内（防止 'position > file size' 错误）
+        """
         if not ENABLE_BINLOG_POSITION or not self._position_manager:
             return
         
@@ -728,9 +733,10 @@ class MySQLBinlogListener:
         if not saved_position:
             return
         
+        log_file = saved_position.get('log_file')
+        log_pos = saved_position.get('log_pos')
+        
         try:
-            # 验证保存的位置是否在当前的 Binlog 文件中
-            # 连接 MySQL 检查 Binlog 文件是否存在
             conn_params = {
                 "host": self.mysql_settings["host"],
                 "port": int(self.mysql_settings["port"]),
@@ -741,28 +747,57 @@ class MySQLBinlogListener:
             conn = pymysql.connect(**conn_params)
             
             with conn.cursor() as cursor:
-                log_file = saved_position.get('log_file')
-                # 检查 Binlog 文件是否存在
                 cursor.execute("SHOW BINARY LOGS")
-                logs = [row[0] for row in cursor.fetchall()]
+                binary_logs = cursor.fetchall()
+                logs = {row[0]: row[1] for row in binary_logs}
                 
                 if log_file not in logs:
-                    logger.warning(f"⚠️ 保存的 Binlog 文件不存在: {log_file}，将重新开始监控")
-                    self._position_manager.clear_position()
-                    
-                    # 获取当前的 Binlog 文件和位置
-                    cursor.execute("SHOW MASTER STATUS")
-                    master_status = cursor.fetchone()
-                    if master_status:
-                        current_log_file = master_status[0]
-                        current_log_pos = master_status[1]
-                        logger.info(f"📍 当前 Binlog 位置: {current_log_file}:{current_log_pos}")
-                        self._position_manager.save_position(current_log_file, current_log_pos)
+                    logger.warning(f"⚠️ 保存的 Binlog 文件不存在: {log_file}，将重置位置")
+                    self._reset_to_current_file_start(cursor, binary_logs)
+                else:
+                    file_size = logs[log_file]
+                    if log_pos > file_size:
+                        logger.warning(f"⚠️ 保存的位置 {log_pos} 超出文件大小 {file_size}，将重置位置")
+                        self._reset_to_current_file_start(cursor, binary_logs)
             
             conn.close()
         except Exception as e:
             logger.warning(f"⚠️ 验证 Binlog 位置失败: {e}")
-            # 如果验证失败，清除旧的位置
+            self._position_manager.clear_position()
+    
+    def _reset_to_current_file_start(self, cursor, binary_logs):
+        """重置位置到当前 Binlog 文件的起始位置
+        
+        当位置无效时，重置到当前文件的开头而非 SHOW MASTER STATUS 的当前位置，
+        这样可以确保不会丢失断连期间的事件（可能重复，但去重器会处理）。
+        
+        Args:
+            cursor: 数据库游标
+            binary_logs: SHOW BINARY LOGS 的结果列表
+        """
+        try:
+            cursor.execute("SHOW MASTER STATUS")
+            master_status = cursor.fetchone()
+            if master_status:
+                current_log_file = master_status[0]
+                reset_pos = 4
+                
+                logs_dict = {row[0]: row[1] for row in binary_logs}
+                if current_log_file in logs_dict:
+                    file_size = logs_dict[current_log_file]
+                    if file_size > 0:
+                        logger.warning(f"📍 重置到当前 Binlog 文件开头: {current_log_file}:{reset_pos}")
+                        self._position_manager.save_position(current_log_file, reset_pos)
+                    else:
+                        logger.warning(f"📍 当前 Binlog 文件为空，使用 MASTER STATUS 位置")
+                        current_log_pos = master_status[1]
+                        self._position_manager.save_position(current_log_file, current_log_pos)
+                else:
+                    logger.warning(f"📍 当前 Binlog 文件不在列表中，使用 MASTER STATUS 位置")
+                    current_log_pos = master_status[1]
+                    self._position_manager.save_position(current_log_file, current_log_pos)
+        except Exception as e:
+            logger.error(f"❌ 重置 Binlog 位置失败: {e}")
             self._position_manager.clear_position()
     
     def _get_column_names(self, database, table_name):
@@ -1182,6 +1217,10 @@ class MySQLBinlogListener:
                     retry_count += 1
                     continue
                 
+                # 验证 Binlog 位置（MySQL重启后可能轮转）
+                if ENABLE_BINLOG_POSITION and self._position_manager:
+                    self._validate_binlog_position()
+                
                 # 尝试启动 Binlog 流
                 if self.running:
                     self._start_binlog_stream()
@@ -1212,6 +1251,8 @@ class MySQLBinlogListener:
                     self._health_checker._send_alert(f"MySQL连接错误: {e}，已重试 {retry_count} 次", "error")
                     last_alert_time = current_time
                 
+                time.sleep(wait_time)
+                
             except (ConnectionError, ConnectionResetError, BrokenPipeError, OSError) as e:
                 # 网络连接错误 → 重试
                 self._consecutive_errors += 1
@@ -1230,6 +1271,8 @@ class MySQLBinlogListener:
                 if current_time - last_alert_time > alert_interval:
                     self._health_checker._send_alert(f"网络连接中断，已重试 {retry_count} 次", "warning")
                     last_alert_time = current_time
+                
+                time.sleep(wait_time)
                 
             except Exception as e:
                 # 其他未知错误 → 记录详细堆栈
