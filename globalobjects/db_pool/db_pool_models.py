@@ -84,6 +84,7 @@ class UsageRecord(BaseModel):
     used_connections: int = Field(..., description="已用连接数")
     total_connections: int = Field(..., description="总连接数")
     is_healthy: bool = Field(True, description="是否健康")
+    pool_available: bool = Field(True, description="连接池是否可用")
     record_time: datetime = Field(default_factory=datetime.now, description="记录时间")
 
 

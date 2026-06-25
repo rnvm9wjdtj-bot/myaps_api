@@ -63,7 +63,8 @@ class EnhancedConnectionLeakDetector:
             usage_rate=pool_status.usage_rate,
             used_connections=pool_status.used_connections,
             total_connections=pool_status.total_connections,
-            is_healthy=is_healthy
+            is_healthy=is_healthy,
+            pool_available=pool_status.pool_available
         )
         
         self._usage_history[connection_name].append(record)
@@ -71,7 +72,7 @@ class EnhancedConnectionLeakDetector:
         logger.debug(
             "LeakDetector",
             f"@{connection_name}",
-            f"记录使用情况: 使用率={pool_status.usage_rate:.1f}%, 健康={is_healthy}"
+            f"记录使用情况: 使用率={pool_status.usage_rate:.1f}%, 健康={is_healthy}, 可用={pool_status.pool_available}"
         )
     
     def detect_leak(self, connection_name: str) -> LeakDetectionResult:
@@ -100,13 +101,32 @@ class EnhancedConnectionLeakDetector:
                 details={"message": "历史数据为空"}
             )
         
-        usage_rates = [r.usage_rate for r in history]
+        pool_unavailable_count = sum(1 for r in history if not r.pool_available)
+        pool_unavailable_rate = pool_unavailable_count / len(history) if history else 0.0
+        
+        if pool_unavailable_rate > 0.5:
+            return LeakDetectionResult(
+                leak_detected=False,
+                severity=LeakSeverity.NORMAL,
+                details={"message": "连接池不可用，跳过泄漏检测"}
+            )
+        
+        available_history = [r for r in history if r.pool_available]
+        
+        if not available_history:
+            return LeakDetectionResult(
+                leak_detected=False,
+                severity=LeakSeverity.NORMAL,
+                details={"message": "无可用连接池历史数据"}
+            )
+        
+        usage_rates = [r.usage_rate for r in available_history]
         avg_usage_rate = sum(usage_rates) / len(usage_rates)
         max_usage_rate = max(usage_rates)
         current_usage_rate = usage_rates[-1] if usage_rates else 0.0
         
-        health_failure_count = sum(1 for r in history if not r.is_healthy)
-        health_check_failure_rate = health_failure_count / len(history) if history else 0.0
+        health_failure_count = sum(1 for r in available_history if not r.is_healthy)
+        health_check_failure_rate = health_failure_count / len(available_history) if available_history else 0.0
         
         trend = self._analyze_trend(connection_name)
         
@@ -129,10 +149,12 @@ class EnhancedConnectionLeakDetector:
             trend=trend,
             details={
                 "history_size": len(history),
+                "available_history_size": len(available_history),
                 "current_usage": current_usage_rate,
                 "avg_usage": avg_usage_rate,
                 "max_usage": max_usage_rate,
-                "health_failure_rate": health_check_failure_rate
+                "health_failure_rate": health_check_failure_rate,
+                "pool_unavailable_rate": pool_unavailable_rate
             }
         )
         
