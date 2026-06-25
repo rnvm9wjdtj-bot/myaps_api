@@ -1817,7 +1817,7 @@ function updateLastUpdateTime() {
     lastUpdateEl.classList.add('update-flashing');
     
     // 更新时间
-    const lastUpdateText = typeof i18n !== 'undefined' ? i18n.t('monitor.last_update') : '最后更新';
+    const lastUpdateText = typeof i18n !== 'undefined' ? i18n.t('monitor.other.last_update') : '最后更新';
     lastUpdateEl.textContent = `${lastUpdateText}  ${timeStr}`;
     
     // 1秒后移除动画效果
