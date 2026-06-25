@@ -99,10 +99,8 @@ class ConnectionPoolStateManager:
             StateTransitionError: 状态转换失败
         """
         try:
-            async with asyncio.wait_for(
-                self._lock.acquire(),
-                timeout=self._config.state_lock_timeout
-            ):
+            await asyncio.wait_for(self._lock.acquire(), timeout=self._config.state_lock_timeout)
+            try:
                 if self._state == ConnectionPoolState.CLOSED:
                     logger.debug(
                         "ConnectionPoolState",
@@ -124,6 +122,8 @@ class ConnectionPoolStateManager:
                     f"状态变更: {old_state.value} -> CLOSED, 原因: {reason}"
                 )
                 return True
+            finally:
+                self._lock.release()
         except asyncio.TimeoutError:
             logger.error(
                 "ConnectionPoolState",
@@ -136,9 +136,6 @@ class ConnectionPoolStateManager:
                 ConnectionPoolState.CLOSED.value,
                 reason="获取状态锁超时"
             )
-        finally:
-            if self._lock.locked():
-                self._lock.release()
     
     async def mark_open(self, reason: str = "refresh_success") -> bool:
         """
@@ -154,10 +151,8 @@ class ConnectionPoolStateManager:
             StateTransitionError: 状态转换失败
         """
         try:
-            async with asyncio.wait_for(
-                self._lock.acquire(),
-                timeout=self._config.state_lock_timeout
-            ):
+            await asyncio.wait_for(self._lock.acquire(), timeout=self._config.state_lock_timeout)
+            try:
                 if self._state == ConnectionPoolState.OPEN:
                     logger.debug(
                         "ConnectionPoolState",
@@ -179,6 +174,8 @@ class ConnectionPoolStateManager:
                     f"状态变更: {old_state.value} -> OPEN, 原因: {reason}"
                 )
                 return True
+            finally:
+                self._lock.release()
         except asyncio.TimeoutError:
             logger.error(
                 "ConnectionPoolState",
@@ -191,9 +188,6 @@ class ConnectionPoolStateManager:
                 ConnectionPoolState.OPEN.value,
                 reason="获取状态锁超时"
             )
-        finally:
-            if self._lock.locked():
-                self._lock.release()
     
     async def mark_refreshing(self, reason: str = "refresh_start") -> bool:
         """
@@ -209,10 +203,8 @@ class ConnectionPoolStateManager:
             StateTransitionError: 状态转换失败
         """
         try:
-            async with asyncio.wait_for(
-                self._lock.acquire(),
-                timeout=self._config.state_lock_timeout
-            ):
+            await asyncio.wait_for(self._lock.acquire(), timeout=self._config.state_lock_timeout)
+            try:
                 if self._state == ConnectionPoolState.REFRESHING:
                     logger.debug(
                         "ConnectionPoolState",
@@ -234,6 +226,8 @@ class ConnectionPoolStateManager:
                     f"状态变更: {old_state.value} -> REFRESHING, 原因: {reason}"
                 )
                 return True
+            finally:
+                self._lock.release()
         except asyncio.TimeoutError:
             logger.error(
                 "ConnectionPoolState",
@@ -246,9 +240,6 @@ class ConnectionPoolStateManager:
                 ConnectionPoolState.REFRESHING.value,
                 reason="获取状态锁超时"
             )
-        finally:
-            if self._lock.locked():
-                self._lock.release()
     
     def get_state_info(self) -> ConnectionPoolStateInfo:
         """
