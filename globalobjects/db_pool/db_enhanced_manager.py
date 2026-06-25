@@ -73,6 +73,7 @@ class EnhancedDbManager:
         """
         cls._instances.pop(connection_name, None)
         ConnectionPoolStateManager.clear_instance(connection_name)
+        HealthChecker.cleanup_warning_timestamps(connection_name)
     
     def __init__(
         self,

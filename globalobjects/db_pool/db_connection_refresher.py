@@ -65,8 +65,10 @@ class SafeConnectionRefresher:
                 f"开始刷新连接池，快速模式: {fast_mode}"
             )
             
+            was_closed = False
             try:
-                await self._state_manager.mark_closed(reason="refresh_start")
+                result = await self._state_manager.mark_closed(reason="refresh_start")
+                was_closed = result is not False
                 
                 await self._close_pool_safely()
                 
@@ -99,6 +101,21 @@ class SafeConnectionRefresher:
                     f"连接池刷新失败: {str(e)}"
                 )
                 return False
+            finally:
+                if was_closed and not self._state_manager.is_available:
+                    logger.warning(
+                        "SafeConnectionRefresher",
+                        f"@{self._connection_name}",
+                        "刷新失败，回滚状态为OPEN"
+                    )
+                    try:
+                        await self._state_manager.mark_open(reason="refresh_fallback")
+                    except Exception as rollback_e:
+                        logger.error(
+                            "SafeConnectionRefresher",
+                            f"@{self._connection_name}",
+                            f"状态回滚失败: {str(rollback_e)}"
+                        )
     
     async def _close_pool_safely(self):
         """

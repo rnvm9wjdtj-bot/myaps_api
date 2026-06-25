@@ -71,8 +71,19 @@ class HealthChecker:
         """
         重置指定连接的告警冷却时间（当健康检查成功时调用）
         """
-        if self._connection_name in self._warning_timestamps:
-            del self._warning_timestamps[self._connection_name]
+        self.__class__.cleanup_warning_timestamps(self._connection_name)
+    
+    @classmethod
+    def cleanup_warning_timestamps(cls, connection_name: str) -> None:
+        """
+        清理指定连接的告警时间戳记录
+        
+        当连接被销毁或不再需要监控时调用，防止类级字典内存泄漏。
+        
+        Args:
+            connection_name: 连接名称
+        """
+        cls._warning_timestamps.pop(connection_name, None)
         
     async def check(self, timeout: Optional[float] = None) -> HealthCheckResult:
         """

@@ -7,8 +7,8 @@ import asyncio
 from typing import Optional, Dict, Any
 from datetime import datetime
 from globalobjects.db_pool import (
-    EnhancedConnectionLeakDetector,
     BackgroundCleanupTask,
+    EnhancedDbManager,
     get_enhanced_db_manager,
     PoolManagerConfig
 )
@@ -47,7 +47,6 @@ class PoolMonitorTask:
             config: 配置对象
         """
         self._config = config or PoolManagerConfig()
-        self._leak_detector = EnhancedConnectionLeakDetector(self._config)
         self._cleanup_task = BackgroundCleanupTask.get_instance(self._config)
         self._is_running = False
         self._monitor_task: Optional[asyncio.Task] = None
@@ -137,7 +136,7 @@ class PoolMonitorTask:
                 
                 # 如果检测到泄漏，生成并发送告警
                 if leak_result.leak_detected:
-                    alert = self._leak_detector.generate_alert(connection_name, leak_result)
+                    alert = EnhancedDbManager.get_leak_detector().generate_alert(connection_name, leak_result)
                     if alert:
                         await self._send_alert(alert)
                 
