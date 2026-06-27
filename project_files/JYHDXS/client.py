@@ -258,9 +258,14 @@ async def batch_handle_pl_status_a2e(event_data_list: List[Dict], _erp: EventRes
         else:
             supplyno = event_data['supplyno']
 
-        # 使用异步版本的函数，避免阻塞事件循环
-        supplymo_detaildata = await _aps.get_supplymo_detaildata(supplyno=supplyno)
+        data = None
         try:
+            supplymo_detaildata = await _aps.get_supplymo_detaildata(supplyno=supplyno)
+            if not supplymo_detaildata:
+                CLIENT_LOGGER.fail("获取工单详情", supplyno, "get_supplymo_detaildata 返回 None，可能是缓存未命中或数据尚未提交")
+                await _erp.mo_release_failed(native_plno=supplyno, msg=f"获取工单详情失败: 数据不存在或尚未提交", push_data=data, msg_from='ERP')
+                return
+
             start_datetime: str = supplymo_detaildata['dt_ordstart'].split(" ")[0]
             end_datetime: str = supplymo_detaildata['dt_ordend'].split(" ")[0]
             orderwc: list = supplymo_detaildata.get('orderwc', [])
@@ -277,7 +282,6 @@ async def batch_handle_pl_status_a2e(event_data_list: List[Dict], _erp: EventRes
                 "BACKUP1": ','.join([i['workcenter'] for i in orderwc])
             }
 
-            # 将同步的 sap_post 调用放在线程池中执行，避免阻塞事件循环
             loop = asyncio.get_event_loop()
             sap_post_future = loop.run_in_executor(
                 None,
@@ -303,7 +307,6 @@ async def batch_handle_pl_status_a2e(event_data_list: List[Dict], _erp: EventRes
                     else:
                         await _erp.mo_release_failed(native_plno=supplyno, msg=sap_mo_data.get('MESSAGE', '未知错误'), push_data=data, msg_from='ERP')
                 else:
-                    # 处理响应格式不正确的情况
                     await _erp.mo_release_failed(native_plno=supplyno, msg=f"响应格式不正确: {sap_response['response_text']}", push_data=data, msg_from='ERP')
             except Exception as e:
                 await _erp.mo_release_failed(native_plno=supplyno, msg=f"处理响应时出错: {str(e)}", push_data=data, msg_from='ERP')           
