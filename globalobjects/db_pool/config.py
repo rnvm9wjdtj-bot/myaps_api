@@ -24,6 +24,7 @@ def get_pool_config() -> PoolManagerConfig:
         LEAK_EMERGENCY_THRESHOLD: 泄漏紧急阈值(默认95%)
         LEAK_HISTORY_SIZE: 泄漏检测历史数据大小(默认100)
         LEAK_ANALYSIS_WINDOW: 泄漏检测分析窗口(默认300秒)
+        ALERT_COOLDOWN: 告警冷却时间(默认300秒)
     
     Returns:
         PoolManagerConfig: 配置对象
@@ -39,7 +40,8 @@ def get_pool_config() -> PoolManagerConfig:
         leak_emergency_threshold=int(os.getenv("LEAK_EMERGENCY_THRESHOLD", "95")),
         leak_history_size=int(os.getenv("LEAK_HISTORY_SIZE", "100")),
         leak_analysis_window=int(os.getenv("LEAK_ANALYSIS_WINDOW", "300")),
-        state_lock_timeout=float(os.getenv("POOL_STATE_LOCK_TIMEOUT", "10.0"))
+        state_lock_timeout=float(os.getenv("POOL_STATE_LOCK_TIMEOUT", "10.0")),
+        alert_cooldown=int(os.getenv("ALERT_COOLDOWN", "300"))
     )
 
 

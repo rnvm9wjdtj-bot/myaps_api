@@ -27,7 +27,10 @@ class EnhancedConnectionLeakDetector:
     增强连接泄漏检测器
     
     基于历史数据分析连接使用趋势，检测连接泄漏并生成分级告警。
+    支持告警冷却机制，避免重复告警。
     """
+    
+    _alert_timestamps: Dict[str, float] = {}
     
     def __init__(self, config: Optional[PoolManagerConfig] = None):
         """
@@ -38,6 +41,36 @@ class EnhancedConnectionLeakDetector:
         """
         self._config = config or PoolManagerConfig()
         self._usage_history: Dict[str, deque] = {}
+    
+    def _should_log_alert(self, connection_name: str) -> bool:
+        """
+        检查是否应该记录告警（基于冷却机制）
+        
+        Args:
+            connection_name: 连接名称
+            
+        Returns:
+            True 如果应该记录，False 如果在冷却期内
+        """
+        from globalobjects.db_pool.db_pool_models import check_cooldown
+        return check_cooldown(
+            self._alert_timestamps,
+            connection_name,
+            self._config.alert_cooldown
+        )
+    
+    @classmethod
+    def cleanup_alert_timestamps(cls, connection_name: str = None):
+        """
+        清理告警时间戳记录
+        
+        Args:
+            connection_name: 连接名称（None则清空所有）
+        """
+        if connection_name:
+            cls._alert_timestamps.pop(connection_name, None)
+        else:
+            cls._alert_timestamps.clear()
         
     def record_usage(
         self,
@@ -159,11 +192,18 @@ class EnhancedConnectionLeakDetector:
         )
         
         if leak_detected:
-            logger.warning(
-                "LeakDetector",
-                f"@{connection_name}",
-                f"检测到连接泄漏: 严重程度={severity.value}, 使用率={current_usage_rate:.1f}%"
-            )
+            if self._should_log_alert(connection_name):
+                logger.warning(
+                    "LeakDetector",
+                    f"@{connection_name}",
+                    f"检测到连接泄漏: 严重程度={severity.value}, 使用率={current_usage_rate:.1f}%"
+                )
+            else:
+                logger.debug(
+                    "LeakDetector",
+                    f"@{connection_name}",
+                    f"检测到连接泄漏但在冷却期内: 严重程度={severity.value}, 使用率={current_usage_rate:.1f}%"
+                )
         
         return result
     

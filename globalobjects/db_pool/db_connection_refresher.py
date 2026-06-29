@@ -4,12 +4,13 @@
 实现安全刷新连接池，包含完整的状态管理、健康验证和失败回滚机制。
 """
 import asyncio
-from typing import Optional, List, Any
+from typing import Optional, Any
 from datetime import datetime
 from tortoise import Tortoise
 from globalobjects.db_pool.db_pool_models import PoolManagerConfig
 from globalobjects.db_pool.db_pool_state_manager import ConnectionPoolStateManager
 from globalobjects.db_pool.db_health_checker import HealthChecker
+from globalobjects.db_pool.db_cleanup_task import BackgroundCleanupTask
 from globalobjects.db_pool.db_pool_exceptions import (
     ConnectionRefreshError,
     ForceCloseError
@@ -46,7 +47,7 @@ class SafeConnectionRefresher:
         self._health_checker = health_checker
         self._config = config or PoolManagerConfig()
         self._refresh_lock = asyncio.Lock()
-        self._pending_cleanup: List[Any] = []
+        self._cleanup_task = BackgroundCleanupTask.get_instance(self._config)
         
     async def refresh(self, fast_mode: bool = False) -> bool:
         """
@@ -141,13 +142,20 @@ class SafeConnectionRefresher:
                 logger.warning(
                     "SafeConnectionRefresher",
                     f"@{self._connection_name}",
-                    "检测到事件循环冲突，将连接加入待清理队列"
+                    "检测到事件循环冲突，将连接提交到后台清理任务"
                 )
-                self._pending_cleanup.append({
-                    "connection": conn,
-                    "reason": "event_loop_conflict",
-                    "time": datetime.now()
-                })
+                try:
+                    await self._cleanup_task.add_to_cleanup_queue(
+                        conn,
+                        self._connection_name,
+                        reason="event_loop_conflict"
+                    )
+                except Exception as queue_error:
+                    logger.error(
+                        "SafeConnectionRefresher",
+                        f"@{self._connection_name}",
+                        f"提交到清理队列失败: {str(queue_error)}"
+                    )
             else:
                 logger.warning(
                     "SafeConnectionRefresher",
@@ -235,31 +243,11 @@ class SafeConnectionRefresher:
                 f"标记连接状态时出错: {str(e)}"
             )
     
-    def get_pending_cleanup_count(self) -> int:
+    def get_cleanup_queue_size(self) -> int:
         """
-        获取待清理连接数量
+        获取后台清理队列大小
         
         Returns:
-            待清理连接数量
+            清理队列大小
         """
-        return len(self._pending_cleanup)
-    
-    def get_pending_cleanup_items(self) -> List[dict]:
-        """
-        获取待清理连接列表
-        
-        Returns:
-            待清理连接列表
-        """
-        return self._pending_cleanup.copy()
-    
-    def clear_pending_cleanup(self):
-        """
-        清空待清理队列
-        """
-        self._pending_cleanup.clear()
-        logger.debug(
-            "SafeConnectionRefresher",
-            f"@{self._connection_name}",
-            "待清理队列已清空"
-        )
+        return self._cleanup_task.get_queue_size()

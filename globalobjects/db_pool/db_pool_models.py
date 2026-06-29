@@ -3,10 +3,38 @@
 
 定义连接池管理所需的所有数据模型、枚举类型和配置对象。
 """
+import time
 from enum import Enum
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from pydantic import BaseModel, Field
+
+
+def check_cooldown(
+    timestamps: Dict[str, float],
+    key: str,
+    cooldown: int
+) -> bool:
+    """
+    检查冷却状态并消耗冷却
+
+    如果距离上次记录的时间超过冷却期，则更新记录并返回 True；
+    否则返回 False。
+
+    Args:
+        timestamps: 时间戳记录字典
+        key: 要检查的键（如连接名称）
+        cooldown: 冷却时间（秒）
+
+    Returns:
+        True 如果允许操作（不在冷却期内），False 如果在冷却期内
+    """
+    current_time = time.time()
+    last_time = timestamps.get(key, 0)
+    if current_time - last_time >= cooldown:
+        timestamps[key] = current_time
+        return True
+    return False
 
 
 class ConnectionPoolState(str, Enum):
@@ -144,3 +172,4 @@ class PoolManagerConfig(BaseModel):
     leak_history_size: int = Field(100, description="泄漏检测历史数据大小")
     leak_analysis_window: int = Field(300, description="泄漏检测分析窗口(秒)")
     state_lock_timeout: float = Field(10.0, description="状态锁超时时间(秒)")
+    alert_cooldown: int = Field(300, description="告警冷却时间(秒)")
