@@ -121,8 +121,7 @@ class BinlogPositionManager:
         self._server_id = "default"  # 默认服务器标识
         self._position_file = os.path.join(os.path.dirname(__file__), "..", "..", "..", "storage", "binlog_position.json")
         self._processed_events_file = os.path.join(os.path.dirname(__file__), "..", "..", "..", "storage", "processed_events.json")
-        # 确保数据目录存在
-        os.makedirs(os.path.dirname(self._position_file), exist_ok=True)
+        self._dir_checked = False  # 仅首次写入时检查目录存在性
     
     def _read_json_file(self, file_path):
         """读取 JSON 文件"""
@@ -147,6 +146,11 @@ class BinlogPositionManager:
         """
         temp_path = f"{file_path}.tmp"
         try:
+            # 首次写入时确保目标目录存在（Docker overlay2 下 rename 可能对挂载点敏感）
+            if not self._dir_checked:
+                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                self._dir_checked = True
+            
             # 先写入临时文件
             with open(temp_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
