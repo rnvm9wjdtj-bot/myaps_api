@@ -94,8 +94,14 @@ async def lifespan(app):
     log_config.info("服务器已就绪")
     
     if TURNON_BINLOG_LISTENER:
-        binlog_listener.start_monitoring()
-        log_config.info("MySQL Binlog监控已启动")
+        # 在 Gunicorn 环境下，由 gunicorn.conf.py 的 post_worker_init 负责启动
+        # 非 Gunicorn 环境（如 dev_run.bat 的 uvicorn 直启）才在此处启动
+        if os.environ.get('GUNICORN_RUNNING') != 'true':
+            binlog_listener.start_monitoring()
+            log_config.info("MySQL Binlog监控已启动")
+        else:
+            worker_id = os.environ.get('GUNICORN_WORKER_ID', '?')
+            log_config.info(f"Gunicorn Worker {worker_id}：Binlog监控由 post_worker_init 管理")
     else:
         log_config.warning("⚠️ MySQL Binlog监控未启动")
     
@@ -458,9 +464,14 @@ async def lifespan(app):
     
     # 2.4 停止 MySQL Binlog 监控
     if TURNON_BINLOG_LISTENER:
-        log_config.info("停止 MySQL Binlog 监控...")
-        binlog_listener.stop_monitoring()
-        log_config.info("✅ MySQL Binlog监控已停止")
+        # 非 Gunicorn 环境下停止监听；Gunicorn 环境由 worker_exit 处理
+        if os.environ.get('GUNICORN_RUNNING') != 'true':
+            log_config.info("停止 MySQL Binlog 监控...")
+            binlog_listener.stop_monitoring()
+            log_config.info("✅ MySQL Binlog监控已停止")
+        else:
+            worker_id = os.environ.get('GUNICORN_WORKER_ID', '?')
+            log_config.info(f"Gunicorn Worker {worker_id}：Binlog监控由 worker_exit 管理关闭")
     
     # 2.5 停止资源监控
     log_config.info("停止资源监控...")
