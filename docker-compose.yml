@@ -25,8 +25,10 @@ services:
     container_name: myaps_redis
     restart: unless-stopped
     network_mode: host
+    environment:
+      - TZ=${TIMEZONE:-Asia/Shanghai}
     volumes:
-      - ./storage/redis_data:/data
+      - ./volumes/redis:/data
     command: redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -49,7 +51,7 @@ services:
       - POSTGRES_DB=${THIS_DB_NAME}
       - POSTGRES_PORT=${THIS_DB_PORT:-5432}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./volumes/postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${THIS_DB_USER} -d ${THIS_DB_NAME}"]
       interval: 10s
@@ -57,10 +59,7 @@ services:
       retries: 5
 
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: ${DOCKER_IMAGE:-myaps_api:latest}
+    image: ${DOCKER_IMAGE:-qsct/myaps-api:latest}
     container_name: myaps_api
     restart: unless-stopped
     network_mode: host
@@ -72,11 +71,15 @@ services:
       - THIS_DB_HOST=${THIS_DB_HOST:-localhost}
       - GUNICORN_BIND=0.0.0.0:${PORT:-8000}
       - APP_ROOT=/app
+      - TZ=${TIMEZONE:-Asia/Shanghai}
     volumes:
       # 日志持久化
       - ./logs:/app/logs
       # 存储持久化（SQLite、Binlog位置等）
       - ./storage:/app/storage
+      # 额外挂载存储目录到 apps 路径（适配代码中的相对路径引用）
+      - ./storage:/app/apps/storage
+      - ./storage:/app/apps/data_opt/storage
       # 项目配置目录挂载（自动使用.env中的PROJECT_DIR）
       # 挂载整个目录，自动包含：
       #   - {PROJECT_JSON}.json (租户配置)
@@ -105,32 +108,11 @@ services:
     network_mode: host
     environment:
       - UPTIME_KUMA_LISTEN=0.0.0.0:${UPTIME_KUMA_PORT:-3001}
+      - TZ=${TIMEZONE:-Asia/Shanghai}
     volumes:
-      - uptime_kuma_data:/app/data
+      - ./volumes/uptime-kuma:/app/data
     healthcheck:
       test: ["CMD", "node", "server/server.js", "--healthcheck"]
       interval: 30s
       timeout: 10s
       retries: 3
-
-  # Portainer 已在生产环境禁用（安全考虑）
-  # 如需临时使用，取消注释并执行: docker-compose up -d portainer
-  # 使用完成后执行: docker-compose stop portainer
-  #
-  # portainer:
-  #   image: portainer/portainer-ce:2.21.4
-  #   container_name: myaps_portainer
-  #   restart: unless-stopped
-  #   network_mode: host
-  #   volumes:
-  #     - /var/run/docker.sock:/var/run/docker.sock
-  #     - portainer_data:/data
-  #   command: --bind=:${PORTAINER_PORT:-9000} --tunnel-port ${PORTAINER_TUNNEL_PORT:-9001}
-
-volumes:
-  postgres_data:
-    driver: local
-  uptime_kuma_data:
-    driver: local
-  # portainer_data:
-  #   driver: local

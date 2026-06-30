@@ -61,7 +61,7 @@ from pymysqlreplication.row_event import (
     DeleteRowsEvent,
 )
 
-from core.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_BINLOG_LISTENER, ENABLE_BINLOG_POSITION
+from core.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_BINLOG_LISTENER, ENABLE_BINLOG_POSITION, BASE_DIR
 
 from globalobjects import logger as log_config
 from globalobjects.reminder import remind_manager, RemindType
@@ -119,8 +119,8 @@ class BinlogPositionManager:
         self._last_save_time = 0
         self._save_interval = 5  # 最少5秒保存一次，避免频繁写入
         self._server_id = "default"  # 默认服务器标识
-        self._position_file = os.path.join(os.path.dirname(__file__), "..", "..", "..", "storage", "binlog_position.json")
-        self._processed_events_file = os.path.join(os.path.dirname(__file__), "..", "..", "..", "storage", "processed_events.json")
+        self._position_file = os.path.join(str(BASE_DIR), "storage", "binlog_position.json")
+        self._processed_events_file = os.path.join(str(BASE_DIR), "storage", "processed_events.json")
         self._dir_checked = False  # 仅首次写入时检查目录存在性
     
     def _read_json_file(self, file_path):
