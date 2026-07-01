@@ -16,9 +16,54 @@ from apps.common.monitor import (
 )
 from apps.common.monitor.log_stream_service import start_log_stream, stop_log_stream
 from globalobjects import EVENT_AGGREGATOR
-from core.settings import TURNON_BINLOG_LISTENER, TRUNON_SCHEDULER, MAX_EVENTS_BATCH_SIZE
+from core.settings import TURNON_BINLOG_LISTENER, TRUNON_SCHEDULER, MAX_EVENTS_BATCH_SIZE, BASE_DIR
 from core.database import check_db_connections, warmup_connections, start_pool_monitoring, db_init_manager, ensure_sqlite_monitor_tables
 from core.task_manager import get_task_manager
+
+# Binlog 文件锁路径（使用 /tmp/ 而非持久化目录，避免容器重建后残留旧锁）
+# 锁文件用于 Gunicorn 多进程环境下确保只有一个 Worker 启动监听器
+_BINLOG_LOCK_FILE = "/tmp/.myaps_binlog.lock"
+
+
+def _pid_is_alive(pid: int) -> bool:
+    """检查进程是否存活（Linux 下通过 /proc 检测，其他平台 fallback）"""
+    try:
+        return os.path.exists(f"/proc/{pid}")
+    except (PermissionError, FileNotFoundError, OSError):
+        return False
+
+
+def _try_acquire_binlog_lock() -> bool:
+    """
+    尝试获取 Binlog 监听器的文件锁。
+    处理废弃锁：如果锁文件存在但持有进程已死，接管锁。
+    返回 True 表示获取成功（调用方应启动监听器），False 表示跳过。
+    """
+    lock_file = _BINLOG_LOCK_FILE
+    try:
+        # 尝试原子创建
+        fd = os.open(lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        with os.fdopen(fd, 'w') as f:
+            f.write(str(os.getpid()))
+        return True
+    except FileExistsError:
+        # 锁已存在，检查是否废弃
+        try:
+            with open(lock_file, 'r') as f:
+                stored_pid_str = f.read().strip()
+            if stored_pid_str:
+                stored_pid = int(stored_pid_str)
+                if not _pid_is_alive(stored_pid):
+                    # 废弃锁，清理后重试
+                    os.unlink(lock_file)
+                    fd = os.open(lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+                    with os.fdopen(fd, 'w') as f:
+                        f.write(str(os.getpid()))
+                    return True
+        except (ValueError, OSError, FileNotFoundError):
+            # 无法读取或清理，跳过
+            pass
+        return False
 
 
 @asynccontextmanager
@@ -94,14 +139,18 @@ async def lifespan(app):
     log_config.info("服务器已就绪")
     
     if TURNON_BINLOG_LISTENER:
-        # 在 Gunicorn 环境下，由 gunicorn.conf.py 的 post_worker_init 负责启动
-        # 非 Gunicorn 环境（如 dev_run.bat 的 uvicorn 直启）才在此处启动
         if os.environ.get('GUNICORN_RUNNING') != 'true':
+            # 非 Gunicorn 环境（如 dev_run.bat 的 uvicorn 直启）直接启动
             binlog_listener.start_monitoring()
             log_config.info("MySQL Binlog监控已启动")
         else:
+            # Gunicorn 环境：使用文件锁确保只有一个 Worker 启动监听器
             worker_id = os.environ.get('GUNICORN_WORKER_ID', '?')
-            log_config.info(f"Gunicorn Worker {worker_id}：Binlog监控由 post_worker_init 管理")
+            if _try_acquire_binlog_lock():
+                binlog_listener.start_monitoring()
+                log_config.info(f"✅ Gunicorn Worker {worker_id}：通过文件锁获取权限，Binlog 监控已启动")
+            else:
+                log_config.info(f"ℹ️ Gunicorn Worker {worker_id}：Binlog 监控已在其他 Worker 中运行，跳过")
     else:
         log_config.warning("⚠️ MySQL Binlog监控未启动")
     
@@ -464,14 +513,34 @@ async def lifespan(app):
     
     # 2.4 停止 MySQL Binlog 监控
     if TURNON_BINLOG_LISTENER:
-        # 非 Gunicorn 环境下停止监听；Gunicorn 环境由 worker_exit 处理
+        # 非 Gunicorn 环境下停止监听；Gunicorn 环境由文件锁控制
         if os.environ.get('GUNICORN_RUNNING') != 'true':
             log_config.info("停止 MySQL Binlog 监控...")
             binlog_listener.stop_monitoring()
             log_config.info("✅ MySQL Binlog监控已停止")
         else:
             worker_id = os.environ.get('GUNICORN_WORKER_ID', '?')
-            log_config.info(f"Gunicorn Worker {worker_id}：Binlog监控由 worker_exit 管理关闭")
+            # Gunicorn 环境：只有持有文件锁的 Worker 才停止监听器
+            is_owner = False
+            if os.path.exists(_BINLOG_LOCK_FILE):
+                try:
+                    with open(_BINLOG_LOCK_FILE, 'r') as f:
+                        started_pid = f.read().strip()
+                    is_owner = (started_pid == str(os.getpid()))
+                except (FileNotFoundError, OSError):
+                    pass
+
+            if is_owner:
+                log_config.info(f"停止 MySQL Binlog 监控（Worker {worker_id} 持有锁）...")
+                binlog_listener.stop_monitoring()
+                try:
+                    os.unlink(_BINLOG_LOCK_FILE)
+                    log_config.info(f"✅ 已清除 Binlog 锁文件（Worker {worker_id}）")
+                except FileNotFoundError:
+                    pass
+                log_config.info("✅ MySQL Binlog监控已停止")
+            else:
+                log_config.info(f"ℹ️ Gunicorn Worker {worker_id}：非锁持有者，跳过停止 Binlog 监控")
     
     # 2.5 停止资源监控
     log_config.info("停止资源监控...")
