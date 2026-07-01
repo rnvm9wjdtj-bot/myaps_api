@@ -14,6 +14,7 @@ from tortoise.exceptions import IntegrityError
 
 from core.settings import MYAPS_DBSET_LIST
 from globalobjects import logger as log_config
+from apps.common.utils.redis_pool_manager import get_redis_client
 import os
 import uuid
 
@@ -334,7 +335,7 @@ class DbCircuitBreakerError(DbManagerError):
 
 class DeadlockCircuitBreaker:
     """
-    死锁熔断保护类
+    死锁熔断保护类（使用Redis实现跨进程状态共享）
     
     实现基于时间窗口的熔断机制，当单位时间内死锁次数超过阈值时触发熔断，
     熔断期间所有请求直接失败，避免系统雪崩。
@@ -347,6 +348,7 @@ class DeadlockCircuitBreaker:
     
     def __init__(
         self, 
+        name: str = "default",
         threshold: int = 5, 
         window_seconds: int = 60, 
         cooldown_seconds: int = 30,
@@ -356,11 +358,13 @@ class DeadlockCircuitBreaker:
         初始化熔断器
         
         Args:
+            name: 熔断器名称，用于Redis键名
             threshold: 时间窗口内的最大死锁次数（超过此值触发熔断）
             window_seconds: 时间窗口大小（秒）
             cooldown_seconds: 熔断持续时间（秒）
             half_open_attempts: 半开状态下允许的尝试次数
         """
+        self.name = name
         self.threshold = threshold
         self.window_seconds = window_seconds
         self.cooldown_seconds = cooldown_seconds
@@ -371,45 +375,239 @@ class DeadlockCircuitBreaker:
         self.STATE_OPEN = "open"
         self.STATE_HALF_OPEN = "half_open"
         
-        # 当前状态
-        self._state = self.STATE_CLOSED
-        
-        # 死锁计数器
-        self._deadlock_count = 0
-        
-        # 时间戳记录
-        self._window_start_time = time.time()
-        self._open_time = None
-        
-        # 半开状态下的尝试计数
-        self._half_open_success_count = 0
-        self._half_open_failure_count = 0
+        # Redis键名前缀
+        self._redis_prefix = f"myaps:circuitbreaker:{name}"
+    
+    def _get_redis_state_key(self) -> str:
+        """获取状态的Redis键名"""
+        return f"{self._redis_prefix}:state"
+    
+    def _get_redis_deadlock_count_key(self) -> str:
+        """获取死锁计数器的Redis键名"""
+        return f"{self._redis_prefix}:deadlock_count"
+    
+    def _get_redis_window_start_key(self) -> str:
+        """获取时间窗口开始时间的Redis键名"""
+        return f"{self._redis_prefix}:window_start"
+    
+    def _get_redis_open_time_key(self) -> str:
+        """获取熔断打开时间的Redis键名"""
+        return f"{self._redis_prefix}:open_time"
+    
+    def _get_redis_half_open_success_key(self) -> str:
+        """获取半开成功计数的Redis键名"""
+        return f"{self._redis_prefix}:half_open_success"
+    
+    def _get_redis_half_open_failure_key(self) -> str:
+        """获取半开失败计数的Redis键名"""
+        return f"{self._redis_prefix}:half_open_failure"
+    
+    def _get_state(self) -> str:
+        """从Redis获取当前状态"""
+        client = get_redis_client()
+        if client:
+            try:
+                state = client.get(self._get_redis_state_key())
+                if state:
+                    return state.decode('utf-8')
+            except Exception as e:
+                logger.warning(
+                    "CircuitBreaker",
+                    "REDIS_ERR",
+                    f"读取熔断状态失败: {e}"
+                )
+        return self.STATE_CLOSED
+    
+    def _set_state(self, state: str):
+        """设置状态到Redis"""
+        client = get_redis_client()
+        if client:
+            try:
+                client.set(self._get_redis_state_key(), state)
+                client.expire(self._get_redis_state_key(), self.window_seconds + self.cooldown_seconds + 60)
+            except Exception as e:
+                logger.warning(
+                    "CircuitBreaker",
+                    "REDIS_ERR",
+                    f"设置熔断状态失败: {e}"
+                )
+    
+    def _get_deadlock_count(self) -> int:
+        """从Redis获取死锁计数"""
+        client = get_redis_client()
+        if client:
+            try:
+                count = client.get(self._get_redis_deadlock_count_key())
+                return int(count) if count else 0
+            except Exception as e:
+                logger.warning(
+                    "CircuitBreaker",
+                    "REDIS_ERR",
+                    f"读取死锁计数失败: {e}"
+                )
+        return 0
+    
+    def _set_deadlock_count(self, count: int):
+        """设置死锁计数到Redis"""
+        client = get_redis_client()
+        if client:
+            try:
+                client.set(self._get_redis_deadlock_count_key(), count)
+                client.expire(self._get_redis_deadlock_count_key(), self.window_seconds + 60)
+            except Exception as e:
+                logger.warning(
+                    "CircuitBreaker",
+                    "REDIS_ERR",
+                    f"设置死锁计数失败: {e}"
+                )
+    
+    def _get_window_start_time(self) -> float:
+        """从Redis获取时间窗口开始时间"""
+        client = get_redis_client()
+        if client:
+            try:
+                start_time = client.get(self._get_redis_window_start_key())
+                return float(start_time) if start_time else time.time()
+            except Exception as e:
+                logger.warning(
+                    "CircuitBreaker",
+                    "REDIS_ERR",
+                    f"读取时间窗口开始时间失败: {e}"
+                )
+        return time.time()
+    
+    def _set_window_start_time(self, start_time: float):
+        """设置时间窗口开始时间到Redis"""
+        client = get_redis_client()
+        if client:
+            try:
+                client.set(self._get_redis_window_start_key(), start_time)
+                client.expire(self._get_redis_window_start_key(), self.window_seconds + 60)
+            except Exception as e:
+                logger.warning(
+                    "CircuitBreaker",
+                    "REDIS_ERR",
+                    f"设置时间窗口开始时间失败: {e}"
+                )
+    
+    def _get_open_time(self) -> Optional[float]:
+        """从Redis获取熔断打开时间"""
+        client = get_redis_client()
+        if client:
+            try:
+                open_time = client.get(self._get_redis_open_time_key())
+                return float(open_time) if open_time else None
+            except Exception as e:
+                logger.warning(
+                    "CircuitBreaker",
+                    "REDIS_ERR",
+                    f"读取熔断打开时间失败: {e}"
+                )
+        return None
+    
+    def _set_open_time(self, open_time: Optional[float]):
+        """设置熔断打开时间到Redis"""
+        client = get_redis_client()
+        if client:
+            try:
+                if open_time:
+                    client.set(self._get_redis_open_time_key(), open_time)
+                    client.expire(self._get_redis_open_time_key(), self.cooldown_seconds + 60)
+                else:
+                    client.delete(self._get_redis_open_time_key())
+            except Exception as e:
+                logger.warning(
+                    "CircuitBreaker",
+                    "REDIS_ERR",
+                    f"设置熔断打开时间失败: {e}"
+                )
+    
+    def _get_half_open_success_count(self) -> int:
+        """从Redis获取半开成功计数"""
+        client = get_redis_client()
+        if client:
+            try:
+                count = client.get(self._get_redis_half_open_success_key())
+                return int(count) if count else 0
+            except Exception as e:
+                logger.warning(
+                    "CircuitBreaker",
+                    "REDIS_ERR",
+                    f"读取半开成功计数失败: {e}"
+                )
+        return 0
+    
+    def _set_half_open_success_count(self, count: int):
+        """设置半开成功计数到Redis"""
+        client = get_redis_client()
+        if client:
+            try:
+                client.set(self._get_redis_half_open_success_key(), count)
+                client.expire(self._get_redis_half_open_success_key(), self.cooldown_seconds + 60)
+            except Exception as e:
+                logger.warning(
+                    "CircuitBreaker",
+                    "REDIS_ERR",
+                    f"设置半开成功计数失败: {e}"
+                )
+    
+    def _get_half_open_failure_count(self) -> int:
+        """从Redis获取半开失败计数"""
+        client = get_redis_client()
+        if client:
+            try:
+                count = client.get(self._get_redis_half_open_failure_key())
+                return int(count) if count else 0
+            except Exception as e:
+                logger.warning(
+                    "CircuitBreaker",
+                    "REDIS_ERR",
+                    f"读取半开失败计数失败: {e}"
+                )
+        return 0
+    
+    def _set_half_open_failure_count(self, count: int):
+        """设置半开失败计数到Redis"""
+        client = get_redis_client()
+        if client:
+            try:
+                client.set(self._get_redis_half_open_failure_key(), count)
+                client.expire(self._get_redis_half_open_failure_key(), self.cooldown_seconds + 60)
+            except Exception as e:
+                logger.warning(
+                    "CircuitBreaker",
+                    "REDIS_ERR",
+                    f"设置半开失败计数失败: {e}"
+                )
     
     @property
     def state(self):
         """获取当前熔断状态"""
         self._check_state_transition()
-        return self._state
+        return self._get_state()
     
     def _check_state_transition(self):
         """检查并执行状态转换"""
         now = time.time()
+        current_state = self._get_state()
         
         # 如果是OPEN状态，检查是否需要转换到HALF_OPEN
-        if self._state == self.STATE_OPEN and self._open_time:
-            if now - self._open_time >= self.cooldown_seconds:
+        if current_state == self.STATE_OPEN:
+            open_time = self._get_open_time()
+            if open_time and now - open_time >= self.cooldown_seconds:
                 self._transition_to_half_open()
         
         # 如果是CLOSED状态，检查时间窗口是否需要重置
-        if self._state == self.STATE_CLOSED:
-            if now - self._window_start_time >= self.window_seconds:
+        if current_state == self.STATE_CLOSED:
+            window_start = self._get_window_start_time()
+            if now - window_start >= self.window_seconds:
                 self._reset_window()
     
     def _transition_to_open(self):
         """转换到OPEN状态（熔断）"""
-        self._state = self.STATE_OPEN
-        self._open_time = time.time()
-        self._deadlock_count = 0
+        self._set_state(self.STATE_OPEN)
+        self._set_open_time(time.time())
+        self._set_deadlock_count(0)
         logger.warning(
             "CircuitBreaker",
             "TRIGGERED",
@@ -418,9 +616,9 @@ class DeadlockCircuitBreaker:
     
     def _transition_to_half_open(self):
         """转换到HALF_OPEN状态（尝试恢复）"""
-        self._state = self.STATE_HALF_OPEN
-        self._half_open_success_count = 0
-        self._half_open_failure_count = 0
+        self._set_state(self.STATE_HALF_OPEN)
+        self._set_half_open_success_count(0)
+        self._set_half_open_failure_count(0)
         logger.warning(
             "CircuitBreaker",
             "HALF_OPEN",
@@ -429,10 +627,10 @@ class DeadlockCircuitBreaker:
     
     def _transition_to_closed(self):
         """转换到CLOSED状态（正常）"""
-        self._state = self.STATE_CLOSED
-        self._deadlock_count = 0
-        self._window_start_time = time.time()
-        self._open_time = None
+        self._set_state(self.STATE_CLOSED)
+        self._set_deadlock_count(0)
+        self._set_window_start_time(time.time())
+        self._set_open_time(None)
         logger.info(
             "CircuitBreaker",
             "RESET",
@@ -441,33 +639,49 @@ class DeadlockCircuitBreaker:
     
     def _reset_window(self):
         """重置时间窗口"""
-        self._deadlock_count = 0
-        self._window_start_time = time.time()
+        self._set_deadlock_count(0)
+        self._set_window_start_time(time.time())
     
     def record_deadlock(self):
-        """记录一次死锁"""
+        """记录一次死锁（使用Redis INCR保证原子性）"""
         self._check_state_transition()
+        current_state = self._get_state()
         
-        if self._state == self.STATE_CLOSED:
-            self._deadlock_count += 1
+        if current_state == self.STATE_CLOSED:
+            client = get_redis_client()
+            if client:
+                try:
+                    new_count = client.incr(self._get_redis_deadlock_count_key())
+                    client.expire(self._get_redis_deadlock_count_key(), self.window_seconds + 60)
+                except Exception as e:
+                    logger.warning(
+                        "CircuitBreaker",
+                        "REDIS_ERR",
+                        f"死锁计数INCR失败，回退到内存模式: {e}"
+                    )
+                    new_count = self._get_deadlock_count() + 1
+                    self._set_deadlock_count(new_count)
+            else:
+                new_count = self._get_deadlock_count() + 1
+                self._set_deadlock_count(new_count)
             
             # 死锁预警：当达到阈值的80%时发出警告
             warning_threshold = int(self.threshold * 0.8)
-            if self._deadlock_count == warning_threshold:
+            if new_count == warning_threshold:
                 logger.warning(
                     "CircuitBreaker",
                     "WARNING",
-                    f"死锁预警：当前死锁次数({self._deadlock_count})已达到阈值({self.threshold})的80%，请关注系统状态"
+                    f"死锁预警：当前死锁次数({new_count})已达到阈值({self.threshold})的80%，请关注系统状态"
                 )
             
             # 检查是否超过阈值
-            if self._deadlock_count >= self.threshold:
+            if new_count >= self.threshold:
                 self._transition_to_open()
                 return True  # 熔断已触发
         
-        elif self._state == self.STATE_HALF_OPEN:
+        elif current_state == self.STATE_HALF_OPEN:
             # 半开状态下再次死锁，立即回到OPEN状态
-            self._half_open_failure_count += 1
+            self._set_half_open_failure_count(self._get_half_open_failure_count() + 1)
             self._transition_to_open()
             return True
         
@@ -476,29 +690,51 @@ class DeadlockCircuitBreaker:
     def record_success(self):
         """记录一次成功操作"""
         self._check_state_transition()
+        current_state = self._get_state()
         
-        if self._state == self.STATE_HALF_OPEN:
-            self._half_open_success_count += 1
+        if current_state == self.STATE_HALF_OPEN:
+            client = get_redis_client()
+            if client:
+                try:
+                    new_count = client.incr(self._get_redis_half_open_success_key())
+                    client.expire(self._get_redis_half_open_success_key(), self.cooldown_seconds + 60)
+                except Exception as e:
+                    logger.warning(
+                        "CircuitBreaker",
+                        "REDIS_ERR",
+                        f"半开成功计数INCR失败，回退到内存模式: {e}"
+                    )
+                    new_count = self._get_half_open_success_count() + 1
+                    self._set_half_open_success_count(new_count)
+            else:
+                new_count = self._get_half_open_success_count() + 1
+                self._set_half_open_success_count(new_count)
             
             # 检查是否达到恢复条件
-            if self._half_open_success_count >= self.half_open_attempts:
+            if new_count >= self.half_open_attempts:
                 self._transition_to_closed()
     
     def is_available(self) -> bool:
         """检查是否可以执行操作"""
         self._check_state_transition()
+        current_state = self._get_state()
         
-        if self._state == self.STATE_OPEN:
+        if current_state == self.STATE_OPEN:
             return False
         
         return True
     
     def get_wait_time(self) -> float:
         """获取距离熔断恢复的剩余时间（秒）"""
-        if self._state != self.STATE_OPEN or not self._open_time:
+        current_state = self._get_state()
+        if current_state != self.STATE_OPEN:
             return 0.0
         
-        elapsed = time.time() - self._open_time
+        open_time = self._get_open_time()
+        if not open_time:
+            return 0.0
+        
+        elapsed = time.time() - open_time
         remaining = max(0.0, self.cooldown_seconds - elapsed)
         return remaining
     
@@ -506,13 +742,13 @@ class DeadlockCircuitBreaker:
         """获取熔断器统计信息"""
         self._check_state_transition()
         return {
-            "state": self._state,
-            "deadlock_count": self._deadlock_count,
+            "state": self._get_state(),
+            "deadlock_count": self._get_deadlock_count(),
             "threshold": self.threshold,
             "window_seconds": self.window_seconds,
             "cooldown_remaining": self.get_wait_time(),
-            "half_open_success_count": self._half_open_success_count,
-            "half_open_failure_count": self._half_open_failure_count
+            "half_open_success_count": self._get_half_open_success_count(),
+            "half_open_failure_count": self._get_half_open_failure_count()
         }
 
 
@@ -793,9 +1029,10 @@ class DbManager:
                 logger.warning(f"初始化增强连接池管理器失败: {e}，将使用原有逻辑")
     
     def _get_or_create_circuit_breaker(self):
-        """获取或创建熔断器实例"""
+        """获取或创建熔断器实例（使用连接名称作为熔断器名称，实现跨进程共享）"""
         if self.connection_name not in DbManager._circuit_breakers:
             DbManager._circuit_breakers[self.connection_name] = DeadlockCircuitBreaker(
+                name=self.connection_name,
                 threshold=5,        # 60秒内超过5次死锁触发熔断
                 window_seconds=60,  # 时间窗口60秒
                 cooldown_seconds=30, # 熔断持续30秒
@@ -855,30 +1092,90 @@ class DbManager:
         """获取存储过程的唯一标识键"""
         return f"{procedure_name}@{self.connection_name}"
     
-    def _check_concurrent_procedure(self, procedure_name: str, max_concurrent: int = 3) -> bool:
+    def _get_redis_key(self, procedure_name: str) -> str:
+        """获取Redis中存储过程并发计数的键名"""
+        return f"myaps:proc:concurrency:{self._get_procedure_key(procedure_name)}"
+    
+    def _try_acquire_procedure_slot(self, procedure_name: str, max_concurrent: int) -> bool:
         """
-        检查存储过程是否超过最大并发数
+        原子性地尝试获取一个存储过程执行槽位（使用Redis INCR保证原子性）
+        
+        将"检查并发数"和"递增计数"合并为一次原子操作，消除TOCTOU竞态条件。
         
         Args:
             procedure_name: 存储过程名称
-            max_concurrent: 最大并发数，默认3
+            max_concurrent: 最大并发数
         
         Returns:
-            True: 可以执行（未超过限制）
-            False: 超过并发限制
+            True: 成功获取槽位（调用方可直接执行，无需再调用 _increment_procedure_count）
+            False: 超过并发限制，未获取到槽位
         """
+        redis_key = self._get_redis_key(procedure_name)
+        
+        client = get_redis_client()
+        if client:
+            try:
+                current = client.incr(redis_key)
+                client.expire(redis_key, 300)
+                if current <= max_concurrent:
+                    return True  # 原子性地获取到槽位
+                # 超过限制，回退
+                client.decr(redis_key)
+                return False
+            except Exception as e:
+                logger.warning(
+                    "并发控制",
+                    "REDIS_ERR",
+                    f"原子获取执行槽位失败（将使用内存模式）: {e}"
+                )
+        
+        # 无Redis时回退到内存模式
         key = self._get_procedure_key(procedure_name)
         current_count = DbManager._active_procedures.get(key, 0)
-        return current_count < max_concurrent
+        if current_count < max_concurrent:
+            DbManager._active_procedures[key] = current_count + 1
+            return True
+        return False
     
     def _increment_procedure_count(self, procedure_name: str):
-        """增加存储过程执行计数"""
+        """增加存储过程执行计数（使用Redis实现跨进程同步）"""
         key = self._get_procedure_key(procedure_name)
+        redis_key = self._get_redis_key(procedure_name)
+        
+        client = get_redis_client()
+        if client:
+            try:
+                client.incr(redis_key)
+                client.expire(redis_key, 300)
+                return
+            except Exception as e:
+                logger.warning(
+                    "并发控制",
+                    "REDIS_ERR",
+                    f"并发计数INCR失败（将使用内存模式）: {e}"
+                )
+        
         DbManager._active_procedures[key] = DbManager._active_procedures.get(key, 0) + 1
     
     def _decrement_procedure_count(self, procedure_name: str):
-        """减少存储过程执行计数"""
+        """减少存储过程执行计数（使用Redis实现跨进程同步）"""
         key = self._get_procedure_key(procedure_name)
+        redis_key = self._get_redis_key(procedure_name)
+        
+        client = get_redis_client()
+        if client:
+            try:
+                current = client.decr(redis_key)
+                if current <= 0:
+                    client.delete(redis_key)
+                return
+            except Exception as e:
+                logger.warning(
+                    "并发控制",
+                    "REDIS_ERR",
+                    f"并发计数DECR失败（将使用内存模式）: {e}"
+                )
+        
         if key in DbManager._active_procedures:
             DbManager._active_procedures[key] -= 1
             if DbManager._active_procedures[key] <= 0:
@@ -1018,7 +1315,7 @@ class DbManager:
         procedure_name: str, 
         params_list: List[List[Any]] = None, 
         use_transaction: Optional[bool] = None,
-        max_concurrent: int = 3,
+        max_concurrent: int = 2,
         wait_timeout: float = 10.0,
         use_queue: bool = None
     ) -> Dict[str, Any]:
@@ -1099,22 +1396,24 @@ class DbManager:
         Returns:
             包含执行结果的字典
         """
-        # 并发检测：等待可用的执行槽位
+        # 并发检测：使用原子操作获取执行槽位（消除TOCTOU竞态条件）
         start_wait = datetime.now()
-        while not self._check_concurrent_procedure(procedure_name, max_concurrent):
+        slot_acquired = False
+        while not slot_acquired:
+            slot_acquired = self._try_acquire_procedure_slot(procedure_name, max_concurrent)
+            if slot_acquired:
+                break
             wait_elapsed = (datetime.now() - start_wait).total_seconds()
             if wait_elapsed >= wait_timeout:
                 logger.warning(
                     "存储过程调用",
                     f"{procedure_name}@{self.connection_name}",
-                    f"等待并发槽位超时（{wait_timeout}秒），当前并发数: {DbManager._active_procedures.get(self._get_procedure_key(procedure_name), 0)}"
+                    f"等待并发槽位超时（{wait_timeout}秒）"
                 )
-                # 不强制拒绝，继续尝试执行但记录警告
+                # 超时后使用内存计数继续执行（保持原有行为）
+                self._increment_procedure_count(procedure_name)
                 break
             await asyncio.sleep(0.5)
-        
-        # 增加执行计数
-        self._increment_procedure_count(procedure_name)
         
         try:
             start_time = datetime.now()
@@ -2859,6 +3158,7 @@ class ProcedureQueue:
 # 高风险存储过程列表（需要串行化执行的存储过程）
 HIGH_RISK_PROCEDURES = {
     'SupplyConvertMOByE2A',
+    'UpdateCnfirmQtyToOrder',
 }
 
 
