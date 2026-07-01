@@ -11,6 +11,7 @@ set "MAX_RESTARTS=5"
 set "RESTART_COUNT=0"
 set "HOST=0.0.0.0"
 set "PORT=8000"
+set "WORKERS=4"
 set "PROJECT_DIR="
 set "PROJECT_JSON="
 
@@ -65,8 +66,8 @@ cd /d "%PROJECT_ROOT%"
 :LOOP
 echo [%date% %time%] Starting FastAPI server...
 
-:: 执行 Python 命令
-%VENV_PYTHON% -m uvicorn main:app --host %HOST% --port %PORT% --log-level info --access-log
+:: 执行 Python 命令（对标Docker部署的Gunicorn多Worker模式）
+%VENV_PYTHON% -m uvicorn main:app --host %HOST% --port %PORT% --workers %WORKERS% --log-level info --access-log
 
 :: 检查退出码（0=正常退出，非0=异常退出）
 if %errorlevel% equ 0 (

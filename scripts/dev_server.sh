@@ -276,7 +276,13 @@ start_app() {
     echo -e "  端口: $PORT"
     echo ""
     
-    nohup env PORT=$PORT $PYTHON_CMD main.py > "$LOG_FILE" 2>&1 &
+    # 使用Gunicorn启动（对标生产部署模式）
+    local gunicorn_conf="$PROJECT_DIR/scripts/deploy/gunicorn.conf.py"
+    if [ -f "$gunicorn_conf" ]; then
+        nohup env PORT=$PORT GUNICORN_BIND="0.0.0.0:$PORT" $PYTHON_CMD -m gunicorn -c "$gunicorn_conf" main:app > "$LOG_FILE" 2>&1 &
+    else
+        nohup env PORT=$PORT $PYTHON_CMD -m uvicorn main:app --host 0.0.0.0 --port $PORT --workers 4 > "$LOG_FILE" 2>&1 &
+    fi
     local pid=$!
     echo $pid > "$PID_FILE"
     

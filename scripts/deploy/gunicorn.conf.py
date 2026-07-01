@@ -4,10 +4,11 @@ import multiprocessing
 
 # 设置工作目录
 # Docker环境下使用/app，否则基于脚本位置计算
+# 配置文件路径: scripts/deploy/gunicorn.conf.py → 项目根目录需上3层
 if os.path.exists('/app/main.py'):
     chdir = '/app'
 else:
-    chdir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    chdir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # 进程数
 workers = min(multiprocessing.cpu_count(), 4)
