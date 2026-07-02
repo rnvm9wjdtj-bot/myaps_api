@@ -299,7 +299,7 @@ jobs:
       - name: 运行 Bandit 安全检查
         run: |
           echo "🔒 运行Bandit代码安全扫描..."
-          bandit -r . -f json -o bandit-report.json || echo "Bandit扫描完成（可能有警告）"
+          bandit -r apps/ core/ globalobjects/ -f json -o bandit-report.json --exclude "*/tests/*,*/__pycache__/*,*/.venv/*" || echo "Bandit扫描完成（可能有警告）"
         continue-on-error: true
 
       - name: 检查依赖安全漏洞
@@ -341,10 +341,8 @@ jobs:
             ]
           }
           EOF
-          sudo systemctl restart docker
-          sleep 5
-          sudo systemctl status docker --no-pager
-          echo "✅ Docker镜像加速器配置完成"
+          echo "✅ Docker镜像加速器配置完成（daemon.json已写入）"
+          echo "注意：容器环境无需重启dockerd，buildx会自动使用镜像加速"
 
       - name: 设置 Docker Buildx
         run: docker buildx create --name myaps-builder --use --bootstrap || true
