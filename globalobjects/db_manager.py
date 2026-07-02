@@ -1181,6 +1181,64 @@ class DbManager:
             if DbManager._active_procedures[key] <= 0:
                 del DbManager._active_procedures[key]
 
+    # ============ 数据库级别全局并发控制 ============
+    
+    def _get_db_concurrency_key(self) -> str:
+        """获取数据库级别并发控制的Redis键名"""
+        return f"myaps:db:concurrency:{self.connection_name}"
+    
+    def _try_acquire_db_slot(self, max_concurrent: int = 3) -> bool:
+        """
+        原子性地尝试获取一个数据库级别执行槽位（使用Redis INCR）
+        
+        限制所有Worker在同一个数据库上的总并发操作数，
+        减少不同操作之间因锁竞争导致的死锁。
+        
+        Args:
+            max_concurrent: 最大总并发数（默认3，跨所有Worker）
+            
+        Returns:
+            True: 成功获取槽位
+            False: 超过并发限制，未获取到槽位
+        """
+        redis_key = self._get_db_concurrency_key()
+        
+        client = get_redis_client()
+        if client:
+            try:
+                current = client.incr(redis_key)
+                client.expire(redis_key, 300)
+                if current <= max_concurrent:
+                    return True
+                client.decr(redis_key)
+                return False
+            except Exception as e:
+                logger.warning(
+                    "数据库并发控制",
+                    "REDIS_ERR",
+                    f"获取DB执行槽位失败: {e}"
+                )
+        
+        # Redis不可用时放行（不影响原有功能）
+        return True
+    
+    def _release_db_slot(self):
+        """释放数据库级别执行槽位"""
+        redis_key = self._get_db_concurrency_key()
+        
+        client = get_redis_client()
+        if client:
+            try:
+                current = client.decr(redis_key)
+                if current <= 0:
+                    client.delete(redis_key)
+            except Exception as e:
+                logger.warning(
+                    "数据库并发控制",
+                    "REDIS_ERR",
+                    f"释放DB执行槽位失败: {e}"
+                )
+    
     async def _get_valid_connection(self):
         """
         获取并检查数据库连接的有效性
@@ -1593,7 +1651,7 @@ class DbManager:
         return response
     
 
-    @handle_db_errors(max_retries=3)
+    @handle_db_errors(max_retries=5)
     async def _execute_native_sql(self, sql: str, params: List[Any], description: str = "") -> tuple:
         """
         执行原生 SQL 查询
@@ -1609,24 +1667,31 @@ class DbManager:
         Raises:
             DbManagerError: 如果执行失败
         """
+        # 数据库级别并发控制（限制定期任务等批量操作的总并发数）
+        db_slot_acquired = self._try_acquire_db_slot(max_concurrent=4)
+        
         start_time = datetime.now()
-        # 使用Tortoise的连接池机制，不需要手动关闭连接
-        # Tortoise会自动管理连接的获取和释放
-        conn = await self._get_valid_connection()
-        
-        # 检查SQL语句是否为空
-        if not sql.strip():
-            raise DbQueryError("SQL语句为空")
-        
-        count, data_list = await conn.execute_query(sql, params)
-        if data_list:
-            data_list = [dict_to_lower_keys(row) for row in data_list]
-        execution_time = (datetime.now() - start_time).total_seconds()
-        
-        if description:
-            logger.debug(f"{description} - 执行时间：{execution_time:.3f}秒")
-        
-        return (count if count else 0, data_list)
+        try:
+            # 使用Tortoise的连接池机制，不需要手动关闭连接
+            # Tortoise会自动管理连接的获取和释放
+            conn = await self._get_valid_connection()
+            
+            # 检查SQL语句是否为空
+            if not sql.strip():
+                raise DbQueryError("SQL语句为空")
+            
+            count, data_list = await conn.execute_query(sql, params)
+            if data_list:
+                data_list = [dict_to_lower_keys(row) for row in data_list]
+            execution_time = (datetime.now() - start_time).total_seconds()
+            
+            if description:
+                logger.debug(f"{description} - 执行时间：{execution_time:.3f}秒")
+            
+            return (count if count else 0, data_list)
+        finally:
+            if db_slot_acquired:
+                self._release_db_slot()
     
 
     async def _bulk_upsert_native_sql(
@@ -3158,7 +3223,7 @@ class ProcedureQueue:
 # 高风险存储过程列表（需要串行化执行的存储过程）
 HIGH_RISK_PROCEDURES = {
     'SupplyConvertMOByE2A',
-    'UpdateCnfirmQtyToOrder',
+    'UpdateConfirmQtyToOrderWC',
 }
 
 
