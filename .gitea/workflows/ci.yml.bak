@@ -1,0 +1,756 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - master
+    
+  workflow_dispatch:
+
+env:
+  TEST_DB_PASSWORD: 'test_password'
+  TEST_DB_NAME: 'myaps_test'
+  
+  DOCKER_PLATFORMS: 'linux/amd64'
+  PIP_INDEX_URL: 'https://mirrors.aliyun.com/pypi/simple/'
+  PIP_TRUSTED_HOST: 'mirrors.aliyun.com'
+
+jobs:
+  lint-and-format:
+    name: 代码检查
+    runs-on: [ubuntu-latest]
+    steps:
+      - name: 检出代码
+        run: |
+          git clone --depth=1 https://x-access-token:${{ github.token }}@${{ secrets.CI_REGISTRY_HOST }}/${{ github.repository }}.git .
+          git checkout ${{ github.sha }}
+
+      - name: 检查 Python 3.12
+        run: python -V
+
+      - name: 设置缓存目录
+        run: |
+          # 使用workspace目录，确保跨CI运行共享
+          CACHE_DIR="${{ github.workspace }}/.cache/pip-${{ runner.os }}-lint"
+          mkdir -p "$CACHE_DIR"
+          echo "CACHE_DIR=$CACHE_DIR" >> $GITHUB_ENV
+          echo "CACHE_KEY=lint-ruff-v1" >> $GITHUB_ENV
+          echo "缓存目录: $CACHE_DIR"
+          echo "缓存键: lint-ruff-v1"
+          # 显示缓存目录内容
+          echo "缓存目录内容："
+          ls -lh "$CACHE_DIR/" 2>/dev/null || echo "缓存目录为空"
+
+      - name: 恢复缓存
+        run: |
+          if [ -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" ]; then
+            echo "✅ 发现缓存文件: $CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+            echo "📦 解压缓存..."
+            if tar -xzf "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" -C ${{ github.workspace }} 2>&1; then
+              if [ -d ".venv" ] && [ -f ".venv/bin/python" ] && [ -f ".venv/bin/ruff" ]; then
+                echo "✅ 缓存恢复成功，验证ruff："
+                .venv/bin/ruff --version 2>&1 || echo "⚠️ ruff验证失败"
+              else
+                echo "❌ 缓存恢复失败，.venv不完整或ruff缺失"
+                echo "清理损坏的缓存..."
+                rm -rf .venv
+                rm -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+              fi
+            else
+              echo "❌ 解压失败，清理损坏的缓存文件"
+              rm -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+            fi
+          else
+            echo "⚠️ 无缓存文件，将创建新环境"
+            ls -lh "$CACHE_DIR/" 2>/dev/null || echo "缓存目录为空"
+          fi
+
+      - name: 创建虚拟环境
+        run: |
+          if [ ! -d ".venv" ]; then
+            echo "创建新的虚拟环境..."
+            python -m venv .venv
+          else
+            echo "虚拟环境已存在"
+          fi
+          echo "${{ github.workspace }}/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: 安装 lint 工具
+        run: |
+          # 检查ruff是否已安装
+          if [ -f ".venv/bin/ruff" ]; then
+            echo "✅ ruff已存在，跳过安装"
+            .venv/bin/ruff --version
+          else
+            echo "⚠️ ruff未安装，开始安装..."
+
+            pip install ruff -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
+            echo "✅ ruff安装完成"
+          fi
+
+      - name: 保存缓存
+        if: always()
+        run: |
+          # 只在.venv完整且ruff已安装时才保存缓存
+          if [ -d ".venv" ] && [ -f ".venv/bin/ruff" ]; then
+            if [ ! -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" ]; then
+              echo "💾 保存虚拟环境到缓存..."
+              echo "缓存大小："
+              du -sh .venv
+              tar -czf "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" -C ${{ github.workspace }} .venv
+              echo "✅ 缓存保存完成: $CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+              ls -lh "$CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+            else
+              echo "⚠️ 缓存文件已存在，跳过保存"
+            fi
+          else
+            echo "❌ .venv不完整或ruff未安装，跳过缓存保存"
+          fi
+
+      - name: 使用 Ruff 进行代码检查
+        run: |
+          echo "🔍 使用Ruff进行代码检查（替代black、isort、flake8）..."
+          ruff check apps/ core/ globalobjects/ tests/ --exclude "*.pyc" --exclude "__pycache__" --exclude ".venv" || echo "⚠️ Ruff检查发现部分问题"
+        continue-on-error: true
+
+      - name: 使用 Ruff 检查代码格式
+        run: |
+          echo "🔍 使用Ruff检查代码格式..."
+          ruff format --check apps/ core/ globalobjects/ tests/ --exclude "*.pyc" --exclude "__pycache__" --exclude ".venv" || echo "⚠️ 代码格式检查发现部分问题"
+        continue-on-error: true
+
+  build-and-test:
+    name: 构建与测试
+    runs-on: [ubuntu-latest]
+    needs: lint-and-format
+    
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: myaps_test
+        ports:
+          - 5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: 检出代码
+        run: |
+          git clone --depth=1 https://x-access-token:${{ github.token }}@${{ secrets.CI_REGISTRY_HOST }}/${{ github.repository }}.git .
+          git checkout ${{ github.sha }}
+
+      - name: 检查 Python 3.12
+        run: python -V
+
+      - name: 设置缓存目录
+        run: |
+          # 使用workspace目录，确保跨CI运行共享
+          CACHE_DIR="${{ github.workspace }}/.cache/pip-${{ runner.os }}"
+          mkdir -p "$CACHE_DIR"
+          echo "CACHE_DIR=$CACHE_DIR" >> $GITHUB_ENV
+          # 使用固定缓存键，避免requirements.txt变化导致缓存失效
+          echo "CACHE_KEY=deps-v1" >> $GITHUB_ENV
+          echo "缓存键: deps-v1"
+          # 显示缓存目录内容
+          echo "缓存目录内容："
+          ls -lh "$CACHE_DIR/" 2>/dev/null || echo "缓存目录为空"
+
+      - name: 恢复缓存
+        run: |
+          if [ -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" ]; then
+            echo "✅ 发现缓存文件: $CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+            echo "📦 解压缓存..."
+            if tar -xzf "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" -C ${{ github.workspace }} 2>&1; then
+              if [ -d ".venv" ] && [ -f ".venv/bin/python" ] && .venv/bin/python -c "import fastapi" 2>/dev/null; then
+                echo "✅ 缓存恢复成功，验证fastapi："
+                .venv/bin/python -c "import fastapi; print(f'fastapi version: {fastapi.__version__}')" 2>&1 || echo "⚠️ fastapi验证失败"
+                echo "虚拟环境大小："
+                du -sh .venv
+              else
+                echo "❌ 缓存恢复失败，.venv不完整或fastapi缺失"
+                echo "清理损坏的缓存..."
+                rm -rf .venv
+                rm -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+              fi
+            else
+              echo "❌ 解压失败，清理损坏的缓存文件"
+              rm -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+            fi
+          else
+            echo "⚠️ 无缓存文件，将创建新环境"
+            ls -lh "$CACHE_DIR/" 2>/dev/null || echo "缓存目录为空"
+          fi
+
+      - name: 创建虚拟环境
+        run: |
+          if [ ! -d ".venv" ]; then
+            echo "创建新的虚拟环境..."
+            python -m venv .venv
+          else
+            echo "虚拟环境已存在"
+          fi
+          echo "${{ github.workspace }}/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: 安装依赖
+        run: |
+          # 检查关键包是否已安装
+          if .venv/bin/python -c "import fastapi" 2>/dev/null; then
+            echo "✅ 依赖已安装，跳过安装步骤"
+            echo "虚拟环境大小："
+            du -sh .venv
+          else
+            echo "⚠️ 依赖未安装，开始安装..."
+
+            pip install -r requirements.txt -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
+            pip install pytest pytest-asyncio pytest-cov -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
+            echo "✅ 依赖安装完成"
+          fi
+
+      - name: 保存缓存
+        if: always()
+        run: |
+          # 只在.venv完整且依赖已安装时才保存缓存
+          if [ -d ".venv" ] && .venv/bin/python -c "import fastapi" 2>/dev/null; then
+            if [ ! -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" ]; then
+              echo "💾 保存虚拟环境到缓存..."
+              echo "缓存大小："
+              du -sh .venv
+              tar -czf "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" -C ${{ github.workspace }} .venv
+              echo "✅ 缓存保存完成: $CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+              ls -lh "$CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+            else
+              echo "⚠️ 缓存文件已存在，跳过保存"
+            fi
+          else
+            echo "❌ .venv不完整或依赖未安装，跳过缓存保存"
+          fi
+
+      - name: 创建环境变量文件
+        run: |
+          cat > .env << EOF
+          #################################################################################
+          # 系统参数
+          #################################################################################
+          SERVICE_NAME=MyAPS_API
+          HOST=0.0.0.0
+          PORT=8000
+          IP_WHITELIST=
+          API_KEY=
+          TIMEZONE=+8
+          USE_LOGURU=true
+          
+          #################################################################################
+          # 项目参数
+          #################################################################################
+          LOG_LEVEL=INFO
+          LOG_RETENTION=2
+          PROJECT_DIR=
+          PROJECT_JSON=dev
+          
+          TURNON_BINLOG_LISTENER=false
+          ENABLE_BINLOG_POSITION=false
+          TRUNON_SCHEDULER=false
+          SCHEDULER_HOUR=*
+          SCHEDULER_MINUTE=*/5
+          MAX_EVENTS_BATCH_SIZE=1
+          MAX_EVENTS_PER_SECOND=10
+          
+          #################################################################################
+          # 基础设施配置
+          #################################################################################
+           # Redis 配置
+           REDIS_HOST=redis
+           REDIS_PORT=6379
+           REDIS_DB=0
+           REDIS_PASSWORD=
+           
+           # PostgreSQL 数据库配置（服务自有数据库）
+           THIS_DB_HOST=postgres
+           THIS_DB_PORT=5432
+           THIS_DB_USER=postgres
+           THIS_DB_PASSWORD=${{ env.TEST_DB_PASSWORD }}
+           THIS_DB_NAME=${{ env.TEST_DB_NAME }}
+          
+          # MySQL 数据库配置（三方系统既有数据库，CI 环境无需配置）
+          # MYAPS_DB_HOST=
+          # MYAPS_DB_PORT=3306
+          # MYAPS_DB_USER=
+          # MYAPS_DB_PASSWORD=
+          # MYAPS_DB_SET=
+          # MYAPS_MAIN_DB=
+          
+          #################################################################################
+          # 部署参数
+          #################################################################################
+          WORKERS=4
+          GUNICORN_BIND=127.0.0.1:8000
+          GUNICORN_TIMEOUT=30
+          APP_USER=root
+          APP_ROOT=/opt/myaps_api/myaps_api
+          EOF
+
+      - name: 检查应用能否启动
+        run: |
+          echo "检查FastAPI应用能否正常创建..."
+          if timeout 10s python -c "from main import app; print('✓ 应用创建成功')"; then
+            echo "✅ 应用启动检查通过"
+          else
+            echo "⚠️ 应用启动检查失败，但继续执行后续步骤"
+          fi
+
+      - name: 运行测试
+        run: |
+          echo "检查测试目录..."
+          if [ -d "tests" ] && [ -n "$(find tests -name '*.py' -type f)" ]; then
+            echo "发现测试文件，运行测试..."
+            pytest tests/ -v --cov=. --cov-report=xml --cov-report=html
+          else
+            echo "📝 未发现测试文件，跳过测试步骤"
+            echo "建议：创建tests/目录并添加测试用例"
+          fi
+
+      - name: 上传测试覆盖率报告
+        if: always()
+        run: |
+          echo "覆盖率报告已生成本地目录 htmlcov/"
+          ls htmlcov/ 2>/dev/null || echo "覆盖率报告不存在"
+
+  security-scan:
+    name: 安全扫描
+    runs-on: [ubuntu-latest]
+    needs: lint-and-format
+    steps:
+      - name: 检出代码
+        run: |
+          git clone --depth=1 https://x-access-token:${{ github.token }}@${{ secrets.CI_REGISTRY_HOST }}/${{ github.repository }}.git .
+          git checkout ${{ github.sha }}
+
+      - name: 检查 Python 3.12
+        run: python -V
+
+      - name: 设置缓存目录
+        run: |
+          # 使用workspace目录，确保跨CI运行共享
+          CACHE_DIR="${{ github.workspace }}/.cache/pip-${{ runner.os }}-security"
+          mkdir -p "$CACHE_DIR"
+          echo "CACHE_DIR=$CACHE_DIR" >> $GITHUB_ENV
+          # 固定缓存键（安全工具版本稳定）
+          echo "CACHE_KEY=security-tools-v1" >> $GITHUB_ENV
+          echo "缓存键: security-tools-v1"
+          # 显示缓存目录内容
+          echo "缓存目录内容："
+          ls -lh "$CACHE_DIR/" 2>/dev/null || echo "缓存目录为空"
+
+      - name: 恢复缓存
+        run: |
+          if [ -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" ]; then
+            echo "✅ 发现缓存文件: $CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+            echo "📦 解压缓存..."
+            if tar -xzf "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" -C ${{ github.workspace }} 2>&1; then
+              if [ -d ".venv" ] && [ -f ".venv/bin/python" ] && [ -f ".venv/bin/bandit" ]; then
+                echo "✅ 缓存恢复成功，验证工具："
+                .venv/bin/bandit --version 2>&1 || echo "bandit验证失败"
+                .venv/bin/safety --version 2>&1 || echo "safety验证失败"
+              else
+                echo "❌ 缓存恢复失败，.venv不完整或工具缺失"
+                echo "清理损坏的缓存..."
+                rm -rf .venv
+                rm -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+              fi
+            else
+              echo "❌ 解压失败，清理损坏的缓存文件"
+              rm -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+            fi
+          else
+            echo "⚠️ 无缓存文件，将创建新环境"
+            ls -lh "$CACHE_DIR/" 2>/dev/null || echo "缓存目录为空"
+          fi
+
+      - name: 创建虚拟环境
+        run: |
+          if [ ! -d ".venv" ]; then
+            echo "创建新的虚拟环境..."
+            python -m venv .venv
+          else
+            echo "虚拟环境已存在"
+          fi
+          echo "${{ github.workspace }}/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: 安装安全检查工具
+        run: |
+          # 检查工具是否已安装
+          if [ -f ".venv/bin/bandit" ] && [ -f ".venv/bin/safety" ]; then
+            echo "✅ 安全工具已安装，跳过安装步骤"
+            .venv/bin/bandit --version
+            .venv/bin/safety --version
+          else
+            echo "⚠️ 安全工具未安装，开始安装..."
+
+            pip install bandit safety -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
+            echo "✅ 安全工具安装完成"
+          fi
+
+      - name: 保存缓存
+        if: always()
+        run: |
+          # 只在.venv完整且工具已安装时才保存缓存
+          if [ -d ".venv" ] && [ -f ".venv/bin/bandit" ] && [ -f ".venv/bin/safety" ]; then
+            if [ ! -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" ]; then
+              echo "💾 保存虚拟环境到缓存..."
+              echo "缓存内容："
+              ls -lh .venv/bin/ | grep -E "bandit|safety|python"
+              tar -czf "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" -C ${{ github.workspace }} .venv
+              echo "✅ 缓存保存完成: $CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+              ls -lh "$CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+            else
+              echo "⚠️ 缓存文件已存在，跳过保存"
+            fi
+          else
+            echo "❌ .venv不完整或工具未安装，跳过缓存保存"
+          fi
+
+      - name: 运行 Bandit 安全检查
+        run: |
+          echo "🔒 运行Bandit代码安全扫描..."
+          bandit -r apps/ core/ globalobjects/ -f json -o bandit-report.json --exclude "*/tests/*,*/__pycache__/*,*/.venv/*" || echo "Bandit扫描完成（可能有警告）"
+        continue-on-error: true
+
+      - name: 检查依赖安全漏洞
+        run: |
+          echo "📦 检查依赖包安全漏洞..."
+          safety check -r requirements.txt --json || echo "Safety检查完成（可能有警告）"
+        continue-on-error: true
+
+      - name: 上传安全扫描报告
+        if: always()
+        run: |
+          echo "安全报告已生成本地 bandit-report.json"
+          ls -la bandit-report.json 2>/dev/null || echo "安全报告不存在"
+
+  build-artifacts:
+    name: 构建交付物
+    runs-on: [ubuntu-latest]
+    needs: [build-and-test, security-scan]
+    
+    outputs:
+      image-tag: ${{ steps.meta.outputs.version }}
+    
+    steps:
+      - name: 检出代码
+        run: |
+          git clone --depth=1 https://x-access-token:${{ github.token }}@${{ secrets.CI_REGISTRY_HOST }}/${{ github.repository }}.git .
+          git checkout ${{ github.sha }}
+
+      - name: 配置 Docker 镜像加速器
+        run: |
+          echo "配置Docker镜像加速器..."
+          # 方法1: 配置daemon.json
+          sudo mkdir -p /etc/docker
+          sudo tee /etc/docker/daemon.json <<EOF
+          {
+            "registry-mirrors": [
+              "https://docker.mirrors.ustc.edu.cn",
+              "https://hub-mirror.c.163.com",
+              "https://mirror.baidubce.com"
+            ]
+          }
+          EOF
+          
+          # 方法2: 配置buildx构建配置
+          mkdir -p ~/.docker
+          tee ~/.docker/config.json <<EOF
+          {
+            "registry-mirrors": [
+              "https://docker.mirrors.ustc.edu.cn",
+              "https://hub-mirror.c.163.com",
+              "https://mirror.baidubce.com"
+            ]
+          }
+          EOF
+          echo "✅ Docker镜像加速器配置完成"
+
+      - name: 设置 Docker Buildx
+        run: |
+          # 删除旧的builder（如果存在）
+          docker buildx rm myaps-builder 2>/dev/null || true
+          
+          # 创建buildkitd配置文件
+          mkdir -p /tmp/buildkit
+          cat > /tmp/buildkit/buildkitd.toml <<EOF
+          [registry."docker.io"]
+            mirrors = [
+              "https://docker.mirrors.ustc.edu.cn",
+              "https://hub-mirror.c.163.com",
+              "https://mirror.baidubce.com"
+            ]
+          EOF
+          
+          echo "Buildkitd配置："
+          cat /tmp/buildkit/buildkitd.toml
+          
+          # 创建新的builder实例，使用buildkitd配置
+          docker buildx create \
+            --name myaps-builder \
+            --driver docker-container \
+            --driver-opt network=host \
+            --config /tmp/buildkit/buildkitd.toml \
+            --use \
+            --bootstrap
+          
+          echo "✅ Docker Buildx配置完成（已启用镜像加速）"
+          docker buildx inspect --bootstrap
+
+      - name: 登录 Gitea Container Registry
+        run: echo "${{ secrets.CI_REGISTRY_TOKEN }}" | docker login ${{ secrets.CI_REGISTRY_HOST }} -u ${{ secrets.CI_REGISTRY_USER }} --password-stdin
+
+      - name: 提取镜像元数据
+        id: meta
+        run: |
+          IMAGE_BASE="${{ secrets.CI_REGISTRY_HOST }}/${{ github.repository_owner }}/myaps-api"
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          echo "tags=${IMAGE_BASE}:${SHORT_SHA},${IMAGE_BASE}:latest" >> "$GITHUB_OUTPUT"
+          echo "labels=org.opencontainers.image.revision=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "version=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: 拉取基础镜像
+        run: |
+          echo "📦 检查本地Python镜像..."
+          
+          # 检查本地是否已有镜像
+          if docker images python:3.12-slim | grep -q python; then
+            echo "✅ 本地已有python:3.12-slim镜像"
+            docker images python:3.12-slim
+            echo "跳过拉取步骤"
+            exit 0
+          fi
+          
+          echo "⚠️ 本地无镜像，开始拉取..."
+          # 尝试从镜像加速器拉取
+          for mirror in "docker.mirrors.ustc.edu.cn" "hub-mirror.c.163.com" "mirror.baidubce.com"; do
+            echo "尝试从 $mirror 拉取..."
+            if docker pull $mirror/library/python:3.12-slim 2>&1; then
+              echo "✅ 从 $mirror 拉取成功"
+              docker tag $mirror/library/python:3.12-slim python:3.12-slim
+              break
+            fi
+          done
+          
+          # 如果镜像加速器都失败，尝试直接拉取
+          if ! docker images python:3.12-slim | grep -q python; then
+            echo "⚠️ 镜像加速器拉取失败，尝试直接拉取..."
+            docker pull python:3.12-slim || echo "❌ 直接拉取也失败，将在构建时拉取"
+          fi
+          
+          echo "当前Python镜像："
+          docker images python:3.12-slim 2>/dev/null || echo "未找到本地镜像"
+
+      - name: 构建并推送镜像
+        run: |
+          IFS=',' read -ra TAGS <<< "${{ steps.meta.outputs.tags }}"
+          TAG_ARGS=()
+          for TAG in "${TAGS[@]}"; do
+            TAG_ARGS+=("-t" "$TAG")
+          done
+          
+          echo "🏗️ 开始构建镜像（单平台：linux/amd64）..."
+          
+          # 检查本地镜像
+          if docker images python:3.12-slim | grep -q python; then
+            echo "✅ 使用本地python:3.12-slim镜像"
+            docker images python:3.12-slim
+          else
+            echo "⚠️ 本地无python:3.12-slim镜像，构建可能会失败"
+          fi
+          
+          # 使用docker build构建镜像（不使用buildx，避免网络访问）
+          echo "构建镜像..."
+          docker build \
+            "${TAG_ARGS[@]}" \
+            --label "${{ steps.meta.outputs.labels }}" \
+            --build-arg USE_ALIYUN_MIRROR=true \
+            .
+          
+          echo "✅ 镜像构建完成"
+          
+          # 推送镜像
+          echo "推送镜像到仓库..."
+          for TAG in "${TAGS[@]}"; do
+            echo "推送 $TAG..."
+            docker push "$TAG"
+          done
+          
+          echo "✅ 镜像构建并推送完成"
+
+
+      - name: 生成环境变量模板
+        run: |
+          cat > .env.template << 'EOF'
+          #################################################################################
+          # MyAPS API 环境变量配置模板
+          # 说明：各租户部署时，复制此文件并修改相关配置
+          #################################################################################
+          
+          #################################################################################
+          # 系统参数
+          #################################################################################
+          SERVICE_NAME=MyAPS_API
+          HOST=0.0.0.0
+          PORT=8000
+          IP_WHITELIST=
+          API_KEY=
+          TIMEZONE=+8
+          USE_LOGURU=true
+          
+          #################################################################################
+          # 项目参数
+          #################################################################################
+          LOG_LEVEL=INFO
+          LOG_RETENTION=2
+          PROJECT_DIR=
+          PROJECT_JSON=prod
+          
+          TURNON_BINLOG_LISTENER=false
+          ENABLE_BINLOG_POSITION=false
+          TRUNON_SCHEDULER=false
+          SCHEDULER_HOUR=*
+          SCHEDULER_MINUTE=*/5
+          MAX_EVENTS_BATCH_SIZE=1
+          MAX_EVENTS_PER_SECOND=10
+          
+          #################################################################################
+          # 基础设施配置（租户需修改）
+          #################################################################################
+          # Redis 配置
+          REDIS_HOST=<租户 Redis 地址>
+          REDIS_PORT=6379
+          REDIS_DB=0
+          REDIS_PASSWORD=<租户 Redis 密码>
+          
+          # PostgreSQL 数据库配置（服务自有数据库）
+          THIS_DB_HOST=<租户 PostgreSQL 地址>
+          THIS_DB_PORT=5432
+          THIS_DB_USER=<租户 PostgreSQL 用户>
+          THIS_DB_PASSWORD=<租户 PostgreSQL 密码>
+          THIS_DB_NAME=<租户数据库名>
+          
+          # MySQL 数据库配置（三方系统既有数据库）
+          MYAPS_DB_HOST=<三方 MySQL 地址>
+          MYAPS_DB_PORT=3306
+          MYAPS_DB_USER=<MySQL 用户>
+          MYAPS_DB_PASSWORD=<MySQL 密码>
+          MYAPS_DB_SET=<允许操作的账套数据库列表>
+          MYAPS_MAIN_DB=<主账套名称>
+          
+          #################################################################################
+          # 部署参数
+          #################################################################################
+          WORKERS=4
+          GUNICORN_BIND=0.0.0.0:8000
+          GUNICORN_TIMEOUT=30
+          APP_USER=root
+          APP_ROOT=/opt/myaps_api/myaps_api
+          EOF
+
+      - name: 生成部署说明文档
+        run: |
+          cat > DEPLOY.md << 'EOF'
+          # MyAPS API 部署指南
+
+          ## 交付物
+          - **Docker 镜像**: `${IMAGE_NAME}:${IMAGE_TAG}`
+          - **支持架构**: `linux/amd64`（Intel x86_64）
+          - **环境变量模板**: `.env.template`
+
+          ## 部署步骤
+
+          ### 1. 拉取镜像
+          ```bash
+          docker pull ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+          ```
+
+          ### 2. 准备环境变量
+          ```bash
+          # 复制模板
+          cp .env.template .env
+
+          # 编辑配置（根据租户实际情况修改）
+          vim .env
+          ```
+
+          ### 3. 启动服务
+          ```bash
+          docker run -d \
+            --name myaps-api \
+            --env-file .env \
+            -p 8000:8000 \
+            ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+          ```
+
+          ### 4. 使用 Docker Compose（推荐）
+          ```yaml
+          services:
+            myaps-api:
+              image: ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+              env_file: .env
+              ports:
+                - "8000:8000"
+              restart: unless-stopped
+          ```
+
+          ## 架构说明
+          - 镜像支持 `linux/amd64` 架构（Intel/AMD x86_64处理器）
+          - 适用于大多数服务器和云主机环境
+          - 如需ARM架构支持，请联系维护团队
+
+          ## 配置要点
+          1. 必须配置 `THIS_DB_*`（PostgreSQL）
+          2. 必须配置 `REDIS_*`
+          3. 根据需要配置 `MYAPS_DB_*`（三方 MySQL）
+          4. 生产环境建议设置 `LOG_LEVEL=INFO` 或 `WARNING`
+          EOF
+          
+          # 替换占位符
+          sed -i "s|\${IMAGE_NAME}|${{ github.repository_owner }}/myaps-api|g" DEPLOY.md
+          sed -i "s|\${IMAGE_TAG}|${{ steps.meta.outputs.version }}|g" DEPLOY.md
+          sed -i "s|\${REGISTRY}|${{ secrets.CI_REGISTRY_HOST }}|g" DEPLOY.md
+
+      - name: 上传交付物
+        run: |
+          echo "交付物已生成: .env.template, DEPLOY.md"
+          ls -la .env.template DEPLOY.md
+
+      - name: 输出部署信息
+        run: |
+          echo "=========================================="
+          echo "构建完成！交付物信息："
+          echo "=========================================="
+          echo "镜像: ${{ secrets.CI_REGISTRY_HOST }}/${{ github.repository_owner }}/myaps-api:${{ steps.meta.outputs.version }}"
+          echo "支持架构: linux/amd64"
+          echo "镜像标签: ${{ steps.meta.outputs.tags }}"
+          echo "=========================================="
+          echo "部署方式："
+          echo "1. 复制 .env.template 并根据租户需求修改环境变量"
+          echo "2. 使用统一镜像部署，注入租户配置"
+          echo "=========================================="
+
+      - name: 清理 Buildx 缓存
+        if: always()
+        run: |
+          echo "清理 Buildx 构建缓存..."
+          docker buildx prune -f
+          echo "✅ 清理完成"

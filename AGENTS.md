@@ -99,10 +99,10 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 #### 方式一：Docker Compose 部署（推荐）
 
-**生产部署（从 Docker Hub 拉取）：**
+**生产部署（从 Gitea Registry 拉取）：**
 ```bash
-# 使用 Docker Hub 镜像（host 网络模式）
-DOCKER_IMAGE=qsct/myaps-api:master docker-compose up -d
+# 使用 Gitea Registry 镜像（host 网络模式）
+DOCKER_IMAGE=gitea.chaoge.xyz/chaoge/myaps-api:master docker-compose up -d
 
 # 查看状态
 docker-compose ps
@@ -125,7 +125,7 @@ docker-compose up -d app
 ```
 
 **镜像说明：**
-- Docker Hub 镜像：`qsct/myaps-api:master`
+- Gitea Registry 镜像：`gitea.chaoge.xyz/chaoge/myaps-api:master`
 - 本地镜像：`myaps_api:latest`
 - 网络模式：全部使用 `host` 模式，统一通过 `localhost` 访问各服务
 - 配置文件挂载：自动根据 `.env` 中的 `PROJECT_DIR` 挂载对应租户配置目录
@@ -159,7 +159,7 @@ docker run -d \
   -v $(pwd)/storage:/app/storage \
   -v $(pwd)/project_files/${PROJECT_DIR}:/app/project_files/${PROJECT_DIR} \
   --env-file .env \
-  qsct/myaps-api:master
+  gitea.chaoge.xyz/chaoge/myaps-api:master
 ```
 
 #### 方式三：单独构建
@@ -765,7 +765,7 @@ result = await db_init_manager.wait_for_init(max_wait=30.0)
 ./scripts/dev_server.sh start|stop|restart|status|logs
 
 # Docker 部署
-DOCKER_IMAGE=qsct/myaps-api:master docker-compose up -d
+DOCKER_IMAGE=gitea.chaoge.xyz/chaoge/myaps-api:master docker-compose up -d
 docker-compose logs -f app
 
 # 测试
@@ -777,5 +777,5 @@ pytest tests/test_unified_router.py::TestIsStagingMode -v
 - **开发端口**: 8001
 - **生产端口**: 8000
 - **Staging 标识**: `--s`
-- **Docker Hub**: `qsct/myaps-api:master`
+- **Gitea Registry**: `gitea.chaoge.xyz/chaoge/myaps-api:master`
 - **网络模式**: host

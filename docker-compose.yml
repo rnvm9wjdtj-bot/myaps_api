@@ -1,8 +1,8 @@
 # MyAPS API Docker Compose 配置
 #
 # 使用方法：
-#   生产部署（从Docker Hub拉取）：
-#     DOCKER_IMAGE=qsct/myaps-api:master docker-compose up -d
+#   生产部署（从Gitea Registry拉取）：
+#     DOCKER_IMAGE=gitea.chaoge.xyz/chaoge/myaps-api:master docker-compose up -d
 #   
 #   本地构建部署：
 #     docker-compose up -d --build
@@ -59,7 +59,7 @@ services:
       retries: 5
 
   app:
-    image: ${DOCKER_IMAGE:-qsct/myaps-api:latest}
+    image: ${DOCKER_IMAGE:-gitea.chaoge.xyz/chaoge/myaps-api:latest}
     container_name: myaps_api
     restart: unless-stopped
     network_mode: host
