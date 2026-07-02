@@ -6,6 +6,7 @@
 
 import time
 import asyncio
+import threading
 from typing import Dict, Any, List, Optional, Set
 from fastapi import WebSocket
 from .collectors import ResourceCollector, DatabaseCollector, SchedulerCollector, HTTPCollector
@@ -54,6 +55,7 @@ class MonitorService:
             "redis": 5,  # 5秒
         }
         self._log_cache = {}
+        self._log_cache_lock = threading.Lock()
         self._log_cache_expiry = 120  # 120秒（优化：增加缓存时间）
         # 日志文件位置跟踪（优化：实现增量读取）
         self._log_file_position = {}
@@ -823,11 +825,12 @@ class MonitorService:
         # 生成缓存键
         cache_key = f"logs_{limit}_{level}"
         
-        # 尝试从缓存获取
-        if cache_key in self._log_cache:
-            logs, timestamp = self._log_cache[cache_key]
-            if time.time() - timestamp < self._log_cache_expiry:
-                return logs
+        # 尝试从缓存获取（线程安全）
+        with self._log_cache_lock:
+            if cache_key in self._log_cache:
+                logs, timestamp = self._log_cache[cache_key]
+                if time.time() - timestamp < self._log_cache_expiry:
+                    return logs
 
         # 缓存过期，重新读取
         logs = []
@@ -856,8 +859,9 @@ class MonitorService:
         logs.sort(key=lambda x: x["timestamp"], reverse=True)
         result = logs[:limit]
         
-        # 设置缓存
-        self._log_cache[cache_key] = (result, time.time())
+        # 设置缓存（线程安全）
+        with self._log_cache_lock:
+            self._log_cache[cache_key] = (result, time.time())
 
         return result
 
@@ -922,17 +926,24 @@ class MonitorService:
             while self._broadcast_running:
                 # 收集监控数据
                 try:
-                    overview = await self.get_overview()
+                    # 并行收集数据，提高效率
+                    loop = asyncio.get_event_loop()
                     
-                    # 收集日志数据 - 广播时强制刷新缓存，确保获取最新日志
-                    self._log_cache = {}  # 清除日志缓存
-                    logs = self.get_recent_logs(limit=100)
+                    # 创建并行任务
+                    overview_task = asyncio.create_task(self.get_overview())
+                    logs_task = loop.run_in_executor(None, self.get_recent_logs, 100)
+                    api_task = asyncio.create_task(
+                        self.http_collector.get_requests_by_date(datetime.now().strftime('%Y-%m-%d'))
+                    )
+                    outbound_task = asyncio.create_task(
+                        self.outbound_http_collector.get_requests_by_date(datetime.now().strftime('%Y-%m-%d'))
+                    )
                     
-                    # 收集 API 请求数据
-                    api_requests = await self.http_collector.get_requests_by_date(datetime.now().strftime('%Y-%m-%d'))
-                    
-                    # 收集发送请求数据
-                    outbound_requests = await self.outbound_http_collector.get_requests_by_date(datetime.now().strftime('%Y-%m-%d'))
+                    # 等待所有任务完成
+                    overview = await overview_task
+                    logs = await logs_task
+                    api_requests = await api_task
+                    outbound_requests = await outbound_task
                     
                     data = {
                         "type": "monitor_data",
