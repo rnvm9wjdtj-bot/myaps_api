@@ -22,16 +22,11 @@ jobs:
     steps:
       - name: 检出代码
         run: |
-          git clone https://x-access-token:${{ github.token }}@${{ secrets.CI_REGISTRY_HOST }}/${{ github.repository }}.git .
+          git clone --depth=1 https://x-access-token:${{ github.token }}@${{ secrets.CI_REGISTRY_HOST }}/${{ github.repository }}.git .
           git checkout ${{ github.sha }}
 
       - name: 检查 Python 3.12
         run: python -V
-
-      - name: 创建虚拟环境
-        run: |
-          python -m venv .venv
-          echo "${{ github.workspace }}/.venv/bin" >> "$GITHUB_PATH"
 
       - name: 缓存 pip 依赖
         uses: actions/cache@v3
@@ -42,6 +37,13 @@ jobs:
           key: ${{ runner.os }}-pip-lint-${{ hashFiles('requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-lint-
+
+      - name: 创建虚拟环境
+        run: |
+          if [ ! -d ".venv" ]; then
+            python -m venv .venv
+          fi
+          echo "${{ github.workspace }}/.venv/bin" >> "$GITHUB_PATH"
 
       - name: 安装 lint 工具
         run: |
@@ -92,16 +94,11 @@ jobs:
     steps:
       - name: 检出代码
         run: |
-          git clone https://x-access-token:${{ github.token }}@${{ secrets.CI_REGISTRY_HOST }}/${{ github.repository }}.git .
+          git clone --depth=1 https://x-access-token:${{ github.token }}@${{ secrets.CI_REGISTRY_HOST }}/${{ github.repository }}.git .
           git checkout ${{ github.sha }}
 
       - name: 检查 Python 3.12
         run: python -V
-
-      - name: 创建虚拟环境
-        run: |
-          python -m venv .venv
-          echo "${{ github.workspace }}/.venv/bin" >> "$GITHUB_PATH"
 
       - name: 缓存 pip 依赖
         uses: actions/cache@v3
@@ -112,6 +109,13 @@ jobs:
           key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-
+
+      - name: 创建虚拟环境
+        run: |
+          if [ ! -d ".venv" ]; then
+            python -m venv .venv
+          fi
+          echo "${{ github.workspace }}/.venv/bin" >> "$GITHUB_PATH"
 
       - name: 安装依赖
         run: |
@@ -216,16 +220,11 @@ jobs:
     steps:
       - name: 检出代码
         run: |
-          git clone https://x-access-token:${{ github.token }}@${{ secrets.CI_REGISTRY_HOST }}/${{ github.repository }}.git .
+          git clone --depth=1 https://x-access-token:${{ github.token }}@${{ secrets.CI_REGISTRY_HOST }}/${{ github.repository }}.git .
           git checkout ${{ github.sha }}
 
       - name: 检查 Python 3.12
         run: python -V
-
-      - name: 创建虚拟环境
-        run: |
-          python -m venv .venv
-          echo "${{ github.workspace }}/.venv/bin" >> "$GITHUB_PATH"
 
       - name: 缓存 pip 依赖
         uses: actions/cache@v3
@@ -236,6 +235,13 @@ jobs:
           key: ${{ runner.os }}-pip-security-${{ hashFiles('requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-security-
+
+      - name: 创建虚拟环境
+        run: |
+          if [ ! -d ".venv" ]; then
+            python -m venv .venv
+          fi
+          echo "${{ github.workspace }}/.venv/bin" >> "$GITHUB_PATH"
 
       - name: 安装安全检查工具
         run: |
@@ -271,7 +277,7 @@ jobs:
     steps:
       - name: 检出代码
         run: |
-          git clone https://x-access-token:${{ github.token }}@${{ secrets.CI_REGISTRY_HOST }}/${{ github.repository }}.git .
+          git clone --depth=1 https://x-access-token:${{ github.token }}@${{ secrets.CI_REGISTRY_HOST }}/${{ github.repository }}.git .
           git checkout ${{ github.sha }}
 
       - name: 配置 Docker 镜像加速器
