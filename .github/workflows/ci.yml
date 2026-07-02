@@ -11,7 +11,7 @@ env:
   TEST_DB_PASSWORD: 'test_password'
   TEST_DB_NAME: 'myaps_test'
   POSTGRES_PORT: '5432'
-  DOCKER_PLATFORMS: 'linux/amd64,linux/arm64'
+  DOCKER_PLATFORMS: 'linux/amd64'
   SHORT_RETENTION_DAYS: '7'
   RELEASE_RETENTION_DAYS: '30'
 
