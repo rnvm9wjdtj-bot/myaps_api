@@ -10,8 +10,8 @@ on:
 env:
   TEST_DB_PASSWORD: 'test_password'
   TEST_DB_NAME: 'myaps_test'
-
-  DOCKER_PLATFORMS: 'linux/amd64,linux/arm64'
+  
+  DOCKER_PLATFORMS: 'linux/amd64'
   PIP_INDEX_URL: 'https://mirrors.aliyun.com/pypi/simple/'
   PIP_TRUSTED_HOST: 'mirrors.aliyun.com'
 
@@ -481,7 +481,17 @@ jobs:
 
       - name: 拉取基础镜像
         run: |
-          echo "📦 拉取Python基础镜像..."
+          echo "📦 检查本地Python镜像..."
+          
+          # 检查本地是否已有镜像
+          if docker images python:3.12-slim | grep -q python; then
+            echo "✅ 本地已有python:3.12-slim镜像"
+            docker images python:3.12-slim
+            echo "跳过拉取步骤"
+            exit 0
+          fi
+          
+          echo "⚠️ 本地无镜像，开始拉取..."
           # 尝试从镜像加速器拉取
           for mirror in "docker.mirrors.ustc.edu.cn" "hub-mirror.c.163.com" "mirror.baidubce.com"; do
             echo "尝试从 $mirror 拉取..."
@@ -509,15 +519,24 @@ jobs:
             TAG_ARGS+=("--tag" "$TAG")
           done
           
-          echo "🏗️ 开始构建镜像..."
+          echo "🏗️ 开始构建镜像（单平台：linux/amd64）..."
           echo "镜像加速器配置："
           cat /etc/docker/daemon.json 2>/dev/null || echo "未找到daemon.json"
+          
+          # 检查本地镜像
+          if docker images python:3.12-slim | grep -q python; then
+            echo "✅ 使用本地python:3.12-slim镜像"
+            docker images python:3.12-slim
+          else
+            echo "⚠️ 本地无python:3.12-slim镜像"
+          fi
           
           # 设置Docker镜像加速环境变量
           export DOCKER_BUILDKIT=1
           
+          # 单平台构建（linux/amd64）
           docker buildx build \
-            --platform ${{ env.DOCKER_PLATFORMS }} \
+            --platform linux/amd64 \
             "${TAG_ARGS[@]}" \
             --label "${{ steps.meta.outputs.labels }}" \
             --push \
@@ -525,20 +544,9 @@ jobs:
             --cache-from type=registry,ref=${{ secrets.CI_REGISTRY_HOST }}/${{ github.repository_owner }}/myaps-api:buildcache \
             --cache-to type=registry,ref=${{ secrets.CI_REGISTRY_HOST }}/${{ github.repository_owner }}/myaps-api:buildcache,mode=max \
             .
+          
+          echo "✅ 镜像构建并推送完成"
 
-      - name: 添加架构标签
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          VERSION: ${{ steps.meta.outputs.version }}
-          IMAGE: ${{ secrets.CI_REGISTRY_HOST }}/${{ github.repository_owner }}/myaps-api
-        run: |
-          echo "为版本 ${VERSION} 添加架构标签..."
-          MANIFEST=$(docker buildx imagetools inspect ${IMAGE}:${VERSION} --raw)
-          AMD64_DIGEST=$(echo "$MANIFEST" | jq -r '.manifests[] | select(.platform.architecture == "amd64") | .digest')
-          ARM64_DIGEST=$(echo "$MANIFEST" | jq -r '.manifests[] | select(.platform.architecture == "arm64") | .digest')
-          docker buildx imagetools create --tag ${IMAGE}:amd64-${VERSION} ${IMAGE}@${AMD64_DIGEST}
-          docker buildx imagetools create --tag ${IMAGE}:arm64-${VERSION} ${IMAGE}@${ARM64_DIGEST}
-          echo "✅ 架构标签创建完成: amd64-${VERSION}, arm64-${VERSION}"
 
       - name: 生成环境变量模板
         run: |
@@ -616,7 +624,7 @@ jobs:
 
           ## 交付物
           - **Docker 镜像**: `${IMAGE_NAME}:${IMAGE_TAG}`
-          - **支持架构**: `linux/amd64`（Intel）和 `linux/arm64`（ARM/Apple Silicon）
+          - **支持架构**: `linux/amd64`（Intel x86_64）
           - **环境变量模板**: `.env.template`
 
           ## 部署步骤
@@ -656,9 +664,9 @@ jobs:
           ```
 
           ## 架构说明
-          - 镜像已支持 `linux/amd64` 和 `linux/arm64` 双架构
-          - Docker 会自动根据部署机器的架构拉取对应版本
-          - Apple Silicon（M系列）用户无需额外配置
+          - 镜像支持 `linux/amd64` 架构（Intel/AMD x86_64处理器）
+          - 适用于大多数服务器和云主机环境
+          - 如需ARM架构支持，请联系维护团队
 
           ## 配置要点
           1. 必须配置 `THIS_DB_*`（PostgreSQL）
@@ -682,14 +690,9 @@ jobs:
           echo "=========================================="
           echo "构建完成！交付物信息："
           echo "=========================================="
-          echo "多架构镜像: ${{ secrets.CI_REGISTRY_HOST }}/${{ github.repository_owner }}/myaps-api:${{ steps.meta.outputs.version }}"
-          echo "支持架构: linux/amd64, linux/arm64"
-          echo "平台标签: ${{ steps.meta.outputs.tags }}"
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            echo "架构专属标签:"
-            echo "  AMD64: ${{ secrets.CI_REGISTRY_HOST }}/${{ github.repository_owner }}/myaps-api:amd64-${{ steps.meta.outputs.version }}"
-            echo "  ARM64: ${{ secrets.CI_REGISTRY_HOST }}/${{ github.repository_owner }}/myaps-api:arm64-${{ steps.meta.outputs.version }}"
-          fi
+          echo "镜像: ${{ secrets.CI_REGISTRY_HOST }}/${{ github.repository_owner }}/myaps-api:${{ steps.meta.outputs.version }}"
+          echo "支持架构: linux/amd64"
+          echo "镜像标签: ${{ steps.meta.outputs.tags }}"
           echo "=========================================="
           echo "部署方式："
           echo "1. 复制 .env.template 并根据租户需求修改环境变量"
