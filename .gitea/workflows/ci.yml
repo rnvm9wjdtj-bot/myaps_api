@@ -10,7 +10,7 @@ on:
 env:
   TEST_DB_PASSWORD: 'test_password'
   TEST_DB_NAME: 'myaps_test'
-  POSTGRES_PORT: '5432'
+
   DOCKER_PLATFORMS: 'linux/amd64,linux/arm64'
   PIP_INDEX_URL: 'https://mirrors.aliyun.com/pypi/simple/'
   PIP_TRUSTED_HOST: 'mirrors.aliyun.com'
@@ -68,7 +68,7 @@ jobs:
           POSTGRES_PASSWORD: test_password
           POSTGRES_DB: myaps_test
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -78,7 +78,7 @@ jobs:
       redis:
         image: redis:7-alpine
         ports:
-          - 6379:6379
+          - 6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 10s
@@ -138,18 +138,18 @@ jobs:
           #################################################################################
           # 基础设施配置
           #################################################################################
-          # Redis 配置
-          REDIS_HOST=127.0.0.1
-          REDIS_PORT=6379
-          REDIS_DB=0
-          REDIS_PASSWORD=
-          
-          # PostgreSQL 数据库配置（服务自有数据库）
-          THIS_DB_HOST=127.0.0.1
-          THIS_DB_PORT=${{ env.POSTGRES_PORT }}
-          THIS_DB_USER=postgres
-          THIS_DB_PASSWORD=${{ env.TEST_DB_PASSWORD }}
-          THIS_DB_NAME=${{ env.TEST_DB_NAME }}
+           # Redis 配置
+           REDIS_HOST=redis
+           REDIS_PORT=6379
+           REDIS_DB=0
+           REDIS_PASSWORD=
+           
+           # PostgreSQL 数据库配置（服务自有数据库）
+           THIS_DB_HOST=postgres
+           THIS_DB_PORT=5432
+           THIS_DB_USER=postgres
+           THIS_DB_PASSWORD=${{ env.TEST_DB_PASSWORD }}
+           THIS_DB_NAME=${{ env.TEST_DB_NAME }}
           
           # MySQL 数据库配置（三方系统既有数据库，CI 环境无需配置）
           # MYAPS_DB_HOST=
