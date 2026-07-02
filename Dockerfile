@@ -1,8 +1,11 @@
 # MyAPS API Dockerfile
 # 多阶段构建，优化镜像体积
 
+# 基础镜像源配置（可选使用国内镜像）
+ARG PYTHON_IMAGE=python:3.12-slim
+
 # 构建阶段
-FROM python:3.12-slim AS builder
+FROM ${PYTHON_IMAGE} AS builder
 
 ARG USE_ALIYUN_MIRROR=false
 RUN if [ "$USE_ALIYUN_MIRROR" = "true" ]; then \
@@ -23,7 +26,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # 运行阶段
-FROM python:3.12-slim
+FROM ${PYTHON_IMAGE}
 
 WORKDIR /app
 

@@ -30,10 +30,10 @@ jobs:
 
       - name: 设置缓存目录
         run: |
-          CACHE_DIR="/tmp/pip-cache-${{ runner.os }}"
+          CACHE_DIR="/tmp/pip-cache-${{ runner.os }}-lint"
           mkdir -p "$CACHE_DIR"
           echo "CACHE_DIR=$CACHE_DIR" >> $GITHUB_ENV
-          echo "CACHE_KEY=$(echo '${{ hashFiles('requirements.txt') }}' | cut -c1-16)" >> $GITHUB_ENV
+          echo "CACHE_KEY=lint-ruff-v1" >> $GITHUB_ENV
 
       - name: 恢复缓存
         run: |
@@ -41,6 +41,7 @@ jobs:
             echo "✅ 从缓存恢复虚拟环境..."
             tar -xzf "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" -C ${{ github.workspace }}
             echo "缓存恢复完成"
+            ls -la .venv/bin/ | grep ruff || echo "⚠️ ruff未找到"
           else
             echo "⚠️ 无缓存，将创建新环境"
           fi
@@ -54,8 +55,15 @@ jobs:
 
       - name: 安装 lint 工具
         run: |
-          python -m pip install --upgrade pip -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
-          pip install ruff -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
+          if [ ! -f ".venv/bin/ruff" ]; then
+            echo "⚠️ ruff未安装，开始安装..."
+            python -m pip install --upgrade pip -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
+            pip install ruff -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
+            echo "✅ ruff安装完成"
+          else
+            echo "✅ ruff已存在，跳过安装"
+            .venv/bin/ruff --version
+          fi
 
       - name: 保存缓存
         if: always()
@@ -121,38 +129,71 @@ jobs:
           CACHE_DIR="/tmp/pip-cache-${{ runner.os }}"
           mkdir -p "$CACHE_DIR"
           echo "CACHE_DIR=$CACHE_DIR" >> $GITHUB_ENV
-          echo "CACHE_KEY=$(echo '${{ hashFiles('requirements.txt') }}' | cut -c1-16)" >> $GITHUB_ENV
+          # 使用requirements.txt的md5哈希作为缓存键
+          CACHE_KEY=$(md5sum requirements.txt | cut -d' ' -f1 | cut -c1-16)
+          echo "CACHE_KEY=$CACHE_KEY" >> $GITHUB_ENV
+          echo "缓存键: $CACHE_KEY"
 
       - name: 恢复缓存
         run: |
           if [ -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" ]; then
-            echo "✅ 从缓存恢复虚拟环境..."
+            echo "✅ 发现缓存文件: $CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+            echo "📦 解压缓存..."
             tar -xzf "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" -C ${{ github.workspace }}
-            echo "缓存恢复完成"
+            if [ -d ".venv" ] && [ -f ".venv/bin/python" ]; then
+              echo "✅ 缓存恢复成功"
+              ls -lh .venv/bin/ | head -10
+            else
+              echo "❌ 缓存恢复失败，.venv不完整"
+              rm -rf .venv
+            fi
           else
-            echo "⚠️ 无缓存，将创建新环境"
+            echo "⚠️ 无缓存文件，将创建新环境"
+            ls -lh "$CACHE_DIR/" 2>/dev/null || echo "缓存目录为空"
           fi
 
       - name: 创建虚拟环境
         run: |
           if [ ! -d ".venv" ]; then
+            echo "创建新的虚拟环境..."
             python -m venv .venv
+          else
+            echo "虚拟环境已存在"
           fi
           echo "${{ github.workspace }}/.venv/bin" >> "$GITHUB_PATH"
 
       - name: 安装依赖
         run: |
-          python -m pip install --upgrade pip -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
-          pip install -r requirements.txt -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
-          pip install pytest pytest-asyncio pytest-cov -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
+          # 检查关键包是否已安装
+          if .venv/bin/python -c "import fastapi" 2>/dev/null; then
+            echo "✅ 依赖已安装，跳过安装步骤"
+            echo "已安装的包："
+            .venv/bin/pip list | head -20
+          else
+            echo "⚠️ 依赖未安装，开始安装..."
+            python -m pip install --upgrade pip -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
+            pip install -r requirements.txt -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
+            pip install pytest pytest-asyncio pytest-cov -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
+            echo "✅ 依赖安装完成"
+          fi
 
       - name: 保存缓存
         if: always()
         run: |
-          if [ -d ".venv" ] && [ ! -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" ]; then
-            echo "💾 保存虚拟环境到缓存..."
-            tar -czf "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" -C ${{ github.workspace }} .venv
-            echo "缓存保存完成: $CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+          # 只在.venv完整且依赖已安装时才保存缓存
+          if [ -d ".venv" ] && .venv/bin/python -c "import fastapi" 2>/dev/null; then
+            if [ ! -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" ]; then
+              echo "💾 保存虚拟环境到缓存..."
+              echo "缓存内容："
+              .venv/bin/pip list | head -10
+              tar -czf "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" -C ${{ github.workspace }} .venv
+              echo "✅ 缓存保存完成: $CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+              ls -lh "$CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+            else
+              echo "⚠️ 缓存文件已存在，跳过保存"
+            fi
+          else
+            echo "❌ .venv不完整或依赖未安装，跳过缓存保存"
           fi
 
       - name: 创建环境变量文件
@@ -263,37 +304,76 @@ jobs:
           CACHE_DIR="/tmp/pip-cache-${{ runner.os }}-security"
           mkdir -p "$CACHE_DIR"
           echo "CACHE_DIR=$CACHE_DIR" >> $GITHUB_ENV
-          echo "CACHE_KEY=$(echo '${{ hashFiles('requirements.txt') }}' | cut -c1-16)" >> $GITHUB_ENV
+          # 固定缓存键（安全工具版本稳定）
+          echo "CACHE_KEY=security-tools-v1" >> $GITHUB_ENV
+          echo "缓存键: security-tools-v1"
 
       - name: 恢复缓存
         run: |
           if [ -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" ]; then
-            echo "✅ 从缓存恢复虚拟环境..."
-            tar -xzf "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" -C ${{ github.workspace }}
-            echo "缓存恢复完成"
+            echo "✅ 发现缓存文件: $CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+            echo "📦 解压缓存..."
+            if tar -xzf "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" -C ${{ github.workspace }} 2>&1; then
+              if [ -d ".venv" ] && [ -f ".venv/bin/python" ] && [ -f ".venv/bin/bandit" ]; then
+                echo "✅ 缓存恢复成功，验证工具："
+                .venv/bin/bandit --version 2>&1 || echo "bandit验证失败"
+                .venv/bin/safety --version 2>&1 || echo "safety验证失败"
+              else
+                echo "❌ 缓存恢复失败，.venv不完整或工具缺失"
+                echo "清理损坏的缓存..."
+                rm -rf .venv
+                rm -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+              fi
+            else
+              echo "❌ 解压失败，清理损坏的缓存文件"
+              rm -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+            fi
           else
-            echo "⚠️ 无缓存，将创建新环境"
+            echo "⚠️ 无缓存文件，将创建新环境"
+            ls -lh "$CACHE_DIR/" 2>/dev/null || echo "缓存目录为空"
           fi
 
       - name: 创建虚拟环境
         run: |
           if [ ! -d ".venv" ]; then
+            echo "创建新的虚拟环境..."
             python -m venv .venv
+          else
+            echo "虚拟环境已存在"
           fi
           echo "${{ github.workspace }}/.venv/bin" >> "$GITHUB_PATH"
 
       - name: 安装安全检查工具
         run: |
-          python -m pip install --upgrade pip -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
-          pip install bandit safety -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
+          # 检查工具是否已安装
+          if [ -f ".venv/bin/bandit" ] && [ -f ".venv/bin/safety" ]; then
+            echo "✅ 安全工具已安装，跳过安装步骤"
+            .venv/bin/bandit --version
+            .venv/bin/safety --version
+          else
+            echo "⚠️ 安全工具未安装，开始安装..."
+            python -m pip install --upgrade pip -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
+            pip install bandit safety -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
+            echo "✅ 安全工具安装完成"
+          fi
 
       - name: 保存缓存
         if: always()
         run: |
-          if [ -d ".venv" ] && [ ! -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" ]; then
-            echo "💾 保存虚拟环境到缓存..."
-            tar -czf "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" -C ${{ github.workspace }} .venv
-            echo "缓存保存完成: $CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+          # 只在.venv完整且工具已安装时才保存缓存
+          if [ -d ".venv" ] && [ -f ".venv/bin/bandit" ] && [ -f ".venv/bin/safety" ]; then
+            if [ ! -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" ]; then
+              echo "💾 保存虚拟环境到缓存..."
+              echo "缓存内容："
+              ls -lh .venv/bin/ | grep -E "bandit|safety|python"
+              tar -czf "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" -C ${{ github.workspace }} .venv
+              echo "✅ 缓存保存完成: $CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+              ls -lh "$CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+            else
+              echo "⚠️ 缓存文件已存在，跳过保存"
+            fi
+          else
+            echo "❌ .venv不完整或工具未安装，跳过缓存保存"
           fi
 
       - name: 运行 Bandit 安全检查
@@ -331,6 +411,7 @@ jobs:
       - name: 配置 Docker 镜像加速器
         run: |
           echo "配置Docker镜像加速器..."
+          # 方法1: 配置daemon.json
           sudo mkdir -p /etc/docker
           sudo tee /etc/docker/daemon.json <<EOF
           {
@@ -341,11 +422,35 @@ jobs:
             ]
           }
           EOF
-          echo "✅ Docker镜像加速器配置完成（daemon.json已写入）"
-          echo "注意：容器环境无需重启dockerd，buildx会自动使用镜像加速"
+          
+          # 方法2: 配置buildx构建配置
+          mkdir -p ~/.docker
+          tee ~/.docker/config.json <<EOF
+          {
+            "registry-mirrors": [
+              "https://docker.mirrors.ustc.edu.cn",
+              "https://hub-mirror.c.163.com",
+              "https://mirror.baidubce.com"
+            ]
+          }
+          EOF
+          echo "✅ Docker镜像加速器配置完成"
 
       - name: 设置 Docker Buildx
-        run: docker buildx create --name myaps-builder --use --bootstrap || true
+        run: |
+          # 删除旧的builder（如果存在）
+          docker buildx rm myaps-builder 2>/dev/null || true
+          
+          # 创建新的builder实例
+          docker buildx create \
+            --name myaps-builder \
+            --driver docker-container \
+            --driver-opt network=host \
+            --use \
+            --bootstrap
+          
+          echo "✅ Docker Buildx配置完成"
+          docker buildx inspect --bootstrap
 
       - name: 登录 Gitea Container Registry
         run: echo "${{ secrets.CI_REGISTRY_TOKEN }}" | docker login ${{ secrets.CI_REGISTRY_HOST }} -u ${{ secrets.CI_REGISTRY_USER }} --password-stdin
@@ -366,6 +471,14 @@ jobs:
           for TAG in "${TAGS[@]}"; do
             TAG_ARGS+=("--tag" "$TAG")
           done
+          
+          echo "🏗️ 开始构建镜像..."
+          echo "镜像加速器配置："
+          cat /etc/docker/daemon.json 2>/dev/null || echo "未找到daemon.json"
+          
+          # 设置Docker镜像加速环境变量
+          export DOCKER_BUILDKIT=1
+          
           docker buildx build \
             --platform ${{ env.DOCKER_PLATFORMS }} \
             "${TAG_ARGS[@]}" \
