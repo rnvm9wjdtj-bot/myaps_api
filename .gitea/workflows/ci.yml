@@ -25,12 +25,8 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v3
 
-      - name: 设置 Python 3.12
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.12'
-        env:
-          AGENT_TOOLSDIRECTORY: ${{ runner.tool_cache }}
+      - name: 检查 Python 3.12
+        run: python -V
 
       - name: 安装 lint 工具
         run: |
@@ -88,13 +84,8 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v3
 
-      - name: 设置 Python 3.12
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-        env:
-          AGENT_TOOLSDIRECTORY: ${{ runner.tool_cache }}
+      - name: 检查 Python 3.12
+        run: python -V
 
       - name: 安装依赖
         run: |
@@ -204,12 +195,8 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v3
 
-      - name: 设置 Python 3.12
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.12'
-        env:
-          AGENT_TOOLSDIRECTORY: ${{ runner.tool_cache }}
+      - name: 检查 Python 3.12
+        run: python -V
 
       - name: 安装安全检查工具
         run: |
