@@ -14,7 +14,7 @@ env:
   DOCKER_PLATFORMS: 'linux/amd64,linux/arm64'
   SHORT_RETENTION_DAYS: '7'
   RELEASE_RETENTION_DAYS: '30'
-  GITEA_HOST: 'gitea.chaoge.xyz'
+
 
 jobs:
   lint-and-format:
@@ -254,13 +254,13 @@ jobs:
       - name: 配置Docker信任Gitea证书
         run: |
           echo "配置Docker信任自签名证书..."
-          sudo mkdir -p /etc/docker/certs.d/${{ env.GITEA_HOST }}
+          sudo mkdir -p /etc/docker/certs.d/${{ vars.GITEA_HOST }}
           echo "已创建证书目录"
 
       - name: 登录镜像仓库
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.GITEA_HOST }}
+          registry: ${{ vars.GITEA_HOST }}
           username: ${{ secrets.GITEA_USERNAME }}
           password: ${{ secrets.GITEA_PASSWORD }}
 
@@ -268,7 +268,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.GITEA_HOST }}/${{ secrets.GITEA_USERNAME }}/myaps-api
+          images: ${{ vars.GITEA_HOST }}/${{ secrets.GITEA_USERNAME }}/myaps-api
           tags: |
             type=sha,prefix=
             type=ref,event=branch
@@ -290,7 +290,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         env:
           VERSION: ${{ steps.meta.outputs.version }}
-          IMAGE: ${{ env.GITEA_HOST }}/${{ secrets.GITEA_USERNAME }}/myaps-api
+          IMAGE: ${{ vars.GITEA_HOST }}/${{ secrets.GITEA_USERNAME }}/myaps-api
         run: |
           echo "为版本 ${VERSION} 添加架构标签..."
           MANIFEST=$(docker buildx imagetools inspect ${IMAGE}:${VERSION} --raw)
@@ -430,7 +430,7 @@ jobs:
           # 替换占位符
           sed -i "s|\${IMAGE_NAME}|${{ secrets.GITEA_USERNAME }}/myaps-api|g" DEPLOY.md
           sed -i "s|\${IMAGE_TAG}|${{ steps.meta.outputs.version }}|g" DEPLOY.md
-          sed -i "s|\${REGISTRY}|${{ env.GITEA_HOST }}|g" DEPLOY.md
+          sed -i "s|\${REGISTRY}|${{ vars.GITEA_HOST }}|g" DEPLOY.md
 
       - name: 上传交付物
         uses: actions/upload-artifact@v4
@@ -446,13 +446,13 @@ jobs:
           echo "=========================================="
           echo "构建完成！交付物信息："
           echo "=========================================="
-          echo "多架构镜像: ${{ env.GITEA_HOST }}/${{ secrets.GITEA_USERNAME }}/myaps-api:${{ steps.meta.outputs.version }}"
+          echo "多架构镜像: ${{ vars.GITEA_HOST }}/${{ secrets.GITEA_USERNAME }}/myaps-api:${{ steps.meta.outputs.version }}"
           echo "支持架构: linux/amd64, linux/arm64"
           echo "平台标签: ${{ steps.meta.outputs.tags }}"
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             echo "架构专属标签:"
-            echo "  AMD64: ${{ env.GITEA_HOST }}/${{ secrets.GITEA_USERNAME }}/myaps-api:amd64-${{ steps.meta.outputs.version }}"
-            echo "  ARM64: ${{ env.GITEA_HOST }}/${{ secrets.GITEA_USERNAME }}/myaps-api:arm64-${{ steps.meta.outputs.version }}"
+            echo "  AMD64: ${{ vars.GITEA_HOST }}/${{ secrets.GITEA_USERNAME }}/myaps-api:amd64-${{ steps.meta.outputs.version }}"
+            echo "  ARM64: ${{ vars.GITEA_HOST }}/${{ secrets.GITEA_USERNAME }}/myaps-api:arm64-${{ steps.meta.outputs.version }}"
           fi
           echo "=========================================="
           echo "部署方式："
