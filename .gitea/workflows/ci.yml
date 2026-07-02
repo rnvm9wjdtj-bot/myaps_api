@@ -34,44 +34,73 @@ jobs:
           mkdir -p "$CACHE_DIR"
           echo "CACHE_DIR=$CACHE_DIR" >> $GITHUB_ENV
           echo "CACHE_KEY=lint-ruff-v1" >> $GITHUB_ENV
+          echo "缓存目录: $CACHE_DIR"
+          echo "缓存键: lint-ruff-v1"
 
       - name: 恢复缓存
         run: |
           if [ -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" ]; then
-            echo "✅ 从缓存恢复虚拟环境..."
-            tar -xzf "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" -C ${{ github.workspace }}
-            echo "缓存恢复完成"
-            ls -la .venv/bin/ | grep ruff || echo "⚠️ ruff未找到"
+            echo "✅ 发现缓存文件: $CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+            echo "📦 解压缓存..."
+            if tar -xzf "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" -C ${{ github.workspace }} 2>&1; then
+              if [ -d ".venv" ] && [ -f ".venv/bin/python" ] && [ -f ".venv/bin/ruff" ]; then
+                echo "✅ 缓存恢复成功，验证ruff："
+                .venv/bin/ruff --version 2>&1 || echo "⚠️ ruff验证失败"
+              else
+                echo "❌ 缓存恢复失败，.venv不完整或ruff缺失"
+                echo "清理损坏的缓存..."
+                rm -rf .venv
+                rm -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+              fi
+            else
+              echo "❌ 解压失败，清理损坏的缓存文件"
+              rm -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+            fi
           else
-            echo "⚠️ 无缓存，将创建新环境"
+            echo "⚠️ 无缓存文件，将创建新环境"
+            ls -lh "$CACHE_DIR/" 2>/dev/null || echo "缓存目录为空"
           fi
 
       - name: 创建虚拟环境
         run: |
           if [ ! -d ".venv" ]; then
+            echo "创建新的虚拟环境..."
             python -m venv .venv
+          else
+            echo "虚拟环境已存在"
           fi
           echo "${{ github.workspace }}/.venv/bin" >> "$GITHUB_PATH"
 
       - name: 安装 lint 工具
         run: |
-          if [ ! -f ".venv/bin/ruff" ]; then
-            echo "⚠️ ruff未安装，开始安装..."
-            python -m pip install --upgrade pip -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
-            pip install ruff -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
-            echo "✅ ruff安装完成"
-          else
+          # 检查ruff是否已安装
+          if [ -f ".venv/bin/ruff" ]; then
             echo "✅ ruff已存在，跳过安装"
             .venv/bin/ruff --version
+          else
+            echo "⚠️ ruff未安装，开始安装..."
+
+            pip install ruff -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
+            echo "✅ ruff安装完成"
           fi
 
       - name: 保存缓存
         if: always()
         run: |
-          if [ -d ".venv" ] && [ ! -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" ]; then
-            echo "💾 保存虚拟环境到缓存..."
-            tar -czf "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" -C ${{ github.workspace }} .venv
-            echo "缓存保存完成: $CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+          # 只在.venv完整且ruff已安装时才保存缓存
+          if [ -d ".venv" ] && [ -f ".venv/bin/ruff" ]; then
+            if [ ! -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" ]; then
+              echo "💾 保存虚拟环境到缓存..."
+              echo "缓存大小："
+              du -sh .venv
+              tar -czf "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" -C ${{ github.workspace }} .venv
+              echo "✅ 缓存保存完成: $CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+              ls -lh "$CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+            else
+              echo "⚠️ 缓存文件已存在，跳过保存"
+            fi
+          else
+            echo "❌ .venv不完整或ruff未安装，跳过缓存保存"
           fi
 
       - name: 使用 Ruff 进行代码检查
@@ -171,7 +200,7 @@ jobs:
             du -sh .venv
           else
             echo "⚠️ 依赖未安装，开始安装..."
-            python -m pip install --upgrade pip -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
+
             pip install -r requirements.txt -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
             pip install pytest pytest-asyncio pytest-cov -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
             echo "✅ 依赖安装完成"
@@ -352,7 +381,7 @@ jobs:
             .venv/bin/safety --version
           else
             echo "⚠️ 安全工具未安装，开始安装..."
-            python -m pip install --upgrade pip -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
+
             pip install bandit safety -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
             echo "✅ 安全工具安装完成"
           fi
@@ -516,34 +545,35 @@ jobs:
           IFS=',' read -ra TAGS <<< "${{ steps.meta.outputs.tags }}"
           TAG_ARGS=()
           for TAG in "${TAGS[@]}"; do
-            TAG_ARGS+=("--tag" "$TAG")
+            TAG_ARGS+=("-t" "$TAG")
           done
           
           echo "🏗️ 开始构建镜像（单平台：linux/amd64）..."
-          echo "镜像加速器配置："
-          cat /etc/docker/daemon.json 2>/dev/null || echo "未找到daemon.json"
           
           # 检查本地镜像
           if docker images python:3.12-slim | grep -q python; then
             echo "✅ 使用本地python:3.12-slim镜像"
             docker images python:3.12-slim
           else
-            echo "⚠️ 本地无python:3.12-slim镜像"
+            echo "⚠️ 本地无python:3.12-slim镜像，构建可能会失败"
           fi
           
-          # 设置Docker镜像加速环境变量
-          export DOCKER_BUILDKIT=1
-          
-          # 单平台构建（linux/amd64）
-          docker buildx build \
-            --platform linux/amd64 \
+          # 使用docker build构建镜像（不使用buildx，避免网络访问）
+          echo "构建镜像..."
+          docker build \
             "${TAG_ARGS[@]}" \
             --label "${{ steps.meta.outputs.labels }}" \
-            --push \
             --build-arg USE_ALIYUN_MIRROR=true \
-            --cache-from type=registry,ref=${{ secrets.CI_REGISTRY_HOST }}/${{ github.repository_owner }}/myaps-api:buildcache \
-            --cache-to type=registry,ref=${{ secrets.CI_REGISTRY_HOST }}/${{ github.repository_owner }}/myaps-api:buildcache,mode=max \
             .
+          
+          echo "✅ 镜像构建完成"
+          
+          # 推送镜像
+          echo "推送镜像到仓库..."
+          for TAG in "${TAGS[@]}"; do
+            echo "推送 $TAG..."
+            docker push "$TAG"
+          done
           
           echo "✅ 镜像构建并推送完成"
 
