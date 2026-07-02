@@ -46,24 +46,18 @@ jobs:
       - name: 安装 lint 工具
         run: |
           python -m pip install --upgrade pip -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
-          pip install black isort ruff mypy -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
-
-      - name: 使用 Black 检查代码格式
-        run: |
-          echo "⚠️ 注意：项目未配置正式lint工具，此检查仅作参考"
-          black --check --diff . || echo "Black检查失败，请考虑格式化代码"
-        continue-on-error: true
-
-      - name: 使用 isort 检查导入顺序
-        run: |
-          echo "⚠️ 注意：项目未配置正式lint工具，此检查仅作参考"
-          isort --check-only --diff . || echo "isort检查失败，请考虑调整导入顺序"
-        continue-on-error: true
+          pip install ruff -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
 
       - name: 使用 Ruff 进行代码检查
         run: |
-          echo "⚠️ 注意：项目未配置正式lint工具，此检查仅作参考"
-          ruff check . || echo "Ruff检查失败，请考虑修复代码质量问题"
+          echo "🔍 使用Ruff进行代码检查（替代black、isort、flake8）..."
+          ruff check apps/ core/ globalobjects/ tests/ --exclude "*.pyc" --exclude "__pycache__" --exclude ".venv" || echo "⚠️ Ruff检查发现部分问题"
+        continue-on-error: true
+
+      - name: 使用 Ruff 检查代码格式
+        run: |
+          echo "🔍 使用Ruff检查代码格式..."
+          ruff format --check apps/ core/ globalobjects/ tests/ --exclude "*.pyc" --exclude "__pycache__" --exclude ".venv" || echo "⚠️ 代码格式检查发现部分问题"
         continue-on-error: true
 
   build-and-test:
