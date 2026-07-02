@@ -168,13 +168,21 @@ jobs:
           if [ -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" ]; then
             echo "✅ 发现缓存文件: $CACHE_DIR/venv-$CACHE_KEY.tar.gz"
             echo "📦 解压缓存..."
-            tar -xzf "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" -C ${{ github.workspace }}
-            if [ -d ".venv" ] && [ -f ".venv/bin/python" ]; then
-              echo "✅ 缓存恢复成功"
-              ls -lh .venv/bin/ | head -10
+            if tar -xzf "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" -C ${{ github.workspace }} 2>&1; then
+              if [ -d ".venv" ] && [ -f ".venv/bin/python" ] && .venv/bin/python -c "import fastapi" 2>/dev/null; then
+                echo "✅ 缓存恢复成功，验证fastapi："
+                .venv/bin/python -c "import fastapi; print(f'fastapi version: {fastapi.__version__}')" 2>&1 || echo "⚠️ fastapi验证失败"
+                echo "虚拟环境大小："
+                du -sh .venv
+              else
+                echo "❌ 缓存恢复失败，.venv不完整或fastapi缺失"
+                echo "清理损坏的缓存..."
+                rm -rf .venv
+                rm -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz"
+              fi
             else
-              echo "❌ 缓存恢复失败，.venv不完整"
-              rm -rf .venv
+              echo "❌ 解压失败，清理损坏的缓存文件"
+              rm -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz"
             fi
           else
             echo "⚠️ 无缓存文件，将创建新环境"
