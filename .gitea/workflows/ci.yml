@@ -30,12 +30,16 @@ jobs:
 
       - name: 设置缓存目录
         run: |
-          CACHE_DIR="/tmp/pip-cache-${{ runner.os }}-lint"
+          # 使用workspace目录，确保跨CI运行共享
+          CACHE_DIR="${{ github.workspace }}/.cache/pip-${{ runner.os }}-lint"
           mkdir -p "$CACHE_DIR"
           echo "CACHE_DIR=$CACHE_DIR" >> $GITHUB_ENV
           echo "CACHE_KEY=lint-ruff-v1" >> $GITHUB_ENV
           echo "缓存目录: $CACHE_DIR"
           echo "缓存键: lint-ruff-v1"
+          # 显示缓存目录内容
+          echo "缓存目录内容："
+          ls -lh "$CACHE_DIR/" 2>/dev/null || echo "缓存目录为空"
 
       - name: 恢复缓存
         run: |
@@ -155,13 +159,16 @@ jobs:
 
       - name: 设置缓存目录
         run: |
-          CACHE_DIR="/tmp/pip-cache-${{ runner.os }}"
+          # 使用workspace目录，确保跨CI运行共享
+          CACHE_DIR="${{ github.workspace }}/.cache/pip-${{ runner.os }}"
           mkdir -p "$CACHE_DIR"
           echo "CACHE_DIR=$CACHE_DIR" >> $GITHUB_ENV
-          # 使用requirements.txt的md5哈希作为缓存键
-          CACHE_KEY=$(md5sum requirements.txt | cut -d' ' -f1 | cut -c1-16)
-          echo "CACHE_KEY=$CACHE_KEY" >> $GITHUB_ENV
-          echo "缓存键: $CACHE_KEY"
+          # 使用固定缓存键，避免requirements.txt变化导致缓存失效
+          echo "CACHE_KEY=deps-v1" >> $GITHUB_ENV
+          echo "缓存键: deps-v1"
+          # 显示缓存目录内容
+          echo "缓存目录内容："
+          ls -lh "$CACHE_DIR/" 2>/dev/null || echo "缓存目录为空"
 
       - name: 恢复缓存
         run: |
@@ -338,12 +345,16 @@ jobs:
 
       - name: 设置缓存目录
         run: |
-          CACHE_DIR="/tmp/pip-cache-${{ runner.os }}-security"
+          # 使用workspace目录，确保跨CI运行共享
+          CACHE_DIR="${{ github.workspace }}/.cache/pip-${{ runner.os }}-security"
           mkdir -p "$CACHE_DIR"
           echo "CACHE_DIR=$CACHE_DIR" >> $GITHUB_ENV
           # 固定缓存键（安全工具版本稳定）
           echo "CACHE_KEY=security-tools-v1" >> $GITHUB_ENV
           echo "缓存键: security-tools-v1"
+          # 显示缓存目录内容
+          echo "缓存目录内容："
+          ls -lh "$CACHE_DIR/" 2>/dev/null || echo "缓存目录为空"
 
       - name: 恢复缓存
         run: |
