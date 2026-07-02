@@ -441,15 +441,30 @@ jobs:
           # 删除旧的builder（如果存在）
           docker buildx rm myaps-builder 2>/dev/null || true
           
-          # 创建新的builder实例
+          # 创建buildkitd配置文件
+          mkdir -p /tmp/buildkit
+          cat > /tmp/buildkit/buildkitd.toml <<EOF
+          [registry."docker.io"]
+            mirrors = [
+              "https://docker.mirrors.ustc.edu.cn",
+              "https://hub-mirror.c.163.com",
+              "https://mirror.baidubce.com"
+            ]
+          EOF
+          
+          echo "Buildkitd配置："
+          cat /tmp/buildkit/buildkitd.toml
+          
+          # 创建新的builder实例，使用buildkitd配置
           docker buildx create \
             --name myaps-builder \
             --driver docker-container \
             --driver-opt network=host \
+            --config /tmp/buildkit/buildkitd.toml \
             --use \
             --bootstrap
           
-          echo "✅ Docker Buildx配置完成"
+          echo "✅ Docker Buildx配置完成（已启用镜像加速）"
           docker buildx inspect --bootstrap
 
       - name: 登录 Gitea Container Registry
