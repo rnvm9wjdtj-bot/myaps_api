@@ -167,8 +167,8 @@ jobs:
           # 检查关键包是否已安装
           if .venv/bin/python -c "import fastapi" 2>/dev/null; then
             echo "✅ 依赖已安装，跳过安装步骤"
-            echo "已安装的包："
-            .venv/bin/pip list | head -20
+            echo "虚拟环境大小："
+            du -sh .venv
           else
             echo "⚠️ 依赖未安装，开始安装..."
             python -m pip install --upgrade pip -i ${{ env.PIP_INDEX_URL }} --trusted-host ${{ env.PIP_TRUSTED_HOST }}
@@ -184,8 +184,8 @@ jobs:
           if [ -d ".venv" ] && .venv/bin/python -c "import fastapi" 2>/dev/null; then
             if [ ! -f "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" ]; then
               echo "💾 保存虚拟环境到缓存..."
-              echo "缓存内容："
-              .venv/bin/pip list | head -10
+              echo "缓存大小："
+              du -sh .venv
               tar -czf "$CACHE_DIR/venv-$CACHE_KEY.tar.gz" -C ${{ github.workspace }} .venv
               echo "✅ 缓存保存完成: $CACHE_DIR/venv-$CACHE_KEY.tar.gz"
               ls -lh "$CACHE_DIR/venv-$CACHE_KEY.tar.gz"
