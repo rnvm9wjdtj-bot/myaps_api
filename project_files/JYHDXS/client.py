@@ -34,7 +34,7 @@ sap_session = get_session(allowed_methods=["GET", "POST"])
 add_basic_auth_requests(sap_session, sap_username, sap_password)
 
 # API 超时配置
-API_TIMEOUT = 30.0  # API 调用超时（秒）
+API_TIMEOUT = 90.0  # API 调用超时（秒）
 
 mes = PROJECT_JSON_FILE.get("mes", {})
 mes_url = mes.get("base_url", "")
@@ -61,12 +61,13 @@ srm_field_map = {
 # ⬇️项目可复用逻辑
 #################################################################################
 
-def sap_post(url: str, session: requests.Session, interface_id: str, data: dict):
+def sap_post(url: str, session: requests.Session, interface_id: str, data: dict, timeout: float = 60.0):
     """
     向SAP系统发送POST请求
     url: 请求URL
     session: requests会话
     data: 请求数据
+    timeout: 读取超时时间（秒）
     """
     headers = {
             "INTF_ID": interface_id,
@@ -79,7 +80,7 @@ def sap_post(url: str, session: requests.Session, interface_id: str, data: dict)
     response: requests.Response = session.post(url, headers=headers, json={
         "HEAD": headers,
         "BODY": [data]
-    }, timeout=(15, 60))
+    }, timeout=(15, timeout))
 
     response_json = {}
     if response.status_code == status.HTTP_200_OK:
@@ -289,7 +290,8 @@ async def batch_handle_pl_status_a2e(event_data_list: List[Dict], _erp: EventRes
                 sap_url2,
                 sap_session,
                 "ZPP_PLAN_ORD_CREATE",
-                data
+                data,
+                API_TIMEOUT
             )
             try:
                 sap_response = await asyncio.wait_for(sap_post_future, timeout=API_TIMEOUT)
