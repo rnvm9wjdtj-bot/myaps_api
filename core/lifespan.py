@@ -20,9 +20,17 @@ from core.settings import TURNON_BINLOG_LISTENER, TRUNON_SCHEDULER, MAX_EVENTS_B
 from core.database import check_db_connections, warmup_connections, start_pool_monitoring, db_init_manager, ensure_sqlite_monitor_tables
 from core.task_manager import get_task_manager
 
-# Binlog 文件锁路径（使用 /tmp/ 而非持久化目录，避免容器重建后残留旧锁）
-# 锁文件用于 Gunicorn 多进程环境下确保只有一个 Worker 启动监听器
+# ============================================================================
+# 文件锁定义 - 用于 Gunicorn 多进程环境
+# 使用 /tmp/ 而非持久化目录，避免容器重建后残留旧锁
+# ============================================================================
+
 _BINLOG_LOCK_FILE = "/tmp/.myaps_binlog.lock"
+_SCHEDULER_LOCK_FILE = "/tmp/.myaps_scheduler.lock"
+_REDIS_CONSUMER_LOCK_FILE = "/tmp/.myaps_redis_consumer.lock"
+_DB_HEALTH_CHECK_LOCK_FILE = "/tmp/.myaps_db_health_check.lock"
+_FAILED_OP_RECOVERY_LOCK_FILE = "/tmp/.myaps_failed_op_recovery.lock"
+_LOG_STREAM_LOCK_FILE = "/tmp/.myaps_log_stream.lock"
 
 
 def _pid_is_alive(pid: int) -> bool:
@@ -33,13 +41,12 @@ def _pid_is_alive(pid: int) -> bool:
         return False
 
 
-def _try_acquire_binlog_lock() -> bool:
+def _try_acquire_lock(lock_file: str) -> bool:
     """
-    尝试获取 Binlog 监听器的文件锁。
+    通用的文件锁获取函数。
     处理废弃锁：如果锁文件存在但持有进程已死，接管锁。
-    返回 True 表示获取成功（调用方应启动监听器），False 表示跳过。
+    返回 True 表示获取成功，False 表示跳过。
     """
-    lock_file = _BINLOG_LOCK_FILE
     try:
         # 尝试原子创建
         fd = os.open(lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
@@ -64,6 +71,36 @@ def _try_acquire_binlog_lock() -> bool:
             # 无法读取或清理，跳过
             pass
         return False
+
+
+def _try_acquire_binlog_lock() -> bool:
+    """尝试获取 Binlog 监听器的文件锁"""
+    return _try_acquire_lock(_BINLOG_LOCK_FILE)
+
+
+def _try_acquire_scheduler_lock() -> bool:
+    """尝试获取调度器的文件锁"""
+    return _try_acquire_lock(_SCHEDULER_LOCK_FILE)
+
+
+def _try_acquire_redis_consumer_lock() -> bool:
+    """尝试获取 Redis 消费者的文件锁"""
+    return _try_acquire_lock(_REDIS_CONSUMER_LOCK_FILE)
+
+
+def _try_acquire_db_health_check_lock() -> bool:
+    """尝试获取数据库健康检查器的文件锁"""
+    return _try_acquire_lock(_DB_HEALTH_CHECK_LOCK_FILE)
+
+
+def _try_acquire_failed_op_recovery_lock() -> bool:
+    """尝试获取失败操作恢复管理器的文件锁"""
+    return _try_acquire_lock(_FAILED_OP_RECOVERY_LOCK_FILE)
+
+
+def _try_acquire_log_stream_lock() -> bool:
+    """尝试获取实时日志流服务的文件锁"""
+    return _try_acquire_lock(_LOG_STREAM_LOCK_FILE)
 
 
 @asynccontextmanager
@@ -158,7 +195,19 @@ async def lifespan(app):
     if TRUNON_SCHEDULER:
         log_config.info("准备启动定时任务...")
         await asyncio.sleep(1)  # 减少等待时间
-        initialize_scheduler()
+        
+        if os.environ.get('GUNICORN_RUNNING') != 'true':
+            # 非 Gunicorn 环境（如 dev_run.bat 的 uvicorn 直启）直接启动
+            initialize_scheduler()
+            log_config.info("✅ 定时任务系统已启动")
+        else:
+            # Gunicorn 环境：使用文件锁确保只有一个 Worker 启动调度器
+            worker_id = os.environ.get('GUNICORN_WORKER_ID', '?')
+            if _try_acquire_scheduler_lock():
+                initialize_scheduler()
+                log_config.info(f"✅ Gunicorn Worker {worker_id}：通过文件锁获取权限，定时任务已启动")
+            else:
+                log_config.info(f"ℹ️ Gunicorn Worker {worker_id}：定时任务已在其他 Worker 中运行，跳过")
     else:
         log_config.warning("⚠️ 定时任务初始化被跳过，因为 TRUNON_SCHEDULER=false")
     
@@ -228,33 +277,78 @@ async def lifespan(app):
 
     # 启动数据库健康检查器（独立后台任务，不依赖前端访问）
     log_config.info("启动数据库健康检查器...")
-    try:
-        await asyncio.wait_for(start_db_health_checker(), timeout=30)
-        log_config.info("数据库健康检查器已启动")
-    except asyncio.TimeoutError:
-        log_config.warning("⚠️ 数据库健康检查器启动超时")
-    except Exception as e:
-        log_config.error(f"❌ 数据库健康检查器启动失败: {e}")
+    if os.environ.get('GUNICORN_RUNNING') != 'true':
+        # 非 Gunicorn 环境直接启动
+        try:
+            await asyncio.wait_for(start_db_health_checker(), timeout=30)
+            log_config.info("✅ 数据库健康检查器已启动")
+        except asyncio.TimeoutError:
+            log_config.warning("⚠️ 数据库健康检查器启动超时")
+        except Exception as e:
+            log_config.error(f"❌ 数据库健康检查器启动失败: {e}")
+    else:
+        # Gunicorn 环境：使用文件锁确保只有一个 Worker 启动
+        worker_id = os.environ.get('GUNICORN_WORKER_ID', '?')
+        if _try_acquire_db_health_check_lock():
+            try:
+                await asyncio.wait_for(start_db_health_checker(), timeout=30)
+                log_config.info(f"✅ Gunicorn Worker {worker_id}：通过文件锁获取权限，数据库健康检查器已启动")
+            except asyncio.TimeoutError:
+                log_config.warning(f"⚠️ Gunicorn Worker {worker_id}：数据库健康检查器启动超时")
+            except Exception as e:
+                log_config.error(f"❌ Gunicorn Worker {worker_id}：数据库健康检查器启动失败: {e}")
+        else:
+            log_config.info(f"ℹ️ Gunicorn Worker {worker_id}：数据库健康检查器已在其他 Worker 中运行，跳过")
 
     # 启动失败操作恢复管理器（后台自动重试失败的数据库操作）
     log_config.info("启动失败操作恢复管理器...")
-    try:
-        await asyncio.wait_for(start_failed_operation_recovery(), timeout=30)
-        log_config.info("失败操作恢复管理器已启动")
-    except asyncio.TimeoutError:
-        log_config.warning("⚠️ 失败操作恢复管理器启动超时")
-    except Exception as e:
-        log_config.error(f"❌ 失败操作恢复管理器启动失败: {e}")
+    if os.environ.get('GUNICORN_RUNNING') != 'true':
+        # 非 Gunicorn 环境直接启动
+        try:
+            await asyncio.wait_for(start_failed_operation_recovery(), timeout=30)
+            log_config.info("✅ 失败操作恢复管理器已启动")
+        except asyncio.TimeoutError:
+            log_config.warning("⚠️ 失败操作恢复管理器启动超时")
+        except Exception as e:
+            log_config.error(f"❌ 失败操作恢复管理器启动失败: {e}")
+    else:
+        # Gunicorn 环境：使用文件锁确保只有一个 Worker 启动
+        worker_id = os.environ.get('GUNICORN_WORKER_ID', '?')
+        if _try_acquire_failed_op_recovery_lock():
+            try:
+                await asyncio.wait_for(start_failed_operation_recovery(), timeout=30)
+                log_config.info(f"✅ Gunicorn Worker {worker_id}：通过文件锁获取权限，失败操作恢复管理器已启动")
+            except asyncio.TimeoutError:
+                log_config.warning(f"⚠️ Gunicorn Worker {worker_id}：失败操作恢复管理器启动超时")
+            except Exception as e:
+                log_config.error(f"❌ Gunicorn Worker {worker_id}：失败操作恢复管理器启动失败: {e}")
+        else:
+            log_config.info(f"ℹ️ Gunicorn Worker {worker_id}：失败操作恢复管理器已在其他 Worker 中运行，跳过")
 
     # 启动实时日志流服务
     log_config.info("启动实时日志流服务...")
-    try:
-        await asyncio.wait_for(start_log_stream(), timeout=30)
-        log_config.info("实时日志流服务已启动")
-    except asyncio.TimeoutError:
-        log_config.warning("⚠️ 实时日志流服务启动超时")
-    except Exception as e:
-        log_config.error(f"❌ 实时日志流服务启动失败: {e}")
+    if os.environ.get('GUNICORN_RUNNING') != 'true':
+        # 非 Gunicorn 环境直接启动
+        try:
+            await asyncio.wait_for(start_log_stream(), timeout=30)
+            log_config.info("✅ 实时日志流服务已启动")
+        except asyncio.TimeoutError:
+            log_config.warning("⚠️ 实时日志流服务启动超时")
+        except Exception as e:
+            log_config.error(f"❌ 实时日志流服务启动失败: {e}")
+    else:
+        # Gunicorn 环境：使用文件锁确保只有一个 Worker 启动
+        worker_id = os.environ.get('GUNICORN_WORKER_ID', '?')
+        if _try_acquire_log_stream_lock():
+            try:
+                await asyncio.wait_for(start_log_stream(), timeout=30)
+                log_config.info(f"✅ Gunicorn Worker {worker_id}：通过文件锁获取权限，实时日志流服务已启动")
+            except asyncio.TimeoutError:
+                log_config.warning(f"⚠️ Gunicorn Worker {worker_id}：实时日志流服务启动超时")
+            except Exception as e:
+                log_config.error(f"❌ Gunicorn Worker {worker_id}：实时日志流服务启动失败: {e}")
+        else:
+            log_config.info(f"ℹ️ Gunicorn Worker {worker_id}：实时日志流服务已在其他 Worker 中运行，跳过")
 
     # 启动 Redis 健康检查任务
     async def schedule_redis_checks():
@@ -464,11 +558,25 @@ async def lifespan(app):
         except Exception as e:
             log_config.error(f"Redis 事件清理任务启动失败: {e}")
 
-    task_manager.create_and_register(
-        "redis_consumer_task",
-        start_redis_consumer()
-    )
-    log_config.info("Redis 消息消费者已启动")
+    # 启动 Redis 消息消费者（处理来自数据库监听器的事件）
+    if os.environ.get('GUNICORN_RUNNING') != 'true':
+        # 非 Gunicorn 环境直接启动
+        task_manager.create_and_register(
+            "redis_consumer_task",
+            start_redis_consumer()
+        )
+        log_config.info("✅ Redis 消息消费者已启动")
+    else:
+        # Gunicorn 环境：使用文件锁确保只有一个 Worker 启动
+        worker_id = os.environ.get('GUNICORN_WORKER_ID', '?')
+        if _try_acquire_redis_consumer_lock():
+            task_manager.create_and_register(
+                "redis_consumer_task",
+                start_redis_consumer()
+            )
+            log_config.info(f"✅ Gunicorn Worker {worker_id}：通过文件锁获取权限，Redis 消息消费者已启动")
+        else:
+            log_config.info(f"ℹ️ Gunicorn Worker {worker_id}：Redis 消息消费者已在其他 Worker 中运行，跳过")
     
     # 启动 Redis 事件清理任务
     task_manager.create_and_register(
