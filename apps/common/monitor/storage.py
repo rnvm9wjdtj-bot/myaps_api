@@ -248,11 +248,16 @@ class RequestStorage:
     async def get_requests_by_date(self, date: str, limit: int = 1000) -> List[APIRequest]:
         """按日期获取请求记录"""
         try:
+            from datetime import timezone, timedelta
+            
+            # 解析日期并设置为UTC时区，避免时区问题
             date_obj = datetime.strptime(date, '%Y-%m-%d')
-            next_day = date_obj.replace(day=date_obj.day + 1)
+            start_timestamp = datetime(date_obj.year, date_obj.month, date_obj.day, tzinfo=timezone.utc)
+            end_timestamp = start_timestamp + timedelta(days=1)
+            
             requests = await APIRequest.filter(
-                timestamp__gte=date_obj,
-                timestamp__lt=next_day
+                timestamp__gte=start_timestamp,
+                timestamp__lt=end_timestamp
             ).limit(limit).order_by('-timestamp').all()
             return requests
         except Exception as e:
@@ -512,11 +517,16 @@ class OutboundRequestStorage:
     async def get_requests_by_date(self, date: str, limit: int = 1000) -> List[OutboundAPIRequest]:
         """按日期获取对外请求记录"""
         try:
+            from datetime import timezone, timedelta
+            
+            # 解析日期并设置为UTC时区，避免时区问题
             date_obj = datetime.strptime(date, '%Y-%m-%d')
-            next_day = date_obj.replace(day=date_obj.day + 1)
+            start_timestamp = datetime(date_obj.year, date_obj.month, date_obj.day, tzinfo=timezone.utc)
+            end_timestamp = start_timestamp + timedelta(days=1)
+            
             requests = await OutboundAPIRequest.filter(
-                timestamp__gte=date_obj,
-                timestamp__lt=next_day
+                timestamp__gte=start_timestamp,
+                timestamp__lt=end_timestamp
             ).limit(limit).order_by('-timestamp').all()
             return requests
         except Exception as e:

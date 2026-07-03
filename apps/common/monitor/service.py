@@ -921,7 +921,7 @@ class MonitorService:
 
     async def _broadcast_loop(self):
         """广播循环，定期发送监控数据"""
-        from datetime import datetime
+        from datetime import datetime, timezone
         try:
             while self._broadcast_running:
                 # 收集监控数据
@@ -929,14 +929,18 @@ class MonitorService:
                     # 并行收集数据，提高效率
                     loop = asyncio.get_event_loop()
                     
+                    # 使用UTC时间，避免时区问题
+                    utc_now = datetime.now(timezone.utc)
+                    date_str = utc_now.strftime('%Y-%m-%d')
+                    
                     # 创建并行任务
                     overview_task = asyncio.create_task(self.get_overview())
                     logs_task = loop.run_in_executor(None, self.get_recent_logs, 100)
                     api_task = asyncio.create_task(
-                        self.http_collector.get_requests_by_date(datetime.now().strftime('%Y-%m-%d'))
+                        self.http_collector.get_requests_by_date(date_str)
                     )
                     outbound_task = asyncio.create_task(
-                        self.outbound_http_collector.get_requests_by_date(datetime.now().strftime('%Y-%m-%d'))
+                        self.outbound_http_collector.get_requests_by_date(date_str)
                     )
                     
                     # 等待所有任务完成

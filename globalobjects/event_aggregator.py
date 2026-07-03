@@ -425,16 +425,23 @@ class EventAggregator:
         self._running = False
         self._condition_thread = None
         
-        # 统计数据
+        # 统计数据 - 使用独立计数器避免队列丢弃导致统计不准确
         self.stats = {
             'total_received': 0,
             'total_processed': 0,
             'total_failed': 0,
             'processing_latencies': deque(maxlen=1000),
-            'received_timestamps': deque(maxlen=3600),
-            'processed_timestamps': deque(maxlen=3600),
+            'received_timestamps': deque(maxlen=86400),  # 增加到1天
+            'processed_timestamps': deque(maxlen=86400),  # 增加到1天
             'first_received_time': None,
             'last_activity_time': None,
+            # 独立时间窗口计数器
+            'events_last_minute': 0,
+            'events_last_hour': 0,
+            'events_today': 0,
+            'last_minute_start': 0,
+            'last_hour_start': 0,
+            'last_day_start': 0,
         }
         
     def add(self, event: Any):
@@ -448,6 +455,29 @@ class EventAggregator:
             if self.stats['first_received_time'] is None:
                 self.stats['first_received_time'] = now
             self.stats['last_activity_time'] = now
+            
+            # 更新独立时间窗口计数器
+            minute_start = now - (now % 60)
+            hour_start = now - (now % 3600)
+            day_start = now - (now % 86400)
+            
+            # 更新分钟计数器
+            if minute_start != self.stats['last_minute_start']:
+                self.stats['events_last_minute'] = 0
+                self.stats['last_minute_start'] = minute_start
+            self.stats['events_last_minute'] += 1
+            
+            # 更新小时计数器
+            if hour_start != self.stats['last_hour_start']:
+                self.stats['events_last_hour'] = 0
+                self.stats['last_hour_start'] = hour_start
+            self.stats['events_last_hour'] += 1
+            
+            # 更新天计数器
+            if day_start != self.stats['last_day_start']:
+                self.stats['events_today'] = 0
+                self.stats['last_day_start'] = day_start
+            self.stats['events_today'] += 1
             
             # 重置安静窗口计时器
             self._last_event_time = now
@@ -539,14 +569,21 @@ class EventAggregator:
             # 计算待处理数
             pending_count = sum(len(events) for events in self._buffer.values())
             
-            # 计算时间窗口统计
-            one_minute_ago = now - 60
-            one_hour_ago = now - 3600
-            today_start = now - (now % 86400)
+            # 使用独立计数器，避免队列丢弃导致统计不准确
+            events_last_minute = stats['events_last_minute']
+            events_last_hour = stats['events_last_hour']
+            events_today = stats['events_today']
             
-            events_last_minute = sum(1 for ts in stats['received_timestamps'] if ts >= one_minute_ago)
-            events_last_hour = sum(1 for ts in stats['received_timestamps'] if ts >= one_hour_ago)
-            events_today = sum(1 for ts in stats['received_timestamps'] if ts >= today_start)
+            # 时间边界检查：当时间窗口已切换但无新事件时，计数器应归零
+            minute_start = now - (now % 60)
+            hour_start = now - (now % 3600)
+            day_start = now - (now % 86400)
+            if minute_start != stats['last_minute_start']:
+                events_last_minute = 0
+            if hour_start != stats['last_hour_start']:
+                events_last_hour = 0
+            if day_start != stats['last_day_start']:
+                events_today = 0
             
             # 计算成功率
             total = stats['total_processed'] + stats['total_failed']
@@ -577,15 +614,23 @@ class EventAggregator:
     def reset_stats(self):
         """重置统计数据"""
         with self._lock:
+            now = time.time()
             self.stats = {
                 'total_received': 0,
                 'total_processed': 0,
                 'total_failed': 0,
                 'processing_latencies': deque(maxlen=1000),
-                'received_timestamps': deque(maxlen=3600),
-                'processed_timestamps': deque(maxlen=3600),
+                'received_timestamps': deque(maxlen=86400),
+                'processed_timestamps': deque(maxlen=86400),
                 'first_received_time': None,
                 'last_activity_time': None,
+                # 重置独立时间窗口计数器
+                'events_last_minute': 0,
+                'events_last_hour': 0,
+                'events_today': 0,
+                'last_minute_start': now - (now % 60),
+                'last_hour_start': now - (now % 3600),
+                'last_day_start': now - (now % 86400),
             }
     
     def _condition_thread_func(self):

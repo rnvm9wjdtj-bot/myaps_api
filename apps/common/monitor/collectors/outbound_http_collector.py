@@ -227,8 +227,8 @@ class OutboundHTTPCollector:
             return
             
         async with self._db_semaphore:
+            # 先复制数据，保存成功后再清空队列
             batch_to_save = list(self._pending_requests)
-            self._pending_requests.clear()
             self._last_batch_time = time.time()
             
             try:
@@ -253,9 +253,13 @@ class OutboundHTTPCollector:
                 
                 await outbound_request_storage.save_requests(requests_data)
                 
+                # 保存成功后才清空队列
+                self._pending_requests.clear()
+                
                 # 批量保存成功后，重置降级相关状态
                 if self._degraded_mode:
                     self._degraded_counter = 0
+                    self._degraded_mode = False
                     print("数据库恢复正常，退出降级模式")
                 
             except Exception as e:
@@ -267,10 +271,7 @@ class OutboundHTTPCollector:
                     self._degraded_mode = True
                     print("数据库连续失败，进入降级模式：只保存内存数据，不再写入数据库")
                 
-                # 将未保存的请求重新放回队列
-                for req in batch_to_save:
-                    if len(self._pending_requests) < 5000:
-                        self._pending_requests.append(req)
+                # 队列未清空，不需要重新放回
 
     def _cleanup_stats(self):
         """清理统计信息，避免无限增长（必须在锁内调用）"""
