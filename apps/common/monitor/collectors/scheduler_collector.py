@@ -58,7 +58,7 @@ class SchedulerCollector:
                     if 'execution_history' in job_info:
                         for record in job_info['execution_history']:
                             execution_history.append({
-                                'time': record['time'].isoformat() if record['time'] else None,
+                                'time': record['time'].isoformat() if hasattr(record['time'], 'isoformat') else record['time'],
                                 'error': record['error']
                             })
                     
@@ -67,8 +67,8 @@ class SchedulerCollector:
                         "id": job_info['id'],
                         "name": job_info['name'],
                         "trigger": job_info['trigger'],
-                        "next_run_time": job_info['next_run_time'].isoformat() if job_info['next_run_time'] else None,
-                        "last_run_time": job_info['last_run_time'].isoformat() if job_info['last_run_time'] else None,
+                        "next_run_time": job_info['next_run_time'].isoformat() if hasattr(job_info['next_run_time'], 'isoformat') else job_info['next_run_time'],
+                        "last_run_time": job_info['last_run_time'].isoformat() if hasattr(job_info['last_run_time'], 'isoformat') else job_info['last_run_time'],
                         "last_error": job_info['last_error'],
                         "execution_history": execution_history,  # 包含执行历史记录
                         "pending": False  # 暂不支持pending状态
@@ -100,7 +100,7 @@ class SchedulerCollector:
                 if 'execution_history' in job_info:
                     for record in job_info['execution_history']:
                         execution_history.append({
-                            'time': record['time'].isoformat() if record['time'] else None,
+                            'time': record['time'].isoformat() if hasattr(record['time'], 'isoformat') else record['time'],
                             'error': record['error']
                         })
                 
@@ -110,8 +110,8 @@ class SchedulerCollector:
                     "name": job_info['name'],
                     "description": job_info.get('description'),
                     "trigger": job_info['trigger'],
-                    "next_run_time": job_info['next_run_time'].isoformat() if job_info['next_run_time'] else None,
-                    "last_run_time": job_info['last_run_time'].isoformat() if job_info['last_run_time'] else None,
+                    "next_run_time": job_info['next_run_time'].isoformat() if hasattr(job_info['next_run_time'], 'isoformat') else job_info['next_run_time'],
+                    "last_run_time": job_info['last_run_time'].isoformat() if hasattr(job_info['last_run_time'], 'isoformat') else job_info['last_run_time'],
                     "last_error": job_info['last_error'],
                     "execution_history": execution_history,  # 包含执行历史记录
                     "pending": False  # 暂不支持pending状态

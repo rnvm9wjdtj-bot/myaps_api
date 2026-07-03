@@ -1,4 +1,4 @@
-import os, asyncio, inspect, atexit
+import os, asyncio, inspect, atexit, json, time
 from fastapi import FastAPI
 
 from typing import Dict, List, Callable, Any, Optional
@@ -18,6 +18,10 @@ import os
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 # 获取统一日志器
 logger = log_config.get_logger(__name__, level=LOG_LEVEL)
+
+# Redis键名，用于存储调度器状态
+SCHEDULER_STATUS_REDIS_KEY = "myaps:scheduler:status"
+SCHEDULER_STATUS_EXPIRE = 60  # Redis中状态过期时间（秒）
 
 class TaskRegistry:
     """任务注册表，用于收集和管理所有定时任务"""
@@ -122,6 +126,9 @@ class SchedulerManager:
         self._job_execution_history = {}  # 存储任务的执行历史记录，格式: {job_id: [{time: datetime, error: str or None}, ...]}
         self._job_errors = {}  # 存储任务的最后错误信息
         self._job_descriptions = {}  # 存储任务的描述信息
+        self._redis_client = None  # Redis客户端
+        self._sync_task: Optional[asyncio.Task] = None  # 后台同步任务
+        self._sync_running = False  # 同步任务运行标志
         
     def set_main_loop(self, loop: asyncio.AbstractEventLoop):
         self.main_loop = loop
@@ -361,8 +368,96 @@ class SchedulerManager:
             else:
                 logger.success("任务执行完成", event.job_id, "")
                 logger.info(f"任务 {event.job_id} 的执行记录已添加到历史，执行成功")
+            
+            # 同步状态到Redis，供其他worker读取
+            self._sync_to_redis()
         else:
             logger.warning_msg("任务错过执行", event.job_id, "")
+    
+    def _get_redis_client(self):
+        """获取Redis客户端"""
+        if self._redis_client is None:
+            try:
+                from apps.common.utils.redis_pool_manager import get_redis_client
+                self._redis_client = get_redis_client()
+            except Exception as e:
+                logger.warning_msg("Redis客户端获取失败", "", str(e))
+        return self._redis_client
+    
+    def _sync_to_redis(self):
+        """将调度器状态同步到Redis，供其他worker读取"""
+        try:
+            redis_client = self._get_redis_client()
+            if not redis_client:
+                return
+            
+            # 获取任务信息，并序列化datetime对象
+            jobs_info = self.get_jobs_info()
+            for job in jobs_info:
+                # 转换datetime对象为ISO字符串
+                if job.get('next_run_time'):
+                    job['next_run_time'] = job['next_run_time'].isoformat() if hasattr(job['next_run_time'], 'isoformat') else str(job['next_run_time'])
+                if job.get('last_run_time'):
+                    job['last_run_time'] = job['last_run_time'].isoformat() if hasattr(job['last_run_time'], 'isoformat') else str(job['last_run_time'])
+                # 转换执行历史中的datetime
+                for record in job.get('execution_history', []):
+                    if record.get('time'):
+                        record['time'] = record['time'].isoformat() if hasattr(record['time'], 'isoformat') else str(record['time'])
+            
+            status = {
+                'initialized': self._initialized,
+                'running': self.scheduler.running if self.scheduler else False,
+                'job_count': len(self.scheduler.get_jobs()) if self.scheduler else 0,
+                'timestamp': time.time(),
+                'jobs': jobs_info
+            }
+            
+            # 序列化状态
+            status_json = json.dumps(status)
+            
+            # 存储到Redis，设置过期时间
+            redis_client.setex(
+                SCHEDULER_STATUS_REDIS_KEY,
+                SCHEDULER_STATUS_EXPIRE,
+                status_json
+            )
+        except Exception as e:
+            logger.warning_msg("调度器状态同步到Redis失败", "", str(e))
+    
+    def _load_from_redis(self) -> Optional[Dict]:
+        """从Redis加载调度器状态"""
+        try:
+            redis_client = self._get_redis_client()
+            if not redis_client:
+                return None
+            
+            status_json = redis_client.get(SCHEDULER_STATUS_REDIS_KEY)
+            if status_json:
+                status = json.loads(status_json)
+                # 检查是否过期
+                if time.time() - status.get('timestamp', 0) < SCHEDULER_STATUS_EXPIRE:
+                    return status
+        except Exception as e:
+            logger.warning_msg("从Redis加载调度器状态失败", "", str(e))
+        return None
+    
+    async def _background_sync_loop(self):
+        """后台同步协程，每30秒静默同步一次状态到Redis"""
+        self._sync_running = True
+        logger.info("调度器状态后台同步任务已启动（每30秒）")
+        
+        while self._sync_running:
+            try:
+                # 同步状态到Redis
+                self._sync_to_redis()
+                # 等待30秒
+                await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                logger.info("调度器状态后台同步任务已取消")
+                break
+            except Exception as e:
+                logger.warning_msg("后台同步任务异常", "", str(e))
+                await asyncio.sleep(5)  # 异常后5秒重试
     
     def start(self) -> bool:
         if not self._initialized:
@@ -375,6 +470,14 @@ class SchedulerManager:
                 
                 self.scheduler.start()
                 logger.success("调度器", f"{self.scheduler}",  "已启动")
+                
+                # 启动后台同步协程（静默运行，不显示在任务列表中）
+                if self.main_loop and not self._sync_task:
+                    self._sync_task = asyncio.create_task(self._background_sync_loop())
+                
+                # 立即同步一次
+                self._sync_to_redis()
+                
                 return True
             else:
                 logger.success("调度器", f"{self.scheduler}", "已在运行中")
@@ -384,6 +487,18 @@ class SchedulerManager:
             return False
     
     def shutdown(self):
+        # 停止后台同步任务
+        if self._sync_task:
+            self._sync_running = False
+            self._sync_task.cancel()
+            try:
+                asyncio.get_event_loop().run_until_complete(self._sync_task)
+            except:
+                pass
+            self._sync_task = None
+            logger.info("后台同步任务已停止")
+        
+        # 关闭调度器
         try:
             if self.scheduler and self.scheduler.running:
                 self.scheduler.shutdown(wait=True)
@@ -493,13 +608,25 @@ def initialize_scheduler():
 
 
 def get_scheduler_status() -> Dict:
-    """获取调度器状态"""
-    return {
+    """获取调度器状态（优先从Redis读取，支持跨worker访问）"""
+    # 尝试从Redis读取（其他worker可能已写入）
+    redis_status = scheduler_manager._load_from_redis()
+    if redis_status:
+        return redis_status
+    
+    # Redis中没有或过期，从本地读取
+    local_status = {
         'initialized': scheduler_manager._initialized,
         'running': scheduler_manager.scheduler.running if scheduler_manager.scheduler else False,
         'job_count': len(scheduler_manager.scheduler.get_jobs()) if scheduler_manager.scheduler else 0,
         'jobs': scheduler_manager.get_jobs_info()
     }
+    
+    # 如果本地有调度器，同步到Redis
+    if local_status['initialized']:
+        scheduler_manager._sync_to_redis()
+    
+    return local_status
 
 
 if __name__ == "__main__":
