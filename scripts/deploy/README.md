@@ -122,8 +122,7 @@ pip install -r requirements.txt
 ## 3. 配置文件
 
 ### 3.1 Gunicorn 配置
-- `gunicorn.conf.py`：Gunicorn 进程管理器配置
-- `gunicorn_multiprocess.conf.py`：多进程模式配置（推荐）
+- `gunicorn.conf.py`：Gunicorn 进程管理器配置（支持环境变量 `GUNICORN_WORKERS` 配置 worker 数）
 
 ### 3.2 Binlog 监听器
 - `binlog_listener_service.py`：Binlog 监听器单进程控制
@@ -287,7 +286,7 @@ Get-Content d:\code\myaps_fastapi\logs\service_daemon.log -Tail 20
 
 - 确保脚本以管理员权限运行
 - 生产环境中修改默认密码
-- 根据服务器配置调整 `gunicorn_multiprocess.conf.py` 中的 `workers` 参数
+- 根据并发需求在 `.env` 中配置 `GUNICORN_WORKERS` 参数（默认为 1）
 - 定期检查日志文件
 - 首次运行会自动安装必要的依赖
 - 所有配置修改后建议使用选项 A 进行健康检查

@@ -106,9 +106,37 @@ def _try_acquire_log_stream_lock() -> bool:
 @asynccontextmanager
 async def lifespan(app):
     """应用生命周期管理器"""
+    # 在 Gunicorn 环境中，只在 worker 进程中初始化
+    # 通过检查进程命令行判断是否在 worker 进程中
+    import sys
+    gunicorn_running = os.environ.get('GUNICORN_RUNNING') == 'true'
+    
+    # 如果没有设置环境变量，检查进程命令行
+    if not gunicorn_running:
+        # 检查是否在 Gunicorn 环境中
+        if 'gunicorn' in sys.modules:
+            # 检查当前进程是否是 worker 进程
+            # Worker 进程的父进程应该是 gunicorn master
+            parent_pid = os.getppid()
+            try:
+                with open(f'/proc/{parent_pid}/cmdline', 'r') as f:
+                    parent_cmdline = f.read()
+                    if 'gunicorn' in parent_cmdline:
+                        # 父进程是 gunicorn master，说明当前是 worker 进程
+                        gunicorn_running = True
+                        os.environ['GUNICORN_RUNNING'] = 'true'
+                        os.environ['GUNICORN_WORKER_PID'] = str(os.getpid())
+            except:
+                pass
+    
+    # 如果是 Gunicorn master 进程（gunicorn 模块已加载但不是 worker），跳过初始化
+    if not gunicorn_running and 'gunicorn' in sys.modules:
+        yield
+        return
+    
     from globalobjects.logger.lifespan import initialize_logging
     await initialize_logging()
-    log_config.info("✅ 统一日志系统初始化完成")
+
     
     main_loop = asyncio.get_running_loop()
     scheduler_manager.set_main_loop(main_loop)
@@ -149,7 +177,7 @@ async def lifespan(app):
     log_config.info("开始预热数据库连接...")
     try:
         await asyncio.wait_for(warmup_connections(), timeout=60)
-        log_config.info("数据库连接预热完成")
+
     except asyncio.TimeoutError:
         log_config.warning("⚠️ 数据库连接预热超时，继续启动其他服务")
     except Exception as e:

@@ -216,9 +216,7 @@ class SmartLogger:
             return
         
         self._router.route(record)
-        
-        if self._console_handler and self._console_handler.enabled:
-            self._console_handler.handle(record)
+
     
     def _format_message(self, msg: Any, args: tuple) -> str:
         """格式化消息"""

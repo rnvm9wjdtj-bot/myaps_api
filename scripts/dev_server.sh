@@ -276,10 +276,19 @@ start_app() {
     echo -e "  端口: $PORT"
     echo ""
     
+    # 读取.env中的GUNICORN_WORKERS配置
+    local gunicorn_workers="1"
+    if [ -f "$PROJECT_DIR/.env" ]; then
+        local env_workers=$(grep '^GUNICORN_WORKERS=' "$PROJECT_DIR/.env" 2>/dev/null | cut -d'=' -f2 | tr -d ' ')
+        if [ -n "$env_workers" ]; then
+            gunicorn_workers="$env_workers"
+        fi
+    fi
+    
     # 使用Gunicorn启动（对标生产部署模式）
     local gunicorn_conf="$PROJECT_DIR/scripts/deploy/gunicorn.conf.py"
     if [ -f "$gunicorn_conf" ]; then
-        nohup env PORT=$PORT GUNICORN_BIND="0.0.0.0:$PORT" $PYTHON_CMD -m gunicorn -c "$gunicorn_conf" main:app > "$LOG_FILE" 2>&1 &
+        nohup env PORT=$PORT GUNICORN_BIND="0.0.0.0:$PORT" GUNICORN_WORKERS=$gunicorn_workers $PYTHON_CMD -m gunicorn -c "$gunicorn_conf" main:app > "$LOG_FILE" 2>&1 &
     else
         nohup env PORT=$PORT $PYTHON_CMD -m uvicorn main:app --host 0.0.0.0 --port $PORT --workers 4 > "$LOG_FILE" 2>&1 &
     fi
@@ -304,26 +313,37 @@ start_app() {
 }
 
 stop_app() {
-    if ! check_app; then
+    # 查找所有 gunicorn 进程
+    local gunicorn_pids=$(pgrep -f "gunicorn.*main:app" 2>/dev/null || true)
+    
+    if [ -z "$gunicorn_pids" ]; then
         echo -e "${YELLOW}[应用]${NC} 服务未运行"
         rm -f "$PID_FILE"
         return 0
     fi
     
-    local pid=$(get_pid)
-    echo -e "${YELLOW}[应用]${NC} 正在停止 (PID: $pid)..."
+    echo -e "${YELLOW}[应用]${NC} 正在停止所有 gunicorn 进程..."
     
-    kill "$pid" 2>/dev/null
+    # 停止所有 gunicorn 进程
+    for pid in $gunicorn_pids; do
+        if kill -0 "$pid" 2>/dev/null; then
+            echo -e "${YELLOW}[应用]${NC}   停止进程: $pid"
+            kill "$pid" 2>/dev/null
+        fi
+    done
     
+    # 等待进程结束
     local count=0
-    while kill -0 "$pid" 2>/dev/null && [ $count -lt 10 ]; do
+    while pgrep -f "gunicorn.*main:app" > /dev/null 2>&1 && [ $count -lt 10 ]; do
         sleep 1
         count=$((count + 1))
     done
     
-    if kill -0 "$pid" 2>/dev/null; then
-        echo -e "${YELLOW}[应用]${NC} 强制结束..."
-        kill -9 "$pid" 2>/dev/null
+    # 强制结束残留进程
+    local remaining=$(pgrep -f "gunicorn.*main:app" 2>/dev/null || true)
+    if [ -n "$remaining" ]; then
+        echo -e "${YELLOW}[应用]${NC} 强制结束残留进程..."
+        pkill -9 -f "gunicorn.*main:app" 2>/dev/null
     fi
     
     rm -f "$PID_FILE"

@@ -10,8 +10,15 @@ if os.path.exists('/app/main.py'):
 else:
     chdir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# 进程数
-workers = min(multiprocessing.cpu_count(), 4)
+# 进程数：从环境变量读取，限制不超过CPU核心数，默认为1
+cpu_count = multiprocessing.cpu_count()
+env_workers = os.getenv("GUNICORN_WORKERS", "1")
+try:
+    workers = min(int(env_workers), cpu_count)
+    if workers < 1:
+        workers = 1
+except ValueError:
+    workers = 1
 worker_class = "uvicorn.workers.UvicornWorker"
 bind = os.getenv("GUNICORN_BIND", "127.0.0.1:8000")
 timeout = 30
@@ -34,7 +41,12 @@ if not os.path.exists(log_dir):
 # 而非 Gunicorn 钩子。这样做更加可靠，避免了对 UvicornWorker 与 Gunicorn 钩子
 # 兼容性的依赖。
 
+def on_starting(server):
+    """Master 进程启动时设置标记"""
+    os.environ['GUNICORN_MASTER_PID'] = str(os.getpid())
+
 def post_fork(server, worker):
     """Worker fork 后立即注入进程标识，供应用代码感知 Gunicorn 环境"""
     os.environ['GUNICORN_RUNNING'] = 'true'
     os.environ['GUNICORN_WORKER_ID'] = str(worker.pid)
+    os.environ['GUNICORN_WORKER_PID'] = str(os.getpid())
