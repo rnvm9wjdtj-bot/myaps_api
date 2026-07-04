@@ -327,28 +327,26 @@ async def lifespan(app):
 
     # 启动实时日志流服务
     log_config.info("启动实时日志流服务...")
-    if os.environ.get('GUNICORN_RUNNING') != 'true':
-        # 非 Gunicorn 环境直接启动
-        try:
-            await asyncio.wait_for(start_log_stream(), timeout=30)
-            log_config.info("✅ 实时日志流服务已启动")
-        except asyncio.TimeoutError:
-            log_config.warning("⚠️ 实时日志流服务启动超时")
-        except Exception as e:
-            log_config.error(f"❌ 实时日志流服务启动失败: {e}")
-    else:
-        # Gunicorn 环境：使用文件锁确保只有一个 Worker 启动
-        worker_id = os.environ.get('GUNICORN_WORKER_ID', '?')
-        if _try_acquire_log_stream_lock():
-            try:
-                await asyncio.wait_for(start_log_stream(), timeout=30)
-                log_config.info(f"✅ Gunicorn Worker {worker_id}：通过文件锁获取权限，实时日志流服务已启动")
-            except asyncio.TimeoutError:
-                log_config.warning(f"⚠️ Gunicorn Worker {worker_id}：实时日志流服务启动超时")
-            except Exception as e:
-                log_config.error(f"❌ Gunicorn Worker {worker_id}：实时日志流服务启动失败: {e}")
+    # 每个 Worker 都启动日志流服务，因为 SSE 连接可能被路由到任何 Worker
+    try:
+        await asyncio.wait_for(start_log_stream(), timeout=30)
+        if os.environ.get('GUNICORN_RUNNING') == 'true':
+            worker_id = os.environ.get('GUNICORN_WORKER_ID', '?')
+            log_config.info(f"✅ Gunicorn Worker {worker_id}：实时日志流服务已启动")
         else:
-            log_config.info(f"ℹ️ Gunicorn Worker {worker_id}：实时日志流服务已在其他 Worker 中运行，跳过")
+            log_config.info("✅ 实时日志流服务已启动")
+    except asyncio.TimeoutError:
+        if os.environ.get('GUNICORN_RUNNING') == 'true':
+            worker_id = os.environ.get('GUNICORN_WORKER_ID', '?')
+            log_config.warning(f"⚠️ Gunicorn Worker {worker_id}：实时日志流服务启动超时")
+        else:
+            log_config.warning("⚠️ 实时日志流服务启动超时")
+    except Exception as e:
+        if os.environ.get('GUNICORN_RUNNING') == 'true':
+            worker_id = os.environ.get('GUNICORN_WORKER_ID', '?')
+            log_config.error(f"❌ Gunicorn Worker {worker_id}：实时日志流服务启动失败: {e}")
+        else:
+            log_config.error(f"❌ 实时日志流服务启动失败: {e}")
 
     # 启动 Redis 健康检查任务
     async def schedule_redis_checks():

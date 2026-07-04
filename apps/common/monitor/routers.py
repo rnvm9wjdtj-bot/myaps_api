@@ -499,16 +499,17 @@ async def test_live_logs():
     """
     测试日志流（调试用）
     """
-    from globalobjects.logger import debug, info, warning, error
+    from globalobjects.logger import debug, info, warning, error, critical
+    debug("测试 DEBUG 日志")
     info("测试 INFO 日志")
     warning("测试 WARNING 日志")
     error("测试 ERROR 日志")
-    debug("测试 DEBUG 日志")
+    critical("测试 CRITICAL 日志")
 
     await asyncio.sleep(0.1)
 
     return {
-        "message": "日志已触发",
+        "message": "所有级别日志已触发",
         "queue_size": len(log_stream_service._log_queue),
     }
 

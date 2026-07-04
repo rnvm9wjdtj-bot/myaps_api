@@ -378,7 +378,7 @@
         </div>
         
         <div class="log-stats">
-            <span data-i18n="monitor.metric.total">总日志: <strong id="totalCount">0</strong></span>
+            <span><span data-i18n="monitor.metric.total">总日志</span>: <strong id="totalCount">0</strong></span>
             <span>DEBUG: <span class="level-count DEBUG" id="debugCount">0</span></span>
             <span>INFO: <span class="level-count INFO" id="infoCount">0</span></span>
             <span>WARNING: <span class="level-count WARNING" id="warningCount">0</span></span>
@@ -637,6 +637,7 @@
             }
             
             stats[logData.level] = (stats[logData.level] || 0) + 1;
+            console.log(`[统计] ${logData.level} 计数: ${stats[logData.level]}, 总计: ${logs.length}`);
             
             if (isDomReady) {
                 updateStats();
@@ -679,9 +680,11 @@
             const criticalCount = document.getElementById('criticalCount');
             
             if (!totalCount || !debugCount || !infoCount || !warningCount || !errorCount || !criticalCount) {
+                console.error('[统计] DOM元素未找到', { totalCount, debugCount, infoCount, warningCount, errorCount, criticalCount });
                 return;
             }
             
+            console.log(`[统计] 更新DOM: 总数=${logs.length}, INFO=${stats.INFO}, WARNING=${stats.WARNING}, ERROR=${stats.ERROR}`);
             totalCount.textContent = logs.length;
             debugCount.textContent = stats.DEBUG || 0;
             infoCount.textContent = stats.INFO || 0;
