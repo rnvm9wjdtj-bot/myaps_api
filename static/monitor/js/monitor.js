@@ -3207,6 +3207,10 @@ function updateSchedulerDetailDisplay(data) {
     // 项目级任务：PROJECT_DIR 目录下的任务
     const envData = getCachedData('environment');
     const projectDir = envData ? envData.project_dir : '';
+    console.log('[任务级别判断] projectDir:', projectDir, 'envData:', envData);
+    jobs.forEach(job => {
+        console.log('[任务级别判断] 任务:', job.name || job.id, '是否包含 project_files.' + projectDir + ':', (job.name || job.id).includes(`project_files.${projectDir}`));
+    });
     jobs.sort((a, b) => {
         const aIsProjectTask = projectDir && (a.name || a.id).includes(`project_files.${projectDir}`);
         const bIsProjectTask = projectDir && (b.name || b.id).includes(`project_files.${projectDir}`);
@@ -3221,9 +3225,10 @@ function updateSchedulerDetailDisplay(data) {
         const lastRunTime = job.last_run_time ? formatDateTime(job.last_run_time) : (typeof i18n !== 'undefined' ? i18n.t('monitor.scheduler.never_run') : '从未执行');
         const nextRunTime = job.next_run_time ? formatDateTime(job.next_run_time) : (typeof i18n !== 'undefined' ? i18n.t('monitor.scheduler.not_scheduled') : '未计划');
         const maxExecutionTime = job.max_execution_time ? `${job.max_execution_time.toFixed(2)} ` + (typeof i18n !== 'undefined' ? i18n.t('monitor.other.seconds') : '秒') : (typeof i18n !== 'undefined' ? i18n.t('monitor.scheduler.default') : '默认');
-        const envData = getCachedData('environment');
-        const projectDir = envData ? envData.project_dir : '';
-        const isProjectTask = projectDir && (job.name || job.id).includes(`project_files.${projectDir}`);
+        
+        // 判断任务级别：检查任务名称是否包含项目路径
+        const jobName = job.name || job.id || '';
+        const isProjectTask = projectDir && jobName.includes(`project_files.${projectDir}`);
         const isSystemTask = !isProjectTask;
         
         // 解析下次执行时间为日期和时间部分

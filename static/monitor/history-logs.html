@@ -1731,8 +1731,8 @@
                 });
             }
             
-            // 按时间戳排序（降序）
-            events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            // 按时间戳排序（升序，从早到晚）
+            events.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
             
             // 应用限制（最多200条）
             timelineData = events.slice(0, 200);
@@ -2277,7 +2277,7 @@
                 return;
             }
             
-            sortedHttpData = [...historyQueryData.http].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            sortedHttpData = [...historyQueryData.http];
             
             tbody.innerHTML = sortedHttpData.map((req, index) => {
                 const methodClass = req.method.toLowerCase();
@@ -2314,7 +2314,7 @@
                 return;
             }
             
-            sortedOutboundData = [...historyQueryData.outbound].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            sortedOutboundData = [...historyQueryData.outbound];
             
             tbody.innerHTML = sortedOutboundData.map((req, index) => {
                 const methodClass = req.method.toLowerCase();
@@ -2351,7 +2351,7 @@
                 return;
             }
             
-            sortedLogsData = [...historyQueryData.logs].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            sortedLogsData = [...historyQueryData.logs];
             
             tbody.innerHTML = sortedLogsData.map((log, index) => {
                 const levelClass = log.level ? log.level.toLowerCase() : 'info';

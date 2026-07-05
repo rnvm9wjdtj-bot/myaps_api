@@ -928,7 +928,7 @@ async def get_history_by_time_range(
     page: int = 1,
     page_size: int = 50,
     sort_by: str = None,
-    sort_order: str = "desc"
+    sort_order: str = "asc"
 ):
     """
     统一的历史查询端点（用于日志联动功能）

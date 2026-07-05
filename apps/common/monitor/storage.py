@@ -131,7 +131,7 @@ class RequestStorage:
             
             # 排序
             sort_by = (filter_params.get('sort_by') if filter_params else None) or 'timestamp'
-            sort_order = (filter_params.get('sort_order') if filter_params else None) or 'desc'
+            sort_order = (filter_params.get('sort_order') if filter_params else None) or 'asc'
             
             if sort_by == 'duration':
                 sort_field = 'response_time'
@@ -408,7 +408,7 @@ class OutboundRequestStorage:
             
             # 排序
             sort_by = filter_params.get('sort_by', 'timestamp') if filter_params else 'timestamp'
-            sort_order = filter_params.get('sort_order', 'desc') if filter_params else 'desc'
+            sort_order = filter_params.get('sort_order', 'asc') if filter_params else 'asc'
             
             if sort_by == 'duration':
                 sort_field = 'duration'
@@ -667,7 +667,7 @@ class SystemLogStorage:
             
             # 排序
             sort_by = (filter_params.get('sort_by') if filter_params else None) or 'timestamp'
-            sort_order = (filter_params.get('sort_order') if filter_params else None) or 'desc'
+            sort_order = (filter_params.get('sort_order') if filter_params else None) or 'asc'
             order_str = f"-{sort_by}" if sort_order == 'desc' else sort_by
             query = query.order_by(order_str)
             
