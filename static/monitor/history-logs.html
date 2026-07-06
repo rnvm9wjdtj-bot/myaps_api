@@ -2358,13 +2358,23 @@
                 const time = formatDateTime(log.timestamp);
                 const timestamp = new Date(log.timestamp).getTime();
                 
+                // HTML转义函数，防止XSS攻击
+                const escapeHtml = (str) => {
+                    if (!str) return '';
+                    return str.replace(/&/g, '&amp;')
+                              .replace(/</g, '&lt;')
+                              .replace(/>/g, '&gt;')
+                              .replace(/"/g, '&quot;')
+                              .replace(/'/g, '&#39;');
+                };
+                
                 return `
                     <tr data-timestamp="${timestamp}">
                         <td>${index + 1}</td>
                         <td class="font-mono">${time}</td>
                         <td class="font-mono"><span class="log-level-badge ${levelClass}">${log.level || '-'}</span></td>
                         <td class="font-mono">${log.module || '-'}</td>
-                        <td class="log-message-cell" style="white-space: normal; word-break: break-all;">${log.message || '-'}</td>
+                        <td class="log-message-cell" style="white-space: normal; word-break: break-all;" title="${escapeHtml(log.message || '')}">${escapeHtml(log.message || '-')}</td>
                         <td>
                             <button class="action-btn" onclick="showHistoryLogDetail(${index})">详情</button>
                             <button class="action-btn precise-btn" onclick="preciseLocate(${index}, 'logs')">± 60s</button>

@@ -149,7 +149,7 @@ async def refresh_stock(dbs: str=MYAPS_DB_SET):
             })
             df_sap_st['itemno'] = pdv.ITEMNO
         except Exception as e:
-            CLIENT_LOGGER.fail("SAP库存获取", "", str(e))
+
             raise
         return df_sap_st
 
