@@ -1,7 +1,7 @@
 """江阴海达橡塑"""
 
 from re import A
-import requests, uuid, asyncio, json#, logging#, os, atexit
+import requests, uuid, asyncio, json, aiohttp
 import pandas as pd
 from datetime import datetime
 from typing import List, Dict, Union
@@ -46,6 +46,8 @@ srm_headers = {
     "Authorization": srm.get("Authorization", ""),
     "Content-Type": "application/json",
 }
+# 同步HTTP会话（已废弃，仅保留用于向后兼容）
+# 注意：push_pr 函数已改造为异步实现，不再使用此同步会话
 srm_session = get_session()
 srm_session.headers.update(srm_headers)
 srm_field_map = {
@@ -56,6 +58,165 @@ srm_field_map = {
     "期间": "original_datestr", "期间要货数": "current_order_quantity",
     "期初盈余": "initial_surplus", "期末盈余": "last_surplus", "要求交期": "datestr",
 }
+
+
+def get_srm_config() -> Dict:
+    """
+    获取SRM配置
+    
+    从project.json读取SRM配置，返回配置字典
+    
+    Returns:
+        Dict: SRM配置字典，包含：
+            - timeout: HTTP请求总超时时间（秒）
+            - connect_timeout: 连接超时时间（秒）
+            - read_timeout: 读取超时时间（秒）
+            - pool_size: 连接池大小
+            - url: SRM基础URL
+            - headers: 请求头（包含认证信息）
+    
+    Raises:
+        ValueError: 如果SRM配置缺失或非法
+    """
+    srm_config = PROJECT_JSON_FILE.get("srm", {})
+    
+    timeout = srm_config.get("timeout", 360)
+    connect_timeout = srm_config.get("connect_timeout", 10)
+    read_timeout = srm_config.get("read_timeout", 360)
+    pool_size = srm_config.get("pool_size", 10)
+    
+    if not (30 <= timeout <= 600):
+        CLIENT_LOGGER.warning("SRM配置", f"timeout={timeout} 超出范围[30, 600]，使用默认值 360")
+        timeout = 360
+    
+    if not (1 <= connect_timeout <= 60):
+        CLIENT_LOGGER.warning("SRM配置", f"connect_timeout={connect_timeout} 超出范围[1, 60]，使用默认值 10")
+        connect_timeout = 10
+    
+    if not (30 <= read_timeout <= 600):
+        CLIENT_LOGGER.warning("SRM配置", f"read_timeout={read_timeout} 超出范围[30, 600]，使用默认值 360")
+        read_timeout = 360
+    
+    if not (1 <= pool_size <= 100):
+        CLIENT_LOGGER.warning("SRM配置", f"pool_size={pool_size} 超出范围[1, 100]，使用默认值 10")
+        pool_size = 10
+    
+    config = {
+        "timeout": timeout,
+        "connect_timeout": connect_timeout,
+        "read_timeout": read_timeout,
+        "pool_size": pool_size,
+        "url": srm_config.get("base_url", ""),
+        "headers": {
+            "Authorization": srm_config.get("Authorization", ""),
+            "Content-Type": "application/json",
+        },
+    }
+    
+    if not config["url"]:
+        raise ValueError("SRM配置缺失：srm.base_url 未配置")
+    
+    if not config["headers"].get("Authorization"):
+        CLIENT_LOGGER.warning("SRM配置", "Authorization 未配置，可能导致认证失败")
+    
+    CLIENT_LOGGER.debug(f"SRM配置加载完成: timeout={config['timeout']}s, pool_size={config['pool_size']}")
+    return config
+
+
+_srm_session: aiohttp.ClientSession | None = None
+_session_lock = asyncio.Lock()
+
+
+async def get_srm_session() -> aiohttp.ClientSession:
+    """
+    获取SRM异步HTTP会话（单例模式）
+    
+    创建或返回已存在的aiohttp.ClientSession实例。
+    使用单例模式避免频繁创建和销毁会话，提升性能。
+    
+    Returns:
+        aiohttp.ClientSession: 异步HTTP会话实例
+    
+    Note:
+        会话配置了超时时间和连接池，支持并发请求。
+        会话在应用退出时自动清理。
+    """
+    global _srm_session
+    
+    if _srm_session is not None and not _srm_session.closed:
+        return _srm_session
+    
+    async with _session_lock:
+        if _srm_session is not None and not _srm_session.closed:
+            return _srm_session
+        
+        config = get_srm_config()
+        
+        connector = aiohttp.TCPConnector(
+            limit=config["pool_size"],
+            limit_per_host=config["pool_size"],
+            ttl_dns_cache=300,
+        )
+        
+        timeout = aiohttp.ClientTimeout(
+            total=config["timeout"],
+            connect=config["connect_timeout"],
+            sock_read=config["read_timeout"],
+        )
+        
+        _srm_session = aiohttp.ClientSession(
+            connector=connector,
+            timeout=timeout,
+            headers=config["headers"],
+        )
+        
+        CLIENT_LOGGER.debug(f"创建SRM异步会话: timeout={config['timeout']}s, pool_size={config['pool_size']}")
+        
+        return _srm_session
+
+
+async def close_srm_session():
+    """
+    关闭SRM异步HTTP会话
+    
+    释放连接池资源，清理会话。
+    建议在应用退出时调用。
+    """
+    global _srm_session
+    
+    if _srm_session is not None and not _srm_session.closed:
+        await _srm_session.close()
+        _srm_session = None
+        CLIENT_LOGGER.debug("SRM异步会话已关闭")
+
+
+async def async_post_to_srm(url: str, json_data: dict) -> dict:
+    """
+    向SRM发送异步POST请求
+    
+    Args:
+        url: 请求URL（完整URL）
+        json_data: JSON请求数据
+    
+    Returns:
+        dict: 响应JSON数据
+    
+    Raises:
+        asyncio.TimeoutError: 请求超时
+        aiohttp.ClientError: 连接异常
+        json.JSONDecodeError: 响应解析异常
+    """
+    session = await get_srm_session()
+    
+    async with session.post(url, json=json_data) as response:
+        response_text = await response.text()
+        
+        try:
+            result = await response.json()
+            return result
+        except json.JSONDecodeError as e:
+            CLIENT_LOGGER.fail("SRM请求", f"响应解析失败: {str(e)}", f"原始响应: {response_text[:500]}")
+            raise
 
 #################################################################################
 # ⬇️项目可复用逻辑
@@ -168,24 +329,49 @@ async def refresh_stock(dbs: str=MYAPS_DB_SET):
 
 
 async def push_pr(period: int = 30, groupdates: List[str] | str = None):
-    if groupdates:
-        if isinstance(groupdates, list):
-            groupdates = ','.join(groupdates)
-
-    pr_data = await ApsPayloadSponsor.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=period, field_map=srm_field_map, groupdates=groupdates)
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    for item in pr_data:
-        item["plant"] = "1000"
-        item["bu_code"] = werks
-        item["version"] = timestamp
-    CLIENT_LOGGER.start(f"推送要货计划到SRM：{pr_data}")
-    response = srm_session.post(
-        url=f"{srm_url}/jbl/service/execute/SRM_RECEIVE_PUSHED_DEMAND_PLAN_SERVICE",
-        json={"demand_plan": pr_data})
-    if response.json().get("body", {}).get("status", "").lower() == "success":
-        CLIENT_LOGGER.success(f"推送要货计划到SRM")
-    else:
-        CLIENT_LOGGER.fail(f"推送要货计划到SRM", response.text)
+    """
+    推送要货计划到SRM
+    
+    Args:
+        period: 期间（天数），默认30天
+        groupdates: 指定日期列表，可选
+    
+    Note:
+        已改造为异步HTTP请求，不阻塞事件循环。
+        异常处理完善，确保定时任务不中断。
+    """
+    try:
+        if groupdates:
+            if isinstance(groupdates, list):
+                groupdates = ','.join(groupdates)
+        
+        pr_data = await ApsPayloadSponsor.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=period, field_map=srm_field_map, groupdates=groupdates)
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        for item in pr_data:
+            item["plant"] = "1000"
+            item["bu_code"] = werks
+            item["version"] = timestamp
+        CLIENT_LOGGER.start(f"推送要货计划到SRM：{pr_data}")
+        
+        config = get_srm_config()
+        url = f"{config['url']}/jbl/service/execute/SRM_RECEIVE_PUSHED_DEMAND_PLAN_SERVICE"
+        
+        try:
+            result = await async_post_to_srm(url, {"demand_plan": pr_data})
+            
+            if result.get("body", {}).get("status", "").lower() == "success":
+                CLIENT_LOGGER.success(f"推送要货计划到SRM")
+            else:
+                CLIENT_LOGGER.fail(f"推送要货计划到SRM", f"响应状态异常: {result}")
+        
+        except asyncio.TimeoutError:
+            CLIENT_LOGGER.fail("推送要货计划到SRM", "请求超时", f"超时时间: {config['timeout']}秒")
+        
+        except aiohttp.ClientError as e:
+            CLIENT_LOGGER.fail("推送要货计划到SRM", f"连接异常: {str(e)}")
+        
+    except Exception as e:
+        CLIENT_LOGGER.exception("推送要货计划到SRM", f"未知异常: {str(e)}")
 
 
 async def push_weekpr_to_srm():

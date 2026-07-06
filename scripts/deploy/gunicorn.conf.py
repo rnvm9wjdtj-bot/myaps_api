@@ -21,7 +21,7 @@ except ValueError:
     workers = 1
 worker_class = "uvicorn.workers.UvicornWorker"
 bind = os.getenv("GUNICORN_BIND", "127.0.0.1:8000")
-timeout = 30
+timeout = int(os.getenv("GUNICORN_TIMEOUT", "360"))  # 默认360秒，可通过环境变量配置
 
 # 日志配置
 accesslog = os.path.join(chdir, "logs", "access.log")
