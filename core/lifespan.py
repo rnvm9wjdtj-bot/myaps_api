@@ -1,10 +1,14 @@
 from contextlib import asynccontextmanager
 import asyncio
 import os
+import sys
 import time
 import json
 import inspect
+import signal
+import atexit
 import redis
+from typing import Optional, Dict, Any, Union, List
 from globalobjects import logger as log_config
 from globalobjects.logger import shutdown_logging
 from apps.data_opt.utils.scheduler import scheduler_manager, get_scheduler_status, initialize_scheduler
@@ -32,6 +36,9 @@ _DB_HEALTH_CHECK_LOCK_FILE = "/tmp/.myaps_db_health_check.lock"
 _FAILED_OP_RECOVERY_LOCK_FILE = "/tmp/.myaps_failed_op_recovery.lock"
 _LOG_STREAM_LOCK_FILE = "/tmp/.myaps_log_stream.lock"
 
+_LOCK_FILES: List[str] = []
+_SIGNAL_HANDLERS_SET: bool = False
+
 
 def _pid_is_alive(pid: int) -> bool:
     """检查进程是否存活（Linux 下通过 /proc 检测，其他平台 fallback）"""
@@ -41,36 +48,412 @@ def _pid_is_alive(pid: int) -> bool:
         return False
 
 
-def _try_acquire_lock(lock_file: str) -> bool:
+def _get_process_info(pid: int) -> Optional[Dict[str, Any]]:
     """
-    通用的文件锁获取函数。
-    处理废弃锁：如果锁文件存在但持有进程已死，接管锁。
-    返回 True 表示获取成功，False 表示跳过。
+    获取进程信息，用于增强锁机制
+    
+    从 /proc 文件系统读取进程详细信息，为增强锁机制提供进程唯一标识。
+    通过进程启动时间（starttime）来区分PID复用的情况。
+    
+    Args:
+        pid: 进程ID
+        
+    Returns:
+        包含进程信息的字典，格式为：
+        {
+            'pid': int,              # 进程ID
+            'starttime': float,      # 进程启动时间（秒，从系统启动开始计算）
+            'cmdline': str           # 进程命令行
+        }
+        如果无法获取进程信息，返回 None
+        
+    Note:
+        - 仅在Linux系统上有效，非Linux系统返回None
+        - 异常情况返回None，不抛出异常
+    """
+    if sys.platform != "linux":
+        return None
+    
+    try:
+        with open(f"/proc/{pid}/stat", 'r') as f:
+            stat = f.read().split()
+            starttime_ticks = int(stat[21])
+            clocks_per_sec = os.sysconf(os.sysconf_names['SC_CLK_TCK'])
+            starttime = starttime_ticks / clocks_per_sec
+        
+        with open(f"/proc/{pid}/cmdline", 'r') as f:
+            cmdline = f.read().replace('\x00', ' ').strip()
+        
+        return {
+            'pid': pid,
+            'starttime': starttime,
+            'cmdline': cmdline
+        }
+    except (FileNotFoundError, PermissionError, ValueError, IndexError, OSError, KeyError):
+        return None
+
+
+def _parse_lock_file(lock_file: str) -> Union[Dict[str, Any], int, None]:
+    """
+    解析锁文件内容，支持新旧格式兼容
+    
+    优先尝试解析为JSON格式（新格式），失败则尝试解析为整数（旧格式）。
+    
+    Args:
+        lock_file: 锁文件路径
+        
+    Returns:
+        - Dict: JSON格式锁文件（新格式）
+        - int: 整数格式锁文件（旧格式，仅包含PID）
+        - None: 文件不存在、损坏或无法解析
+        
+    Note:
+        新格式锁文件包含完整的进程标识信息：
+        {
+            "pid": int,
+            "starttime": float,
+            "cmdline": str,
+            "worker_id": str,
+            "timestamp": float
+        }
+        
+        旧格式锁文件仅包含PID（整数）
     """
     try:
-        # 尝试原子创建
+        with open(lock_file, 'r') as f:
+            content = f.read().strip()
+        
+        if not content:
+            return None
+        
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            try:
+                return int(content)
+            except ValueError:
+                return None
+    except (FileNotFoundError, OSError):
+        return None
+
+
+def _write_lock_file(fd: int) -> bool:
+    """
+    写入增强格式的锁文件
+    
+    将当前进程的完整标识信息写入锁文件，用于PID复用检测。
+    
+    Args:
+        fd: 文件描述符（已通过 os.open 打开）
+        
+    Returns:
+        True: 写入成功
+        False: 写入失败（无法获取进程信息或写入异常）
+        
+    Note:
+        锁文件格式为JSON，包含以下字段：
+        - pid: 进程ID
+        - starttime: 进程启动时间（秒）
+        - cmdline: 进程命令行
+        - worker_id: Gunicorn Worker ID（如果存在）
+        - timestamp: 锁创建时间戳
+    """
+    try:
+        current_pid = os.getpid()
+        process_info = _get_process_info(current_pid)
+        
+        if not process_info:
+            return False
+        
+        lock_data = {
+            'pid': current_pid,
+            'starttime': process_info['starttime'],
+            'cmdline': process_info['cmdline'],
+            'worker_id': os.environ.get('GUNICORN_WORKER_ID', str(current_pid)),
+            'timestamp': time.time()
+        }
+        
+        json_str = json.dumps(lock_data, ensure_ascii=False)
+        os.write(fd, json_str.encode('utf-8'))
+        os.fsync(fd)
+        
+        return True
+    except (OSError, TypeError):
+        return False
+
+
+def _try_acquire_lock_simple(lock_file: str) -> bool:
+    """
+    简单锁获取函数（降级方案）
+    
+    当无法获取进程信息时使用简单锁机制，仅检查PID是否存在。
+    
+    Args:
+        lock_file: 锁文件路径
+        
+    Returns:
+        True: 锁获取成功
+        False: 锁已被占用或获取失败
+    """
+    try:
         fd = os.open(lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
         with os.fdopen(fd, 'w') as f:
             f.write(str(os.getpid()))
+        register_lock_file(lock_file)
+        log_config.info(f"✅ 简单锁获取成功: {lock_file}, PID={os.getpid()}")
         return True
     except FileExistsError:
-        # 锁已存在，检查是否废弃
         try:
             with open(lock_file, 'r') as f:
                 stored_pid_str = f.read().strip()
             if stored_pid_str:
                 stored_pid = int(stored_pid_str)
                 if not _pid_is_alive(stored_pid):
-                    # 废弃锁，清理后重试
                     os.unlink(lock_file)
                     fd = os.open(lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
                     with os.fdopen(fd, 'w') as f:
                         f.write(str(os.getpid()))
+                    register_lock_file(lock_file)
+                    log_config.info(f"✅ 简单锁获取成功（清理废弃锁）: {lock_file}, PID={os.getpid()}")
                     return True
         except (ValueError, OSError, FileNotFoundError):
-            # 无法读取或清理，跳过
             pass
+        log_config.info(f"ℹ️ 简单锁已被占用: {lock_file}")
         return False
+    except Exception as e:
+        log_config.error(f"❌ 简单锁获取失败: {lock_file}, 错误: {e}")
+        return False
+
+
+def _try_acquire_lock_enhanced(lock_file: str) -> bool:
+    """
+    增强的锁获取函数
+    
+    通过进程启动时间检测PID复用，支持新旧格式锁文件兼容。
+    
+    Args:
+        lock_file: 锁文件路径
+        
+    Returns:
+        True: 锁获取成功
+        False: 锁已被占用或获取失败
+        
+    Note:
+        核心逻辑：
+        1. 尝试创建锁文件，成功则写入增强格式数据
+        2. 锁文件存在时，解析并判断：
+           - JSON格式（新）：比较starttime，检测PID复用
+           - 整数格式（旧）：检查PID是否存在
+           - 损坏：清理并重试
+        3. 无法获取进程信息时降级到简单锁机制
+    """
+    current_pid = os.getpid()
+    current_info = _get_process_info(current_pid)
+    
+    if not current_info:
+        log_config.debug(f"⚠️ 无法获取进程信息，降级到简单锁机制: {lock_file}")
+        return _try_acquire_lock_simple(lock_file)
+    
+    try:
+        fd = os.open(lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        if _write_lock_file(fd):
+            os.close(fd)
+            register_lock_file(lock_file)
+            log_config.info(f"✅ 增强锁获取成功: {lock_file}, PID={current_pid}")
+            return True
+        else:
+            os.close(fd)
+            log_config.warning(f"⚠️ 增强锁写入失败，降级到简单锁: {lock_file}")
+            return _try_acquire_lock_simple(lock_file)
+    except FileExistsError:
+        stored_data = _parse_lock_file(lock_file)
+        
+        if stored_data is None:
+            log_config.warning(f"⚠️ 锁文件损坏，清理并重试: {lock_file}")
+            try:
+                os.unlink(lock_file)
+                fd = os.open(lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+                if _write_lock_file(fd):
+                    os.close(fd)
+                    register_lock_file(lock_file)
+                    log_config.info(f"✅ 增强锁获取成功（清理损坏锁）: {lock_file}, PID={current_pid}")
+                    return True
+                else:
+                    os.close(fd)
+                    return False
+            except Exception as e:
+                log_config.error(f"❌ 清理损坏锁失败: {lock_file}, 错误: {e}")
+                return False
+        
+        if isinstance(stored_data, dict):
+            stored_pid = stored_data.get('pid')
+            stored_starttime = stored_data.get('starttime')
+            
+            if stored_pid == current_pid:
+                if stored_starttime is not None and abs(current_info['starttime'] - stored_starttime) < 1.0:
+                    log_config.info(f"ℹ️ 增强锁已被当前进程持有: {lock_file}, PID={current_pid}")
+                    return False
+                else:
+                    log_config.warning(f"⚠️ 检测到PID复用，清理废弃锁: {lock_file}, 旧starttime={stored_starttime}, 新starttime={current_info['starttime']}")
+                    try:
+                        os.unlink(lock_file)
+                        fd = os.open(lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+                        if _write_lock_file(fd):
+                            os.close(fd)
+                            register_lock_file(lock_file)
+                            log_config.info(f"✅ 增强锁获取成功（清理PID复用锁）: {lock_file}, PID={current_pid}")
+                            return True
+                        else:
+                            os.close(fd)
+                            return False
+                    except Exception as e:
+                        log_config.error(f"❌ 清理PID复用锁失败: {lock_file}, 错误: {e}")
+                        return False
+            else:
+                if not _pid_is_alive(stored_pid):
+                    log_config.warning(f"⚠️ 检测到废弃锁（进程已终止），清理: {lock_file}, PID={stored_pid}")
+                    try:
+                        os.unlink(lock_file)
+                        fd = os.open(lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+                        if _write_lock_file(fd):
+                            os.close(fd)
+                            register_lock_file(lock_file)
+                            log_config.info(f"✅ 增强锁获取成功（清理废弃锁）: {lock_file}, PID={current_pid}")
+                            return True
+                        else:
+                            os.close(fd)
+                            return False
+                    except Exception as e:
+                        log_config.error(f"❌ 清理废弃锁失败: {lock_file}, 错误: {e}")
+                        return False
+                else:
+                    log_config.info(f"ℹ️ 增强锁已被其他进程持有: {lock_file}, PID={stored_pid}")
+                    return False
+        
+        elif isinstance(stored_data, int):
+            stored_pid = stored_data
+            if not _pid_is_alive(stored_pid):
+                log_config.warning(f"⚠️ 检测到旧格式废弃锁，清理: {lock_file}, PID={stored_pid}")
+                try:
+                    os.unlink(lock_file)
+                    fd = os.open(lock_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+                    if _write_lock_file(fd):
+                        os.close(fd)
+                        register_lock_file(lock_file)
+                        log_config.info(f"✅ 增强锁获取成功（清理旧格式废弃锁）: {lock_file}, PID={current_pid}")
+                        return True
+                    else:
+                        os.close(fd)
+                        return False
+                except Exception as e:
+                    log_config.error(f"❌ 清理旧格式废弃锁失败: {lock_file}, 错误: {e}")
+                    return False
+            else:
+                log_config.info(f"ℹ️ 旧格式锁已被其他进程持有: {lock_file}, PID={stored_pid}")
+                return False
+        
+        return False
+    except Exception as e:
+        log_config.error(f"❌ 增强锁获取失败: {lock_file}, 错误: {e}")
+        return False
+
+
+def _try_acquire_lock(lock_file: str) -> bool:
+    """
+    通用的文件锁获取函数（增强版）
+    
+    使用增强锁机制，通过进程启动时间检测PID复用。
+    如果无法获取进程信息，自动降级到简单锁机制。
+    
+    Args:
+        lock_file: 锁文件路径
+        
+    Returns:
+        True: 锁获取成功
+        False: 锁已被占用或获取失败
+    """
+    return _try_acquire_lock_enhanced(lock_file)
+
+
+def register_lock_file(lock_file: str) -> None:
+    """
+    注册锁文件，用于进程退出时自动清理
+    
+    Args:
+        lock_file: 锁文件路径
+    """
+    global _LOCK_FILES
+    if lock_file not in _LOCK_FILES:
+        _LOCK_FILES.append(lock_file)
+        log_config.debug(f"📝 注册锁文件: {lock_file}")
+
+
+def _cleanup_lock_files() -> None:
+    """
+    清理当前进程持有的所有锁文件
+    
+    在进程退出时自动调用，确保锁文件不会残留。
+    """
+    global _LOCK_FILES
+    current_pid = os.getpid()
+    
+    cleaned_count = 0
+    for lock_file in _LOCK_FILES:
+        try:
+            stored_data = _parse_lock_file(lock_file)
+            
+            should_delete = False
+            if isinstance(stored_data, dict):
+                if stored_data.get('pid') == current_pid:
+                    should_delete = True
+            elif isinstance(stored_data, int):
+                if stored_data == current_pid:
+                    should_delete = True
+            
+            if should_delete:
+                os.unlink(lock_file)
+                cleaned_count += 1
+                log_config.info(f"🧹 清理锁文件: {lock_file}")
+        except (FileNotFoundError, PermissionError, OSError):
+            pass
+        except Exception as e:
+            log_config.warning(f"⚠️ 清理锁文件失败: {lock_file}, 错误: {e}")
+    
+    _LOCK_FILES.clear()
+    if cleaned_count > 0:
+        log_config.info(f"✅ 已清理 {cleaned_count} 个锁文件")
+
+
+def _setup_signal_handlers() -> None:
+    """
+    设置信号处理函数，确保进程退出时清理锁文件
+    
+    捕获 SIGTERM、SIGINT、SIGABRT 信号，在进程终止前清理锁文件。
+    """
+    global _SIGNAL_HANDLERS_SET
+    
+    if _SIGNAL_HANDLERS_SET:
+        return
+    
+    def _signal_handler(signum, frame):
+        try:
+            _cleanup_lock_files()
+            log_config.info(f"📤 收到信号 {signum}，已清理锁文件")
+        except Exception as e:
+            log_config.error(f"❌ 信号处理失败: {e}")
+        finally:
+            signal.signal(signum, signal.SIG_DFL)
+            os.kill(os.getpid(), signum)
+    
+    for sig in [signal.SIGTERM, signal.SIGINT, signal.SIGABRT]:
+        try:
+            signal.signal(sig, _signal_handler)
+        except (ValueError, OSError):
+            pass
+    
+    atexit.register(_cleanup_lock_files)
+    _SIGNAL_HANDLERS_SET = True
+    log_config.info("✅ 信号处理函数已注册")
 
 
 def _try_acquire_binlog_lock() -> bool:
@@ -106,6 +489,8 @@ def _try_acquire_log_stream_lock() -> bool:
 @asynccontextmanager
 async def lifespan(app):
     """应用生命周期管理器"""
+    _setup_signal_handlers()
+    
     # 在 Gunicorn 环境中，只在 worker 进程中初始化
     # 通过检查进程命令行判断是否在 worker 进程中
     import sys
