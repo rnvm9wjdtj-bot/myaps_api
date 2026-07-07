@@ -1045,7 +1045,7 @@ async def get_history_by_time_range(
         http_requests = await request_storage.get_requests_with_filters(
             utc_start, utc_end, limit, filter_params
         )
-        print(f"[DEBUG] HTTP查询: page={page}, page_size={page_size}, 返回{len(http_requests)}条")
+
         # 列表查询只返回基本字段，不返回request_body/response_body大字段（详情时懒加载）
         result["http_requests"] = [{
             "id": req.id,
@@ -1068,7 +1068,7 @@ async def get_history_by_time_range(
         outbound_requests = await outbound_request_storage.get_requests_with_filters(
             utc_start, utc_end, limit, filter_params
         )
-        print(f"[DEBUG] Outbound查询: page={page}, page_size={page_size}, 返回{len(outbound_requests)}条")
+
         # 列表查询只返回基本字段，不返回request_body/response_body大字段
         result["outbound_requests"] = [{
             "id": req.id,
@@ -1089,7 +1089,7 @@ async def get_history_by_time_range(
         logs = await system_log_storage.get_logs_with_filters(
             utc_start, utc_end, level, limit, filter_params
         )
-        print(f"[DEBUG] Logs查询: page={page}, page_size={page_size}, 返回{len(logs)}条")
+
         # 列表查询不返回stack_trace大字段（详情时懒加载）
         result["logs"] = [{
             "id": log.id,

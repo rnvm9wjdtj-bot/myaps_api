@@ -281,6 +281,8 @@ window.__i18n_en_US__ = {
     'monitor.error.load_failed': 'Load failed, please retry',
     'monitor.error.invalid_params': 'Invalid parameters',
     'monitor.error.clear_dl_failed': 'Failed to clear DeadLetter queue',
+    'monitor.error.start_time_future': 'Start time cannot be in the future!\nQuery time: {startTime}\nSystem time: {now}',
+    'monitor.error.end_time_future': 'End time is in the future, auto-adjusted to current time.\nOriginal: {endTime}\nAdjusted: {now}',
     
     // ============ Success ============
     'monitor.success.query_complete': 'Query Complete',

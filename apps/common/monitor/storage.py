@@ -49,11 +49,10 @@ class RequestStorage:
         try:
             query = APIRequest.filter()
             
-            if start_time and end_time:
-                query = query.filter(
-                    timestamp__gte=start_time,
-                    timestamp__lte=end_time
-                )
+            if start_time:
+                query = query.filter(timestamp__gte=start_time)
+            if end_time:
+                query = query.filter(timestamp__lte=end_time)
             
             requests = await query.limit(limit).order_by('-timestamp').all()
             return requests
@@ -93,11 +92,10 @@ class RequestStorage:
         try:
             query = APIRequest.filter()
             
-            if start_time and end_time:
-                query = query.filter(
-                    timestamp__gte=start_time,
-                    timestamp__lte=end_time
-                )
+            if start_time:
+                query = query.filter(timestamp__gte=start_time)
+            if end_time:
+                query = query.filter(timestamp__lte=end_time)
             
             if filter_params:
                 # 状态码范围过滤
@@ -168,11 +166,10 @@ class RequestStorage:
         try:
             query = APIRequest.filter()
             
-            if start_time and end_time:
-                query = query.filter(
-                    timestamp__gte=start_time,
-                    timestamp__lte=end_time
-                )
+            if start_time:
+                query = query.filter(timestamp__gte=start_time)
+            if end_time:
+                query = query.filter(timestamp__lte=end_time)
             
             if filter_params:
                 if filter_params.get('status_code_min'):
@@ -368,13 +365,12 @@ class OutboundRequestStorage:
             对外请求记录列表
         """
         try:
-            # 修复：当时间范围为 None 时，不添加时间过滤条件
-            query = OutboundAPIRequest.select()
+            query = OutboundAPIRequest.filter()
             
             if start_time:
-                query = query.where(OutboundAPIRequest.timestamp >= start_time)
+                query = query.filter(timestamp__gte=start_time)
             if end_time:
-                query = query.where(OutboundAPIRequest.timestamp <= end_time)
+                query = query.filter(timestamp__lte=end_time)
             
             if filter_params:
                 # 模块过滤（IN查询）
@@ -443,10 +439,12 @@ class OutboundRequestStorage:
     ) -> int:
         """计数查询（用于分页）"""
         try:
-            query = OutboundAPIRequest.filter(
-                timestamp__gte=start_time,
-                timestamp__lte=end_time
-            )
+            query = OutboundAPIRequest.filter()
+            
+            if start_time:
+                query = query.filter(timestamp__gte=start_time)
+            if end_time:
+                query = query.filter(timestamp__lte=end_time)
             
             if filter_params:
                 if filter_params.get('module'):
@@ -600,11 +598,10 @@ class SystemLogStorage:
         try:
             query = SystemLog.filter()
             
-            if start_time and end_time:
-                query = query.filter(
-                    timestamp__gte=start_time,
-                    timestamp__lte=end_time
-                )
+            if start_time:
+                query = query.filter(timestamp__gte=start_time)
+            if end_time:
+                query = query.filter(timestamp__lte=end_time)
             
             if level:
                 level_order = {'DEBUG': 10, 'INFO': 20, 'WARNING': 30, 'ERROR': 40, 'CRITICAL': 50}
@@ -643,11 +640,10 @@ class SystemLogStorage:
         try:
             query = SystemLog.filter()
             
-            if start_time and end_time:
-                query = query.filter(
-                    timestamp__gte=start_time,
-                    timestamp__lte=end_time
-                )
+            if start_time:
+                query = query.filter(timestamp__gte=start_time)
+            if end_time:
+                query = query.filter(timestamp__lte=end_time)
             
             if level:
                 level_order = {'DEBUG': 10, 'INFO': 20, 'WARNING': 30, 'ERROR': 40, 'CRITICAL': 50}
@@ -697,11 +693,10 @@ class SystemLogStorage:
         try:
             query = SystemLog.filter()
             
-            if start_time and end_time:
-                query = query.filter(
-                    timestamp__gte=start_time,
-                    timestamp__lte=end_time
-                )
+            if start_time:
+                query = query.filter(timestamp__gte=start_time)
+            if end_time:
+                query = query.filter(timestamp__lte=end_time)
             
             if level:
                 level_order = {'DEBUG': 10, 'INFO': 20, 'WARNING': 30, 'ERROR': 40, 'CRITICAL': 50}

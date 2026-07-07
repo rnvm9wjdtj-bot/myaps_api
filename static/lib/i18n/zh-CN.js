@@ -282,6 +282,8 @@ window.__i18n_zh_CN__ = {
     'monitor.error.load_failed': '加载失败，请重试',
     'monitor.error.invalid_params': '参数错误',
     'monitor.error.clear_dl_failed': '清空DeadLetter队列失败',
+    'monitor.error.start_time_future': '起始时间不能是未来时间！当前查询时间：{startTime}\n当前系统时间：{now}',
+    'monitor.error.end_time_future': '结束时间是未来时间，已自动调整为当前时间。\n原时间：{endTime}\n调整后：{now}',
     
     // ============ 成功提示 ============
     'monitor.success.query_complete': '查询完成',

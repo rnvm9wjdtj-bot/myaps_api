@@ -282,6 +282,8 @@ window.__i18n_de_DE__ = {
     'monitor.error.load_failed': 'Laden fehlgeschlagen, bitte erneut versuchen',
     'monitor.error.invalid_params': 'Ungültige Parameter',
     'monitor.error.clear_dl_failed': 'DeadLetter-Warteschlange löschen fehlgeschlagen',
+    'monitor.error.start_time_future': 'Startzeit darf nicht in der Zukunft liegen!\nAbfragezeit: {startTime}\nSystemzeit: {now}',
+    'monitor.error.end_time_future': 'Endzeit liegt in der Zukunft, automatisch angepasst.\nUrsprünglich: {endTime}\nAngepasst: {now}',
     
     // ============ Erfolg ============
     'monitor.success.query_complete': 'Abfrage abgeschlossen',

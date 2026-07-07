@@ -1170,8 +1170,8 @@
         }
 
         async function executeHistoryQuery() {
-            const startTime = document.getElementById('history-start-time').value;
-            const endTime = document.getElementById('history-end-time').value;
+            let startTime = document.getElementById('history-start-time').value;
+            let endTime = document.getElementById('history-end-time').value;
             const logLevel = document.getElementById('history-log-level').value;
             const queryType = document.getElementById('history-query-type').value;
             
@@ -1179,10 +1179,36 @@
             if (startTime && endTime) {
                 const startDate = new Date(startTime);
                 const endDate = new Date(endTime);
+                const now = new Date();
                 
                 if (startDate >= endDate) {
-                    alert(i18n.t('monitor.error.time_range_invalid'));
+                    alert(i18n.t('monitor.error.time_range_invalid') || '起始时间必须早于结束时间');
                     return;
+                }
+                
+                // 验证时间不能是未来时间
+                if (startDate > now) {
+                    alert(i18n.t('monitor.error.start_time_future', {
+                        startTime: startTime,
+                        now: now.toLocaleString('zh-CN')
+                    }) || '起始时间不能是未来时间！当前查询时间：' + startTime + '\n当前系统时间：' + now.toLocaleString('zh-CN'));
+                    return;
+                }
+                
+                if (endDate > now) {
+                    // 如果结束时间是未来，自动调整为当前时间
+                    const nowStr = now.toLocaleString('zh-CN').replace(/\//g, '-');
+                    const confirmed = confirm(i18n.t('monitor.error.end_time_future', {
+                        endTime: endTime,
+                        now: nowStr
+                    }) || '结束时间是未来时间，已自动调整为当前时间。\n原时间：' + endTime + '\n调整后：' + nowStr);
+                    if (confirmed) {
+                        const adjustedEndTime = now.toISOString().slice(0, 19);
+                        document.getElementById('history-end-time').value = adjustedEndTime;
+                        endTime = adjustedEndTime;  // 更新变量，确保后续查询使用调整后的时间
+                    } else {
+                        return;
+                    }
                 }
             }
             
@@ -1622,6 +1648,12 @@
             const tabContent = document.getElementById('tab-' + tab);
             if (tabContent) {
                 tabContent.classList.add('active');
+            }
+            
+            // 自动同步查询类型选择器
+            const queryTypeSelect = document.getElementById('history-query-type');
+            if (queryTypeSelect && (tab === 'http' || tab === 'outbound' || tab === 'logs')) {
+                queryTypeSelect.value = tab;
             }
             
             if (tab === 'http') {
@@ -2729,9 +2761,31 @@
             }, 300);
         }
 
-        window.onload = function() {
-            quickTimeRange('1h');
-        };
+         window.onload = function() {
+             // 清除可能存在的错误时间值（未来时间）
+             const startTimeInput = document.getElementById('history-start-time');
+             const endTimeInput = document.getElementById('history-end-time');
+             const now = new Date();
+             
+             if (startTimeInput && startTimeInput.value) {
+                 const startDate = new Date(startTimeInput.value);
+                 if (startDate > now) {
+                     console.warn('检测到错误的起始时间（未来时间），已清除:', startTimeInput.value);
+                     startTimeInput.value = '';
+                 }
+             }
+             
+             if (endTimeInput && endTimeInput.value) {
+                 const endDate = new Date(endTimeInput.value);
+                 if (endDate > now) {
+                     console.warn('检测到错误的结束时间（未来时间），已清除:', endTimeInput.value);
+                     endTimeInput.value = '';
+                 }
+             }
+             
+             // 自动设置最近1小时的时间范围
+             quickTimeRange('1h');
+         };
     </script>
 </body>
 </html>
