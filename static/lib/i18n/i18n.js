@@ -72,6 +72,11 @@ class I18n {
             this.updateLangSelector();
             this.updateHtmlLang();
             
+            // 通知所有监听者语言已加载
+            window.dispatchEvent(new CustomEvent('langchange', { 
+                detail: { lang: this.currentLang } 
+            }));
+            
             console.log(`[i18n] Initialized with language: ${this.currentLang}`);
             return true;
         } catch (error) {

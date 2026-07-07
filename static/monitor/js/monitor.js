@@ -8,6 +8,26 @@ let refreshInterval = null;
 let originalTitle = document.title;
 let titleAlertInterval = null;
 
+// 监听语言切换，重建所有图表（确保翻译已加载）
+window.addEventListener('langchange', () => {
+    // 资源图表
+    if (resourceChart) {
+        resourceChart.destroy();
+        resourceChart = null;
+    }
+    initResourceChart();
+    // Redis 图表
+    if (redisConnectionsChart) {
+        redisConnectionsChart.destroy();
+        redisConnectionsChart = null;
+    }
+    if (redisBufferChart) {
+        redisBufferChart.destroy();
+        redisBufferChart = null;
+    }
+    initRedisCharts();
+});
+
 // 存储实际错误状态
 let actualErrorState = {};
 // 存储已确认的错误状态（用于比较状态变化）
@@ -196,7 +216,6 @@ function saveBadgeConfirmedHasError() {
 document.addEventListener('DOMContentLoaded', async () => {
     // 加载已确认的错误状态
     loadBadgeConfirmedHasError();
-    initResourceChart();
     initRedisCharts();
     fetchEnvironment();
     // 无论当前在哪个页面，都获取一次日志数据来检查未读状态
