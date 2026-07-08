@@ -1,7 +1,7 @@
 """江阴海达橡塑"""
 
 from re import A
-import requests, uuid, asyncio, json, aiohttp
+import requests, uuid, asyncio, json, httpx
 import pandas as pd
 from datetime import datetime
 from typing import List, Dict, Union
@@ -13,7 +13,7 @@ from dateutil.relativedelta import relativedelta
 from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
 from .._base import (
     get_scheduler_minute, async_rate_limit, CacheItem,
-    ApsPayloadSponsor, EventResultPoster, CLIENT_LOGGER, standard_response, get_session, event_batch_handler,
+    ApsPayloadSponsor, EventResultPoster, CLIENT_LOGGER, standard_response, get_session, get_async_session, event_batch_handler,
     cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, PROJECT_JSON_FILE, pdv,
 )
 
@@ -123,76 +123,34 @@ def get_srm_config() -> Dict:
     return config
 
 
-_srm_session: aiohttp.ClientSession | None = None
-_session_lock = asyncio.Lock()
-
-
-async def get_srm_session() -> aiohttp.ClientSession:
-    """
-    获取SRM异步HTTP会话（单例模式）
+async def get_srm_async_session():
+    """SRM异步会话单例，首次调用时初始化"""
+    session = getattr(get_srm_async_session, '_session', None)
+    if session is not None:
+        return session
     
-    创建或返回已存在的aiohttp.ClientSession实例。
-    使用单例模式避免频繁创建和销毁会话，提升性能。
+    lock = getattr(get_srm_async_session, '_lock', None)
+    if lock is None:
+        lock = asyncio.Lock()
+        get_srm_async_session._lock = lock
     
-    Returns:
-        aiohttp.ClientSession: 异步HTTP会话实例
-    
-    Note:
-        会话配置了超时时间和连接池，支持并发请求。
-        会话在应用退出时自动清理。
-    """
-    global _srm_session
-    
-    if _srm_session is not None and not _srm_session.closed:
-        return _srm_session
-    
-    async with _session_lock:
-        if _srm_session is not None and not _srm_session.closed:
-            return _srm_session
+    async with lock:
+        session = getattr(get_srm_async_session, '_session', None)
+        if session is not None:
+            return session
         
-        config = get_srm_config()
-        
-        connector = aiohttp.TCPConnector(
-            limit=config["pool_size"],
-            limit_per_host=config["pool_size"],
-            ttl_dns_cache=300,
+        c = get_srm_config()
+        get_srm_async_session._session = await get_async_session(
+            pool_connections=c["pool_size"], pool_maxsize=c["pool_size"],
+            connect_timeout=c["connect_timeout"], read_timeout=c["read_timeout"],
         )
-        
-        timeout = aiohttp.ClientTimeout(
-            total=config["timeout"],
-            connect=config["connect_timeout"],
-            sock_read=config["read_timeout"],
-        )
-        
-        _srm_session = aiohttp.ClientSession(
-            connector=connector,
-            timeout=timeout,
-            headers=config["headers"],
-        )
-        
-        CLIENT_LOGGER.debug(f"创建SRM异步会话: timeout={config['timeout']}s, pool_size={config['pool_size']}")
-        
-        return _srm_session
-
-
-async def close_srm_session():
-    """
-    关闭SRM异步HTTP会话
-    
-    释放连接池资源，清理会话。
-    建议在应用退出时调用。
-    """
-    global _srm_session
-    
-    if _srm_session is not None and not _srm_session.closed:
-        await _srm_session.close()
-        _srm_session = None
-        CLIENT_LOGGER.debug("SRM异步会话已关闭")
+        CLIENT_LOGGER.debug(f"创建SRM异步会话: pool_size={c['pool_size']}, timeout={c['timeout']}s")
+        return get_srm_async_session._session
 
 
 async def async_post_to_srm(url: str, json_data: dict) -> dict:
     """
-    向SRM发送异步POST请求
+    向SRM发送异步POST请求（复用单例会话，支持监控记录）
     
     Args:
         url: 请求URL（完整URL）
@@ -203,20 +161,16 @@ async def async_post_to_srm(url: str, json_data: dict) -> dict:
     
     Raises:
         asyncio.TimeoutError: 请求超时
-        aiohttp.ClientError: 连接异常
+        httpx.HTTPError: 连接异常
         json.JSONDecodeError: 响应解析异常
     """
-    session = await get_srm_session()
-    
-    async with session.post(url, json=json_data) as response:
-        response_text = await response.text()
-        
-        try:
-            result = await response.json()
-            return result
-        except json.JSONDecodeError as e:
-            CLIENT_LOGGER.fail("SRM请求", f"响应解析失败: {str(e)}", f"原始响应: {response_text[:500]}")
-            raise
+    session = await get_srm_async_session()
+    try:
+        response = await session.post(url, json=json_data, headers=get_srm_config()["headers"])
+        return response.json()
+    except json.JSONDecodeError as e:
+        CLIENT_LOGGER.fail("SRM请求", f"响应解析失败: {str(e)}", f"原始响应: {response.text[:500]}")
+        raise
 
 #################################################################################
 # ⬇️项目可复用逻辑
@@ -330,7 +284,7 @@ async def refresh_stock(dbs: str=MYAPS_DB_SET):
 
 async def push_pr(period: int = 30, groupdates: List[str] | str = None):
     """
-    推送要货计划到SRM
+    推送要货计划到SRM（分批发送）
     
     Args:
         period: 期间（天数），默认30天
@@ -338,46 +292,103 @@ async def push_pr(period: int = 30, groupdates: List[str] | str = None):
     
     Note:
         已改造为异步HTTP请求，不阻塞事件循环。
-        异常处理完善，确保定时任务不中断。
+        采用分批发送策略，每批100条数据，避免超时。
     """
     try:
         if groupdates:
             if isinstance(groupdates, list):
                 groupdates = ','.join(groupdates)
         
+        # 查询数据
         pr_data = await ApsPayloadSponsor.get_dategrouped_pr(db_name=MYAPS_MAIN_DB, period=period, field_map=srm_field_map, groupdates=groupdates)
+        
+        # 数据验证
+        if not pr_data or len(pr_data) == 0:
+            CLIENT_LOGGER.warning("推送要货计划到SRM", "查询数据为空", f"period={period}天, groupdates={groupdates}")
+            return False
+        
+        # 补充字段
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         for item in pr_data:
             item["plant"] = "1000"
             item["bu_code"] = werks
             item["version"] = timestamp
-        CLIENT_LOGGER.start(f"推送要货计划到SRM：{pr_data}")
+        
+        total_count = len(pr_data)
+        CLIENT_LOGGER.start(f"推送要货计划到SRM", f"共{total_count}条数据，开始分批发送")
         
         config = get_srm_config()
         url = f"{config['url']}/jbl/service/execute/SRM_RECEIVE_PUSHED_DEMAND_PLAN_SERVICE"
         
-        try:
-            result = await async_post_to_srm(url, {"demand_plan": pr_data})
+        # 分批发送
+        batch_size = 100
+        max_retries = 2  # 每批最大重试次数
+        success_count = 0
+        fail_count = 0
+        
+        for i in range(0, total_count, batch_size):
+            batch_num = i // batch_size + 1
+            batch_data = pr_data[i:i + batch_size]
+            batch_count = len(batch_data)
             
-            if result.get("body", {}).get("status", "").lower() == "success":
-                CLIENT_LOGGER.success(f"推送要货计划到SRM")
-            else:
-                CLIENT_LOGGER.fail(f"推送要货计划到SRM", f"响应状态异常: {result}")
+            # 带重试的批次发送
+            for attempt in range(1 + max_retries):
+                try:
+                    CLIENT_LOGGER.info(f"推送批次 {batch_num}", f"发送{batch_count}条数据" + (f"（第{attempt + 1}次尝试）" if attempt > 0 else ""))
+                    
+                    result = await async_post_to_srm(url, {"demand_plan": batch_data})
+                    
+                    if result.get("body", {}).get("status", "").lower() == "success":
+                        success_count += batch_count
+                        CLIENT_LOGGER.success(f"批次 {batch_num} 推送成功", f"成功{batch_count}条")
+                        break  # 成功，跳出重试循环
+                    else:
+                        # 响应状态异常，非网络错误不重试
+                        fail_count += batch_count
+                        CLIENT_LOGGER.fail(f"批次 {batch_num} 推送失败", f"响应状态异常: {result}")
+                        break
+                    
+                except asyncio.TimeoutError:
+                    if attempt < max_retries:
+                        CLIENT_LOGGER.warning(f"批次 {batch_num} 超时重试", f"第{attempt + 1}次超时，准备重试")
+                        await asyncio.sleep(1.0)  # 重试前等待1秒
+                    else:
+                        fail_count += batch_count
+                        CLIENT_LOGGER.fail(f"批次 {batch_num} 推送失败", f"重试{max_retries}次后仍超时", f"超时时间: {config['timeout']}秒")
+                
+                except Exception as e:
+                    # 捕获所有异常（包括 httpx.HTTPError, httpx.TimeoutException 等）
+                    if attempt < max_retries:
+                        CLIENT_LOGGER.warning(f"批次 {batch_num} 连接异常重试", f"第{attempt + 1}次异常: {str(e)[:100]}，准备重试")
+                        await asyncio.sleep(1.0)  # 重试前等待1秒
+                    else:
+                        fail_count += batch_count
+                        CLIENT_LOGGER.fail(f"批次 {batch_num} 推送失败", f"重试{max_retries}次后仍连接异常: {str(e)}")
+            
+            # 批次间延迟，避免资源耗尽
+            if i + batch_size < total_count:
+                await asyncio.sleep(0.5)
         
-        except asyncio.TimeoutError:
-            CLIENT_LOGGER.fail("推送要货计划到SRM", "请求超时", f"超时时间: {config['timeout']}秒")
-        
-        except aiohttp.ClientError as e:
-            CLIENT_LOGGER.fail("推送要货计划到SRM", f"连接异常: {str(e)}")
+        # 汇总结果
+        if fail_count == 0:
+            CLIENT_LOGGER.success(f"推送要货计划到SRM完成", f"全部成功：{success_count}条")
+            return True
+        else:
+            CLIENT_LOGGER.warning(f"推送要货计划到SRM完成", f"部分失败：成功{success_count}条，失败{fail_count}条")
+            return False
         
     except Exception as e:
         CLIENT_LOGGER.exception("推送要货计划到SRM", f"未知异常: {str(e)}")
+        return False
 
 
 async def push_weekpr_to_srm():
     CLIENT_LOGGER.start("推送周要货计划到SRM任务")
-    await push_pr(period=30)
-    CLIENT_LOGGER.success("推送周要货计划到SRM任务", "", "执行完成")
+    success = await push_pr(period=30)
+    if success:
+        CLIENT_LOGGER.success("推送周要货计划到SRM任务", "", "执行完成")
+    else:
+        CLIENT_LOGGER.fail("推送周要货计划到SRM任务", "", "执行失败")
 
 
 async def push_monthpr_to_srm():
@@ -386,8 +397,11 @@ async def push_monthpr_to_srm():
         (datetime.now().replace(day=1) + relativedelta(months=i + 1) - relativedelta(days=1)).strftime('%Y-%m-%d')
         for i in range(3)
     ]
-    await push_pr(period=90, groupdates=date_list)
-    CLIENT_LOGGER.success("推送月度要货计划到SRM任务", "", "执行完成")
+    success = await push_pr(period=90, groupdates=date_list)
+    if success:
+        CLIENT_LOGGER.success("推送月度要货计划到SRM任务", "", "执行完成")
+    else:
+        CLIENT_LOGGER.fail("推送月度要货计划到SRM任务", "", "执行失败")
 #################################################################################
 # ⬇️定时任务设置
 #################################################################################
@@ -406,7 +420,6 @@ async def task_confirm_workreport():
 
 
 @cron_task(hour=23, minute=59, description="推送周要货计划到SRM")  # 每天23:59执行一次，需须在23:55拉取库存和确认报工之后
-# @cron_task(hour="8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23", minute="0,5,10,15,20,25,30,35,40,45,50,55")
 async def task_push_weekpr_to_srm():
     await push_weekpr_to_srm()
 

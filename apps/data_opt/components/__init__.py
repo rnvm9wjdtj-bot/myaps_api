@@ -1662,6 +1662,9 @@ class ApsPayloadSponsor:
             
         Returns:
             处理后的库存动态报表数据
+            
+        Note:
+            已改造为分页查询，确保获取全部数据，避免默认1000条限制。
         """
         start_date: datetime.date = datetime.now().date()
 
@@ -1685,13 +1688,47 @@ class ApsPayloadSponsor:
         if materialno:
             sql_matno = ','.join([f"'{matno.strip()}'" for matno in materialno.split(',')])
             filter_string += f" AND `MaterialNo` IN ({sql_matno})"
-        query_result = await db_query(db_name=db_name, model_or_tablename="v_matdailyqtyreport", filter_string=filter_string, order_string=order_string)
-        if data := query_result.data:
-            request_result.extend(data)
+        
+        # 分页查询，确保获取全部数据
+        page_index = 1
+        page_size = 1000  # 每页1000条
+        total_fetched = 0
+        max_pages = 100  # 安全限制，防止无限循环
+        
+        while page_index <= max_pages:
+            query_result = await db_query(
+                db_name=db_name,
+                model_or_tablename="v_matdailyqtyreport",
+                filter_string=filter_string,
+                order_string=order_string,
+                page_size=page_size,
+                page_index=page_index
+            )
+            
+            if not query_result.data:
+                # 没有数据，结束查询
+                logger.debug(f"分页查询结束：第{page_index}页无数据，累计获取{total_fetched}条")
+                break
+            
+            # 添加到结果列表
+            request_result.extend(query_result.data)
+            total_fetched += len(query_result.data)
+            
+            # 如果返回数据少于page_size，说明已经是最后一页
+            if len(query_result.data) < page_size:
+                logger.debug(f"分页查询完成：共{page_index}页，累计获取{total_fetched}条原始数据")
+                break
+            
+            # 继续查询下一页
+            page_index += 1
+        
+        if page_index > max_pages:
+            logger.warning(f"分页查询达到最大页数限制({max_pages}页)，累计获取{total_fetched}条，可能存在更多数据")
 
         if not request_result:
             return []
 
+        logger.debug(f"开始处理数据：原始数据{len(request_result)}条")
         df = pd.DataFrame(request_result)
         df = df.sort_values(by=['materialno', 'datestr'], ascending=[True, True])
 
@@ -1733,6 +1770,8 @@ class ApsPayloadSponsor:
                                 })
         )
         
+        logger.debug(f"分组聚合完成：{len(df_grouped)}条记录")
+        
         result = []
         material_balances = {}
         
@@ -1755,6 +1794,8 @@ class ApsPayloadSponsor:
             })
             material_balances[mat_no] = closing_balance
             result.append(record)
+        
+        logger.debug(f"数据处理完成：最终{len(result)}条记录")
         
         # Fix: Convert NaN values to None for JSON serialization
         for record in result:
