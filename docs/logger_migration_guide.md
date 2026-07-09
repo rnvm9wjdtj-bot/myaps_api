@@ -153,8 +153,8 @@ info("消息")
 LOG_LEVEL=INFO                    # 日志级别
 LOG_DIR=logs                      # 日志文件目录
 LOG_FILE_PREFIX=app               # 日志文件前缀
-MAX_FILE_SIZE=100                 # 单文件最大大小 (MB)
-RETENTION_DAYS=7                  # 日志保留天数
+LOG_MAX_FILE_SIZE=100             # 单文件最大大小 (MB)
+LOG_RETENTION_DAYS=7              # 日志保留天数
 
 # 输出目标开关
 TO_CONSOLE=true                   # 输出到控制台
@@ -188,14 +188,7 @@ LOG_STACK_TRACE=false             # 是否启用调用栈追踪
 
 如遇问题需要回滚：
 
-### 方式1: 环境变量切换
-
-```bash
-# 在 .env 中设置
-USE_UNIFIED_LOGGER=false
-```
-
-### 方式2: 文件恢复
+### 方式1: 文件恢复
 
 ```bash
 cd globalobjects/

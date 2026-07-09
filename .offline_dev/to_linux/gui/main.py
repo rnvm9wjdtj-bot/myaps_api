@@ -553,7 +553,6 @@ class OfflineMigrationTool:
             f.write("TO_FILE=true\n")
             f.write("TO_DATABASE=true\n")
             f.write("TO_WEBSOCKET=true\n")
-            f.write("USE_UNIFIED_LOGGER=true\n")
 
         self.log(f"配置已保存到: {env_file}", "success")
         messagebox.showinfo("成功", "配置已保存！请前往 '4. 服务管理' 标签页启动服务。")

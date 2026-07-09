@@ -154,9 +154,6 @@ echo TO_CONSOLE=true
 echo TO_FILE=true
 echo TO_DATABASE=true
 echo TO_WEBSOCKET=true
-echo.
-echo # 旧版兼容
-echo USE_UNIFIED_LOGGER=true
 ) > "%ENV_FILE%"
 
 echo   配置已写入: %ENV_FILE%

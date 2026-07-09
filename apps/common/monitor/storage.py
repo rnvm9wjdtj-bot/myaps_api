@@ -1,7 +1,7 @@
 from typing import List, Dict, Any
 from datetime import datetime, timezone, timedelta
 from tortoise.expressions import Q
-from core.settings import LOG_RETENTION, LOG_LEVEL
+from core.settings import MONITOR_RETENTION_DAYS, LOG_LEVEL
 from .models import APIRequest, OutboundAPIRequest, SystemLog
 
 # 日志级别优先级映射
@@ -307,7 +307,7 @@ class RequestStorage:
         ).limit(limit).order_by('-timestamp').all()
         return error_requests
 
-    async def clean_old_data(self, days: int = LOG_RETENTION) -> int:
+    async def clean_old_data(self, days: int = MONITOR_RETENTION_DAYS) -> int:
         """清理指定天数前的数据
         
         Returns:
@@ -568,7 +568,7 @@ class OutboundRequestStorage:
         ).limit(limit).order_by('-timestamp').all()
         return requests
 
-    async def clean_old_data(self, days: int = LOG_RETENTION) -> int:
+    async def clean_old_data(self, days: int = MONITOR_RETENTION_DAYS) -> int:
         """清理指定天数前的对外请求数据
         
         Returns:
@@ -716,7 +716,7 @@ class SystemLogStorage:
             print(f"计数查询失败: {e}")
             return 0
     
-    async def clean_old_data(self, days: int = LOG_RETENTION) -> int:
+    async def clean_old_data(self, days: int = MONITOR_RETENTION_DAYS) -> int:
         """清理指定天数前的系统日志数据
         
         Returns:
@@ -733,11 +733,11 @@ outbound_request_storage = OutboundRequestStorage()
 system_log_storage = SystemLogStorage()
 
 
-async def clean_all_old_data(days: int = LOG_RETENTION):
+async def clean_all_old_data(days: int = MONITOR_RETENTION_DAYS):
     """统一清理所有旧的请求数据
     
     Args:
-        days: 保留多少天的数据，默认使用配置文件中的 LOG_RETENTION
+        days: 保留多少天的数据，默认使用配置文件中的 MONITOR_RETENTION_DAYS
     """
     from globalobjects import logger as log_config
     logger = log_config.get_logger(__name__)

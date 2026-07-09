@@ -135,7 +135,7 @@ pip install -r requirements.txt
     - `PROTOCOL`：访问协议（http:// 或 https://）
     - `PORT`：服务端口
     - `PYTHON_VENV_DIR`：Python 虚拟环境目录
-    - `LOG_RETENTION`：日志保留天数
+    - `MONITOR_RETENTION_DAYS`：监控数据保留天数
 
 ### 3.4 健康检查脚本
 - `check_health.bat`：HTTP 健康检查脚本

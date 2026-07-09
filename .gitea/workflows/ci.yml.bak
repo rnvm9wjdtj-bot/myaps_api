@@ -258,7 +258,7 @@ jobs:
           # 项目参数
           #################################################################################
           LOG_LEVEL=INFO
-          LOG_RETENTION=2
+          MONITOR_RETENTION_DAYS=2
           PROJECT_DIR=
           PROJECT_JSON=dev
           
@@ -620,7 +620,7 @@ jobs:
           # 项目参数
           #################################################################################
           LOG_LEVEL=INFO
-          LOG_RETENTION=2
+          MONITOR_RETENTION_DAYS=2
           PROJECT_DIR=
           PROJECT_JSON=prod
           

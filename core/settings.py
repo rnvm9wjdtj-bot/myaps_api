@@ -84,8 +84,8 @@ SCHEDULER_HOUR = os.getenv("SCHEDULER_HOUR") or "6,8,10,12,14,16"
 SCHEDULER_MINUTE = os.getenv("SCHEDULER_MINUTE") or "55"
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "").strip() or "INFO"
-# 日志保留天数，默认5
-LOG_RETENTION = int(os.getenv("LOG_RETENTION", 5))
+# 监控数据保留天数，默认5
+MONITOR_RETENTION_DAYS = int(os.getenv("MONITOR_RETENTION_DAYS", 5))
 
 # 日志引擎开关：使用 loguru (V2) 还是原生 logging (V1)
 # 默认 True，使用 loguru；设置为 False 切换到原生 logging

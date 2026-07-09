@@ -17,6 +17,7 @@ dist/
 .vscode/
 .idea/
 .arts/
+.codeartsdoer/
 *.suo
 *.ntvs*
 *.njsproj
