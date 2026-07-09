@@ -119,17 +119,31 @@ mkdir -p project_files/{PROJECT_DIR}
 }
 ```
 
-**4.3 创建 remind.py**（可选）：
+**4.3 创建 remind.py**（必填，client.py 的硬依赖）：
 ```python
 from globalobjects.reminder import QqEmailReminder
 
 ops_reminder = QqEmailReminder(
-    smtp_user="your@qq.com",
-    smtp_password="授权码",
-    email_from="your@qq.com",
-    email_to="recipient@qq.com",
+    smtp_user="",
+    smtp_password="",
+    email_from="",
+    email_to="",
 )
+
+bus_reminder = QqEmailReminder(
+    smtp_user="",
+    smtp_password="",
+    email_from="",
+    email_to="",
+)
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(ops_reminder.remind_by_shell())
 ```
+
+> **注意**：`remind.py` 是 `client.py` 的硬依赖（通过 `from .remind import` 引入），必须存在。
+> 模板中配置项硬编码为空字符串，实际使用时填入 QQ 邮箱及授权码即可启用消息推送。
 
 ### Step 5: 数据库初始化
 ```bash
@@ -163,7 +177,7 @@ curl http://localhost:8001/docs  # 验证
 **项目配置**
 - [ ] .env 已配置
 - [ ] dev.json 已创建
-- [ ] remind.py 已创建
+- [ ] remind.py 已创建（必填）
 
 **数据库初始化**
 - [ ] 监控表已创建（8 个表）
@@ -324,7 +338,7 @@ make && make install PREFIX=$HOME/local
 |------|------|------|
 | .env | 环境变量配置 | ✓ |
 | project_files/{PROJECT_DIR}/dev.json | 项目配置 | ✓ |
-| project_files/{PROJECT_DIR}/remind.py | 消息推送 | ✗ |
+| project_files/{PROJECT_DIR}/remind.py | 消息推送 | ✓ |
 | requirements.txt | Python 依赖 | ✓ |
 
 ### 3. 重要配置项
