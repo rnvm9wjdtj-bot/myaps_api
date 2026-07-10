@@ -218,7 +218,13 @@ def sap_post(url: str, session: requests.Session, interface_id: str, data: dict,
 async def refresh_stock(dbs: str=MYAPS_DB_SET):
     """
     刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据
-    db: 对哪些账套生效，多个账套用逗号分隔
+    
+    Args:
+        dbs: 对哪些账套生效，多个账套用逗号分隔
+    
+    Note:
+        已改造为无阻塞异步执行，同步HTTP请求和pandas处理在线程池中运行。
+        超时保护设置为75秒（连接15秒 + 读取60秒）。
     """
     def get_sap_stock_data():
         """
@@ -270,7 +276,19 @@ async def refresh_stock(dbs: str=MYAPS_DB_SET):
 
     CLIENT_LOGGER.start("刷新库存任务")
     mto_vir_st = await ApsPayloadSponsor.mto_workreport_to_virtual_stock()
-    df_sap_st = get_sap_stock_data()
+    
+    loop = asyncio.get_event_loop()
+    try:
+        df_sap_st = await asyncio.wait_for(
+            loop.run_in_executor(None, get_sap_stock_data),
+            timeout=75
+        )
+    except asyncio.TimeoutError:
+        CLIENT_LOGGER.fail("刷新库存任务", "获取SAP库存数据超时", "超过75秒")
+        return
+    except Exception as e:
+        CLIENT_LOGGER.fail("刷新库存任务", "获取SAP库存数据失败", str(e))
+        return
 
     if mto_vir_st is not None:
         stock_data_total = pd.concat([df_sap_st, mto_vir_st], axis=0, ignore_index=True)
