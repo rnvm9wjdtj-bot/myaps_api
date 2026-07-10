@@ -1715,6 +1715,40 @@ async def get_http_request_detail(request_id: int):
         raise HTTPException(status_code=500, detail=f"查询详情失败: {str(e)}")
 
 
+@router.get("/history/http/by-request-id/{request_id}")
+async def get_http_request_by_request_id(request_id: str):
+    """
+    根据request_id（UUID）获取HTTP请求详情（包含完整的request_body、response_body）
+    用于前端复制功能获取完整数据
+    """
+    try:
+        req = await APIRequest.get_or_none(request_id=request_id)
+        if not req:
+            raise HTTPException(status_code=404, detail="请求不存在")
+        
+        return {
+            "id": req.id,
+            "request_id": req.request_id,
+            "timestamp": req.timestamp.isoformat(),
+            "method": req.method,
+            "path": req.path,
+            "query_params": req.query_params,
+            "status_code": req.status_code,
+            "duration": req.response_time,
+            "client_ip": req.client_ip,
+            "user_agent": req.user_agent,
+            "is_slow": req.is_slow,
+            "is_error": req.is_error,
+            "error_message": req.error_message,
+            "request_body": req.request_body,
+            "response_body": req.response_body,
+            "request_headers": getattr(req, 'request_headers', None),
+            "response_headers": getattr(req, 'response_headers', None)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"查询详情失败: {str(e)}")
+
+
 @router.get("/history/log/{log_id}")
 async def get_log_detail(log_id: int):
     """

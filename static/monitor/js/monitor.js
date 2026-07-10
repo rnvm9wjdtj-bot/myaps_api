@@ -2590,43 +2590,78 @@ function copyRequestBody() {
     const requestBodyEl = document.getElementById('api-detail-request-body');
     if (!requestBodyEl) return;
     
-    // 从原始数据源获取完整内容
+    // 从原始数据源获取request_id
     const requestIndex = parseInt(requestBodyEl.dataset.requestIndex);
-    let content = '';
+    let requestId = null;
     
     if (!isNaN(requestIndex) && window.apiRequestsData && window.apiRequestsData.recent_requests && window.apiRequestsData.recent_requests[requestIndex]) {
-        // 从原始数据获取完整内容
-        content = formatBody(window.apiRequestsData.recent_requests[requestIndex].request_body);
+        requestId = window.apiRequestsData.recent_requests[requestIndex].request_id;
     }
     
-    // 如果无法从原始数据获取，使用显示的内容作为降级方案
-    if (!content || content.trim() === '') {
-        content = requestBodyEl.textContent;
+    // 如果有request_id，尝试从数据库获取完整数据
+    if (requestId) {
+        fetch(`${API_BASE}/history/http/by-request-id/${requestId}`)
+            .then(response => {
+                if (!response.ok) throw new Error('获取完整数据失败');
+                return response.json();
+            })
+            .then(data => {
+                if (data.request_body) {
+                    const content = formatBody(data.request_body);
+                    copyToClipboard(content)
+                        .then(() => showCopySuccess(requestBodyEl))
+                        .catch(err => {
+                            console.error('复制失败:', err);
+                            alert(typeof i18n !== 'undefined' ? i18n.t('monitor.copy.failed') : '复制失败，请手动复制');
+                        });
+                } else {
+                    throw new Error('请求体为空');
+                }
+            })
+            .catch(err => {
+                console.warn('从数据库获取完整数据失败，使用内存数据:', err);
+                // 降级：使用内存中的数据
+                copyFromMemory();
+            });
+    } else {
+        // 没有request_id，直接使用内存数据
+        copyFromMemory();
     }
     
-    // 如果高亮后textContent为空，尝试获取innerText
-    if (!content || content.trim() === '') {
-        content = requestBodyEl.innerText;
+    function copyFromMemory() {
+        let content = '';
+        
+        if (!isNaN(requestIndex) && window.apiRequestsData && window.apiRequestsData.recent_requests && window.apiRequestsData.recent_requests[requestIndex]) {
+            content = formatBody(window.apiRequestsData.recent_requests[requestIndex].request_body);
+        }
+        
+        if (!content || content.trim() === '') {
+            content = requestBodyEl.textContent;
+        }
+        
+        if (!content || content.trim() === '') {
+            content = requestBodyEl.innerText;
+        }
+        
+        copyToClipboard(content)
+            .then(() => showCopySuccess(requestBodyEl))
+            .catch(err => {
+                console.error('复制失败:', err);
+                alert(typeof i18n !== 'undefined' ? i18n.t('monitor.copy.failed') : '复制失败，请手动复制');
+            });
     }
-    
-    copyToClipboard(content)
-        .then(() => {
-            // 显示复制成功提示
-            const sectionActions = requestBodyEl.closest('.api-detail-section').querySelector('.section-actions');
-            const btn = sectionActions ? sectionActions.querySelector('button:nth-child(2)') : null;
-            if (btn) {
-                const originalText = btn.textContent;
-                btn.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.copy.success') : '已复制';
-                setTimeout(() => {
-                    btn.textContent = originalText;
-                }, 2000);
-            }
-        })
-        .catch(err => {
-            console.error('复制失败:', err);
-            // 显示复制失败提示
-            alert(typeof i18n !== 'undefined' ? i18n.t('monitor.copy.failed') : '复制失败，请手动复制');
-        });
+}
+
+function showCopySuccess(element) {
+    const sectionActions = element.closest('.api-detail-section').querySelector('.section-actions');
+    const btn = sectionActions ? sectionActions.querySelector('button:nth-child(2)') : null;
+    if (btn) {
+        const originalText = btn.textContent;
+        btn.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.copy.success') : '已复制';
+        setTimeout(() => {
+            btn.textContent = originalText;
+        }, 2000);
+    }
 }
 
 // 复制响应体到剪贴板
@@ -2634,43 +2669,66 @@ function copyResponseBody() {
     const responseBodyEl = document.getElementById('api-detail-response-body');
     if (!responseBodyEl) return;
     
-    // 从原始数据源获取完整内容
+    // 从原始数据源获取request_id
     const requestIndex = parseInt(responseBodyEl.dataset.requestIndex);
-    let content = '';
+    let requestId = null;
     
     if (!isNaN(requestIndex) && window.apiRequestsData && window.apiRequestsData.recent_requests && window.apiRequestsData.recent_requests[requestIndex]) {
-        // 从原始数据获取完整内容
-        content = formatBody(window.apiRequestsData.recent_requests[requestIndex].response_body);
+        requestId = window.apiRequestsData.recent_requests[requestIndex].request_id;
     }
     
-    // 如果无法从原始数据获取，使用显示的内容作为降级方案
-    if (!content || content.trim() === '') {
-        content = responseBodyEl.textContent;
+    // 如果有request_id，尝试从数据库获取完整数据
+    if (requestId) {
+        fetch(`${API_BASE}/history/http/by-request-id/${requestId}`)
+            .then(response => {
+                if (!response.ok) throw new Error('获取完整数据失败');
+                return response.json();
+            })
+            .then(data => {
+                if (data.response_body) {
+                    const content = formatBody(data.response_body);
+                    copyToClipboard(content)
+                        .then(() => showCopySuccess(responseBodyEl))
+                        .catch(err => {
+                            console.error('复制失败:', err);
+                            alert(typeof i18n !== 'undefined' ? i18n.t('monitor.copy.failed') : '复制失败，请手动复制');
+                        });
+                } else {
+                    throw new Error('响应体为空');
+                }
+            })
+            .catch(err => {
+                console.warn('从数据库获取完整数据失败，使用内存数据:', err);
+                // 降级：使用内存中的数据
+                copyFromMemory();
+            });
+    } else {
+        // 没有request_id，直接使用内存数据
+        copyFromMemory();
     }
     
-    // 如果高亮后textContent为空，尝试获取innerText
-    if (!content || content.trim() === '') {
-        content = responseBodyEl.innerText;
+    function copyFromMemory() {
+        let content = '';
+        
+        if (!isNaN(requestIndex) && window.apiRequestsData && window.apiRequestsData.recent_requests && window.apiRequestsData.recent_requests[requestIndex]) {
+            content = formatBody(window.apiRequestsData.recent_requests[requestIndex].response_body);
+        }
+        
+        if (!content || content.trim() === '') {
+            content = responseBodyEl.textContent;
+        }
+        
+        if (!content || content.trim() === '') {
+            content = responseBodyEl.innerText;
+        }
+        
+        copyToClipboard(content)
+            .then(() => showCopySuccess(responseBodyEl))
+            .catch(err => {
+                console.error('复制失败:', err);
+                alert(typeof i18n !== 'undefined' ? i18n.t('monitor.copy.failed') : '复制失败，请手动复制');
+            });
     }
-    
-    copyToClipboard(content)
-        .then(() => {
-            // 显示复制成功提示
-            const sectionActions = responseBodyEl.closest('.api-detail-section').querySelector('.section-actions');
-            const btn = sectionActions ? sectionActions.querySelector('button:nth-child(2)') : null;
-            if (btn) {
-                const originalText = btn.textContent;
-                btn.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.copy.success') : '已复制';
-                setTimeout(() => {
-                    btn.textContent = originalText;
-                }, 2000);
-            }
-        })
-        .catch(err => {
-            console.error('复制失败:', err);
-            // 显示复制失败提示
-            alert(typeof i18n !== 'undefined' ? i18n.t('monitor.copy.failed') : '复制失败，请手动复制');
-        });
 }
 
 function refreshAPIRequests() {

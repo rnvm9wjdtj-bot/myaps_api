@@ -60,10 +60,19 @@ class HTTPMetricsCollector:
         error_message: str = None,
         request_body: str = None,
         response_body: str = None,
+        request_body_full: str = None,
+        response_body_full: str = None,
         query_params: str = None,
         request_id: str = None,
     ):
-        """记录请求信息"""
+        """记录请求信息
+        
+        Args:
+            request_body: 截断版本，用于内存队列展示
+            response_body: 截断版本，用于内存队列展示
+            request_body_full: 完整版本，用于数据库存储
+            response_body_full: 完整版本，用于数据库存储
+        """
         async with self._get_lock():
             request_info = {
                 "request_id": request_id or str(uuid.uuid4()),
@@ -77,15 +86,19 @@ class HTTPMetricsCollector:
                 "is_slow": duration >= self._slow_threshold,
                 "is_internal": is_internal_ip(client_ip),
                 "error_message": error_message,
-                "request_body": request_body,
-                "response_body": response_body,
+                "request_body": request_body,  # 截断版本，用于内存队列
+                "response_body": response_body,  # 截断版本，用于内存队列
                 "query_params": query_params,
             }
 
             self._requests.append(request_info)
             
-            # 直接保存到数据库，不再依赖监控面板访问
-            asyncio.create_task(self._save_request_to_db(request_info))
+            # 保存到数据库时使用完整版本
+            asyncio.create_task(self._save_request_to_db(
+                request_info,
+                request_body_full=request_body_full or request_body,
+                response_body_full=response_body_full or response_body
+            ))
 
             # 更新统计
             self._stats["total_requests"] += 1
@@ -165,8 +178,19 @@ class HTTPMetricsCollector:
             "recent_requests": recent_requests,
         }
 
-    async def _save_request_to_db(self, request_info: Dict[str, Any]):
-        """将请求保存到数据库"""
+    async def _save_request_to_db(
+        self, 
+        request_info: Dict[str, Any],
+        request_body_full: str = None,
+        response_body_full: str = None
+    ):
+        """将请求保存到数据库
+        
+        Args:
+            request_info: 请求信息（内存队列版本，包含截断的请求体/响应体）
+            request_body_full: 完整的请求体，用于数据库存储
+            response_body_full: 完整的响应体，用于数据库存储
+        """
         try:
             from .storage import request_storage
             from datetime import datetime, timezone
@@ -181,10 +205,10 @@ class HTTPMetricsCollector:
                 "response_time": request_info.get("duration") * 1000,  # 转换为毫秒
                 "client_ip": request_info.get("client_ip"),
                 "user_agent": request_info.get("user_agent"),
-                "payload_size": len(request_info.get("request_body", "")) if request_info.get("request_body") else None,
-                "response_size": len(request_info.get("response_body", "")) if request_info.get("response_body") else None,
-                "request_body": request_info.get("request_body"),
-                "response_body": request_info.get("response_body"),
+                "payload_size": len(request_body_full) if request_body_full else None,
+                "response_size": len(response_body_full) if response_body_full else None,
+                "request_body": request_body_full,  # 使用完整版本
+                "response_body": response_body_full,  # 使用完整版本
                 "is_slow": request_info.get("is_slow", False),
                 "slow_threshold": 1000.0 if request_info.get("is_slow") else None,
                 "is_error": request_info.get("is_error", False),
@@ -296,8 +320,8 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
 
         start_time = time.time()
         error_message = None
-        request_body = None
         response_body = None
+        response_body_full = None
         query_params = None
 
         # 收集查询参数
@@ -310,18 +334,31 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
             query_params = None
 
         # 读取请求体
+        request_body_full = None  # 完整版本，用于数据库
+        request_body = None  # 截断版本，用于内存队列展示
         try:
             if request.method in ["POST", "PUT", "PATCH", "DELETE"]:
                 body = await request.body()
                 if body:
                     try:
                         import json
-                        # 限制请求体大小，避免内存占用过大
-                        if len(body) < 1024 * 1024:  # 1MB
-                            request_body = body.decode('utf-8')
+                        decoded_body = body.decode('utf-8')
+                        request_body_full = decoded_body  # 保存完整版本
+                        
+                        # 生成截断版本用于内存队列展示
+                        if len(decoded_body) > 1024 * 1024:  # 1MB
+                            preview_size = 100 * 1024  # 100KB
+                            request_body = (
+                                decoded_body[:preview_size] + 
+                                f"\n\n... [请求体过大，已截断]\n" +
+                                f"总大小: {len(body)} bytes ({len(body) / 1024 / 1024:.2f} MB)\n" +
+                                f"已显示: 前 {preview_size} bytes ({preview_size / 1024:.1f} KB)\n" +
+                                f"提示: 完整请求体已保存到数据库，可点击复制按钮获取完整内容"
+                            )
                         else:
-                            request_body = f"[请求体过大，已截断，大小: {len(body)} bytes]"
+                            request_body = decoded_body
                     except (UnicodeDecodeError, json.JSONDecodeError):
+                        request_body_full = "[请求体不是有效的 JSON]"
                         request_body = "[请求体不是有效的 JSON]"
         except Exception as e:
             logger.debug(f"读取请求体失败: {e}")
@@ -346,10 +383,12 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
                     try:
                         import json
                         # 尝试解码响应体
-                        response_body = body.decode('utf-8')
+                        decoded_body = body.decode('utf-8')
+                        response_body_full = decoded_body  # 保存完整版本
+                        
                         # 总是尝试解析响应体，检查业务状态码
                         try:
-                            response_json = json.loads(response_body)
+                            response_json = json.loads(decoded_body)
                             # 检查是否包含业务状态码
                             if isinstance(response_json, dict):
                                 # 直接取响应体json根路径下的status_code
@@ -361,10 +400,21 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
                         except json.JSONDecodeError:
                             # 解析失败，仍然保存响应体
                             pass
-                        # 限制显示的响应体大小，避免内存占用过大
-                        if len(response_body) > 1024 * 1024:  # 1MB
-                            response_body = f"[响应体过大，已截断，大小: {len(body)} bytes]"
+                        
+                        # 生成截断版本用于内存队列展示
+                        if len(decoded_body) > 1024 * 1024:  # 1MB
+                            preview_size = 100 * 1024  # 100KB
+                            response_body = (
+                                decoded_body[:preview_size] + 
+                                f"\n\n... [响应体过大，已截断]\n" +
+                                f"总大小: {len(body)} bytes ({len(body) / 1024 / 1024:.2f} MB)\n" +
+                                f"已显示: 前 {preview_size} bytes ({preview_size / 1024:.1f} KB)\n" +
+                                f"提示: 完整响应体已保存到数据库，可点击复制按钮获取完整内容"
+                            )
+                        else:
+                            response_body = decoded_body
                     except (UnicodeDecodeError, json.JSONDecodeError):
+                        response_body_full = "[响应体不是有效的 JSON]"
                         response_body = "[响应体不是有效的 JSON]"
             except Exception as e:
                 logger.debug(f"读取响应体失败: {e}")
@@ -392,6 +442,8 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
                     error_message=error_message,
                     request_body=request_body,
                     response_body=response_body,
+                    request_body_full=request_body_full,
+                    response_body_full=response_body_full,
                     query_params=query_params,
                     request_id=request_id,
                 )
