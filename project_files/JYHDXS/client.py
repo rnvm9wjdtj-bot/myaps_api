@@ -34,7 +34,7 @@ sap_session = get_session(allowed_methods=["GET", "POST"])
 add_basic_auth_requests(sap_session, sap_username, sap_password)
 
 # API 超时配置
-API_TIMEOUT = 90.0  # API 调用超时（秒）
+API_TIMEOUT = 180.0  # API 调用超时（秒）
 
 mes = PROJECT_JSON_FILE.get("mes", {})
 mes_url = mes.get("base_url", "")
@@ -484,8 +484,16 @@ async def batch_handle_pl_status_a2e(event_data_list: List[Dict], _erp: EventRes
                 await _erp.mo_release_failed(native_plno=supplyno, msg=f"获取工单详情失败: 数据不存在或尚未提交", push_data=data, msg_from='ERP')
                 return
 
-            start_datetime: str = supplymo_detaildata['dt_ordstart'].split(" ")[0]
-            end_datetime: str = supplymo_detaildata['dt_ordend'].split(" ")[0]
+            dt_start = supplymo_detaildata.get('dt_ordstart')
+            dt_end = supplymo_detaildata.get('dt_ordend')
+            
+            if not dt_start or not dt_end:
+                CLIENT_LOGGER.fail("日期字段为空", supplyno, f"dt_ordstart={dt_start}, dt_ordend={dt_end}")
+                await _erp.mo_release_failed(native_plno=supplyno, msg=f"日期字段为空: dt_ordstart={dt_start}, dt_ordend={dt_end}", push_data=data, msg_from='ERP')
+                return
+            
+            start_datetime: str = dt_start.split(" ")[0]
+            end_datetime: str = dt_end.split(" ")[0]
             orderwc: list = supplymo_detaildata.get('orderwc', [])
 
             data = {
@@ -497,7 +505,9 @@ async def batch_handle_pl_status_a2e(event_data_list: List[Dict], _erp: EventRes
                 "GLTRP": end_datetime,  # 基本完成日期
                 "GAMNG": supplymo_detaildata['avail_qty'],  # 总订单数量
                 "WEMPF": "SAP",  # 产线代码
-                "BACKUP1": ','.join([i['workcenter'] for i in orderwc])
+                "BACKUP1": ','.join([i['workcenter'] for i in orderwc]),
+                "BACKUP2": supplyno,
+
             }
 
             loop = asyncio.get_event_loop()
