@@ -3914,7 +3914,15 @@ function createSectionWithTruncation(title, content, length) {
     const isLarge = length > WARNING_THRESHOLD;
     const isTruncated = length > MAX_CONTENT_LENGTH;
     const truncatedText = typeof i18n !== 'undefined' ? i18n.t('monitor.section.truncated') : '[内容已截断，完整内容请导出查看]';
-    const displayContent = isTruncated ? content.substring(0, MAX_CONTENT_LENGTH) + '...\n\n' + truncatedText : content;
+    let displayContent;
+    if (isTruncated) {
+        const truncated = content.substring(0, MAX_CONTENT_LENGTH);
+        const lastNewline = truncated.lastIndexOf('\n');
+        const cleanTruncated = lastNewline > 0 ? truncated.substring(0, lastNewline) : truncated;
+        displayContent = cleanTruncated + '...\n\n' + truncatedText;
+    } else {
+        displayContent = content;
+    }
     const warningHtml = isLarge ? `<div style="color: #ff9800; margin-bottom: 8px; font-size: 12px; display: flex; align-items: center;">${typeof i18n !== 'undefined' ? i18n.t('monitor.section.large_data_warning').replace('{count}', length.toLocaleString()) : '⚠️ 数据量较大(' + length.toLocaleString() + '字符)，可能影响显示性能'}</div>` : '';
     
     return `
@@ -3993,7 +4001,15 @@ function formatBodyForDisplay(body) {
     const length = formattedBody.length;
     const isTruncated = length > MAX_CONTENT_LENGTH;
     const truncatedText = typeof i18n !== 'undefined' ? i18n.t('monitor.section.truncated') : '[内容已截断，完整内容请复制查看]';
-    const displayContent = isTruncated ? formattedBody.substring(0, MAX_CONTENT_LENGTH) + '...\n\n' + truncatedText : formattedBody;
+    let displayContent;
+    if (isTruncated) {
+        const truncated = formattedBody.substring(0, MAX_CONTENT_LENGTH);
+        const lastNewline = truncated.lastIndexOf('\n');
+        const cleanTruncated = lastNewline > 0 ? truncated.substring(0, lastNewline) : truncated;
+        displayContent = cleanTruncated + '...\n\n' + truncatedText;
+    } else {
+        displayContent = formattedBody;
+    }
     
     return { display: displayContent, length: length, truncated: isTruncated };
 }

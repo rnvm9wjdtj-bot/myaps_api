@@ -1504,6 +1504,11 @@ body {
     gap: 16px;
     min-height: 250px;
     margin-top: 0;
+    width: 100%;
+}
+
+.api-detail-bodies .api-detail-section {
+    min-width: 0;
 }
 
 /* 确保 api-detail-bodies 中的 section 能够扩展 */

@@ -7,6 +7,7 @@
 import time
 import asyncio
 import uuid
+import json
 from typing import Dict, Any, List, Optional, Callable
 from collections import deque, defaultdict
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -16,6 +17,61 @@ from globalobjects import logger as log_config
 from .models import is_internal_ip
 
 logger = log_config.get_logger(__name__)
+
+
+def truncate_json(obj, max_chars):
+    """递归截断JSON对象，保持有效JSON结构"""
+    def _truncate(obj, remaining):
+        if remaining <= 0:
+            return "...", 0
+        
+        if isinstance(obj, str):
+            s = obj
+            if len(s) <= remaining:
+                return s, len(s)
+            return s[:remaining - 5] + "...", remaining
+        
+        elif isinstance(obj, (int, float, bool, type(None))):
+            s = str(obj)
+            return obj, len(s)
+        
+        elif isinstance(obj, list):
+            result = []
+            chars_used = 2
+            for item in obj:
+                item_str_len = len(json.dumps(item, ensure_ascii=False)) + 2
+                if chars_used + item_str_len > remaining - 1:
+                    result.append("...")
+                    chars_used += 5
+                    break
+                truncated_item, item_chars = _truncate(item, remaining - chars_used - 1)
+                result.append(truncated_item)
+                chars_used += item_chars + 2
+            
+            return result, chars_used
+        
+        elif isinstance(obj, dict):
+            result = {}
+            chars_used = 2
+            for key, value in obj.items():
+                key_len = len(json.dumps(key, ensure_ascii=False)) + 2
+                value_str_len = len(json.dumps(value, ensure_ascii=False)) + 2
+                if chars_used + key_len + value_str_len > remaining - 1:
+                    result[key] = "..."
+                    chars_used += key_len + 5
+                    break
+                truncated_value, value_chars = _truncate(value, remaining - chars_used - key_len - 1)
+                result[key] = truncated_value
+                chars_used += key_len + value_chars + 2
+            
+            return result, chars_used
+        
+        else:
+            s = str(obj)
+            return obj, len(s)
+    
+    truncated_obj, _ = _truncate(obj, max_chars)
+    return truncated_obj
 
 
 class HTTPMetricsCollector:
@@ -348,13 +404,12 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
                         # 生成截断版本用于内存队列展示
                         if len(decoded_body) > 1024 * 1024:  # 1MB
                             preview_size = 100 * 1024  # 100KB
-                            request_body = (
-                                decoded_body[:preview_size] + 
-                                f"\n\n... [请求体过大，已截断]\n" +
-                                f"总大小: {len(body)} bytes ({len(body) / 1024 / 1024:.2f} MB)\n" +
-                                f"已显示: 前 {preview_size} bytes ({preview_size / 1024:.1f} KB)\n" +
-                                f"提示: 完整请求体已保存到数据库，可点击复制按钮获取完整内容"
-                            )
+                            try:
+                                parsed_json = json.loads(decoded_body)
+                                truncated_json = truncate_json(parsed_json, preview_size)
+                                request_body = json.dumps(truncated_json, ensure_ascii=False, indent=2)
+                            except Exception:
+                                request_body = decoded_body[:preview_size]
                         else:
                             request_body = decoded_body
                     except (UnicodeDecodeError, json.JSONDecodeError):
@@ -404,13 +459,12 @@ class HTTPMonitorMiddleware(BaseHTTPMiddleware):
                         # 生成截断版本用于内存队列展示
                         if len(decoded_body) > 1024 * 1024:  # 1MB
                             preview_size = 100 * 1024  # 100KB
-                            response_body = (
-                                decoded_body[:preview_size] + 
-                                f"\n\n... [响应体过大，已截断]\n" +
-                                f"总大小: {len(body)} bytes ({len(body) / 1024 / 1024:.2f} MB)\n" +
-                                f"已显示: 前 {preview_size} bytes ({preview_size / 1024:.1f} KB)\n" +
-                                f"提示: 完整响应体已保存到数据库，可点击复制按钮获取完整内容"
-                            )
+                            try:
+                                parsed_json = json.loads(decoded_body)
+                                truncated_json = truncate_json(parsed_json, preview_size)
+                                response_body = json.dumps(truncated_json, ensure_ascii=False, indent=2)
+                            except Exception:
+                                response_body = decoded_body[:preview_size]
                         else:
                             response_body = decoded_body
                     except (UnicodeDecodeError, json.JSONDecodeError):
