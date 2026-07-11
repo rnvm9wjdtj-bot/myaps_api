@@ -34,7 +34,7 @@ sap_session = get_session(allowed_methods=["GET", "POST"])
 add_basic_auth_requests(sap_session, sap_username, sap_password)
 
 # API 超时配置
-API_TIMEOUT = 180.0  # API 调用超时（秒）
+API_TIMEOUT = 300.0  # API 调用超时（秒）
 
 mes = PROJECT_JSON_FILE.get("mes", {})
 mes_url = mes.get("base_url", "")
@@ -165,8 +165,14 @@ async def async_post_to_srm(url: str, json_data: dict) -> dict:
         json.JSONDecodeError: 响应解析异常
     """
     session = await get_srm_async_session()
+    config = get_srm_config()
     try:
-        response = await session.post(url, json=json_data, headers=get_srm_config()["headers"])
+        response = await session.post(
+            url, 
+            json=json_data, 
+            headers=config["headers"],
+            timeout=httpx.Timeout(config["timeout"], connect=config["connect_timeout"])
+        )
         return response.json()
     except json.JSONDecodeError as e:
         CLIENT_LOGGER.fail("SRM请求", f"响应解析失败: {str(e)}", f"原始响应: {response.text[:500]}")
@@ -338,54 +344,80 @@ async def push_pr(period: int = 30, groupdates: List[str] | str = None):
         config = get_srm_config()
         url = f"{config['url']}/jbl/service/execute/SRM_RECEIVE_PUSHED_DEMAND_PLAN_SERVICE"
         
-        # 分批发送
+        # 并发配置
         batch_size = 100
+        max_concurrent = 5  # 最大并发数
         max_retries = 2  # 每批最大重试次数
-        success_count = 0
-        fail_count = 0
         
+        # 准备所有批次
+        batches = []
         for i in range(0, total_count, batch_size):
             batch_num = i // batch_size + 1
             batch_data = pr_data[i:i + batch_size]
+            batches.append((batch_num, batch_data))
+        
+        # 信号量控制并发
+        semaphore = asyncio.Semaphore(max_concurrent)
+        
+        async def send_batch(batch_num: int, batch_data: list) -> tuple[int, int]:
+            """发送单个批次，返回 (成功数, 失败数)"""
             batch_count = len(batch_data)
             
-            # 带重试的批次发送
-            for attempt in range(1 + max_retries):
-                try:
-                    CLIENT_LOGGER.info(f"推送批次 {batch_num}", f"发送{batch_count}条数据" + (f"（第{attempt + 1}次尝试）" if attempt > 0 else ""))
+            async with semaphore:  # 控制并发
+                for attempt in range(1 + max_retries):
+                    try:
+                        CLIENT_LOGGER.info(f"推送批次 {batch_num}", f"发送{batch_count}条数据" + (f"（第{attempt + 1}次尝试）" if attempt > 0 else ""))
+                        
+                        result = await async_post_to_srm(url, {"demand_plan": batch_data})
+                        
+                        if result.get("body", {}).get("status", "").lower() == "success":
+                            CLIENT_LOGGER.success(f"批次 {batch_num} 推送成功", f"成功{batch_count}条")
+                            return (batch_count, 0)
+                        else:
+                            CLIENT_LOGGER.fail(f"批次 {batch_num} 推送失败", f"响应状态异常: {result}")
+                            return (0, batch_count)
+                        
+                    except httpx.TimeoutException:
+                        if attempt < max_retries:
+                            CLIENT_LOGGER.warning(f"批次 {batch_num} 超时重试", f"第{attempt + 1}次超时，准备重试")
+                            await asyncio.sleep(1.0)
+                        else:
+                            CLIENT_LOGGER.fail(f"批次 {batch_num} 推送失败", f"重试{max_retries}次后仍超时", f"超时时间: {config['timeout']}秒")
+                            return (0, batch_count)
                     
-                    result = await async_post_to_srm(url, {"demand_plan": batch_data})
-                    
-                    if result.get("body", {}).get("status", "").lower() == "success":
-                        success_count += batch_count
-                        CLIENT_LOGGER.success(f"批次 {batch_num} 推送成功", f"成功{batch_count}条")
-                        break  # 成功，跳出重试循环
-                    else:
-                        # 响应状态异常，非网络错误不重试
-                        fail_count += batch_count
-                        CLIENT_LOGGER.fail(f"批次 {batch_num} 推送失败", f"响应状态异常: {result}")
-                        break
-                    
-                except asyncio.TimeoutError:
-                    if attempt < max_retries:
-                        CLIENT_LOGGER.warning(f"批次 {batch_num} 超时重试", f"第{attempt + 1}次超时，准备重试")
-                        await asyncio.sleep(1.0)  # 重试前等待1秒
-                    else:
-                        fail_count += batch_count
-                        CLIENT_LOGGER.fail(f"批次 {batch_num} 推送失败", f"重试{max_retries}次后仍超时", f"超时时间: {config['timeout']}秒")
-                
-                except Exception as e:
-                    # 捕获所有异常（包括 httpx.HTTPError, httpx.TimeoutException 等）
-                    if attempt < max_retries:
-                        CLIENT_LOGGER.warning(f"批次 {batch_num} 连接异常重试", f"第{attempt + 1}次异常: {str(e)[:100]}，准备重试")
-                        await asyncio.sleep(1.0)  # 重试前等待1秒
-                    else:
-                        fail_count += batch_count
-                        CLIENT_LOGGER.fail(f"批次 {batch_num} 推送失败", f"重试{max_retries}次后仍连接异常: {str(e)}")
+                    except Exception as e:
+                        if attempt < max_retries:
+                            CLIENT_LOGGER.warning(f"批次 {batch_num} 连接异常重试", f"第{attempt + 1}次异常: {str(e)[:100]}，准备重试")
+                            await asyncio.sleep(1.0)
+                        else:
+                            CLIENT_LOGGER.fail(f"批次 {batch_num} 推送失败", f"重试{max_retries}次后仍连接异常: {str(e)}")
+                            return (0, batch_count)
             
-            # 批次间延迟，避免资源耗尽
-            if i + batch_size < total_count:
-                await asyncio.sleep(0.5)
+            return (0, batch_count)  # 兜底返回
+        
+        # 并发执行所有批次（总超时保护）
+        tasks = [send_batch(batch_num, batch_data) for batch_num, batch_data in batches]
+        total_timeout = config["timeout"] * len(batches) / max_concurrent + 60  # 总超时 = 单批超时 × 批次数 / 并发数 + 缓冲时间
+        try:
+            results = await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True),
+                timeout=total_timeout
+            )
+        except asyncio.TimeoutError:
+            CLIENT_LOGGER.fail("推送要货计划到SRM", f"总执行超时（{total_timeout}秒）", f"已发送批次可能部分成功")
+            return False
+        
+        # 统计结果
+        success_count = 0
+        fail_count = 0
+        for result in results:
+            if isinstance(result, tuple):
+                success, fail = result
+                success_count += success
+                fail_count += fail
+            else:
+                # 异常情况
+                fail_count += batch_size
         
         # 汇总结果
         if fail_count == 0:
