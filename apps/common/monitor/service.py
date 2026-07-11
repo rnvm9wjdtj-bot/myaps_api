@@ -857,7 +857,18 @@ class MonitorService:
                 logs.extend(self._read_logs_reverse(log_file, limit - len(logs), level))
 
         logs.sort(key=lambda x: x["timestamp"], reverse=True)
-        result = logs[:limit]
+        
+        # 去重：ERROR日志会同时写入app.log和error.log，需要去重
+        seen = set()
+        unique_logs = []
+        for log in logs:
+            # 使用时间戳、级别、模块、消息作为唯一标识
+            log_key = (log.get("timestamp"), log.get("level"), log.get("module"), log.get("message"))
+            if log_key not in seen:
+                seen.add(log_key)
+                unique_logs.append(log)
+        
+        result = unique_logs[:limit]
         
         # 设置缓存（线程安全）
         with self._log_cache_lock:
