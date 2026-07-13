@@ -926,3 +926,17 @@ class AcceptConfirm(BaseModel):
     def model_valid_after(self):
         _set_raw_input_data(self)
         return self
+
+
+
+class AcceptCheckQtyReport(BaseModel):
+    workcenter: str = Field(..., max_length=32, description="工作中心代码", example="WC001")
+    materialno: str = Field(..., description="料号", example="M001")
+    checktime: str = Field(..., description="班次", example="2026-07-10 07:30:00")
+    reportqty: float = Field(..., ge=0, description="数量", example=600)
+    _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
+
+    class Config:
+        title = "验证规则 - 班次报工"
+        extra = "ignore"
+

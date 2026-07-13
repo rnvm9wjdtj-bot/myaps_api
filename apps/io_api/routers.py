@@ -13,7 +13,7 @@ from globalobjects import globalconst as gc, logger as log_config, ProjectDefaul
 # from .models import TMaterial, TWorkcenter, TMatWc, TMatVer, TMatWcBom, TSupply, TDemand, TMold, TMatWcMold, TConfirm#,TortoiseBaseModel
 from .schemas import (
     AcceptMaterial, AcceptWorkcenter, AcceptMatWc, AcceptMatVer, AcceptMatWcBom, AcceptSupply, AcceptDemand, AcceptMold, AcceptMatWcMold, AcceptConfirm,
-    ModifySupply, ModifyDemand
+    ModifySupply, ModifyDemand, AcceptCheckQtyReport,
     #DeleteSupply
 )
 
@@ -1514,23 +1514,45 @@ async def delete_workreport(
         )
 
 
-# @rt.patch(
-#     "/t_confirm",
-#     tags=["生产数据 - 报工"],
-#     summary="确认报工记录",
-#     description="确认报工记录",
-#     include_in_schema=False,
-#     dependencies=[Depends(only_localhost())]
-# )
-# async def confirm_workreport(
-#     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-#     x_api_key: str = Header(None, description="API密钥")
-# ):
-#     """
-#     确认报工记录
-#     db_name: str，数据库名称，多个数据库名称用逗号分隔
-#     """
-#     db_name = db_name.replace(" ", "")
-#     result = await call_dbprocdure(db_names=db_name, procedure_name="UpdateConfirmQtyToOrderWC")
-#     return result
+@rt.post(
+    "/t_checkqty_report",
+    tags=["主数据 - 工序"],
+    summary="新增或修改班次报工",
+    description="根据🗝️【料号+工作中心+班次时点】形成的联合索引新增或修改工序记录"
+)
+async def post_checkqty_report(
+    request: Request,
+    data: List[AcceptCheckQtyReport] = Body(...),
+    db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+    return_data: bool = Query(False, description="是否返回数据"),
+    x_api_key: str = Header(None, description="API密钥"),
+):
+    log_api_request(request)
+    db_table = "t_checkqty_report"
+    db_name = db_name.replace(" ", "")
 
+    try:
+        await drop_matched_data(
+            data=data,
+            db_names=db_name,
+            table_name=db_table,
+            match_on=("workcenter", "materialno", "checktime"),
+            db_fields=("WorkCenter", "MaterialNo", "CheckTime")
+        )
+        result = await db_bupsert(db_names=db_name, model_or_tablename=db_table, data_list=data)
+        return standard_response(
+            status_code=200,
+            success=result.success,
+            message=result.message,
+            data=result.data if return_data else None,
+            meta=result.meta
+        )
+    except Exception as e:
+        logger.error(f"新增或修改班次报工失败: {str(e)}")
+        return standard_response(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            success=0,
+            message=f"操作失败：{str(e)}",
+            data=[],
+            meta={}
+        )
