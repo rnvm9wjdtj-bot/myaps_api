@@ -456,7 +456,7 @@ class DataTable {
                         : 'white-space: nowrap;';
                     // 状态字段或有错误的字段不设置title，避免覆盖错误提示框
                     const hasError = errorMap[col.field];
-                    const cellTitle = (col.field === '_status' || hasError) ? '' : `title="${escapeHtml(row[col.field] || '')}"`;
+                    const cellTitle = (col.field === '_status' || hasError) ? '' : `title="${String(row[col.field] || '').replace(/"/g, '&quot;')}"`;
                     return `<td style="${cellStyle}" ${cellTitle}>${this.renderCell(col, row, errorMap)}</td>`;
                 }).join('')}
             </tr>
@@ -698,12 +698,12 @@ class DataTable {
     renderTextCell(value, col) {
         if (typeof value === 'string' && value.length > 30) {
             return `
-                <span class="font-mono" title="${escapeHtml(value)}">
+                <span class="font-mono" title="${value.replace(/"/g, '&quot;')}">
                     ${escapeHtml(truncateText(value, 30))}
                 </span>
             `;
         }
-        
+
         return `<span class="font-mono">${escapeHtml(value)}</span>`;
     }
     

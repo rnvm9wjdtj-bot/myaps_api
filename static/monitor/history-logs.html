@@ -2424,14 +2424,19 @@
                 try {
                     parsedParams = JSON.parse(params);
                 } catch (e) {
-                    // 如果解析失败，直接返回原字符串
-                    return params;
+                    // 如果解析失败，解码后返回
+                    try {
+                        return decodeURIComponent(params);
+                    } catch (e2) {
+                        return params;
+                    }
                 }
             }
             if (typeof parsedParams !== 'object' || Array.isArray(parsedParams)) return '-';
             const pairs = [];
             for (const [key, value] of Object.entries(parsedParams)) {
-                pairs.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+                const decodedValue = typeof value === 'string' ? decodeURIComponent(value) : value;
+                pairs.push(`${key}=${decodedValue}`);
             }
             return pairs.length > 0 ? '?' + pairs.join('&') : '-';
         }

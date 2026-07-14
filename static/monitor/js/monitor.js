@@ -2335,11 +2335,15 @@ function updateAPIRequestsDisplay(data) {
                 const parsedParams = JSON.parse(req.query_params);
                 if (Object.keys(parsedParams).length > 0) {
                     queryParamsDisplay = Object.entries(parsedParams)
-                        .map(([key, value]) => `${key}=${value}`)
+                        .map(([key, value]) => `${key}=${decodeURIComponent(value)}`)
                         .join('&');
                 }
             } catch (e) {
-                queryParamsDisplay = req.query_params;
+                try {
+                    queryParamsDisplay = decodeURIComponent(req.query_params);
+                } catch (e2) {
+                    queryParamsDisplay = req.query_params;
+                }
             }
         }
         
@@ -2827,11 +2831,15 @@ function updateAPIRequestsTable(requests) {
                 const parsedParams = JSON.parse(req.query_params);
                 if (Object.keys(parsedParams).length > 0) {
                     queryParamsDisplay = Object.entries(parsedParams)
-                        .map(([key, value]) => `${key}=${value}`)
+                        .map(([key, value]) => `${key}=${decodeURIComponent(value)}`)
                         .join('&');
                 }
             } catch (e) {
-                queryParamsDisplay = req.query_params;
+                try {
+                    queryParamsDisplay = decodeURIComponent(req.query_params);
+                } catch (e2) {
+                    queryParamsDisplay = req.query_params;
+                }
             }
         }
         
@@ -4924,5 +4932,3 @@ function formatFileSize(bytes) {
     return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
 }
 
-
-// ==================== 日志历史查询已移至 history-logs.html ====================
