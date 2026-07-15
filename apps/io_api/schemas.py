@@ -498,8 +498,8 @@ class AcceptMold(BaseModel):
     moldname: str = Field(..., max_length=64, description='模具名称', example="测试模具A")
     type: str = Field(..., example="T1", max_length=4, description='类型')
     status: str = Field(..., max_length=6, description='状态', example="AVL")
-    moldnum: int = Field(..., ge=1, description='模具穴数', example=4)
-    qty: int = Field(..., gt=1, description='模具台数', example=2)
+    moldnum: int = Field(..., gt=0, description='模具穴数', example=4)
+    qty: int = Field(..., gt=0, description='模具台数', example=2)
     memo: Optional[str] = Field(None, max_length=255, description="备注", example="标准模具")
     _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
     

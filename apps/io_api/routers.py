@@ -1536,8 +1536,8 @@ async def post_checkqty_report(
             data=data,
             db_names=db_name,
             table_name=db_table,
-            match_on=("workcenter", "materialno", "checktime"),
-            db_fields=("WorkCenter", "MaterialNo", "CheckTime")
+            match_on=("workcenter", "checktime"),
+            db_fields=("WorkCenter", "CheckTime")
         )
         result = await db_bupsert(db_names=db_name, model_or_tablename=db_table, data_list=data)
         return standard_response(
