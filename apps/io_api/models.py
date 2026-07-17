@@ -164,6 +164,14 @@ class TBatchLog(pm.ProtoBatchLog):
         table = "t_batchlog"
 
 
+class TCheckqtyReport(pm.ProtoCheckqtyReport):
+    
+    class Meta:
+        managed = False
+        abstract = False
+        table = "t_checkqty_report"
+        unique_together = [("workcenter", "materialno", "checktime")]
+
 
 def get_table_model_mapping():
     """

@@ -150,6 +150,18 @@ class ProtoCheckqtyRecord(TortoiseBaseModel):
         table = 't_checkqty_record'
 
 
+class ProtoCheckqtyReport(TortoiseBaseModel):
+    workcenter = fields.CharField(source_field='WorkCenter', max_length=32, description='工作中心代码')
+    materialno = fields.CharField(source_field='MaterialNo', max_length=64, description='料号')
+    checktime = fields.DatetimeField(source_field='CheckTime', description='班次时点')
+    reportqty = fields.FloatField(source_field='ReportQty', description='报工数量')
+
+    class Meta:
+        abstract = True
+        table = 't_checkqty_report'
+        unique_together = [("workcenter", "materialno", "checktime")]
+
+
 class ProtoConfirm(TortoiseBaseModel):
     noid = fields.IntField(source_field='NoID', primary_key=True, generated=True)  # Field name made lowercase.
     supplyno = fields.CharField(source_field='SupplyNo', max_length=64)  # Field name made lowercase.
