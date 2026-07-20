@@ -118,7 +118,9 @@ def event_batch_handler(
     start_handler: callable = None,
     final_handler: callable = None,
     error_handler: Union[callable, str] = None,
-    description: str = None
+    description: str = None,
+    max_retries: int = 3,
+    retry_delay: float = 5.0
 ):
     """
     事件批处理装饰器（整合开始通知、结果收集、结束通知）
@@ -200,50 +202,75 @@ def event_batch_handler(
                 content += f"\n 🚩 在收到完成提示前请耐心等待\n ⚠️ 请勿进行其他操作"
                 await reminder.remind(content)
             
-            # 6. 执行被装饰函数
+            # 6. 执行被装饰函数（带重试机制）
+            retry_count = 0
+            last_exception = None
+            
             try:
-                result = await func(*args, **kwargs)
-            except Exception as e:
-                CLIENT_LOGGER.error(f"{actual_description} 执行出错: {str(e)}")
-                if error_handler is not None:
-                    CLIENT_LOGGER.info(f"尝试使用 {error_handler} 进行错误捕获处理。。。")
-                    if isinstance(error_handler, str):
-                        if hasattr(func, '__self__'):
-                            error_method = getattr(func.__self__, error_handler, None)
+                while retry_count <= max_retries:
+                    try:
+                        result = await func(*args, **kwargs)
+                        break  # 成功则跳出重试循环
+                    except Exception as e:
+                        last_exception = e
+                        error_str = str(e).upper()
+                        is_deadlock = 'DEADLOCK' in error_str or '1213' in str(e) or '死锁' in str(e)
+                        
+                        if is_deadlock and retry_count < max_retries:
+                            retry_count += 1
+                            current_delay = retry_delay * (2 ** (retry_count - 1))
+                            current_delay = min(current_delay, 30.0)
+                            
+                            CLIENT_LOGGER.warning_msg(
+                                f"{actual_description} 检测到死锁，第{retry_count}次重试中...",
+                                f"等待{current_delay:.1f}秒后重试"
+                            )
+                            await asyncio.sleep(current_delay)
                         else:
-                            error_method = None
-                        if not error_method:
-                            CLIENT_LOGGER.warning_msg(f"无法解析 {error_handler} 为有效的方法")
-                            pending_exception = e
-                        elif not callable(error_method):
-                            CLIENT_LOGGER.warning_msg(f"{error_handler} 为不可调用对象")
-                            pending_exception = e
+                            break
+                
+                if last_exception is not None:
+                    e = last_exception
+                    CLIENT_LOGGER.error(f"{actual_description} 执行出错: {str(e)}")
+                    if error_handler is not None:
+                        CLIENT_LOGGER.info(f"尝试使用 {error_handler} 进行错误捕获处理。。。")
+                        if isinstance(error_handler, str):
+                            if hasattr(func, '__self__'):
+                                error_method = getattr(func.__self__, error_handler, None)
+                            else:
+                                error_method = None
+                            if not error_method:
+                                CLIENT_LOGGER.warning_msg(f"无法解析 {error_handler} 为有效的方法")
+                                pending_exception = e
+                            elif not callable(error_method):
+                                CLIENT_LOGGER.warning_msg(f"{error_handler} 为不可调用对象")
+                                pending_exception = e
+                            else:
+                                try:
+                                    if inspect.iscoroutinefunction(error_method):
+                                        await error_method(msg=str(e))
+                                    else:
+                                        error_method(msg=str(e))
+                                    CLIENT_LOGGER.info(f"已使用 {error_handler} 完成捕获处理")
+                                except Exception as inner_e:
+                                    CLIENT_LOGGER.fail(f"使用 {error_handler} 处理异常", str(inner_e))
+                                    pending_exception = e
                         else:
-                            try:
-                                if inspect.iscoroutinefunction(error_method):
-                                    await error_method(msg=str(e))
-                                else:
-                                    error_method(msg=str(e))
-                                CLIENT_LOGGER.info(f"已使用 {error_handler} 完成捕获处理")
-                            except Exception as inner_e:
-                                CLIENT_LOGGER.fail(f"使用 {error_handler} 处理异常", str(inner_e))
+                            if callable(error_handler):
+                                try:
+                                    if inspect.iscoroutinefunction(error_handler):
+                                        await error_handler(e, *args, **kwargs)
+                                    else:
+                                        error_handler(e, *args, **kwargs)
+                                    CLIENT_LOGGER.info(f"已使用 {error_handler.__name__} 完成捕获处理")
+                                except Exception as inner_e:
+                                    CLIENT_LOGGER.fail(f"使用 {error_handler.__name__} 处理异常", str(inner_e))
+                                    pending_exception = e
+                            else:
+                                CLIENT_LOGGER.warning_msg(f"{error_handler.__name__} 为不可调用对象")
                                 pending_exception = e
                     else:
-                        if callable(error_handler):
-                            try:
-                                if inspect.iscoroutinefunction(error_handler):
-                                    await error_handler(e, *args, **kwargs)
-                                else:
-                                    error_handler(e, *args, **kwargs)
-                                CLIENT_LOGGER.info(f"已使用 {error_handler.__name__} 完成捕获处理")
-                            except Exception as inner_e:
-                                CLIENT_LOGGER.fail(f"使用 {error_handler.__name__} 处理异常", str(inner_e))
-                                pending_exception = e
-                        else:
-                            CLIENT_LOGGER.warning_msg(f"{error_handler.__name__} 为不可调用对象")
-                            pending_exception = e
-                else:
-                    pending_exception = e
+                        pending_exception = e
             finally:
                 # 6. 汇总结果
                 summary = _erp.get_summary()

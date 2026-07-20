@@ -704,7 +704,8 @@ async function refreshAll() {
                 case 'database':
                     await Promise.all([
                         fetchDatabaseDetail(),
-                        fetchEventStats()
+                        fetchEventStats(),
+                        fetchDeadlockStats()
                     ]);
                     break;
                 case 'scheduler':
@@ -4930,5 +4931,116 @@ function formatFileSize(bytes) {
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
     if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
     return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+}
+
+// ==================== 死锁监控相关函数 ====================
+
+// 获取死锁统计数据
+async function fetchDeadlockStats() {
+    try {
+        const response = await fetch(`${API_BASE}/deadlock/stats`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        updateDeadlockDisplay(data);
+    } catch (error) {
+        console.error('获取死锁统计数据失败:', error);
+    }
+}
+
+// 更新死锁监控显示
+function updateDeadlockDisplay(data) {
+    // 更新汇总信息
+    const totalEl = getElement('deadlock-total');
+    if (totalEl) {
+        totalEl.textContent = data.summary.total_deadlocks || 0;
+        totalEl.className = 'summary-value ' + (data.summary.total_deadlocks > 0 ? 'error' : '');
+    }
+    
+    const circuitCountEl = getElement('deadlock-circuit-count');
+    if (circuitCountEl) {
+        circuitCountEl.textContent = data.summary.circuit_open_count || 0;
+        circuitCountEl.className = 'summary-value ' + (data.summary.circuit_open_count > 0 ? 'error' : '');
+    }
+    
+    const highRiskEl = getElement('deadlock-high-risk');
+    if (highRiskEl) {
+        const highRisk = data.summary.high_risk_databases || [];
+        highRiskEl.textContent = highRisk.length > 0 ? highRisk.join(', ') : '无';
+        highRiskEl.className = 'summary-value ' + (highRisk.length > 0 ? 'warning' : '');
+    }
+    
+    // 更新状态徽章
+    const badgeEl = getElement('deadlock-badge');
+    if (badgeEl) {
+        if (data.summary.circuit_open_count > 0) {
+            badgeEl.textContent = '🚨 熔断中';
+            badgeEl.className = 'badge error';
+        } else if (data.summary.total_deadlocks > 0) {
+            badgeEl.textContent = '⚠️ 有死锁';
+            badgeEl.className = 'badge warning';
+        } else {
+            badgeEl.textContent = '✅ 正常';
+            badgeEl.className = 'badge success';
+        }
+    }
+    
+    // 更新死锁详情表格
+    const tbody = getElement('deadlock-tbody');
+    if (tbody && data.databases) {
+        tbody.innerHTML = '';
+        
+        for (const [dbName, dbStats] of Object.entries(data.databases)) {
+            const row = document.createElement('tr');
+            
+            // 状态图标
+            const stateIcons = {
+                'closed': '✅ 正常',
+                'open': '🔴 熔断',
+                'half_open': '🟡 半开',
+                'unknown': '❓ 未知'
+            };
+            
+            // 告警级别样式
+            const alertStyles = {
+                'normal': '',
+                'warning': 'background-color: #fff3cd;',
+                'critical': 'background-color: #f8d7da;'
+            };
+            
+            row.innerHTML = `
+                <td><strong>${dbName}</strong></td>
+                <td>${stateIcons[dbStats.state] || dbStats.state}</td>
+                <td class="${dbStats.deadlock_count > 0 ? 'error' : ''}">${dbStats.deadlock_count}</td>
+                <td>${dbStats.half_open_success || 0}</td>
+                <td>${dbStats.half_open_failure || 0}</td>
+                <td style="${alertStyles[dbStats.alert_level] || ''}">${dbStats.alert_level.toUpperCase()}</td>
+            `;
+            
+            tbody.appendChild(row);
+        }
+    }
+    
+    // 更新告警列表
+    const alertsContainer = getElement('deadlock-alerts');
+    const alertsList = getElement('deadlock-alert-list');
+    
+    if (alertsContainer && alertsList && data.alerts && data.alerts.length > 0) {
+        alertsContainer.style.display = 'block';
+        alertsList.innerHTML = '';
+        
+        data.alerts.forEach(alert => {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert-item ${alert.level}`;
+            alertDiv.innerHTML = `
+                <span class="alert-icon">${alert.level === 'critical' ? '🚨' : '⚠️'}</span>
+                <span class="alert-message">${alert.message}</span>
+            `;
+            alertsList.appendChild(alertDiv);
+        });
+    } else if (alertsContainer) {
+        alertsContainer.style.display = 'none';
+    }
 }
 

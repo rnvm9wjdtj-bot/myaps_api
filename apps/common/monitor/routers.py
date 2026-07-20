@@ -1771,3 +1771,187 @@ async def get_log_detail(log_id: int):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"查询详情失败: {str(e)}")
+
+
+@router.get("/deadlock/stats")
+async def get_deadlock_stats():
+    """
+    获取死锁监控统计信息
+    
+    Returns:
+        {
+            "timestamp": "2026-07-20T12:00:00",
+            "databases": {
+                "haida1": {
+                    "state": "closed",
+                    "deadlock_count": 3,
+                    "is_circuit_open": false,
+                    "alert_level": "normal"
+                }
+            },
+            "summary": {
+                "total_deadlocks": 5,
+                "circuit_open_count": 0,
+                "high_risk_databases": []
+            },
+            "alerts": []
+        }
+    """
+    from apps.common.utils.redis_pool_manager import get_redis_client
+    from core.settings import MYAPS_DBSET_LIST
+    
+    stats = {}
+    redis_client = get_redis_client()
+    
+    if redis_client:
+        try:
+            for db_name in MYAPS_DBSET_LIST:
+                prefix = f"myaps:circuitbreaker:{db_name}"
+                
+                state = redis_client.get(f"{prefix}:state")
+                deadlock_count = redis_client.get(f"{prefix}:deadlock_count")
+                window_start = redis_client.get(f"{prefix}:window_start")
+                open_time = redis_client.get(f"{prefix}:open_time")
+                half_open_success = redis_client.get(f"{prefix}:half_open_success")
+                half_open_failure = redis_client.get(f"{prefix}:half_open_failure")
+                
+                state_str = state.decode('utf-8') if state else 'closed'
+                deadlock_count_int = int(deadlock_count) if deadlock_count else 0
+                
+                stats[db_name] = {
+                    'state': state_str,
+                    'deadlock_count': deadlock_count_int,
+                    'window_start': float(window_start) if window_start else time.time(),
+                    'open_time': float(open_time) if open_time else None,
+                    'is_circuit_open': state_str == 'open',
+                    'half_open_success': int(half_open_success) if half_open_success else 0,
+                    'half_open_failure': int(half_open_failure) if half_open_failure else 0,
+                    'alert_level': 'normal'
+                }
+        except Exception as e:
+            logger.error(f"获取熔断器统计信息失败: {e}")
+    else:
+        for db_name in MYAPS_DBSET_LIST:
+            stats[db_name] = {
+                'state': 'unknown',
+                'deadlock_count': 0,
+                'is_circuit_open': False,
+                'alert_level': 'normal'
+            }
+    
+    report = {
+        'timestamp': datetime.now().isoformat(),
+        'databases': {},
+        'alerts': [],
+        'summary': {
+            'total_deadlocks': 0,
+            'circuit_open_count': 0,
+            'high_risk_databases': []
+        }
+    }
+    
+    alert_threshold = 5
+    
+    for db_name, db_stats in stats.items():
+        deadlock_count = db_stats['deadlock_count']
+        is_circuit_open = db_stats['is_circuit_open']
+        
+        report['databases'][db_name] = {
+            'deadlock_count': deadlock_count,
+            'state': db_stats['state'],
+            'is_circuit_open': is_circuit_open,
+            'alert_level': 'normal',
+            'half_open_success': db_stats.get('half_open_success', 0),
+            'half_open_failure': db_stats.get('half_open_failure', 0)
+        }
+        
+        report['summary']['total_deadlocks'] += deadlock_count
+        
+        if is_circuit_open:
+            report['summary']['circuit_open_count'] += 1
+            report['databases'][db_name]['alert_level'] = 'critical'
+            report['alerts'].append({
+                'database': db_name,
+                'level': 'critical',
+                'message': f"数据库 {db_name} 熔断器已触发，死锁次数: {deadlock_count}"
+            })
+        elif deadlock_count >= alert_threshold:
+            report['summary']['high_risk_databases'].append(db_name)
+            report['databases'][db_name]['alert_level'] = 'warning'
+            report['alerts'].append({
+                'database': db_name,
+                'level': 'warning',
+                'message': f"数据库 {db_name} 死锁次数较高: {deadlock_count}（阈值: {alert_threshold}）"
+            })
+    
+    return report
+
+
+@router.get("/deadlock/history")
+async def get_deadlock_history(hours: int = 24):
+    """
+    获取死锁历史趋势数据（用于图表展示）
+    
+    Args:
+        hours: 查询最近多少小时的数据，默认24小时
+    
+    Returns:
+        {
+            "timeline": [...],
+            "deadlocks": [...],
+            "circuit_opens": [...]
+        }
+    """
+    from apps.common.utils.redis_pool_manager import get_redis_client
+    
+    redis_client = get_redis_client()
+    
+    if not redis_client:
+        return {
+            "timeline": [],
+            "deadlocks": [],
+            "circuit_opens": []
+        }
+    
+    try:
+        history_key = "myaps:deadlock:history"
+        history_data = redis_client.lrange(history_key, 0, -1)
+        
+        if not history_data:
+            return {
+                "timeline": [],
+                "deadlocks": [],
+                "circuit_opens": []
+            }
+        
+        timeline = []
+        deadlocks = []
+        circuit_opens = []
+        
+        cutoff_time = datetime.now() - timedelta(hours=hours)
+        
+        for item in history_data:
+            try:
+                data = json.loads(item.decode('utf-8'))
+                timestamp = datetime.fromisoformat(data['timestamp'])
+                
+                if timestamp >= cutoff_time:
+                    timeline.append(data['timestamp'])
+                    deadlocks.append(data.get('total_deadlocks', 0))
+                    circuit_opens.append(data.get('circuit_open_count', 0))
+            except Exception as e:
+                logger.debug(f"解析死锁历史数据失败: {e}")
+                continue
+        
+        return {
+            "timeline": timeline,
+            "deadlocks": deadlocks,
+            "circuit_opens": circuit_opens
+        }
+    except Exception as e:
+        logger.error(f"获取死锁历史数据失败: {e}")
+        return {
+            "timeline": [],
+            "deadlocks": [],
+            "circuit_opens": []
+        }

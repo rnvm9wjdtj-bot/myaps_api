@@ -289,6 +289,56 @@
                     </div>
                 </div>
             </section>
+            
+            <!-- 死锁监控卡片 -->
+            <section class="card full-width">
+                <div class="card-header">
+                    <h2>🔒 死锁监控</h2>
+                    <span class="badge" id="deadlock-badge">检查中</span>
+                </div>
+                <div class="card-body">
+                    <!-- 死锁汇总信息 -->
+                    <div class="deadlock-summary">
+                        <div class="summary-item">
+                            <span class="summary-label">总死锁次数</span>
+                            <span class="summary-value" id="deadlock-total">0</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">熔断数据库数</span>
+                            <span class="summary-value" id="deadlock-circuit-count">0</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">高风险数据库</span>
+                            <span class="summary-value" id="deadlock-high-risk">无</span>
+                        </div>
+                    </div>
+                    
+                    <!-- 死锁详情表格 -->
+                    <div class="db-detail-table-container">
+                        <table class="db-detail-table" id="deadlock-table">
+                            <thead>
+                                <tr>
+                                    <th>数据库</th>
+                                    <th>熔断器状态</th>
+                                    <th>死锁次数</th>
+                                    <th>半开成功</th>
+                                    <th>半开失败</th>
+                                    <th>告警级别</th>
+                                </tr>
+                            </thead>
+                            <tbody id="deadlock-tbody">
+                                <!-- 动态生成死锁监控信息 -->
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- 死锁告警列表 -->
+                    <div class="deadlock-alerts" id="deadlock-alerts" style="display: none;">
+                        <h4>🚨 告警信息</h4>
+                        <div id="deadlock-alert-list"></div>
+                    </div>
+                </div>
+            </section>
         </main>
 
         <!-- 接收请求页面 -->

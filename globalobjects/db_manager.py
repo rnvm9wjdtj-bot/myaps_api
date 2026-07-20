@@ -921,12 +921,12 @@ def handle_db_errors(max_retries: int = 3):
                         if is_connection_closed:
                             base_delay = 3.0
                         elif is_deadlock:
-                            base_delay = 4.0  # 增加死锁重试延迟，减少熔断器频繁触发
+                            base_delay = 5.0  # 增加死锁重试延迟，减少熔断器频繁触发
                         else:
                             base_delay = 1.0
                         
                         current_delay = base_delay * (2 ** (retry_count - 1))
-                        current_delay = min(current_delay, 20.0)
+                        current_delay = min(current_delay, 30.0)  # 最大延迟从20秒增加到30秒
                         
                         error_type = "连接错误"
                         if is_connection_closed:
@@ -1033,10 +1033,10 @@ class DbManager:
         if self.connection_name not in DbManager._circuit_breakers:
             DbManager._circuit_breakers[self.connection_name] = DeadlockCircuitBreaker(
                 name=self.connection_name,
-                threshold=5,        # 60秒内超过5次死锁触发熔断
-                window_seconds=60,  # 时间窗口60秒
-                cooldown_seconds=30, # 熔断持续30秒
-                half_open_attempts=2 # 半开状态下成功2次恢复
+                threshold=10,        # 60秒内超过10次死锁触发熔断（从5增加到10）
+                window_seconds=60,   # 时间窗口60秒
+                cooldown_seconds=45, # 熔断持续45秒（从30增加到45）
+                half_open_attempts=3 # 半开状态下成功3次恢复（从2增加到3）
             )
     
     @property
@@ -1432,7 +1432,7 @@ class DbManager:
             )
     
     @with_transaction
-    @handle_db_errors(max_retries=5)
+    @handle_db_errors(max_retries=8)
     async def _call_stored_procedure_inner(
         self,
         procedure_name: str,

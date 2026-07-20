@@ -3029,3 +3029,100 @@ td {
     padding: 8px 12px;
     font-size: 13px;
 }
+
+/* ==================== 死锁监控样式 ==================== */
+
+.deadlock-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+    padding: 16px;
+    background: #f5f5f5;
+    border-radius: 8px;
+}
+
+.deadlock-summary .summary-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.deadlock-summary .summary-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.deadlock-summary .summary-value {
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.deadlock-summary .summary-value.error {
+    color: var(--error-color);
+}
+
+.deadlock-summary .summary-value.warning {
+    color: var(--warning-color);
+}
+
+.deadlock-alerts {
+    margin-top: 24px;
+    padding: 16px;
+    background: #fff5f5;
+    border: 1px solid #ffccc7;
+    border-radius: 8px;
+}
+
+.deadlock-alerts h4 {
+    margin-bottom: 12px;
+    color: var(--error-color);
+    font-size: 16px;
+}
+
+.deadlock-alerts .alert-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    margin-bottom: 8px;
+    background: white;
+    border-radius: 6px;
+    border-left: 4px solid var(--error-color);
+}
+
+.deadlock-alerts .alert-item.warning {
+    border-left-color: var(--warning-color);
+    background: #fffbf0;
+}
+
+.deadlock-alerts .alert-item.critical {
+    border-left-color: var(--error-color);
+    background: #fff5f5;
+}
+
+.deadlock-alerts .alert-icon {
+    font-size: 20px;
+}
+
+.deadlock-alerts .alert-message {
+    flex: 1;
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+/* 死锁表格样式增强 */
+#deadlock-table tbody tr {
+    transition: background-color 0.2s;
+}
+
+#deadlock-table tbody tr:hover {
+    background-color: #f5f5f5;
+}
+
+#deadlock-table td.error {
+    color: var(--error-color);
+    font-weight: 600;
+}
