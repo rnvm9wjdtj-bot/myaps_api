@@ -111,3 +111,7 @@ entrypoint.sh
 
 
 backup/**
+
+
+volumes/
+volumes/**
