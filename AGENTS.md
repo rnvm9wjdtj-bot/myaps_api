@@ -62,6 +62,74 @@ LOG_STACK_TRACE=false      # 是否启用调用栈追踪
 - `logger_v1_backup.py` - 原logger.py备份
 - `logger_v2_backup.py` - 原logger_v2.py备份
 
+## 分布式锁系统
+
+项目实现了基于Redis的分布式锁机制，用于解决MySQL死锁问题。
+
+### 特性
+- 基于Redis SET NX EX原子操作，确保互斥性
+- Lua脚本安全释放锁，防止误删他人的锁
+- 支持上下文管理器（async with），自动管理锁生命周期
+- 自动过期和降级策略
+- 锁键名安全验证，防止注入攻击
+
+### 使用方法
+
+#### 基本使用
+```python
+from apps.common.utils.distributed_lock import DistributedLock
+
+# 方式1：手动获取和释放
+lock = DistributedLock("my_resource", timeout=30)
+if await lock.acquire(max_wait=10.0):
+    try:
+        # 执行需要加锁的操作
+        pass
+    finally:
+        await lock.release()
+
+# 方式2：使用上下文管理器（推荐）
+async with DistributedLock("my_resource").lock(max_wait=10.0) as acquired:
+    if acquired:
+        # 执行需要加锁的操作
+        pass
+    else:
+        # 获取锁失败的处理
+        raise Exception("无法获取锁")
+```
+
+#### 存储过程调用集成
+```python
+from globalobjects.db_manager import DbManager
+
+db_manager = DbManager(connection)
+
+# 启用分布式锁的存储过程调用
+result = await db_manager.call_stored_procedure(
+    procedure_name="SupplyConvertMOByE2A",
+    params_list=[["PL001", "MO001", "E2A", "", "", "test"]],
+    use_distributed_lock=True  # 启用分布式锁
+)
+```
+
+### 配置参数
+```bash
+DISTRIBUTED_LOCK_TIMEOUT=30           # 锁超时时间（秒），范围[5, 300]
+DISTRIBUTED_LOCK_RETRY_INTERVAL=0.1   # 锁获取重试间隔（秒），范围[0.01, 1.0]
+DEFAULT_MAX_CONCURRENT=1              # 默认最大并发数，范围[1, 10]
+DEFAULT_WAIT_TIMEOUT=15.0             # 默认等待超时时间（秒），范围[5.0, 60.0]
+```
+
+### 降级策略
+- Redis不可用时自动降级为无锁模式
+- 记录WARNING级别日志
+- 不影响业务执行
+
+### 并发控制优化
+- `max_concurrent`: 从2降低到1，减少并发冲突
+- `wait_timeout`: 从10秒增加到15秒，增加等待时间
+- 并发槽位使用Redis INCR原子操作，消除TOCTOU竞态条件
+
 ## 构建和运行命令
 
 ### 开发环境运行

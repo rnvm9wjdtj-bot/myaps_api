@@ -1373,20 +1373,22 @@ class DbManager:
         procedure_name: str, 
         params_list: List[List[Any]] = None, 
         use_transaction: Optional[bool] = None,
-        max_concurrent: int = 2,
-        wait_timeout: float = 10.0,
-        use_queue: bool = None
+        max_concurrent: int = 1,
+        wait_timeout: float = 15.0,
+        use_queue: bool = None,
+        use_distributed_lock: bool = False
     ) -> Dict[str, Any]:
         """
-        调用数据库存储过程（支持死锁自动重试、并发控制和请求排队）
+        调用数据库存储过程（支持死锁自动重试、并发控制、请求排队和分布式锁）
         
         Args:
             procedure_name: 存储过程名称
             params_list: 存储过程参数列表，每个元素是一个参数列表（可选，默认[[]]）
             use_transaction: 是否使用事务（可选，默认使用实例配置的use_transaction）
-            max_concurrent: 最大并发数，超过此限制将等待或拒绝（默认3）
-            wait_timeout: 等待并发资源的超时时间（默认10秒）
+            max_concurrent: 最大并发数，超过此限制将等待或拒绝（默认1）
+            wait_timeout: 等待并发资源的超时时间（默认15秒）
             use_queue: 是否使用队列执行（默认None，表示高风险存储过程自动使用队列）
+            use_distributed_lock: 是否使用分布式锁（默认False）
             
         Returns:
             包含执行结果的字典，包括成功状态、执行时间、影响记录数等
@@ -1401,15 +1403,30 @@ class DbManager:
         if use_queue is None:
             use_queue = is_high_risk_procedure(procedure_name)
         
-        if use_queue:
-            # 高风险存储过程使用队列串行化执行
-            logger.debug(
-                "存储过程调用",
-                f"{procedure_name}@{self.connection_name}",
-                "使用队列串行化执行"
-            )
-            # 创建实际执行的回调函数
-            async def _execute_procedure():
+        # 定义实际执行的内部函数
+        async def _execute_with_lock():
+            if use_queue:
+                # 高风险存储过程使用队列串行化执行
+                logger.debug(
+                    "存储过程调用",
+                    f"{procedure_name}@{self.connection_name}",
+                    "使用队列串行化执行"
+                )
+                # 创建实际执行的回调函数
+                async def _execute_procedure():
+                    return await self._call_stored_procedure_inner(
+                        procedure_name=procedure_name,
+                        params_list=params_list,
+                        use_transaction=use_transaction,
+                        max_concurrent=max_concurrent,
+                        wait_timeout=wait_timeout
+                    )
+                
+                # 获取队列并执行
+                queue = ProcedureQueueManager.get_queue(procedure_name)
+                return await queue.enqueue(_execute_procedure)
+            else:
+                # 普通存储过程直接执行
                 return await self._call_stored_procedure_inner(
                     procedure_name=procedure_name,
                     params_list=params_list,
@@ -1417,19 +1434,30 @@ class DbManager:
                     max_concurrent=max_concurrent,
                     wait_timeout=wait_timeout
                 )
+        
+        # 如果启用分布式锁
+        if use_distributed_lock:
+            from apps.common.utils.distributed_lock import DistributedLock
             
-            # 获取队列并执行
-            queue = ProcedureQueueManager.get_queue(procedure_name)
-            return await queue.enqueue(_execute_procedure)
-        else:
-            # 普通存储过程直接执行
-            return await self._call_stored_procedure_inner(
-                procedure_name=procedure_name,
-                params_list=params_list,
-                use_transaction=use_transaction,
-                max_concurrent=max_concurrent,
-                wait_timeout=wait_timeout
-            )
+            lock_key = f"{procedure_name}:{self.connection_name}"
+            lock = DistributedLock(lock_key, timeout=30)
+            
+            async with lock.lock(max_wait=wait_timeout) as acquired:
+                if not acquired:
+                    raise DbManagerError(
+                        f"无法获取分布式锁: {lock_key}，等待超时 {wait_timeout} 秒"
+                    )
+                
+                logger.debug(
+                    "存储过程调用",
+                    f"{procedure_name}@{self.connection_name}",
+                    "使用分布式锁执行"
+                )
+                
+                return await _execute_with_lock()
+        
+        # 不使用分布式锁，直接执行
+        return await _execute_with_lock()
     
     @with_transaction
     @handle_db_errors(max_retries=8)
@@ -1438,8 +1466,8 @@ class DbManager:
         procedure_name: str,
         params_list: List[List[Any]],
         use_transaction: Optional[bool] = None,
-        max_concurrent: int = 3,
-        wait_timeout: float = 10.0
+        max_concurrent: int = 1,
+        wait_timeout: float = 15.0
     ) -> Dict[str, Any]:
         """
         存储过程调用的内部实现
