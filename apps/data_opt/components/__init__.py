@@ -35,17 +35,13 @@ logger = log_config.get_logger(__name__)
 
 
 
-
-
-
-
-
 class CacheItem(Enum):
     SUPPLY_MO = 'supply_mo'
     ORDER_WC = 'orderwc'
     DEMAND = 'demand'
     PEG = 'peg'
     MATERIAL = 'material'
+    BOM = 'bom'
 
 
 
@@ -108,6 +104,7 @@ class _ProductionDataCache:
             CacheItem.DEMAND.value,
             CacheItem.PEG.value,
             CacheItem.MATERIAL.value,
+            CacheItem.BOM.value,
         ]
         
         # 缓存项依赖关系（声明式配置）
@@ -118,6 +115,7 @@ class _ProductionDataCache:
             CacheItem.ORDER_WC: [CacheItem.SUPPLY_MO],
             CacheItem.PEG: [CacheItem.SUPPLY_MO],
             CacheItem.MATERIAL: [CacheItem.SUPPLY_MO, CacheItem.DEMAND],
+            CacheItem.BOM: [CacheItem.SUPPLY_MO],
         }
         
         # 强制加载的缓存项（即使未在 CACHE_ITEMS 中也会加载）
@@ -135,7 +133,8 @@ class _ProductionDataCache:
             CacheItem.ORDER_WC.value: {},
             CacheItem.DEMAND.value: {},
             CacheItem.PEG.value: {},
-            CacheItem.MATERIAL.value: {}
+            CacheItem.MATERIAL.value: {},
+            CacheItem.BOM.value: {}
         }
         
         # 缓存时间戳（记录每个缓存项的加载时间）
@@ -144,7 +143,8 @@ class _ProductionDataCache:
             CacheItem.ORDER_WC.value: 0.0,
             CacheItem.DEMAND.value: 0.0,
             CacheItem.PEG.value: 0.0,
-            CacheItem.MATERIAL.value: 0.0
+            CacheItem.MATERIAL.value: 0.0,
+            CacheItem.BOM.value: 0.0
         }
     
         # 统计信息
@@ -249,7 +249,8 @@ class _ProductionDataCache:
         2. orderwc - 只加载与指定 supplyno 相关的工序数据
         3. peg - 只加载与指定 supplyno 相关的匹配关系，并收集 demandno
         4. demand - 只加载 peg 中收集到的 demandno 数据
-        5. material - 全量加载（或根据需要优化）
+        5. material - 收集 supply_mo 和 demand 中的 materialno 并集
+        6. bom - 从 supply_mo 中提取 materialno 和 matver，去重后查询BOM
         
         Args:
             db_name: 数据库名称
@@ -298,6 +299,15 @@ class _ProductionDataCache:
                 logger.success("生产数据缓存", "", f"{CacheItem.MATERIAL.value} 缓存加载: {len(self._cache[CacheItem.MATERIAL.value])} 条")
             else:
                 logger.info("生产数据缓存", "", "跳过 material 缓存（未启用）")
+            
+            # 6. 加载 bom 缓存（从 supply_mo 中提取 materialno 和 matver，去重后查询）
+            if CacheItem.BOM.value in effective_items:
+                logger.info("生产数据缓存", "", "开始构建 bom 缓存（按需）...")
+                await self._build_bom_cache(db_name)
+                total_bom = sum(len(items) for items in self._cache[CacheItem.BOM.value].values())
+                logger.success("生产数据缓存", "", f"{CacheItem.BOM.value} 缓存加载: {total_bom} 条")
+            else:
+                logger.info("生产数据缓存", "", "跳过 bom 缓存（未启用）")
             
             self._stats['total_refreshes'] += 1
             self._stats['cache_size'] = sum(
@@ -521,6 +531,83 @@ class _ProductionDataCache:
             process_item=process_item,
             filter_string=filter_string
         )
+
+
+    async def _build_bom_cache(self, db_name: str):
+        """构建BOM缓存（按需加载，自动去重，分批查询）
+        
+        从 supply_mo 缓存中提取 (materialno, matver) 组合，去重后查询对应的BOM数据。
+        BOM数据按 (productno, matver) 作为键进行索引，方便快速查询。
+        当 BOM 数量较多时分批查询，避免 SQL 过长。
+        
+        Args:
+            db_name: 数据库名称
+        """
+        if not self._cache[CacheItem.SUPPLY_MO.value]:
+            logger.warning("生产数据缓存", "", "supply_mo 缓存为空，跳过 BOM 缓存构建")
+            self._cache[CacheItem.BOM.value] = defaultdict(list)
+            return
+        
+        bom_keys = {
+            (item.get('materialno'), item.get('matver'))
+            for item in self._cache[CacheItem.SUPPLY_MO.value].values()
+            if item.get('materialno') and item.get('matver')
+        }
+        
+        if not bom_keys:
+            logger.info("生产数据缓存", "", "没有需要加载的 BOM 数据")
+            self._cache[CacheItem.BOM.value] = defaultdict(list)
+            return
+        
+        total_keys = len(bom_keys)
+        logger.info("生产数据缓存", "", f"需要加载 {total_keys} 个 BOM（已去重）")
+        
+        def process_item(item, cache):
+            productno = item.get('productno', '')
+            matver = item.get('matver', '')
+            if productno and matver:
+                key = (productno, matver)
+                cache[key].append(item)
+        
+        # 分批查询，避免单次 SQL 过长
+        batch_size = 500
+        bom_keys_list = list(bom_keys)
+        bom_cache = defaultdict(list)
+        
+        for batch_start in range(0, len(bom_keys_list), batch_size):
+            batch = bom_keys_list[batch_start:batch_start + batch_size]
+            batch_no = batch_start // batch_size + 1
+            total_batches = (len(bom_keys_list) + batch_size - 1) // batch_size
+            
+            conditions = [
+                f"(`ProductNo`='{productno}' AND `MatVer`='{matver}')"
+                for productno, matver in batch
+            ]
+            filter_string = " OR ".join(conditions)
+            
+            logger.info(
+                "生产数据缓存", "",
+                f"正在查询第 {batch_no}/{total_batches} 批 BOM（{len(batch)} 条）"
+            )
+            
+            try:
+                result: DbResult = await db_query(
+                    db_name=db_name,
+                    model_or_tablename="t_mat_wc_bom",
+                    filter_string=filter_string,
+                    page_size=self.DEFAULT_PAGE_SIZE,
+                    page_index=self.DEFAULT_PAGE_INDEX
+                )
+                
+                for item in result.data:
+                    process_item(item, bom_cache)
+                    
+            except Exception as e:
+                logger.fail("生产数据缓存", f"构建 BOM 缓存（第{batch_no}批）", f"{e}")
+                raise e
+        
+        self._cache[CacheItem.BOM.value] = bom_cache
+        self._update_cache_timestamp(CacheItem.BOM.value)
 
 
     async def _wait_for_loading(self, timeout: float = None) -> bool:
@@ -891,6 +978,56 @@ class _ProductionDataCache:
             data = self._cache[CacheItem.MATERIAL.value].get(material_no)
             if data:
                 results.append(data)
+                self._stats['total_hits'] += 1
+            else:
+                self._stats['total_misses'] += 1
+        return results
+
+
+    def get_bom(self, productno: str, matver: str) -> List[Dict]:
+        """获取BOM数据（按父件号和版本号查找）
+        
+        Args:
+            productno: 父件号（对应 supply_mo.materialno）
+            matver: 版本号（对应 supply_mo.matver）
+            
+        Returns:
+            BOM记录列表，每个记录包含子件信息
+        """
+        if self._is_cache_expired(CacheItem.BOM.value):
+            self._stats['total_misses'] += 1
+            return []
+        
+        key = (productno, matver)
+        data = self._cache[CacheItem.BOM.value].get(key, [])
+        if data:
+            self._stats['total_hits'] += 1
+        else:
+            self._stats['total_misses'] += 1
+        return data
+
+
+    def batch_get_bom(self, bom_keys: List[tuple]) -> Dict[tuple, List[Dict]]:
+        """批量获取BOM数据
+        
+        Args:
+            bom_keys: (productno, matver) 元组列表
+            
+        Returns:
+            字典，键为 (productno, matver)，值为BOM记录列表
+        """
+        if self._is_cache_expired(CacheItem.BOM.value):
+            results = {}
+            for key in bom_keys:
+                results[key] = []
+                self._stats['total_misses'] += 1
+            return results
+        
+        results = {}
+        for key in bom_keys:
+            data = self._cache[CacheItem.BOM.value].get(key, [])
+            results[key] = data
+            if data:
                 self._stats['total_hits'] += 1
             else:
                 self._stats['total_misses'] += 1
