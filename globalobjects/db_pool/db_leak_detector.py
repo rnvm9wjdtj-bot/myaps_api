@@ -193,16 +193,29 @@ class EnhancedConnectionLeakDetector:
         
         if leak_detected:
             if self._should_log_alert(connection_name):
-                logger.warning(
-                    "LeakDetector",
-                    f"@{connection_name}",
-                    f"检测到连接泄漏: 严重程度={severity.value}, 使用率={current_usage_rate:.1f}%"
-                )
+                if health_check_failure_rate > 0.5:
+                    logger.error(
+                        "LeakDetector",
+                        f"@{connection_name}",
+                        f"健康检查持续失败: 失败率={health_check_failure_rate:.1%}, 请检查数据库连接"
+                    )
+                elif current_usage_rate >= 80:
+                    logger.warning(
+                        "LeakDetector",
+                        f"@{connection_name}",
+                        f"检测到连接泄漏: 严重程度={severity.value}, 使用率={current_usage_rate:.1f}%, 平均={avg_usage_rate:.1f}%"
+                    )
+                else:
+                    logger.warning(
+                        "LeakDetector",
+                        f"@{connection_name}",
+                        f"连接池异常: 严重程度={severity.value}, 使用率={current_usage_rate:.1f}%"
+                    )
             else:
                 logger.debug(
                     "LeakDetector",
                     f"@{connection_name}",
-                    f"检测到连接泄漏但在冷却期内: 严重程度={severity.value}, 使用率={current_usage_rate:.1f}%"
+                    f"检测到异常但在冷却期内: 严重程度={severity.value}, 使用率={current_usage_rate:.1f}%"
                 )
         
         return result

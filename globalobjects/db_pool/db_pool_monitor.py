@@ -14,6 +14,7 @@ from globalobjects.db_pool import (
     get_enhanced_db_manager,
     PoolManagerConfig
 )
+from globalobjects.db_pool.db_active_recovery import ActiveConnectionRecovery
 from globalobjects import logger
 
 
@@ -55,6 +56,7 @@ class PoolMonitorTask:
         """
         self._config = config or PoolManagerConfig()
         self._cleanup_task = BackgroundCleanupTask.get_instance(self._config)
+        self._active_recovery = ActiveConnectionRecovery.get_instance(self._config)
         self._is_running = False
         self._monitor_task: Optional[asyncio.Task] = None
         self._connection_names: list = []
@@ -102,6 +104,11 @@ class PoolMonitorTask:
         # 启动后台清理任务
         await self._cleanup_task.start()
         
+        # 启动主动恢复引擎
+        for conn_name in connection_names:
+            self._active_recovery.register_connection(conn_name)
+        await self._active_recovery.start()
+        
         # 启动监控循环
         self._monitor_task = asyncio.create_task(self._monitor_loop())
         
@@ -127,6 +134,9 @@ class PoolMonitorTask:
             except asyncio.CancelledError:
                 pass
             self._monitor_task = None
+        
+        # 停止主动恢复引擎
+        await self._active_recovery.stop()
         
         # 停止后台清理任务
         await self._cleanup_task.stop()
@@ -299,7 +309,8 @@ class PoolMonitorTask:
             "max_interval": self.MAX_MONITOR_INTERVAL,
             "connection_names": self._connection_names,
             "health_status": self._last_health_status,
-            "cleanup_status": self._cleanup_task.get_status()
+            "cleanup_status": self._cleanup_task.get_status(),
+            "active_recovery_status": self._active_recovery.get_status()
         }
     
     @classmethod

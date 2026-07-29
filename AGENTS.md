@@ -690,13 +690,13 @@ await start_pool_monitoring(["db1", "db2", "db3"])
 ### 环境变量配置
 
 ```bash
-USE_ENHANCED_POOL=true            # 是否使用增强的连接池管理
-POOL_STATE_LOCK_TIMEOUT=10.0      # 状态锁超时时间（秒）
-HEALTH_CHECK_TIMEOUT=5.0          # 健康检查超时时间（秒）
-CLEANUP_INTERVAL=300              # 后台清理任务间隔（秒）
-LEAK_WARNING_THRESHOLD=80         # 泄漏警告阈值（百分比）
-LEAK_CRITICAL_THRESHOLD=90        # 泄漏严重阈值（百分比）
-LEAK_EMERGENCY_THRESHOLD=95       # 泄漏紧急阈值（百分比）
+DBPOOL_USE_ENHANCED=true            # 是否使用增强的连接池管理
+DBPOOL_STATE_LOCK_TIMEOUT=10.0      # 状态锁超时时间（秒）
+DBPOOL_HEALTH_CHECK_TIMEOUT=5.0     # 健康检查超时时间（秒）
+DBPOOL_CLEANUP_INTERVAL=300         # 后台清理任务间隔（秒）
+DBPOOL_LEAK_WARNING_THRESHOLD=80    # 泄漏警告阈值（百分比）
+DBPOOL_LEAK_CRITICAL_THRESHOLD=90   # 泄漏严重阈值（百分比）
+DBPOOL_LEAK_EMERGENCY_THRESHOLD=95  # 泄漏紧急阈值（百分比）
 ```
 
 ### 相关文档

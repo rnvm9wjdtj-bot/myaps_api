@@ -38,6 +38,7 @@ from globalobjects.db_pool.db_enhanced_manager import (
     EnhancedDbManager,
     get_enhanced_db_manager
 )
+from globalobjects.db_pool.db_active_recovery import ActiveConnectionRecovery
 from globalobjects.db_pool.db_pool_monitor import (
     PoolMonitorTask,
     start_pool_monitoring,
@@ -83,6 +84,7 @@ __all__ = [
     "EnhancedConnectionLeakDetector",
     "BackgroundCleanupTask",
     "EnhancedDbManager",
+    "ActiveConnectionRecovery",
     # 监控任务
     "PoolMonitorTask",
     # 工具函数
