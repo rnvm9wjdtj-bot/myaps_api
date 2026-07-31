@@ -938,6 +938,7 @@ class TplusMo(MoVoucher):
             if isinstance(supplymo_detaildata, Exception):
                 raise supplymo_detaildata
             supplymo_detaildata['demand_list'] = demand_list
+            supplymo_detaildata['_production_cache'] = _aps._production_cache
 
             pydantic_model = pydantic_model or cls._PUSH_PYDANTIC_MODEL
             # dto = InternalData(data=supplymo_detaildata).dump(pydantic_model=pydantic_model)

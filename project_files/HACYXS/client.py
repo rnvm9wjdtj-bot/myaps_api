@@ -16,7 +16,8 @@
 #     - free3 包装要求
 """
 import asyncio
-from apps.io_api.models import TSupply
+from typing import Dict, Any, Union
+
 from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR, SCHEDULER_MINUTE
 from .._base import (
     get_scheduler_minute, cron_task, CLIENT_LOGGER, CLIENT_SESSION, PROJECT_JSON_FILE,
@@ -30,7 +31,6 @@ from apps.data_opt.components.yonyou_tplus import (
     YonyouTplusConnection, TplusStock, TplusMo, TplusRs, TplusPr,
     RsPushModel, MoPushModel, model_validator
 )
-from typing import Dict, Any, Union
 
 #################################################################################
 # ⬇️ 项目对象及参数
