@@ -8,7 +8,6 @@ from typing import Dict, Any, List
 from globalobjects import RemindType, remind_manager
 from ..middleware import http_metrics_collector
 from ..storage import request_storage
-from ..models import is_internal_ip
 
 
 class HTTPCollector:
@@ -25,78 +24,7 @@ class HTTPCollector:
         Returns:
             Dict: HTTP 请求指标
         """
-        # 保存所有请求到数据库
-        await self.save_all_requests()
         return self._collector.get_metrics()
-
-
-    async def save_all_requests(self):
-        """
-        保存所有请求到数据库
-        """
-        from globalobjects import logger as log_config
-        logger = log_config.get_logger(__name__)
-
-        requests = list(self._collector._requests)
-        logger.debug(f"开始保存请求数据，共 {len(requests)} 个请求")
-
-        saved_count = 0
-        saved_ids = set()  # 内存级去重，防止单次处理中的重复
-        
-        for req in requests:
-            try:
-                request_id = req.get("request_id")
-                
-                # 内存级去重：同一批处理中跳过已保存的 request_id
-                if request_id and request_id in saved_ids:
-                    logger.debug(f"跳过重复请求（内存去重）: {request_id}")
-                    continue
-                
-                # 数据库级去重：只对有 request_id 的请求进行数据库查询去重
-                existing = None
-                if request_id:
-                    try:
-                        existing = await request_storage.get_request_by_request_id(request_id)
-                        if existing:
-                            logger.debug(f"跳过重复请求（数据库去重）: {request_id}")
-                    except Exception as e:
-                        logger.debug(f"通过 request_id 查询失败: {e}")
-                
-                # 如果没有找到重复记录，保存请求
-                if not existing:
-                    client_ip = req.get("client_ip")
-                    # 保存请求数据
-                    from datetime import datetime, timezone
-                    request_data = {
-                        "request_id": request_id,
-                        "timestamp": datetime.fromtimestamp(req.get("timestamp"), timezone.utc),
-                        "method": req.get("method"),
-                        "path": req.get("path"),
-                        "query_params": req.get("query_params"),
-                        "status_code": req.get("status_code"),
-                        "response_time": req.get("duration") * 1000,  # 转换为毫秒
-                        "client_ip": client_ip,
-                        "user_agent": req.get("user_agent"),
-                        "payload_size": len(req.get("request_body", "")) if req.get("request_body") else None,
-                        "response_size": len(req.get("response_body", "")) if req.get("response_body") else None,
-                        "request_body": req.get("request_body"),
-                        "response_body": req.get("response_body"),
-                        "is_slow": req.get("is_slow", False),
-                        "slow_threshold": 1000.0 if req.get("is_slow") else None,
-                        "is_error": req.get("is_error", False),
-                        "error_message": req.get("error_message"),
-                        "is_internal": is_internal_ip(client_ip) if client_ip else False
-                    }
-                    result = await request_storage.save_request(request_data)
-                    if result:
-                        if request_id:
-                            saved_ids.add(request_id)
-                        saved_count += 1
-                        logger.debug(f"保存请求成功: {request_id}")
-            except Exception as e:
-                logger.error(f"保存请求数据失败: {e}")
-
-        logger.debug(f"请求数据保存完成，共保存 {saved_count} 个请求")
 
 
     async def get_slow_requests(self, limit: int = 10) -> List[Dict[str, Any]]:
@@ -110,31 +38,6 @@ class HTTPCollector:
             List: 慢请求列表
         """
         slow_requests = self._collector.get_slow_requests(limit)
-
-        # 持久化慢请求数据
-        from datetime import datetime, timezone
-        for req in slow_requests:
-            client_ip = req.get("client_ip")
-            # 保存基础请求数据和慢请求字段
-            request_data = {
-                "timestamp": datetime.fromtimestamp(req.get("timestamp"), timezone.utc),
-                "method": req.get("method"),
-                "path": req.get("path"),
-                "query_params": req.get("query_params"),
-                "status_code": req.get("status_code"),
-                "response_time": req.get("duration") * 1000,  # 转换为毫秒
-                "client_ip": client_ip,
-                "user_agent": req.get("user_agent"),
-                "payload_size": len(req.get("request_body", "")) if req.get("request_body") else None,
-                "response_size": len(req.get("response_body", "")) if req.get("response_body") else None,
-                "request_body": req.get("request_body"),
-                "response_body": req.get("response_body"),
-                "is_slow": True,
-                "slow_threshold": 1000.0,
-                "is_error": False,
-                "is_internal": is_internal_ip(client_ip) if client_ip else False
-            }
-            await request_storage.save_request(request_data)
 
         await remind_manager.trigger_remind(RemindType.REQUEST_SLOW, slow_requests)
         return slow_requests
@@ -151,31 +54,6 @@ class HTTPCollector:
             List: 错误请求列表
         """
         error_requests = self._collector.get_error_requests(limit)
-
-        # 持久化错误请求数据
-        from datetime import datetime, timezone
-        for req in error_requests:
-            client_ip = req.get("client_ip")
-            # 保存基础请求数据和错误请求字段
-            request_data = {
-                "timestamp": datetime.fromtimestamp(req.get("timestamp"), timezone.utc),
-                "method": req.get("method"),
-                "path": req.get("path"),
-                "query_params": req.get("query_params"),
-                "status_code": req.get("status_code"),
-                "response_time": req.get("duration") * 1000,  # 转换为毫秒
-                "client_ip": client_ip,
-                "user_agent": req.get("user_agent"),
-                "payload_size": len(req.get("request_body", "")) if req.get("request_body") else None,
-                "response_size": len(req.get("response_body", "")) if req.get("response_body") else None,
-                "request_body": req.get("request_body"),
-                "response_body": req.get("response_body"),
-                "is_error": True,
-                "error_message": req.get("error_message"),
-                "is_slow": False,
-                "is_internal": is_internal_ip(client_ip) if client_ip else False
-            }
-            await request_storage.save_request(request_data)
 
         await remind_manager.trigger_remind(RemindType.REQUEST_ERROR, error_requests)
         return error_requests
