@@ -1,11 +1,12 @@
 import asyncio
 import json
+import time
 import uuid
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from functools import wraps
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
+from typing import Any, Callable, Dict, List, Literal, Optional, Set, Tuple
 
 from fastapi import status
 from pydantic import BaseModel as PydanticSchema
@@ -136,6 +137,105 @@ class MultiDbResult(DbResult):
         }
 
 
+_TABLE_COLUMN_CACHE: Dict[str, Tuple[Set[str], float]] = {}
+_TABLE_COLUMN_CACHE_TTL = 300.0
+
+
+async def _get_table_columns(db_name: str, table_name: str) -> Set[str]:
+    """
+    获取数据库表的实际字段集合（带缓存）
+
+    Args:
+        db_name: 账套名称
+        table_name: 表名
+
+    Returns:
+        字段名集合（小写）
+    """
+    cache_key = f"{db_name}.{table_name}"
+    now = time.time()
+
+    if cache_key in _TABLE_COLUMN_CACHE:
+        cached_columns, cached_time = _TABLE_COLUMN_CACHE[cache_key]
+        if now - cached_time < _TABLE_COLUMN_CACHE_TTL:
+            return cached_columns
+
+    db_manager = get_db_manager(db_name)
+    conn = await db_manager._get_valid_connection()
+    columns_result = await conn.execute_query(f"SHOW COLUMNS FROM `{table_name}`", [])
+
+    db_field_names = set()
+    for column in columns_result[1]:
+        field_name = column.get('Field', column.get('field', '')).lower()
+        if field_name:
+            db_field_names.add(field_name)
+
+    _TABLE_COLUMN_CACHE[cache_key] = (db_field_names, now)
+    return db_field_names
+
+
+def _invalidate_table_column_cache(db_name: str = None, table_name: str = None) -> None:
+    """
+    失效表字段缓存
+
+    当写入因 "Unknown column" 失败时调用：说明表结构可能已变更（如 ALTER TABLE 新增字段），
+    缓存中的旧字段集合已过期，清除后下次查询将重新获取真实字段。
+
+    Args:
+        db_name: 账套名称（None 表示匹配所有账套）
+        table_name: 表名（None 表示匹配所有表）
+    """
+    if db_name is None and table_name is None:
+        _TABLE_COLUMN_CACHE.clear()
+        return
+
+    prefix = f"{db_name}." if db_name else None
+    suffix = f".{table_name}" if table_name else None
+
+    for key in list(_TABLE_COLUMN_CACHE.keys()):
+        if prefix is not None and suffix is not None:
+            if key == f"{db_name}.{table_name}":
+                _TABLE_COLUMN_CACHE.pop(key, None)
+        elif prefix is not None:
+            if key.startswith(prefix):
+                _TABLE_COLUMN_CACHE.pop(key, None)
+        elif suffix is not None:
+            if key.endswith(suffix):
+                _TABLE_COLUMN_CACHE.pop(key, None)
+
+
+def _filter_dict_by_table_fields(
+    data: Dict[str, Any],
+    table_columns: Set[str],
+    table_name: str,
+    operation_name: str
+) -> Dict[str, Any]:
+    """
+    过滤字典中不在数据库表中的字段
+
+    Args:
+        data: 原始数据字典
+        table_columns: 数据库表字段集合（小写）
+        table_name: 表名（用于日志）
+        operation_name: 操作名称（用于日志）
+
+    Returns:
+        过滤后的数据字典
+    """
+    original_keys = set(data.keys())
+    filtered_keys = {k for k in original_keys if k.lower() in table_columns}
+    missing_keys = original_keys - filtered_keys
+
+    if missing_keys:
+        logger.warning(
+            f"{operation_name}检测到数据字段与数据库表字段存在差异",
+            f"表={table_name}",
+            f"数据中存在但表中不存在的字段={missing_keys}，这些字段将被忽略"
+        )
+
+    return {k: v for k, v in data.items() if k in filtered_keys}
+
+
 def db_managers():
     """
     获取数据库管理器实例字典
@@ -155,6 +255,36 @@ def get_db_manager(db_name):
         DbManager 实例
     """
     return get_db_managers()[db_name]
+
+
+async def _filter_data_by_table(
+    db_name: str,
+    table_name: str,
+    data: Dict[str, Any],
+    operation_name: str
+) -> Dict[str, Any]:
+    """
+    根据数据库表的实际字段过滤数据字典，移除表中不存在的字段
+
+    Args:
+        db_name: 账套名称
+        table_name: 表名
+        data: 原始数据字典
+        operation_name: 操作名称（用于日志）
+
+    Returns:
+        过滤后的数据字典
+    """
+    try:
+        table_columns = await _get_table_columns(db_name, table_name)
+        return _filter_dict_by_table_fields(data, table_columns, table_name, operation_name)
+    except Exception as e:
+        logger.warning(
+            f"{operation_name}获取表字段失败，跳过字段过滤",
+            f"{table_name}@{db_name}",
+            str(e)
+        )
+        return data
 
 
 from ..models import TABLE_MODEL_MAPPING
@@ -736,11 +866,21 @@ async def db_supsert(
         db_manager = get_db_manager(db_name)
         try:
             async def _make_request():
+                # 每次执行前重新过滤，确保表结构变化（如 ALTER TABLE 新增字段）后重试能感知新字段
+                filtered_data = await _filter_data_by_table(db_name, table_name, data, "单条upsert")
+
+                # 防御：数据字段全部不存在于表中时，single_upsert 会因冲突字段为空生成无效 WHERE 语法
+                if not filtered_data:
+                    raise ValueError(
+                        f"数据字段 {sorted(data.keys())} 在表 {table_name}@{db_name} 中均不存在，"
+                        "无法执行单条upsert，请检查表结构"
+                    )
+
                 return await db_manager.single_upsert(
                     model_class=mdl,
-                    data=data,
+                    data=filtered_data,
                 )
-            
+
             result = await _execute_with_retry(
                 db_manager=db_manager,
                 coro_func=_make_request,
@@ -1182,16 +1322,21 @@ async def _execute_with_retry(db_manager, coro_func=None, table_name="", db_name
                 raise ValueError("必须提供 coro_func 或数据库操作参数")
         except Exception as e:
             error_msg = str(e)
-            
-            # 检查是否是瞬态错误
+
+            # 写入报"未知列"通常意味着表结构已变更（如 ALTER TABLE 新增字段），
+            # 字段缓存中的旧集合已过期，失效缓存让重试重新获取真实字段
+            if "Unknown column" in error_msg:
+                _invalidate_table_column_cache(db_name, table_name)
+
+            # 检查是否是瞬态错误（"未知列"在缓存失效后可恢复，一并纳入重试）
             is_transient = any(keyword in error_msg for keyword in TRANSIENT_ERROR_KEYWORDS)
-            
-            if is_transient and attempt < max_retries:
+
+            if (is_transient or "Unknown column" in error_msg) and attempt < max_retries:
                 delay = retry_delay * (2 ** attempt)  # 指数退避
-                logger.warning(f"数据库瞬态错误，重试 {attempt+1}/{max_retries} ({db_name}.{table_name}): {error_msg}")
+                logger.warning(f"数据库错误，重试 {attempt+1}/{max_retries} ({db_name}.{table_name}): {error_msg}")
                 await asyncio.sleep(delay)
                 continue
-            
+
             # 非瞬态错误或重试次数用尽，抛出异常
             raise
 
@@ -1241,16 +1386,33 @@ async def db_update_by_index(
     for db_name in valid_dbs:
         db_manager = get_db_manager(db_name)
 
-        logger.debug(f"index_dict: {index_dict}")
-        logger.debug(f"new_values_dict: {new_values_dict}")
-
         try:
+            async def _make_request():
+                # 每次执行前重新过滤，确保表结构变化（如 ALTER TABLE 新增字段）后重试能感知新字段
+                filtered_index_dict = await _filter_data_by_table(db_name, table_name, index_dict, "索引更新-index")
+                filtered_new_values_dict = await _filter_data_by_table(db_name, table_name, new_values_dict, "索引更新-values")
+
+                logger.debug(f"index_dict: {filtered_index_dict}")
+                logger.debug(f"new_values_dict: {filtered_new_values_dict}")
+
+                # 防御：索引字段全部不存在于表中时禁止继续，
+                # 否则 update_by_index 的 index_dict 为空会生成无 WHERE 的 SQL，导致全表更新
+                if not filtered_index_dict:
+                    raise ValueError(
+                        f"索引字段 {sorted(index_dict.keys())} 在表 {table_name}@{db_name} 中均不存在，"
+                        "无法执行索引更新，请检查表结构"
+                    )
+
+                return await db_manager.update_by_index(
+                    model_class=mdl,
+                    index_dict=filtered_index_dict,
+                    new_values_dict=filtered_new_values_dict,
+                    not_found_behavior=not_found_behavior
+                )
+
             result = await _execute_with_retry(
                 db_manager=db_manager,
-                mdl=mdl,
-                index_dict=index_dict,
-                new_values_dict=new_values_dict,
-                not_found_behavior=not_found_behavior,
+                coro_func=_make_request,
                 table_name=table_name,
                 db_name=db_name
             )
