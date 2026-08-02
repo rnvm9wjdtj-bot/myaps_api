@@ -397,6 +397,7 @@ class ProtoMatWc(TortoiseBaseModel):
     materialno = fields.CharField(source_field='MaterialNo', max_length=64, description='物料号')  # Field name made lowercase.
     matver = fields.CharField(source_field='MatVer', max_length=4, description='版本号')  # Field name made lowercase.
     itemno = fields.CharField(source_field='ItemNo', max_length=6, description='工序号')  # Field name made lowercase.
+    itemname = fields.CharField(source_field='ItemName', max_length=255, blank=True, null=True, description='工序名称')  # Field name made lowercase.
     workcenter = fields.CharField(source_field='WorkCenter', max_length=32, description='工作中心')  # Field name made lowercase.
     sortno = fields.IntField(source_field='SortNo', description='排序')  # Field name made lowercase.
     basesec = fields.IntField(source_field='BaseSec', description='节拍')  # Field name made lowercase.
@@ -404,6 +405,8 @@ class ProtoMatWc(TortoiseBaseModel):
     fixsec = fields.IntField(source_field='FixSec', description='额定时间(秒)')  # Field name made lowercase.
     sf = fields.CharField(source_field='SF', max_length=1, blank=True, null=True, description='串并行')  # Field name made lowercase.
     offsetsec = fields.IntField(source_field='OffSetSec', blank=True, null=True, description='偏置±秒')  # Field name made lowercase.
+    lotsize = fields.FloatField(source_field='LotSize', description='批量大小')  # Field name made lowercase.
+    lotsec = fields.IntField(source_field='LotSec', description='批量时间(秒)')  # Field name made lowercase.
     rate = fields.FloatField(source_field='Rate', blank=True, null=True, description='配比')  # Field name made lowercase.
     memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
     sys_stamp = fields.DatetimeField(source_field='Sys_Stamp', blank=True, null=True)  # Field name made lowercase.

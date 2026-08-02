@@ -222,6 +222,9 @@ CREATE TABLE IF NOT EXISTS t_mat_wc_staging (
     "FixSec" INT NOT NULL,
     "SF" VARCHAR(1) NULL,
     "OffSetSec" INT NULL,
+    "ItemName" VARCHAR(255) NULL,
+    "LotSize" DOUBLE PRECISION NULL,
+    "LotSec" INT NULL,
     "Rate" DOUBLE PRECISION NULL,
     "Memo" VARCHAR(255) NULL,
     "Sys_Stamp" TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP

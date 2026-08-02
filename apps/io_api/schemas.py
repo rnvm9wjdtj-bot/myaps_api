@@ -10,6 +10,15 @@ from globalobjects import globalconst as gc, ProjectDefaultValues as pdv
 
 
 
+def _normalize_enum_fields(values: Dict[str, Any], field_enum_map: Dict[str, type]) -> None:
+    for field_name, enum_cls in field_enum_map.items():
+        val = values.get(field_name)
+        if isinstance(val, str):
+            upper_val = val.upper()
+            if upper_val in enum_cls._value2member_map_:
+                values[field_name] = upper_val
+
+
 def _cache_raw_input_data(cls, values: Dict[str, Any]) -> Dict[str, Any]:
     """
     在模型验证之前捕获原始输入数据，并过滤掉不在Pydantic模型中的字段。
@@ -109,6 +118,13 @@ class AcceptMaterial(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values: Dict[str, Any]):
+        _normalize_enum_fields(values, {
+            "abc": gc.AbcEnum,
+            "type": gc.EfEnum,
+            "phantom": gc.YesNoEnum,
+            "candelay": gc.YesNoEnum,
+            "lotsize": gc.LotSizeEnum,
+        })
         if values.get("price") in gc.NONE_AND_EMPTY:
             values["price"] = 0.00
         if values.get("phantommin", "") == "":
@@ -221,6 +237,11 @@ class AcceptWorkcenter(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values: Dict[str, Any]):
+        _normalize_enum_fields(values, {
+            "bottleneck": gc.YesNoEnum,
+            "finite": gc.YesNoEnum,
+            "type": gc.YesNoEnum,
+        })
         _cache_raw_input_data(cls, values)
         
         # 转换整数字段 - 支持字符串形式的浮点数（如 "30.00000000000000"）
@@ -281,6 +302,7 @@ class AcceptMatWc(BaseModel):
     materialno: str = Field(..., max_length=64, description='料号', example="M001")
     matver: str = Field(..., max_length=4, example=pdv.MATVER, description='产线版本')
     itemno: Optional[str] = Field(None, max_length=6, description='工序项目', example=pdv.ITEMNO)
+    itemname: Optional[str] = Field(None, max_length=64, description='工序名称', example="装配")
     workcenter: str = Field(..., max_length=32, description='工作中心', example="WC001")
     sortno: int = Field(..., ge=0, le=999, description='序号', example=1)
     basesec: float = Field(..., ge=0, description='节拍T/T(秒/100)', example=600)
@@ -288,6 +310,8 @@ class AcceptMatWc(BaseModel):
     fixsec: int = Field(0, ge=0, description='额定时间(秒)', example=300)
     sf: gc.SfEnum = Field(gc.SfEnum.F, example="F", description='并行S/串行F')
     offsetsec: int = Field(0, description='偏置+/-(秒)', example=0)
+    lotsize: float = Field(0.0, description='批量大小', example=0.0)
+    lotsec: int = Field(0, description='批量时间(秒)', example=0)
     rate: float = Field(pdv.MATWC_RATE, ge=0, description='配比', example=pdv.MATWC_RATE)
     memo: Optional[str] = Field(None, max_length=255, description='备注', example="标准工序")
     _raw_input_data: Dict[str, Any] = PrivateAttr(default=None)
@@ -315,6 +339,7 @@ class AcceptMatWc(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values):
+        _normalize_enum_fields(values, {"sf": gc.SfEnum})
         _cache_raw_input_data(cls, values)
         try:
             # 先转换为 float 再转换为 int，支持字符串形式的浮点数（如 "30.00000000000000"）
@@ -390,6 +415,7 @@ class AcceptMatVer(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values):
+        _normalize_enum_fields(values, {"active": gc.YesNoEnum})
         _cache_raw_input_data(cls, values)
         
         # 转换整数字段 - 支持字符串形式的浮点数（如 "30.00000000000000"）
@@ -459,6 +485,10 @@ class AcceptMatWcBom(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values):
+        _normalize_enum_fields(values, {
+            "mto": gc.YesNoEnum,
+            "alt": gc.YesNoEnum,
+        })
         _cache_raw_input_data(cls, values)
         
         # 转换整数字段 - 支持字符串形式的浮点数（如 "30.00000000000000"）
@@ -651,6 +681,11 @@ class AcceptSupply(BaseModel):
     @classmethod
     def model_valid(cls, values):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        _normalize_enum_fields(values, {
+            "type": gc.SupplyTypeEnum,
+            "category": gc.ProductCategoryEnum,
+            "status": gc.OrderStatusEnum,
+        })
         if values.get("apiex_id") not in gc.NONE_AND_EMPTY and values.get("apiex_entryid") in gc.NONE_AND_EMPTY:
             values["apiex_entryid"] = values["apiex_id"]
         _cache_raw_input_data(cls, values)
@@ -725,6 +760,7 @@ class ModifySupply(BaseModel):
     @classmethod
     def model_valid(cls, values):
         _cache_raw_input_data(cls, values)
+        _normalize_enum_fields(values, {"status": gc.OrderStatusEnum})
         if values.get("avail_qty") is not None:
             try:
                 values["avail_qty"] = float(values["avail_qty"])
@@ -796,6 +832,11 @@ class AcceptDemand(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values):
+        _normalize_enum_fields(values, {
+            "type": gc.DemandTypeEnum,
+            "category": gc.ProductCategoryEnum,
+            "status": gc.OrderStatusEnum,
+        })
         if values.get("apiex_id") not in gc.NONE_AND_EMPTY and values.get("apiex_entryid") in gc.NONE_AND_EMPTY:
             values["apiex_entryid"] = values["apiex_id"]
         _cache_raw_input_data(cls, values)
