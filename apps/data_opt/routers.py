@@ -6,7 +6,7 @@ from typing import Optional#, Dict, Any
 
 
 import pandas as pd
-from fastapi import APIRouter, Query, Body, Header, File, UploadFile#, HTTPException
+from fastapi import APIRouter, Query, Body, File, UploadFile#, HTTPException
 from fastapi.responses import HTMLResponse#, StreamingResponse
 
 from core.settings import BASE_DIR
@@ -22,6 +22,14 @@ from apps.data_opt.utils.routechecker import RouteChecker
 
 # 创建路由器实例
 rt = APIRouter()
+
+# 【HMAC签名验证说明】
+# 配置 API_KEY 后，本文件中的接口需携带 HMAC-SHA256 签名。
+# 签名算法: sign_string = "{METHOD}{PATH}{QUERY}{TIMESTAMP}{BODY_SHA256}"
+#           signature   = HMAC-SHA256(API_KEY, sign_string)
+#           QUERY: 请求 URL 的原始查询字符串（不含 "?"，无参数时为空字符串）
+# 请求Header: X-Signature（签名值）, X-Timestamp（Unix时间戳）
+# 详见 apps/io_api/routers.py 顶部的完整说明
 
 
 @rt.post("/generate/qrcode",
@@ -40,7 +48,7 @@ async def generate_qrcode_api(
     image_format: Optional[str] = Body("SVG", pattern="^(PNG|JPEG|GIF|SVG)$", description="图片格式"),
     show_content: Optional[bool] = Body(True, description="是否在图片底部显示原字符串内容"),
     content_font_size: Optional[int] = Body(12, ge=8, description="内容文字大小"),
-    x_api_key: str = Header(None, description="API密钥")
+    # 鉴权已由中间件HMAC签名统一处理
 ):
     try:
         result = generate_qrcode(
@@ -237,7 +245,7 @@ async def generate_barcode_api(
     image_format: Optional[str] = Body("SVG", pattern="^(PNG|JPEG|GIF|SVG)$", description="图片格式"),
     show_content: Optional[bool] = Body(True, description="是否在图片底部显示原字符串内容"),
     content_font_size: Optional[int] = Body(20, ge=8, description="内容文字大小"),
-    x_api_key: str = Header(None, description="API密钥")
+    # 鉴权已由中间件HMAC签名统一处理
 ):
     try:
         result = generate_barcode(
@@ -286,7 +294,7 @@ async def check_bom_excel(
     denominator_col: str = Query(None, example=None, description="分母"),
     parentunit_col: str = Query(None, example=None, description="父单位"),
     childunit_col: str = Query(None, example=None, description="子单位"),
-    x_api_key: str = Header(None, description="API密钥")
+    # 鉴权已由中间件HMAC签名统一处理
 ):
 
     try:
@@ -349,7 +357,7 @@ async def bom_check_page():
 )
 async def get_bom_check_result_api(
     output_method: str = Query(..., example="EXCEL", enum=["EXCEL", "HAP"], description="输出方式"),
-    x_api_key: str = Header(None, description="API密钥")
+    # 鉴权已由中间件HMAC签名统一处理
 ):
     try:
         bom_json_data = await project_client.ScheduleTasks.get_bom()
@@ -409,7 +417,7 @@ def check_route_excel(
     sortno_col: str = Query(..., example="SortNo", description="顺序号"),
     itemno_col: str = Query(..., example="ItemNo", description="工序项"),
     workcenter_col: str = Query(None, example="WorkCenter", description="工作中心"),
-    x_api_key: str = Header(None, description="API密钥")
+    # 鉴权已由中间件HMAC签名统一处理
 ):
     try:
         # 验证文件格式是否为 xlsx

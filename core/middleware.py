@@ -1,11 +1,18 @@
 import os
 import ipaddress
 import re
+import hashlib
+import hmac
+import time
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
 IP_WHITELIST = [ip.strip() for ip in os.getenv("IP_WHITELIST", "").split(",") if ip.strip()]
 API_KEY = os.getenv("API_KEY", "")
+
+# HMAC签名验证配置
+
+SIGNATURE_MAX_AGE = int(os.getenv("SIGNATURE_MAX_AGE", "300"))
 
 # 文档相关路径，只能在内网访问
 DOC_PATHS = ["/docs", "/redoc", "/openapi.json"]
@@ -218,12 +225,65 @@ def is_ip_allowed(client_ip: str) -> bool:
     return False
 
 
+def _verify_hmac_signature(request: Request, body: bytes) -> bool:
+    """
+    验证HMAC-SHA256请求签名
+
+    签名算法:
+        sign_string = "{METHOD}{PATH}{QUERY}{TIMESTAMP}{BODY_SHA256}"
+        signature = HMAC-SHA256(API_KEY, sign_string)
+    QUERY: 请求 URL 的原始查询字符串（不含 "?"，无参数时为空字符串），
+           与 request.url.query 保持一致（含顺序与编码），防止 query 参数被篡改。
+
+    请求方需携带以下Header:
+        X-Signature: HMAC-SHA256签名值（十六进制）
+        X-Timestamp: 签名生成时的Unix时间戳（秒，浮点数）
+
+    防重放机制:
+        服务端校验 |当前时间 - X-Timestamp| <= SIGNATURE_MAX_AGE（默认300秒）
+
+    使用示例（调用方）:
+        import hmac, hashlib, time
+        ts = str(time.time())
+        query = "db_name=hacy_p"        # 与请求 URL 的 query 原样一致，无参数时为空串
+        body_bytes = json.dumps(payload).encode()
+        body_hash = hashlib.sha256(body_bytes).hexdigest()
+        sign_str = f"POST/api/t_material{query}{ts}{body_hash}"
+        sig = hmac.new(API_KEY.encode(), sign_str.encode(), hashlib.sha256).hexdigest()
+        headers = {"X-Signature": sig, "X-Timestamp": ts, "Content-Type": "application/json"}
+    """
+    if not API_KEY:
+        return False
+
+    signature = request.headers.get("X-Signature")
+    timestamp = request.headers.get("X-Timestamp")
+
+    if not signature or not timestamp:
+        return False
+
+    try:
+        ts_float = float(timestamp)
+    except (ValueError, TypeError):
+        return False
+
+    if abs(time.time() - ts_float) > SIGNATURE_MAX_AGE:
+        return False
+
+    body_hash = hashlib.sha256(body).hexdigest()
+    sign_string = f"{request.method}{request.url.path}{request.url.query}{timestamp}{body_hash}"
+    expected = hmac.new(
+        API_KEY.encode(), sign_string.encode(), hashlib.sha256
+    ).hexdigest()
+
+    return hmac.compare_digest(signature, expected)
+
+
 def create_security_middleware():
     async def security_middleware(request: Request, call_next):
         url_path = request.url.path
         request_method = request.method
         client_ip = request.client.host
-        
+
         # MDS页面路径直接放行
         if url_path in MDS_PATHS:
             return await call_next(request)
@@ -265,15 +325,23 @@ def create_security_middleware():
         client_ip = request.client.host
         if is_ip_allowed(client_ip):
             return await call_next(request)
-            
-        # 若不在IP白名单则需要认证请求头X-API-Key
-        if not API_KEY or request.headers.get("X-API-Key") == API_KEY:
+
+        # 未配置API_KEY则不做鉴权（开发模式）
+        if not API_KEY:
             return await call_next(request)
 
-        # 未授权请求返回真实HTTP 401状态码
+        # HMAC签名验证（所有非白名单请求必须携带有效签名）
+        body = b""
+        if request_method in ("POST", "PUT", "PATCH", "DELETE"):
+            body = await request.body()
+
+        if _verify_hmac_signature(request, body):
+            return await call_next(request)
+
+        # 签名验证失败
         return JSONResponse(
             status_code=401,
-            content={"status_code": 401, "success": 0, "meta": {}, "message": "Unauthorized: Invalid or missing API Key"}
+            content={"status_code": 401, "success": 0, "meta": {}, "message": "Unauthorized: Invalid or expired HMAC signature"}
         )
     
     return security_middleware

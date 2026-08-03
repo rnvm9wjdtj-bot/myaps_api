@@ -5,7 +5,7 @@ from typing import List, Dict, Optional, Literal#, Any
 from enum import Enum
 import inspect, functools, pandas as pd, asyncio
 # import httpx
-from fastapi import APIRouter, Path, Query, Body, Header, status, Request, HTTPException, Depends
+from fastapi import APIRouter, Path, Query, Body, status, Request, HTTPException, Depends
 # from tortoise import Tortoise
 
 from core.settings import MYAPS_DB_SET, MYAPS_DBSET_LIST, MYAPS_MAIN_DB, THIS_BASE_URL, STAGING_DB_NAME
@@ -219,8 +219,38 @@ def only_localhost():
 
 rt = APIRouter()
 ########################################################################
-########################################################################
 # 主数据接口
+########################################################################
+#
+# 【HMAC签名验证说明】
+# 配置 API_KEY 后，所有非白名单请求必须携带 HMAC-SHA256 签名，
+# 原有静态 X-API-Key 校验已被移除，不再生效。
+#
+# 签名算法:
+#   sign_string = "{METHOD}{PATH}{QUERY}{TIMESTAMP}{BODY_SHA256}"
+#   signature   = HMAC-SHA256(API_KEY, sign_string)
+#   QUERY: 请求 URL 的原始查询字符串（不含 "?"，无参数时为空字符串），
+#          需与 request.url.query 完全一致（含顺序与编码）
+#
+# 请求Header:
+#   X-Signature: 签名值（十六进制小写）
+#   X-Timestamp: 签名时的Unix时间戳（秒，浮点数）
+#
+# 调用方示例（Python httpx）:
+#   import hmac, hashlib, time, httpx, json
+#   ts = str(time.time())
+#   query = "db_name=hacy_p&return_data=true"   # 按实际 URL 的 query 原样传入，无参数时为空串
+#   body_bytes = json.dumps(payload).encode()
+#   body_hash = hashlib.sha256(body_bytes).hexdigest()
+#   sign_str = f"POST/api/t_material{query}{ts}{body_hash}"
+#   sig = hmac.new(API_KEY.encode(), sign_str.encode(), hashlib.sha256).hexdigest()
+#   resp = httpx.post(f"{url}?{query}", content=body_bytes, headers={
+#       "X-Signature": sig, "X-Timestamp": ts,
+#       "Content-Type": "application/json"
+#   })
+#
+# 防重放: 服务端校验 |当前时间 - X-Timestamp| <= SIGNATURE_MAX_AGE（默认300秒）
+# 兼容性: API_KEY 未配置时不做鉴权（开发模式）
 ########################################################################
 
 @rt.get("/meta", include_in_schema=False, dependencies=[Depends(only_localhost())])
@@ -417,7 +447,7 @@ async def post_material(
     data: List[AcceptMaterial] = Body(..., description="新增或修改的物料数据"),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     return_data: bool = Query(False, description="是否返回数据"),
-    x_api_key: str = Header(None, description="API密钥"),
+
     source_system: str = Query("unknown", description="来源系统"),
     dedup_strategy: DedupStrategyEnum = Query(DedupStrategyEnum.OVERWRITE, description="去重策略"),
     update_mode: UpdateModeEnum = Query(UpdateModeEnum.PARTIAL, description="更新模式"),
@@ -449,7 +479,7 @@ async def post_material(
         
         async def run_matver_task():
             try:
-                await post_mat_ver(request=request, data=matver_data, db_name=db_name, x_api_key=x_api_key)
+                await post_mat_ver(request=request, data=matver_data, db_name=db_name)
             except Exception as e:
                 logger.error(f"Error in post_mat_ver background task: {e}")
         
@@ -487,7 +517,7 @@ async def post_workcenter(
     data: List[AcceptWorkcenter] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     return_data: bool = Query(False, description="是否返回数据"),
-    x_api_key: str = Header(None, description="API密钥"),
+
     source_system: str = Query("unknown", description="来源系统"),
     dedup_strategy: DedupStrategyEnum = Query(DedupStrategyEnum.OVERWRITE, description="去重策略"),
     update_mode: UpdateModeEnum = Query(UpdateModeEnum.PARTIAL, description="更新模式"),
@@ -540,7 +570,7 @@ async def post_mat_wc(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     drop: Literal["all", "matched"] = Query(None, description="丢弃旧数据的方式"),
     return_data: bool = Query(False, description="是否返回数据"),
-    x_api_key: str = Header(None, description="API密钥"),
+
     source_system: str = Query("unknown", description="来源系统"),
     dedup_strategy: DedupStrategyEnum = Query(DedupStrategyEnum.OVERWRITE, description="去重策略"),
     update_mode: UpdateModeEnum = Query(UpdateModeEnum.PARTIAL, description="更新模式"),
@@ -603,7 +633,7 @@ async def post_mat_ver(
     data: List[AcceptMatVer] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     return_data: bool = Query(False, description="是否返回数据"),
-    x_api_key: str = Header(None, description="API密钥"),
+
     source_system: str = Query("unknown", description="来源系统"),
     dedup_strategy: DedupStrategyEnum = Query(DedupStrategyEnum.OVERWRITE, description="去重策略"),
     update_mode: UpdateModeEnum = Query(UpdateModeEnum.PARTIAL, description="更新模式"),
@@ -655,7 +685,7 @@ async def post_mat_wc_bom(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     drop: Literal["all", "matched"] = Query(None, description="丢弃旧数据的方式"),
     return_data: bool = Query(False, description="是否返回数据"),
-    x_api_key: str = Header(None, description="API密钥"),
+
     source_system: str = Query("unknown", description="来源系统"),
     dedup_strategy: DedupStrategyEnum = Query(DedupStrategyEnum.OVERWRITE, description="去重策略"),
     update_mode: UpdateModeEnum = Query(UpdateModeEnum.PARTIAL, description="更新模式"),
@@ -718,7 +748,7 @@ async def post_mold(
     data: List[AcceptMold] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     return_data: bool = Query(False, description="是否返回数据"),
-    x_api_key: str = Header(None, description="API密钥"),
+
     source_system: str = Query("unknown", description="来源系统"),
     dedup_strategy: DedupStrategyEnum = Query(DedupStrategyEnum.OVERWRITE, description="去重策略"),
     update_mode: UpdateModeEnum = Query(UpdateModeEnum.PARTIAL, description="更新模式"),
@@ -770,7 +800,7 @@ async def post_mat_wc_mold(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     drop: Literal["all", "matched"] = Query(None, description="丢弃旧数据的方式"),
     return_data: bool = Query(False, description="是否返回数据"),
-    x_api_key: str = Header(None, description="API密钥"),
+
     source_system: str = Query("unknown", description="来源系统"),
     dedup_strategy: DedupStrategyEnum = Query(DedupStrategyEnum.OVERWRITE, description="去重策略"),
     update_mode: UpdateModeEnum = Query(UpdateModeEnum.PARTIAL, description="更新模式"),
@@ -853,7 +883,7 @@ async def post_supply(
     data: List[AcceptSupply] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     return_data: bool = Query(False, description="是否返回数据"),
-    x_api_key: str = Header(None, description="API密钥")
+    # 鉴权已由中间件HMAC签名统一处理，路由内不再声明x_api_key
 ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
@@ -891,7 +921,7 @@ async def post_supply(
 #     data: ModifySupply = Body(..., description="修改为这些信息"),
 #     if_not_exist: Literal["skip", "insert"] = Query("skip", description="如果不存在如何处理"),
 #     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-#     x_api_key: str = Header(None, description="API密钥")
+#     # 鉴权已由中间件HMAC签名统一处理，路由内不再声明x_api_key
 # ):
 #     db_name = db_name.replace(" ", "")
 #     if isinstance(data, ModifySupply):
@@ -923,7 +953,7 @@ async def post_supply(
 #     supplyno: str = Path(..., description="要修改的供应记录的供应号"),
 #     data: ModifySupply = Body(..., description="修改为这些信息"),
 #     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-#     x_api_key: str = Header(None, description="API密钥")
+#     # 鉴权已由中间件HMAC签名统一处理，路由内不再声明x_api_key
 # ):
 #     db_name = db_name.replace(" ", "")
 #     query_result = await db_query(db_name=db_name, model_or_tablename="t_supply", filter_string=f"`SupplyNo`='{supplyno}'")
@@ -959,7 +989,7 @@ async def replace_supply(
     type_: str = Path(..., enum=['PL', 'MO', 'PR', 'PO', 'ST'], description="供应类型"),
     data: List[AcceptSupply] = Body(..., description="替换为这些供应记录"),
     return_data: bool = Query(False, description="是否返回数据"),
-    x_api_key: str = Header(None, description="API密钥")
+    # 鉴权已由中间件HMAC签名统一处理，路由内不再声明x_api_key
 ):
     log_api_request(request)
     wrong_type_count = 0
@@ -1013,7 +1043,7 @@ async def delete_supply(
     request: Request,
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     supplyno: str = Path(..., description="要删除的供应记录的供应号"),
-    x_api_key: str = Header(None, description="API密钥")
+    # 鉴权已由中间件HMAC签名统一处理，路由内不再声明x_api_key
 ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
@@ -1098,7 +1128,7 @@ async def post_demand(
     data: List[AcceptDemand] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     return_data: bool = Query(False, description="是否返回数据"),
-    x_api_key: str = Header(None, description="API密钥")
+    # 鉴权已由中间件HMAC签名统一处理，路由内不再声明x_api_key
 ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
@@ -1135,7 +1165,7 @@ async def post_demand(
 #     data: ModifyDemand = Body(..., description="修改为这些信息"),
 #     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
 #     if_not_exist: Literal["skip", "insert"] = Query("skip", description="如果不存在如何处理"),
-#     x_api_key: str = Header(None, description="API密钥")
+#     # 鉴权已由中间件HMAC签名统一处理，路由内不再声明x_api_key
 # ):
 #     db_name = db_name.replace(" ", "")
 #     index_dict = {"DemandNo": demandno}
@@ -1442,7 +1472,7 @@ async def create_workreport(
     data: List[AcceptConfirm] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     return_data: bool = Query(False, description="是否返回数据"),
-    x_api_key: str = Header(None, description="API密钥")
+    # 鉴权已由中间件HMAC签名统一处理，路由内不再声明x_api_key
 ):
     """
     新增报工记录
@@ -1483,7 +1513,7 @@ async def delete_workreport(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     supplyno: str = Path(..., description="工单号"),
     itemno: str = Path(..., description="工序项目"),
-    x_api_key: str = Header(None, description="API密钥")
+    # 鉴权已由中间件HMAC签名统一处理，路由内不再声明x_api_key
 ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
@@ -1525,7 +1555,7 @@ async def post_checkqty_report(
     data: List[AcceptCheckQtyReport] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     return_data: bool = Query(False, description="是否返回数据"),
-    x_api_key: str = Header(None, description="API密钥"),
+
 ):
     log_api_request(request)
     db_table = "t_checkqty_report"

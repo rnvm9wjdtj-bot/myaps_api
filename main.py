@@ -70,6 +70,8 @@ from apps.common.monitor.middleware import HTTPMonitorMiddleware
 app.add_middleware(HTTPMonitorMiddleware)
 
 # 配置安全中间件（后注册，在外层，优先检查端点存在性）
+# 当IP_WHITELIST或API_KEY配置时启用安全中间件
+# API_KEY配置后，非白名单请求必须携带HMAC签名
 if IP_WHITELIST or API_KEY:
     app.middleware("http")(create_security_middleware())
 
