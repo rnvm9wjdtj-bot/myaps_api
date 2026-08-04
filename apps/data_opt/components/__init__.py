@@ -1761,11 +1761,22 @@ class ApsPayloadSponsor:
     def query_material_sync(self, materialnos: str | list[str]) -> list:
         """
         同步查询物料信息（优先从缓存获取，缓存未命中则通过HTTP API获取并加入缓存）
+
+        .. deprecated::
+            已废弃，请使用 async 版本 :meth:`query_material` 替代。
+            若需在同步上下文中调用，请通过 data_preprocessor 回调将异步查询结果注入数据字典。
+
         Args:
             materialnos: 物料编号（多个用半角逗号分隔）或物料编号列表
         Returns:
             物料信息列表
         """
+        import warnings
+        warnings.warn(
+            "query_material_sync 已废弃，请使用 async 版本 query_material 替代",
+            FutureWarning,
+            stacklevel=2
+        )
         material_list, cached_data, missing_materials = self._process_materialnos_and_get_cache(materialnos)
 
         if not material_list:

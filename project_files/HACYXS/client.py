@@ -100,92 +100,99 @@ async def task_confirm_workreport(description="确认报工"):
 
 back_flush_warehouse = 'ck06'
 
-def create_custom_mo_push_model(_aps: ApsPayloadSponsor):
-    """创建带有 ApsHelper 实例的 CustomMoPushModel 类"""
-    
-    class CustomMoPushModel(MoPushModel):
-        class Config:
-            extra = 'allow'
 
-        @model_validator(mode="before")
-        @classmethod
-        def model_valid(cls, values: Dict[str, Any]):
-            cleaned_values = MoPushModel.model_valid(values)
+async def mo_data_preprocessor(data: dict, _aps: ApsPayloadSponsor) -> dict:
+    """MO 推送数据预处理器：补充物料信息映射和后续工单关系"""
+    demand_list = data.get('demand_list', [])
+    if demand_list:
+        materialnos = [d['materialno'] for d in demand_list if d.get('materialno')]
+        if materialnos:
+            materials = await _aps.query_material(materialnos)
+            data['materials_map'] = {item['materialno']: item for item in materials}
 
-            workcenter = None
-            try:
-                first_orderwc = values["orderwc"][0]
-                workcenter = first_orderwc.get("workcenter", "")
-            except:
-                workcenter = ""
-            cleaned_values['Department'] = {'Code': workcenter}
+    supplyno = data.get('supplyno', '')
+    next_mos = _aps._production_cache.get_peg_by_supply(supplyno)
+    if next_mos:
+        data['next_mos'] = next_mos
 
-            mo_details = cleaned_values['ManufactureOrderDetails'][0]
-            mo_material_details: list[dict] = mo_details['ManufactureOrderMaterialDetails']
-
-            # 批量查询所有物料的 free1 字段
-            materialnos = [md['Inventory']['Code'] for md in mo_material_details]
-            # 使用闭包中的 _aps 实例，调用同步方法
-            materials = _aps.query_material_sync(materialnos)
-            materials = {item['materialno']: item for item in materials}
-            
-            for md in mo_material_details:
-                materialno = md['Inventory']['Code']
-                free1 = materials.get(materialno, {}).get('free1',"")
-                if True:#free1.upper().strip() == 'Y':    # 该物料为倒冲料
-                    md['Warehouse'] = {'Code': back_flush_warehouse} # 倒冲料仓库
-                    md.pop('IsMaterialRequest')
-
-            mo_details['DynamicPropertyKeys'] = []
-            mo_details['DynamicPropertyValues'] = []
-            # 构建后续工单关系
-            next_mos: list[str] = _aps._production_cache.get_peg_by_supply(values['supplyno'])
-            if next_mos:
-                next_mo_sn = ','.join(next_mos)
-                if next_mo_sn:
-                    mo_details['DynamicPropertyKeys'].append('priuserdefnvc1')  # 存入自定义字段
-                    mo_details['DynamicPropertyValues'].append(next_mo_sn)
-            
-            # 源销售订单号
-            so = values.get('so')
-            if so:
-                mo_details['DynamicPropertyKeys'].append('priuserdefnvc4')  # 存入自定义字段
-                mo_details['DynamicPropertyValues'].append(so.get('demandno', ""))
-            return cleaned_values
-
-    return CustomMoPushModel
+    return data
 
 
-def create_custom_rs_push_model(_aps: ApsPayloadSponsor):
-    class CustomRsPushModel(RsPushModel):
+async def rs_data_preprocessor(data: dict, _aps: ApsPayloadSponsor) -> dict:
+    """RS 推送数据预处理器：补充物料 free1 映射，供倒冲料过滤使用"""
+    mo_material_details = data.get('mo_material_details', [])
+    materialnos = [md['Inventory']['Code'] for md in mo_material_details if md.get('Inventory', {}).get('Code')]
+    if materialnos:
+        materials = await _aps.query_material(materialnos)
+        data['materials_map'] = {item['materialno']: item for item in materials}
+    return data
 
-        class Config:
-            extra = 'allow'
 
-        @model_validator(mode="before")
-        @classmethod
-        def model_valid(cls, values: Dict[str, Any]):
-            cleaned_values = RsPushModel.model_valid(values)
+class CustomMoPushModel(MoPushModel):
+    class Config:
+        extra = 'allow'
 
-            mr_details:list[dict] = cleaned_values['MaterialRequestDetails']
-            materialnos = [md['Inventory']['Code'] for md in mr_details]
-            materials = _aps.query_material_sync(materialnos)
-            # materialnos = ','.join([md['Inventory']['Code'] for md in mr_details])
-            # materials = CLIENT_SESSION.get(f"{THIS_BASE_URL}/api/t_material/{materialnos}")
-            # materials = materials.json()['data']
-            materials = {item['materialno']: item for item in materials}
-            
-            mr_details2 = []
-            for md in mr_details:
-                materialno = md['Inventory']['Code']
-                free1 = materials.get(materialno, {}).get('free1',"")
-                if free1.upper().strip() != 'Y':    # 该物料 不为 倒冲料
-                    mr_details2.append(md)
-            
-            cleaned_values['MaterialRequestDetails'] = mr_details2
-            return cleaned_values
-            
-    return CustomRsPushModel
+    @model_validator(mode="before")
+    @classmethod
+    def model_valid(cls, values: Dict[str, Any]):
+        cleaned_values = MoPushModel.model_valid(values)
+
+        workcenter = None
+        try:
+            first_orderwc = values["orderwc"][0]
+            workcenter = first_orderwc.get("workcenter", "")
+        except:
+            workcenter = ""
+        cleaned_values['Department'] = {'Code': workcenter}
+
+        mo_details = cleaned_values['ManufactureOrderDetails'][0]
+        mo_material_details: list[dict] = mo_details['ManufactureOrderMaterialDetails']
+
+        materials_map: dict = values.get('materials_map', {})
+        for md in mo_material_details:
+            materialno = md['Inventory']['Code']
+            free1 = materials_map.get(materialno, {}).get('free1', "")
+            if True:
+                md['Warehouse'] = {'Code': back_flush_warehouse}
+                md.pop('IsMaterialRequest', None)
+
+        mo_details['DynamicPropertyKeys'] = []
+        mo_details['DynamicPropertyValues'] = []
+        next_mos: list[str] = values.get('next_mos', [])
+        if next_mos:
+            next_mo_sn = ','.join(next_mos)
+            if next_mo_sn:
+                mo_details['DynamicPropertyKeys'].append('priuserdefnvc1')
+                mo_details['DynamicPropertyValues'].append(next_mo_sn)
+
+        so = values.get('so')
+        if so:
+            mo_details['DynamicPropertyKeys'].append('priuserdefnvc4')
+            mo_details['DynamicPropertyValues'].append(so.get('demandno', ""))
+        return cleaned_values
+
+
+class CustomRsPushModel(RsPushModel):
+    class Config:
+        extra = 'allow'
+
+    @model_validator(mode="before")
+    @classmethod
+    def model_valid(cls, values: Dict[str, Any]):
+        cleaned_values = RsPushModel.model_valid(values)
+
+        mr_details: list[dict] = cleaned_values['MaterialRequestDetails']
+        materials_map: dict = values.get('materials_map', {})
+
+        mr_details2 = []
+        for md in mr_details:
+            materialno = md['Inventory']['Code']
+            free1 = materials_map.get(materialno, {}).get('free1', "")
+            if free1.upper().strip() != 'Y':    # 该物料 不为 倒冲料
+                mr_details2.append(md)
+
+        cleaned_values['MaterialRequestDetails'] = mr_details2
+        return cleaned_values
 
 
 @event_batch_handler(reminder=bus_reminder)
@@ -195,9 +202,10 @@ async def batch_handle_pl_status_a2e(event_data_list: list[dict], _erp: EventRes
         event_data_list=event_data_list,
         _erp=_erp,
         production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL],
-        pydantic_model=create_custom_mo_push_model,
+        pydantic_model=CustomMoPushModel,
         remain_native_supplyno=_REMAIN_NATIVE_SUPPLYNO,
         auto_approve=_AUTO_APPROVE_MO,
+        data_preprocessor=mo_data_preprocessor,
     )
 
 
@@ -208,7 +216,8 @@ async def batch_handle_pl_status_a2e(event_data_list: list[dict], _erp: EventRes
 #         event_data_list=event_data_list,
 #         _erp=_erp,
 #         production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL],
-#         pydantic_model=create_custom_rs_push_model,
+#         pydantic_model=CustomRsPushModel,
+#         data_preprocessor=rs_data_preprocessor,
 #     )
 
 

@@ -1570,9 +1570,10 @@ class MoVoucher(BaseVoucher):
         cls,
         event_data_list: list[dict],
         _erp,
-        production_cache_items=None,
-        pydantic_model: Type[PydanticModel] | Callable = None,
+        production_cache_items = None,
+        pydantic_model: Type[PydanticModel] = None,
         remain_native_supplyno: bool = True,
+        data_preprocessor = None,
         **kwargs
     ):
         """
@@ -1580,9 +1581,11 @@ class MoVoucher(BaseVoucher):
         Args:
             event_data_list: 生产加工单数据列表
             _aps: ApsPayloadSponsor 实例
-            pydantic_model: 生产加工单数据模型 或 能返回生产加工单数据模型的工厂函数，默认使用 cls._PUSH_PYDANTIC_MODEL
+            pydantic_model: 生产加工单数据模型，默认使用 cls._PUSH_PYDANTIC_MODEL
             production_cache_items: 生产缓存项
             remain_native_supplyno: 是否保留原生供应号
+            data_preprocessor: 数据预处理器，签名 (data: dict, _aps: ApsPayloadSponsor) -> dict，
+                               在构造 Pydantic 模型前对数据字典进行租户定制化补充
         Returns:
             None
         """
@@ -1599,14 +1602,7 @@ class MoVoucher(BaseVoucher):
         _aps = ApsPayloadSponsor(production_cache_items=production_cache_items)
         await _aps.establish_production_cache(supplynos=supply_nos)
 
-        if pydantic_model:
-            if callable(pydantic_model):
-                try:
-                    pydantic_model = pydantic_model(_aps)
-                except Exception as e:
-                    pydantic_model = pydantic_model()
-        else:
-            pydantic_model = cls._PUSH_PYDANTIC_MODEL
+        pydantic_model = pydantic_model or cls._PUSH_PYDANTIC_MODEL
 
         tasks = [
             cls.create(
@@ -1615,6 +1611,7 @@ class MoVoucher(BaseVoucher):
                 _erp=_erp,
                 pydantic_model=pydantic_model,
                 remain_native_supplyno=remain_native_supplyno,
+                data_preprocessor=data_preprocessor,
                 **kwargs
             )
             for _ in event_data_list
@@ -1639,7 +1636,8 @@ class RsVoucher(BaseVoucher):
         event_data_list: list[dict],
         _erp,
         production_cache_items=None,
-        pydantic_model: Type[PydanticModel] | Callable = None,
+        pydantic_model: Type[PydanticModel] = None,
+        data_preprocessor=None,
         **kwargs
     ):
         """
@@ -1648,7 +1646,9 @@ class RsVoucher(BaseVoucher):
             event_data_list: 领料申请数据列表
             _aps: ApsPayloadSponsor 实例
             production_cache_items: 生产缓存项
-            pydantic_model: 领料申请数据模型 或 能返回领料申请数据模型的工厂函数，默认使用 cls._PUSH_PYDANTIC_MODEL
+            pydantic_model: 领料申请数据模型，默认使用 cls._PUSH_PYDANTIC_MODEL
+            data_preprocessor: 数据预处理器，签名 (data: dict, _aps: ApsPayloadSponsor) -> dict，
+                               在构造 Pydantic 模型前对数据字典进行租户定制化补充
         Returns:
             None
         """
@@ -1666,14 +1666,7 @@ class RsVoucher(BaseVoucher):
         _aps = ApsPayloadSponsor(production_cache_items=production_cache_items)
         await _aps.establish_production_cache(supplynos=supply_nos)
 
-        if pydantic_model:
-            if callable(pydantic_model):
-                try:
-                    pydantic_model = pydantic_model(_aps)
-                except Exception as e:
-                    pydantic_model = pydantic_model()
-        else:
-            pydantic_model = cls._PUSH_PYDANTIC_MODEL
+        pydantic_model = pydantic_model or cls._PUSH_PYDANTIC_MODEL
 
         tasks = [
             cls.create(
@@ -1681,6 +1674,7 @@ class RsVoucher(BaseVoucher):
                 _aps=_aps,
                 _erp=_erp,
                 pydantic_model=pydantic_model,
+                data_preprocessor=data_preprocessor,
                 **kwargs
             )
             for event_data in event_data_list

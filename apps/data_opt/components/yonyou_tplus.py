@@ -924,6 +924,7 @@ class TplusMo(MoVoucher):
         _erp: EventResultPoster,
         pydantic_model: Type[PydanticModel] = None,
         remain_native_supplyno: bool = True,
+        data_preprocessor: Callable = None,
         **kwargs
     ):
         # mo_create_response_json = {}
@@ -939,6 +940,12 @@ class TplusMo(MoVoucher):
                 raise supplymo_detaildata
             supplymo_detaildata['demand_list'] = demand_list
             supplymo_detaildata['_production_cache'] = _aps._production_cache
+
+            if data_preprocessor:
+                result = data_preprocessor(supplymo_detaildata, _aps)
+                if inspect.isawaitable(result):
+                    result = await result
+                supplymo_detaildata = result
 
             pydantic_model = pydantic_model or cls._PUSH_PYDANTIC_MODEL
             # dto = InternalData(data=supplymo_detaildata).dump(pydantic_model=pydantic_model)
@@ -1045,6 +1052,7 @@ class TplusRs(RsVoucher):
         _aps: ApsPayloadSponsor,
         _erp: EventResultPoster,
         pydantic_model: Type[PydanticModel] = None,
+        data_preprocessor: Callable = None,
         **kwargs
     ):
         # rs_create_response_json = {}
@@ -1077,6 +1085,12 @@ class TplusRs(RsVoucher):
             
             # processed_rsdata['mo_material_details_id'] = mo_material_details_id
             processed_rsdata['mo_material_details'] = mo_material_details
+
+            if data_preprocessor:
+                result = data_preprocessor(processed_rsdata, _aps)
+                if inspect.isawaitable(result):
+                    result = await result
+                processed_rsdata = result
 
             dto = pydantic_model(**processed_rsdata).model_dump()
             if dto["MaterialRequestDetails"]:   # 有领料申请详情
