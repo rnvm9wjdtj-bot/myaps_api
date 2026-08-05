@@ -9,11 +9,6 @@
 其他：
 - 物料主数据
     - free1 是否倒冲料，Y 表示倒冲料，N 表示普通物料
-
-# - 销售订单SO
-#     - free1 客户订单号
-#     - free2 客户产品号
-#     - free3 包装要求
 """
 import asyncio
 from typing import Dict, Any, Union
@@ -40,30 +35,9 @@ _AUTO_APPROVE_MO = True   # 自动审批 MO
 _AUTO_APPROVE_PR = True   # 自动审批请购单
 
 
-# 延迟初始化，初始为 None
-# hacyxs_tplus_conn = None
 hacyxs_tplus_conn = YonyouTplusConnection()
 hacyxs_tplus_conn.register_source([TplusStock, TplusMo, TplusRs, TplusPr])
 
-# def get_tplus_conn():
-#     """获取TplusConnection实例（延迟初始化）"""
-#     global hacyxs_tplus_conn
-#     if hacyxs_tplus_conn is None:
-#         hacyxs_tplus_conn = YonyouTplusConnection()
-#         # 异步预热连接池（延迟到事件循环启动后执行）
-#         hacyxs_tplus_conn.register_source([TplusStock, TplusMo, TplusRs, TplusPr])
-#     return hacyxs_tplus_conn
-
-# def warm_up_tplus_conn():
-#     """预热连接池（在事件循环启动后调用）"""
-#     import asyncio
-#     if hacyxs_tplus_conn is not None:
-#         try:
-#             loop = asyncio.get_running_loop()
-#             asyncio.create_task(hacyxs_tplus_conn._warm_up_connection(connection_count=5))
-#         except RuntimeError:
-#             # 没有运行的事件循环，跳过预热
-#             pass
 #################################################################################
 # ⬇️ 通知相关
 #################################################################################
@@ -135,7 +109,7 @@ class CustomMoPushModel(MoPushModel):
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values: Dict[str, Any]):
-        cleaned_values = MoPushModel.model_valid(values)
+        cleaned_values = super().model_valid(values)
 
         workcenter = None
         try:
@@ -152,7 +126,7 @@ class CustomMoPushModel(MoPushModel):
         for md in mo_material_details:
             materialno = md['Inventory']['Code']
             free1 = materials_map.get(materialno, {}).get('free1', "")
-            if True:
+            if True:    # free1.upper().strip() == 'Y':    # 为 倒冲料
                 md['Warehouse'] = {'Code': back_flush_warehouse}
                 md.pop('IsMaterialRequest', None)
 
@@ -179,7 +153,7 @@ class CustomRsPushModel(RsPushModel):
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values: Dict[str, Any]):
-        cleaned_values = RsPushModel.model_valid(values)
+        cleaned_values = super().model_valid(values)
 
         mr_details: list[dict] = cleaned_values['MaterialRequestDetails']
         materials_map: dict = values.get('materials_map', {})
@@ -188,7 +162,7 @@ class CustomRsPushModel(RsPushModel):
         for md in mr_details:
             materialno = md['Inventory']['Code']
             free1 = materials_map.get(materialno, {}).get('free1', "")
-            if free1.upper().strip() != 'Y':    # 该物料 不为 倒冲料
+            if free1.upper().strip() != 'Y':    # 非 倒冲料
                 mr_details2.append(md)
 
         cleaned_values['MaterialRequestDetails'] = mr_details2
@@ -204,8 +178,8 @@ async def batch_handle_pl_status_a2e(event_data_list: list[dict], _erp: EventRes
         production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL],
         pydantic_model=CustomMoPushModel,
         remain_native_supplyno=_REMAIN_NATIVE_SUPPLYNO,
-        auto_approve=_AUTO_APPROVE_MO,
         data_preprocessor=mo_data_preprocessor,
+        auto_approve=_AUTO_APPROVE_MO,
     )
 
 

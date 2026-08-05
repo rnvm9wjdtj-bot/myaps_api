@@ -1593,10 +1593,10 @@ class MoVoucher(BaseVoucher):
         
 
         assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
-        await cls._CONNECTION.auth()
+        # await cls._CONNECTION.auth()
 
         if production_cache_items is None:
-            production_cache_items = [CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL]
+            production_cache_items = [CacheItem.SUPPLY_MO]
         supply_nos = [s['supplyno'] for s in event_data_list]
         await TSupply.filter(supplyno__in=supply_nos).update(memo=" 📤 正在推送...")
         _aps = ApsPayloadSponsor(production_cache_items=production_cache_items)
@@ -1656,10 +1656,10 @@ class RsVoucher(BaseVoucher):
         
 
         assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
-        await cls._CONNECTION.auth()
+        # await cls._CONNECTION.auth()
 
         if production_cache_items is None:
-            production_cache_items = [CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL]
+            production_cache_items = [CacheItem.SUPPLY_MO, CacheItem.DEMAND]
         supply_nos = [s['supplyno'] for s in event_data_list]
         await TDemand.filter(demandno__in=supply_nos).update(status='A2E', memo=" 📤 正在推送...")
 
@@ -1670,14 +1670,14 @@ class RsVoucher(BaseVoucher):
 
         tasks = [
             cls.create(
-                event_data=event_data,
+                event_data=_,
                 _aps=_aps,
                 _erp=_erp,
                 pydantic_model=pydantic_model,
                 data_preprocessor=data_preprocessor,
                 **kwargs
             )
-            for event_data in event_data_list
+            for _ in event_data_list
         ]
         await asyncio.gather(*tasks, return_exceptions=True)
 
