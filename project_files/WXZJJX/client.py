@@ -3,7 +3,7 @@
 """
 
 import asyncio
-from typing import Dict, Any, Union
+from typing import Dict, Any, Union, Tuple
 
 from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR, SCHEDULER_MINUTE
 from .._base import (
@@ -13,13 +13,13 @@ from .._base import (
     TSupply, async_service_operation, batch_service_operation
 )
 
-from apps.data_opt.components.mino import MinoConnection, MinoMo
+from apps.data_opt.components.mino import MinoConnection, MinoMo, MinoOperation, MinoRoute
 
 #################################################################################
 # ⬇️ 连接组件
 #################################################################################
 mino_conn = MinoConnection()
-mino_conn.register_source([MinoMo])
+mino_conn.register_source([MinoMo, MinoOperation])
 
 
 
@@ -59,3 +59,15 @@ async def batch_handle_pl_status_a2e(event_data_list: list[dict], _erp: EventRes
         production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.BOM],
         # pydantic_model=create_custom_mo_push_model,
     )
+
+
+@event_batch_handler(reminder=None)
+@batch_service_operation(module="事件处理")
+async def batch_handle_mat_wc_insert(event_data_list: list[dict], _erp: EventResultPoster, description="工艺路线新增"):
+    await MinoRoute.create(data=event_data_list)
+    involved_itemnos = list({row['itemno'] for row in event_data_list if row['itemno']})
+    operation_details = await ApsPayloadSponsor.extract_unique_matwcitem(itemnos=involved_itemnos)
+    await MinoOperation.create_or_update(operation_details)
+
+
+

@@ -67,6 +67,7 @@ class DbEventType(Enum):
     PR_STATUS_A2E = "pr_status_a2e"  # PR状态变为 A2E
     PR_DELETED = "pr_deleted"  # PR 删除
     NEW_BATCHLOG = "new_batchlog"  # 新的 一键通排 记录
+    MAT_WC_INSERT = "mat_wc_insert"  # 工艺路线新增
 
 
 # 模块级变量，用于跟踪事件是否已经注册
@@ -162,6 +163,7 @@ if not _events_registered:
     aps_pl_typeto_mo_event = ApsEvent(event_type=DbEventType.PL_TYPETO_MO, description="PL 变更为 MO")
     aps_pr_deleted_event = ApsEvent(event_type=DbEventType.PR_DELETED, description="PR 单据 删除")
     aps_new_batchlog_event = ApsEvent(event_type=DbEventType.NEW_BATCHLOG, description="新的 一键通排 记录", batch_size=1, quiet_window=1)
+    aps_mat_wc_insert_event = ApsEvent(event_type=DbEventType.MAT_WC_INSERT, description="工艺路线新增", batch_size=100000, quiet_window=5)
 
     _events_registered = True
     logger.success("数据库事件注册", "", "所有事件已成功注册")
@@ -211,6 +213,17 @@ def handle_insert_batchlog(database: str, table: str, data: dict):
             aps_new_batchlog_event.add_event(new_data)
     except Exception as e:
         logger.fail("处理t_batchlog插入事件", "", str(e))
+
+
+@binlog_listener.on_insert_for_table("t_mat_wc", database=MYAPS_MAIN_DB)
+def handle_insert_mat_wc(database: str, table: str, data: dict):
+    """处理t_mat_wc表的插入事件"""
+    try:
+        new_data = dict_to_lower_keys(data['new'])
+        aps_mat_wc_insert_event.add_event(new_data)
+    except Exception as e:
+        logger.fail("处理工艺路线插入事件", "", str(e))
+
 
 # @binlog_listener.on_insert_for_table("t_supply", database=MYAPS_MAIN_DB)
 # def handle_insert_supply(database: str, table: str, data: dict):

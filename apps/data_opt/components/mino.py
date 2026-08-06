@@ -240,6 +240,129 @@ class MinoConnection(ExternalBaseConnection):
 
 
 
+class MinoOperationPushModel(PydanticModel):
+    """工序"""
+    siteCode: str = Field()             # 企业编号
+    operationCode: str = Field()        # 工序编码
+    operationName: str = Field()        # 工序名称
+    operationTypeCode: str = Field("PRODUCTION", enum=["PRODUCTION", "OUTSOURCING", "BLANK", "QUALITY", "ENGINEERING"])    # 工序类型
+    workUnitTypeCode: str = Field()     # 作业单元类型编号（系统中必须存在）
+    standardTime: float = Field()       # 标准用时
+    standardTimeUnit: str = Field("SECOND", enum=["SECOND", "MINUTE", "HOUR", "DAY"])       # 标准用时单位
+
+    class Config:
+        extra = 'allow'
+
+
+    @model_validator(mode="before")
+    @classmethod
+    def model_valid(cls, values: Dict[str, Any]):
+        cleaned_values = {}
+        cleaned_values['siteCode'] = CACHE_MINO.get("$siteCode", "")
+        cleaned_values['operationCode'] = values['itemno']
+        cleaned_values['operationName'] = values.get('itemname') or values.get('workcenter', '')
+        cleaned_values['operationTypeCode'] = "PRODUCTION"
+        cleaned_values['workUnitTypeCode'] = values.get('workcenter', '')
+        cleaned_values['standardTime'] = values['avg_basesec']
+        cleaned_values['standardTimeUnit'] = "SECOND"
+        return cleaned_values
+
+
+
+class MinoOperation(BaseSource):
+    """
+    工序数据
+    """
+    _CREATE_ENDPOINT = "/tmgc2-api/api-proxy/erp/operation/addAndUpdateOperationBatchToExternal"    # 也可用于更新
+    _DELETE_ENDPOINT = None
+    _APPROVE_ENDPOINT = None
+    _PUSH_PYDANTIC_MODEL = MinoOperationPushModel
+    _DOCUMENTATION_URL = "https://www.yuque.com/vqp0d0/liv2wo/cvwb787373hq3cni"
+
+
+    async def create_or_update(self, data: list[Dict[str, Any]], pydantic_model: Type[PydanticModel] = None) -> Dict[str, Any]:
+        """
+        创建或更新工序
+        """
+        pydantic_model = pydantic_model or self._PUSH_PYDANTIC_MODEL
+        dto = [pydantic_model.model_validate(item) for item in data]
+        payload = {"entity": dto}
+        return await self._CONNECTION._post(self._CREATE_ENDPOINT, data=payload)
+
+
+
+class MinoRoutePushModel(PydanticModel):
+    """工艺路线"""
+
+    siteCode: str = Field()                 # 企业编号
+    processCode: str = Field()              # 工艺路线编码
+    processName: str = Field()              # 工艺路线名称
+    outDockProcessVersion: str = Field()    # 外部对接工艺版本（与processCode组合作为唯一性校验键，重复则拒绝创建）
+    operationInfoVos: list[dict] = Field()  # 工序列表
+
+
+    class Config:
+        extra = 'allow'
+
+
+    @model_validator(mode="before")
+    @classmethod
+    def model_valid(cls, values: Dict[str, Any]):
+        cleaned_values = {}
+        cleaned_values['siteCode'] = CACHE_MINO.get("$siteCode", "")
+        materialno, matver = values['key']
+        route_detail = values['route']
+        cleaned_values['processCode'] = f"{materialno}-{matver}"
+        cleaned_values['processName'] = f"{materialno}-{matver}"
+        cleaned_values['outDockProcessVersion'] = matver
+        oiv = []
+        for row in route_detail:
+            oiv.append({
+                "operationCode": row['itemno'],
+                "operationName": row.get('itemname') or row.get('workcenter', ''),
+                "operationTypeCode": "PRODUCTION",
+                "workUnitTypeCode": row['workcenter'],
+                "standardTime": row['basesec'] / 100,
+                "standardTimeUnit": "SECOND",
+            })
+        cleaned_values['operationInfoVos'] = oiv
+        return cleaned_values
+
+
+
+class MinoRoute(BaseSource):
+    """
+    工艺路线数据
+    """
+    _CREATE_ENDPOINT = "/tmgc2-api/api-proxy/erp/process/addProcessBatchToExternal"
+    _DELETE_ENDPOINT = "/tmgc2-api/api-proxy/erp/process/deleteProcessByCodeVersions"
+    # _APPROVE_ENDPOINT = None
+    _PUSH_PYDANTIC_MODEL = MinoRoutePushModel
+    _DOCUMENTATION_URL = "https://www.yuque.com/vqp0d0/liv2wo/vfybddzwami5n64c"
+
+
+    async def create(self, data: list[Dict[str, Any]], pydantic_model: Type[PydanticModel] = None) -> Dict[str, Any]:
+        """
+        创建工艺路线
+        data: APS原生扁平工艺路线数据, 可直接传入事件数据列表
+        """
+        grouped_route_data: Dict[Tuple[str, str], list[dict]] = {}
+        # 按物料和产线版本分组
+        for row in data:
+            key = (row['materialno'], row['matver'])
+            grouped_route_data.setdefault(key, []).append(row)
+        # 每组按 sortno 升序排序
+        for route in grouped_route_data.values():
+            route.sort(key=lambda r: r.get('sortno'))
+
+        pydantic_model = pydantic_model or self._PUSH_PYDANTIC_MODEL
+        dto = [pydantic_model.model_validate({"key": key, "route": route}) for key, route in grouped_route_data.items()]
+        payload = dto
+        return await self._CONNECTION._post(self._CREATE_ENDPOINT, data=payload)
+
+
+
+
 class MoPushModel(PydanticModel):   # 对应 productionOrderVo
     plannedStartDateTime: str = Field()         # 计划开始时间
     plannedEndDateTime: str = Field()           # 计划结束时间
@@ -364,3 +487,6 @@ class MinoMo(MoVoucher):
         except Exception as e:
             logger.warning("创建工序任务单失败", str(e))
             await _erp.mo_release_failed(native_plno=supplyno, msg=str(e))
+
+
+

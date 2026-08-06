@@ -2178,6 +2178,109 @@ class ApsPayloadSponsor:
             raise
 
 
+    @classmethod
+    @async_aps_error_handler("提取去重工序列表")
+    async def extract_unique_matwcitem(
+        cls,
+        db_name: str = MYAPS_MAIN_DB,
+        field_map: Optional[Dict[str, str]] = None,
+        itemnos: Optional[Union[List[str], str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        从工艺路线表(t_mat_wc)提取工序信息，按工序编号去重
+
+        聚合规则：
+            - itemno:  分组键
+            - itemname: 取出现次数最多的值（众数）
+            - workcenter: 取出现次数最多的值（众数）
+            - basesec: 取平均值后除以100（数据库原始值为100次执行时间）
+
+        数据库只做简单的 SELECT 四列，聚合去重由 pandas 完成，减轻数据库负载。
+
+        Args:
+            db_name: 账套名称，默认 MYAPS_MAIN_DB
+            field_map: 字段名映射字典，用于重命名输出字段。
+                       默认输出键为 itemno / itemname / workcenter / avg_basesec，
+                       传入如 {"itemno": "工序号", "itemname": "工序名称"} 可将对应键重命名，
+                       未映射的键保持原名。
+            itemnos: 可选，仅提取指定工序编号。支持 itemno 列表，或以逗号分隔的
+                     itemno 字符串（如 "P001,P002"），为 None 时提取全部工序。
+
+        Returns:
+            去重后的工序列表
+        """
+        # 归一化 itemnos 参数：支持列表或逗号分隔字符串，通过 WHERE 条件在数据库侧过滤
+        filter_string = ""
+        if itemnos is not None:
+            itemno_list = []
+            if isinstance(itemnos, str):
+                itemno_list = [item.strip() for item in itemnos.split(",") if item.strip()]
+            elif isinstance(itemnos, (list, tuple)):
+                itemno_list = [str(item).strip() for item in itemnos if str(item).strip()]
+            if itemno_list:
+                # 转义反斜杠与单引号，防止 SQL 注入
+                escaped = "','".join(
+                    item.replace("\\", "\\\\").replace("'", "''") for item in itemno_list
+                )
+                filter_string = f"ItemNo IN ('{escaped}')"
+            else:
+                filter_string = "1=0"  # 参数无效或为空时查询不到任何数据
+
+        # 底层 query_data 会将 page_size 钳制为 1000，这里直接按上限取值，
+        # 使下方 `len(result.data) < page_size` 能正确识别末页，避免分页失效
+        page_size = 1000
+        page_index = 1
+        all_data: List[Dict[str, Any]] = []
+        max_pages = 1000  # 上限 100 万行，超出时告警
+
+        while page_index <= max_pages:
+            result: DbResult = await db_query(
+                db_name=db_name,
+                model_or_tablename="t_mat_wc",
+                select="ItemNo, ItemName, WorkCenter, BaseSec",
+                filter_string=filter_string,
+                order_string="ItemNo",  # 稳定排序，保证 OFFSET 分页不重不漏
+                page_size=page_size,
+                page_index=page_index,
+            )
+            if not result.data:
+                break
+            all_data.extend(result.data)
+            if len(result.data) < page_size:
+                break
+            if page_index == max_pages:
+                logger.warning("提取去重工序列表", db_name, f"已达分页上限 {max_pages} 页（{max_pages * page_size} 行），数据可能不完整")
+            page_index += 1
+
+        if not all_data:
+            return []
+
+        df = pd.DataFrame(all_data)
+
+        def _mode(series: pd.Series) -> Any:
+            """取众数，空序列返回 None"""
+            modes = series.dropna().mode()
+            return modes.iloc[0] if len(modes) > 0 else None
+
+        agg_df = (
+            df.groupby("itemno", sort=True)
+            .agg(
+                itemname=("itemname", _mode),
+                workcenter=("workcenter", _mode),
+                avg_basesec=("basesec", "mean"),
+            )
+            .reset_index()
+        )
+
+        agg_df["avg_basesec"] = (agg_df["avg_basesec"] / 100).round(2)
+        agg_df = agg_df.replace({pd.NA: None, pd.NaT: None, float("nan"): None})
+
+        if field_map:
+            agg_df.rename(columns=field_map, inplace=True)
+
+        return agg_df.to_dict(orient="records")
+
+
 
 @dataclass
 class BatchSummary:
