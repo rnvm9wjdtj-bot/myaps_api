@@ -364,8 +364,8 @@ async def get_meta(request: Request):
     tags=["主数据 - 物料"],
     summary="获取物料分页数据",
     description="根据分页参数获取物料分页数据",
-    include_in_schema=False,
-    dependencies=[Depends(only_localhost())]
+    # include_in_schema=False,
+    # dependencies=[Depends(only_localhost())]
 )
 async def get_material_page(
     request: Request,
@@ -1546,7 +1546,7 @@ async def delete_workreport(
 
 @rt.post(
     "/t_checkqty_report",
-    tags=["主数据 - 工序"],
+    tags=["生产数据 - 报工"],
     summary="新增或修改班次报工",
     description="根据🗝️【料号+工作中心+班次时点】形成的联合索引新增或修改工序记录"
 )

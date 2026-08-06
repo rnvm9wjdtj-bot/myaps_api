@@ -1559,7 +1559,11 @@ class DbManager:
         Raises:
             DbManagerError: 如果查询失败
         """
-        page_size = min(page_size, 1000)  # 限制最大页大小为1000
+        if page_size <= 0:
+            page_size = 1000
+            page_index = 0
+        else:
+            page_size = min(page_size, 1000)
         start_time = datetime.now()
         
         # 使用Tortoise的连接池机制，不需要手动关闭连接
