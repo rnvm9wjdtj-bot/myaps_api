@@ -376,7 +376,7 @@ async def get_material_page(
     log_api_request(request)
     db_name = db_name.replace(" ", "")
     try:
-        result = await db_query(db_name=db_name, model_or_tablename="t_material", page_index=page_index, page_size=page_size)
+        result = await db_query(db_name=db_name, model_or_tablename="t_material", order_string="`MaterialNo`", page_index=page_index, page_size=page_size)
         return standard_response(
             status_code=200,
             success=result.success,
@@ -1219,7 +1219,7 @@ async def get_mo_page(
         conditions.append(("DT_OrdEnd", "<=", end_time))
     filter_string = build_safe_filter(conditions)
     try:
-        result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=filter_string, page_size=page_size, page_index=page_index)
+        result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=filter_string, order_string="`MaterialNo`, `SupplyNo`", page_size=page_size, page_index=page_index)
         return standard_response(
             status_code=200,
             success=result.success,
@@ -1317,7 +1317,7 @@ async def get_orderwc_page(
         conditions.append(("DT_End", "<=", end_time))
     filter_string = build_safe_filter(conditions)
     try:
-        result = await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=filter_string, page_size=page_size, page_index=page_index)
+        result = await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=filter_string, order_string="`OrderNo`", page_size=page_size, page_index=page_index)
         return standard_response(
             status_code=200,
             success=result.success,
@@ -1387,7 +1387,7 @@ async def get_peg_page(
     log_api_request(request)
     db_name = db_name.replace(" ", "")
     try:
-        result = await db_query(db_name=db_name, model_or_tablename="v_peg", page_size=page_size, page_index=page_index)
+        result = await db_query(db_name=db_name, model_or_tablename="v_peg", order_string="`id`", page_size=page_size, page_index=page_index)
         return standard_response(
             status_code=200,
             success=result.success,
