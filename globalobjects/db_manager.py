@@ -1631,6 +1631,189 @@ class DbManager:
         return response
     
 
+    @handle_db_errors(max_retries=3)
+    async def query_data_cursor(
+        self,
+        table_name: str,
+        select_fields: str = '*',
+        filter_string: str = '',
+        order_fields: List[Tuple[str, str]] = None,
+        page_size: int = 1000,
+        cursor_values: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        游标分页查询（Keyset Pagination），避免 LIMIT/OFFSET 的幻读问题
+
+        与 query_data 的 OFFSET 分页不同，游标分页使用排序字段的上次最大值作为游标，
+        每次查询只追加 WHERE 条件而非使用 OFFSET，因此不受并发插入/删除影响。
+
+        Args:
+            table_name: 表名
+            select_fields: SELECT字段字符串（默认"*"）
+            filter_string: 基础 WHERE 条件字符串（不含游标条件）
+            order_fields: 排序字段列表，每个元素为 (字段名, 'ASC'|'DESC')，
+                          例如 [('MaterialNo', 'ASC'), ('DateStr', 'ASC')]
+                          必须指定，用于构建游标条件和 ORDER BY 子句。
+                          注意：排序字段必须是 NOT NULL 列且包含在 select_fields 中，
+                          否则游标值为 NULL 时无法生成正确的游标条件，将抛出 ValueError。
+            page_size: 每页大小（最大1000，默认1000）
+            cursor_values: 游标值字典，键为排序字段名，值为上一页最后一条记录的对应字段值。
+                           首页查询时传 None 或空字典。
+
+        Returns:
+            包含查询结果的字典：
+            - success: 是否成功
+            - data: 数据列表（字段名已转小写）
+            - has_more: 是否还有更多数据（返回行数 == page_size 时为 True）
+            - cursor_values: 本页最后一条记录的排序字段值，供下一页查询使用
+            - execution_time: 执行耗时
+
+        Raises:
+            ValueError: order_fields 为空时抛出
+            DbManagerError: 查询失败时抛出
+
+        Example:
+            # 首页
+            result = await manager.query_data_cursor(
+                table_name="v_supply",
+                filter_string="`Type`='PR'",
+                order_fields=[("MaterialNo", "ASC"), ("DateStr", "ASC")],
+                page_size=1000,
+                cursor_values=None,
+            )
+            # 下一页
+            result = await manager.query_data_cursor(
+                table_name="v_supply",
+                filter_string="`Type`='PR'",
+                order_fields=[("MaterialNo", "ASC"), ("DateStr", "ASC")],
+                page_size=1000,
+                cursor_values=result["cursor_values"],
+            )
+        """
+        if not order_fields:
+            raise ValueError("游标分页必须指定 order_fields，用于确定游标位置和排序方向")
+
+        if page_size <= 0:
+            page_size = 1000
+        page_size = min(page_size, 1000)
+
+        start_time = datetime.now()
+        conn = await self._get_valid_connection()
+
+        # 构建基础 WHERE 子句
+        where_parts = []
+        if filter_string:
+            where_parts.append(filter_string)
+
+        # 构建游标条件：基于排序字段的上次最大值
+        # 对于 ASC 排序: (f1 > v1) OR (f1 = v1 AND f2 > v2) OR ...
+        # 对于 DESC 排序: 将 > 改为 <
+        if cursor_values:
+            cursor_condition = self._build_cursor_condition(order_fields, cursor_values)
+            if cursor_condition:
+                where_parts.append(cursor_condition)
+
+        where = f" WHERE {' AND '.join(where_parts)}" if where_parts else ''
+
+        # 构建 ORDER BY 子句
+        order_clause = ', '.join(f"`{field}` {direction}" for field, direction in order_fields)
+        order = f" ORDER BY {order_clause}"
+
+        # 无需 COUNT(*)，直接查询
+        sql = f'SELECT {select_fields} FROM `{table_name}` {where} {order} LIMIT {page_size}'
+        _, batch_data = await conn.execute_query(sql)
+
+        execution_time = (datetime.now() - start_time).total_seconds()
+
+        # 提取本页最后一条记录的游标值，供下一页使用
+        next_cursor = None
+        if batch_data:
+            last_row = batch_data[-1]
+            next_cursor = {field: last_row.get(field) for field, _ in order_fields}
+
+        has_more = len(batch_data) == page_size
+
+        self.stats['total_processed'] += len(batch_data)
+        self.stats['batches_executed'] += 1
+        self.stats['last_execution_time'] = execution_time
+        self._record_query_performance(table_name, len(batch_data), execution_time)
+
+        response = {
+            "success": True,
+            "table_name": table_name,
+            "filter": filter_string,
+            "order": order_clause,
+            "execution_time": execution_time,
+            "total": len(batch_data),
+            "page_size": page_size,
+            "has_more": has_more,
+            "cursor_values": next_cursor,
+            "data": [dict_to_lower_keys(item) for item in batch_data],
+        }
+
+        logger.success("游标分页查询", f"{table_name}@{self.connection_name}", f"执行时间{execution_time:.3f}秒，返回{len(batch_data)}条记录，{'还有更多' if has_more else '已到末页'}")
+        if execution_time > 1.0:
+            logger.warning_console(f"游标分页查询 {table_name}@{self.connection_name} 查询执行时间较长: {execution_time:.3f}秒")
+
+        return response
+
+    @staticmethod
+    def _build_cursor_condition(
+        order_fields: List[Tuple[str, str]],
+        cursor_values: Dict[str, Any],
+    ) -> str:
+        """
+        根据排序字段和游标值构建游标过滤条件
+
+        对于组合排序键 (f1 ASC, f2 ASC, f3 ASC) 和游标值 (v1, v2, v3)，
+        生成条件:
+          (`f1` > 'v1' OR (`f1` = 'v1' AND `f2` > 'v2') OR (`f1` = 'v1' AND `f2` = 'v2' AND `f3` > 'v3'))
+
+        DESC 排序字段使用 < 替代 >。
+
+        Args:
+            order_fields: 排序字段列表 [(field, 'ASC'|'DESC'), ...]
+            cursor_values: 游标值字典 {field_name: value}
+
+        Returns:
+            游标条件的 SQL 字符串（不含 WHERE 关键字）
+        """
+        if not cursor_values:
+            return ''
+
+        def _sql_value(val: Any) -> str:
+            if val is None:
+                return 'NULL'
+            if isinstance(val, (int, float)):
+                return str(val)
+            return f"'{str(val).replace(chr(39), chr(39)+chr(39))}'"
+
+        or_parts = []
+        for i in range(len(order_fields)):
+            field, direction = order_fields[i]
+            op = '>' if direction.upper() == 'ASC' else '<'
+            val = cursor_values.get(field)
+            if val is None:
+                raise ValueError(
+                    f"游标分页失败：排序字段 {field} 的游标值为 NULL 或缺失（cursor_values={cursor_values}）。"
+                    f"游标分页要求排序字段为 NOT NULL 列且包含在 select 字段中，"
+                    f"请确认 {field} 满足条件，或改用 db_query 分页。"
+                )
+
+            eq_chain = []
+            for j in range(i):
+                prev_field, _ = order_fields[j]
+                prev_val = cursor_values.get(prev_field)
+                eq_chain.append(f"`{prev_field}` = {_sql_value(prev_val)}")
+
+            condition = f"`{field}` {op} {_sql_value(val)}"
+            if eq_chain:
+                condition = ' AND '.join(eq_chain) + f' AND {condition}'
+            or_parts.append(f'({condition})')
+
+        return ' OR '.join(or_parts) if or_parts else ''
+
+
     @with_transaction
     @handle_db_errors(max_retries=3)
     async def delete_data(self, table_name: str, filter_string: str = '', use_transaction: Optional[bool] = None) -> Dict[str, Any]:

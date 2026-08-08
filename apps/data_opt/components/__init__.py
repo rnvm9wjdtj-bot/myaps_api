@@ -25,7 +25,7 @@ import uuid
 from globalobjects import logger as log_config, ProjectDefaultValues as pdv, StaticString as ce
 from dataclasses import dataclass, field
 from core.settings import THIS_BASE_URL, MYAPS_MAIN_DB, MYAPS_DB_SET
-from apps.io_api.utils.db_operation import db_exec_sql, db_query, db_update_by_index, db_query, db_delete, db_bupsert, call_dbprocdure, DbResult, MultiDbResult
+from apps.io_api.utils.db_operation import db_exec_sql, db_query, db_query_cursor, db_update_by_index, db_delete, db_bupsert, call_dbprocdure, DbResult, MultiDbResult
 from apps.io_api.models import TBatchLog 
 
 
@@ -1562,12 +1562,31 @@ class ApsPayloadSponsor:
     @classmethod
     async def get_new_pr_data(cls):
         try:
-            result: DbResult = await db_query(
-                db_name=MYAPS_MAIN_DB,
-                model_or_tablename="v_supply",
-                filter_string="`Type`='PR' AND `Status`='NEW'"
-            )
-            return result.data
+            all_data = []
+            cursor_values = None
+            page_size = 1000
+            max_rounds = 1000
+            order_fields = [("SupplyNo", "ASC")]
+
+            for round_idx in range(1, max_rounds + 1):
+                result: DbResult = await db_query_cursor(
+                    db_name=MYAPS_MAIN_DB,
+                    model_or_tablename="v_supply",
+                    filter_string="`Type`='PR' AND `Status`='NEW'",
+                    order_fields=order_fields,
+                    page_size=page_size,
+                    cursor_values=cursor_values,
+                )
+                if not result.data:
+                    break
+                all_data.extend(result.data)
+                cursor_values = result.meta.get("cursor_values")
+                if not result.meta.get("has_more", False):
+                    break
+            else:
+                logger.warning(f"获取新PR数据：已达游标分页上限 {max_rounds} 轮，累计获取{len(all_data)}条，数据可能不完整")
+
+            return all_data
         except Exception as e:
             logger.fail("获取新PR数据", "", f"{e}")
             return []
@@ -2010,46 +2029,41 @@ class ApsPayloadSponsor:
         else:
             dates = [(start_date + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(period)]
         filter_string = f"`DateStr` >= '{start_date}' AND `DateStr` <= '{end_date}'"
-        order_string = "`MaterialNo`, `DateStr`"
         if materialno:
             sql_matno = ','.join([f"'{matno.strip()}'" for matno in materialno.split(',')])
             filter_string += f" AND `MaterialNo` IN ({sql_matno})"
         
-        # 分页查询，确保获取全部数据
-        page_index = 1
-        page_size = 1000  # 每页1000条
+        # 游标分页查询，避免 LIMIT/OFFSET 幻读问题
+        page_size = 1000
         total_fetched = 0
-        max_pages = 100  # 安全限制，防止无限循环
+        cursor_values = None
+        max_rounds = 1000  # 安全限制，防止无限循环
+        order_fields = [("MaterialNo", "ASC"), ("DateStr", "ASC")]
         
-        while page_index <= max_pages:
-            query_result = await db_query(
+        for round_idx in range(1, max_rounds + 1):
+            query_result = await db_query_cursor(
                 db_name=db_name,
                 model_or_tablename="v_matdailyqtyreport",
                 filter_string=filter_string,
-                order_string=order_string,
+                order_fields=order_fields,
                 page_size=page_size,
-                page_index=page_index
+                cursor_values=cursor_values,
             )
             
             if not query_result.data:
-                # 没有数据，结束查询
-                logger.debug(f"分页查询结束：第{page_index}页无数据，累计获取{total_fetched}条")
+                logger.debug(f"游标分页查询结束：第{round_idx}轮无数据，累计获取{total_fetched}条")
                 break
             
-            # 添加到结果列表
             request_result.extend(query_result.data)
             total_fetched += len(query_result.data)
+            cursor_values = query_result.meta.get("cursor_values")
+            has_more = query_result.meta.get("has_more", False)
             
-            # 如果返回数据少于page_size，说明已经是最后一页
-            if len(query_result.data) < page_size:
-                logger.debug(f"分页查询完成：共{page_index}页，累计获取{total_fetched}条原始数据")
+            if not has_more:
+                logger.debug(f"游标分页查询完成：共{round_idx}轮，累计获取{total_fetched}条原始数据")
                 break
-            
-            # 继续查询下一页
-            page_index += 1
-        
-        if page_index > max_pages:
-            logger.warning(f"分页查询达到最大页数限制({max_pages}页)，累计获取{total_fetched}条，可能存在更多数据")
+        else:
+            logger.warning(f"游标分页查询达到最大轮次限制({max_rounds}轮)，累计获取{total_fetched}条，可能存在更多数据")
 
         if not request_result:
             return []
@@ -2226,31 +2240,32 @@ class ApsPayloadSponsor:
             else:
                 filter_string = "1=0"  # 参数无效或为空时查询不到任何数据
 
-        # 底层 query_data 会将 page_size 钳制为 1000，这里直接按上限取值，
-        # 使下方 `len(result.data) < page_size` 能正确识别末页，避免分页失效
+        # 游标分页查询，避免 LIMIT/OFFSET 幻读问题
         page_size = 1000
-        page_index = 1
         all_data: List[Dict[str, Any]] = []
-        max_pages = 1000  # 上限 100 万行，超出时告警
+        cursor_values = None
+        max_rounds = 1000  # 上限 100 万行，超出时告警
+        order_fields = [("ItemNo", "ASC")]
 
-        while page_index <= max_pages:
-            result: DbResult = await db_query(
+        for round_idx in range(1, max_rounds + 1):
+            result: DbResult = await db_query_cursor(
                 db_name=db_name,
                 model_or_tablename="t_mat_wc",
                 select="ItemNo, ItemName, WorkCenter, BaseSec",
                 filter_string=filter_string,
-                order_string="ItemNo",  # 稳定排序，保证 OFFSET 分页不重不漏
+                order_fields=order_fields,
                 page_size=page_size,
-                page_index=page_index,
+                cursor_values=cursor_values,
             )
             if not result.data:
                 break
             all_data.extend(result.data)
-            if len(result.data) < page_size:
+            cursor_values = result.meta.get("cursor_values")
+            has_more = result.meta.get("has_more", False)
+            if not has_more:
                 break
-            if page_index == max_pages:
-                logger.warning("提取去重工序列表", db_name, f"已达分页上限 {max_pages} 页（{max_pages * page_size} 行），数据可能不完整")
-            page_index += 1
+        else:
+            logger.warning("提取去重工序列表", db_name, f"已达游标分页上限 {max_rounds} 轮（{max_rounds * page_size} 行），数据可能不完整")
 
         if not all_data:
             return []

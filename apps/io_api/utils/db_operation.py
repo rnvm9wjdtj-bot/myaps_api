@@ -735,6 +735,78 @@ async def db_query(
     )
 
 
+@retry_on_connection_error(max_retries=3, retry_delay=1.0)
+async def db_query_cursor(
+    db_name: str,
+    model_or_tablename: TortoiseBaseModel | str,
+    select="*",
+    filter_string: str = '',
+    order_fields: List[Tuple[str, str]] = None,
+    page_size: int = 1000,
+    cursor_values: Optional[Dict[str, Any]] = None,
+) -> DbResult:
+    """
+    游标分页查询，避免 LIMIT/OFFSET 的幻读问题
+
+    与 db_query 的 OFFSET 分页不同，游标分页使用排序字段的上次最大值作为游标，
+    每次查询追加 WHERE 条件而非 OFFSET，不受并发插入/删除影响。
+
+    Args:
+        db_name: 数据库连接名称
+        model_or_tablename: 模型类或表名
+        select: 要查询的字段，默认为 "*"
+        filter_string: WHERE子句，用于指定查询条件
+        order_fields: 排序字段列表，每个元素为 (字段名, 'ASC'|'DESC')，
+                      例如 [('MaterialNo', 'ASC'), ('DateStr', 'ASC')]
+                      必须指定，用于构建游标条件和 ORDER BY 子句。
+                      注意：排序字段必须是 NOT NULL 列且包含在 select 字段中，
+                      否则游标值为 NULL 时无法生成正确的游标条件，将抛出 ValueError。
+        page_size: 每页大小，默认为 1000
+        cursor_values: 游标值字典，键为排序字段名，值为上一页最后一条记录的对应字段值。
+                       首页查询时传 None。
+
+    Returns:
+        DbResult: 统一格式的返回值，meta 中额外包含：
+            - has_more: 是否还有更多数据
+            - cursor_values: 本页最后一条记录的排序字段值，供下一页查询使用
+    """
+    valid_dbs = validate_databases(db_name)
+    if not valid_dbs:
+        logger.fail("数据库验证", f"{db_name}", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
+        raise ValueError(f"操作失败：未找到有效账套，input_db_name: {db_name}, available_dbs: {MYAPS_DB_SET}")
+    valid_db = valid_dbs[0]
+
+    db_manager = get_db_manager(valid_db)
+    _, table_name = process_model_or_tablename(model_or_tablename)
+
+    query_result = await db_manager.query_data_cursor(
+        table_name=table_name,
+        select_fields=select,
+        filter_string=filter_string,
+        order_fields=order_fields,
+        page_size=page_size,
+        cursor_values=cursor_values,
+    )
+    formatted_data = [format_query_result(row) for row in query_result['data']]
+
+    has_more = query_result.get('has_more', False)
+    next_cursor = query_result.get('cursor_values')
+
+    return DbResult(
+        success=1,
+        data=formatted_data,
+        message=f"游标分页查询成功，返回{len(formatted_data)}条记录，{'还有更多' if has_more else '已到末页'}",
+        meta={
+            "affected_rows": len(formatted_data),
+            "page_size": page_size,
+            "db_names": [valid_db],
+            "table_name": table_name,
+            "has_more": has_more,
+            "cursor_values": next_cursor,
+        }
+    )
+
+
 
 async def preprocess_data(
     data_list: List[PydanticSchema | Dict[str, Any]],
