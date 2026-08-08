@@ -335,27 +335,43 @@ class _ProductionDataCache:
             raise
     
 
-    async def _build_cache(self, db_name: str, table_name: str, cache_name: str, cache_factory, process_item, filter_string: str = ''):
-        """通用的缓存构建方法"""
+    async def _build_cache(self, db_name: str, table_name: str, cache_name: str, cache_factory, process_item, filter_string: str = '', order_fields: list = None):
+        """通用的缓存构建方法（游标分页，避免 LIMIT/OFFSET 幻读问题）"""
         cache = cache_factory()
         
+        if not order_fields:
+            raise ValueError(f"构建 {cache_name} 缓存时必须指定 order_fields，用于游标分页排序")
+
         try:
-            # 直接从数据库获取数据，不分页，因为 db_query 已经处理了分页
-            result: DbResult = await db_query(
-                db_name=db_name,
-                model_or_tablename=table_name,
-                filter_string=filter_string,
-                page_size=self.DEFAULT_PAGE_SIZE,
-                page_index=self.DEFAULT_PAGE_INDEX
-            )
-            data_list = result.data
+            all_data = []
+            cursor_values = None
+            page_size = self.DEFAULT_PAGE_SIZE
+            max_rounds = 1000
+
+            for round_idx in range(1, max_rounds + 1):
+                result: DbResult = await db_query_cursor(
+                    db_name=db_name,
+                    model_or_tablename=table_name,
+                    filter_string=filter_string,
+                    order_fields=order_fields,
+                    page_size=page_size,
+                    cursor_values=cursor_values,
+                )
+                if not result.data:
+                    break
+                all_data.extend(result.data)
+                cursor_values = result.meta.get("cursor_values")
+                if not result.meta.get("has_more", False):
+                    break
+            else:
+                logger.warning("生产数据缓存", cache_name, f"游标分页达到上限 {max_rounds} 轮，数据可能不完整")
             
-            for item in data_list:
+            for item in all_data:
                 process_item(item, cache)
             
             self._cache[cache_name] = cache
-            self._update_cache_timestamp(cache_name)  # 更新缓存时间戳
-            return data_list
+            self._update_cache_timestamp(cache_name)
+            return all_data
         except Exception as e:
             logger.fail("生产数据缓存", f"构建 {cache_name} 缓存", f"{e}")
             raise e
@@ -385,7 +401,8 @@ class _ProductionDataCache:
             cache_name=CacheItem.SUPPLY_MO.value,
             cache_factory=dict,
             process_item=process_item,
-            filter_string=filter_string
+            filter_string=filter_string,
+            order_fields=[("MaterialNo", "ASC"), ("SupplyNo", "ASC")]
         )
     
 
@@ -413,9 +430,10 @@ class _ProductionDataCache:
             cache_name=CacheItem.ORDER_WC.value,
             cache_factory=lambda: defaultdict(list),
             process_item=process_item,
-            filter_string=filter_string
+            filter_string=filter_string,
+            order_fields=[("OrderNo", "ASC")]
         )
-    
+
 
     async def _build_demand_cache(self, db_name: str, demandnos: list = None):
         """使用数据库查询方式构建 demand 缓存
@@ -446,7 +464,8 @@ class _ProductionDataCache:
             cache_name=CacheItem.DEMAND.value,
             cache_factory=lambda: defaultdict(list),
             process_item=process_item,
-            filter_string=filter_string
+            filter_string=filter_string,
+            order_fields=[("MaterialNo", "ASC"), ("DemandNo", "ASC"), ("ItemNo", "ASC")]
         )
 
 
@@ -544,7 +563,8 @@ class _ProductionDataCache:
             cache_name=CacheItem.MATERIAL.value,
             cache_factory=dict,
             process_item=process_item,
-            filter_string=filter_string
+            filter_string=filter_string,
+            order_fields=[("MaterialNo", "ASC")]
         )
 
 
@@ -622,15 +642,30 @@ class _ProductionDataCache:
             )
             
             try:
-                result: DbResult = await db_query(
-                    db_name=db_name,
-                    model_or_tablename="t_mat_wc_bom",
-                    filter_string=filter_string,
-                    page_size=self.DEFAULT_PAGE_SIZE,
-                    page_index=self.DEFAULT_PAGE_INDEX
-                )
-                
-                for item in result.data:
+                bom_all_data = []
+                cursor_values = None
+                max_rounds = 1000
+                bom_order_fields = [("ProductNo", "ASC"), ("MatVer", "ASC"), ("ItemNo", "ASC"), ("MaterialNo", "ASC")]
+
+                for round_idx in range(1, max_rounds + 1):
+                    result: DbResult = await db_query_cursor(
+                        db_name=db_name,
+                        model_or_tablename="t_mat_wc_bom",
+                        filter_string=filter_string,
+                        order_fields=bom_order_fields,
+                        page_size=self.DEFAULT_PAGE_SIZE,
+                        cursor_values=cursor_values,
+                    )
+                    if not result.data:
+                        break
+                    bom_all_data.extend(result.data)
+                    cursor_values = result.meta.get("cursor_values")
+                    if not result.meta.get("has_more", False):
+                        break
+                else:
+                    logger.warning("生产数据缓存", f"构建 BOM 缓存（第{batch_no}批）", f"游标分页达到上限 {max_rounds} 轮，数据可能不完整")
+
+                for item in bom_all_data:
                     process_item(item)
                     
             except Exception as e:
@@ -699,15 +734,30 @@ class _ProductionDataCache:
             )
             
             try:
-                result: DbResult = await db_query(
-                    db_name=db_name,
-                    model_or_tablename="t_mat_wc",
-                    filter_string=filter_string,
-                    page_size=self.DEFAULT_PAGE_SIZE,
-                    page_index=self.DEFAULT_PAGE_INDEX
-                )
-                
-                for item in result.data:
+                mat_wc_all_data = []
+                cursor_values = None
+                max_rounds = 1000
+                mat_wc_order_fields = [("MaterialNo", "ASC"), ("MatVer", "ASC"), ("ItemNo", "ASC")]
+
+                for round_idx in range(1, max_rounds + 1):
+                    result: DbResult = await db_query_cursor(
+                        db_name=db_name,
+                        model_or_tablename="t_mat_wc",
+                        filter_string=filter_string,
+                        order_fields=mat_wc_order_fields,
+                        page_size=self.DEFAULT_PAGE_SIZE,
+                        cursor_values=cursor_values,
+                    )
+                    if not result.data:
+                        break
+                    mat_wc_all_data.extend(result.data)
+                    cursor_values = result.meta.get("cursor_values")
+                    if not result.meta.get("has_more", False):
+                        break
+                else:
+                    logger.warning("生产数据缓存", f"构建 mat_wc 缓存（第{batch_no}批）", f"游标分页达到上限 {max_rounds} 轮，数据可能不完整")
+
+                for item in mat_wc_all_data:
                     process_item(item, mat_wc_cache)
                     
             except Exception as e:
@@ -1465,8 +1515,28 @@ class ApsPayloadSponsor:
         """
         try:
             now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            response_json: DbResult = await db_query(db_name=db_name, model_or_tablename="v_supply_complete")
-            mo_complete_data = response_json.data
+            mo_complete_data = []
+            cursor_values = None
+            page_size = 1000
+            max_rounds = 1000
+            order_fields = [("MaterialNo", "ASC"), ("SupplyNo", "ASC")]
+
+            for round_idx in range(1, max_rounds + 1):
+                result: DbResult = await db_query_cursor(
+                    db_name=db_name,
+                    model_or_tablename="v_supply_complete",
+                    order_fields=order_fields,
+                    page_size=page_size,
+                    cursor_values=cursor_values,
+                )
+                if not result.data:
+                    break
+                mo_complete_data.extend(result.data)
+                cursor_values = result.meta.get("cursor_values")
+                if not result.meta.get("has_more", False):
+                    break
+            else:
+                logger.warning("MTO报工转虚拟库存", "", f"游标分页达到上限 {max_rounds} 轮，数据可能不完整")
             df_mto_vir_st = None
             if mo_complete_data:
                 df_mo_complete = pd.DataFrame(mo_complete_data)
