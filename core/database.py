@@ -737,9 +737,13 @@ async def warmup_connections():
             
             try:
                 start_time = time.time()
+                # 注意：首次连接的 MySQL 握手可能耗时 5 秒以上（服务端未开 skip-name-resolve 时），
+                # 此处的 timeout 必须大于握手耗时，否则预热会一直超时退化为 fallback 路径。
+                # fast_mode 下最坏耗时链为 健康检查(10s) + 刷新(0.5s + 内部健康检查10s) + 复查(10s) ≈ 30.5s，
+                # 故外层超时需覆盖完整链路，否则"刷新后复查"回退分支会被截断。
                 is_healthy = await asyncio.wait_for(
-                    manager.check_connection_health(timeout=5, fast_mode=True),
-                    timeout=10
+                    manager.check_connection_health(timeout=10, fast_mode=True),
+                    timeout=35
                 )
                 response_time = time.time() - start_time
                 if is_healthy:

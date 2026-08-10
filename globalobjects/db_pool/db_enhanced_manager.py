@@ -163,17 +163,19 @@ class EnhancedDbManager:
             )
             raise
     
-    async def check_health(self, timeout: Optional[float] = None) -> HealthCheckResult:
+    async def check_health(self, timeout: Optional[float] = None, force: bool = False) -> HealthCheckResult:
         """
         检查连接健康状态
         
         Args:
             timeout: 超时时间（秒）
+            force: 是否强制执行（绕过连接池状态检查）。
+                用于刷新流程内部验证刚重建的连接。
             
         Returns:
             健康检查结果
         """
-        return await self._health_checker.check(timeout)
+        return await self._health_checker.check(timeout, force=force)
     
     async def refresh_connection(self, fast_mode: bool = False) -> bool:
         """
@@ -278,12 +280,17 @@ def get_enhanced_db_manager(
 ) -> EnhancedDbManager:
     """
     获取增强的数据库管理器实例
-    
+
     Args:
         connection_name: 连接名称
-        config: 配置对象
-        
+        config: 配置对象，不传时使用 get_cached_config()（环境变量配置），
+            避免 PoolManagerConfig() 字段默认值与 get_pool_config() 不一致
+            导致健康检查超时等参数分叉
+
     Returns:
         增强的数据库管理器实例
     """
+    if config is None:
+        from globalobjects.db_pool.config import get_cached_config
+        config = get_cached_config()
     return EnhancedDbManager.get_instance(connection_name, config)

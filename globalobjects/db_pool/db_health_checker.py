@@ -85,12 +85,16 @@ class HealthChecker:
         """
         cls._warning_timestamps.pop(connection_name, None)
         
-    async def check(self, timeout: Optional[float] = None) -> HealthCheckResult:
+    async def check(self, timeout: Optional[float] = None, force: bool = False) -> HealthCheckResult:
         """
         执行健康检查
         
         Args:
             timeout: 超时时间（秒），None则使用配置的默认值
+            force: 是否强制执行（绕过连接池状态检查）。
+                用于 SafeConnectionRefresher 刷新流程内部 —— 此时状态为
+                REFRESHING（is_available=False），但确实需要执行一次真实
+                查询以验证刚重建的连接。
             
         Returns:
             健康检查结果
@@ -98,7 +102,7 @@ class HealthChecker:
         if timeout is None:
             timeout = self._config.health_check_timeout
             
-        if not self._state_manager.is_available:
+        if not force and not self._state_manager.is_available:
             logger.warning(
                 "HealthChecker",
                 f"@{self._connection_name}",
@@ -177,7 +181,8 @@ class HealthChecker:
         self,
         max_retries: int = 3,
         retry_delay: float = 1.0,
-        timeout: Optional[float] = None
+        timeout: Optional[float] = None,
+        force: bool = False
     ) -> HealthCheckResult:
         """
         执行带重试的健康检查
@@ -186,6 +191,7 @@ class HealthChecker:
             max_retries: 最大重试次数
             retry_delay: 重试延迟（秒）
             timeout: 超时时间（秒）
+            force: 是否强制执行（绕过连接池状态检查）
             
         Returns:
             健康检查结果
@@ -193,7 +199,7 @@ class HealthChecker:
         last_result = None
         
         for attempt in range(max_retries + 1):
-            result = await self.check(timeout)
+            result = await self.check(timeout, force=force)
             
             if result.is_healthy:
                 if attempt > 0:
@@ -222,11 +228,14 @@ class HealthChecker:
         
         return last_result
     
-    async def check_fast(self) -> HealthCheckResult:
+    async def check_fast(self, force: bool = False) -> HealthCheckResult:
         """
         快速健康检查（使用较短的超时时间）
         
+        Args:
+            force: 是否强制执行（绕过连接池状态检查）
+            
         Returns:
             健康检查结果
         """
-        return await self.check(timeout=2.0)
+        return await self.check(timeout=2.0, force=force)

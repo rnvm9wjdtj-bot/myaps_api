@@ -161,7 +161,7 @@ class PendingCleanupItem(BaseModel):
 
 class PoolManagerConfig(BaseModel):
     """连接池管理器配置模型"""
-    health_check_timeout: float = Field(5.0, description="健康检查超时时间(秒)")
+    health_check_timeout: float = Field(10.0, description="健康检查超时时间(秒)")
     health_check_sql: str = Field("SELECT 1", description="健康检查SQL")
     cleanup_interval: int = Field(300, description="清理任务间隔(秒)")
     max_cleanup_time: int = Field(30, description="单次清理最大时间(秒)")

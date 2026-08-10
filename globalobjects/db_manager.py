@@ -1024,7 +1024,13 @@ class DbManager:
         if self._use_enhanced_pool:
             try:
                 from globalobjects.db_pool import get_enhanced_db_manager
-                self._enhanced_pool_manager = get_enhanced_db_manager(connection_name)
+                from globalobjects.db_pool.config import get_cached_config
+                # 必须传入 get_cached_config()，否则会使用 PoolManagerConfig() 默认值，
+                # 导致 .env 中的 DBPOOL_HEALTH_CHECK_TIMEOUT 等配置不生效
+                self._enhanced_pool_manager = get_enhanced_db_manager(
+                    connection_name,
+                    get_cached_config()
+                )
             except Exception as e:
                 logger.warning(f"初始化增强连接池管理器失败: {e}，将使用原有逻辑")
     

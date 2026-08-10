@@ -15,7 +15,7 @@ def get_pool_config() -> PoolManagerConfig:
     环境变量:
         DBPOOL_USE_ENHANCED: 是否使用增强的连接池管理(默认True)
         DBPOOL_STATE_LOCK_TIMEOUT: 状态锁超时时间(默认10.0秒)
-        DBPOOL_HEALTH_CHECK_TIMEOUT: 健康检查超时时间(默认5.0秒)
+        DBPOOL_HEALTH_CHECK_TIMEOUT: 健康检查超时时间(默认10.0秒)
         DBPOOL_HEALTH_CHECK_SQL: 健康检查SQL语句(默认"SELECT 1")
         DBPOOL_CLEANUP_INTERVAL: 后台清理任务间隔(默认300秒)
         DBPOOL_MAX_CLEANUP_TIME: 单次清理最大时间(默认30秒)
@@ -31,7 +31,7 @@ def get_pool_config() -> PoolManagerConfig:
         PoolManagerConfig: 配置对象
     """
     return PoolManagerConfig(
-        health_check_timeout=float(os.getenv("DBPOOL_HEALTH_CHECK_TIMEOUT", "5.0")),
+        health_check_timeout=float(os.getenv("DBPOOL_HEALTH_CHECK_TIMEOUT", "10")),
         health_check_sql=os.getenv("DBPOOL_HEALTH_CHECK_SQL", "SELECT 1"),
         cleanup_interval=int(os.getenv("DBPOOL_CLEANUP_INTERVAL", "300")),
         max_cleanup_time=int(os.getenv("DBPOOL_MAX_CLEANUP_TIME", "30")),
