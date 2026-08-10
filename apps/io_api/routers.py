@@ -370,8 +370,8 @@ async def get_meta(request: Request):
 async def get_material_page(
     request: Request,
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-    page_index: int = Query(0, description="页码"),
-    page_size: int = Query(1000, description="每页数量"),
+    page_index: int = Query(1, gt=0, description="页码"),
+    page_size: int = Query(1000, ge=0, description="每页数量"),
 ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
@@ -1081,8 +1081,8 @@ async def delete_supply(
 #     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
 #     start_time: str = Query(None, description="需求开始时间"),
 #     end_time: str = Query(None, description="需求截止时间"),
-#     page_size: int = Query(1000, description="每页数量"),
-#     page_index: int = Query(0, description="页码"),
+#     page_size: int = Query(1000, ge=0, description="每页数量"),
+#     page_index: int = Query(1, gt=0, description="页码"),
 # ):
 #     db_name = db_name.replace(" ", "")
 #     filter = []
@@ -1203,8 +1203,8 @@ async def get_mo_page(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     start_time: datetime = Query(None, description="工单开工时间"),
     end_time: datetime = Query(None, description="工单完工时间"),
-    page_size: int = Query(1000, description="每页数量"),
-    page_index: int = Query(0, description="页码"),
+    page_size: int = Query(1000, ge=0, description="每页数量"),
+    page_index: int = Query(1, gt=0, description="页码"),
     # x_api_key: str = Header(None, description="API密钥")
 ):
     log_api_request(request)
@@ -1301,8 +1301,8 @@ async def get_orderwc_page(
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     start_time: datetime = Query(None, description="工序开工时间"),
     end_time: datetime = Query(None, description="工序完工时间"),
-    page_size: int = Query(1000, description="每页数量"),
-    page_index: int = Query(0, description="页码"),
+    page_size: int = Query(1000, ge=0, description="每页数量"),
+    page_index: int = Query(1, gt=0, description="页码"),
     # x_api_key: str = Header(None, description="API密钥")
 ):
     log_api_request(request)
@@ -1381,8 +1381,8 @@ async def get_orderwc(
 async def get_peg_page(
     request: Request,
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-    page_size: int = Query(1000, description="每页数量"),
-    page_index: int = Query(0, description="页码"),
+    page_size: int = Query(1000, ge=0, description="每页数量"),
+    page_index: int = Query(1, gt=0, description="页码"),
 ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
@@ -1416,8 +1416,8 @@ async def get_peg_page(
 # )
 # async def get_peg_relation(
 #     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-#     page_size: int = Query(10000, description="每页数量"),
-#     page_index: int = Query(0, description="页码"),
+#     page_size: int = Query(10000, ge=0, description="每页数量"),
+#     page_index: int = Query(0, gt=0, description="页码"),
 # ):
 #     db_name = db_name.replace(" ", "")
 #     return await db_query(db_name=db_name, model_or_tablename="v_peg", page_size=page_size, page_index=page_index)
