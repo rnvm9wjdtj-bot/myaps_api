@@ -869,11 +869,9 @@ class MySQLBinlogListener:
         """将数据映射到正确的列名"""
         if not data:
             return data
-            
-        # 尝试获取列名
+
         column_names = self._get_column_names(database, table_name)
-        
-        # 如果无法获取列名，尝试使用通用列名
+
         if not column_names:
             if isinstance(data, (list, tuple)):
                 mapped_data = {}
@@ -894,8 +892,7 @@ class MySQLBinlogListener:
                 return mapped_data
             else:
                 return {"raw_data": data}
-        
-        # 有列名的情况
+
         if isinstance(data, (list, tuple)):
             mapped_data = {}
             for i, value in enumerate(data):
@@ -906,13 +903,29 @@ class MySQLBinlogListener:
             return mapped_data
         elif isinstance(data, dict):
             mapped_data = {}
-            for i, (key, value) in enumerate(data.items()):
-                if i < len(column_names):
-                    mapped_data[column_names[i]] = value
-                else:
+            for key, value in data.items():
+                if key.startswith('UNKNOWN_COL'):
+                    try:
+                        col_num = int(key.replace('UNKNOWN_COL', ''))
+                        if col_num < len(column_names):
+                            mapped_data[column_names[col_num]] = value
+                        else:
+                            mapped_data[f"extra_col_{col_num}"] = value
+                    except:
+                        mapped_data[key] = value
+                elif key in column_names:
                     mapped_data[key] = value
+                else:
+                    try:
+                        col_idx = int(key.replace('col_', ''))
+                        if col_idx < len(column_names):
+                            mapped_data[column_names[col_idx]] = value
+                        else:
+                            mapped_data[key] = value
+                    except (ValueError, AttributeError):
+                        mapped_data[key] = value
             return mapped_data
-        
+
         return data
 
     # 装饰器方法（支持多数据库）
@@ -1328,6 +1341,7 @@ class MySQLBinlogListener:
             "blocking": True,
             "resume_stream": True,
             "only_events": [WriteRowsEvent, UpdateRowsEvent, DeleteRowsEvent],
+            "use_column_name_cache": True,
         }
         
         # 尝试恢复上次的位置
