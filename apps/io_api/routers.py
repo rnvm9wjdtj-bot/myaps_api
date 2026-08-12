@@ -1340,7 +1340,7 @@ async def get_orderwc_page(
     "/v_orderwc/{supplyno}",
     tags=["报表 - 工序报表"],
     summary="获取工序报表",
-    description="按编号（供应号）获取工序报表"
+    description="按工单号（供应号）获取工序信息"
 )
 async def get_orderwc(
     request: Request,
@@ -1371,6 +1371,43 @@ async def get_orderwc(
             data=[],
             meta={}
         )
+
+
+
+@rt.get(
+    "/v_mo_demand/{supplyno}",
+    tags=["报表 - 工单需求"],
+    summary="查询工单所需的物料",
+    description="按工单号（供应号）查询工单所需的物料信息",
+)
+async def get_mo_demand(
+    request: Request,
+    db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+    supplyno: str = Path(..., description="工单（供应）号"),
+):
+    log_api_request(request)
+    db_name = db_name.replace(" ", "")
+    from globalobjects.db_manager import build_safe_condition
+    filter_string = build_safe_condition("DemandNo", "=", supplyno)
+    try:
+        result = await db_query(db_name=db_name, model_or_tablename="v_mo_demand", filter_string=filter_string)
+        return standard_response(
+            status_code=200,
+            success=result.success,
+            message=result.message,
+            data=result.data,
+            meta=result.meta
+        )
+    except Exception as e:
+        logger.error(f"获取工单需求失败: {str(e)}")
+        return standard_response(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            success=0,
+            message=f"操作失败：{str(e)}",
+            data=[],
+            meta={}
+        )
+
 
 
 @rt.get(
