@@ -36,6 +36,9 @@ PUBLIC_GET_PREFIXES = [
 
 # 缓存已注册的路由信息，避免每次请求都重新解析
 REGISTERED_ROUTES = []
+_ROUTE_EXACT_MAP = {}
+_ROUTE_PREFIX_MAP = {}
+_ROUTE_PARAM_ROUTES = []
 
 
 def is_internal_ip(ip_str: str) -> bool:
@@ -75,62 +78,108 @@ def is_internal_ip(ip_str: str) -> bool:
         return False
 
 
+def _collect_routes(routes, prefix=''):
+    """递归收集所有路由，展开 _IncludedRouter 等嵌套结构"""
+    results = []
+    for route in routes:
+        rtype = type(route).__name__
+        if rtype == '_IncludedRouter':
+            ctx = getattr(route, 'include_context', None)
+            if ctx:
+                sub_router = getattr(ctx, 'included_router', None)
+                sub_prefix = prefix + getattr(ctx, 'prefix', '')
+                if sub_router and hasattr(sub_router, 'routes'):
+                    results.extend(_collect_routes(sub_router.routes, sub_prefix))
+        elif hasattr(route, 'path') and hasattr(route, 'methods'):
+            results.append({
+                'path': prefix + route.path,
+                'methods': route.methods
+            })
+        elif hasattr(route, 'path') and rtype == 'Mount':
+            results.append({
+                'path': prefix + route.path,
+                'methods': {'GET', 'HEAD', 'OPTIONS'},
+                'mount': True
+            })
+    return results
+
+
+def _build_route_index(routes):
+    """构建路由索引，加速查找
+
+    - exact_map: 精确路径 -> 方法集合（O(1) 匹配）
+    - prefix_map: Mount 子应用按一级路径段分组（前缀匹配，如 /static）
+    - param_routes: 含路径参数的路由列表（正则匹配）
+    """
+    exact_map = {}
+    prefix_map = {}
+    param_routes = []
+
+    for route in routes:
+        path = route['path'].rstrip('/')
+        if route.get('mount'):
+            # Mount 子应用：同时支持精确访问与子路径前缀访问
+            exact_map.setdefault(path, set()).update(route['methods'])
+            segment = '/' + path.split('/', 2)[1] if path.count('/') >= 1 else path
+            prefix_map.setdefault(segment, []).append(route)
+        elif '{' in path:
+            # 参数路由统一遍历，避免一级参数路由（如 /{page}）按段分组时键不匹配
+            param_routes.append(route)
+        else:
+            # 同一路径可注册多个方法（如 GET 与 POST），累积方法集避免互相覆盖
+            exact_map.setdefault(path, set()).update(route['methods'])
+
+    return exact_map, prefix_map, param_routes
+
+
 def init_registered_routes(app):
     """
     初始化已注册路由列表
     在应用启动后调用此函数来缓存所有路由信息
     """
-    global REGISTERED_ROUTES
-    REGISTERED_ROUTES = []
-    
-    for route in app.routes:
-        if hasattr(route, 'path') and hasattr(route, 'methods'):
-            REGISTERED_ROUTES.append({
-                'path': route.path,
-                'methods': route.methods
-            })
+    global REGISTERED_ROUTES, _ROUTE_EXACT_MAP, _ROUTE_PREFIX_MAP, _ROUTE_PARAM_ROUTES
+    REGISTERED_ROUTES = _collect_routes(app.routes)
+    _ROUTE_EXACT_MAP, _ROUTE_PREFIX_MAP, _ROUTE_PARAM_ROUTES = _build_route_index(REGISTERED_ROUTES)
 
 
 def is_route_exists(request_path: str, request_method: str) -> bool:
     """
     检查请求的路径和方法是否匹配已注册的路由
     
-    FastAPI路由支持路径参数，如 /api/{id}
-    这里实现简单的路径参数匹配
+    索引加速：先 O(1) 精确匹配，再匹配 Mount 子应用前缀，最后遍历参数路由正则匹配。
     """
-    # 去除末尾斜杠以便统一比较
     request_path = request_path.rstrip('/')
-    
-    for route in REGISTERED_ROUTES:
+
+    # 1. 精确匹配（O(1)）
+    methods = _ROUTE_EXACT_MAP.get(request_path)
+    if methods is not None and request_method in methods:
+        return True
+
+    # 2. Mount 子应用前缀匹配（如 /static）
+    segment = '/' + request_path.split('/', 2)[1] if request_path.count('/') >= 1 else request_path
+    for route in _ROUTE_PREFIX_MAP.get(segment, []):
         route_path = route['path'].rstrip('/')
-        route_methods = route['methods']
-        
-        # 检查HTTP方法是否匹配
-        if request_method not in route_methods:
-            continue
-        
-        # 精确匹配
-        if request_path == route_path:
+        if request_method in route['methods'] and request_path.startswith(route_path + '/'):
             return True
-        
-        # 处理路径参数，将 {param} 转换为正则表达式
-        # 例如: /api/{id} -> /api/([^/]+)
-        # 先将 {param} 替换为占位符，再对剩余部分转义，最后还原占位符为正则
+
+    # 3. 路径参数路由匹配
+    for route in _ROUTE_PARAM_ROUTES:
+        if request_method not in route['methods']:
+            continue
+        route_path = route['path'].rstrip('/')
         param_pattern = r'([^/]+)'
         placeholder = '\x00PARAM\x00'
         temp = re.sub(r'\{[^}]+\}', placeholder, route_path)
         pattern = re.escape(temp).replace(placeholder, param_pattern)
-        
-        # 添加开始和结束标记
         pattern = f"^{pattern}$"
-        
         try:
             if re.match(pattern, request_path):
                 return True
         except re.error:
             continue
-    
+
     return False
+
 
 
 def _match_ip_wildcard(client_ip: str, pattern: str) -> bool:
