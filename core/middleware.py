@@ -114,10 +114,12 @@ def is_route_exists(request_path: str, request_method: str) -> bool:
             return True
         
         # 处理路径参数，将 {param} 转换为正则表达式
-        # 例如: /api/{id} -> /api/(\w+)
-        pattern = re.escape(route_path).replace(r'\{', '(').replace(r'\}', ')')
-        # 将 (\w+) 替换为更通用的匹配模式 ([^/]+)
-        pattern = pattern.replace(r'\(\w+\)', r'([^/]+)')
+        # 例如: /api/{id} -> /api/([^/]+)
+        # 先将 {param} 替换为占位符，再对剩余部分转义，最后还原占位符为正则
+        param_pattern = r'([^/]+)'
+        placeholder = '\x00PARAM\x00'
+        temp = re.sub(r'\{[^}]+\}', placeholder, route_path)
+        pattern = re.escape(temp).replace(placeholder, param_pattern)
         
         # 添加开始和结束标记
         pattern = f"^{pattern}$"
