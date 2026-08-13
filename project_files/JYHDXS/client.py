@@ -581,7 +581,8 @@ async def batch_handle_pl_status_a2e(event_data_list: List[Dict], _erp: EventRes
         return
         
     supply_nos = [_['supplyno'] for _ in event_data_list]
-    supply_list = await TSupply.filter(supplyno__in=supply_nos).update(memo=" 正在推送。。。")
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    supply_list = await TSupply.filter(supplyno__in=supply_nos).update(memo=f" {now} 📤 正在推送...")
     _aps = ApsPayloadSponsor(production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.ORDER_WC])
     cache = await _aps.establish_production_cache(supplynos=supply_nos)
     tasks = [handle_pl_status_a2e(event_data=item, _aps=_aps) for item in event_data_list]

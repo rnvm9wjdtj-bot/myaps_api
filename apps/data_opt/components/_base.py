@@ -1598,7 +1598,8 @@ class MoVoucher(BaseVoucher):
         if production_cache_items is None:
             production_cache_items = [CacheItem.SUPPLY_MO]
         supply_nos = [s['supplyno'] for s in event_data_list]
-        await TSupply.filter(supplyno__in=supply_nos).update(memo=" 📤 正在推送...")
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        await TSupply.filter(supplyno__in=supply_nos).update(memo=f" {now} 📤 正在推送...")
         _aps = ApsPayloadSponsor(production_cache_items=production_cache_items)
         await _aps.establish_production_cache(supplynos=supply_nos)
 
