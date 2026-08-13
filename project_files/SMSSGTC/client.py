@@ -31,7 +31,7 @@ smssgtc_qingflow_conn.register_source(QingflowMaterial)
 async def pull_all_material():
     """拉取所有物料数据"""
     materials = await smssgtc_qingflow_conn.query_batch()
-    return await materials.dumps(to_dbtable='t_material')
+    return await materials.persist(to_dbtable='t_material')
 
 
 

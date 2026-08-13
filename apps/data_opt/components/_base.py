@@ -1743,7 +1743,7 @@ class ExternalDataSet:
         return not self.raw_data
 
 
-    async def dumps(self, pydantic_model: Type[PydanticModel] = None, to_dbs: str | List[str] = MYAPS_DB_SET, to_dbtable: str = None) -> List[dict]:
+    async def dumps(self, pydantic_model: Type[PydanticModel] = None) -> List[dict]:
         assert self._pydantic_model or pydantic_model, "未设置转换模型pydantic_model"
 
         if pydantic_model:
@@ -1754,19 +1754,46 @@ class ExternalDataSet:
             if self._dumped_data is None:
                 self._dumped_data = [self._pydantic_model(**_).model_dump() for _ in self.raw_data]
 
-        if to_dbtable:
-            # 写库前基于当前 raw_data 重新转换，避免命中转换缓存写入陈旧数据
-            model = pydantic_model or self._pydantic_model
-            write_data = [
-                {key: (value.value if isinstance(value, Enum) else value)
-                 for key, value in model(**_).model_dump().items()}
-                for _ in self.raw_data
-            ]
-            result = await db_bupsert(db_names=to_dbs, model_or_tablename=to_dbtable, data_list=write_data)
-            if result.meta.get('has_errors'):
-                raise RuntimeError(f"写库 {to_dbtable} 失败: {result.message}")
-
         return self._dumped_data
+
+    async def persist(
+        self,
+        to_dbs: str | List[str] = MYAPS_DB_SET,
+        to_dbtable: str = None,
+        source_system: str = "unknown",
+        dedup_strategy: str = "overwrite",
+        update_mode: str = "partial",
+    ) -> List[dict]:
+        assert to_dbtable, "persist 需要指定 to_dbtable"
+        data = await self.dumps()
+
+        # 写库前基于当前 raw_data 重新转换，避免命中转换缓存写入陈旧数据
+        model = self._pydantic_model
+        write_data = [
+            {key: (value.value if isinstance(value, Enum) else value)
+             for key, value in model(**_).model_dump().items()}
+            for _ in self.raw_data
+        ]
+
+        from core.settings import STAGING_DB_NAME
+        if isinstance(to_dbs, str) and to_dbs == STAGING_DB_NAME:
+            from apps.io_api.routers import dispatch_to_staging, DedupStrategyEnum, UpdateModeEnum
+            staging_response = await dispatch_to_staging(
+                table_key=to_dbtable,
+                data=write_data,
+                source_system=source_system,
+                dedup_strategy=DedupStrategyEnum(dedup_strategy),
+                update_mode=UpdateModeEnum(update_mode),
+            )
+            if not staging_response.get("success"):
+                raise RuntimeError(f"清洗模式写库 {to_dbtable} 失败: {staging_response.get('message')}")
+            return data
+
+        result = await db_bupsert(db_names=to_dbs, model_or_tablename=to_dbtable, data_list=write_data)
+        if result.meta.get('has_errors'):
+            raise RuntimeError(f"写库 {to_dbtable} 失败: {result.message}")
+
+        return data
 
         
 #################################################################################
