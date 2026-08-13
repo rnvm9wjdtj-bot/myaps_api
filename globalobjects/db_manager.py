@@ -1922,7 +1922,7 @@ class DbManager:
         update_fields: Optional[List[str]] = None,
         exclude_fields: Optional[List[str]] = None,
         conflict_fields: Optional[Tuple[str, ...]] = None
-    ) -> Dict[str, int]:
+    ) -> Dict[str, Any]:
         """
         使用原生 SQL 执行批量 upsert
         
@@ -1998,6 +1998,7 @@ class DbManager:
         fields_str = ', '.join([f"`{field}`" for field in all_fields])
         total_inserted = 0
         total_updated = 0
+        failed_batches = []
         
         # 动态调整批量大小，避免锁等待超时
         # 对于批量upsert操作，使用较小的批量大小
@@ -2091,13 +2092,19 @@ class DbManager:
                 # 注意：底层的 _execute_native_sql 已经通过 @handle_db_errors 装饰器记录了错误日志
                 # 这里只记录 SQL 语句以便调试，避免重复记录错误信息
                 logger.error(f"执行批量upsert批次失败，SQL语句: {sql}")
+                # 累计失败批次信息，供上层感知写库失败（避免静默丢失数据）
+                failed_batches.append({
+                    "batch": i // batch_size + 1,
+                    "error": str(e)
+                })
                 # 跳过当前批次，继续处理下一批次
                 continue
         
         return {
             'inserted': total_inserted or 0,
             'updated': total_updated or 0,
-            'total': (total_inserted or 0) + (total_updated or 0)
+            'total': (total_inserted or 0) + (total_updated or 0),
+            'errors': failed_batches
         }
     
     
@@ -2300,13 +2307,15 @@ class DbManager:
         # 记录批量操作性能，用于动态调整批量大小
         self._record_batch_performance(len(data_list), execution_time)
         
+        batch_errors = result.get('errors', [])
         response = {
-            "success": True,
+            "success": not batch_errors,
             "method": method,
             "total_records": len(data_list),
             "affected_rows": result['total'],
             "inserted": result['inserted'],
             "updated": result['updated'],
+            "errors": batch_errors,
             "execution_time": execution_time,
             "batch_size": len(data_list),
             "optimal_batch_size": self.optimal_batch_size,

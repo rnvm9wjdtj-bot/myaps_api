@@ -1128,6 +1128,19 @@ async def db_bupsert(
                     db_create_count = (db_create_count or 0) + batch_create
                     db_update_count = (db_update_count or 0) + batch_update
                     logger.insert("账套批次生效", f"{db_name} (批次{i+1}/{total_batches})", f"新增{batch_create}条，修改{batch_update}条")
+
+                    # 消费底层写库失败信息，避免静默丢失数据。两类来源：
+                    # 1) _bulk_upsert_native_sql 批内吞错后累计的 errors 列表；
+                    # 2) with_transaction 非事务模式整体失败返回的 {success: False, error: ...} 字典
+                    batch_errors = result.get("errors") or []
+                    if result.get("success") is False and result.get("error"):
+                        batch_errors.append({"batch": i + 1, "error": result["error"]})
+                    if batch_errors:
+                        db_errors.extend(batch_errors)
+                        db_success = False
+                        db_skipped_count += len(batch_data)
+                        db_skipped_batches.append(i + 1)
+                        logger.fail("账套批次失败", f"{db_name} (批次{i+1}/{total_batches})", str(batch_errors))
                 except Exception as batch_error:
                     db_errors.append({"batch": i + 1, "error": str(batch_error), "skipped_count": len(batch_data)})
                     db_skipped_count += len(batch_data)
