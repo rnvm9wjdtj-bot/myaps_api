@@ -1718,7 +1718,7 @@ class ExternalData:
 
 
 class ExternalDataSet:
-    """外部ERP数据列表包装器"""
+    """外部系统数据列表包装器"""
 
     def __init__(self, raw_data: List[dict], pydantic_model: Type[PydanticModel] = None):
         """
@@ -1742,7 +1742,7 @@ class ExternalDataSet:
         return not self.raw_data
 
 
-    async def dumps(self, pydantic_model: Type[PydanticModel] = None) -> List[dict]:
+    async def dumps(self, pydantic_model: Type[PydanticModel] = None, to_dbs: str | List[str] = MYAPS_DB_SET, to_dbtable: str = None) -> List[dict]:
         assert self._pydantic_model or pydantic_model, "未设置转换模型pydantic_model"
 
         if pydantic_model:
@@ -1752,6 +1752,19 @@ class ExternalDataSet:
         else:
             if self._dumped_data is None:
                 self._dumped_data = [self._pydantic_model(**_).model_dump() for _ in self.raw_data]
+
+        if to_dbtable:
+            # 写库前基于当前 raw_data 重新转换，避免命中转换缓存写入陈旧数据
+            model = pydantic_model or self._pydantic_model
+            write_data = [
+                {key: (value.value if isinstance(value, Enum) else value)
+                 for key, value in model(**_).model_dump().items()}
+                for _ in self.raw_data
+            ]
+            result = await db_bupsert(db_names=to_dbs, model_or_tablename=to_dbtable, data_list=write_data)
+            if result.meta.get('has_errors'):
+                raise RuntimeError(f"写库 {to_dbtable} 失败: {result.message}")
+
         return self._dumped_data
 
         
