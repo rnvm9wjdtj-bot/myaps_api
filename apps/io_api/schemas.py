@@ -1,11 +1,12 @@
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 # import enum
 from typing import Literal, Dict, Optional, Any#, List
 from decimal import Decimal
 
 from pydantic import BaseModel, Field, model_validator, PrivateAttr#, ValidationError, field_validator
 
-from core.settings import MYAPS_VERSION
+from core.settings import MYAPS_VERSION, TIMEZONE_NAME
 from globalobjects import globalconst as gc, ProjectDefaultValues as pdv
 
 
@@ -945,8 +946,9 @@ class AcceptConfirm(BaseModel):
         
         # 处理 recorddt 字段，支持时间戳转换
         recorddt = values.get("recorddt")
+        _tz = ZoneInfo(TIMEZONE_NAME)
         if recorddt in gc.NONE_AND_EMPTY:
-            values["recorddt"] = datetime.now(timezone.utc)
+            values["recorddt"] = datetime.now(_tz)
         else:
             try:
                 # 尝试将时间戳转换为 datetime
@@ -954,9 +956,9 @@ class AcceptConfirm(BaseModel):
                     timestamp = float(recorddt)
                     # 判断是毫秒还是秒
                     if timestamp > 10000000000:  # 毫秒时间戳
-                        values["recorddt"] = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
+                        values["recorddt"] = datetime.fromtimestamp(timestamp / 1000, tz=_tz)
                     else:  # 秒时间戳
-                        values["recorddt"] = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+                        values["recorddt"] = datetime.fromtimestamp(timestamp, tz=_tz)
             except (ValueError, TypeError):
                 # 如果转换失败，保持原样让 Pydantic 处理
                 pass
