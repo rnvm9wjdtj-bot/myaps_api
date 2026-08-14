@@ -677,5 +677,19 @@ window.__i18n_en_US__ = {
     'monitor.other.no': 'No',
     'monitor.other.data_points': 'data points',
     'monitor.col.is_slow': 'Is Slow Request',
-    'monitor.col.is_error': 'Is Error'
+    'monitor.col.is_error': 'Is Error',
+    
+    // ============ Restart Service ============
+    'monitor.btn.restart': 'Restart Service',
+    'monitor.restart.title': 'Restart Service',
+    'monitor.restart.warning': 'Service will be briefly unavailable (~3-10s). Docker will automatically restart the container.',
+    'monitor.restart.password_label': 'Admin Password',
+    'monitor.restart.password_required': 'Please enter admin password',
+    'monitor.restart.wrong_password': 'Wrong password',
+    'monitor.restart.not_enabled': 'Restart not enabled (ADMIN_PASSWORD not configured)',
+    'monitor.restart.cooldown': 'Please wait {seconds}s before retrying',
+    'monitor.restart.restarting': 'Restarting...',
+    'monitor.restart.success': 'Service is restarting, please wait...',
+    'monitor.restart.network_error': 'Request failed, service may already be restarting',
+    'monitor.restart.too_many_attempts': 'Too many attempts, please try again later'
 };

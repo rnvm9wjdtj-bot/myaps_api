@@ -5044,3 +5044,165 @@ function updateDeadlockDisplay(data) {
     }
 }
 
+
+// ========== 重启服务功能 ==========
+
+let restartCooldown = 0;
+let restartCooldownTimer = null;
+const RESTART_BTN_TEXT_KEY = 'monitor.btn.restart';
+
+function formatCooldownTime(seconds) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function updateRestartButton() {
+    const btn = getElement('restart-btn');
+    if (!btn) return;
+    const _i18n = typeof i18n !== 'undefined' ? i18n : null;
+    const baseText = _i18n ? _i18n.t(RESTART_BTN_TEXT_KEY) : '重启服务';
+    if (restartCooldown > 0) {
+        btn.textContent = `${baseText} (${formatCooldownTime(restartCooldown)})`;
+        btn.disabled = true;
+        btn.classList.add('btn-cooldown');
+    } else {
+        btn.textContent = baseText;
+        btn.disabled = false;
+        btn.classList.remove('btn-cooldown');
+    }
+}
+
+function startRestartCooldown(seconds) {
+    restartCooldown = seconds;
+    updateRestartButton();
+    if (restartCooldownTimer) clearInterval(restartCooldownTimer);
+    restartCooldownTimer = setInterval(() => {
+        restartCooldown--;
+        if (restartCooldown <= 0) {
+            restartCooldown = 0;
+            clearInterval(restartCooldownTimer);
+            restartCooldownTimer = null;
+        }
+        updateRestartButton();
+    }, 1000);
+}
+
+async function checkAdminEnabled() {
+    try {
+        const resp = await fetch(`${API_BASE}/admin-enabled`);
+        const data = await resp.json();
+        const btn = getElement('restart-btn');
+        if (btn) {
+            btn.style.display = data.enabled ? 'inline-block' : 'none';
+        }
+        if (data.enabled && data.cooldown_remaining > 0) {
+            startRestartCooldown(data.cooldown_remaining);
+        }
+    } catch (e) {
+        // ignore
+    }
+}
+
+function showRestartDialog() {
+    if (restartCooldown > 0) return;
+    const modal = getElement('restart-modal');
+    const errorEl = getElement('restart-error');
+    const passwordEl = getElement('restart-password');
+    if (modal) modal.style.display = 'flex';
+    if (errorEl) errorEl.style.display = 'none';
+    if (passwordEl) {
+        passwordEl.value = '';
+        setTimeout(() => passwordEl.focus(), 100);
+    }
+}
+
+function hideRestartDialog() {
+    const modal = getElement('restart-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function confirmRestart() {
+    const _i18n = typeof i18n !== 'undefined' ? i18n : null;
+    const passwordEl = getElement('restart-password');
+    const errorEl = getElement('restart-error');
+    const confirmBtn = getElement('restart-confirm-btn');
+    const password = passwordEl ? passwordEl.value : '';
+
+    if (!password) {
+        if (errorEl) {
+            errorEl.textContent = _i18n ? _i18n.t('monitor.restart.password_required') : '请输入管理员密码';
+            errorEl.style.display = 'block';
+        }
+        return;
+    }
+
+    if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = _i18n ? _i18n.t('monitor.restart.restarting') : '重启中...';
+    }
+
+    try {
+        const resp = await fetch(`${API_BASE}/restart`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: password })
+        });
+
+        const data = await resp.json();
+
+        if (resp.ok) {
+            hideRestartDialog();
+            startRestartCooldown(data.cooldown_seconds || 43200);
+            const msg = _i18n ? _i18n.t('monitor.restart.success') : '服务正在重启，请稍候...';
+            document.body.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:var(--mono-font);color:#8c8c8c;font-size:18px;"><div style="text-align:center;"><div style="font-size:48px;margin-bottom:16px;">🔄</div>${msg}</div></div>`;
+            setTimeout(() => window.location.reload(), 10000);
+            return;
+        }
+
+        if (errorEl) {
+            if (data.error === 'wrong_password') {
+                errorEl.textContent = _i18n ? _i18n.t('monitor.restart.wrong_password') : '密码错误';
+            } else if (data.error === 'restart_not_enabled') {
+                errorEl.textContent = _i18n ? _i18n.t('monitor.restart.not_enabled') : '重启功能未启用';
+            } else if (data.error === 'cooldown') {
+                const secs = data.remaining_seconds || 43200;
+                errorEl.textContent = _i18n ? _i18n.t('monitor.restart.cooldown', { seconds: secs }) : `请等待后重试`;
+                startRestartCooldown(secs);
+                hideRestartDialog();
+            } else if (data.error === 'too_many_attempts') {
+                errorEl.textContent = _i18n ? _i18n.t('monitor.restart.too_many_attempts') : '尝试次数过多，请稍后再试';
+            } else {
+                errorEl.textContent = data.error || 'Unknown error';
+            }
+            errorEl.style.display = 'block';
+        }
+    } catch (e) {
+        if (errorEl) {
+            errorEl.textContent = _i18n ? _i18n.t('monitor.restart.network_error') : '请求失败，服务可能已在重启中';
+            errorEl.style.display = 'block';
+        }
+    } finally {
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = _i18n ? _i18n.t('monitor.btn.restart') : '重启服务';
+        }
+    }
+}
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        const modal = getElement('restart-modal');
+        if (modal && modal.style.display !== 'none') {
+            confirmRestart();
+        }
+    }
+    if (e.key === 'Escape') {
+        hideRestartDialog();
+    }
+});
+
+checkAdminEnabled();
+

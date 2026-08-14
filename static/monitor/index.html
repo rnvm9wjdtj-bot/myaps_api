@@ -33,6 +33,7 @@
                 <span id="status-indicator" class="status healthy" data-i18n="monitor.status.healthy">● 系统正常</span>
                 <span id="last-update"><span data-i18n="monitor.other.last_update">最后更新</span>&nbsp;&nbsp;--</span>
                 <button id="refresh-btn" class="btn btn-primary" onclick="refreshAll()" data-i18n="monitor.btn.refresh">刷新</button>
+                <button id="restart-btn" class="btn btn-danger" onclick="showRestartDialog()" data-i18n="monitor.btn.restart" style="display:none;">重启服务</button>
             </div>
         </header>
 
@@ -763,6 +764,29 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-primary" onclick="resumeMonitoring()">恢复连接</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 重启服务确认对话框 -->
+    <div class="modal" id="restart-modal" style="display: none;">
+        <div class="modal-overlay" onclick="hideRestartDialog()"></div>
+        <div class="modal-content restart-modal-content">
+            <div class="modal-header">
+                <h3 data-i18n="monitor.restart.title">重启服务</h3>
+                <button class="btn btn-small close-btn" onclick="hideRestartDialog()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="restart-warning" data-i18n="monitor.restart.warning">重启期间服务将短暂不可用（约3~10秒），Docker将自动拉起服务。</div>
+                <div class="restart-form">
+                    <label for="restart-password" data-i18n="monitor.restart.password_label">管理员密码</label>
+                    <input type="password" id="restart-password" autocomplete="off" placeholder="">
+                </div>
+                <div class="restart-error" id="restart-error" style="display:none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="hideRestartDialog()" data-i18n="monitor.btn.cancel">取消</button>
+                <button class="btn btn-danger" id="restart-confirm-btn" onclick="confirmRestart()" data-i18n="monitor.btn.restart">重启服务</button>
             </div>
         </div>
     </div>

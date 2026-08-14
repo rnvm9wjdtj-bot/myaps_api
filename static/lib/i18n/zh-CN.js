@@ -678,5 +678,19 @@ window.__i18n_zh_CN__ = {
     'monitor.other.no': '否',
     'monitor.other.data_points': '个时间点',
     'monitor.col.is_slow': '是否慢请求',
-    'monitor.col.is_error': '是否错误'
+    'monitor.col.is_error': '是否错误',
+    
+    // ============ 重启服务 ============
+    'monitor.btn.restart': '重启服务',
+    'monitor.restart.title': '重启服务',
+    'monitor.restart.warning': '重启期间服务将短暂不可用（约3~10秒），Docker将自动拉起服务。',
+    'monitor.restart.password_label': '管理员密码',
+    'monitor.restart.password_required': '请输入管理员密码',
+    'monitor.restart.wrong_password': '密码错误',
+    'monitor.restart.not_enabled': '重启功能未启用（ADMIN_PASSWORD 未配置）',
+    'monitor.restart.cooldown': '请等待 {seconds} 秒后重试',
+    'monitor.restart.restarting': '重启中...',
+    'monitor.restart.success': '服务正在重启，请稍候...',
+    'monitor.restart.network_error': '请求失败，服务可能已在重启中',
+    'monitor.restart.too_many_attempts': '尝试次数过多，请稍后再试'
 };

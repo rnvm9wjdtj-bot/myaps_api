@@ -3126,3 +3126,78 @@ td {
     color: var(--error-color);
     font-weight: 600;
 }
+
+/* 重启服务按钮 */
+.btn-danger {
+    background: var(--error-color);
+    color: white;
+    border: none;
+}
+
+.btn-danger:hover {
+    background: #cf1322;
+}
+
+.btn-danger:disabled {
+    background: #d9d9d9;
+    color: #999;
+    cursor: not-allowed;
+}
+
+.btn-danger.btn-cooldown {
+    background: #d9d9d9;
+    color: #8c8c8c;
+    cursor: not-allowed;
+    font-family: var(--mono-font);
+    font-size: 13px;
+}
+
+/* 重启对话框 */
+.restart-modal-content {
+    max-width: 420px;
+}
+
+.restart-warning {
+    background: #fff7e6;
+    border: 1px solid var(--warning-color);
+    border-radius: 4px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    font-size: 14px;
+    color: #ad6800;
+    line-height: 1.6;
+}
+
+.restart-form {
+    margin-bottom: 8px;
+}
+
+.restart-form label {
+    display: block;
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 6px;
+    color: var(--text-primary);
+}
+
+.restart-form input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: var(--mono-font);
+    outline: none;
+    transition: border-color 0.3s;
+}
+
+.restart-form input:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+}
+
+.restart-error {
+    color: var(--error-color);
+    font-size: 13px;
+    margin-top: 8px;
+}

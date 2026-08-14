@@ -114,6 +114,8 @@ MAX_EVENTS_PER_SECOND = max(1, int(os.getenv("MAX_EVENTS_PER_SECOND") or 1))
 
 MDS_MANUAL_REMOVE = str(os.getenv("MDS_MANUAL_REMOVE", "never")).lower()
 
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "").strip()
+
 # 监控阈值配置
 MONITOR_THRESHOLDS = {
     # 资源监控阈值

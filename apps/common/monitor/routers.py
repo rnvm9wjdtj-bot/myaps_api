@@ -5,10 +5,11 @@
 """
 
 import time
+import hmac
 import json
 import asyncio
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, HTTPException, WebSocket
+from fastapi import APIRouter, HTTPException, WebSocket, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from typing import Dict, Any, List, Optional
 from tortoise import Tortoise
@@ -17,12 +18,13 @@ from .log_stream_service import log_stream_service
 from .storage import request_storage, outbound_request_storage, system_log_storage
 from .models import APIRequest, OutboundAPIRequest, SystemLog
 from core.settings import TIMEZONE, SQLITE_FILE
+from apps.common.utils.redis_pool_manager import get_redis_client
 from globalobjects import logger as log_config
 import time
 import json
 import asyncio
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, HTTPException, WebSocket
+from fastapi import APIRouter, HTTPException, WebSocket, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from typing import Dict, Any, List, Optional
 from tortoise import Tortoise
@@ -1955,3 +1957,188 @@ async def get_deadlock_history(hours: int = 24):
             "deadlocks": [],
             "circuit_opens": []
         }
+
+
+# ========== 服务管理端点 ==========
+
+_RESTART_COOLDOWN = 43200
+_RESTART_COOLDOWN_KEY = "myaps:restart:cooldown"
+_RESTART_FAIL_PREFIX = "myaps:restart:fail:"
+_RESTART_FAIL_LIMIT = 10
+_RESTART_FAIL_WINDOW = 300
+
+_last_restart_time = 0.0  # Redis 不可用时的内存降级
+_last_fail_count = 0
+_last_fail_window_start = 0.0
+
+
+def _get_cooldown_remaining(now: float) -> int:
+    """获取重启冷却剩余秒数，优先 Redis，不可用时回退内存"""
+    try:
+        client = get_redis_client()
+        if client is not None:
+            ttl = client.ttl(_RESTART_COOLDOWN_KEY)
+            if ttl is not None and ttl > 0:
+                return int(ttl)
+    except Exception:
+        pass
+    return max(0, int(_RESTART_COOLDOWN - (now - _last_restart_time)))
+
+
+def _set_cooldown(now: float) -> None:
+    """记录重启时间，写入 Redis 并设置 TTL，同时更新内存降级值"""
+    global _last_restart_time
+    _last_restart_time = now
+    try:
+        client = get_redis_client()
+        if client is not None:
+            client.setex(_RESTART_COOLDOWN_KEY, _RESTART_COOLDOWN, int(now))
+    except Exception:
+        pass
+
+
+def _restart_fail_key(ip: str) -> str:
+    """失败计数 Redis 键名（按客户端 IP 隔离）"""
+    return f"{_RESTART_FAIL_PREFIX}{ip}"
+
+
+def _is_fail_blocked(ip: str) -> bool:
+    """判断是否已触发失败锁定"""
+    try:
+        client = get_redis_client()
+        if client is not None:
+            count = client.get(_restart_fail_key(ip))
+            return count is not None and int(count) > _RESTART_FAIL_LIMIT
+    except Exception:
+        pass
+    return _last_fail_count > _RESTART_FAIL_LIMIT
+
+
+def _record_fail(ip: str, now: float) -> None:
+    """记录一次密码校验失败（窗口内计数，超时自动清零）"""
+    global _last_fail_count, _last_fail_window_start
+    try:
+        client = get_redis_client()
+        if client is not None:
+            key = _restart_fail_key(ip)
+            count = client.incr(key)
+            if count == 1:
+                client.expire(key, _RESTART_FAIL_WINDOW)
+            return
+    except Exception:
+        pass
+    if now - _last_fail_window_start > _RESTART_FAIL_WINDOW:
+        _last_fail_count = 0
+        _last_fail_window_start = now
+    _last_fail_count += 1
+
+
+def _reset_fail(ip: str) -> None:
+    """校验成功后清零失败计数"""
+    global _last_fail_count
+    _last_fail_count = 0
+    try:
+        client = get_redis_client()
+        if client is not None:
+            client.delete(_restart_fail_key(ip))
+    except Exception:
+        pass
+
+
+@router.get("/admin-enabled")
+async def check_admin_enabled():
+    """
+    检查管理员功能是否启用
+
+    当 ADMIN_PASSWORD 环境变量已配置时返回 enabled=True
+    """
+    from core.settings import ADMIN_PASSWORD
+    now = time.time()
+    remaining = _get_cooldown_remaining(now)
+    return {"enabled": bool(ADMIN_PASSWORD), "cooldown_remaining": remaining}
+
+
+@router.post("/restart")
+async def restart_service(request: Request):
+    """
+    重启服务
+
+    需要提供正确的管理员密码（ADMIN_PASSWORD 环境变量配置）
+    进程退出后由 Docker restart: unless-stopped 策略自动拉起
+    """
+    import os as _os
+    from core.settings import ADMIN_PASSWORD
+
+    try:
+        body = await request.json()
+        password = body.get("password", "")
+    except Exception:
+        password = ""
+
+    if not ADMIN_PASSWORD:
+        return JSONResponse(
+            status_code=403,
+            content={"success": False, "error": "restart_not_enabled"}
+        )
+
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.time()
+
+    # 失败次数锁定：超过阈值直接拒绝，防止暴力破解
+    if _is_fail_blocked(client_ip):
+        return JSONResponse(
+            status_code=429,
+            content={"success": False, "error": "too_many_attempts"}
+        )
+
+    if not hmac.compare_digest(password.encode("utf-8"), ADMIN_PASSWORD.encode("utf-8")):
+        _record_fail(client_ip, now)
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "error": "wrong_password"}
+        )
+
+    _reset_fail(client_ip)
+
+    remaining = _get_cooldown_remaining(now)
+    if remaining > 0:
+        return JSONResponse(
+            status_code=429,
+            content={"success": False, "error": "cooldown", "remaining_seconds": remaining}
+        )
+
+    _set_cooldown(now)
+
+    logger.warning("服务重启", "管理员触发", "正在执行优雅关闭...")
+
+    try:
+        from apps.common.utils.event_helpers import shutdown_event_helpers
+        shutdown_event_helpers()
+    except Exception as e:
+        logger.fail("重启清理", "event_helpers", str(e))
+
+    try:
+        from apps.common.utils.thread_pool_manager import global_pool_manager
+        global_pool_manager.shutdown_all(wait=False, cancel_futures=True)
+    except Exception as e:
+        logger.fail("重启清理", "thread_pool", str(e))
+
+    try:
+        from apps.common.utils.resource_monitor import resource_monitor
+        resource_monitor.stop_monitoring()
+    except Exception as e:
+        logger.fail("重启清理", "resource_monitor", str(e))
+
+    logger.warning("服务重启", "优雅关闭完成", "进程即将退出")
+
+    # 先返回响应，再由后台任务触发进程退出，避免 HTTP 响应未发送即被终止
+    async def _trigger_exit():
+        await asyncio.sleep(0.5)
+        _os._exit(0)
+
+    asyncio.create_task(_trigger_exit())
+    return JSONResponse(
+        status_code=200,
+        content={"success": True, "cooldown_seconds": _RESTART_COOLDOWN}
+    )
+

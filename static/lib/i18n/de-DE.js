@@ -678,5 +678,19 @@ window.__i18n_de_DE__ = {
     'monitor.other.no': 'Nein',
     'monitor.other.data_points': 'Datenpunkte',
     'monitor.col.is_slow': 'Ist langsame Anfrage',
-    'monitor.col.is_error': 'Ist Fehler'
+    'monitor.col.is_error': 'Ist Fehler',
+    
+    // ============ Dienst neu starten ============
+    'monitor.btn.restart': 'Dienst neu starten',
+    'monitor.restart.title': 'Dienst neu starten',
+    'monitor.restart.warning': 'Der Dienst ist kurzzeitig nicht verfügbar (~3-10s). Docker startet den Container automatisch neu.',
+    'monitor.restart.password_label': 'Admin-Passwort',
+    'monitor.restart.password_required': 'Bitte Admin-Passwort eingeben',
+    'monitor.restart.wrong_password': 'Falsches Passwort',
+    'monitor.restart.not_enabled': 'Neustart nicht aktiviert (ADMIN_PASSWORD nicht konfiguriert)',
+    'monitor.restart.cooldown': 'Bitte {seconds}s vor erneutem Versuch warten',
+    'monitor.restart.restarting': 'Neustart...',
+    'monitor.restart.success': 'Dienst wird neu gestartet, bitte warten...',
+    'monitor.restart.network_error': 'Anfrage fehlgeschlagen, Dienst wird möglicherweise bereits neu gestartet',
+    'monitor.restart.too_many_attempts': 'Zu viele Versuche, bitte später erneut versuchen'
 };
