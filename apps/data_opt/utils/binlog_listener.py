@@ -265,6 +265,11 @@ class BinlogPositionManager:
             logger.warning(f"⚠️ 清理旧的已处理 binlog监听 事件记录失败: {e}")
 
 
+class FetchoneTimeoutError(ConnectionError):
+    """binlog stream fetchone 超时专用异常，便于捕获处用 isinstance 精确识别"""
+    pass
+
+
 class ConnectionHealthChecker:
     """连接健康检查器 - 定期检查 MySQL 连接状态"""
     
@@ -1279,7 +1284,7 @@ class MySQLBinlogListener:
                 time.sleep(wait_time)
                 
             except (ConnectionError, ConnectionResetError, BrokenPipeError, OSError) as e:
-                # 网络连接错误 → 重试
+                # 网络连接错误 → 重试（fetchone超时也走此分支）
                 self._consecutive_errors += 1
                 retry_count += 1
                 
@@ -1288,14 +1293,20 @@ class MySQLBinlogListener:
                 
                 wait_time = min(2 ** min(retry_count, 8), self._max_retry_wait)
                 
+                is_fetchone_timeout = isinstance(e, FetchoneTimeoutError)
+                mysql_healthy = self._health_checker.is_healthy()
                 if retry_count <= 5 or retry_count % 10 == 0:
-                    logger.warning(f"⚠️ 网络连接中断 ({retry_count}次): {type(e).__name__}")
+                    if is_fetchone_timeout and mysql_healthy:
+                        logger.info(f"fetchone超时重连 ({retry_count}次)，MySQL健康")
+                    else:
+                        logger.warning(f"⚠️ 网络连接中断 ({retry_count}次): {type(e).__name__}")
                     logger.info(f"⏳ {wait_time}秒后重试...")
-                
-                current_time = time.time()
-                if current_time - last_alert_time > alert_interval:
-                    self._health_checker._send_alert(f"网络连接中断，已重试 {retry_count} 次", "warning")
-                    last_alert_time = current_time
+
+                if not (is_fetchone_timeout and mysql_healthy):
+                    current_time = time.time()
+                    if current_time - last_alert_time > alert_interval:
+                        self._health_checker._send_alert(f"网络连接中断，已重试 {retry_count} 次", "warning")
+                        last_alert_time = current_time
                 
                 time.sleep(wait_time)
                 
@@ -1379,9 +1390,12 @@ class MySQLBinlogListener:
                     future = _fetch_executor.submit(stream.fetchone)
                     binlogevent = future.result(timeout=_event_timeout)
                 except concurrent.futures.TimeoutError:
-                    logger.warning(f"⚠️ fetchone 超时（{_event_timeout}秒），疑似stream卡死，主动断开重连")
+                    if self._health_checker.is_healthy():
+                        logger.info(f"fetchone 超时（{_event_timeout}秒）但MySQL健康，静默重连")
+                    else:
+                        logger.warning(f"⚠️ fetchone 超时（{_event_timeout}秒），MySQL不健康，主动断开重连")
                     future.cancel()
-                    raise ConnectionError(f"Binlog stream fetchone超时（{_event_timeout}秒）")
+                    raise FetchoneTimeoutError(f"Binlog stream fetchone超时（{_event_timeout}秒）")
                 except Exception:
                     raise
                 
