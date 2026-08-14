@@ -187,6 +187,8 @@ async def dispatch_to_staging(
 
 def log_api_request(request: Request):
     """记录请求日志，动态获取路径和查询参数"""
+    if request is None:
+        return
     path = request.url.path
     query = request.url.query
     if query:

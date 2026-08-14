@@ -1763,8 +1763,23 @@ class ExternalDataSet:
         source_system: str = "unknown",
         dedup_strategy: str = "overwrite",
         update_mode: str = "partial",
+        drop: str = None,
     ) -> List[dict]:
+        """
+        持久化数据到指定账套和表
+        
+        Args:
+            to_dbs: 目标账套：逗号分隔字符串（如"db1,db2"）或账套列表，统一转换为逗号分隔字符串
+            to_dbtable: 目标表名（如 t_material）；在路由映射表内走对应 post_* 路由（支持清洗模式），否则走 db_bupsert 直写
+            source_system: 数据来源系统标识，用于清洗模式记录来源
+            dedup_strategy: 去重策略：overwrite（覆盖）/ skip（跳过）/ reject（拒绝），仅路由路径生效
+            update_mode: 更新模式：partial（部分字段更新）/ full（全字段更新），仅路由路径生效
+            drop: 丢弃旧数据方式：all（清空表）/ matched（删除匹配记录），仅 t_mat_wc/t_mat_wc_bom/t_mat_wc_mold 路由支持，其余表静默忽略
+        """
         assert to_dbtable, "persist 需要指定 to_dbtable"
+        # 账套统一为逗号分隔字符串，避免 list 输入时只写第一个账套
+        if isinstance(to_dbs, list):
+            to_dbs = ",".join(to_dbs)
         data = await self.dumps()
 
         # 写库前基于当前 raw_data 重新转换，避免命中转换缓存写入陈旧数据
@@ -1775,19 +1790,59 @@ class ExternalDataSet:
             for _ in self.raw_data
         ]
 
-        from core.settings import STAGING_DB_NAME
-        if isinstance(to_dbs, str) and to_dbs == STAGING_DB_NAME:
-            from apps.io_api.routers import dispatch_to_staging, DedupStrategyEnum, UpdateModeEnum
-            staging_response = await dispatch_to_staging(
-                table_key=to_dbtable,
-                data=write_data,
-                source_system=source_system,
-                dedup_strategy=DedupStrategyEnum(dedup_strategy),
-                update_mode=UpdateModeEnum(update_mode),
-            )
-            if not staging_response.get("success"):
-                raise RuntimeError(f"清洗模式写库 {to_dbtable} 失败: {staging_response.get('message')}")
+        from apps.io_api.routers import (
+            post_material, post_workcenter, post_mat_wc,
+            post_mat_ver, post_mat_wc_bom, post_mold, post_mat_wc_mold,
+            DedupStrategyEnum, UpdateModeEnum,
+        )
+
+        _TABLE_ROUTER_MAP = {
+            "t_material": post_material,
+            "t_workcenter": post_workcenter,
+            "t_mat_wc": post_mat_wc,
+            "t_mat_ver": post_mat_ver,
+            "t_mat_wc_bom": post_mat_wc_bom,
+            "t_mold": post_mold,
+            "t_mat_wc_mold": post_mat_wc_mold,
+        }
+        _TABLE_SCHEMA_MAP = {
+            "t_material": AcceptMaterial,
+            "t_workcenter": AcceptWorkcenter,
+            "t_mat_wc": AcceptMatWc,
+            "t_mat_ver": AcceptMatVer,
+            "t_mat_wc_bom": AcceptMatWcBom,
+            "t_mold": AcceptMold,
+            "t_mat_wc_mold": AcceptMatWcMold,
+        }
+        # 仅这三个路由支持 drop 参数
+        _DROP_SUPPORTED_TABLES = {"t_mat_wc", "t_mat_wc_bom", "t_mat_wc_mold"}
+
+        router_fn = _TABLE_ROUTER_MAP.get(to_dbtable)
+        if router_fn:
+            if drop is not None and to_dbtable not in _DROP_SUPPORTED_TABLES:
+                logger.debug(f"表 {to_dbtable} 不支持 drop 参数，忽略 drop 操作")
+                drop = None
+            # 直接调用路由（绕过 FastAPI Body 强转），先校验为对应 Pydantic 模型实例再传入
+            schema_model = _TABLE_SCHEMA_MAP.get(to_dbtable)
+            route_data = [schema_model(**_) for _ in write_data] if schema_model else write_data
+            kwargs = {
+                "request": None,
+                "data": route_data,
+                "db_name": to_dbs,
+                "source_system": source_system,
+                "dedup_strategy": DedupStrategyEnum(dedup_strategy),
+                "update_mode": UpdateModeEnum(update_mode),
+            }
+            if drop is not None:
+                kwargs["drop"] = drop
+            response = await router_fn(**kwargs)
+            if response.get("success") != 1:
+                raise RuntimeError(f"写库 {to_dbtable} 失败: {response.get('message')}")
             return data
+
+        from core.settings import STAGING_DB_NAME
+        if to_dbs == STAGING_DB_NAME:
+            raise RuntimeError(f"清洗模式({STAGING_DB_NAME})不支持表 {to_dbtable} 的写入")
 
         result = await db_bupsert(db_names=to_dbs, model_or_tablename=to_dbtable, data_list=write_data)
         if result.meta.get('has_errors'):
