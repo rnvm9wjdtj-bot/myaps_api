@@ -51,7 +51,7 @@ SHOW VARIABLES LIKE 'binlog_format';  -- 推荐ROW模式
 """
 
 
-import os, asyncio, time, logging, threading, concurrent.futures, json, pickle, pymysql, uuid, random
+import os, asyncio, time, logging, threading, concurrent.futures, json, pickle, pymysql, uuid, random, socket
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, Callable
 from pymysqlreplication import BinLogStreamReader
@@ -60,6 +60,7 @@ from pymysqlreplication.row_event import (
     UpdateRowsEvent,
     DeleteRowsEvent,
 )
+from pymysqlreplication.event import HeartbeatLogEvent
 
 from core.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_BINLOG_LISTENER, ENABLE_BINLOG_POSITION, BASE_DIR
 
@@ -520,6 +521,13 @@ class MySQLBinlogListener:
                 
             self.mysql_settings = mysql_settings
             self.running = False
+            
+            # 固定server_id，避免重连时变化导致MySQL端注册混乱；支持SERVER_ID环境变量覆盖（多实例部署建议显式配置唯一ID）
+            server_id_env = os.environ.get("SERVER_ID")
+            if server_id_env:
+                self._server_id = int(server_id_env)
+            else:
+                self._server_id = 1000000000 + (os.getpid() % 10000) * 10000 + (int(time.time() * 1000) % 10000) * 100 + random.randint(1000, 9999) % 100
         
         # 存储表结构信息（按数据库分组）
         self._table_schemas = {}  # 格式: {database: {table: [columns]}}
@@ -1326,13 +1334,8 @@ class MySQLBinlogListener:
             "passwd": self.mysql_settings["password"],
         }
         
-        # 生成更可靠的server_id，避免冲突
-        # 结合进程ID、时间戳和随机数
-        import random
-        timestamp = int(time.time() * 1000)  # 毫秒时间戳
-        random_num = random.randint(1000, 9999)
-        # 使用更大的范围，确保唯一性
-        server_id = 1000000000 + (os.getpid() % 10000) * 10000 + (timestamp % 10000) * 100 + random_num % 100
+        # 使用固定的server_id，避免重连时变化导致MySQL端注册混乱
+        server_id = self._server_id
         
         # 基础配置
         stream_config = {
@@ -1340,8 +1343,9 @@ class MySQLBinlogListener:
             "server_id": server_id,
             "blocking": True,
             "resume_stream": True,
-            "only_events": [WriteRowsEvent, UpdateRowsEvent, DeleteRowsEvent],
+            "only_events": [WriteRowsEvent, UpdateRowsEvent, DeleteRowsEvent, HeartbeatLogEvent],
             "use_column_name_cache": True,
+            "slave_heartbeat": 30,  # MySQL主库每30秒发送心跳；心跳事件由主循环跳过，仅作为连接活性信号
         }
         
         # 尝试恢复上次的位置
@@ -1360,17 +1364,37 @@ class MySQLBinlogListener:
             logger.info("binlog监听监控所有数据库")
         
         stream = None
+        _fetch_executor = None  # try块内创建，先初始化避免finally引用未定义变量
         try:
             stream = BinLogStreamReader(**stream_config)
             logger.success("binlog监听", f"@{MYAPS_MAIN_DB}", "开始运行")
             
             event_count = 0
             last_position_save = time.time()
+            _event_timeout = 60  # fetchone超时阈值（秒），2倍心跳间隔，超过此时间无事件则重连
+            _fetch_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
             
-            for binlogevent in stream:
-                if not self.running:
+            while self.running:
+                try:
+                    future = _fetch_executor.submit(stream.fetchone)
+                    binlogevent = future.result(timeout=_event_timeout)
+                except concurrent.futures.TimeoutError:
+                    logger.warning(f"⚠️ fetchone 超时（{_event_timeout}秒），疑似stream卡死，主动断开重连")
+                    future.cancel()
+                    raise ConnectionError(f"Binlog stream fetchone超时（{_event_timeout}秒）")
+                except Exception:
+                    raise
+                
+                if binlogevent is None:
                     break
                 
+                if not self.running:
+                    break
+
+                # 心跳事件仅作为连接活性信号，跳过业务处理
+                if isinstance(binlogevent, HeartbeatLogEvent):
+                    continue
+
                 # ========== Simplified HA: 背压控制检测 ==========
                 self._event_count_since_check += 1
                 if HA_MODULES_AVAILABLE and self._event_count_since_check >= 10:
@@ -1427,6 +1451,7 @@ class MySQLBinlogListener:
                 if event_count % 1000 == 0:
                     logger.debug(f"📊 已处理 {event_count} 个 Binlog 事件")
 
+
         except Exception as e:
             # 异常前尝试保存当前位置
             if stream and ENABLE_BINLOG_POSITION and self._position_manager:
@@ -1438,6 +1463,8 @@ class MySQLBinlogListener:
             logger.fail("Binlog监听处理", "", str(e))
             raise
         finally:
+            if _fetch_executor is not None:
+                _fetch_executor.shutdown(wait=False)
             if stream:
                 # 关闭前保存最终位置
                 if ENABLE_BINLOG_POSITION and self._position_manager:
@@ -1446,7 +1473,22 @@ class MySQLBinlogListener:
                         logger.info(f"💾 最终位置已保存: {stream.log_file}:{stream.log_pos}")
                     except:
                         pass
-                stream.close()
+                # 先shutdown底层socket（唤醒阻塞的fetchone线程后关闭，不涉及_rfile内部锁），避免主线程抢锁死锁
+                try:
+                    if hasattr(stream, '_stream_connection') and stream._stream_connection:
+                        sock = getattr(stream._stream_connection, '_sock', None)
+                        if sock:
+                            try:
+                                sock.shutdown(socket.SHUT_RDWR)
+                            except:
+                                pass
+                            sock.close()
+                except:
+                    pass
+                try:
+                    stream.close()
+                except:
+                    pass
                 logger.success("Binlog监听", "", "已关闭")
 
     def _add_to_dead_letter_queue(self, event, error_message):

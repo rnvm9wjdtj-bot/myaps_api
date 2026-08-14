@@ -7,6 +7,7 @@ import json
 import inspect
 import signal
 import atexit
+import tempfile
 import redis
 from typing import Optional, Dict, Any, Union, List
 from globalobjects import logger as log_config
@@ -26,25 +27,44 @@ from core.task_manager import get_task_manager
 
 # ============================================================================
 # 文件锁定义 - 用于 Gunicorn 多进程环境
-# 使用 /tmp/ 而非持久化目录，避免容器重建后残留旧锁
+# 使用系统临时目录（Linux 下为 /tmp，Windows 下为 %TEMP%），避免持久化目录残留旧锁
 # ============================================================================
 
-_BINLOG_LOCK_FILE = "/tmp/.myaps_binlog.lock"
-_SCHEDULER_LOCK_FILE = "/tmp/.myaps_scheduler.lock"
-_REDIS_CONSUMER_LOCK_FILE = "/tmp/.myaps_redis_consumer.lock"
-_DB_HEALTH_CHECK_LOCK_FILE = "/tmp/.myaps_db_health_check.lock"
-_FAILED_OP_RECOVERY_LOCK_FILE = "/tmp/.myaps_failed_op_recovery.lock"
-_LOG_STREAM_LOCK_FILE = "/tmp/.myaps_log_stream.lock"
+_LOCK_DIR = tempfile.gettempdir()
+_BINLOG_LOCK_FILE = os.path.join(_LOCK_DIR, ".myaps_binlog.lock")
+_SCHEDULER_LOCK_FILE = os.path.join(_LOCK_DIR, ".myaps_scheduler.lock")
+_REDIS_CONSUMER_LOCK_FILE = os.path.join(_LOCK_DIR, ".myaps_redis_consumer.lock")
+_DB_HEALTH_CHECK_LOCK_FILE = os.path.join(_LOCK_DIR, ".myaps_db_health_check.lock")
+_FAILED_OP_RECOVERY_LOCK_FILE = os.path.join(_LOCK_DIR, ".myaps_failed_op_recovery.lock")
+_LOG_STREAM_LOCK_FILE = os.path.join(_LOCK_DIR, ".myaps_log_stream.lock")
 
 _LOCK_FILES: List[str] = []
 _SIGNAL_HANDLERS_SET: bool = False
 
 
 def _pid_is_alive(pid: int) -> bool:
-    """检查进程是否存活（Linux 下通过 /proc 检测，其他平台 fallback）"""
+    """检查进程是否存活（Linux 下通过 /proc 检测，Windows 下通过 OpenProcess，其他平台信号0检测）"""
+    if sys.platform == "linux":
+        try:
+            return os.path.exists(f"/proc/{pid}")
+        except (PermissionError, FileNotFoundError, OSError):
+            return False
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+            if handle:
+                ctypes.windll.kernel32.CloseHandle(handle)
+                return True
+            return False
+        except Exception:
+            return False
+    # 其他平台 fallback：信号0检测（Windows 上 os.kill(pid, 0) 会终止进程，故仅限非 Windows）
     try:
-        return os.path.exists(f"/proc/{pid}")
-    except (PermissionError, FileNotFoundError, OSError):
+        os.kill(pid, 0)
+        return True
+    except OSError:
         return False
 
 
@@ -504,13 +524,15 @@ async def lifespan(app):
             # Worker 进程的父进程应该是 gunicorn master
             parent_pid = os.getppid()
             try:
-                with open(f'/proc/{parent_pid}/cmdline', 'r') as f:
-                    parent_cmdline = f.read()
-                    if 'gunicorn' in parent_cmdline:
-                        # 父进程是 gunicorn master，说明当前是 worker 进程
-                        gunicorn_running = True
-                        os.environ['GUNICORN_RUNNING'] = 'true'
-                        os.environ['GUNICORN_WORKER_PID'] = str(os.getpid())
+                if sys.platform == "linux":
+                    with open(f'/proc/{parent_pid}/cmdline', 'r') as f:
+                        parent_cmdline = f.read()
+                        if 'gunicorn' in parent_cmdline:
+                            # 父进程是 gunicorn master，说明当前是 worker 进程
+                            gunicorn_running = True
+                            os.environ['GUNICORN_RUNNING'] = 'true'
+                            os.environ['GUNICORN_WORKER_PID'] = str(os.getpid())
+                # 非 Linux（如 Windows）不依赖 /proc 检测；gunicorn 本身不支持 Windows，由 GUNICORN_RUNNING 环境变量控制
             except:
                 pass
     
