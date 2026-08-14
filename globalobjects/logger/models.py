@@ -149,7 +149,7 @@ class LoggerConfig(BaseModel):
             log_dir=os.getenv('LOG_DIR', 'logs'),
             log_file_prefix=os.getenv('LOG_FILE_PREFIX', 'app'),
             max_file_size=get_int('LOG_MAX_FILE_SIZE', 100) * 1024 * 1024,
-            retention_days=get_int('LOG_RETENTION_DAYS', 7),
+            retention_days=get_int('LOG_RETENTION_DAYS', 15),
             to_console=get_bool('TO_CONSOLE', True),
             to_file=get_bool('TO_FILE', True),
             to_database=get_bool('TO_DATABASE', True),
