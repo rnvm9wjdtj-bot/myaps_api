@@ -34,6 +34,8 @@ class BackpressureController:
         pause_duration: int = 5,
         check_interval: int = 10,
         delay_threshold: float = 10.0,
+        warning_cooldown: float = 60.0,
+        critical_cooldown: float = 30.0,
         on_throttle: Optional[Callable[[PressureState], None]] = None
     ):
         """
@@ -45,6 +47,8 @@ class BackpressureController:
             pause_duration: 暂停时长（秒）
             check_interval: 检查间隔（事件数）
             delay_threshold: 延迟阈值（秒）
+            warning_cooldown: WARNING告警冷却时间（秒），同一状态内去重
+            critical_cooldown: CRITICAL告警冷却时间（秒），同一状态内去重
             on_throttle: 限流回调函数
         """
         self.warning_threshold = warning_threshold
@@ -52,6 +56,8 @@ class BackpressureController:
         self.pause_duration = pause_duration
         self.check_interval = check_interval
         self.delay_threshold = delay_threshold
+        self.warning_cooldown = warning_cooldown
+        self.critical_cooldown = critical_cooldown
         self._on_throttle = on_throttle
         
         self._lock = threading.RLock()
@@ -62,6 +68,9 @@ class BackpressureController:
         self._current_state = PressureState.NORMAL
         self._is_paused = False
         self._pause_until = 0.0
+        self._last_warning_log_time = 0.0
+        self._last_critical_log_time = 0.0
+        self._last_logged_state = PressureState.NORMAL
     
     def check_pressure(
         self,
@@ -129,31 +138,43 @@ class BackpressureController:
             if state is None:
                 state = self._current_state
             
+            now = time.time()
+            
             if state == PressureState.NORMAL:
-                logger.debug("✅ 背压状态正常，继续拉取事件")
+                if self._last_logged_state != PressureState.NORMAL:
+                    logger.info("✅ 背压恢复正常")
+                    self._last_logged_state = PressureState.NORMAL
                 return False
             
             elif state == PressureState.WARNING:
                 queue_size = prometheus_metrics.queue_size._value.get() if hasattr(prometheus_metrics.queue_size, '_value') else 0
-                logger.warning(
-                    f"⚠️ 背压告警: 队列大小超过阈值 "
-                    f"(current={queue_size}, warning_threshold={self.warning_threshold})"
-                )
+                if (self._last_logged_state != PressureState.WARNING
+                        or now - self._last_warning_log_time >= self.warning_cooldown):
+                    logger.warning(
+                        f"⚠️ 背压告警: 队列大小超过阈值 "
+                        f"(current={queue_size}, warning_threshold={self.warning_threshold})"
+                    )
+                    self._last_warning_log_time = now
+                    self._last_logged_state = PressureState.WARNING
                 return False
             
             elif state == PressureState.CRITICAL:
                 self._throttle_count += 1
-                self._pause_until = time.time() + self.pause_duration
+                self._pause_until = now + self.pause_duration
                 self._total_throttle_duration += self.pause_duration
                 
                 prometheus_metrics.inc_throttle_duration(self.pause_duration)
                 
                 queue_size = prometheus_metrics.queue_size._value.get() if hasattr(prometheus_metrics.queue_size, '_value') else 0
-                logger.error(
-                    f"🚨 背压严重: 触发限流，暂停拉取 {self.pause_duration}秒 "
-                    f"(current={queue_size}, limit_threshold={self.limit_threshold}, "
-                    f"throttle_count={self._throttle_count})"
-                )
+                if (self._last_logged_state != PressureState.CRITICAL
+                        or now - self._last_critical_log_time >= self.critical_cooldown):
+                    logger.error(
+                        f"🚨 背压严重: 触发限流，暂停拉取 {self.pause_duration}秒 "
+                        f"(current={queue_size}, limit_threshold={self.limit_threshold}, "
+                        f"throttle_count={self._throttle_count})"
+                    )
+                    self._last_critical_log_time = now
+                    self._last_logged_state = PressureState.CRITICAL
                 
                 if self._on_throttle:
                     self._on_throttle(state)
@@ -199,6 +220,9 @@ class BackpressureController:
             self._is_paused = False
             self._pause_until = 0.0
             self._processing_delays.clear()
+            self._last_warning_log_time = 0.0
+            self._last_critical_log_time = 0.0
+            self._last_logged_state = PressureState.NORMAL
             logger.info("✅ 背压状态已重置")
     
     def update_thresholds(

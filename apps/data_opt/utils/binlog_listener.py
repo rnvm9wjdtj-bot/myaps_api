@@ -83,6 +83,17 @@ except ImportError as e:
     HA_MODULES_AVAILABLE = False
 
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
+_DEFAULT_FETCHONE_TIMEOUT = 60
+try:
+    BINLOG_FETCHONE_TIMEOUT = int(os.getenv("BINLOG_FETCHONE_TIMEOUT", str(_DEFAULT_FETCHONE_TIMEOUT)))
+except (ValueError, TypeError):
+    _tmp_logger = log_config.get_logger(__name__, level=LOG_LEVEL)
+    _tmp_logger.warning(
+        f"⚠️ BINLOG_FETCHONE_TIMEOUT 环境变量非法，回退默认值 {_DEFAULT_FETCHONE_TIMEOUT}s"
+    )
+    BINLOG_FETCHONE_TIMEOUT = _DEFAULT_FETCHONE_TIMEOUT
+if BINLOG_FETCHONE_TIMEOUT < 10 or BINLOG_FETCHONE_TIMEOUT > 3600:
+    BINLOG_FETCHONE_TIMEOUT = max(10, min(BINLOG_FETCHONE_TIMEOUT, 3600))
 logger = log_config.get_logger(__name__, level=LOG_LEVEL)
 
 
@@ -266,8 +277,16 @@ class BinlogPositionManager:
 
 
 class FetchoneTimeoutError(ConnectionError):
-    """binlog stream fetchone 超时专用异常，便于捕获处用 isinstance 精确识别"""
-    pass
+    """binlog stream fetchone 超时专用异常，便于捕获处用 isinstance 精确识别
+
+    Attributes:
+        mysql_healthy: 抛出异常时瞬时的 MySQL 健康检查结果，
+            用于外层捕获处与内层日志决策保持一致，避免二次 is_healthy() 产生 TOCTOU。
+    """
+
+    def __init__(self, *args: Any, mysql_healthy: bool = False, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self.mysql_healthy = mysql_healthy
 
 
 class ConnectionHealthChecker:
@@ -1382,7 +1401,7 @@ class MySQLBinlogListener:
             
             event_count = 0
             last_position_save = time.time()
-            _event_timeout = 60  # fetchone超时阈值（秒），2倍心跳间隔，超过此时间无事件则重连
+            _event_timeout = BINLOG_FETCHONE_TIMEOUT  # fetchone超时阈值（秒），默认2倍心跳间隔，可通过BINLOG_FETCHONE_TIMEOUT环境变量调整
             _fetch_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
             
             while self.running:
@@ -1390,12 +1409,16 @@ class MySQLBinlogListener:
                     future = _fetch_executor.submit(stream.fetchone)
                     binlogevent = future.result(timeout=_event_timeout)
                 except concurrent.futures.TimeoutError:
-                    if self._health_checker.is_healthy():
+                    mysql_healthy = self._health_checker.is_healthy()
+                    if mysql_healthy:
                         logger.info(f"fetchone 超时（{_event_timeout}秒）但MySQL健康，静默重连")
                     else:
                         logger.warning(f"⚠️ fetchone 超时（{_event_timeout}秒），MySQL不健康，主动断开重连")
                     future.cancel()
-                    raise FetchoneTimeoutError(f"Binlog stream fetchone超时（{_event_timeout}秒）")
+                    raise FetchoneTimeoutError(
+                        f"Binlog stream fetchone超时（{_event_timeout}秒）",
+                        mysql_healthy=mysql_healthy,
+                    )
                 except Exception:
                     raise
                 
@@ -1474,7 +1497,10 @@ class MySQLBinlogListener:
                     logger.info(f"💾 异常前保存位置: {stream.log_file}:{stream.log_pos}")
                 except:
                     pass
-            logger.fail("Binlog监听处理", "", str(e))
+            if isinstance(e, FetchoneTimeoutError) and e.mysql_healthy:
+                logger.info(f"Binlog监听fetchone超时重连（MySQL健康）: {e}")
+            else:
+                logger.fail("Binlog监听处理", "", str(e))
             raise
         finally:
             if _fetch_executor is not None:
