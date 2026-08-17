@@ -1075,6 +1075,7 @@ async def get_history_by_time_range(
         result["outbound_requests"] = [{
             "id": req.id,
             "timestamp": req.timestamp.isoformat(),
+            "request_timestamp": req.request_timestamp.isoformat() if req.request_timestamp else None,
             "method": req.method,
             "url": req.url,
             "status_code": req.status_code,
@@ -1595,6 +1596,7 @@ async def export_history_data(
         data = await outbound_request_storage.get_requests_with_filters(utc_start, utc_end, limit, filter_params)
         records = [{
             "时间": req.timestamp.isoformat(),
+            "发送时间": req.request_timestamp.isoformat() if req.request_timestamp else "",
             "方法": req.method,
             "URL": req.url,
             "状态码": req.status_code,
@@ -1668,6 +1670,7 @@ async def get_outbound_request_detail(request_id: int):
         return {
             "id": req.id,
             "timestamp": req.timestamp.isoformat(),
+            "request_timestamp": req.request_timestamp.isoformat() if req.request_timestamp else None,
             "method": req.method,
             "url": req.url,
             "status_code": req.status_code,

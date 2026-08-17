@@ -653,12 +653,26 @@ REQUIRED_SQLITE_TABLES = [
 ]
 
 
+def _ensure_column_exists(cursor, table_name: str, column_name: str, column_def: str) -> bool:
+    """确保表中存在指定列，不存在则添加（幂等）
+
+    用于已有数据库的增量列迁移，弥补 CREATE TABLE IF NOT EXISTS 不补列的限制。
+    """
+    cursor.execute(f"PRAGMA table_info({table_name})")
+    existing_columns = {row[1] for row in cursor.fetchall()}
+    if column_name not in existing_columns:
+        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
+        log_config.info(f"✅ 已为表 {table_name} 添加列 {column_name} ({column_def})")
+        return True
+    return False
+
+
 async def ensure_sqlite_monitor_tables() -> bool:
     """
     确保 SQLite 监控模块表存在
 
     在启动时检查必需的表是否存在于 SQLite 数据库中，
-    如果不存在则执行迁移脚本创建表。
+    如果不存在则执行迁移脚本创建表。随后对已有表执行增量列迁移。
 
     Returns:
         bool: 所有表都存在或创建成功返回 True
@@ -678,37 +692,45 @@ async def ensure_sqlite_monitor_tables() -> bool:
 
         if not missing_tables:
             log_config.debug("✅ SQLite 监控表检查通过，所有表已存在")
-            conn.close()
-            return True
+        else:
+            log_config.warning(f"⚠️ SQLite 监控表缺失: {missing_tables}")
 
-        log_config.warning(f"⚠️ SQLite 监控表缺失: {missing_tables}")
+            migration_script = BASE_DIR / "scripts" / "migrate" / "monitor" / "monitor_tables.sql"
+            if migration_script.exists():
+                log_config.info(f"📦 正在执行数据库迁移脚本: {migration_script}")
 
-        migration_script = BASE_DIR / "scripts" / "migrate" / "monitor" / "monitor_tables.sql"
-        if migration_script.exists():
-            log_config.info(f"📦 正在执行数据库迁移脚本: {migration_script}")
+                with open(migration_script, 'r', encoding='utf-8') as f:
+                    sql_content = f.read()
 
-            with open(migration_script, 'r', encoding='utf-8') as f:
-                sql_content = f.read()
+                cursor.executescript(sql_content)
+                conn.commit()
 
-            cursor.executescript(sql_content)
-            conn.commit()
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;")
+                created_tables = {row[0] for row in cursor.fetchall()}
 
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;")
-            created_tables = {row[0] for row in cursor.fetchall()}
+                still_missing = [table for table in REQUIRED_SQLITE_TABLES if table not in created_tables]
+                if still_missing:
+                    log_config.error(f"❌ 迁移后仍有表缺失: {still_missing}")
+                    conn.close()
+                    return False
 
-            still_missing = [table for table in REQUIRED_SQLITE_TABLES if table not in created_tables]
-            if still_missing:
-                log_config.error(f"❌ 迁移后仍有表缺失: {still_missing}")
+                log_config.info("✅ SQLite 监控表迁移完成")
+            else:
+                log_config.error(f"❌ 迁移脚本不存在: {migration_script}")
                 conn.close()
                 return False
 
-            log_config.info("✅ SQLite 监控表迁移完成")
-            conn.close()
-            return True
-        else:
-            log_config.error(f"❌ 迁移脚本不存在: {migration_script}")
-            conn.close()
-            return False
+        # 增量列迁移：为 outbound_api_requests 补充 request_timestamp 列（幂等）
+        # 适配已有数据库，CREATE TABLE IF NOT EXISTS 不会为已存在的表补列
+        _ensure_column_exists(cursor, "outbound_api_requests", "request_timestamp", "DATETIME")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_outbound_request_timestamp "
+            "ON outbound_api_requests(request_timestamp)"
+        )
+        conn.commit()
+
+        conn.close()
+        return True
 
     except Exception as e:
         log_config.error(f"❌ SQLite 监控表初始化失败: {e}")

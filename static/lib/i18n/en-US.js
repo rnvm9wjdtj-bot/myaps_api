@@ -172,6 +172,7 @@ window.__i18n_en_US__ = {
     // ============ Table Columns ============
     'monitor.col.index': '#',
     'monitor.col.time': 'Time',
+    'monitor.col.request_time': 'Send Time',
     'monitor.col.level': 'Level',
     'monitor.col.module': 'Module',
     'monitor.col.message': 'Message',

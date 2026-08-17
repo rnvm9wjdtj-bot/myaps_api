@@ -173,6 +173,7 @@ window.__i18n_zh_CN__ = {
     // ============ 表格列名 ============
     'monitor.col.index': '序号',
     'monitor.col.time': '时间',
+    'monitor.col.request_time': '发送时间',
     'monitor.col.level': '级别',
     'monitor.col.module': '模块',
     'monitor.col.message': '消息',

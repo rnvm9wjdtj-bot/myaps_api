@@ -146,6 +146,7 @@ class OutboundAPIRequest(Model):
     """对外 HTTP 请求记录模型"""
     id = fields.IntField(primary_key=True, auto_generate=True)
     timestamp = fields.DatetimeField(default=lambda: datetime.now(timezone.utc), description="请求时间")
+    request_timestamp = fields.DatetimeField(null=True, description="请求发送时间")
     method = fields.CharField(max_length=10, description="HTTP 方法")
     url = fields.TextField(description="请求 URL")
     status_code = fields.IntField(description="响应状态码")
@@ -165,6 +166,7 @@ class OutboundAPIRequest(Model):
         default_connection = SQLITE_FILE
         indexes = [
             ("timestamp",),
+            ("request_timestamp",),
             ("module",),
             ("status_code",),
             ("is_error",),

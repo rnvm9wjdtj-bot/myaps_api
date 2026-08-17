@@ -49,6 +49,7 @@ CREATE INDEX IF NOT EXISTS idx_api_requests_timestamp_status ON api_requests(tim
 CREATE TABLE IF NOT EXISTS outbound_api_requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    request_timestamp DATETIME,
     method VARCHAR(10) NOT NULL,
     url TEXT NOT NULL,
     status_code INTEGER NOT NULL,
@@ -66,6 +67,7 @@ CREATE TABLE IF NOT EXISTS outbound_api_requests (
 
 -- 索引（幂等创建）
 CREATE INDEX IF NOT EXISTS idx_outbound_timestamp ON outbound_api_requests(timestamp);
+CREATE INDEX IF NOT EXISTS idx_outbound_request_timestamp ON outbound_api_requests(request_timestamp);
 CREATE INDEX IF NOT EXISTS idx_outbound_module ON outbound_api_requests(module);
 CREATE INDEX IF NOT EXISTS idx_outbound_status_code ON outbound_api_requests(status_code);
 CREATE INDEX IF NOT EXISTS idx_outbound_is_error ON outbound_api_requests(is_error);

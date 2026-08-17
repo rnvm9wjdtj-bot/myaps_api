@@ -97,6 +97,7 @@ class OutboundHTTPCollector:
         response_body: Any = None,
         error_message: str = None,
         module: str = None,
+        request_timestamp: float = None,
     ):
         """
         记录对外 HTTP 请求信息
@@ -112,6 +113,7 @@ class OutboundHTTPCollector:
             response_body: 响应体
             error_message: 错误信息
             module: 发起请求的模块
+            request_timestamp: 请求发送时间（time.time() 格式），None 时不记录
         """
         # 限制请求体和响应体大小（不持有锁）
         max_size = 1024 * 1024 * 5  # 5MB
@@ -141,6 +143,7 @@ class OutboundHTTPCollector:
 
         request_info = {
             "timestamp": timestamp,
+            "request_timestamp": request_timestamp,
             "method": method,
             "url": url,
             "status_code": status_code,
@@ -197,6 +200,7 @@ class OutboundHTTPCollector:
             # 正常模式：将请求加入待批量保存队列
             self._pending_requests.append({
                 "timestamp": timestamp,
+                "request_timestamp": request_timestamp,
                 "method": method,
                 "url": url,
                 "status_code": status_code,
@@ -236,6 +240,7 @@ class OutboundHTTPCollector:
                 for req in batch_to_save:
                     requests_data.append({
                         "timestamp": datetime.fromtimestamp(req["timestamp"], timezone.utc),
+                        "request_timestamp": datetime.fromtimestamp(req["request_timestamp"], timezone.utc) if req.get("request_timestamp") else None,
                         "method": req["method"],
                         "url": req["url"],
                         "status_code": req["status_code"],
@@ -316,6 +321,7 @@ class OutboundHTTPCollector:
         response_body: Any = None,
         error_message: str = None,
         module: str = None,
+        request_timestamp: float = None,
     ):
         """
         同步记录对外 HTTP 请求信息
@@ -331,6 +337,7 @@ class OutboundHTTPCollector:
             response_body: 响应体
             error_message: 错误信息
             module: 发起请求的模块
+            request_timestamp: 请求发送时间（time.time() 格式），None 时不记录
         """
         # 限制请求体和响应体大小
         # 增加大小限制到 5MB，避免频繁截断
@@ -355,6 +362,7 @@ class OutboundHTTPCollector:
 
         request_info = {
             "timestamp": time.time(),
+            "request_timestamp": request_timestamp,
             "method": method,
             "url": url,
             "status_code": status_code,
@@ -450,6 +458,7 @@ class OutboundHTTPCollector:
                 # 准备保存到数据库的数据
                 request_data = {
                     "timestamp": datetime.fromtimestamp(request_info["timestamp"], timezone.utc),
+                    "request_timestamp": datetime.fromtimestamp(request_timestamp, timezone.utc) if request_timestamp else None,
                     "method": method,
                     "url": url,
                     "status_code": status_code,
@@ -602,6 +611,7 @@ class OutboundHTTPCollector:
         return [{
             "id": req.id,
             "timestamp": req.timestamp.isoformat(),
+            "request_timestamp": req.request_timestamp.isoformat() if req.request_timestamp else None,
             "method": req.method,
             "url": req.url,
             "status_code": req.status_code,
@@ -633,6 +643,7 @@ class OutboundHTTPCollector:
         return [{
             "id": req.id,
             "timestamp": req.timestamp.isoformat(),
+            "request_timestamp": req.request_timestamp.isoformat() if req.request_timestamp else None,
             "method": req.method,
             "url": req.url,
             "status_code": req.status_code,
@@ -664,6 +675,7 @@ class OutboundHTTPCollector:
         return [{
             "id": req.id,
             "timestamp": req.timestamp.isoformat(),
+            "request_timestamp": req.request_timestamp.isoformat() if req.request_timestamp else None,
             "method": req.method,
             "url": req.url,
             "status_code": req.status_code,

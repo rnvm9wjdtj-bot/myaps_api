@@ -114,7 +114,8 @@ class HTTPMonitorWrapper:
                 response_headers=response_headers,
                 response_body=response_body,
                 error_message=error_message,
-                module=module
+                module=module,
+                request_timestamp=start_time,
             )
         
         return response
@@ -260,7 +261,8 @@ class HTTPMonitorWrapper:
                 response_headers=response_headers,
                 response_body=response_body,
                 error_message=error_message,
-                module=module
+                module=module,
+                request_timestamp=start_time,
             )
         
         return response
@@ -443,7 +445,8 @@ class HTTPAsyncMonitorWrapper:
                         response_headers=response_headers,
                         response_body=response_body,
                         error_message=error_message,
-                        module=module
+                        module=module,
+                        request_timestamp=start_time,
                     )
                 except Exception as record_error:
                     # 记录异常，确保即使发生异常也不会影响主流程
@@ -625,7 +628,8 @@ class HTTPAsyncMonitorWrapper:
                         response_headers=response_headers,
                         response_body=response_body,
                         error_message=error_message,
-                        module=module
+                        module=module,
+                        request_timestamp=start_time,
                     )
                 except Exception as record_error:
                     # 记录异常，确保即使发生异常也不会影响主流程

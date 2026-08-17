@@ -654,7 +654,7 @@
             text-align: center;
         }
         
-        /* 发送请求表格列宽 - 8列：序号、时间、方法、URL、状态码、响应时间、模块、操作 */
+        /* 发送请求表格列宽 - 9列：序号、时间、发送时间、方法、URL、状态码、响应时间、模块、操作 */
         #outbound-results-table th:nth-child(1),
         #outbound-results-table td:nth-child(1) {
             width: 45px;
@@ -666,36 +666,41 @@
         }
         #outbound-results-table th:nth-child(3),
         #outbound-results-table td:nth-child(3) {
-            width: 70px;
-            text-align: center;
+            width: 80px;
+            font-family: var(--font-mono);
         }
         #outbound-results-table th:nth-child(4),
         #outbound-results-table td:nth-child(4) {
-            width: 300px;
+            width: 70px;
+            text-align: center;
         }
         #outbound-results-table th:nth-child(5),
         #outbound-results-table td:nth-child(5) {
-            width: 60px;
-            text-align: center;
-            border-bottom: 1px solid #e8e8e8 !important;
-            font-family: var(--font-mono);
+            width: 300px;
         }
         #outbound-results-table th:nth-child(6),
         #outbound-results-table td:nth-child(6) {
             width: 60px;
             text-align: center;
+            border-bottom: 1px solid #e8e8e8 !important;
             font-family: var(--font-mono);
         }
         #outbound-results-table th:nth-child(7),
         #outbound-results-table td:nth-child(7) {
+            width: 60px;
+            text-align: center;
+            font-family: var(--font-mono);
+        }
+        #outbound-results-table th:nth-child(8),
+        #outbound-results-table td:nth-child(8) {
             width: 120px;
             font-family: var(--font-mono);
         }
-         #outbound-results-table th:nth-child(8),
-         #outbound-results-table td:nth-child(8) {
-             width: 90px;
-             text-align: center;
-         }
+        #outbound-results-table th:nth-child(9),
+        #outbound-results-table td:nth-child(9) {
+            width: 90px;
+            text-align: center;
+        }
          .no-data {
             text-align: center;
             color: var(--text-secondary);
@@ -1067,6 +1072,7 @@
                         <tr>
                             <th data-i18n="monitor.col.index">序号</th>
                             <th data-i18n="monitor.col.time">时间</th>
+                            <th data-i18n="monitor.col.request_time">发送时间</th>
                             <th data-i18n="monitor.col.method">方法</th>
                             <th data-i18n="monitor.col.URL">URL</th>
                             <th data-i18n="monitor.col.status_code">状态码</th>
@@ -1076,7 +1082,7 @@
                         </tr>
                     </thead>
                     <tbody id="outbound-results-body">
-                        <tr><td colspan="8" class="no-data" data-i18n="monitor.status.no_data">暂无数据</td></tr>
+                        <tr><td colspan="9" class="no-data" data-i18n="monitor.status.no_data">暂无数据</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -1401,7 +1407,7 @@
             document.getElementById('result-tabs').style.display = 'none';
             
             document.getElementById('http-results-body').innerHTML = '<tr><td colspan="8" class="no-data">' + i18n.t('monitor.status.no_data') + '</td></tr>';
-            document.getElementById('outbound-results-body').innerHTML = '<tr><td colspan="8" class="no-data">' + i18n.t('monitor.status.no_data') + '</td></tr>';
+            document.getElementById('outbound-results-body').innerHTML = '<tr><td colspan="9" class="no-data">' + i18n.t('monitor.status.no_data') + '</td></tr>';
             document.getElementById('logs-results-body').innerHTML = '<tr><td colspan="6" class="no-data">' + i18n.t('monitor.status.no_data') + '</td></tr>';
             
             historyQueryData = { http: [], outbound: [], logs: [] };
@@ -2341,7 +2347,7 @@
             if (!tbody) return;
             
             if (historyQueryData.outbound.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" class="no-data">' + i18n.t('monitor.status.no_data') + '</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" class="no-data">' + i18n.t('monitor.status.no_data') + '</td></tr>';
                 sortedOutboundData = [];
                 return;
             }
@@ -2352,6 +2358,7 @@
                 const methodClass = req.method.toLowerCase();
                 const statusClass = req.status_code >= 400 ? 'error' : 'success';
                 const time = formatDateTime(req.timestamp);
+                const requestTime = formatDateTime(req.request_timestamp);
                 const duration = req.duration ? req.duration.toFixed(2) + 'ms' : '-';
                 const timestamp = new Date(req.timestamp).getTime();
                 
@@ -2359,6 +2366,7 @@
                     <tr data-timestamp="${timestamp}">
                         <td>${index + 1}</td>
                         <td class="font-mono">${time}</td>
+                        <td class="font-mono">${requestTime}</td>
                         <td><span class="api-method ${methodClass}">${req.method}</span></td>
                         <td class="font-mono" style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${req.url || '-'}</td>
                         <td class="font-mono"><span class="api-status ${statusClass}">${req.status_code || '-'}</span></td>
@@ -2504,6 +2512,7 @@
     <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; width: 120px; color: #8c8c8c;">请求ID</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.id || '-'}</td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">时间戳</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.timestamp || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">发送时间</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.request_timestamp || '-'}</td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求方法</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;"><span class="api-method ${(detailData.method || '').toLowerCase()}">${detailData.method || '-'}</span></td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求URL</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.url || '-'}</td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">状态码</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono api-status ${(detailData.status_code || 0) >= 400 ? 'error' : 'success'}">${detailData.status_code || '-'}</td></tr>

@@ -173,6 +173,7 @@ window.__i18n_de_DE__ = {
     // ============ Tabellenspalten ============
     'monitor.col.index': '#',
     'monitor.col.time': 'Zeit',
+    'monitor.col.request_time': 'Sendezeit',
     'monitor.col.level': 'Stufe',
     'monitor.col.module': 'Modul',
     'monitor.col.message': 'Nachricht',
