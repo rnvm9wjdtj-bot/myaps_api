@@ -34,7 +34,7 @@ sap_session = get_session(allowed_methods=["GET", "POST"])
 add_basic_auth_requests(sap_session, sap_username, sap_password)
 
 # API 超时配置
-API_TIMEOUT = 900.0  # API 调用超时（秒）
+API_TIMEOUT = 1800.0  # API 调用超时（秒）
 
 mes = PROJECT_JSON_FILE.get("mes", {})
 mes_url = mes.get("base_url", "")

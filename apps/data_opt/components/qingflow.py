@@ -43,21 +43,23 @@ class MaterialPullModel(AcceptMaterial):
     @classmethod
     def model_valid(cls, values: Dict[str, Any]):
         cleaned_values = {}
-        cleaned_values['materialno'] = clean_value(values.get('料号', ''))
-        cleaned_values['description'] = clean_value(values.get('物料类型', ''))
-        cleaned_values['size'] = values.get('规格型号')
-        cleaned_values['plant'] = pdv.MAT_PLANT
-        cleaned_values['planner'] = pdv.MAT_PLANNER
-        cleaned_values['fifo'] = pdv.MAT_FIFO
-        cleaned_values['leadday'] = pdv.MAT_LEADDAY_F
-        cleaned_values['expday'] = 0
-        cleaned_values['grday'] = 0
-        cleaned_values['abc'] = globalconst.AbcEnum.B
-        cleaned_values['unit'] = ''
+        cleaned_values['materialno'] = clean_value(values.get('materialno', ''))
+        cleaned_values['description'] = clean_value(values.get('description', ''))
+        cleaned_values['size'] = values.get('size', '')
+        cleaned_values['plant'] = values.get('plant', '')
+        cleaned_values['planner'] = values.get('planner', '')
+        cleaned_values['fifo'] = values.get('fifo', '')
+        cleaned_values['leadday'] = values.get('leadday', '')
+        cleaned_values['expday'] = values.get('expday', '')
+        cleaned_values['grday'] = values.get('grday', '')
+        cleaned_values['abc'] = values.get('abc', '')
+        cleaned_values['unit'] = values.get('unit', '')
+        cleaned_values['candelay'] = "Y"
+        cleaned_values['lotsize'] = "EX"
         cleaned_values['price'] = 0
-        cleaned_values['groupno'] = ''
-        cleaned_values['type'] = globalconst.EfEnum.F
-        cleaned_values['phantom'] = globalconst.YesNoEnum.NO
+        cleaned_values['groupno'] = values.get('groupno', '')
+        cleaned_values['type'] = values.get('type', '')
+        cleaned_values['phantom'] = 'N'
         values = cleaned_values
         return values
 

@@ -16,7 +16,7 @@ from .._base import (
     get_scheduler_minute, async_rate_limit, CacheItem,
     ApsPayloadSponsor, EventResultPoster, CLIENT_LOGGER, standard_response, get_session, get_async_session, event_batch_handler,
     cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, PROJECT_JSON_FILE, pdv,
-    TSupply, batch_service_operation,
+    TSupply, batch_service_operation, async_service_operation
 )
 
 
@@ -30,12 +30,13 @@ smssgtc_qingflow_conn.register_source(QingflowMaterial)
 
 async def pull_all_material():
     """拉取所有物料数据"""
-    materials = await smssgtc_qingflow_conn.query_batch()
-    return await materials.persist(to_dbtable='t_material')
+    materials = await QingflowMaterial.query_batch()
+    return await materials.persist(to_dbtable='t_material', to_dbs="--s")
 
 
 
-@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(-1))
+@cron_task(hour='*', minute='*/5')
+# @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(-1))
 async def task_pull_all_material():
     materials = await pull_all_material()
     return materials
@@ -168,10 +169,10 @@ async def refresh_stock(dbs: str=MYAPS_DB_SET):
 
 
 
-@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute())
-@async_service_operation(module="定时任务")
-async def task_refresh_stock(description="刷新库存数据"):
-    await refresh_stock()
+# @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute())
+# @async_service_operation(module="定时任务")
+# async def task_refresh_stock(description="刷新库存数据"):
+#     await refresh_stock()
 
 
 
