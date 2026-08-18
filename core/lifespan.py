@@ -1143,6 +1143,18 @@ async def lifespan(app):
     except Exception as e:
         log_config.warning(f"⚠️ 关闭事件辅助模块失败: {e}")
     
+    # 3.2.1 关闭项目HTTP客户端（如SAP异步客户端，释放连接池）
+    log_config.info("关闭项目HTTP客户端...")
+    try:
+        from project_files import project_client
+        close_fn = getattr(project_client, 'close_sap_async_client', None)
+        if close_fn:
+            await close_fn()
+        else:
+            log_config.debug("项目客户端未定义 close_sap_async_client，跳过")
+    except Exception as e:
+        log_config.warning(f"⚠️ 关闭项目HTTP客户端失败: {e}")
+    
     # 3.3 关闭数据库连接（最后关闭）
     log_config.info("关闭数据库连接...")
     try:

@@ -36,6 +36,23 @@ add_basic_auth_requests(sap_session, sap_username, sap_password)
 # API 超时配置
 API_TIMEOUT = 1800.0  # API 调用超时（秒）
 
+# SAP 异步客户端（用于 sap_post 异步调用，避免线程池阻塞与超时后线程不释放问题）
+_sap_async_client = httpx.AsyncClient(
+    auth=httpx.BasicAuth(sap_username, sap_password),
+    timeout=httpx.Timeout(connect=15, read=API_TIMEOUT, write=API_TIMEOUT, pool=15),
+    transport=httpx.AsyncHTTPTransport(
+        retries=3,  # 恢复瞬时连接错误自动重试（与旧 requests Session 的 Retry 对齐）
+        limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
+    ),
+)
+try:
+    from apps.common.monitor.http_client_wrapper import HTTPAsyncMonitorWrapper
+    # 包装监控，恢复 SAP 请求的出站 HTTP 监控记录（与 get_async_session 一致）
+    sap_async_client = HTTPAsyncMonitorWrapper(_sap_async_client)
+except Exception as e:
+    CLIENT_LOGGER.warning("SAP异步客户端", f"监控包装初始化失败，降级为裸客户端: {e}")
+    sap_async_client = _sap_async_client
+
 mes = PROJECT_JSON_FILE.get("mes", {})
 mes_url = mes.get("base_url", "")
 
@@ -182,11 +199,11 @@ async def async_post_to_srm(url: str, json_data: dict) -> dict:
 # ⬇️项目可复用逻辑
 #################################################################################
 
-def sap_post(url: str, session: requests.Session, interface_id: str, data: dict, timeout: float = 60.0):
+async def sap_post(url: str, interface_id: str, data: dict, timeout: float = API_TIMEOUT):
     """
-    向SAP系统发送POST请求
+    向SAP系统发送POST请求（异步）
     url: 请求URL
-    session: requests会话
+    interface_id: 接口ID
     data: 请求数据
     timeout: 读取超时时间（秒）
     """
@@ -198,10 +215,12 @@ def sap_post(url: str, session: requests.Session, interface_id: str, data: dict,
             "BACKUP1": "",
             "BACKUP2": ""
     }
-    response: requests.Response = session.post(url, headers=headers, json={
-        "HEAD": headers,
-        "BODY": [data]
-    }, timeout=(15, timeout))
+    response = await sap_async_client.post(
+        url,
+        headers=headers,
+        json={"HEAD": headers, "BODY": [data]},
+        timeout=httpx.Timeout(connect=15, read=timeout, write=timeout, pool=15),
+    )
 
     response_json = {}
     if response.status_code == status.HTTP_200_OK:
@@ -219,6 +238,16 @@ def sap_post(url: str, session: requests.Session, interface_id: str, data: dict,
         'response_text': response.text,
         'response_json': response_json
     }
+
+
+async def close_sap_async_client():
+    """关闭SAP异步客户端，释放连接池资源（应用关闭阶段调用）"""
+    if sap_async_client is not None:
+        try:
+            await sap_async_client.aclose()
+            CLIENT_LOGGER.debug("SAP异步客户端", "已关闭")
+        except Exception as e:
+            CLIENT_LOGGER.warning("SAP异步客户端", f"关闭失败: {e}")
 
 
 async def refresh_stock(dbs: str=MYAPS_DB_SET):
@@ -542,20 +571,13 @@ async def batch_handle_pl_status_a2e(event_data_list: List[Dict], _erp: EventRes
 
             }
 
-            loop = asyncio.get_event_loop()
-            sap_post_future = loop.run_in_executor(
-                None,
-                sap_post,
-                sap_url2,
-                sap_session,
-                "ZPP_PLAN_ORD_CREATE",
-                data,
-                API_TIMEOUT
-            )
             try:
-                sap_response = await asyncio.wait_for(sap_post_future, timeout=API_TIMEOUT)
-            except asyncio.TimeoutError:
+                sap_response = await sap_post(sap_url2, "ZPP_PLAN_ORD_CREATE", data, API_TIMEOUT)
+            except httpx.TimeoutException:
                 await _erp.mo_release_failed(native_plno=supplyno, msg=f"SAP API 调用超时（{API_TIMEOUT}秒）", push_data=data, msg_from='ERP')
+                return
+            except httpx.HTTPError as e:
+                await _erp.mo_release_failed(native_plno=supplyno, msg=f"SAP API 调用失败: {str(e)}", push_data=data, msg_from='ERP')
                 return
             sap_response_json = sap_response['response_json']
             
