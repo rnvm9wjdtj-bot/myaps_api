@@ -473,8 +473,23 @@ class _EventLoopHealthChecker:
         try:
             event_loop = getattr(self._listener, '_event_loop', None)
             if event_loop is None:
-                logger.debug("⚠️ 事件循环未初始化")
-                self._consecutive_failures += 1
+                # 区分两种情况：
+                # 1. 事件循环从未启动过（按需启动设计下属于正常状态，不报警）
+                # 2. 事件循环曾启动过但已被关闭（属于异常状态，需要告警）
+                if getattr(self._listener, '_event_loop_started', False):
+                    logger.error("❌ 事件循环已关闭（曾启动过但当前为空）")
+                    self._is_healthy = False
+                    self._consecutive_failures += 1
+                    if self._consecutive_failures >= self._max_consecutive_failures:
+                        if hasattr(self._listener, '_health_checker'):
+                            self._listener._health_checker._send_alert(
+                                f"binlog监听事件循环已关闭，已连续失败 {self._consecutive_failures} 次",
+                                "error"
+                            )
+                else:
+                    # 事件循环按需启动，尚未触发属于正常状态
+                    self._is_healthy = True
+                    self._consecutive_failures = 0
                 return
             
             # 检查事件循环是否还在运行
@@ -568,6 +583,9 @@ class MySQLBinlogListener:
         # 创建持久的事件循环和线程
         self._event_loop = None
         self._loop_thread = None
+        # 标记事件循环是否曾被启动过（按需启动设计：仅在异步handler触发时才创建）
+        # 用于区分"从未启动"(正常)与"启动后关闭"(异常)两种状态
+        self._event_loop_started = False
         
         # 初始化 Binlog 位置管理器
         if ENABLE_BINLOG_POSITION:
@@ -590,6 +608,8 @@ class MySQLBinlogListener:
             self.mysql_settings if mysql_settings else self.get_mysql_config(),
             check_interval=30  # 每30秒检查一次
         )
+        # 接入告警通道：健康检查器的告警回调转发到 RemindManager（带去重和频率限制）
+        self._health_checker.register_alert_callback(self._send_remind)
         
         # 初始化事件循环健康检查器
         self._event_loop_health_checker = _EventLoopHealthChecker(
@@ -1049,8 +1069,13 @@ class MySQLBinlogListener:
                 self._event_loop
             )
         else:
-            # 如果事件循环未运行，同步执行
-            asyncio.create_task(remind_manager.trigger_remind(remind_type, remind_content))
+            # 事件循环未运行（含健康检查线程等非事件循环线程调用），
+            # 优先复用当前线程已有的运行中循环，避免 asyncio.run 在嵌套循环场景下抛错
+            try:
+                asyncio.get_running_loop()
+                asyncio.create_task(remind_manager.trigger_remind(remind_type, remind_content))
+            except RuntimeError:
+                asyncio.run(remind_manager.trigger_remind(remind_type, remind_content))
 
     def regist_reminder(self, reminder):
         """注册提示提醒器到全局 RemindManager
@@ -1155,6 +1180,7 @@ class MySQLBinlogListener:
         """启动事件循环线程"""
         self._event_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._event_loop)
+        self._event_loop_started = True
         try:
             self._event_loop.run_forever()
         except Exception as e:
@@ -1162,6 +1188,9 @@ class MySQLBinlogListener:
         finally:
             if self._event_loop:
                 self._event_loop.close()
+                # 置空引用：让健康检查能区分"曾启动但已关闭"并告警（_event_loop_started 仍为 True），
+                # 同时使 _run_handler 在下次异步事件时能自动重启事件循环线程
+                self._event_loop = None
 
     def _monitor_thread_pool(self):
         """监控线程池并动态调整大小"""
@@ -2018,6 +2047,7 @@ class MySQLBinlogListener:
         # 5. 清理状态
         self._event_loop = None
         self._loop_thread = None
+        self._event_loop_started = False
         
         logger.success("binlog监听", f"@{MYAPS_MAIN_DB}", "已完全停止")
 
