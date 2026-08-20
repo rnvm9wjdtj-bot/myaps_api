@@ -1320,7 +1320,8 @@ async def call_dbprocdure(
     db_names: str,
     procedure_name: str,
     params_list: List[List[Any]] = [[]],
-    on_db_error: Literal["continue", "abort"] = "continue"
+    on_db_error: Literal["continue", "abort"] = "continue",
+    use_distributed_lock: bool = False
 ) -> MultiDbResult:
     """
     调用数据库存储过程
@@ -1330,6 +1331,8 @@ async def call_dbprocdure(
         procedure_name: 存储过程名称
         params_list: 存储过程参数列表，每个元素是一个参数列表
         on_db_error: 账套出错时的策略，"continue" 继续下一账套，"abort" 中断
+        use_distributed_lock: 是否使用分布式锁（默认False）。注意锁粒度为"存储过程名+账套"，
+            开启后同一账套下该存储过程的所有调用将被串行化，仅对确有死锁风险的过程启用
 
     Returns:
         MultiDbResult: 统一格式的返回值
@@ -1340,7 +1343,11 @@ async def call_dbprocdure(
         raise ValueError(f"操作失败：未找到有效账套，input_db_name: {db_names}, available_dbs: {MYAPS_DB_SET}")
 
     async def single_db_operation(db_manager: DbManager) -> Dict[str, Any]:
-        return await db_manager.call_stored_procedure(procedure_name=procedure_name, params_list=params_list)
+        return await db_manager.call_stored_procedure(
+            procedure_name=procedure_name,
+            params_list=params_list,
+            use_distributed_lock=use_distributed_lock
+        )
 
     results, errors = await execute_with_db_fault_tolerance(
         valid_dbs=valid_dbs,
@@ -1432,7 +1439,8 @@ async def db_update_by_index(
     index_dict: Dict[str, Any],
     new_values_dict: Dict[str, Any],
     not_found_behavior: Literal["insert", "error", "skip"] = "skip",
-    on_db_error: Literal["continue", "abort"] = "continue"
+    on_db_error: Literal["continue", "abort"] = "continue",
+    use_distributed_lock: bool = False
 ) -> MultiDbResult:
     """
     基于索引更新记录，支持更新联合主键字段
@@ -1444,6 +1452,7 @@ async def db_update_by_index(
         new_values_dict: 新值构成的字典，可包含联合主键字段
         not_found_behavior: 找不到记录时的行为："insert" 新增，"error" 报错，"skip" 略过
         on_db_error: 账套出错时的策略，"continue" 继续下一账套，"abort" 中断
+        use_distributed_lock: 是否使用分布式锁（默认False），用于避免并发更新同一行导致的死锁
         
     Returns:
         MultiDbResult: 统一格式的返回值
@@ -1495,12 +1504,49 @@ async def db_update_by_index(
                     not_found_behavior=not_found_behavior
                 )
 
-            result = await _execute_with_retry(
-                db_manager=db_manager,
-                coro_func=_make_request,
-                table_name=table_name,
-                db_name=db_name
-            )
+            async def _locked_execute():
+                if not use_distributed_lock:
+                    return await _execute_with_retry(
+                        db_manager=db_manager,
+                        coro_func=_make_request,
+                        table_name=table_name,
+                        db_name=db_name
+                    )
+                import hashlib
+                from apps.common.utils.distributed_lock import (
+                    DistributedLock,
+                    get_distributed_lock_config,
+                )
+
+                # 先按表结构过滤索引字段，确保锁键与实际执行的 WHERE 条件一致，
+                # 避免原始字典中的多余字段导致不同调用方锁键不一致、互斥失效
+                filtered_index_dict = await _filter_data_by_table(
+                    db_name, table_name, index_dict, "索引更新-index"
+                )
+                # default=str 兜底：索引值含 datetime/Decimal 等非 JSON 可序列化类型时不再抛异常
+                index_key_hash = hashlib.sha1(
+                    json.dumps(
+                        filtered_index_dict,
+                        sort_keys=True,
+                        ensure_ascii=False,
+                        default=str
+                    ).encode('utf-8')
+                ).hexdigest()[:12]
+                lock_key = f"db_update_by_index:{table_name}:{index_key_hash}:{db_name}"
+
+                config = get_distributed_lock_config()
+                lock = DistributedLock(lock_key, timeout=config['timeout'])
+                async with lock.lock(max_wait=config['wait_timeout']) as acquired:
+                    if not acquired:
+                        raise TimeoutError(f"获取分布式锁超时: {lock_key}")
+                    return await _execute_with_retry(
+                        db_manager=db_manager,
+                        coro_func=_make_request,
+                        table_name=table_name,
+                        db_name=db_name
+                    )
+
+            result = await _locked_execute()
 
             if result['success']:
                 success_db.append(db_name)

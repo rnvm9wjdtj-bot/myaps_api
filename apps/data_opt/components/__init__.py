@@ -2573,7 +2573,8 @@ class EventResultPoster:
         response_json: MultiDbResult = await call_dbprocdure(
             db_names=self.db_name,
             procedure_name="SupplyConvertMOByE2A",
-            params_list=[[native_plno, mono, to_status, str(_id or ""), str(_entryid or ""), memo[:255]]]
+            params_list=[[native_plno, mono, to_status, str(_id or ""), str(_entryid or ""), memo[:255]]],
+            use_distributed_lock=True
         )
         
         logger.info(f"更新PL状态响应：成功")
@@ -2617,7 +2618,8 @@ class EventResultPoster:
             model_or_tablename="t_supply",
             index_dict={"SupplyNo": native_plno},
             new_values_dict=patch_data,
-            not_found_behavior="skip"
+            not_found_behavior="skip",
+            use_distributed_lock=True
         )
         
         await self._collector.add_result(ExecutionResult(
