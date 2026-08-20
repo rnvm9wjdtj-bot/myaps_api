@@ -18,6 +18,7 @@ dist/
 .idea/
 .arts/
 .codeartsdoer/
+.codegraph/
 *.suo
 *.ntvs*
 *.njsproj
