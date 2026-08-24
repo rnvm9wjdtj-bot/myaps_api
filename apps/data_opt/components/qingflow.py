@@ -4,10 +4,18 @@
 基于轻流OpenAPI文档实现，支持：
 - 获取accessToken认证
 - 获取应用数据（分页、筛选、排序）
+- 通过租户配置的字段映射规则，将轻流工作表数据转换为APS标准格式
+
+设计要点：
+    轻流是低代码平台，所有工作表查询逻辑相同（POST /openApi/app/{appKey}/apply/filter），
+    区别仅在于字段映射规则。因此：
+    1. QingflowConnection 只负责连接、认证、原始数据获取
+    2. QingflowSource 抽象通用查询逻辑，由各租户通过 field_map + pydantic_model 配置具体规则
+    3. 映射规则和Pydantic模型由租户客户端 client.py 注入，适配不同租户
 """
 import asyncio
 import inspect
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Type
 from datetime import datetime, timedelta
 
 from . import ApsPayloadSponsor, EventResultPoster
@@ -24,46 +32,6 @@ from ._base import (
 
 
 CACHE_QINGFLOW = PROJECT_JSON_FILE.get("qingflow", {})
-
-
-#################################################################################
-# 数据规范模型
-#################################################################################
-
-class MaterialPullModel(AcceptMaterial):
-
-    size: Optional[str] = Field(None)
-    candelay: Optional[str] = Field(None)
-    lotsize: Optional[str] = Field(None)
-
-    class Config:
-        extra = 'allow'
-
-    @model_validator(mode="before")
-    @classmethod
-    def model_valid(cls, values: Dict[str, Any]):
-        cleaned_values = {}
-        cleaned_values['materialno'] = clean_value(values.get('materialno', ''))
-        cleaned_values['description'] = clean_value(values.get('description', ''))
-        cleaned_values['size'] = values.get('size', '')
-        cleaned_values['plant'] = values.get('plant', '')
-        cleaned_values['planner'] = values.get('planner', '')
-        cleaned_values['fifo'] = values.get('fifo', '')
-        cleaned_values['leadday'] = values.get('leadday', '')
-        cleaned_values['expday'] = values.get('expday', '')
-        cleaned_values['grday'] = values.get('grday', '')
-        cleaned_values['abc'] = values.get('abc', '')
-        cleaned_values['unit'] = values.get('unit', '')
-        cleaned_values['candelay'] = "Y"
-        cleaned_values['lotsize'] = "EX"
-        cleaned_values['price'] = 0
-        cleaned_values['groupno'] = values.get('groupno', '')
-        cleaned_values['type'] = values.get('type', '')
-        cleaned_values['phantom'] = 'N'
-        values = cleaned_values
-        return values
-
-
 
 
 #################################################################################
@@ -105,8 +73,8 @@ class QingflowConnection(ExternalBaseConnection):
     """
     轻流 OpenAPI 连接类 - 继承自 ExternalBaseConnection
 
-    使用父类提供的限流、连接池和超时保护机制，
-    实现轻流 OpenAPI 的认证和请求处理。
+    仅负责连接、认证和原始数据获取，不包含任何业务字段映射逻辑。
+    字段映射由 QingflowSource + 租户配置的 field_map 完成。
 
     认证流程：
         1. GET /openApi/accessToken?wsId=xxx&wsSecret=xxx 获取accessToken
@@ -143,7 +111,8 @@ class QingflowConnection(ExternalBaseConnection):
         轻流的accessToken通过GET请求获取，有效期7200秒。
         支持缓存复用，过期自动刷新，含重试机制。
         """
-        assert self.ws_id and self.ws_secret, "轻流工作区ID或密钥缺失"
+        assert self.base_url, "轻流base_url未配置，请在租户配置文件中添加qingflow.base_url"
+        assert self.ws_id and self.ws_secret, "轻流工作区ID或密钥缺失，请在租户配置文件中添加qingflow.ws_id/ws_secret"
 
         if self._auth_at_:
             expire_time = datetime.strptime(self._auth_at_, "%Y-%m-%d %H:%M:%S") + timedelta(seconds=self.config.token_expire_seconds)
@@ -304,7 +273,7 @@ class QingflowConnection(ExternalBaseConnection):
         scope: int = 1,
     ) -> Dict[str, Any]:
         """
-        获取轻流应用数据（自动分页）
+        获取轻流应用单页数据
 
         Args:
             app_key: 应用ID，默认使用配置中的app_key
@@ -337,7 +306,6 @@ class QingflowConnection(ExternalBaseConnection):
         response = await self._post(endpoint=endpoint, data=body, user_id=user_id)
         return response
 
-
     async def fetch_all_app_data(
         self,
         app_key: str = None,
@@ -355,7 +323,7 @@ class QingflowConnection(ExternalBaseConnection):
             同fetch_app_data
 
         Returns:
-            所有页的数据列表（result数组）
+            所有页的数据列表（result数组，每项含answers和applyBaseInfo）
         """
         app_key = app_key or self.config.app_key
         page_size = page_size or self.config.max_page_size
@@ -388,9 +356,8 @@ class QingflowConnection(ExternalBaseConnection):
 
         return all_results
 
-
     @staticmethod
-    def _parse_answer_values(answers: list) -> Dict[str, Any]:
+    def parse_answer_values(answers: list) -> Dict[str, Any]:
         """
         解析轻流数据中的answers数组，转换为 {queTitle: value} 的字典
 
@@ -422,9 +389,8 @@ class QingflowConnection(ExternalBaseConnection):
 
         return parsed
 
-
     @staticmethod
-    def _parse_apply_data(apply_data: dict) -> Dict[str, Any]:
+    def parse_apply_data(apply_data: dict) -> Dict[str, Any]:
         """
         解析单条轻流应用数据，提取字段值和基础信息
 
@@ -432,9 +398,9 @@ class QingflowConnection(ExternalBaseConnection):
             apply_data: 轻流返回的单条数据（含answers和applyBaseInfo）
 
         Returns:
-            扁平化的数据字典，包含字段值和基础信息
+            扁平化的数据字典，包含字段值（以queTitle为键）和基础信息
         """
-        parsed = QingflowConnection._parse_answer_values(apply_data.get("answers", []))
+        parsed = QingflowConnection.parse_answer_values(apply_data.get("answers", []))
 
         base_info = apply_data.get("applyBaseInfo", {})
         parsed["applyId"] = apply_data.get("applyId", "")
@@ -448,43 +414,139 @@ class QingflowConnection(ExternalBaseConnection):
 
 
 #################################################################################
-# 轻流数据对象管理器
+# 轻流通用数据源（抽象查询逻辑，复用于所有工作表）
 #################################################################################
 
-class QingflowMaterial(BaseSource):
+class QingflowSource(BaseSource):
     """
-    轻流物料数据源
+    轻流通用数据源 - 抽象所有工作表的查询逻辑
 
-    从轻流"物料主数据"应用中拉取物料信息，
-    通过queId映射字段并转换为APS标准格式。
+    轻流是低代码平台，所有工作表查询逻辑相同（POST /openApi/app/{appKey}/apply/filter），
+    区别仅在于字段映射规则。本类通过 pydantic_model 参数化配置，
+    使同一套查询逻辑可复用于物料、BOM、工艺路线、库存等任何工作表。
+
+    字段映射+清洗统一由 pydantic_model 的 @model_validator(mode="before") 完成，
+    直接接收轻流原始字段（queTitle为键），在 validator 中映射为 APS 标准字段并清洗。
+
+    使用方式：
+        1. 在租户client.py中定义 pydantic_model（含 model_validator 做映射+清洗）
+        2. 通过 QingflowSource.configure(...) 创建专属数据源类
+        3. 注册到 QingflowConnection 后即可调用 query_batch()
+
+    配置参数：
+        pydantic_model: 数据清洗模型，继承自 AcceptMaterial/AcceptSupply 等，
+                        其 @model_validator(mode="before") 直接接收轻流原始字段
+        app_key: 可选，覆盖默认应用ID（不同工作表可能在不同应用下）
+        queries: 可选，默认筛选条件
+        sorts: 可选，默认排序条件
+        user_id: 可选，默认userId
+        scope: 可选，数据范围， 1 - 全部数据（默认）， 2 - 已填写的数据， 3 - 未填写的数据
     """
 
-    _PULL_PYDANTIC_MODEL = MaterialPullModel
-
+    _APP_KEY: Optional[str] = None
+    _DEFAULT_QUERIES: Optional[list] = None
+    _DEFAULT_SORTS: Optional[list] = None
+    _DEFAULT_USER_ID: Optional[str] = None
+    _DEFAULT_SCOPE: int = 1
 
     @classmethod
-    async def query_batch(cls, queries: list = None, user_id: str = None):
+    def configure(
+        cls,
+        pydantic_model: Type[PydanticModel],
+        app_key: str = None,
+        queries: list = None,
+        sorts: list = None,
+        user_id: str = None,
+        scope: int = 1,
+        class_name: str = None,
+    ) -> Type['QingflowSource']:
         """
-        查询批量物料数据
+        工厂方法：创建一个配置好的专属数据源子类
 
         Args:
-            queries: 可选筛选条件
-            user_id: 可选userId
+            pydantic_model: 数据清洗Pydantic模型，其 model_validator 直接接收轻流原始字段
+            app_key: 可选，应用ID
+            queries: 可选，默认筛选条件
+            sorts: 可选，默认排序条件
+            user_id: 可选，默认userId
+            scope: 可选，数据范围
+            class_name: 可选，生成的类名
 
         Returns:
-            ExternalDataSet 包装的物料数据
+            配置好的 QingflowSource 子类
+
+        使用示例：
+            QingflowMaterial = QingflowSource.configure(
+                pydantic_model=MaterialPullModel,
+                class_name="QingflowMaterial",
+            )
+            conn.register_source(QingflowMaterial)
+            data = await QingflowMaterial.query_batch()
+        """
+        new_cls = type(
+            class_name or f"QingflowSource_{pydantic_model.__name__}",
+            (cls,),
+            {
+                "_PULL_PYDANTIC_MODEL": pydantic_model,
+                "_APP_KEY": app_key,
+                "_DEFAULT_QUERIES": queries,
+                "_DEFAULT_SORTS": sorts,
+                "_DEFAULT_USER_ID": user_id,
+                "_DEFAULT_SCOPE": scope,
+            }
+        )
+        return new_cls
+
+    @classmethod
+    async def query_batch(
+        cls,
+        queries: list = None,
+        sorts: list = None,
+        user_id: str = None,
+        scope: int = None,
+        app_key: str = None,
+    ):
+        """
+        查询批量数据（通用查询逻辑，复用于所有工作表）
+
+        流程：
+            1. 通过 QingflowConnection.fetch_all_app_data 获取原始数据
+            2. 解析每条数据的 answers 数组为 {queTitle: value} 字典
+            3. 返回 ExternalDataSet 包装的数据（由 pydantic_model 的 model_validator 完成映射+清洗）
+
+        Args:
+            queries: 筛选条件，默认使用类配置的 _DEFAULT_QUERIES
+            sorts: 排序条件，默认使用类配置的 _DEFAULT_SORTS
+            user_id: 可选userId
+            scope: 数据范围
+            app_key: 应用ID，默认使用类配置或连接配置
+
+        Returns:
+            ExternalDataSet 包装的数据
         """
         assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
+        assert cls._PULL_PYDANTIC_MODEL, "未配置 pydantic_model 数据模型"
         await cls._CONNECTION.auth()
 
+        queries = queries if queries is not None else cls._DEFAULT_QUERIES
+        sorts = sorts if sorts is not None else cls._DEFAULT_SORTS
+        user_id = user_id if user_id is not None else cls._DEFAULT_USER_ID
+        scope = scope if scope is not None else cls._DEFAULT_SCOPE
+        app_key = app_key or cls._APP_KEY
+
         raw_results = await cls._CONNECTION.fetch_all_app_data(
+            app_key=app_key,
             queries=queries,
+            sorts=sorts,
             user_id=user_id,
+            scope=scope,
         )
 
-        data_list = []
-        for item in raw_results:
-            parsed = QingflowConnection._parse_apply_data(item)
-            data_list.append(parsed)
+        data_list = [
+            QingflowConnection.parse_apply_data(item)
+            for item in raw_results
+        ]
 
         return ExternalDataSet(raw_data=data_list, pydantic_model=cls._PULL_PYDANTIC_MODEL)
+
+

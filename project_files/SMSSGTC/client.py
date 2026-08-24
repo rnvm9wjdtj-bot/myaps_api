@@ -5,11 +5,13 @@
 import asyncio
 import pandas as pd
 from datetime import datetime
+from typing import Optional, Dict, Any
 
 from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
 
 from apps.data_opt.components.qingflow import (
-    QingflowConnection, QingflowMaterial, model_validator
+    QingflowConnection, QingflowSource, model_validator, AcceptMaterial,
+    Field, clean_value, globalconst
 )
 
 from .._base import (
@@ -23,6 +25,50 @@ from .._base import (
 #################################################################################
 # ⬇️轻流
 #################################################################################
+class MaterialPullModel(AcceptMaterial):
+    """
+    物料数据清洗模型（无锡西门子燃气轮机租户专属）
+
+    直接接收轻流原始字段（queTitle为键），在 model_validator 中完成
+    字段映射 + 清洗 + 默认值补充，无需独立 field_map。
+    """
+
+    size: Optional[str] = Field(None)
+    candelay: Optional[str] = Field(None)
+    lotsize: Optional[str] = Field(None)
+
+    class Config:
+        extra = 'allow'
+
+    @model_validator(mode="before")
+    @classmethod
+    def model_valid(cls, values: Dict[str, Any]):
+        cleaned_values = {}
+        cleaned_values['materialno'] = clean_value(values.get('materialno', ''))
+        cleaned_values['description'] = clean_value(values.get('description', ''))
+        cleaned_values['size'] = values.get('size')
+        cleaned_values['plant'] = pdv.MAT_PLANT
+        cleaned_values['planner'] = pdv.MAT_PLANNER
+        cleaned_values['fifo'] = pdv.MAT_FIFO
+        cleaned_values['leadday'] = pdv.MAT_LEADDAY_F
+        cleaned_values['expday'] = 0
+        cleaned_values['grday'] = 0
+        cleaned_values['abc'] = globalconst.AbcEnum.B
+        cleaned_values['candelay'] = values.get('candelay') or pdv.MAT_CANDELAY
+        cleaned_values['lotsize'] = values.get('lotsize') or pdv.MAT_LOTSIZE
+        cleaned_values['unit'] = values.get('unit', '')
+        cleaned_values['price'] = values.get('price', 0)
+        cleaned_values['groupno'] = values.get('groupno', '')
+        cleaned_values['type'] = globalconst.EfEnum.F
+        cleaned_values['phantom'] = globalconst.YesNoEnum.NO
+        values = cleaned_values
+        return values
+
+# 通过工厂方法创建配置好的物料数据源
+QingflowMaterial = QingflowSource.configure(
+    pydantic_model=MaterialPullModel,
+    class_name="QingflowMaterial",
+)
 
 smssgtc_qingflow_conn = QingflowConnection()
 smssgtc_qingflow_conn.register_source(QingflowMaterial)
