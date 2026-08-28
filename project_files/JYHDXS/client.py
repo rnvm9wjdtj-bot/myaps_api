@@ -377,6 +377,7 @@ async def push_pr(period: int = 30, groupdates: List[str] | str = None):
         batch_size = 100
         max_concurrent = 5  # 最大并发数
         max_retries = 2  # 每批最大重试次数
+        batch_interval = 5  # 每批推送间隔（秒），节流防止下游查重更新来不及落库
         
         # 准备所有批次
         batches = []
@@ -387,12 +388,25 @@ async def push_pr(period: int = 30, groupdates: List[str] | str = None):
         
         # 信号量控制并发
         semaphore = asyncio.Semaphore(max_concurrent)
-        
+
+        # 全局节流：保证任意两次请求间隔 >= batch_interval（下游查重落库需要时间）
+        next_allowed = asyncio.get_running_loop().time()
+
         async def send_batch(batch_num: int, batch_data: list) -> tuple[int, int]:
             """发送单个批次，返回 (成功数, 失败数)"""
+            nonlocal next_allowed
             batch_count = len(batch_data)
             
             async with semaphore:  # 控制并发
+                # 请求节流：等到允许发送的时间再发送
+                if batch_interval > 0:
+                    now = asyncio.get_running_loop().time()
+                    wait = next_allowed - now
+                    if wait > 0:
+                        await asyncio.sleep(wait)
+                        now = next_allowed
+                    next_allowed = now + batch_interval
+                
                 for attempt in range(1 + max_retries):
                     try:
                         CLIENT_LOGGER.info(f"推送批次 {batch_num}", f"发送{batch_count}条数据" + (f"（第{attempt + 1}次尝试）" if attempt > 0 else ""))
@@ -426,7 +440,8 @@ async def push_pr(period: int = 30, groupdates: List[str] | str = None):
         
         # 并发执行所有批次（总超时保护）
         tasks = [send_batch(batch_num, batch_data) for batch_num, batch_data in batches]
-        total_timeout = config["timeout"] * len(batches) / max_concurrent + 60  # 总超时 = 单批超时 × 批次数 / 并发数 + 缓冲时间
+        throttle_time = (len(batches) - 1) * batch_interval if batch_interval > 0 else 0  # 节流等待总时长
+        total_timeout = config["timeout"] * len(batches) / max_concurrent + throttle_time + 60  # 总超时 = 单批超时 × 批次数 / 并发数 + 节流等待 + 缓冲时间
         try:
             results = await asyncio.wait_for(
                 asyncio.gather(*tasks, return_exceptions=True),
