@@ -1375,12 +1375,12 @@ class DbManager:
     
 
     async def call_stored_procedure(
-        self, 
-        procedure_name: str, 
+        self,
+        procedure_name: str,
         params_list: List[List[Any]] = None, 
         use_transaction: Optional[bool] = None,
         max_concurrent: int = 1,
-        wait_timeout: float = 15.0,
+        wait_timeout: Optional[float] = None,
         use_queue: bool = None,
         use_distributed_lock: bool = False
     ) -> Dict[str, Any]:
@@ -1392,7 +1392,7 @@ class DbManager:
             params_list: 存储过程参数列表，每个元素是一个参数列表（可选，默认[[]]）
             use_transaction: 是否使用事务（可选，默认使用实例配置的use_transaction）
             max_concurrent: 最大并发数，超过此限制将等待或拒绝（默认1）
-            wait_timeout: 等待并发资源的超时时间（默认15秒）
+            wait_timeout: 等待并发资源的超时时间（默认取分布式锁配置 DEFAULT_WAIT_TIMEOUT，即60秒）
             use_queue: 是否使用队列执行（默认None，表示高风险存储过程自动使用队列）
             use_distributed_lock: 是否使用分布式锁（默认False）
             
@@ -1404,6 +1404,12 @@ class DbManager:
         """
         if params_list is None:
             params_list = [[]]
+        
+        # wait_timeout 未显式传入时从分布式锁全局配置读取，保证锁获取等待预算
+        # 与 DISTRIBUTED_LOCK_TIMEOUT（默认200s）匹配，覆盖存储过程最坏重试耗时
+        if wait_timeout is None:
+            from apps.common.utils.distributed_lock import get_distributed_lock_config
+            wait_timeout = get_distributed_lock_config()['wait_timeout']
         
         # 判断是否使用队列
         if use_queue is None:
@@ -1446,21 +1452,34 @@ class DbManager:
             from apps.common.utils.distributed_lock import DistributedLock
             
             lock_key = f"{procedure_name}:{self.connection_name}"
-            lock = DistributedLock(lock_key, timeout=30)
+            # 锁超时从全局配置读取（DISTRIBUTED_LOCK_TIMEOUT），需覆盖存储过程最坏重试耗时
+            lock = DistributedLock(lock_key)
             
-            async with lock.lock(max_wait=wait_timeout) as acquired:
-                if not acquired:
-                    raise DbManagerError(
-                        f"无法获取分布式锁: {lock_key}，等待超时 {wait_timeout} 秒"
+            # 获取锁失败属于瞬态故障，进行有限次指数退避重试，避免并发竞争时直接判失败
+            lock_max_retries = 3
+            lock_retry_base_delay = 1.0
+            for lock_attempt in range(lock_max_retries + 1):
+                async with lock.lock(max_wait=wait_timeout) as acquired:
+                    if acquired:
+                        logger.debug(
+                            "存储过程调用",
+                            f"{procedure_name}@{self.connection_name}",
+                            "使用分布式锁执行"
+                        )
+                        return await _execute_with_lock()
+                
+                if lock_attempt < lock_max_retries:
+                    retry_delay = lock_retry_base_delay * (2 ** lock_attempt)
+                    logger.warning(
+                        "存储过程调用",
+                        f"{procedure_name}@{self.connection_name}",
+                        f"获取分布式锁失败（第{lock_attempt + 1}次），将在 {retry_delay:.1f} 秒后重试"
                     )
-                
-                logger.debug(
-                    "存储过程调用",
-                    f"{procedure_name}@{self.connection_name}",
-                    "使用分布式锁执行"
-                )
-                
-                return await _execute_with_lock()
+                    await asyncio.sleep(retry_delay)
+            
+            raise DbManagerError(
+                f"无法获取分布式锁: {lock_key}，等待超时 {wait_timeout} 秒，已重试 {lock_max_retries} 次"
+            )
         
         # 不使用分布式锁，直接执行
         return await _execute_with_lock()

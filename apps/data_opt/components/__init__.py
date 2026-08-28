@@ -2527,6 +2527,46 @@ def async_error_handler(operation_name):
 
 
 
+# 进程内回写预排队信号量（按账套粒度，容量1）
+# 背景：批量事件（如PL下达）并发回写时，同进程内多个任务会同时spin在Redis分布式锁上，
+# 后到者会耗尽锁等待预算（wait_timeout）而超时失败。此信号量在锁获取之前增加一层
+# 进程内排队，让同一账套同一时间只有一个任务真正去抢锁，其余任务在信号量上排队，
+# 锁释放后立即补位，不再因竞争超时。
+# 注意：信号量仅作用于进程内；跨进程（多worker）互斥仍由分布式锁 + 等待预算兜底，
+# 与 db_manager 中存储过程执行队列（锁获取之后）职责互补：一个控"抢锁"，一个控"执行"。
+# 排队等待正常耗时较短（前序任务锁释放后立即补位），此超时仅为兜底安全阀，
+# 防止前序任务异常挂起（如 Redis/DB 卡死）时后续同账套任务无限阻塞。
+_RELEASE_PRESEM_QUEUE_TIMEOUT = 300.0
+_release_presems: Dict[str, asyncio.Semaphore] = {}
+
+
+def _get_release_presem(key: str) -> asyncio.Semaphore:
+    """按账套获取回写预排队信号量（懒加载，跨实例共享）"""
+    sem = _release_presems.get(key)
+    if sem is None:
+        sem = asyncio.Semaphore(1)
+        _release_presems[key] = sem
+    return sem
+
+
+@asynccontextmanager
+async def _acquire_release_presem(key: str, timeout: float = _RELEASE_PRESEM_QUEUE_TIMEOUT):
+    """带排队超时兜底地获取回写预排队信号量，排队超时抛出 TimeoutError，避免无限阻塞"""
+    sem = _get_release_presem(key)
+    try:
+        await asyncio.wait_for(sem.acquire(), timeout=timeout)
+    except asyncio.TimeoutError:
+        raise TimeoutError(
+            f"等待回写预排队信号量超时（{timeout:.0f}秒），键：{key}，"
+            "请检查是否有任务异常挂起或回写链路阻塞"
+        ) from None
+    try:
+        yield
+    finally:
+        sem.release()
+
+
+
 class EventResultPoster:
 
     def __init__(self, db_name: str=MYAPS_MAIN_DB):
@@ -2570,12 +2610,13 @@ class EventResultPoster:
         
         logger.update("PL状态", f"目标状态{to_status}，MO单号{native_plno} -> {mono}", 1)
         
-        response_json: MultiDbResult = await call_dbprocdure(
-            db_names=self.db_name,
-            procedure_name="SupplyConvertMOByE2A",
-            params_list=[[native_plno, mono, to_status, str(_id or ""), str(_entryid or ""), memo[:255]]],
-            use_distributed_lock=True
-        )
+        async with _get_release_presem(f"release:{self.db_name}"):
+            response_json: MultiDbResult = await call_dbprocdure(
+                db_names=self.db_name,
+                procedure_name="SupplyConvertMOByE2A",
+                params_list=[[native_plno, mono, to_status, str(_id or ""), str(_entryid or ""), memo[:255]]],
+                use_distributed_lock=True
+            )
         
         logger.info(f"更新PL状态响应：成功")
 
@@ -2613,14 +2654,15 @@ class EventResultPoster:
             'Memo': memo[:255],
         }
         
-        response_json: MultiDbResult = await db_update_by_index(
-            db_names=self.db_name,
-            model_or_tablename="t_supply",
-            index_dict={"SupplyNo": native_plno},
-            new_values_dict=patch_data,
-            not_found_behavior="skip",
-            use_distributed_lock=True
-        )
+        async with _acquire_release_presem(f"release:{self.db_name}"):
+            response_json: MultiDbResult = await db_update_by_index(
+                db_names=self.db_name,
+                model_or_tablename="t_supply",
+                index_dict={"SupplyNo": native_plno},
+                new_values_dict=patch_data,
+                not_found_behavior="skip",
+                use_distributed_lock=True
+            )
         
         await self._collector.add_result(ExecutionResult(
             success=False,

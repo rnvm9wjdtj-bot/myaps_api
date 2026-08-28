@@ -165,10 +165,10 @@ def get_distributed_lock_config() -> Dict[str, Any]:
         - wait_timeout: 默认等待超时时间（秒）
     
     环境变量：
-        DISTRIBUTED_LOCK_TIMEOUT: 锁超时时间，默认30，范围[5, 300]
+        DISTRIBUTED_LOCK_TIMEOUT: 锁超时时间，默认200，范围[5, 300]
         DISTRIBUTED_LOCK_RETRY_INTERVAL: 重试间隔，默认0.1，范围[0.01, 1.0]
         DEFAULT_MAX_CONCURRENT: 最大并发数，默认1，范围[1, 10]
-        DEFAULT_WAIT_TIMEOUT: 等待超时，默认15.0，范围[5.0, 60.0]
+        DEFAULT_WAIT_TIMEOUT: 等待超时，默认60.0，范围[5.0, 60.0]
     
     使用示例：
         config = get_distributed_lock_config()
@@ -182,7 +182,7 @@ def get_distributed_lock_config() -> Dict[str, Any]:
         'timeout': validate_int_param(
             value=os.getenv("DISTRIBUTED_LOCK_TIMEOUT"),
             param_name="DISTRIBUTED_LOCK_TIMEOUT",
-            default=30,
+            default=200,
             min_value=5,
             max_value=300
         ),
@@ -203,7 +203,7 @@ def get_distributed_lock_config() -> Dict[str, Any]:
         'wait_timeout': validate_float_param(
             value=os.getenv("DEFAULT_WAIT_TIMEOUT"),
             param_name="DEFAULT_WAIT_TIMEOUT",
-            default=15.0,
+            default=60.0,
             min_value=5.0,
             max_value=60.0
         )

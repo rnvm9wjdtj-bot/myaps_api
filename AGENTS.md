@@ -114,10 +114,10 @@ result = await db_manager.call_stored_procedure(
 
 ### 配置参数
 ```bash
-DISTRIBUTED_LOCK_TIMEOUT=30           # 锁超时时间（秒），范围[5, 300]
-DISTRIBUTED_LOCK_RETRY_INTERVAL=0.1   # 锁获取重试间隔（秒），范围[0.01, 1.0]
-DEFAULT_MAX_CONCURRENT=1              # 默认最大并发数，范围[1, 10]
-DEFAULT_WAIT_TIMEOUT=15.0             # 默认等待超时时间（秒），范围[5.0, 60.0]
+DISTRIBUTED_LOCK_TIMEOUT=200         # 锁超时时间（秒），默认200，范围[5, 300]，需覆盖存储过程最坏重试耗时
+DISTRIBUTED_LOCK_RETRY_INTERVAL=0.1  # 锁获取重试间隔（秒），默认0.1，范围[0.01, 1.0]
+DEFAULT_MAX_CONCURRENT=1             # 默认最大并发数，范围[1, 10]
+DEFAULT_WAIT_TIMEOUT=60              # 默认等待超时时间（秒），默认60，范围[5.0, 60.0]
 ```
 
 ### 降级策略
