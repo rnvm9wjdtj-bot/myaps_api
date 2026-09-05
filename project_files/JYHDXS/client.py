@@ -18,6 +18,7 @@ from .._base import (
 )
 
 
+
 #################################################################################
 # ⬇️对象及项目参数
 #################################################################################
@@ -555,10 +556,6 @@ async def batch_handle_pl_status_a2e(event_data_list: List[Dict], _erp: EventRes
         data = None
         try:
             supplymo_detaildata = await _aps.get_supplymo_detaildata(supplyno=supplyno)
-            if not supplymo_detaildata:
-                CLIENT_LOGGER.fail("获取工单详情", supplyno, "get_supplymo_detaildata 返回 None，可能是缓存未命中或数据尚未提交")
-                await _erp.mo_release_failed(native_plno=supplyno, msg=f"获取工单详情失败: 数据不存在或尚未提交", push_data=data, msg_from='ERP')
-                return
 
             dt_start = supplymo_detaildata.get('dt_ordstart')
             dt_end = supplymo_detaildata.get('dt_ordend')

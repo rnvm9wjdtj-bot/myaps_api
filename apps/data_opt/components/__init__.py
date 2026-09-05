@@ -1284,17 +1284,31 @@ class _ProductionDataCache:
 
 
 
+# 业务标识参数候选：调用方多以关键字传参（如 supplyno=），需从中提取用于失败日志定位
+_APS_BUSINESS_KEY_CANDIDATES = (
+    "supplyno", "demandno", "supplynos", "materialno", "materialnos", "vendorno", "db_name",
+)
+
+
 def async_aps_error_handler(operation_name: str):
     def decorator(func):
         async def wrapper(self, *args, **kwargs):
-            target_obj = args[0] if args else "未知"
+            # 尝试获取操作对象（优先位置参数，其次常见业务键关键字，最后兜底"未知"）
+            if args:
+                target_obj = args[0]
+            else:
+                target_obj = next(
+                    (kwargs[k] for k in _APS_BUSINESS_KEY_CANDIDATES if k in kwargs),
+                    "未知"
+                )
             try:
                 return await func(self, *args, **kwargs)
             except Exception as e:
-                logger.fail(operation_name, target_obj, f"{operation_name}时发生错误：{e}")
+                logger.fail(operation_name, target_obj, f"发生错误：{e}")
                 raise
         return wrapper
     return decorator
+
 
 
 
@@ -1929,7 +1943,8 @@ class ApsPayloadSponsor:
                 self._production_cache._cache[CacheItem.SUPPLY_MO.value][supplyno] = mo_data
                 return mo_data
             else:
-                logger.fail("获取工单计划单详情", supplyno, f"API返回错误: {supply_response_json.message}")
+                # 失败由 @async_aps_error_handler 统一记录（含 supplyno 与 API 原因），此处不重复记录
+                raise Exception(f"[{supplyno}] API返回错误: {supply_response_json.message}")
 
 
     @classmethod
