@@ -16,6 +16,7 @@ class ResourceMonitor:
         self._last_cleanup = time.time()
         self._running = False
         self._monitor_thread = None
+        self._alert_state = {}  # 告警状态去重: {alert_key: bool}，True表示当前处于告警中
         
         # 从settings.py加载阈值
         from core.settings import MONITOR_THRESHOLDS, RESOURCE_CLEANUP_CONFIG
@@ -180,9 +181,21 @@ class ResourceMonitor:
                     else:
                         logger.debug(f"资源使用: CPU={usage.get('cpu', 0)}%, 内存={usage['memory']['rss']:.2f}MB, 线程={usage['threads']}")
                 
-                # 处理告警
+                # 处理告警（状态变化去重：仅在正常→超阈值记录告警，超阈值→正常记录恢复）
+                current_alert_keys = set()
                 for alert in alerts:
-                    logger.warning(f"资源告警: {alert}")
+                    # 提取告警类别作为去重key（去掉具体数值），如 "Memory usage"
+                    alert_key = alert.split('(')[0].strip()
+                    current_alert_keys.add(alert_key)
+                    if not self._alert_state.get(alert_key, False):
+                        logger.warning(f"资源告警: {alert}")
+                        self._alert_state[alert_key] = True
+                
+                # 记录恢复的告警（之前告警现在已回到正常范围）
+                for alert_key in list(self._alert_state.keys()):
+                    if self._alert_state[alert_key] and alert_key not in current_alert_keys:
+                        logger.info(f"资源告警恢复: {alert_key} 已回到正常范围")
+                        self._alert_state[alert_key] = False
                 
                 # 检查是否需要进行资源清理
                 current_time = time.time()
