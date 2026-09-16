@@ -25,6 +25,11 @@ from .._base import (
 #################################################################################
 # ⬇️轻流
 #################################################################################
+# 从配置文件读取各业务模块的appKey
+_qingflow_config = PROJECT_JSON_FILE.get("qingflow", {})
+_qingflow_app_keys = _qingflow_config.get("app_keys", {})
+
+
 class MaterialPullModel(AcceptMaterial):
     """
     物料数据清洗模型（无锡西门子燃气轮机租户专属）
@@ -64,9 +69,10 @@ class MaterialPullModel(AcceptMaterial):
         values = cleaned_values
         return values
 
-# 通过工厂方法创建配置好的物料数据源
+# 通过工厂方法创建配置好的物料数据源（appKey从配置文件读取，configure内校验）
 QingflowMaterial = QingflowSource.configure(
     pydantic_model=MaterialPullModel,
+    app_key=_qingflow_app_keys.get("material"),
     class_name="QingflowMaterial",
 )
 

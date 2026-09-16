@@ -48,9 +48,14 @@ class QingflowConfig:
             "base_url": "...",
             "ws_id": "...",
             "ws_secret": "...",
-            "app_key": "...",
+            "app_keys": {
+                "material": "...",
+                "bom": "...",
+                "workcenter": "...",
+                "wcmold": "..."
+            },
             "access_token": "...",
-            "_auth_at_": "2026-08-11 09:00:00"
+            "_auth_at_": "..."
         }
     }
     """
@@ -64,7 +69,7 @@ class QingflowConfig:
         self.base_url = cache_qf.get("base_url")
         self.ws_id = cache_qf.get("ws_id")
         self.ws_secret = cache_qf.get("ws_secret")
-        self.app_key = cache_qf.get("app_key")
+        self.app_keys = cache_qf.get("app_keys", {})
         self.token_expire_seconds = cache_qf.get("token_expire_seconds", 7200)
         self.max_page_size = min(cache_qf.get("max_page_size", 100), 100)
 
@@ -97,10 +102,11 @@ class QingflowConnection(ExternalBaseConnection):
         self.config = config
         self.base_url = self.config.base_url
         self.cache_file = self.config.cache_file
-        self.credential_keys = ("ws_id", "ws_secret", "app_key", "access_token", globalconst.StaticString.AUTH_AT.value)
+        self.credential_keys = ("ws_id", "ws_secret", "app_keys", "access_token", globalconst.StaticString.AUTH_AT.value)
         cache_qf = self.cache_file.get("qingflow", {})
+        _defaults = {"app_keys": {}}
         for key in self.credential_keys:
-            setattr(self, key, cache_qf.get(key, ""))
+            setattr(self, key, cache_qf.get(key, _defaults.get(key, "")))
         self._auth_lock = asyncio.Lock()
 
 
@@ -263,7 +269,7 @@ class QingflowConnection(ExternalBaseConnection):
 
     async def fetch_app_data(
         self,
-        app_key: str = None,
+        app_key: str,
         page_size: int = None,
         page_num: int = 1,
         sorts: list = None,
@@ -276,7 +282,7 @@ class QingflowConnection(ExternalBaseConnection):
         获取轻流应用单页数据
 
         Args:
-            app_key: 应用ID，默认使用配置中的app_key
+            app_key: 应用ID（必传），不同业务模块对应不同appKey
             page_size: 每页数据条数，默认使用配置中的max_page_size
             page_num: 起始页码
             sorts: 排序条件列表 [{"queId": int, "isAscend": bool}]
@@ -288,7 +294,8 @@ class QingflowConnection(ExternalBaseConnection):
         Returns:
             完整的API响应数据
         """
-        app_key = app_key or self.config.app_key
+        if not app_key:
+            raise ValueError("app_key不能为空，请从config.app_keys中获取对应业务模块的appKey")
         page_size = page_size or self.config.max_page_size
         endpoint = f"/openApi/app/{app_key}/apply/filter"
 
@@ -308,7 +315,7 @@ class QingflowConnection(ExternalBaseConnection):
 
     async def fetch_all_app_data(
         self,
-        app_key: str = None,
+        app_key: str,
         page_size: int = None,
         sorts: list = None,
         queries: list = None,
@@ -320,12 +327,14 @@ class QingflowConnection(ExternalBaseConnection):
         获取轻流应用全部数据（自动翻页）
 
         Args:
-            同fetch_app_data
+            app_key: 应用ID（必传），不同业务模块对应不同appKey
+            同fetch_app_data其余参数
 
         Returns:
             所有页的数据列表（result数组，每项含answers和applyBaseInfo）
         """
-        app_key = app_key or self.config.app_key
+        if not app_key:
+            raise ValueError("app_key不能为空，请从config.app_keys中获取对应业务模块的appKey")
         page_size = page_size or self.config.max_page_size
         all_results = []
         current_page = 1
@@ -436,7 +445,7 @@ class QingflowSource(BaseSource):
     配置参数：
         pydantic_model: 数据清洗模型，继承自 AcceptMaterial/AcceptSupply 等，
                         其 @model_validator(mode="before") 直接接收轻流原始字段
-        app_key: 可选，覆盖默认应用ID（不同工作表可能在不同应用下）
+        app_key: 应用ID（必传），不同业务模块对应不同appKey，可从租户配置qingflow.app_keys获取
         queries: 可选，默认筛选条件
         sorts: 可选，默认排序条件
         user_id: 可选，默认userId
@@ -465,7 +474,7 @@ class QingflowSource(BaseSource):
 
         Args:
             pydantic_model: 数据清洗Pydantic模型，其 model_validator 直接接收轻流原始字段
-            app_key: 可选，应用ID
+            app_key: 应用ID（必传），可从租户配置qingflow.app_keys获取对应业务模块的appKey
             queries: 可选，默认筛选条件
             sorts: 可选，默认排序条件
             user_id: 可选，默认userId
@@ -478,11 +487,14 @@ class QingflowSource(BaseSource):
         使用示例：
             QingflowMaterial = QingflowSource.configure(
                 pydantic_model=MaterialPullModel,
+                app_key="your_app_key",
                 class_name="QingflowMaterial",
             )
             conn.register_source(QingflowMaterial)
             data = await QingflowMaterial.query_batch()
         """
+        if not app_key:
+            raise ValueError("app_key不能为空，请在configure(app_key=...)中传入，可从租户配置qingflow.app_keys获取对应业务模块的appKey")
         new_cls = type(
             class_name or f"QingflowSource_{pydantic_model.__name__}",
             (cls,),
@@ -519,20 +531,22 @@ class QingflowSource(BaseSource):
             sorts: 排序条件，默认使用类配置的 _DEFAULT_SORTS
             user_id: 可选userId
             scope: 数据范围
-            app_key: 应用ID，默认使用类配置或连接配置
+            app_key: 应用ID，默认使用类配置的 _APP_KEY（configure时绑定）
 
         Returns:
             ExternalDataSet 包装的数据
         """
         assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
         assert cls._PULL_PYDANTIC_MODEL, "未配置 pydantic_model 数据模型"
+        app_key = app_key or cls._APP_KEY
+        if not app_key:
+            raise ValueError("app_key不能为空，请在configure(app_key=...)中指定或调用时传入")
         await cls._CONNECTION.auth()
 
         queries = queries if queries is not None else cls._DEFAULT_QUERIES
         sorts = sorts if sorts is not None else cls._DEFAULT_SORTS
         user_id = user_id if user_id is not None else cls._DEFAULT_USER_ID
         scope = scope if scope is not None else cls._DEFAULT_SCOPE
-        app_key = app_key or cls._APP_KEY
 
         raw_results = await cls._CONNECTION.fetch_all_app_data(
             app_key=app_key,
