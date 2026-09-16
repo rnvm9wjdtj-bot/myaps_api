@@ -67,6 +67,7 @@ class AcceptMaterial(BaseModel):
     grday: int = Field(..., ge=0, description="收货质检（天）", example=1)
     abc: gc.AbcEnum = Field(..., example="A", description="ABC分类")
     unit: str = Field(..., description='单位', example="PCS")
+    warehouse: str = Field(None, description='仓库', example="原料仓")
     price: Decimal = Field(0, description="价格", ge=0, example=100.50)
     groupno: str = Field("", description="型号", example="G001")
     type: gc.EfEnum = Field(... if MYAPS_VERSION == 'P' else None, example="E", description="物料类型")

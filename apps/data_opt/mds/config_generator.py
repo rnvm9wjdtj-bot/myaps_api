@@ -307,6 +307,7 @@ _PAGE_COLUMNS_CONFIG = {
         {"field": "grday", "title": "质检期"},
         {"field": "abc", "title": "ABC"},
         {"field": "unit", "title": "单位"},
+        {"field": "warehouse", "title": "仓库"},
         {"field": "price", "title": "价格"},
         {"field": "groupno", "title": "型号"},
         {"field": "type", "title": "类型"},

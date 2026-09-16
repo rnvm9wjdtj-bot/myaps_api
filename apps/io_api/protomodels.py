@@ -517,6 +517,7 @@ class ProtoMaterial(TortoiseBaseModel):
     grday = fields.IntField(source_field='GRDay', description='质检期')  # Field name made lowercase.
     abc = fields.CharField(source_field='ABC', max_length=8, blank=True, null=True, description='ABC分类')  # Field name made lowercase.
     unit = fields.CharField(source_field='Unit', max_length=8, blank=True, null=True, description='单位')  # Field name made lowercase.
+    warehouse = fields.CharField(source_field='Warehouse', max_length=32, blank=True, null=True, description='仓库')  # Field name made lowercase.
     price = fields.DecimalField(source_field='Price', max_digits=10, decimal_places=2, blank=True, null=True, description='价格')  # Field name made lowercase.
     groupno = fields.CharField(source_field='GroupNo', max_length=32, blank=True, null=True, description='型号')  # Field name made lowercase.
     type = fields.CharField(source_field='Type', max_length=1, blank=True, null=True, description='类型')  # Field name made lowercase.
@@ -705,6 +706,8 @@ class ProtoOrderwc(TortoiseBaseModel):
     offsetsec = fields.IntField(source_field='OffSetSec', blank=True, null=True)  # Field name made lowercase.
     memo = fields.CharField(source_field='MEMO', max_length=255, blank=True, null=True)  # Field name made lowercase.
     sys_stamp = fields.DatetimeField(source_field='Sys_Stamp')  # Field name made lowercase.
+    apiex_firstpush = fields.DatetimeField(source_field='ApiEx_FirstPush', blank=True, null=True, description='首次对外推送')  # Field name made lowercase.
+    apiex_lastpush = fields.DatetimeField(source_field='ApiEx_LastPush', blank=True, null=True, description='最近对外推送')  # Field name made lowercase.
 
     class Meta:
         abstract = True
