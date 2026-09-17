@@ -17,18 +17,22 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from pydantic import BaseModel as PydanticModel
 import uuid
 
 
 from globalobjects import logger as log_config, ProjectDefaultValues as pdv, StaticString as ce
 from dataclasses import dataclass, field
-from core.settings import THIS_BASE_URL, MYAPS_MAIN_DB, MYAPS_DB_SET
+from core.settings import THIS_BASE_URL, MYAPS_MAIN_DB, MYAPS_DB_SET, TIMEZONE_NAME
 from apps.io_api.utils.db_operation import db_exec_sql, db_query, db_query_cursor, db_update_by_index, db_delete, db_bupsert, call_dbprocdure, DbResult, MultiDbResult
 from apps.io_api.models import TBatchLog 
 
 
+
+# 业务时区（来自系统配置 TIMEZONE，默认 Asia/Shanghai），用于本地时间 ↔ UTC 转换
+_BUSINESS_TIMEZONE = ZoneInfo(TIMEZONE_NAME)
 
 logger = log_config.get_logger(__name__)
 
@@ -2410,18 +2414,20 @@ class ApsPayloadSponsor:
                 "mo_qty": 去重后的 supplyno 数量
             }
         """
-        # 参数默认值：未指定时间则默认当日整点区间
+        # 参数默认值：未指定时间则默认当日整点区间（业务本地时间 Asia/Shanghai）
         today = datetime.now().date()
         if start_time is None:
             start_time = datetime.combine(today, datetime.min.time())
         if end_time is None:
             end_time = datetime.combine(today, datetime.max.time())
 
-        # 变更判定：Sys_Stamp（系统时间戳）落在 [start_time, end_time] 区间，
+        # 变更判定：Sys_Stamp（系统时间戳，会话时区为 UTC）落在 [start_time, end_time] 区间，
         # 且 Sys_Stamp > ApiEx_LastPush（变更晚于上次推送），即存在未推送的变更。
-        # 首次推送后 ApiEx_LastPush 即有值（=ApiEx_FirstPush），故无需 IS NULL 分支。
-        start_str = start_time.strftime("%Y-%m-%d %H:%M:%S")
-        end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
+        # 传入时间为业务本地时间（TIMEZONE 配置），需转 UTC 后拼 SQL，避免时区偏差。
+        start_utc = start_time.replace(tzinfo=_BUSINESS_TIMEZONE).astimezone(timezone.utc).replace(tzinfo=None)
+        end_utc = end_time.replace(tzinfo=_BUSINESS_TIMEZONE).astimezone(timezone.utc).replace(tzinfo=None)
+        start_str = start_utc.strftime("%Y-%m-%d %H:%M:%S")
+        end_str = end_utc.strftime("%Y-%m-%d %H:%M:%S")
         filter_string = (
             f"`Sys_Stamp` >= '{start_str}' AND `Sys_Stamp` <= '{end_str}' "
             f"AND `Sys_Stamp` > `ApiEx_LastPush`"
@@ -2472,9 +2478,11 @@ class ApsPayloadSponsor:
         # 导致下一轮增量查询误命中。显式 SET Sys_Stamp = Sys_Stamp 保留原值可绕过该机制。
         if update_lastpush and supplynos:
             try:
-                now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                # 写入 UTC 时间，与 Sys_Stamp（TIMESTAMP, 会话 UTC）一致，
+                # 保证 Sys_Stamp > ApiEx_LastPush 比较不产生 8 小时偏差
+                now_utc_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
                 update_sql = (
-                    f"UPDATE `t_orderwc` SET `ApiEx_LastPush` = '{now_str}', `Sys_Stamp` = `Sys_Stamp` "
+                    f"UPDATE `t_orderwc` SET `ApiEx_LastPush` = '{now_utc_str}', `Sys_Stamp` = `Sys_Stamp` "
                     f"WHERE {filter_string}"
                 )
                 await db_exec_sql(
@@ -2756,6 +2764,9 @@ class EventResultPoster:
         """
         mono = mono or native_plno
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # 存储过程写入 ApiEx_FirstPush 用 UTC 时间，与 Sys_Stamp（TIMESTAMP, 会话 UTC）语义一致，
+        # 避免 8 小时偏差；memo 仍使用业务本地时间（Asia/Shanghai）便于阅读
+        now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         memo = f"{now} {ce.RELEASE_SUCCESS.value} {msg_from}: '{msg}' @ {native_plno}"
         
         logger.update("PL状态", f"目标状态{to_status}，MO单号{native_plno} -> {mono}", 1)
@@ -2764,7 +2775,7 @@ class EventResultPoster:
             response_json: MultiDbResult = await call_dbprocdure(
                 db_names=self.db_name,
                 procedure_name="SupplyConvertMOByE2A",
-                params_list=[[native_plno, mono, to_status, str(_id or ""), str(_entryid or ""), memo[:255]]],
+                params_list=[[native_plno, mono, to_status, str(_id or ""), str(_entryid or ""), memo[:255], now_utc]],
                 use_distributed_lock=True
             )
         
