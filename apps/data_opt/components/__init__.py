@@ -2381,6 +2381,141 @@ class ApsPayloadSponsor:
         return agg_df.to_dict(orient="records")
 
 
+    @classmethod
+    @async_aps_error_handler("筛选有过变更的orderwc排期")
+    async def get_changed_orderwc(
+        cls,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        db_name: str = MYAPS_MAIN_DB,
+        with_detail: bool = False,
+        update_lastpush: bool = True,
+    ) -> Dict[str, Any]:
+        """筛选出对外推送后有变更的orderwc排期
+
+        Args:
+            start_time: 开始时间，筛选此时间之后的变更；为空默认当日 00:00:00
+            end_time: 结束时间，筛选此时间之前的变更；为空默认当日 23:59:59
+            db_name: 账套名称，默认 MYAPS_MAIN_DB
+            with_detail: 是否返回工单详情；False 时 data 为 supplyno 列表，
+                         True 时通过 get_mo_by_supplyno 并发查询，data 为工单详情列表
+            update_lastpush: 是否将命中的 orderwc 的 ApiEx_LastPush 更新为当前时间；
+                             默认 True，设 False 可纯查询不写库
+
+        Returns:
+            dict: {
+                "time_range": [start_time, end_time] 实际筛选区间,
+                "data": with_detail=False 时为 supplyno 列表（去重，保持首次出现顺序）,
+                        with_detail=True 时为工单详情列表,
+                "mo_qty": 去重后的 supplyno 数量
+            }
+        """
+        # 参数默认值：未指定时间则默认当日整点区间
+        today = datetime.now().date()
+        if start_time is None:
+            start_time = datetime.combine(today, datetime.min.time())
+        if end_time is None:
+            end_time = datetime.combine(today, datetime.max.time())
+
+        # 变更判定：Sys_Stamp（系统时间戳）落在 [start_time, end_time] 区间，
+        # 且 Sys_Stamp > ApiEx_LastPush（变更晚于上次推送），即存在未推送的变更。
+        # 首次推送后 ApiEx_LastPush 即有值（=ApiEx_FirstPush），故无需 IS NULL 分支。
+        start_str = start_time.strftime("%Y-%m-%d %H:%M:%S")
+        end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
+        filter_string = (
+            f"`Sys_Stamp` >= '{start_str}' AND `Sys_Stamp` <= '{end_str}' "
+            f"AND `Sys_Stamp` > `ApiEx_LastPush`"
+        )
+
+        # 游标分页查询，避免 LIMIT/OFFSET 幻读问题
+        page_size = 1000
+        all_data: List[Dict[str, Any]] = []
+        cursor_values = None
+        max_rounds = 1000
+        order_fields = [("SupplyNo", "ASC")]
+
+        for round_idx in range(1, max_rounds + 1):
+            result: DbResult = await db_query_cursor(
+                db_name=db_name,
+                model_or_tablename="t_orderwc",
+                select="`SupplyNo`",
+                filter_string=filter_string,
+                order_fields=order_fields,
+                page_size=page_size,
+                cursor_values=cursor_values,
+            )
+            if not result.data:
+                break
+            all_data.extend(result.data)
+            cursor_values = result.meta.get("cursor_values")
+            has_more = result.meta.get("has_more", False)
+            if not has_more:
+                break
+        else:
+            logger.warning(
+                "筛选有过变更的orderwc排期",
+                db_name,
+                f"已达游标分页上限 {max_rounds} 轮（{max_rounds * page_size} 行），数据可能不完整",
+            )
+
+        # 去重并保持首次出现顺序
+        seen = set()
+        supplynos: List[str] = []
+        for row in all_data:
+            sno = row.get("supplyno")
+            if sno and sno not in seen:
+                seen.add(sno)
+                supplynos.append(sno)
+
+        # 将命中的 orderwc 的 ApiEx_LastPush 更新为当前时间
+        # 注意：Sys_Stamp 具有 ON UPDATE CURRENT_TIMESTAMP 属性，UPDATE 会自动将其对齐到当前时间，
+        # 导致下一轮增量查询误命中。显式 SET Sys_Stamp = Sys_Stamp 保留原值可绕过该机制。
+        if update_lastpush and supplynos:
+            try:
+                now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                update_sql = (
+                    f"UPDATE `t_orderwc` SET `ApiEx_LastPush` = '{now_str}', `Sys_Stamp` = `Sys_Stamp` "
+                    f"WHERE {filter_string}"
+                )
+                await db_exec_sql(
+                    db_name=db_name,
+                    sql=update_sql,
+                    description="更新命中orderwc的ApiEx_LastPush",
+                )
+            except Exception as e:
+                logger.fail("更新命中orderwc的ApiEx_LastPush", db_name, str(e))
+
+        if with_detail:
+            # 并发查询每个 supplyno 的工单详情，信号量控制并发避免压垮数据库
+            semaphore = asyncio.Semaphore(10)
+
+            async def fetch_detail(sno: str) -> Optional[Dict[str, Any]]:
+                async with semaphore:
+                    try:
+                        res: DbResult = await cls.get_mo_by_supplyno(
+                            supplyno=sno,
+                            db_name=db_name,
+                        )
+                        if res.success and res.data:
+                            return res.data[0]
+                        return None
+                    except Exception as e:
+                        logger.fail("查询变更工单详情", sno, str(e))
+                        return None
+
+            detail_results = await asyncio.gather(*(fetch_detail(sno) for sno in supplynos))
+            data = [r for r in detail_results if r is not None]
+        else:
+            data = supplynos
+
+        return {
+            "time_range": [start_time, end_time],
+            "data": data,
+            "mo_qty": len(supplynos),
+        }
+
+
+
 
 @dataclass
 class BatchSummary:
