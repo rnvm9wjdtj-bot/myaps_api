@@ -17,7 +17,7 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from pydantic import BaseModel as PydanticModel
 import uuid
@@ -2394,44 +2394,63 @@ class ApsPayloadSponsor:
         db_name: str = MYAPS_MAIN_DB,
         with_detail: bool = False,
         update_lastpush: bool = True,
+        log_preview_count: int = 50,
     ) -> Dict[str, Any]:
         """筛选出对外推送后有变更的orderwc排期
 
         Args:
-            start_time: 开始时间，筛选此时间之后的变更；为空默认当日 00:00:00
-            end_time: 结束时间，筛选此时间之前的变更；为空默认当日 23:59:59
+            start_time: 开始时间，筛选此时间之后的变更；为空且 end_time 也为空时
+                        不限时间窗口，直接查所有未推送变更（Sys_Stamp > ApiEx_LastPush）
+            end_time: 结束时间，筛选此时间之前的变更；为空且 start_time 也为空时
+                      不限时间窗口；仅其中一个为空时默认当日边界
             db_name: 账套名称，默认 MYAPS_MAIN_DB
             with_detail: 是否返回工单详情；False 时 data 为 supplyno 列表，
                          True 时通过 get_mo_by_supplyno 并发查询，data 为工单详情列表
             update_lastpush: 是否将命中的 orderwc 的 ApiEx_LastPush 更新为当前时间；
                              默认 True，设 False 可纯查询不写库
+            log_preview_count: 日志中最多展示的变更单号数量，超出仅提示总数；默认 50
 
         Returns:
             dict: {
-                "time_range": [start_time, end_time] 实际筛选区间,
+                "time_range": 实际筛选区间；无时间窗口时为 [None, snapshot]
+                               （下界不限，上界为本次查询快照时刻 snapshot），
+                               指定时间窗口时为 [start_time, end_time],
+                "mo_qty": 去重后的 supplyno 数量，
                 "data": with_detail=False 时为 supplyno 列表（去重，保持首次出现顺序）,
                         with_detail=True 时为工单详情列表,
-                "mo_qty": 去重后的 supplyno 数量
             }
         """
-        # 参数默认值：未指定时间则默认当日整点区间（业务本地时间 Asia/Shanghai）
-        today = datetime.now().date()
-        if start_time is None:
-            start_time = datetime.combine(today, datetime.min.time())
-        if end_time is None:
-            end_time = datetime.combine(today, datetime.max.time())
+        # 变更判定核心：Sys_Stamp > ApiEx_LastPush（变更晚于上次推送），即存在未推送的变更。
+        # Sys_Stamp / ApiEx_LastPush 均为 TIMESTAMP（会话 UTC），同行横向比对无时区偏差。
+        if start_time is None and end_time is None:
+            # 不限时间窗口：直接查所有存在未推送变更的行
+            unbounded = True
+            filter_string = "`Sys_Stamp` > `ApiEx_LastPush`"
+        else:
+            unbounded = False
+            # 限定时间窗口：Sys_Stamp 落在 [start_time, end_time] 区间
+            # 传入时间为业务本地时间（TIMEZONE 配置），Sys_Stamp 为 TIMESTAMP，
+            # MySQL 按会话时区解释字符串，会话时区与 TIMEZONE 一致，直接拼 SQL 即可
+            today = datetime.now().date()
+            if start_time is None:
+                start_time = datetime.combine(today, datetime.min.time())
+            if end_time is None:
+                end_time = datetime.combine(today, datetime.max.time())
+            start_str = start_time.strftime("%Y-%m-%d %H:%M:%S")
+            end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
+            filter_string = (
+                f"`Sys_Stamp` >= '{start_str}' AND `Sys_Stamp` <= '{end_str}' "
+                f"AND `Sys_Stamp` > `ApiEx_LastPush`"
+            )
 
-        # 变更判定：Sys_Stamp（系统时间戳，会话时区为 UTC）落在 [start_time, end_time] 区间，
-        # 且 Sys_Stamp > ApiEx_LastPush（变更晚于上次推送），即存在未推送的变更。
-        # 传入时间为业务本地时间（TIMEZONE 配置），需转 UTC 后拼 SQL，避免时区偏差。
-        start_utc = start_time.replace(tzinfo=_BUSINESS_TIMEZONE).astimezone(timezone.utc).replace(tzinfo=None)
-        end_utc = end_time.replace(tzinfo=_BUSINESS_TIMEZONE).astimezone(timezone.utc).replace(tzinfo=None)
-        start_str = start_utc.strftime("%Y-%m-%d %H:%M:%S")
-        end_str = end_utc.strftime("%Y-%m-%d %H:%M:%S")
-        filter_string = (
-            f"`Sys_Stamp` >= '{start_str}' AND `Sys_Stamp` <= '{end_str}' "
-            f"AND `Sys_Stamp` > `ApiEx_LastPush`"
-        )
+        # 固定查询快照时刻作为 Sys_Stamp 上界。
+        # 查询与 UPDATE 复用同一 filter_string，但分别在两个时刻求值：
+        # 无上界时，查询结束后、UPDATE 前产生的新变更行也满足 WHERE，会被一并置为已推送，
+        # 却不在本次返回的 supplynos 中，导致这些变更永久漏推（竞态漏推）。
+        # 加上界后两次求值范围一致，快照之后的新变更留待下一轮处理。
+        snapshot_dt = datetime.now(_BUSINESS_TIMEZONE).replace(tzinfo=None)
+        snapshot_str = snapshot_dt.strftime("%Y-%m-%d %H:%M:%S")
+        filter_string += f" AND `Sys_Stamp` <= '{snapshot_str}'"
 
         # 游标分页查询，避免 LIMIT/OFFSET 幻读问题
         page_size = 1000
@@ -2478,11 +2497,11 @@ class ApsPayloadSponsor:
         # 导致下一轮增量查询误命中。显式 SET Sys_Stamp = Sys_Stamp 保留原值可绕过该机制。
         if update_lastpush and supplynos:
             try:
-                # 写入 UTC 时间，与 Sys_Stamp（TIMESTAMP, 会话 UTC）一致，
-                # 保证 Sys_Stamp > ApiEx_LastPush 比较不产生 8 小时偏差
-                now_utc_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                # 写入业务本地时间（TIMEZONE 配置），TIMESTAMP 列由 MySQL 按会话时区统一处理，
+                # 与 Sys_Stamp 的 CURRENT_TIMESTAMP 行为一致，避免时区偏差
+                now_local_str = datetime.now(_BUSINESS_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S")
                 update_sql = (
-                    f"UPDATE `t_orderwc` SET `ApiEx_LastPush` = '{now_utc_str}', `Sys_Stamp` = `Sys_Stamp` "
+                    f"UPDATE `t_orderwc` SET `ApiEx_LastPush` = '{now_local_str}', `Sys_Stamp` = `Sys_Stamp` "
                     f"WHERE {filter_string}"
                 )
                 await db_exec_sql(
@@ -2516,10 +2535,20 @@ class ApsPayloadSponsor:
         else:
             data = supplynos
 
+        mo_qty = len(supplynos)
+        if mo_qty == 0:
+            logger.info("筛选有过变更的orderwc排期", db_name, "无变更数据")
+        else:
+            preview = ",".join(supplynos[:log_preview_count])
+            if mo_qty > log_preview_count:
+                preview += f" 等共{mo_qty}条"
+            logger.success("筛选有过变更的orderwc排期", db_name, f"共{mo_qty}条变更", preview)
+
         return {
-            "time_range": [start_time, end_time],
+            # 无时间窗口：下界不限、上界为本次快照时刻；指定窗口：实际生效边界
+            "time_range": [None, snapshot_dt] if unbounded else [start_time, end_time],
+            "mo_qty": mo_qty,
             "data": data,
-            "mo_qty": len(supplynos),
         }
 
 
@@ -2763,11 +2792,10 @@ class EventResultPoster:
         🅰 _entryid: 外部系统返回的 MO 详情 ID（对于某些有表头的ERP，具体的 MO 是存在于子表中的，有单独的行记录id
         """
         mono = mono or native_plno
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        # 存储过程写入 ApiEx_FirstPush 用 UTC 时间，与 Sys_Stamp（TIMESTAMP, 会话 UTC）语义一致，
-        # 避免 8 小时偏差；memo 仍使用业务本地时间（Asia/Shanghai）便于阅读
-        now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        memo = f"{now} {ce.RELEASE_SUCCESS.value} {msg_from}: '{msg}' @ {native_plno}"
+        # 业务本地时间（TIMEZONE 配置），TIMESTAMP 列由 MySQL 按会话时区统一处理，
+        # 与 Sys_Stamp 的 CURRENT_TIMESTAMP 一致；memo 也用此时间便于阅读
+        now_local = datetime.now(_BUSINESS_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S")
+        memo = f"{now_local} {ce.RELEASE_SUCCESS.value} {msg_from}: '{msg}' @ {native_plno}"
         
         logger.update("PL状态", f"目标状态{to_status}，MO单号{native_plno} -> {mono}", 1)
         
@@ -2775,7 +2803,7 @@ class EventResultPoster:
             response_json: MultiDbResult = await call_dbprocdure(
                 db_names=self.db_name,
                 procedure_name="SupplyConvertMOByE2A",
-                params_list=[[native_plno, mono, to_status, str(_id or ""), str(_entryid or ""), memo[:255], now_utc]],
+                params_list=[[native_plno, mono, to_status, str(_id or ""), str(_entryid or ""), memo[:255], now_local]],
                 use_distributed_lock=True
             )
         

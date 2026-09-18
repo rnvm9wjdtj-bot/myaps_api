@@ -3,8 +3,8 @@
 from re import A
 import requests, uuid, asyncio, json, httpx
 import pandas as pd
-from datetime import datetime, timedelta
-from typing import List, Dict, Union, Optional
+from datetime import datetime
+from typing import List, Dict, Union
 
 from contextlib import asynccontextmanager
 from fastapi import status
@@ -515,50 +515,13 @@ async def task_confirm_workreport():
 
 
 CHANGED_ORDERWC_POLL_INTERVAL_MINUTES = 10
-CHANGED_ORDERWC_LOG_PREVIEW_COUNT = 50  # 日志中最多展示的变更单号数量，超出仅提示总数
-_last_changed_orderwc_run_time: Optional[datetime] = None
 
 
 @cron_task(minute=f"*/{CHANGED_ORDERWC_POLL_INTERVAL_MINUTES}", description="查询有变化的工单号")
 async def task_push_changed_orderwc():
-    global _last_changed_orderwc_run_time
-    try:
-        now = datetime.now()
-        is_full_sync = now.hour in (6, 12, 18) and now.minute == 0
-
-        if is_full_sync:
-            # 6/12/18点全量兜底：取当日0:00至当前，防止增量累积漂移
-            start_time = datetime.combine(now.date(), datetime.min.time())
-            mode = "全量"
-        else:
-            # 增量：自上次执行时间起；未记录则默认1小时前（覆盖重启断档）
-            start_time = _last_changed_orderwc_run_time or (now - timedelta(hours=1))
-            mode = "增量"
-
-        result = await ApsPayloadSponsor.get_changed_orderwc(
-            start_time=start_time,
-            end_time=now,
-            db_name=MYAPS_MAIN_DB,
-        )
-        _last_changed_orderwc_run_time = now
-
-        supplynos = result["data"]
-        mo_qty = result["mo_qty"]
-        time_range = f"{start_time:%H:%M:%S}~{now:%H:%M:%S}"
-        if not supplynos:
-            CLIENT_LOGGER.info("查询有变化的工单号", f"{mode}无变更数据", time_range)
-            return
-        # 只展示前若干个单号，避免全量窗口下单号过多触发统一日志 message 上限（65535）被截断
-        preview = ",".join(supplynos[:CHANGED_ORDERWC_LOG_PREVIEW_COUNT])
-        if mo_qty > CHANGED_ORDERWC_LOG_PREVIEW_COUNT:
-            preview += f" 等共{mo_qty}条"
-        CLIENT_LOGGER.success(
-            "查询有变化的工单号",
-            f"{mode}共{mo_qty}条变更",
-            f"{time_range} | {preview}",
-        )
-    except Exception as e:
-        CLIENT_LOGGER.fail("查询有变化的工单号", "执行失败", str(e))
+    # 不传时间：横向比对 Sys_Stamp > ApiEx_LastPush，直接查所有未推送变更
+    # 日志已集成在 get_changed_orderwc 内部
+    await ApsPayloadSponsor.get_changed_orderwc(db_name=MYAPS_MAIN_DB)
 
 
 @cron_task(hour=23, minute=59, description="推送周要货计划到SRM")  # 每天23:59执行一次，需须在23:55拉取库存和确认报工之后
