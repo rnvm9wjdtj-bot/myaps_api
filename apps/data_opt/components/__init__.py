@@ -2497,11 +2497,10 @@ class ApsPayloadSponsor:
         # 导致下一轮增量查询误命中。显式 SET Sys_Stamp = Sys_Stamp 保留原值可绕过该机制。
         if update_lastpush and supplynos:
             try:
-                # 写入业务本地时间（TIMEZONE 配置），TIMESTAMP 列由 MySQL 按会话时区统一处理，
-                # 与 Sys_Stamp 的 CURRENT_TIMESTAMP 行为一致，避免时区偏差
-                now_local_str = datetime.now(_BUSINESS_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S")
+                # 用 MySQL NOW() 写入，按会话时区取值，与 Sys_Stamp 的 CURRENT_TIMESTAMP 完全一致，
+                # 无需 Python 传时间字面值，杜绝连接池会话时区不一致导致的 8 小时偏差
                 update_sql = (
-                    f"UPDATE `t_orderwc` SET `ApiEx_LastPush` = '{now_local_str}', `Sys_Stamp` = `Sys_Stamp` "
+                    f"UPDATE `t_orderwc` SET `ApiEx_LastPush` = NOW(), `Sys_Stamp` = `Sys_Stamp` "
                     f"WHERE {filter_string}"
                 )
                 await db_exec_sql(
