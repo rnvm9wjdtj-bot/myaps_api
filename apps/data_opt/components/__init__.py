@@ -2492,7 +2492,7 @@ class ApsPayloadSponsor:
                 seen.add(sno)
                 supplynos.append(sno)
 
-        # 将命中的 orderwc 的 ApiEx_LastPush 更新为当前时间
+        # 将命中的 orderwc 及其对应 supply 的 ApiEx_LastPush 更新为当前时间
         # 注意：Sys_Stamp 具有 ON UPDATE CURRENT_TIMESTAMP 属性，UPDATE 会自动将其对齐到当前时间，
         # 导致下一轮增量查询误命中。显式 SET Sys_Stamp = Sys_Stamp 保留原值可绕过该机制。
         if update_lastpush and supplynos:
@@ -2507,6 +2507,17 @@ class ApsPayloadSponsor:
                     db_name=db_name,
                     sql=update_sql,
                     description="更新命中orderwc的ApiEx_LastPush",
+                )
+                # 同步更新 t_supply 对应 SupplyNo 的 ApiEx_LastPush
+                supplyno_list = ",".join(f"'{s}'" for s in supplynos)
+                update_supply_sql = (
+                    f"UPDATE `t_supply` SET `ApiEx_LastPush` = NOW(), `Sys_Stamp` = `Sys_Stamp` "
+                    f"WHERE `SupplyNo` IN ({supplyno_list})"
+                )
+                await db_exec_sql(
+                    db_name=db_name,
+                    sql=update_supply_sql,
+                    description="更新命中supply的ApiEx_LastPush",
                 )
             except Exception as e:
                 logger.fail("更新命中orderwc的ApiEx_LastPush", db_name, str(e))
@@ -2802,7 +2813,7 @@ class EventResultPoster:
             response_json: MultiDbResult = await call_dbprocdure(
                 db_names=self.db_name,
                 procedure_name="SupplyConvertMOByE2A",
-                params_list=[[native_plno, mono, to_status, str(_id or ""), str(_entryid or ""), memo[:255], now_local]],
+                params_list=[[native_plno, mono, to_status, str(_id or ""), str(_entryid or ""), memo[:255], None]],
                 use_distributed_lock=True
             )
         

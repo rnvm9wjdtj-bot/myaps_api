@@ -1134,6 +1134,8 @@ class ProtoSupply(TortoiseBaseModel):
     sys_date = fields.DatetimeField(source_field='Sys_Date', blank=True, null=True)
     sys_user = fields.CharField(source_field='Sys_User', max_length=32, blank=True, null=True)
     sys_stamp = fields.DatetimeField(source_field='Sys_Stamp', blank=True, null=True)
+    apiex_firstpush = fields.DatetimeField(source_field='ApiEx_FirstPush', blank=True, null=True, description='首次对外推送')  # Field name made lowercase.
+    apiex_lastpush = fields.DatetimeField(source_field='ApiEx_LastPush', blank=True, null=True, description='最近对外推送')  # Field name made lowercase.
 
     class Meta:
         abstract = True
