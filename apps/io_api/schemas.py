@@ -11,6 +11,9 @@ from globalobjects import globalconst as gc, ProjectDefaultValues as pdv
 
 
 
+PL_OR_MO = (gc.OrderStatusEnum.PL.value, gc.OrderStatusEnum.MO.value)
+
+
 def _normalize_enum_fields(values: Dict[str, Any], field_enum_map: Dict[str, type]) -> None:
     for field_name, enum_cls in field_enum_map.items():
         val = values.get(field_name)
@@ -710,10 +713,13 @@ class AcceptSupply(BaseModel):
             except:
                 values["avail_qty"] = None
         
+        if values.get('type') in PL_OR_MO:
+            values['type'] = gc.SupplyTypeEnum.PL.value   # 如果外部输入的是MO则强制转换为PL，以适配后续工单推送相关逻辑
+            values['status'] = gc.OrderStatusEnum.CRE.value
         if values.get('itemno') in gc.NONE_AND_EMPTY:
             values['itemno'] = pdv.ITEMNO
         if values.get("status") not in gc.OrderStatusEnum.__members__:
-            values["status"] = gc.OrderStatusEnum.CRE
+            values["status"] = gc.OrderStatusEnum.CRE.value
         if values.get("create_date") in gc.NONE_AND_EMPTY:
             values["create_date"] = now
         if values.get("avail_end_date") in gc.NONE_AND_EMPTY:
@@ -725,9 +731,9 @@ class AcceptSupply(BaseModel):
         # if values.get("category") == gc.ProductCategoryEnum.MTO and values.get("vendorno") in gc.NONE_AND_EMPTY:
         #     raise ValueError("MTO订单号vendorno不能为空")
         if values.get("vendorno"):
-            values["category"] = gc.ProductCategoryEnum.MTO
+            values["category"] = gc.ProductCategoryEnum.MTO.value
         else:
-            values["category"] = gc.ProductCategoryEnum.MTS
+            values["category"] = gc.ProductCategoryEnum.MTS.value
         return values
 
     @model_validator(mode='after')
