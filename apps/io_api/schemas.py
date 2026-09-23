@@ -11,7 +11,7 @@ from globalobjects import globalconst as gc, ProjectDefaultValues as pdv
 
 
 
-PL_OR_MO = (gc.OrderStatusEnum.PL.value, gc.OrderStatusEnum.MO.value)
+PL_OR_MO = (gc.SupplyTypeEnum.PL.value, gc.SupplyTypeEnum.MO.value)
 
 
 def _normalize_enum_fields(values: Dict[str, Any], field_enum_map: Dict[str, type]) -> None:
