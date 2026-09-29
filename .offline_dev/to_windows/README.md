@@ -16,6 +16,7 @@ to_windows/
 │   ├── download_packages.sh    # Linux/macOS 下载脚本
 │   ├── download_packages.ps1   # Windows PowerShell 下载脚本
 │   ├── install_packages.bat    # 内网安装脚本
+│   ├── merge_tools.bat         # 大文件分片合并脚本
 │   └── setup_env.bat           # 环境配置向导
 ├── gui/                   # 可视化工具
 │   ├── __init__.py
@@ -24,12 +25,15 @@ to_windows/
 │   └── run_gui.sh         # Linux/macOS 启动脚本
 ├── tools/                 # Windows 工具软件
 │   ├── _python-3.12.2.exe           # Python 安装包
-│   ├── postgresql-18.3-3-windows-x64.exe  # PostgreSQL
+│   ├── postgresql-18.3-3-windows-x64.exe.part1  # PostgreSQL 分片1 (199M)
+│   ├── postgresql-18.3-3-windows-x64.exe.part2  # PostgreSQL 分片2 (157M)
 │   ├── Redis-x64-5.0.14.1.msi       # Redis
 │   ├── dbeaver-ce-26.1.0-windows-x86_64.exe  # DBeaver 数据库工具
-│   ├── SQLark_V3.10_Win_x86_64.zip  # SQLark 数据库工具
+│   ├── SQLark_V3.10_Win_x86_64.zip.part1  # SQLark 分片1 (199M)
+│   ├── SQLark_V3.10_Win_x86_64.zip.part2  # SQLark 分片2 (170M)
 │   ├── npp.8.9.6.4.Installer.exe    # Notepad++ 编辑器
-│   └── Trae_CN-Setup-x64.exe        # Trae 编辑器
+│   ├── Trae_CN-Setup-x64.exe.part1  # Trae 分片1 (199M)
+│   └── Trae_CN-Setup-x64.exe.part2  # Trae 分片2 (91M)
 └── packages/              # Python 离线依赖包
     ├── *.whl              # Windows wheel 包
     ├── *.tar.gz           # 源码包
@@ -60,15 +64,21 @@ to_windows/
 
 ### 第二阶段：内网 Windows 部署
 
-1. **安装 Python**：
-   运行 `tools/_python-3.12.2.exe`
+1. **合并大文件分片**：
+   ```cmd
+   scripts\merge_tools.bat
+   ```
+   将超过200M上传限制而拆分的工具包（PostgreSQL、SQLark、Trae）重新合并还原。
 
-2. **安装依赖**：
+2. **安装 Python**：
+   运行 `tools\_python-3.12.2.exe`
+
+3. **安装依赖**：
    ```cmd
    scripts\install_packages.bat
    ```
 
-3. **配置环境**：
+4. **配置环境**：
    ```cmd
    scripts\setup_env.bat
    ```
