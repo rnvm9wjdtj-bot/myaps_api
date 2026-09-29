@@ -16,7 +16,7 @@ to_windows/
 │   ├── download_packages.sh    # Linux/macOS 下载脚本
 │   ├── download_packages.ps1   # Windows PowerShell 下载脚本
 │   ├── install_packages.bat    # 内网安装脚本
-│   ├── merge_tools.bat         # 大文件分片合并脚本
+
 │   └── setup_env.bat           # 环境配置向导
 ├── gui/                   # 可视化工具
 │   ├── __init__.py
@@ -31,6 +31,7 @@ to_windows/
 │   ├── dbeaver-ce-26.1.0-windows-x86_64.exe  # DBeaver 数据库工具
 │   ├── SQLark_V3.10_Win_x86_64.zip.part1  # SQLark 分片1 (199M)
 │   ├── SQLark_V3.10_Win_x86_64.zip.part2  # SQLark 分片2 (170M)
+│   ├── merge_tools.bat              # 大文件分片合并脚本
 │   ├── npp.8.9.6.4.Installer.exe    # Notepad++ 编辑器
 │   ├── Trae_CN-Setup-x64.exe.part1  # Trae 分片1 (199M)
 │   └── Trae_CN-Setup-x64.exe.part2  # Trae 分片2 (91M)
@@ -66,7 +67,7 @@ to_windows/
 
 1. **合并大文件分片**：
    ```cmd
-   scripts\merge_tools.bat
+   tools\merge_tools.bat
    ```
    将超过200M上传限制而拆分的工具包（PostgreSQL、SQLark、Trae）重新合并还原。
 
