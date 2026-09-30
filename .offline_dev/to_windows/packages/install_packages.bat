@@ -6,7 +6,7 @@ REM ============================================================
 REM 用途: 在内网Windows机器上离线安装所有Python依赖
 REM 前置条件:
 REM   1. Python 3.11+ 已安装并配置环境变量
-REM   2. 已将 offline_packages 目录复制到本机
+REM   2. 已将本脚本与离线依赖包一起复制到本机同一目录
 REM   3. 已将 requirements.txt 复制到项目根目录
 REM ============================================================
 
@@ -20,7 +20,7 @@ cd /d "%PROJECT_ROOT%"
 set "VENV_DIR=%PROJECT_ROOT%\venv"
 set "VENV_PYTHON=%VENV_DIR%\Scripts\python.exe"
 set "VENV_PIP=%VENV_DIR%\Scripts\pip.exe"
-set "PACKAGES_DIR=%SCRIPT_DIR%..\packages"
+set "PACKAGES_DIR=%SCRIPT_DIR%"
 set "REQUIREMENTS_FILE=%PROJECT_ROOT%\requirements.txt"
 
 REM 颜色定义 (使用 ANSI 转义码)
@@ -58,7 +58,7 @@ echo %BLUE%[2/7] 检查离线包目录...%NC%
 if not exist "%PACKAGES_DIR%" (
     echo %RED%错误: 未找到离线包目录%NC%
     echo   预期路径: %PACKAGES_DIR%
-    echo %YELLOW%请将 offline_packages 目录复制到 scripts 同级目录%NC%
+    echo %YELLOW%请将离线依赖包放置到本脚本所在目录%NC%
     pause
     exit /b 1
 )
