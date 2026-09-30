@@ -5,7 +5,7 @@
 import asyncio
 import pandas as pd
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, ClassVar
 
 from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
 
@@ -41,6 +41,9 @@ class MaterialPullModel(AcceptMaterial):
     size: Optional[str] = Field(None)
     candelay: Optional[str] = Field(None)
     lotsize: Optional[str] = Field(None)
+
+    # 仅比对来源系统提供的字段（ClassVar 避免被 Pydantic 转为私有属性）
+    _compare_fields: ClassVar[set] = {"materialno", "description", "size", "candelay", "lotsize", "unit", "price", "groupno"}
 
     class Config:
         extra = 'allow'

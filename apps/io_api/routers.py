@@ -84,8 +84,13 @@ async def dispatch_to_staging(
     source_system: str = "API",
     dedup_strategy: DedupStrategyEnum = DedupStrategyEnum.OVERWRITE,
     update_mode: UpdateModeEnum = UpdateModeEnum.PARTIAL,
-    drop: Literal["all", "matched"] = None
+    drop: Literal["all", "matched"] = None,
+    compare_fields: Optional[set] = None
 ) -> dict:
+    if isinstance(compare_fields, str) and compare_fields.strip():
+        compare_fields = set(f.strip() for f in compare_fields.split(",") if f.strip())
+    elif not compare_fields:
+        compare_fields = None
     if not STAGING_MODULES_AVAILABLE:
         return {
             "success": 0,
@@ -141,7 +146,7 @@ async def dispatch_to_staging(
         
         strategy = DedupStrategy(dedup_strategy.value)
         processed_data, handled_data = await apply_dedup_strategy(
-            table_key, data_list, strategy, update_mode.value
+            table_key, data_list, strategy, update_mode.value, compare_fields
         )
         
         inserted_count = 0
@@ -453,6 +458,7 @@ async def post_material(
     source_system: str = Query("unknown", description="来源系统"),
     dedup_strategy: DedupStrategyEnum = Query(DedupStrategyEnum.OVERWRITE, description="去重策略"),
     update_mode: UpdateModeEnum = Query(UpdateModeEnum.PARTIAL, description="更新模式"),
+    compare_fields: str = Query(None, description="限定比对字段（逗号分隔），仅比对来源系统提供的字段"),
     ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
@@ -464,7 +470,8 @@ async def post_material(
             data=data,
             source_system=source_system,
             dedup_strategy=dedup_strategy,
-            update_mode=update_mode
+            update_mode=update_mode,
+            compare_fields=compare_fields
         )
         return map_staging_response_to_direct(staging_response)
     

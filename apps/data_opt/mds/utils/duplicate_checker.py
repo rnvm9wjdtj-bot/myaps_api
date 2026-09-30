@@ -17,7 +17,7 @@ INTERNAL_FIELDS = {'_staging_id', '_status', '_error_msg', '_createtime', '_upda
                    '_synced_time', '_retry_count', '_source_system'}
 
 
-def compare_content(existing_record, new_data: Dict, field_map: Dict = None, update_mode: str = "partial") -> Tuple[bool, str]:
+def compare_content(existing_record, new_data: Dict, field_map: Dict = None, update_mode: str = "partial", compare_fields: Optional[set] = None) -> Tuple[bool, str]:
     """
     比对已存在记录与新数据的内容是否一致
     
@@ -28,6 +28,7 @@ def compare_content(existing_record, new_data: Dict, field_map: Dict = None, upd
         update_mode: 更新模式
             - "partial": 部分更新，跳过new_data中不存在的字段（默认）
             - "full": 完整更新，所有字段都参与比对（不存在的字段视为None）
+        compare_fields: 限定比对字段集合，非 None 时仅比对这些字段
     
     Returns:
         (是否一致, 差异字段列表)
@@ -52,6 +53,11 @@ def compare_content(existing_record, new_data: Dict, field_map: Dict = None, upd
         for field_name in model_fields:
             # 跳过内部字段
             if field_name in INTERNAL_FIELDS:
+                continue
+            
+            # 限定比对字段范围（仅比对来源系统提供的字段，跳过校验填充的字段）
+            if compare_fields is not None and field_name not in compare_fields:
+                skip_count += 1
                 continue
             
             # 部分更新模式：跳过new_data中不存在的字段
@@ -412,7 +418,8 @@ async def apply_dedup_strategy(
     table_name: str,
     data_list: List[Dict[str, Any]],
     strategy: DedupStrategy = DedupStrategy.SKIP,
-    update_mode: str = "partial"
+    update_mode: str = "partial",
+    compare_fields: Optional[set] = None
 ) -> Tuple[List[Dict], List[Dict]]:
     """
     应用去重策略
@@ -424,6 +431,7 @@ async def apply_dedup_strategy(
         update_mode: 更新模式
             - "partial": 部分更新，跳过未传递的字段（默认）
             - "full": 完整更新，所有字段都参与比对
+        compare_fields: 限定比对字段集合，非 None 时仅比对这些字段
     
     Returns:
         (处理后的数据列表, 被处理的数据列表)
@@ -453,6 +461,9 @@ async def apply_dedup_strategy(
             })
     
     elif strategy == DedupStrategy.OVERWRITE:
+        # 内容相同跳过覆盖的计数（两处比对逻辑共用，需在使用前初始化）
+        skip_unchanged_count = 0
+        
         # 收集所有内部重复的主键
         internal_dup_pk_values = set(item["pk_value"] for item in result["duplicates"])
         
@@ -507,7 +518,7 @@ async def apply_dedup_strategy(
                 diff_info = ""
                 if existing_records:
                     for existing_record in existing_records:
-                        is_same, diff = compare_content(existing_record, new_data, update_mode=update_mode)
+                        is_same, diff = compare_content(existing_record, new_data, update_mode=update_mode, compare_fields=compare_fields)
                         if not is_same:
                             all_same = False
                             diff_info = diff
@@ -547,7 +558,6 @@ async def apply_dedup_strategy(
                 })
         
         # 处理缓冲表已存在的记录（添加内容比对）
-        skip_unchanged_count = 0
         for item in result["existing"]:
             pk_value = item["pk_value"]
             
@@ -579,7 +589,7 @@ async def apply_dedup_strategy(
             diff_info = ""
             if existing_records:
                 for existing_record in existing_records:
-                    is_same, diff = compare_content(existing_record, new_data, update_mode=update_mode)
+                    is_same, diff = compare_content(existing_record, new_data, update_mode=update_mode, compare_fields=compare_fields)
                     if not is_same:
                         all_same = False
                         diff_info = diff

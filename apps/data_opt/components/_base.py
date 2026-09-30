@@ -1816,6 +1816,8 @@ class ExternalDataSet:
         }
         # 仅这三个路由支持 drop 参数
         _DROP_SUPPORTED_TABLES = {"t_mat_wc", "t_mat_wc_bom", "t_mat_wc_mold"}
+        # 仅该路由支持 compare_fields 参数
+        _COMPARE_FIELDS_SUPPORTED_TABLES = {"t_material"}
 
         router_fn = _TABLE_ROUTER_MAP.get(to_dbtable)
         if router_fn:
@@ -1833,6 +1835,8 @@ class ExternalDataSet:
                 "dedup_strategy": DedupStrategyEnum(dedup_strategy),
                 "update_mode": UpdateModeEnum(update_mode),
             }
+            if to_dbtable in _COMPARE_FIELDS_SUPPORTED_TABLES:
+                kwargs["compare_fields"] = getattr(model, "_compare_fields", None)
             if drop is not None:
                 kwargs["drop"] = drop
             response = await router_fn(**kwargs)
