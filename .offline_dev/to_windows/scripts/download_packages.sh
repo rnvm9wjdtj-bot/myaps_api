@@ -98,6 +98,17 @@ download_packages() {
         --no-binary :all: \
         "${PIP_ARGS[@]}" 2>&1 | tee -a "${PACKAGES_DIR}/download.log"
 
+    # 递归补齐所有子依赖（--no-deps 只下载了顶层包，子依赖需要递归解析）
+    echo -e "\n${YELLOW}递归补齐子依赖（解析所有 whl 的 METADATA）...${NC}"
+    RESOLVE_SCRIPT="${SCRIPT_DIR}/resolve_deps.py"
+    if [[ -f "${RESOLVE_SCRIPT}" ]]; then
+        local resolve_index="${INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}"
+        python3 "${RESOLVE_SCRIPT}" "${PACKAGES_DIR}" "${REQUIREMENTS_FILE}" "" "${resolve_index}" 2>&1 | tee -a "${PACKAGES_DIR}/download.log"
+    else
+        echo -e "  ${YELLOW}警告: 未找到 resolve_deps.py，跳过子依赖补齐${NC}"
+        echo -e "  ${YELLOW}如安装时报缺失依赖，需手动下载补齐${NC}"
+    fi
+
     echo ""
 }
 
