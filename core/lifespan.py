@@ -611,18 +611,14 @@ async def lifespan(app):
     log_config.info("服务器已就绪")
     
     if TURNON_BINLOG_LISTENER:
-        if os.environ.get('GUNICORN_RUNNING') != 'true':
-            # 非 Gunicorn 环境（如 dev_run.bat 的 uvicorn 直启）直接启动
+        # 统一文件锁选主：Gunicorn 多 worker 与 uvicorn --workers 均只让一个 worker 启动监听器
+        is_gunicorn = os.environ.get('GUNICORN_RUNNING') == 'true'
+        worker_id = os.environ.get('GUNICORN_WORKER_ID', '?') if is_gunicorn else 'uvicorn'
+        if _try_acquire_binlog_lock():
             binlog_listener.start_monitoring()
-            log_config.info("MySQL Binlog监控已启动")
+            log_config.info(f"✅ Worker {worker_id}：通过文件锁获取权限，Binlog 监控已启动")
         else:
-            # Gunicorn 环境：使用文件锁确保只有一个 Worker 启动监听器
-            worker_id = os.environ.get('GUNICORN_WORKER_ID', '?')
-            if _try_acquire_binlog_lock():
-                binlog_listener.start_monitoring()
-                log_config.info(f"✅ Gunicorn Worker {worker_id}：通过文件锁获取权限，Binlog 监控已启动")
-            else:
-                log_config.info(f"ℹ️ Gunicorn Worker {worker_id}：Binlog 监控已在其他 Worker 中运行，跳过")
+            log_config.info(f"ℹ️ Worker {worker_id}：Binlog 监控已在其他 Worker 中运行，跳过")
     else:
         log_config.warning("⚠️ MySQL Binlog监控未启动")
     
@@ -631,18 +627,14 @@ async def lifespan(app):
         log_config.info("准备启动定时任务...")
         await asyncio.sleep(1)  # 减少等待时间
         
-        if os.environ.get('GUNICORN_RUNNING') != 'true':
-            # 非 Gunicorn 环境（如 dev_run.bat 的 uvicorn 直启）直接启动
+        # 统一文件锁选主：Gunicorn 多 worker 与 uvicorn --workers 均只让一个 worker 启动调度器
+        is_gunicorn = os.environ.get('GUNICORN_RUNNING') == 'true'
+        worker_id = os.environ.get('GUNICORN_WORKER_ID', '?') if is_gunicorn else 'uvicorn'
+        if _try_acquire_scheduler_lock():
             initialize_scheduler()
-            log_config.info("✅ 定时任务系统已启动")
+            log_config.info(f"✅ Worker {worker_id}：通过文件锁获取权限，定时任务已启动")
         else:
-            # Gunicorn 环境：使用文件锁确保只有一个 Worker 启动调度器
-            worker_id = os.environ.get('GUNICORN_WORKER_ID', '?')
-            if _try_acquire_scheduler_lock():
-                initialize_scheduler()
-                log_config.info(f"✅ Gunicorn Worker {worker_id}：通过文件锁获取权限，定时任务已启动")
-            else:
-                log_config.info(f"ℹ️ Gunicorn Worker {worker_id}：定时任务已在其他 Worker 中运行，跳过")
+            log_config.info(f"ℹ️ Worker {worker_id}：定时任务已在其他 Worker 中运行，跳过")
     else:
         log_config.warning("⚠️ 定时任务初始化被跳过，因为 TRUNON_SCHEDULER=false")
     
