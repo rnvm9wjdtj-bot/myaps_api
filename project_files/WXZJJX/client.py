@@ -13,13 +13,13 @@ from .._base import (
     TSupply, async_service_operation, batch_service_operation
 )
 
-from apps.data_opt.components.mino import MinoConnection, MinoMo, MinoOperation, MinoRoute
+from apps.data_opt.components.mino import MinoConnection, MinoMo, MinoOperation, MinoRoute, MinoWorkUnitType
 
 #################################################################################
 # ⬇️ 连接组件
 #################################################################################
 mino_conn = MinoConnection()
-mino_conn.register_source([MinoMo, MinoOperation])
+mino_conn.register_source([MinoMo, MinoOperation, MinoRoute, MinoWorkUnitType])
 
 
 
@@ -68,6 +68,12 @@ async def batch_handle_mat_wc_insert(event_data_list: list[dict], _erp: EventRes
     involved_itemnos = list({row['itemno'] for row in event_data_list if row['itemno']})
     operation_details = await ApsPayloadSponsor.extract_unique_matwcitem(itemnos=involved_itemnos)
     await MinoOperation.create_or_update(operation_details)
+
+
+@event_batch_handler(reminder=None)
+@batch_service_operation(module="事件处理")
+async def batch_handle_workcenter_insert(event_data_list: list[dict], _erp: EventResultPoster, description="工作中心新增"):
+    await MinoWorkUnitType.create_batch(data=event_data_list)
 
 
 

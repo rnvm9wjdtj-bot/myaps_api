@@ -153,7 +153,7 @@ class MinoConnection(ExternalBaseConnection):
         Returns:
             响应 JSON 数据
         """
-        headers = self.auth("GET", params=params)
+        headers = await self.auth("GET", params=params)
         async_session = await self._get_async_session()
         
         url = f"{self.base_url}{endpoint}"
@@ -177,7 +177,7 @@ class MinoConnection(ExternalBaseConnection):
         Returns:
             响应 JSON 数据
         """
-        headers = self.auth("POST", body=data)
+        headers = await self.auth("POST", body=data)
         async_session = await self._get_async_session()
         
         url = f"{self.base_url}{endpoint}"
@@ -201,7 +201,7 @@ class MinoConnection(ExternalBaseConnection):
         Returns:
             响应 JSON 数据
         """
-        headers = self.auth("PUT", body=data)
+        headers = await self.auth("PUT", body=data)
         async_session = await self._get_async_session()
         
         url = f"{self.base_url}{endpoint}"
@@ -225,7 +225,7 @@ class MinoConnection(ExternalBaseConnection):
         Returns:
             响应 JSON 数据
         """
-        headers = self.auth("DELETE", body=data)
+        headers = await self.auth("DELETE", body=data)
         async_session = await self._get_async_session()
         
         url = f"{self.base_url}{endpoint}"
@@ -280,14 +280,15 @@ class MinoOperation(BaseSource):
     _DOCUMENTATION_URL = "https://www.yuque.com/vqp0d0/liv2wo/cvwb787373hq3cni"
 
 
-    async def create_or_update(self, data: list[Dict[str, Any]], pydantic_model: Type[PydanticModel] = None) -> Dict[str, Any]:
+    @classmethod
+    async def create_or_update(cls, data: list[Dict[str, Any]], pydantic_model: Type[PydanticModel] = None) -> Dict[str, Any]:
         """
         创建或更新工序
         """
-        pydantic_model = pydantic_model or self._PUSH_PYDANTIC_MODEL
-        dto = [pydantic_model.model_validate(item) for item in data]
+        pydantic_model = pydantic_model or cls._PUSH_PYDANTIC_MODEL
+        dto = [pydantic_model.model_validate(item).model_dump(exclude_none=True) for item in data]
         payload = {"entity": dto}
-        return await self._CONNECTION._post(self._CREATE_ENDPOINT, data=payload)
+        return await cls._CONNECTION._post(cls._CREATE_ENDPOINT, data=payload)
 
 
 
@@ -341,7 +342,8 @@ class MinoRoute(BaseSource):
     _DOCUMENTATION_URL = "https://www.yuque.com/vqp0d0/liv2wo/vfybddzwami5n64c"
 
 
-    async def create(self, data: list[Dict[str, Any]], pydantic_model: Type[PydanticModel] = None) -> Dict[str, Any]:
+    @classmethod
+    async def create(cls, data: list[Dict[str, Any]], pydantic_model: Type[PydanticModel] = None) -> Dict[str, Any]:
         """
         创建工艺路线
         data: APS原生扁平工艺路线数据, 可直接传入事件数据列表
@@ -355,11 +357,92 @@ class MinoRoute(BaseSource):
         for route in grouped_route_data.values():
             route.sort(key=lambda r: r.get('sortno'))
 
-        pydantic_model = pydantic_model or self._PUSH_PYDANTIC_MODEL
-        dto = [pydantic_model.model_validate({"key": key, "route": route}) for key, route in grouped_route_data.items()]
+        pydantic_model = pydantic_model or cls._PUSH_PYDANTIC_MODEL
+        dto = [pydantic_model.model_validate({"key": key, "route": route}).model_dump(exclude_none=True) for key, route in grouped_route_data.items()]
         payload = dto
-        return await self._CONNECTION._post(self._CREATE_ENDPOINT, data=payload)
+        return await cls._CONNECTION._post(cls._CREATE_ENDPOINT, data=payload)
 
+
+
+
+class MinoWorkUnitTypePushModel(PydanticModel):
+    """作业单元类型，对应APS的Workcenter"""
+    workUnitTypeCode: str = Field()                                      # 作业单元类型编号，同时作作业单元编号，≤50
+    workUnitTypeName: str = Field()                                      # 作业单元类型名称，同时作作业单元名称，≤100
+    workshopCode: str = Field()                                          # 车间编号（作业单元所属车间）
+    standardCapacity: float = Field()                                    # 标准产能（小数位数受系统配置约束）
+    # factoryId: Optional[int] = Field(None)                               # 工厂id；系统开启集团化管理时必填
+    # standardHours: Optional[float] = Field(None)                         # 标准工时；有值时 timeUnit 必填
+    # timeUnit: Optional[str] = Field(None, enum=["DAY", "HOUR", "MINUTE", "SECOND"])   # 时间单位
+    # perHourPrice: Optional[float] = Field(None)                          # 单价/小时
+    # remark: Optional[str] = Field(None)                                  # 备注（类型与作业单元共用），≤200
+
+    class Config:
+        extra = 'allow'
+
+
+    @model_validator(mode="before")
+    @classmethod
+    def model_valid(cls, values: Dict[str, Any]):
+        cleaned_values = {}
+        cleaned_values['workUnitTypeCode'] = values.get('workcenter', '')
+        cleaned_values['workUnitTypeName'] = values.get('workcentername', '')
+        cleaned_values['workshopCode'] = values.get('location', '')
+        cleaned_values['standardCapacity'] = values.get('worker', 0)
+        # if values.get('plant') is not None:
+        #     cleaned_values['factoryId'] = values.get('factoryId')
+        # if values.get('standardHours') is not None:
+        #     cleaned_values['standardHours'] = values.get('standardHours')
+        # if values.get('timeUnit') is not None:
+        #     cleaned_values['timeUnit'] = values.get('timeUnit')
+        # if values.get('perHourPrice') is not None:
+        #     cleaned_values['perHourPrice'] = values.get('perHourPrice')
+        # if values.get('remark') is not None:
+        #     cleaned_values['remark'] = values.get('remark')
+        return cleaned_values
+
+
+
+class MinoWorkUnitType(BaseSource):
+    """
+    作业单元类型（外部对接）
+
+    传入作业单元类型数据，系统自动创建同编号同名称的作业单元并建立 1:1 关联。
+    整批事务：任一条校验失败则全批不入库；编号已存在则该条幂等跳过（reason 标注"编号已存在，跳过创建"）。
+    """
+    _CREATE_ENDPOINT = "/tmgc2-api/api-proxy/erp/workUnitType/addWorkUnitTypeAndWorkUnitBatchToExternal"
+    _DELETE_ENDPOINT = None
+    _APPROVE_ENDPOINT = None
+    _PUSH_PYDANTIC_MODEL = MinoWorkUnitTypePushModel
+    _DOCUMENTATION_URL = "https://www.yuque.com/vqp0d0/liv2wo/tet13guuc2c269gv"
+
+
+    @classmethod
+    async def create_batch(cls, data: list[Dict[str, Any]], pydantic_model: Type[PydanticModel] = None) -> Dict[str, Any]:
+        """
+        批量新增作业单元类型及作业单元
+
+        Args:
+            data: 作业单元类型数据列表，每个元素对应 addVos 一条
+            pydantic_model: 可选的自定义 Pydantic 模型
+
+        Returns:
+            响应 JSON：
+            - 成功：{success:true, data:{value:[{message,result,reason}, ...]}}，value 与 addVos 一一对应
+            - 失败：{success:false, errorMessage:"第N条[编号]：..."}，整批不入库
+
+        注意：
+            - siteCode 由配置 CACHE_MINO["$siteCode"] 自动注入，无需在 data 中传入
+
+            - 鉴权（sign/erptimestamp）由 MinoConnection._post 内置处理
+        """
+        pydantic_model = pydantic_model or cls._PUSH_PYDANTIC_MODEL
+        dto = [pydantic_model.model_validate(item).model_dump(exclude_none=True) for item in data]
+        payload = {
+            "siteCode": CACHE_MINO.get("$siteCode", ""),
+            "addVos": dto
+        }
+        return await cls._CONNECTION._post(cls._CREATE_ENDPOINT, data=payload)
 
 
 
