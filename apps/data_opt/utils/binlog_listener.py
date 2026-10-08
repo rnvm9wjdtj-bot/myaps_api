@@ -62,7 +62,7 @@ from pymysqlreplication.row_event import (
 )
 from pymysqlreplication.event import HeartbeatLogEvent
 
-from core.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_BINLOG_LISTENER, ENABLE_BINLOG_POSITION, BASE_DIR
+from core.settings import MYAPS_DB_HOST, MYAPS_DB_PORT, MYAPS_DB_USER, MYAPS_DB_PASSWORD, MYAPS_MAIN_DB, MYAPS_DBSET_LIST, TURNON_BINLOG_LISTENER, ENABLE_BINLOG_POSITION, BASE_DIR, BINLOG_TABLES
 
 from globalobjects import logger as log_config
 from globalobjects.reminder import remind_manager, RemindType
@@ -1407,6 +1407,22 @@ class MySQLBinlogListener:
             "slave_heartbeat": 30,  # MySQL主库每30秒发送心跳；心跳事件由主循环跳过，仅作为连接活性信号
         }
         
+        # 表+事件类型过滤：只拉取配置的表，入队前按事件类型二次过滤
+        table_event_map = BINLOG_TABLES
+        if table_event_map:
+            stream_config["only_tables"] = list(table_event_map.keys())
+            logger.info(f"binlog监听表+事件类型: {table_event_map}")
+            # 启动校验：配置的表+事件类型是否已注册对应 handler
+            for _tbl, _cfg_types in table_event_map.items():
+                _registered = set()
+                for _full_name, _handlers in self._table_filters.items():
+                    if _full_name.split('.')[-1] == _tbl:
+                        _registered.update(k for k, v in _handlers.items() if v)
+                _missing = set(_cfg_types) - _registered
+                if _missing:
+                    logger.warning(f"⚠️ binlog监听表 {_tbl} 配置了事件类型 {_missing} 但未注册对应 handler")
+        _event_type_map = {WriteRowsEvent: "insert", UpdateRowsEvent: "update", DeleteRowsEvent: "delete"}
+        
         # 尝试恢复上次的位置
         if ENABLE_BINLOG_POSITION and self._position_manager:
             saved_position = self._position_manager.load_position()
@@ -1460,6 +1476,14 @@ class MySQLBinlogListener:
                 # 心跳事件仅作为连接活性信号，跳过业务处理
                 if isinstance(binlogevent, HeartbeatLogEvent):
                     continue
+
+                # 表+事件类型入队前过滤：跳过未配置监听的表/事件类型，不占 pending 队列
+                if table_event_map:
+                    _evt_type = _event_type_map.get(type(binlogevent))
+                    if _evt_type:
+                        _tbl = getattr(binlogevent, 'table', None)
+                        if _tbl and _evt_type not in table_event_map.get(_tbl, []):
+                            continue
 
                 # ========== Simplified HA: 背压控制检测 ==========
                 self._event_count_since_check += 1

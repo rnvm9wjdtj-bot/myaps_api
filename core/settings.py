@@ -77,6 +77,29 @@ TIMEZONE_NAME = get_timezone_name(TIMEZONE)
 TURNON_BINLOG_LISTENER = os.getenv("TURNON_BINLOG_LISTENER", "False").lower().strip() == "true"
 # Binlog 位置管理器开关，默认关闭
 ENABLE_BINLOG_POSITION = os.getenv("ENABLE_BINLOG_POSITION", "False").lower().strip() == "true"
+# Binlog 监听表+事件类型配置（格式: t_supply:u,t_batchlog:i,t_mat_wc:i,t_workcenter:i）
+# u=update, i=insert, d=delete，多类型用+连接（如 t_supply:u+d）；未配置时使用内置默认表
+_DEFAULT_BINLOG_TABLES = {"t_supply": ["update"], "t_batchlog": ["insert"],
+                          "t_mat_wc": ["insert"], "t_workcenter": ["insert"]}
+_binlog_tables_raw = os.getenv("BINLOG_TABLES", "").strip()
+if _binlog_tables_raw:
+    _event_abbr = {"u": "update", "i": "insert", "d": "delete"}
+    _parsed_binlog_tables = {}
+    for _seg in _binlog_tables_raw.split(","):
+        _seg = _seg.strip()
+        if not _seg or ":" not in _seg:
+            continue
+        _table, _types_str = _seg.split(":", 1)
+        _types = [_event_abbr[_c.strip().lower()] for _c in _types_str.split("+") if _c.strip().lower() in _event_abbr]
+        if _table.strip() and _types:
+            _parsed_binlog_tables[_table.strip()] = _types
+    if _parsed_binlog_tables:
+        BINLOG_TABLES = _parsed_binlog_tables
+    else:
+        logger.warning(f"⚠️ BINLOG_TABLES 配置无法解析，已回退内置默认表: {_binlog_tables_raw}")
+        BINLOG_TABLES = dict(_DEFAULT_BINLOG_TABLES)
+else:
+    BINLOG_TABLES = dict(_DEFAULT_BINLOG_TABLES)
 # 定时任务开关，默认关闭
 TRUNON_SCHEDULER = os.getenv("TRUNON_SCHEDULER", "False").lower().strip() == "true"
 # 定时任务执行时间
