@@ -36,7 +36,7 @@ _AUTO_APPROVE_PR = True   # 自动审批请购单
 
 
 hacyxs_tplus_conn = YonyouTplusConnection()
-hacyxs_tplus_conn.register_source([TplusStock, TplusMo, TplusRs, TplusPr])
+hacyxs_tplus_conn.register_source(TplusStock, TplusMo, TplusRs, TplusPr)
 
 #################################################################################
 # ⬇️ 通知相关

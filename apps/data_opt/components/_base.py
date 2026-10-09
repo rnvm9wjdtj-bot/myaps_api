@@ -1338,14 +1338,12 @@ class ExternalBaseConnection(ABC):
         raise NotImplementedError("auth method not implemented")
 
 
-    def register_source(self, source):
+    def register_source(self, *sources):
         """
         注册数据源
-        source: 数据源对象或数据源 class 列表
+        sources: 一个或多个数据源对象/数据源 class
         """
-        if not isinstance(source, list):
-            source = [source]
-        for s in source:
+        for s in sources:
             s._CONNECTION = self
         return self
 
