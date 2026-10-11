@@ -13,13 +13,13 @@ from .._base import (
     TSupply, async_service_operation, batch_service_operation
 )
 
-from apps.data_opt.components.mino import MinoConnection, MinoMo, MinoOperation, MinoRoute, MinoWorkUnitType
+from apps.data_opt.components.mino_ime import ImeConnection, ImeMo, ImeOperation, ImeRoute, ImeWorkUnitType
 
 #################################################################################
 # ⬇️ 连接组件
 #################################################################################
-mino_conn = MinoConnection()
-mino_conn.register_source([MinoMo, MinoOperation, MinoRoute, MinoWorkUnitType])
+ime_conn = ImeConnection()
+ime_conn.register_source(ImeMo, ImeOperation, ImeRoute, ImeWorkUnitType)
 
 
 
@@ -53,7 +53,7 @@ _REMAIN_NATIVE_SUPPLYNO = False
 @event_batch_handler(reminder=None)
 @batch_service_operation(module="事件处理")
 async def batch_handle_pl_status_a2e(event_data_list: list[dict], _erp: EventResultPoster, description="下达工序任务单"):
-    await MinoMo.create_batch(
+    await ImeMo.create_batch(
         event_data_list=event_data_list,
         _erp=_erp,
         production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.BOM],
@@ -64,16 +64,16 @@ async def batch_handle_pl_status_a2e(event_data_list: list[dict], _erp: EventRes
 @event_batch_handler(reminder=None)
 @batch_service_operation(module="事件处理")
 async def batch_handle_mat_wc_insert(event_data_list: list[dict], _erp: EventResultPoster, description="工艺路线新增"):
-    await MinoRoute.create(data=event_data_list)
     involved_itemnos = list({row['itemno'] for row in event_data_list if row['itemno']})
     operation_details = await ApsPayloadSponsor.extract_unique_matwcitem(itemnos=involved_itemnos)
-    await MinoOperation.create_or_update(operation_details)
+    await ImeOperation.create_or_update(operation_details)
+    await ImeRoute.create(data=event_data_list)
 
 
 @event_batch_handler(reminder=None)
 @batch_service_operation(module="事件处理")
 async def batch_handle_workcenter_insert(event_data_list: list[dict], _erp: EventResultPoster, description="工作中心新增"):
-    await MinoWorkUnitType.create_batch(data=event_data_list)
+    await ImeWorkUnitType.create_batch(data=event_data_list)
 
 
 

@@ -27,16 +27,16 @@ from ._base import (
 
 
 
-CACHE_MINO = PROJECT_JSON_FILE.get("mino", {})
+CACHE_IME = PROJECT_JSON_FILE.get("ime", {})
 
 
-class MinoConfig:
+class ImeConfig:
     """
     明珞 MES 配置类
     
     配置示例（project_files/{PROJECT_DIR}/{PROJECT_JSON}.json）：
     {
-        "mino": {
+        "ime": {
             "base_url": "https://betacore.imefuture.com",
             "access_key_secret": "your_secret_key",
             "max_qps": 50
@@ -50,16 +50,16 @@ class MinoConfig:
             from globalobjects.json_manager import JSONManager
             self.cache_file = JSONManager(cache_file)
         
-        cache_mino = self.cache_file.get("mino", {})
-        self.base_url = cache_mino.get("base_url", "https://beta-tmgc2-gateway.imefuture.com")  # 默认测试地址，生产地址https://tmgc2-gateway.imefuture.com
-        self.access_key_secret = cache_mino.get("access_key_secret", "")
-        self.max_qps = cache_mino.get("max_qps", 50)
+        cache_ime = self.cache_file.get("ime", {})
+        self.base_url = cache_ime.get("base_url", "https://beta-tmgc2-gateway.imefuture.com")  # 默认测试地址，生产地址https://tmgc2-gateway.imefuture.com
+        self.access_key_secret = cache_ime.get("access_key_secret", "")
+        self.max_qps = cache_ime.get("max_qps", 50)
         
         if not self.access_key_secret:
             logger.warning("明珞 access_key_secret 未配置，请检查配置文件")
 
 
-class MinoConnection(ExternalBaseConnection):
+class ImeConnection(ExternalBaseConnection):
     """
     明珞 MES 连接类 - 继承自 ExternalBaseConnection
     
@@ -73,19 +73,19 @@ class MinoConnection(ExternalBaseConnection):
         - pool_maxsize: 建议与 async_qps 相等或更大
     """
     
-    def __init__(self, config: MinoConfig = None):
+    def __init__(self, config: ImeConfig = None):
         """
         初始化明珞 连接
         
         Args:
-            config: MinoConfig 实例
+            config: ImeConfig 实例
             
         使用示例：
-            config = MinoConfig()
-            conn = MinoConnection(config)
+            config = ImeConfig()
+            conn = ImeConnection(config)
         """
         if config is None:
-            config = MinoConfig()
+            config = ImeConfig()
         
         super().__init__(
             async_qps=getattr(config, 'max_qps', None),
@@ -240,7 +240,7 @@ class MinoConnection(ExternalBaseConnection):
 
 
 
-class MinoOperationPushModel(PydanticModel):
+class ImeOperationPushModel(PydanticModel):
     """工序"""
     siteCode: str = Field()             # 企业编号
     operationCode: str = Field()        # 工序编码
@@ -249,6 +249,7 @@ class MinoOperationPushModel(PydanticModel):
     workUnitTypeCode: str = Field()     # 作业单元类型编号（系统中必须存在）
     standardTime: float = Field()       # 标准用时
     standardTimeUnit: str = Field("SECOND", enum=["SECOND", "MINUTE", "HOUR", "DAY"])       # 标准用时单位
+    standardCapacity: float = Field(1)  # 标准产能
 
     class Config:
         extra = 'allow'
@@ -258,25 +259,26 @@ class MinoOperationPushModel(PydanticModel):
     @classmethod
     def model_valid(cls, values: Dict[str, Any]):
         cleaned_values = {}
-        cleaned_values['siteCode'] = CACHE_MINO.get("$siteCode", "")
+        cleaned_values['siteCode'] = CACHE_IME.get("$siteCode", "")
         cleaned_values['operationCode'] = values['itemno']
         cleaned_values['operationName'] = values.get('itemname') or values.get('workcenter', '')
         cleaned_values['operationTypeCode'] = "PRODUCTION"
         cleaned_values['workUnitTypeCode'] = values.get('workcenter', '')
         cleaned_values['standardTime'] = values['avg_basesec']
         cleaned_values['standardTimeUnit'] = "SECOND"
+        cleaned_values['standardCapacity'] = 1
         return cleaned_values
 
 
 
-class MinoOperation(BaseSource):
+class ImeOperation(BaseSource):
     """
     工序数据
     """
     _CREATE_ENDPOINT = "/tmgc2-api/api-proxy/erp/operation/addAndUpdateOperationBatchToExternal"    # 也可用于更新
-    _DELETE_ENDPOINT = None
+    _DELETE_ENDPOINT = "/tmgc2-api/api-proxy/erp/operationInfo/deleteOperationInfoByCodes"
     _APPROVE_ENDPOINT = None
-    _PUSH_PYDANTIC_MODEL = MinoOperationPushModel
+    _PUSH_PYDANTIC_MODEL = ImeOperationPushModel
     _DOCUMENTATION_URL = "https://www.yuque.com/vqp0d0/liv2wo/cvwb787373hq3cni"
 
 
@@ -287,12 +289,12 @@ class MinoOperation(BaseSource):
         """
         pydantic_model = pydantic_model or cls._PUSH_PYDANTIC_MODEL
         dto = [pydantic_model.model_validate(item).model_dump(exclude_none=True) for item in data]
-        payload = {"entity": dto}
+        payload = dto
         return await cls._CONNECTION._post(cls._CREATE_ENDPOINT, data=payload)
 
 
 
-class MinoRoutePushModel(PydanticModel):
+class ImeRoutePushModel(PydanticModel):
     """工艺路线"""
 
     siteCode: str = Field()                 # 企业编号
@@ -310,7 +312,7 @@ class MinoRoutePushModel(PydanticModel):
     @classmethod
     def model_valid(cls, values: Dict[str, Any]):
         cleaned_values = {}
-        cleaned_values['siteCode'] = CACHE_MINO.get("$siteCode", "")
+        cleaned_values['siteCode'] = CACHE_IME.get("$siteCode", "")
         materialno, matver = values['key']
         route_detail = values['route']
         cleaned_values['processCode'] = f"{materialno}-{matver}"
@@ -331,14 +333,14 @@ class MinoRoutePushModel(PydanticModel):
 
 
 
-class MinoRoute(BaseSource):
+class ImeRoute(BaseSource):
     """
     工艺路线数据
     """
     _CREATE_ENDPOINT = "/tmgc2-api/api-proxy/erp/process/addProcessBatchToExternal"
     _DELETE_ENDPOINT = "/tmgc2-api/api-proxy/erp/process/deleteProcessByCodeVersions"
     # _APPROVE_ENDPOINT = None
-    _PUSH_PYDANTIC_MODEL = MinoRoutePushModel
+    _PUSH_PYDANTIC_MODEL = ImeRoutePushModel
     _DOCUMENTATION_URL = "https://www.yuque.com/vqp0d0/liv2wo/vfybddzwami5n64c"
 
 
@@ -365,7 +367,7 @@ class MinoRoute(BaseSource):
 
 
 
-class MinoWorkUnitTypePushModel(PydanticModel):
+class ImeWorkUnitTypePushModel(PydanticModel):
     """作业单元类型，对应APS的Workcenter"""
     workUnitTypeCode: str = Field()                                      # 作业单元类型编号，同时作作业单元编号，≤50
     workUnitTypeName: str = Field()                                      # 作业单元类型名称，同时作作业单元名称，≤100
@@ -403,7 +405,7 @@ class MinoWorkUnitTypePushModel(PydanticModel):
 
 
 
-class MinoWorkUnitType(BaseSource):
+class ImeWorkUnitType(BaseSource):
     """
     作业单元类型（外部对接）
 
@@ -413,7 +415,7 @@ class MinoWorkUnitType(BaseSource):
     _CREATE_ENDPOINT = "/tmgc2-api/api-proxy/erp/workUnitType/addWorkUnitTypeAndWorkUnitBatchToExternal"
     _DELETE_ENDPOINT = None
     _APPROVE_ENDPOINT = None
-    _PUSH_PYDANTIC_MODEL = MinoWorkUnitTypePushModel
+    _PUSH_PYDANTIC_MODEL = ImeWorkUnitTypePushModel
     _DOCUMENTATION_URL = "https://www.yuque.com/vqp0d0/liv2wo/tet13guuc2c269gv"
 
 
@@ -432,14 +434,14 @@ class MinoWorkUnitType(BaseSource):
             - 失败：{success:false, errorMessage:"第N条[编号]：..."}，整批不入库
 
         注意：
-            - siteCode 由配置 CACHE_MINO["$siteCode"] 自动注入，无需在 data 中传入
+            - siteCode 由配置 CACHE_IME["$siteCode"] 自动注入，无需在 data 中传入
 
-            - 鉴权（sign/erptimestamp）由 MinoConnection._post 内置处理
+            - 鉴权（sign/erptimestamp）由 ImeConnection._post 内置处理
         """
         pydantic_model = pydantic_model or cls._PUSH_PYDANTIC_MODEL
         dto = [pydantic_model.model_validate(item).model_dump(exclude_none=True) for item in data]
         payload = {
-            "siteCode": CACHE_MINO.get("$siteCode", ""),
+            "siteCode": CACHE_IME.get("$siteCode", ""),
             "addVos": dto
         }
         return await cls._CONNECTION._post(cls._CREATE_ENDPOINT, data=payload)
@@ -471,11 +473,12 @@ class MoPushModel(PydanticModel):   # 对应 productionOrderVo
 
         cleaned_values['plannedStartDateTime'] = values['dt_ordstart']
         cleaned_values['plannedEndDateTime'] = values['dt_ordend']
-        cleaned_values['departmentCode'] = CACHE_MINO.get("$departmentCode", "")
-        cleaned_values['sourceNo'] = values['vendorno']
+        cleaned_values['departmentCode'] = CACHE_IME.get("$departmentCode", "")
+        # cleaned_values['sourceNo'] = values.get('vendorno')
+        cleaned_values['sourceNo'] = values.get('supplyno', "")
         cleaned_values['materialCode'] = values['materialno']
         cleaned_values['plannedQuantity'] = values['avail_qty']
-        cleaned_values['createUser'] = CACHE_MINO.get("$createUser", "")
+        cleaned_values['createUser'] = CACHE_IME.get("$createUser", "")
         cleaned_values['createDateTime'] = values['create_date']
         cleaned_values['priority'] = '1'
 
@@ -502,7 +505,7 @@ class MoPushModel(PydanticModel):   # 对应 productionOrderVo
                     'plannedStartDateTime': orderwc['dt_start'],    # 计划开始时间
                     'plannedEndDateTime': orderwc['dt_end'],        # 计划结束时间
                     'plannedQuantity': orderwc['orderqty'],         # 计划数量
-                    'createUser': CACHE_MINO.get("$createUser", ""),
+                    'createUser': CACHE_IME.get("$createUser", ""),
                     'createDateTime': orderwc['sys_stamp'],
                     'operationBomList': obl
                 })
@@ -511,7 +514,7 @@ class MoPushModel(PydanticModel):   # 对应 productionOrderVo
 
 
 
-class MinoMo(MoVoucher):
+class ImeMo(MoVoucher):
     """
     工序任务单
     """
@@ -524,7 +527,7 @@ class MinoMo(MoVoucher):
     
     @classmethod
     @async_rate_limit()
-    # @async_service_operation(module="mino接口", operation="创建工序任务单")
+    # @async_service_operation(module="ime接口", operation="创建工序任务单")
     async def create(
         cls,
         event_data: dict,
@@ -550,7 +553,7 @@ class MinoMo(MoVoucher):
             dto = pydantic_model(**supplymo_detaildata).model_dump(exclude_none=True)
 
             payload = [{
-                "siteCode": CACHE_MINO.get("$siteCode", ""),
+                "siteCode": CACHE_IME.get("$siteCode", ""),
                 "productionOrderVo": dto
             }]
         
