@@ -426,7 +426,7 @@ class UploadResponse(BaseModel):
 
 **调用方处理方式**：
 - `client.py`（JYHDXS）：异常传播到外层 `except Exception`，以"处理请求时出错"统一处理
-- `mino.py` / `yonyou_tplus.py`：通过 `asyncio.gather(..., return_exceptions=True)` + `isinstance(x, Exception)` 捕获后重新抛出，由外层 `except Exception` 兜底
+- `mino_ime.py` / `yonyou_tplus.py`：通过 `asyncio.gather(..., return_exceptions=True)` + `isinstance(x, Exception)` 捕获后重新抛出，由外层 `except Exception` 兜底
 
 **业务字段校验留在调用方**：方法只负责取数，不校验业务字段（如日期是否为空）。业务校验由编排层（如 `handle_pl_status_a2e`）负责，避免取数方法越界承担业务校验职责。
 
