@@ -25,7 +25,7 @@ from ._base import (
     DataProcessor, globalconst, PROJECT_JSON_FILE, pdv,
     convert_timeunit, clean_value,
     model_validator, Field,
-    AcceptMaterial, AcceptSupply,
+    AcceptMaterial, AcceptSupply, AcceptMatWcBom, AcceptWorkcenter, AcceptMatWcMold,
     db_query, ExternalBaseConnection, BaseSource, ExternalData, ExternalDataSet,
     async_rate_limit, async_service_operation, batch_service_operation
 )
@@ -49,10 +49,10 @@ class QingflowConfig:
             "ws_id": "...",
             "ws_secret": "...",
             "app_keys": {
-                "material": "...",
-                "bom": "...",
-                "workcenter": "...",
-                "wcmold": "..."
+                "t_material": "...",
+                "t_mat_wc_bom": "...",
+                "t_workcenter": "...",
+                "t_mat_wc_mold": "..."
             },
             "access_token": "...",
             "_auth_at_": "..."

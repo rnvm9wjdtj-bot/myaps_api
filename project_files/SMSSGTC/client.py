@@ -10,7 +10,8 @@ from typing import Optional, Dict, Any, ClassVar
 from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
 
 from apps.data_opt.components.qingflow import (
-    QingflowConnection, QingflowSource, model_validator, AcceptMaterial,
+    QingflowConnection, QingflowSource, model_validator,
+    AcceptMaterial, AcceptMatWcBom, AcceptWorkcenter, AcceptMatWcMold,
     Field, clean_value, globalconst
 )
 
@@ -75,7 +76,7 @@ class MaterialPullModel(AcceptMaterial):
 # 通过工厂方法创建配置好的物料数据源（appKey从配置文件读取，configure内校验）
 QingflowMaterial = QingflowSource.configure(
     pydantic_model=MaterialPullModel,
-    app_key=_qingflow_app_keys.get("material"),
+    app_key=_qingflow_app_keys.get("t_material"),
     class_name="QingflowMaterial",
 )
 
@@ -86,7 +87,8 @@ smssgtc_qingflow_conn.register_source(QingflowMaterial)
 async def pull_all_material():
     """拉取所有物料数据"""
     materials = await QingflowMaterial.query_batch()
-    return await materials.persist(to_dbtable='t_material', to_dbs="--s")
+    # return await materials.persist(to_dbtable='t_material', to_dbs="--s")
+    return await materials.persist(to_dbtable='t_material')
 
 
 
@@ -95,6 +97,151 @@ async def pull_all_material():
 async def task_pull_all_material():
     materials = await pull_all_material()
     return materials
+
+
+class BomPullModel(AcceptMatWcBom):
+    """
+    BOM数据清洗模型（无锡西门子燃气轮机租户专属）
+
+    直接接收轻流原始字段（queTitle为键），在 model_validator 中完成
+    字段映射 + 清洗 + 默认值补充。
+    """
+
+    class Config:
+        extra = 'allow'
+
+    @model_validator(mode="before")
+    @classmethod
+    def model_valid(cls, values: Dict[str, Any]):
+        cleaned_values = {}
+        cleaned_values['productno'] = clean_value(values.get('productno', ''))
+        cleaned_values['matver'] = "🈳❗"
+        cleaned_values['itemno'] = "🈳❗"
+        cleaned_values['materialno'] = clean_value(values.get('materialno', ''))
+        cleaned_values['qty'] = values.get('qty', 0)
+        cleaned_values['scrap'] = values.get('scrap', 0)
+        cleaned_values['denominator'] = values.get('denominator')
+        return cleaned_values
+
+
+QingflowBom = QingflowSource.configure(
+    pydantic_model=BomPullModel,
+    app_key=_qingflow_app_keys.get("t_mat_wc_bom"),
+    class_name="QingflowBom",
+)
+
+smssgtc_qingflow_conn.register_source(QingflowBom)
+
+
+async def pull_all_bom():
+    """拉取所有BOM数据"""
+    bom = await QingflowBom.query_batch()
+    return await bom.persist(to_dbtable='t_mat_wc_bom', drop='all')
+
+
+@cron_task(hour='*', minute='*/5')
+# @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(0))
+async def task_pull_all_bom():
+    bom = await pull_all_bom()
+    return bom
+
+
+class WorkcenterPullModel(AcceptWorkcenter):
+    """
+    工作中心数据清洗模型（无锡西门子燃气轮机租户专属）
+    """
+
+    class Config:
+        extra = 'allow'
+
+    @model_validator(mode="before")
+    @classmethod
+    def model_valid(cls, values: Dict[str, Any]):
+        cleaned_values = {}
+        cleaned_values['workcenter'] = clean_value(values.get('workcenter', ''))
+        cleaned_values['workcentername'] = clean_value(values.get('workcentername', ''))
+        cleaned_values['pri_wc'] = values.get('pri_wc', pdv.WC_PRIORITY)
+        cleaned_values['bottleneck'] = values.get('bottleneck')
+        cleaned_values['sortno'] = values.get('sortno')
+        cleaned_values['plant'] = values.get('plant', pdv.MAT_PLANT)
+        cleaned_values['location'] = values.get('location')
+        cleaned_values['finite'] = values.get('finite')
+        cleaned_values['type'] = values.get('type')
+        cleaned_values['capnum'] = values.get('capnum', pdv.WC_CAPNUM)
+        cleaned_values['capmax'] = values.get('capmax', pdv.WC_CAPMAX)
+        cleaned_values['worker'] = values.get('worker', pdv.WC_WORKER)
+        cleaned_values['setupno'] = values.get('setupno')
+        cleaned_values['grpno'] = values.get('grpno')
+        cleaned_values['memo'] = values.get('memo')
+        return cleaned_values
+
+
+QingflowWorkcenter = QingflowSource.configure(
+    pydantic_model=WorkcenterPullModel,
+    app_key=_qingflow_app_keys.get("t_workcenter"),
+    class_name="QingflowWorkcenter",
+)
+
+smssgtc_qingflow_conn.register_source(QingflowWorkcenter)
+
+
+async def pull_all_workcenter():
+    """拉取所有工作中心数据"""
+    workcenters = await QingflowWorkcenter.query_batch()
+    return await workcenters.persist(to_dbtable='t_workcenter')
+
+
+@cron_task(hour='*', minute='*/5')
+# @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1))
+async def task_pull_all_workcenter():
+    workcenters = await pull_all_workcenter()
+    return workcenters
+
+
+class WorkcenterMoldPullModel(AcceptMatWcMold):
+    """
+    机台模具数据清洗模型（无锡西门子燃气轮机租户专属）
+    """
+
+    class Config:
+        extra = 'allow'
+
+    @model_validator(mode="before")
+    @classmethod
+    def model_valid(cls, values: Dict[str, Any]):
+        cleaned_values = {}
+        cleaned_values['materialno'] = clean_value(values.get('materialno', ''))
+        cleaned_values['workcenter'] = clean_value(values.get('workcenter', ''))
+        cleaned_values['itemno'] = values.get('itemno', '🈳❗')
+        cleaned_values['moldno'] = values.get('moldno', '')
+        cleaned_values['basesec'] = values.get('basesec', 0)
+        cleaned_values['fixsec'] = values.get('fixsec', 0)
+        cleaned_values['priority'] = values.get('priority', 1)
+        cleaned_values['worker'] = values.get('worker', 0)
+        cleaned_values['memo'] = values.get('memo')
+        return cleaned_values
+
+
+QingflowWorkcenterMold = QingflowSource.configure(
+    pydantic_model=WorkcenterMoldPullModel,
+    app_key=_qingflow_app_keys.get("t_mat_wc_mold"),
+    class_name="QingflowWorkcenterMold",
+)
+
+smssgtc_qingflow_conn.register_source(QingflowWorkcenterMold)
+
+
+async def pull_all_wcmold():
+    """拉取所有机台模具数据"""
+    molds = await QingflowWorkcenterMold.query_batch()
+    return await molds.persist(to_dbtable='t_mat_wc_mold', drop='all')
+
+
+@cron_task(hour='*', minute='*/5')
+# @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2))
+async def task_pull_all_wcmold():
+    molds = await pull_all_wcmold()
+    return molds
 
 
 #################################################################################
