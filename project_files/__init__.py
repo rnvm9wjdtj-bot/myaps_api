@@ -189,7 +189,8 @@ def handle_update_supply(database: str, table: str, data: dict, data_diff: dict)
         status_now = data_now['status']
         
         match (type_now, status_now, type_before, status_before):
-            case ('PL', 'A2E', _, 'NEW' | 'CRE'):
+            # PL 和 MO 都支持进入事件处理逻辑
+            case ('PL' | 'MO', 'A2E', _, 'NEW' | 'CRE'):
                 # plno = data_now['supplyno']
                 aps_pl_status_a2e_event.add_event(data_now)
 
