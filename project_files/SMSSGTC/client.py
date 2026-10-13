@@ -92,58 +92,10 @@ async def pull_all_material():
 
 
 
-@cron_task(hour='*', minute='*/5')
-# @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(-1))
+@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(0))
 async def task_pull_all_material():
     materials = await pull_all_material()
     return materials
-
-
-class BomPullModel(AcceptMatWcBom):
-    """
-    BOM数据清洗模型（无锡西门子燃气轮机租户专属）
-
-    直接接收轻流原始字段（queTitle为键），在 model_validator 中完成
-    字段映射 + 清洗 + 默认值补充。
-    """
-
-    class Config:
-        extra = 'allow'
-
-    @model_validator(mode="before")
-    @classmethod
-    def model_valid(cls, values: Dict[str, Any]):
-        cleaned_values = {}
-        cleaned_values['productno'] = clean_value(values.get('productno', ''))
-        cleaned_values['matver'] = "🈳❗"
-        cleaned_values['itemno'] = "🈳❗"
-        cleaned_values['materialno'] = clean_value(values.get('materialno', ''))
-        cleaned_values['qty'] = values.get('qty', 0)
-        cleaned_values['scrap'] = values.get('scrap', 0)
-        cleaned_values['denominator'] = values.get('denominator')
-        return cleaned_values
-
-
-QingflowBom = QingflowSource.configure(
-    pydantic_model=BomPullModel,
-    app_key=_qingflow_app_keys.get("t_mat_wc_bom"),
-    class_name="QingflowBom",
-)
-
-smssgtc_qingflow_conn.register_source(QingflowBom)
-
-
-async def pull_all_bom():
-    """拉取所有BOM数据"""
-    bom = await QingflowBom.query_batch()
-    return await bom.persist(to_dbtable='t_mat_wc_bom', drop='all')
-
-
-@cron_task(hour='*', minute='*/5')
-# @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(0))
-async def task_pull_all_bom():
-    bom = await pull_all_bom()
-    return bom
 
 
 class WorkcenterPullModel(AcceptWorkcenter):
@@ -191,8 +143,7 @@ async def pull_all_workcenter():
     return await workcenters.persist(to_dbtable='t_workcenter')
 
 
-@cron_task(hour='*', minute='*/5')
-# @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1))
+@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1))
 async def task_pull_all_workcenter():
     workcenters = await pull_all_workcenter()
     return workcenters
@@ -237,11 +188,57 @@ async def pull_all_wcmold():
     return await molds.persist(to_dbtable='t_mat_wc_mold', drop='all')
 
 
-@cron_task(hour='*', minute='*/5')
-# @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2))
+@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2))
 async def task_pull_all_wcmold():
     molds = await pull_all_wcmold()
     return molds
+
+
+
+class BomPullModel(AcceptMatWcBom):
+    """
+    BOM数据清洗模型（无锡西门子燃气轮机租户专属）
+
+    直接接收轻流原始字段（queTitle为键），在 model_validator 中完成
+    字段映射 + 清洗 + 默认值补充。
+    """
+
+    class Config:
+        extra = 'allow'
+
+    @model_validator(mode="before")
+    @classmethod
+    def model_valid(cls, values: Dict[str, Any]):
+        cleaned_values = {}
+        cleaned_values['productno'] = clean_value(values.get('productno', ''))
+        cleaned_values['matver'] = "🈳❗"
+        cleaned_values['itemno'] = "🈳❗"
+        cleaned_values['materialno'] = clean_value(values.get('materialno', ''))
+        cleaned_values['qty'] = values.get('qty', 0)
+        cleaned_values['scrap'] = values.get('scrap', 0)
+        cleaned_values['denominator'] = values.get('denominator')
+        return cleaned_values
+
+
+QingflowBom = QingflowSource.configure(
+    pydantic_model=BomPullModel,
+    app_key=_qingflow_app_keys.get("t_mat_wc_bom"),
+    class_name="QingflowBom",
+)
+
+smssgtc_qingflow_conn.register_source(QingflowBom)
+
+
+async def pull_all_bom():
+    """拉取所有BOM数据"""
+    bom = await QingflowBom.query_batch()
+    return await bom.persist(to_dbtable='t_mat_wc_bom', drop='all')
+
+
+@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(4))
+async def task_pull_all_bom():
+    bom = await pull_all_bom()
+    return bom
 
 
 #################################################################################
