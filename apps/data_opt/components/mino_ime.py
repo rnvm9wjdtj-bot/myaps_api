@@ -1,5 +1,5 @@
 """
-明珞 - 智造家 MES 连接
+明珞 - 智造家 MES 连接器
 """
 from typing import Dict, Any, Optional
 from urllib.parse import urlencode
@@ -498,6 +498,7 @@ class MoPushModel(PydanticModel):   # 对应 productionOrderVo
                     obl = []
                 otovl.append({
                     'equipmentFlag': '1',                           # 是否设备报工标志（0否 1是）
+                    # 'reportType': '0',                              # 报工类型（0 - 人工报工）
                     'sourceNo': orderwc['orderno'],                 # 外部工序任务单编号
                     'operationCode': orderwc['itemno'],             # 工序编码
                     'workCenterCode': orderwc['workcenter'],        # 工作中心编码
@@ -573,6 +574,64 @@ class ImeMo(MoVoucher):
         except Exception as e:
             logger.warning("创建工序任务单失败", str(e))
             await _erp.mo_release_failed(native_plno=supplyno, msg=str(e))
+
+
+# class ImeMaterialPushModel(PydanticModel):
+#     """物料主数据（不在双方对接合同范围内，仅用于辅助推送缺失物料）"""
+#     siteCode: str = Field()                     # 企业编号
+#     materialCode: str = Field()                 # 物料编码
+#     materialText: str = Field()                 # 物料名称
+#     materialUnitText: str = Field()   # 基本单位
+
+#     class Config:
+#         extra = 'allow'
+
+#     @model_validator(mode="before")
+#     @classmethod
+#     def model_valid(cls, values: Dict[str, Any]):
+#         cleaned_values = {}
+#         cleaned_values['siteCode'] = CACHE_IME.get("$siteCode", "")
+#         cleaned_values['materialCode'] = values.get('materialno', values.get('materialcode', ''))
+#         cleaned_values['materialText'] = values.get('description', cleaned_values['materialCode'])
+#         cleaned_values['materialUnitText'] = '件'
+#         return cleaned_values
+
+
+# class ImeMaterial(BaseSource):
+#     """
+#     物料主数据（外部对接）
+
+#     注意：物料推送不在双方对接合同范围内，仅用于辅助推送工序任务单所依赖的缺失物料。
+#     不接入 binlog 事件流，需手动调用 create_or_update。
+#     """
+#     _CREATE_ENDPOINT = "/tmgc2-api/api-proxy/erp/material/saveAndUpdateMaterial"
+#     _DELETE_ENDPOINT = None
+#     _APPROVE_ENDPOINT = None
+#     _PUSH_PYDANTIC_MODEL = ImeMaterialPushModel
+#     _DOCUMENTATION_URL = "https://www.yuque.com/vqp0d0/liv2wo/saveAndUpdateMaterial"
+
+#     @classmethod
+#     async def create_or_update(cls, data: list[Dict[str, Any]], pydantic_model: Type[PydanticModel] = None) -> Dict[str, Any]:
+#         """
+#         批量新增或更新物料主数据
+
+#         Args:
+#             data: 物料数据列表，每个元素至少包含 materialno 和 materialname
+
+#         Returns:
+#             响应 JSON：
+#             - 成功：{success:true, errorCode:"0", errorMessage:""}
+#             - 失败：{success:false, errorMessage:"..."}
+
+#         注意：
+#             - siteCode 由配置 CACHE_IME["$siteCode"] 自动注入
+#             - payload 格式为 {"entity": [{"zzjmaterial": {...}}]}，与其他接口不同
+#             - 鉴权（sign/erptimestamp）由 ImeConnection._post 内置处理
+#         """
+#         pydantic_model = pydantic_model or cls._PUSH_PYDANTIC_MODEL
+#         dto = [pydantic_model.model_validate(item).model_dump(exclude_none=True) for item in data]
+#         payload = {"entity": [{"zzjmaterial": item} for item in dto]}
+#         return await cls._CONNECTION._post(cls._CREATE_ENDPOINT, data=payload)
 
 
 

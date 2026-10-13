@@ -14,6 +14,7 @@ from .._base import (
 )
 
 from apps.data_opt.components.mino_ime import ImeConnection, ImeMo, ImeOperation, ImeRoute, ImeWorkUnitType
+# from apps.data_opt.components.mino_ime import ImeMaterial  # 物料推送已注释，需启用时取消注释
 
 #################################################################################
 # ⬇️ 连接组件
@@ -74,6 +75,27 @@ async def batch_handle_mat_wc_insert(event_data_list: list[dict], _erp: EventRes
 @batch_service_operation(module="事件处理")
 async def batch_handle_workcenter_insert(event_data_list: list[dict], _erp: EventResultPoster, description="工作中心新增"):
     await ImeWorkUnitType.create_batch(data=event_data_list)
+
+
+#################################################################################
+# ⬇️ 辅助推送（不在对接合同范围内，需手动调用）
+#################################################################################
+# async def push_materials(data: list[dict]):
+#     """
+#     手动推送物料主数据到明珞 MES
+
+#     注意：物料推送不在双方对接合同范围内，仅用于辅助推送工序任务单所依赖的缺失物料。
+
+#     Args:
+#         data: 物料数据列表，每个元素至少包含 materialno 和 materialname
+
+#     Usage:
+#         await push_materials([
+#             {"materialno": "2100-011-300", "materialname": "成品物料"},
+#             {"materialno": "ZA", "materialname": "ZA"},
+#         ])
+#     """
+#     return await ImeMaterial.create_or_update(data)
 
 
 
