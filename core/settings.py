@@ -19,6 +19,55 @@ logger = log_config.get_logger(__name__)
 # 时区，默认东八区（使用 IANA 格式）
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Shanghai")
 
+
+# 项目目录
+PROJECT_DIR = os.getenv("PROJECT_DIR")
+if PROJECT_DIR is None:
+    raise ValueError("❌ PROJECT_DIR 环境变量未设置，请在 .env 文件中设置 PROJECT_DIR")
+# JSON文件中记录的配置项
+PROJECT_JSON = (os.getenv("PROJECT_JSON") or "dev") + ".json"
+CACHE_JSON_FILE = JSONManager(f"project_files/{PROJECT_DIR}/{PROJECT_JSON}")
+json_env_config = CACHE_JSON_FILE.get("env") or {}
+MYAPS_VERSION = (os.getenv("MYAPS_VERSION") or json_env_config.get("MYAPS_VERSION") or "L").upper()
+MYAPS_BASE_URL = os.getenv("MYAPS_BASE_URL") or json_env_config.get("MYAPS_BASE_URL")
+MYAPS_DB_HOST = os.getenv("MYAPS_DB_HOST") or json_env_config.get("MYAPS_DB_HOST")
+MYAPS_DB_PORT = int(os.getenv("MYAPS_DB_PORT") or json_env_config.get("MYAPS_DB_PORT") or 3333)
+MYAPS_DB_USER = os.getenv("MYAPS_DB_USER") or json_env_config.get("MYAPS_DB_USER")
+MYAPS_DB_PASSWORD = os.getenv("MYAPS_DB_PASSWORD") or json_env_config.get("MYAPS_DB_PASSWORD")
+MYAPS_DB_SET = os.getenv("MYAPS_DB_SET") or json_env_config.get("MYAPS_DB_SET")
+if not MYAPS_DB_SET:
+    logger.warning_msg("环境变量配置", "MYAPS_DB_SET 未设置")
+    MYAPS_DB_SET = ""
+MYAPS_DBSET_LIST = MYAPS_DB_SET.split(",")
+MYAPS_MAIN_DB = os.getenv("MYAPS_MAIN_DB") or json_env_config.get("MYAPS_MAIN_DB")
+if MYAPS_MAIN_DB is None:
+    MYAPS_MAIN_DB = MYAPS_DBSET_LIST[0]
+
+
+# 作为开发者提示，不要改动硬编码值
+STAGING_DB_NAME = "--s"
+
+
+# 本API数据库配置<postgreSQL>
+THIS_DB_HOST = os.getenv("THIS_DB_HOST") or json_env_config.get("THIS_DB_HOST")
+THIS_DB_PORT = int(os.getenv("THIS_DB_PORT") or json_env_config.get("THIS_DB_PORT") or 5432)
+THIS_DB_USER = os.getenv("THIS_DB_USER") or json_env_config.get("THIS_DB_USER")
+THIS_DB_PASSWORD = os.getenv("THIS_DB_PASSWORD") or json_env_config.get("THIS_DB_PASSWORD")
+THIS_DB_NAME = os.getenv("THIS_DB_NAME") or json_env_config.get("THIS_DB_NAME")
+
+
+# Redis 配置
+REDIS_HOST = os.getenv("REDIS_HOST") or json_env_config.get("REDIS_HOST") or "127.0.0.1"
+REDIS_PORT = int(os.getenv("REDIS_PORT") or json_env_config.get("REDIS_PORT") or 6379)
+REDIS_DB = int(os.getenv("REDIS_DB") or json_env_config.get("REDIS_DB") or 0)
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD") or json_env_config.get("REDIS_PASSWORD") or ""
+
+
+# 定时任务执行时间
+SCHEDULER_HOUR = os.getenv("SCHEDULER_HOUR") or json_env_config.get("SCHEDULER_HOUR") or "6,8,10,12,14,16"
+SCHEDULER_MINUTE = os.getenv("SCHEDULER_MINUTE") or json_env_config.get("SCHEDULER_MINUTE") or "55"
+
+
 def get_timezone_name(timezone_str):
     """
     将时区字符串转换为标准 IANA 时区名称
@@ -102,9 +151,7 @@ else:
     BINLOG_TABLES = dict(_DEFAULT_BINLOG_TABLES)
 # 定时任务开关，默认关闭
 TRUNON_SCHEDULER = os.getenv("TRUNON_SCHEDULER", "False").lower().strip() == "true"
-# 定时任务执行时间
-SCHEDULER_HOUR = os.getenv("SCHEDULER_HOUR") or "6,8,10,12,14,16"
-SCHEDULER_MINUTE = os.getenv("SCHEDULER_MINUTE") or "55"
+
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "").strip() or "INFO"
 
@@ -180,42 +227,3 @@ RESOURCE_CLEANUP_CONFIG = {
 
 
 
-# 项目目录
-PROJECT_DIR = os.getenv("PROJECT_DIR")
-if PROJECT_DIR is None:
-    raise ValueError("❌ PROJECT_DIR 环境变量未设置，请在 .env 文件中设置 PROJECT_DIR")
-# JSON文件中记录的配置项
-PROJECT_JSON = (os.getenv("PROJECT_JSON") or "dev") + ".json"
-CACHE_JSON_FILE = JSONManager(f"project_files/{PROJECT_DIR}/{PROJECT_JSON}")
-json_env_config = CACHE_JSON_FILE.get("env") or {}
-MYAPS_VERSION = (os.getenv("MYAPS_VERSION") or json_env_config.get("MYAPS_VERSION") or "L").upper()
-MYAPS_BASE_URL = os.getenv("MYAPS_BASE_URL") or json_env_config.get("MYAPS_BASE_URL")
-MYAPS_DB_HOST = os.getenv("MYAPS_DB_HOST") or json_env_config.get("MYAPS_DB_HOST")
-MYAPS_DB_PORT = int(os.getenv("MYAPS_DB_PORT") or json_env_config.get("MYAPS_DB_PORT") or 3333)
-MYAPS_DB_USER = os.getenv("MYAPS_DB_USER") or json_env_config.get("MYAPS_DB_USER")
-MYAPS_DB_PASSWORD = os.getenv("MYAPS_DB_PASSWORD") or json_env_config.get("MYAPS_DB_PASSWORD")
-MYAPS_DB_SET = os.getenv("MYAPS_DB_SET") or json_env_config.get("MYAPS_DB_SET")
-if not MYAPS_DB_SET:
-    logger.warning_msg("环境变量配置", "MYAPS_DB_SET 未设置")
-    MYAPS_DB_SET = ""
-MYAPS_DBSET_LIST = MYAPS_DB_SET.split(",")
-MYAPS_MAIN_DB = os.getenv("MYAPS_MAIN_DB") or json_env_config.get("MYAPS_MAIN_DB")
-if MYAPS_MAIN_DB is None:
-    MYAPS_MAIN_DB = MYAPS_DBSET_LIST[0]
-
-STAGING_DB_NAME = "--s"
-
-
-# 本API数据库配置<postgreSQL>
-THIS_DB_HOST = os.getenv("THIS_DB_HOST") or json_env_config.get("THIS_DB_HOST")
-THIS_DB_PORT = int(os.getenv("THIS_DB_PORT") or json_env_config.get("THIS_DB_PORT") or 5432)
-THIS_DB_USER = os.getenv("THIS_DB_USER") or json_env_config.get("THIS_DB_USER")
-THIS_DB_PASSWORD = os.getenv("THIS_DB_PASSWORD") or json_env_config.get("THIS_DB_PASSWORD")
-THIS_DB_NAME = os.getenv("THIS_DB_NAME") or json_env_config.get("THIS_DB_NAME")
-
-
-# Redis 配置
-REDIS_HOST = os.getenv("REDIS_HOST") or json_env_config.get("REDIS_HOST") or "127.0.0.1"
-REDIS_PORT = int(os.getenv("REDIS_PORT") or json_env_config.get("REDIS_PORT") or 6379)
-REDIS_DB = int(os.getenv("REDIS_DB") or json_env_config.get("REDIS_DB") or 0)
-REDIS_PASSWORD = os.getenv("REDIS_PASSWORD") or json_env_config.get("REDIS_PASSWORD") or ""
