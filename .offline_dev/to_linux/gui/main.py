@@ -428,7 +428,7 @@ class OfflineMigrationTool:
         ])
 
         self._add_config_section(scrollable_frame, "项目配置", [
-            ("PROJECT_DIR", "租户目录", "HACYXS"),
+            ("PROJECT_DIR", "租户目录", "ZONE"),
             ("PROJECT_JSON", "配置文件", "dev"),
         ])
 
