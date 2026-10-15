@@ -9,7 +9,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(os.getenv('ENV_FILE', os.path.join(BASE_DIR, '.env')), override=False)
 
 from globalobjects.json_manager import JSONManager
-from globalobjects import logger as log_config
+from globalobjects import logger as log_config, PROJECT_JSON_FILE
 
 
 logger = log_config.get_logger(__name__)
@@ -26,8 +26,8 @@ if PROJECT_DIR is None:
     raise ValueError("❌ PROJECT_DIR 环境变量未设置，请在 .env 文件中设置 PROJECT_DIR")
 # JSON文件中记录的配置项
 PROJECT_JSON = (os.getenv("PROJECT_JSON") or "dev") + ".json"
-CACHE_JSON_FILE = JSONManager(f"project_files/{PROJECT_DIR}/{PROJECT_JSON}")
-json_env_config = CACHE_JSON_FILE.get("env") or {}
+# 统一复用 globalobjects 的配置管理实例（内存态单例），避免多实例读写不同步
+json_env_config = PROJECT_JSON_FILE.get("env") or {}
 MYAPS_VERSION = (os.getenv("MYAPS_VERSION") or json_env_config.get("MYAPS_VERSION") or "L").upper()
 MYAPS_BASE_URL = os.getenv("MYAPS_BASE_URL") or json_env_config.get("MYAPS_BASE_URL")
 MYAPS_DB_HOST = os.getenv("MYAPS_DB_HOST") or json_env_config.get("MYAPS_DB_HOST")

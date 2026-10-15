@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from fastapi import status
 from dateutil.relativedelta import relativedelta
 
-from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR, CACHE_JSON_FILE
+from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
 from .._base import (
     get_scheduler_minute, async_rate_limit, CacheItem,
     ApsPayloadSponsor, EventResultPoster, CLIENT_LOGGER, standard_response, get_session, get_async_session, event_batch_handler,
@@ -259,7 +259,7 @@ class StockManager:
     @staticmethod
     def _update_last_input_date(date_str: str):
         """更新prod.json中的erp.last_order_material_input"""
-        CACHE_JSON_FILE.set('erp / last_order_material_input', date_str)
+        PROJECT_JSON_FILE.set('erp / last_order_material_input', date_str)
         erp['last_order_material_input'] = date_str
 
     @staticmethod
