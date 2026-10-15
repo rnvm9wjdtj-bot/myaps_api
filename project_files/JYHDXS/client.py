@@ -1,21 +1,23 @@
 """江阴海达橡塑"""
 
 from re import A
+
 import requests, uuid, asyncio, json, httpx
 import pandas as pd
-from datetime import datetime
-from typing import List, Dict, Union
+from datetime import datetime, timedelta
+from typing import List, Dict, Union, Optional, Tuple
 
 from contextlib import asynccontextmanager
 from fastapi import status
 from dateutil.relativedelta import relativedelta
 
-from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
+from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR, CACHE_JSON_FILE
 from .._base import (
     get_scheduler_minute, async_rate_limit, CacheItem,
     ApsPayloadSponsor, EventResultPoster, CLIENT_LOGGER, standard_response, get_session, get_async_session, event_batch_handler,
     cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, PROJECT_JSON_FILE, pdv,
 )
+from apps.io_api.utils.db_operation import db_exec_sql
 
 
 
@@ -251,92 +253,292 @@ async def close_sap_async_client():
             CLIENT_LOGGER.warning("SAP异步客户端", f"关闭失败: {e}")
 
 
-async def refresh_stock(dbs: str=MYAPS_DB_SET):
-    """
-    刷新库存，先清空supply中类型为ST的数据，再从ERP同步1600厂全部库存数据
-    
-    Args:
-        dbs: 对哪些账套生效，多个账套用逗号分隔
-    
-    Note:
-        已改造为无阻塞异步执行，同步HTTP请求和pandas处理在线程池中运行。
-        超时保护设置为75秒（连接15秒 + 读取60秒）。
-    """
-    def get_sap_stock_data():
+class StockManager:
+    """库存数据管理：SAP库存同步 + 投料虚拟库存(MI)累加/淘汰"""
+
+    @staticmethod
+    def _update_last_input_date(date_str: str):
+        """更新prod.json中的erp.last_order_material_input"""
+        CACHE_JSON_FILE.set('erp / last_order_material_input', date_str)
+        erp['last_order_material_input'] = date_str
+
+    @staticmethod
+    async def get_sap_input_stock() -> Tuple[Optional[pd.DataFrame], Optional[str]]:
         """
-        从SAP系统获取1600厂全部库存数据
+        从SAP获取生产投料数据作为虚拟库存(累积区间，支持失败补取)
+        查询区间：[上次成功处理日的次日, 昨天]
+        Returns: (df, pending_date)，失败/无数据/无需取数为(None, None)
         """
-        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        now = datetime.now()
+        now_str = now.strftime('%Y-%m-%d %H:%M:%S')
+        yesterday_str = (now - timedelta(days=1)).strftime('%Y%m%d')
+
+        last_date = erp.get("last_order_material_input", "")
+        if last_date:
+            try:
+                i_datum_f = (datetime.strptime(last_date, '%Y%m%d') + timedelta(days=1)).strftime('%Y%m%d')
+            except ValueError:
+                CLIENT_LOGGER.warning("生产投料同步", f"上次时点{last_date}格式非法，回退为前7天")
+                i_datum_f = (now - timedelta(days=7)).strftime('%Y%m%d')
+        else:
+            i_datum_f = (now - timedelta(days=7)).strftime('%Y%m%d')
+        i_datum_t = yesterday_str
+
+        if i_datum_f > i_datum_t:
+            CLIENT_LOGGER.info("生产投料同步", f"已处理到{last_date}，无需取数(区间{i_datum_f}~{i_datum_t}为空)")
+            return None, None
+
+        def fetch_input_data():
+            response = sap_session.get(
+                url=sap_url1,
+                headers={
+                    'interface': 'order_material_input',
+                    'werks': werks,
+                    'i_datum_f': i_datum_f,
+                    'i_datum_t': i_datum_t,
+                },
+                timeout=(15, 60),
+            ).json()
+            data = response.get('data', [])
+            if not data:
+                return pd.DataFrame()
+
+            df = pd.DataFrame(data)
+            df = df.astype({
+                'werks': 'str', 'matnr': 'str', 'aufnr': 'str',
+                'menge': 'float64', 'bwart': 'str',
+            })
+            df = df[df['bwart'].isin(['261', '262'])]
+            if df.empty:
+                return pd.DataFrame()
+
+            df['avail_qty'] = df['menge'].where(df['bwart'] == '261', -df['menge'])
+            df['supplyno'] = 'MI-' + df['aufnr'] + '-' + df['matnr'] + '-' + df['werks']
+            df['materialno'] = df['matnr']
+            df['type'] = ''
+            df['priority'] = 0
+            df['avail_date'] = now_str
+            df['dt_req'] = now_str
+            df['status'] = 'NEW'
+            df['category'] = ''
+            df['create_date'] = now_str
+            df['itemno'] = pdv.ITEMNO
+
+            df = (df
+                  .groupby(['supplyno'], as_index=False)
+                  .agg({
+                      'materialno': 'first', 'avail_qty': 'sum', 'type': 'first',
+                      'avail_date': 'first', 'dt_req': 'first', 'priority': 'first',
+                      'status': 'first', 'category': 'first', 'create_date': 'first', 'itemno': 'first',
+                  }))
+            return df
+
+        loop = asyncio.get_event_loop()
         try:
-            sap_stock_response = sap_session.get(url=f"{sap_url1}", headers={'interface': 'stock', 'werks': werks}, timeout=(15, 60)).json()
-            sap_st_data = sap_stock_response.get('data', [])
-            df_sap_st = pd.DataFrame(sap_st_data)
-            df_sap_st = df_sap_st.astype({
-                'werks': 'str',
-                'matnr': 'str',
-                'lgort': 'str',
-                'labst': 'int32',
-                'labst2': 'int32',
-                'charg': 'str'
-            })
-            df_sap_st['avail_qty'] = df_sap_st['labst'] + df_sap_st['labst2']
-            df_sap_st['supplyno'] = df_sap_st['matnr'] + '-' + df_sap_st['werks'] # 注意不要用f string，否则supplyno会变成所有料号的超长字符串
-            df_sap_st['type'] = 'ST'
-            df_sap_st['priority'] = 0
-            df_sap_st['avail_date'] = now
-            df_sap_st['dt_req'] = now
-            df_sap_st['status'] = 'NEW'
-            df_sap_st['category'] = ''
-            df_sap_st['create_date'] = now
-            df_sap_st = (df_sap_st
-                            .groupby(['supplyno'], as_index=False)
-                            .agg({
-                                'matnr': 'first',
-                                'avail_qty': 'sum',
-                                'type': 'first',
-                                'avail_date': 'first',
-                                'dt_req': 'first',
-                                'priority': 'first',
-                                'status': 'first',
-                                'category': 'first',
-                                'create_date': 'first',
-                            })) 
-            df_sap_st = df_sap_st.rename(columns={
-                'matnr': 'materialno',
-            })
-            df_sap_st['itemno'] = pdv.ITEMNO
+            df_input = await asyncio.wait_for(
+                loop.run_in_executor(None, fetch_input_data),
+                timeout=75,
+            )
+        except asyncio.TimeoutError:
+            CLIENT_LOGGER.fail("生产投料同步", "获取SAP投料数据超时", "超过75秒")
+            return None, None
         except Exception as e:
+            CLIENT_LOGGER.fail("生产投料同步", "获取SAP投料数据失败", str(e))
+            return None, None
 
-            raise
-        return df_sap_st
+        if df_input.empty:
+            CLIENT_LOGGER.info("生产投料同步", f"区间{i_datum_f}~{i_datum_t}无投料数据")
+            return None, yesterday_str
 
-    CLIENT_LOGGER.start("刷新库存任务")
-    mto_vir_st = await ApsPayloadSponsor.mto_workreport_to_virtual_stock()
-    
-    loop = asyncio.get_event_loop()
-    try:
-        df_sap_st = await asyncio.wait_for(
-            loop.run_in_executor(None, get_sap_stock_data),
-            timeout=75
+        CLIENT_LOGGER.success("生产投料同步", f"获取{len(df_input)}条投料虚拟库存", f"区间{i_datum_f}~{i_datum_t}")
+        return df_input, yesterday_str
+
+    @staticmethod
+    async def _toggle_mi_type(to_st: bool, dbs: str = MYAPS_DB_SET):
+        """切换MI投料虚拟库存的Type字段：to_st=True置'ST'(供SRM推送)，False置空(避免APS误计入)"""
+        target = 'ST' if to_st else ''
+        for db_name in dbs.split(','):
+            db_name = db_name.strip()
+            if not db_name:
+                continue
+            await db_exec_sql(
+                db_name=db_name,
+                sql="UPDATE t_supply SET Type=%s WHERE SupplyNo LIKE 'MI-%'",
+                params=[target],
+                description=f"切换MI投料Type为{'ST' if to_st else '空'}",
+            )
+
+    @staticmethod
+    async def _upsert_input_stock(df_input: pd.DataFrame, dbs: str = MYAPS_DB_SET):
+        """投料虚拟库存累加写入：读存量MI按supplyno累加avail_qty后upsert，type置空，独立于ST全量替换"""
+        existing_qty: Dict[str, float] = {}
+        supplynos = df_input['supplyno'].unique().tolist()
+        if supplynos:
+            quoted = ",".join(f"'{s}'" for s in supplynos)
+            filter_str = f"`SupplyNo` IN ({quoted})" if len(supplynos) > 1 else f"`SupplyNo`='{supplynos[0]}'"
+            existing_result = await db_query(
+                db_name=MYAPS_MAIN_DB,
+                model_or_tablename="t_supply",
+                select="SupplyNo,Avail_Qty",
+                filter_string=filter_str,
+            )
+            if existing_result.data:
+                for row in existing_result.data:
+                    existing_qty[row['supplyno']] = existing_qty.get(row['supplyno'], 0) + (row.get('avail_qty') or 0)
+        df_merged = df_input.copy()
+        df_merged['avail_qty'] = df_merged['supplyno'].map(existing_qty).fillna(0) + df_merged['avail_qty']
+        records = df_merged.to_dict(orient='records')
+        await db_bupsert(db_names=dbs, model_or_tablename="t_supply", data_list=records)
+        CLIENT_LOGGER.success("投料虚拟库存累加", f"写入{len(records)}条", f"存量{len(existing_qty)}条")
+        await StockManager.cleanup_mi_stock(dbs)
+
+    @staticmethod
+    async def cleanup_mi_stock(dbs: str = MYAPS_DB_SET):
+        """淘汰无效工单对应的MI投料虚拟库存。有效工单=Type='MO'且Status!='CMP'，MI的AUFNR不在有效集合中则DELETE"""
+        valid_result = await db_query(
+            db_name=MYAPS_MAIN_DB,
+            model_or_tablename="t_supply",
+            select="SupplyNo",
+            filter_string="`Type`='MO' AND `Status`!='CMP'",
+            page_size=10000,
         )
-    except asyncio.TimeoutError:
-        CLIENT_LOGGER.fail("刷新库存任务", "获取SAP库存数据超时", "超过75秒")
-        return
-    except Exception as e:
-        CLIENT_LOGGER.fail("刷新库存任务", "获取SAP库存数据失败", str(e))
-        return
+        valid_aufnrs = {row['supplyno'] for row in valid_result.data} if valid_result.data else set()
 
-    if mto_vir_st is not None:
-        stock_data_total = pd.concat([df_sap_st, mto_vir_st], axis=0, ignore_index=True)
-    else:
-        stock_data_total = df_sap_st
-    
-    # if stock_data_total is not None:
-    stock_data_total.fillna('', inplace=True)
-    await ApsPayloadSponsor.refresh_supply(stock_data_total.to_dict(orient='records'), dbs=dbs)
+        mi_supplynos = []
+        page_index = 1
+        page_size = 1000
+        while True:
+            batch = await db_query(
+                db_name=MYAPS_MAIN_DB,
+                model_or_tablename="t_supply",
+                select="SupplyNo",
+                filter_string="`SupplyNo` LIKE 'MI-%'",
+                page_size=page_size,
+                page_index=page_index,
+            )
+            if not batch.data:
+                break
+            mi_supplynos.extend(row['supplyno'] for row in batch.data)
+            if len(batch.data) < page_size:
+                break
+            page_index += 1
+
+        to_delete = []
+        for s in mi_supplynos:
+            parts = s.split('-')
+            if len(parts) >= 4 and parts[1] not in valid_aufnrs:
+                to_delete.append(s)
+
+        if not to_delete:
+            CLIENT_LOGGER.info("MI投料淘汰", "无需淘汰", f"有效工单{len(valid_aufnrs)}个, MI共{len(mi_supplynos)}条")
+            return
+
+        deleted = 0
+        for i in range(0, len(to_delete), 500):
+            chunk = to_delete[i:i + 500]
+            quoted = ",".join(f"'{s}'" for s in chunk)
+            for db_name in dbs.split(','):
+                db_name = db_name.strip()
+                if not db_name:
+                    continue
+                await db_exec_sql(
+                    db_name=db_name,
+                    sql=f"DELETE FROM t_supply WHERE SupplyNo IN ({quoted})",
+                    params=None,
+                    description=f"淘汰无效MI投料({i + 1}-{i + len(chunk)})",
+                )
+            deleted += len(chunk)
+
+        CLIENT_LOGGER.success("MI投料淘汰", f"删除{deleted}条", f"有效工单{len(valid_aufnrs)}个, MI共{len(mi_supplynos)}条")
+
+    @staticmethod
+    async def refresh(dbs: str = MYAPS_DB_SET, include_input_stock: bool = False):
+        """
+        刷新库存：SAP库存+MTO全量替换Type='ST'，可选投料MI累加(type='')
+        Args:
+            dbs: 对哪些账套生效，逗号分隔
+            include_input_stock: False=仅SAP库存+MTO(高频), True=额外取前一日投料(每日00:05)
+        """
+        def get_sap_stock_data():
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            try:
+                sap_stock_response = sap_session.get(url=f"{sap_url1}", headers={'interface': 'stock', 'werks': werks}, timeout=(15, 60)).json()
+                sap_st_data = sap_stock_response.get('data', [])
+                df_sap_st = pd.DataFrame(sap_st_data)
+                df_sap_st = df_sap_st.astype({
+                    'werks': 'str', 'matnr': 'str', 'lgort': 'str',
+                    'labst': 'int32', 'labst2': 'int32', 'charg': 'str',
+                })
+                df_sap_st['avail_qty'] = df_sap_st['labst'] + df_sap_st['labst2']
+                df_sap_st['supplyno'] = df_sap_st['matnr'] + '-' + df_sap_st['werks']
+                df_sap_st['type'] = 'ST'
+                df_sap_st['priority'] = 0
+                df_sap_st['avail_date'] = now
+                df_sap_st['dt_req'] = now
+                df_sap_st['status'] = 'NEW'
+                df_sap_st['category'] = ''
+                df_sap_st['create_date'] = now
+                df_sap_st = (df_sap_st
+                                .groupby(['supplyno'], as_index=False)
+                                .agg({
+                                    'matnr': 'first', 'avail_qty': 'sum', 'type': 'first',
+                                    'avail_date': 'first', 'dt_req': 'first', 'priority': 'first',
+                                    'status': 'first', 'category': 'first', 'create_date': 'first',
+                                }))
+                df_sap_st = df_sap_st.rename(columns={'matnr': 'materialno'})
+                df_sap_st['itemno'] = pdv.ITEMNO
+            except Exception as e:
+                raise
+            return df_sap_st
+
+        CLIENT_LOGGER.start("刷新库存任务")
+        mto_vir_st = await ApsPayloadSponsor.mto_workreport_to_virtual_stock()
+
+        loop = asyncio.get_event_loop()
+        try:
+            df_sap_st = await asyncio.wait_for(
+                loop.run_in_executor(None, get_sap_stock_data),
+                timeout=75
+            )
+        except asyncio.TimeoutError:
+            CLIENT_LOGGER.fail("刷新库存任务", "获取SAP库存数据超时", "超过75秒")
+            return
+        except Exception as e:
+            CLIENT_LOGGER.fail("刷新库存任务", "获取SAP库存数据失败", str(e))
+            return
+
+        df_input_vir = None
+        pending_input_date = None
+        if include_input_stock:
+            df_input_vir, pending_input_date = await StockManager.get_sap_input_stock()
+
+        parts = [df_sap_st]
+        if mto_vir_st is not None:
+            parts.append(mto_vir_st)
+        stock_data_total = pd.concat(parts, axis=0, ignore_index=True)
+
+        stock_data_total.fillna('', inplace=True)
+        try:
+            await ApsPayloadSponsor.refresh_supply(stock_data_total.to_dict(orient='records'), dbs=dbs)
+        except Exception:
+            CLIENT_LOGGER.fail("刷新库存任务", "全量替换供应数据失败", "投料时点不推进，下次将重试该区间" if include_input_stock else "")
+            raise
+
+        if df_input_vir is not None:
+            try:
+                await StockManager._upsert_input_stock(df_input_vir, dbs=dbs)
+            except Exception as e:
+                CLIENT_LOGGER.fail("刷新库存任务", "投料虚拟库存累加失败", str(e))
+                raise
+
+        if pending_input_date:
+            try:
+                StockManager._update_last_input_date(pending_input_date)
+            except Exception as e:
+                CLIENT_LOGGER.warning("刷新库存任务", f"投料查询时点持久化失败: {e}")
 
 
-async def push_pr(period: int = 30, groupdates: List[str] | str = None):
+async def _push_pr_impl(period: int = 30, groupdates: List[str] | str = None):
     """
     推送要货计划到SRM（分批发送）
     
@@ -497,14 +699,31 @@ async def push_monthpr_to_srm():
         CLIENT_LOGGER.success("推送月度要货计划到SRM任务", "", "执行完成")
     else:
         CLIENT_LOGGER.fail("推送月度要货计划到SRM任务", "", "执行失败")
+
+
+async def push_pr(period: int = 30, groupdates: List[str] | str = None):
+    """推送要货计划到SRM，推送前将MI投料Type置ST(供SRM计入)，结束后置回空"""
+    await StockManager._toggle_mi_type(to_st=True)
+    try:
+        return await _push_pr_impl(period, groupdates)
+    finally:
+        await StockManager._toggle_mi_type(to_st=False)
 #################################################################################
 # ⬇️定时任务设置
 #################################################################################
 
-@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(), description="刷新库存数据")
+@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(), description="刷新库存数据(不含投料)")
 async def task_refresh_stock():
     try:
-        await refresh_stock()
+        await StockManager.refresh(include_input_stock=False)
+    except Exception as e:
+        pass
+
+
+@cron_task(hour=0, minute=5, description="刷新库存数据(含前一日投料虚拟库存)")
+async def task_refresh_stock_with_input():
+    try:
+        await StockManager.refresh(include_input_stock=True)
     except Exception as e:
         pass
 
@@ -524,12 +743,12 @@ async def task_push_changed_orderwc():
     await ApsPayloadSponsor.get_changed_orderwc(db_name=MYAPS_MAIN_DB)
 
 
-@cron_task(hour=23, minute=59, description="推送周要货计划到SRM")  # 每天23:59执行一次，需须在23:55拉取库存和确认报工之后
+@cron_task(hour=0, minute=30, description="推送周要货计划到SRM")  # 日初00:05刷新库存(含投料)后执行
 async def task_push_weekpr_to_srm():
     await push_weekpr_to_srm()
 
 
-@cron_task(day=1, hour=0, minute=5, description="推送月度要货计划到SRM")
+@cron_task(day=1, hour=1, minute=0, description="推送月度要货计划到SRM")  # 日初库存刷新后执行，错开周推送(00:30)
 async def task_push_seasonpr_to_srm():
     await push_monthpr_to_srm()
 
@@ -639,7 +858,7 @@ async def batch_handle_pl_status_a2e(event_data_list: List[Dict], _erp: EventRes
 
 # strategy -> handler function 映射表
 _STRATEGY_HANDLERS: Dict[str, callable] = {
-    '库存': refresh_stock,
+    '库存': StockManager.refresh,
     # 添加更多策略处理器...
     # '采购': refresh_purchase,
     # '生产': refresh_production,
