@@ -1940,7 +1940,8 @@ class DbManager:
         data_list: List[Dict[str, Any]],
         update_fields: Optional[List[str]] = None,
         exclude_fields: Optional[List[str]] = None,
-        conflict_fields: Optional[Tuple[str, ...]] = None
+        conflict_fields: Optional[Tuple[str, ...]] = None,
+        return_inserted_detail: bool = False
     ) -> Dict[str, Any]:
         """
         使用原生 SQL 执行批量 upsert
@@ -2018,6 +2019,14 @@ class DbManager:
         total_inserted = 0
         total_updated = 0
         failed_batches = []
+        inserted_rows = []
+        
+        # 回查带 ID 行记录所需的主键数据库列名
+        pk_db_column = None
+        if return_inserted_detail:
+            pk_attr = getattr(model_class._meta, 'pk_attr', None)
+            pk_field_obj = model_class._meta.fields_map.get(pk_attr) if pk_attr else None
+            pk_db_column = pk_field_obj.source_field if pk_field_obj and hasattr(pk_field_obj, 'source_field') else pk_attr
         
         # 动态调整批量大小，避免锁等待超时
         # 对于批量upsert操作，使用较小的批量大小
@@ -2102,6 +2111,29 @@ class DbManager:
                 total_inserted = (total_inserted or 0) + inserted
                 total_updated = (total_updated or 0) + updated
                 
+                # 并发安全地回查本批次插入行的自增 ID（依赖 RR 隔离 + 同事务）
+                if return_inserted_detail and pk_db_column and inserted > 0:
+                    try:
+                        _, first_id_rows = await self._execute_native_sql(
+                            "SELECT LAST_INSERT_ID() AS first_id",
+                            [],
+                            description=f"批量 upsert 回查首行ID 批次 {i//batch_size + 1}"
+                        )
+                        first_id = first_id_rows[0].get('first_id') if first_id_rows else None
+                        if first_id is not None:
+                            last_id = first_id + len(batch) - 1
+                            _, batch_rows = await self._execute_native_sql(
+                                f"SELECT * FROM `{table_name}` WHERE `{pk_db_column}` BETWEEN %s AND %s",
+                                [first_id, last_id],
+                                description=f"批量 upsert 回查带ID行 批次 {i//batch_size + 1}"
+                            )
+                            if len(batch_rows) == inserted:
+                                inserted_rows.extend(batch_rows)
+                            else:
+                                logger.warning(f"批量upsert回查行数({len(batch_rows)})与插入数({inserted})不符，跳过本批回查结果")
+                    except Exception as rc_err:
+                        logger.warning(f"批量upsert回查带ID行失败: {str(rc_err)}")
+                
                 self.stats['batches_executed'] += 1
                 
                 # 每处理完一个批次，短暂休眠，避免过度占用数据库资源
@@ -2123,7 +2155,8 @@ class DbManager:
             'inserted': total_inserted or 0,
             'updated': total_updated or 0,
             'total': (total_inserted or 0) + (total_updated or 0),
-            'errors': failed_batches
+            'errors': failed_batches,
+            'inserted_rows': inserted_rows
         }
     
     
@@ -2260,7 +2293,8 @@ class DbManager:
         exclude_fields: Optional[List[str]] = None,
         conflict_fields: Optional[Tuple[str, ...]] = None,
         use_orm_or_sql: Literal["orm", "sql", "auto"] = "sql",
-        use_transaction: Optional[bool] = None
+        use_transaction: Optional[bool] = None,
+        return_inserted_detail: bool = False
     ) -> Dict[str, Any]:
         """
         批量 upsert 主方法
@@ -2304,7 +2338,15 @@ class DbManager:
             update_fields = list(all_fields - excluded_set)
         
         # 选择执行策略
-        if use_orm_or_sql == "orm" or (use_orm_or_sql == "auto" and len(data_list) < 100):
+        # return_inserted_detail 仅 native_sql 路径支持（ORM bulk_create 不回填自增主键）
+        if return_inserted_detail:
+            method = "native_sql"
+            result = await self._bulk_upsert_native_sql(
+                model_class, data_list, update_fields,
+                exclude_fields, conflict_fields,
+                return_inserted_detail=return_inserted_detail
+            )
+        elif use_orm_or_sql == "orm" or (use_orm_or_sql == "auto" and len(data_list) < 100):
             method = "orm"
             result = await self._bulk_upsert_orm(
                 model_class, data_list, update_fields,
@@ -2339,7 +2381,8 @@ class DbManager:
             "batch_size": len(data_list),
             "optimal_batch_size": self.optimal_batch_size,
             "conflict_fields": conflict_fields,
-            "update_fields": update_fields
+            "update_fields": update_fields,
+            "inserted_rows": result.get('inserted_rows', [])
         }
         
         logger.success("批量upsert", f"{db_table}@{self.connection_name}", f"插入{result['inserted']}条，更新{result['updated']}条，执行时间{execution_time:.3f}秒")

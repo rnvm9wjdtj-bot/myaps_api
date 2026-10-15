@@ -1517,24 +1517,33 @@ async def create_workreport(
     request: Request,
     data: List[AcceptConfirm] = Body(...),
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-    return_data: bool = Query(False, description="是否返回数据"),
+    return_data: bool = Query(False, description="是否返回写入数据（含自增主键NoID的完整行）"),
     # 鉴权已由中间件HMAC签名统一处理，路由内不再声明x_api_key
 ):
     """
     新增报工记录
     db_name: str，数据库名称，多个数据库名称用逗号分隔
+    return_data: 是否返回写入数据。开启时通过LAST_INSERT_ID()+范围回查（RR隔离+同事务）
+        并发安全地返回各行的自增主键NoID及完整数据库行；多账套时每行附加_db_name字段。
     """
     log_api_request(request)
     db_name = db_name.replace(" ", "")
     try:
-        # await db_query(db_name=db_name, model_or_tablename="t_orderwc", filter_string=f"`SupplyNo`='{supplyno}' AND `ItemNo`='{itemno}'")
-        result = await db_bupsert(db_names=db_name, model_or_tablename="t_confirm", data_list=data)
+        result = await db_bupsert(db_names=db_name, model_or_tablename="t_confirm", data_list=data, return_inserted_detail=return_data)
         return standard_response(
             status_code=200,
             success=result.success,
             message=result.message,
             data=result.data if return_data else None,
             meta=result.meta
+        )
+    except ValueError as e:
+        return standard_response(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            success=0,
+            message=f"参数错误：{str(e)}",
+            data=[],
+            meta={}
         )
     except Exception as e:
         logger.error(f"新增报工记录失败: {str(e)}")
@@ -1581,6 +1590,45 @@ async def delete_workreport(
         )
     except Exception as e:
         logger.error(f"删除报工记录失败: {str(e)}")
+        return standard_response(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            success=0,
+            message=f"操作失败：{str(e)}",
+            data=[],
+            meta={}
+        )
+
+
+@rt.delete(
+    "/t_confirm/{noid}",
+    tags=["生产数据 - 报工"],
+    summary="按NoID删除单条报工记录",
+    description="按自增主键NoID删除单条报工记录"
+)
+async def delete_workreport_by_noid(
+    request: Request,
+    db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+    noid: int = Path(..., description="自增主键NoID"),
+    # 鉴权已由中间件HMAC签名统一处理，路由内不再声明x_api_key
+):
+    log_api_request(request)
+    db_name = db_name.replace(" ", "")
+
+    from globalobjects.db_manager import build_safe_filter
+
+    conditions = [("NoID", "=", noid)]
+    filter_string = build_safe_filter(conditions)
+    try:
+        result = await db_delete(db_names=db_name, model_or_tablename="t_confirm", filter_string=filter_string)
+        return standard_response(
+            status_code=200,
+            success=result.success,
+            message=result.message,
+            data=result.data,
+            meta=result.meta
+        )
+    except Exception as e:
+        logger.error(f"按NoID删除报工记录失败: {str(e)}")
         return standard_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,

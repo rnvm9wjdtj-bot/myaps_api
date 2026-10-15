@@ -1006,7 +1006,8 @@ async def db_bupsert(
     exclude_none: bool = True,
     batch_size: int = 1000,
     on_batch_error: Literal["continue", "skip"] = "continue",
-    on_db_error: Literal["continue", "abort"] = "continue"
+    on_db_error: Literal["continue", "abort"] = "continue",
+    return_inserted_detail: bool = False
 ) -> MultiDbResult:
     """
     通用批量写入操作，支持创建和更新
@@ -1020,7 +1021,11 @@ async def db_bupsert(
         batch_size: 批次大小，默认为1000
         on_batch_error: 批次出错时的策略，"continue"继续下一批次，"skip"跳过后续所有批次
         on_db_error: 账套出错时的策略，"continue" 继续下一账套，"abort" 中断
-        
+        return_inserted_detail: 是否返回带自增主键ID的完整插入行。开启时强制走原生SQL路径并启用事务，
+            写入后通过 LAST_INSERT_ID()+范围回查（依赖MySQL RR隔离+同事务）并发安全地取回各行的自增ID。
+            要求冲突字段为自增主键且输入数据不含该字段（纯插入场景），否则抛出ValueError。
+            返回的data由原始入参替换为带noid的数据库完整行；多账套时每行附加_db_name字段。
+    
     Returns:
         MultiDbResult: 统一格式的返回值
     """
@@ -1056,6 +1061,23 @@ async def db_bupsert(
     # 格式化数据用于日志记录，将枚举和Decimal等类型转换为字符串
     formatted_data = format_data_for_logging(upsert_data_list)
     logger.insert("批量upsert", mdl._meta.db_table, f"接收{origin_total}条，去重后{len(upsert_data_list)}")
+    
+    # 开启返回带 ID 行记录时的前置校验
+    if return_inserted_detail:
+        # 仅支持 native_sql 路径（ORM bulk_create 不回填自增主键）
+        use_orm_or_sql = "sql"
+        # 校验纯插入场景：冲突字段必须是自增主键且输入数据不含该字段
+        pk_attr = getattr(mdl._meta, 'pk_attr', None)
+        pk_field_obj = mdl._meta.fields_map.get(pk_attr) if pk_attr else None
+        if not (pk_field_obj and pk_field_obj.generated):
+            raise ValueError(f"return_inserted_detail 要求冲突字段为自增主键，但 {table_name} 的主键 {pk_attr} 非自增")
+        # 冲突字段必须即自增主键本身，否则 ON DUPLICATE KEY UPDATE 会触发业务键冲突的 UPDATE，
+        # 导致 LAST_INSERT_ID() 语义错乱、范围回查拿到错误区间
+        if tuple(model_key) != (pk_attr,):
+            raise ValueError(f"return_inserted_detail 要求冲突字段即自增主键，但 conflict_fields={tuple(model_key)} ≠ pk=({pk_attr},)，表 {table_name}")
+        for item in upsert_data_list:
+            if pk_attr in item and item[pk_attr] is not None:
+                raise ValueError(f"return_inserted_detail 要求纯插入场景，但输入数据包含自增主键 {pk_attr} 的值")
     
     # 检查upsert_data_list是否为空
     if not upsert_data_list:
@@ -1097,6 +1119,7 @@ async def db_bupsert(
         db_skipped_count = 0
         db_skipped_batches = []
         db_success = True
+        db_inserted_rows = []
         
         total_batches = (len(upsert_data_list) + batch_size - 1) // batch_size
         try:
@@ -1113,7 +1136,9 @@ async def db_bupsert(
                             update_fields=update_fields,
                             exclude_fields=exclude_fields,
                             conflict_fields=tuple(model_key) if model_key else None,
-                            use_orm_or_sql=use_orm_or_sql
+                            use_orm_or_sql=use_orm_or_sql,
+                            return_inserted_detail=return_inserted_detail,
+                            use_transaction=True if return_inserted_detail else None
                         )
                     
                     result = await _execute_with_retry(
@@ -1125,6 +1150,7 @@ async def db_bupsert(
 
                     batch_create = result.get("inserted") or 0
                     batch_update = result.get("updated") or 0
+                    db_inserted_rows.extend(result.get("inserted_rows") or [])
                     db_create_count = (db_create_count or 0) + batch_create
                     db_update_count = (db_update_count or 0) + batch_update
                     logger.insert("账套批次生效", f"{db_name} (批次{i+1}/{total_batches})", f"新增{batch_create}条，修改{batch_update}条")
@@ -1180,7 +1206,8 @@ async def db_bupsert(
             "update": db_update_count,
             "errors": db_errors,
             "skipped_count": db_skipped_count,
-            "skipped_batches": db_skipped_batches
+            "skipped_batches": db_skipped_batches,
+            "inserted_rows": db_inserted_rows
         })
     
     success_db_names = [r["db_name"] for r in db_results if r["success"]]
@@ -1219,9 +1246,22 @@ async def db_bupsert(
             }
         )
 
+    # 合并带 ID 的插入行（多账套时每行标注 _db_name）
+    if return_inserted_detail:
+        all_inserted_rows = []
+        for r in db_results:
+            rows = r.get("inserted_rows", [])
+            if len(valid_dbs) > 1:
+                for row in rows:
+                    row["_db_name"] = r["db_name"]
+            all_inserted_rows.extend(rows)
+        final_data = all_inserted_rows if all_inserted_rows else data_list
+    else:
+        final_data = data_list
+
     return MultiDbResult(
         success=success_value,
-        data=data_list,
+        data=final_data,
         message=f"生效{len(db_results)}个账套，总计新增{create_count_total}条，修改{update_count_total}条",
         meta={
             "affected_rows": (create_count_total or 0) + (update_count_total or 0),
