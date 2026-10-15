@@ -127,12 +127,14 @@ class EfEnum(str, Enum):
 class SfEnum(str, Enum):
     S = "S"
     F = "F"
+    Z = 'Z'
     
     @classmethod
     def get_options(cls):
         return [
-            {"value": "S", "label": "S"},
-            {"value": "F", "label": "F"}
+            {"value": "S", "label": "并行(S)"},
+            {"value": "F", "label": "串行(F)"},
+            {"value": "Z", "label": "并结(Z)"}
         ]
 
 

@@ -313,7 +313,7 @@ class AcceptMatWc(BaseModel):
     basesec: float = Field(..., ge=0, description='节拍T/T(秒/100)', example=600)
     fixqty: int = Field(0, ge=0, description='额定量', example=100)
     fixsec: int = Field(0, ge=0, description='额定时间(秒)', example=300)
-    sf: gc.SfEnum = Field(gc.SfEnum.F, example="F", description='并行S/串行F')
+    sf: gc.SfEnum = Field(gc.SfEnum.F, example="F", description='并行S/串行F/并结Z')
     offsetsec: int = Field(0, description='偏置+/-(秒)', example=0)
     lotsize: float = Field(0.0, description='批量大小', example=0.0)
     lotsec: int = Field(0, description='批量时间(秒)', example=0)
