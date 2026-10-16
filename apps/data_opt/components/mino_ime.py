@@ -601,7 +601,7 @@ class ImeMo(MoVoucher):
 #     """
 #     物料主数据（外部对接）
 
-#     注意：物料推送不在双方对接合同范围内，仅用于辅助推送工序任务单所依赖的缺失物料。
+#     注意：物料推送不在双方对接合同范围内，仅用于辅助推送工序任务单依赖的缺失物料。
 #     不接入 binlog 事件流，需手动调用 create_or_update。
 #     """
 #     _CREATE_ENDPOINT = "/tmgc2-api/api-proxy/erp/material/saveAndUpdateMaterial"

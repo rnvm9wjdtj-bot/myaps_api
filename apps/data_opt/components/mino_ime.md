@@ -1,6 +1,6 @@
-# mino_ime.py 联调指南
+# mino_ime.py 对接操作指引
 
-> 本文档记录 MyAPS → 明珞智造家 MES (imefuture) 对接联调过程中的关键注意事项，供 AI Agent 在新项目复用模块时快速调试参考。
+> 本文档为 MyAPS → 明珞智造家 MES (imefuture) 对接模块的操作指引，供 AI Agent 在新环境复用时快速调试参考。文档仅包含通用规则与操作步骤，不含任何环境特定的阶段性状态。
 
 ## 1. 鉴权机制
 
@@ -14,13 +14,13 @@ sign = md5(json.dumps(body, ensure_ascii=False) + erptimestamp + access_key_secr
 - `erptimestamp` 为毫秒级时间戳字符串
 
 ### 配置项（dev.json `ime` 节点）
-| 配置键 | 说明 | 测试环境值 |
-|--------|------|-----------|
-| `base_url` | 网关地址 | `https://beta-tmgc2-gateway.imefuture.com` |
-| `access_key_secret` | 签名密钥 | `2EE351BC3AC94730FC227F9DB4B73083` |
-| `$siteCode` | 企业编号 | `A00046447`（**不带 NO. 前缀**） |
-| `$departmentCode` | 部门编码 | （测试环境为空，工序任务单可能需要非空值） |
-| `$createUser` | 创建人工号 | （测试环境为空） |
+| 配置键 | 说明 | 备注 |
+|--------|------|------|
+| `base_url` | 网关地址 | 测试：`https://beta-tmgc2-gateway.imefuture.com`；生产：`https://tmgc2-gateway.imefuture.com` |
+| `access_key_secret` | 签名密钥 | 由明珞方分配 |
+| `$siteCode` | 企业编号 | **不带 NO. 前缀**，直接用明珞分配的原值 |
+| `$departmentCode` | 部门编码 | 工序任务单需要非空值，由明珞方分配 |
+| `$createUser` | 创建人工号 | 可留空，明珞方需适配空值校验 |
 
 ### 响应分层
 - **网关层**：`{status, returnCode, returnMsg, memberId}`
@@ -33,13 +33,13 @@ sign = md5(json.dumps(body, ensure_ascii=False) + erptimestamp + access_key_secr
 
 ## 2. 五个接口总览
 
-| # | 接口 | APS 源表 | Endpoint | Payload 格式 | 联调状态 |
-|---|------|---------|----------|-------------|---------|
-| 1 | 作业单元类型 | `t_workcenter` | `erp/workUnitType/addWorkUnitTypeAndWorkUnitBatchToExternal` | `{"siteCode":..., "addVos":[...]}` | ✅ 已通 |
-| 2 | 工序 | `t_mat_wc` (去重 itemno) | `erp/operation/addAndUpdateOperationBatchToExternal` | 裸列表 `[...]` | ✅ 已通 |
-| 3 | 工艺路线 | `t_mat_wc` | `erp/process/addProcessBatchToExternal` | 裸列表 `[...]` | ✅ 已通 |
-| 4 | 物料主数据 | 手动构造 | `erp/material/saveAndUpdateMaterial` | `{"entity":[{"zzjmaterial":{...}}]}` | ✅ 已通 |
-| 5 | 工序任务单 | `t_supply` (Type=PL) | `erp/operationTaskOrder/api/create` | `[{"siteCode":..., "productionOrderVo":{...}}]` | ✅ 已通 |
+| # | 接口 | APS 源表 | Endpoint | Payload 格式 |
+|---|------|---------|----------|-------------|
+| 1 | 作业单元类型 | `t_workcenter` | `erp/workUnitType/addWorkUnitTypeAndWorkUnitBatchToExternal` | `{"siteCode":..., "addVos":[...]}` |
+| 2 | 工序 | `t_mat_wc` (去重 itemno) | `erp/operation/addAndUpdateOperationBatchToExternal` | 裸列表 `[...]` |
+| 3 | 工艺路线 | `t_mat_wc` | `erp/process/addProcessBatchToExternal` | 裸列表 `[...]` |
+| 4 | 物料主数据 | 手动构造 | `erp/material/saveAndUpdateMaterial` | `{"entity":[{"zzjmaterial":{...}}]}` |
+| 5 | 工序任务单 | `t_supply` (Type=PL) | `erp/operationTaskOrder/api/create` | `[{"siteCode":..., "productionOrderVo":{...}}]` |
 
 > **⚠️ Payload 格式陷阱**：五个接口的 payload 包裹格式各不相同，极易混淆。上表已逐一标明，新增接口时务必先确认格式。
 
@@ -101,15 +101,15 @@ sign = md5(json.dumps(body, ensure_ascii=False) + erptimestamp + access_key_secr
 - 不接入 binlog 事件流，需手动调用 `push_materials()`
 - `materialUnitText` 传明珞系统中已存在单位的**中文描述/名称**（如"件"、"千克"），不是编码（如"PC"、"kg"）
 
-> **⚠️ 当前为注释状态（2026-10-13）**
+> **物料推送功能启用/禁用操作**
 >
-> 联调完成后，物料推送相关代码已全部注释，涉及三处：
-> 1. `mino_ime.py`：`ImeMaterialPushModel` 类定义（L579-597）、`ImeMaterial` 类定义（L600-634）
-> 2. `client.py` L16：`ImeMaterial` 的 import 行
-> 3. `client.py` L22：`register_source(...)` 中的 `ImeMaterial` 参数
-> 4. `client.py` L82-97：`push_materials()` 函数定义
+> 物料推送为合同外辅助功能，默认注释禁用。涉及四处注释点：
+> 1. `mino_ime.py`：`ImeMaterialPushModel` 类定义、`ImeMaterial` 类定义
+> 2. `client.py`：`ImeMaterial` 的 import 行
+> 3. `client.py`：`register_source(...)` 中的 `ImeMaterial` 参数
+> 4. `client.py`：`push_materials()` 函数定义
 >
-> **启用步骤**（后续调试需推送物料时）：
+> **启用步骤**：
 > 1. 取消 `mino_ime.py` 中 `ImeMaterialPushModel` 和 `ImeMaterial` 的注释
 > 2. 取消 `client.py` 中 `ImeMaterial` 的 import 注释
 > 3. 取消 `client.py` 中 `register_source(...)` 的 `ImeMaterial` 参数注释
@@ -126,7 +126,7 @@ sign = md5(json.dumps(body, ensure_ascii=False) + erptimestamp + access_key_secr
 |----------|---------|------|
 | `dt_ordstart` | `plannedStartDateTime` | 计划开始时间 |
 | `dt_ordend` | `plannedEndDateTime` | 计划结束时间 |
-| — | `departmentCode` | 部门编码（配置注入，测试环境为空） |
+| — | `departmentCode` | 部门编码（配置注入，须非空） |
 | `supplyno` | `sourceNo` | 外部订单编号（**原映射 vendorno，null 时用 supplyno 兜底**） |
 | `materialno` | `materialCode` | 物料编码（**不带 -V1 后缀**） |
 | `avail_qty` | `plannedQuantity` | 计划数量 |
@@ -181,18 +181,18 @@ await ImeRoute.create(data=event_data_list)             # 后工艺路线
 
 | 层级 | 缺失主数据 | 明珞报错信息 | 解决方式 |
 |------|-----------|-------------|---------|
-| 1 | 工作组 (WorkingTeam) | `远程内部接口调用失败:null` | 明珞方修复 `getWorkingTeamInfoByWorkingTeamCode` bug |
+| 1 | 工作组 (WorkingTeam) | `远程内部接口调用失败:null` | 需明珞方修复 `getWorkingTeamInfoByWorkingTeamCode` |
 | 2 | 工艺路线匹配 | `系统中工艺不存在，请维护工艺!` | processCode 带 `-V1` 后缀 vs materialCode 不带后缀，需明珞方确认匹配逻辑 |
 | 3 | 物料主数据 | `该物料[xxx]系统中不存在!` | 先推送物料主数据（成品 + BOM 子物料） |
-| 4 | 未知 | `500 Internal Server Error` | 明珞方修复服务端校验规则后通过；最终 `departmentCode=LH`、`reportType` 注释、`createUser` 留空 |
+| 4 | 服务端异常 | `500 Internal Server Error` | 凭 `requestId` 联系明珞方查服务端日志；检查 `departmentCode`/`createUser` 等字段是否空值导致 NPE |
 
 > **⚠️ 关键区分**：`workCenterCode` 查的是**工作组 (WorkingTeam)**，不是**作业单元 (WorkUnit)**。推送作业单元类型不会创建工作组，二者是独立主数据。
 
-## 5. 联调踩坑点与解决方式
+## 5. 踩坑点与解决方式
 
 ### 5.1 siteCode 带前缀导致 404
 - **现象**：siteCode 带 `NO.` 前缀时网关返回 404
-- **解决**：直接用 dev.json 配置原值（如 `A00046447`），不带前缀
+- **解决**：直接用 dev.json 配置原值，不带前缀
 
 ### 5.2 returnCode=11 是密钥错误
 - **现象**：`returnCode=11`，曾误判为 memberId 缺失
@@ -221,7 +221,7 @@ await ImeRoute.create(data=event_data_list)             # 后工艺路线
 
 ### 5.8 processCode 与 materialCode 不匹配
 - **现象**：工艺路线 `processCode=2100-011-300-V1`，工序任务单 `materialCode=2100-011-300`，明珞报"工艺不存在"
-- **状态**：明珞方已修复匹配逻辑，但后续仍出现 500，需进一步确认
+- **解决**：需明珞方确认匹配逻辑是否已适配版本后缀差异
 
 ### 5.9 classmethod 中误用 self._CONNECTION
 - **现象**：`ImeRoute`/`ImeOperation` 的 classmethod 中误用 `self` 导致 NameError 被 except 吞掉
@@ -300,10 +300,10 @@ async def main():
 
 asyncio.run(main())
 ```
-运行：`PROJECT_DIR=WXZJJX python3 /tmp/test_xxx.py`
+运行：`PROJECT_DIR=<租户目录> python3 /tmp/test_xxx.py`
 
 ### 7.4 Linux 环境用 python3
-该环境 `python` 不在 PATH，运行脚本用 `python3`。
+Linux 环境 `python` 可能不在 PATH，运行脚本用 `python3`。
 
 ## 8. Pydantic DTO 约定
 
@@ -314,10 +314,38 @@ asyncio.run(main())
 
 ## 9. 模块命名说明
 
-模块原名为 `mino.py`，2026-10-11 重命名为 `mino_ime.py`（通用化命名，不绑定单一客户）。所有 `Mino*` 类名改为 `Ime*`，`CACHE_MINO` 改为 `CACHE_IME`，`dev.json` 配置键 `mino` 改为 `ime`。
+模块原名为 `mino.py`，已重命名为 `mino_ime.py`（通用化命名，不绑定单一客户）。所有 `Mino*` 类名改为 `Ime*`，`CACHE_MINO` 改为 `CACHE_IME`，`dev.json` 配置键 `mino` 改为 `ime`。
 
----
+## 10. 全量推送操作
 
-**最后更新**: 2026-10-13  
-**联调环境**: WXZJJX（测试租户）  
-**联调状态**: 五个接口全部联调通过（2026-10-13）
+新环境首次对接时，需按前置依赖链顺序全量推送主数据：
+
+| 顺序 | APS 表 | 推送方法 | 说明 |
+|------|--------|---------|------|
+| 1 | `t_workcenter` | `ImeWorkUnitType.create_batch(data=全表行)` | 接口幂等，已存在的自动跳过 |
+| 2 | `t_mat_wc` 去重工序 | `ImeOperation.create_or_update(去重数据)` | 通过 `extract_unique_matwcitem` 去重 |
+| 3 | `t_mat_wc` 全表 | `ImeRoute.create(data=全表行)` | 按 `(materialno, matver)` 分组 |
+| 4 | `t_material` | `ImeMaterial.create_or_update(全表行)` | 需先启用物料推送功能（见 §3.4） |
+| 5 | `t_supply` PL | `ImeMo.create_batch(...)` | 依赖前四步全部完成 |
+
+全量推送脚本模板：
+```python
+import pymysql
+from apps.data_opt.components.mino_ime import ImeConnection, ImeWorkUnitType
+
+DB = dict(host=..., port=..., user=..., password=..., database=..., charset='utf8mb4')
+
+async def main():
+    ime_conn = ImeConnection()
+    ime_conn.register_source(ImeWorkUnitType)
+    conn = pymysql.connect(**DB)
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM t_workcenter ORDER BY workcenter")
+    cols = [d[0] for d in cur.description]
+    rows = [{k.lower(): v for k, v in dict(zip(cols, r)).items()} for r in cur.fetchall()]
+    result = await ImeWorkUnitType.create_batch(data=rows)
+    print(result)
+    conn.close()
+
+asyncio.run(main())
+```
