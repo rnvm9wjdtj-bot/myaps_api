@@ -4,7 +4,7 @@ from re import A
 
 import requests, uuid, asyncio, json, httpx
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Dict, Union, Optional, Tuple
 
 from contextlib import asynccontextmanager
@@ -17,7 +17,7 @@ from .._base import (
     ApsPayloadSponsor, EventResultPoster, CLIENT_LOGGER, standard_response, get_session, get_async_session, event_batch_handler,
     cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, PROJECT_JSON_FILE, pdv,
 )
-from apps.io_api.utils.db_operation import db_exec_sql
+
 
 
 
@@ -254,39 +254,43 @@ async def close_sap_async_client():
 
 
 class StockManager:
-    """库存数据管理：SAP库存同步 + 投料虚拟库存(MI)累加/淘汰"""
+    """库存数据管理：SAP库存 + MTO + MI投料全量同步"""
 
     @staticmethod
-    def _update_last_input_date(date_str: str):
-        """更新prod.json中的erp.last_order_material_input"""
-        PROJECT_JSON_FILE.set('erp / last_order_material_input', date_str)
-        erp['last_order_material_input'] = date_str
-
-    @staticmethod
-    async def get_sap_input_stock() -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+    async def get_sap_input_stock() -> Optional[pd.DataFrame]:
         """
-        从SAP获取生产投料数据作为虚拟库存(累积区间，支持失败补取)
-        查询区间：[上次成功处理日的次日, 昨天]
-        Returns: (df, pending_date)，失败/无数据/无需取数为(None, None)
+        从SAP获取生产投料数据(全量)，视为一般库存ST。
+        起始时间: MO工单最早创建时间；截止时间: 当天。
+        白名单过滤: AUFNR不在MO白名单的MI数据剔除。
         """
-        now = datetime.now()
-        now_str = now.strftime('%Y-%m-%d %H:%M:%S')
-        yesterday_str = (now - timedelta(days=1)).strftime('%Y%m%d')
-
-        last_date = erp.get("last_order_material_input", "")
-        if last_date:
-            try:
-                i_datum_f = (datetime.strptime(last_date, '%Y%m%d') + timedelta(days=1)).strftime('%Y%m%d')
-            except ValueError:
-                CLIENT_LOGGER.warning("生产投料同步", f"上次时点{last_date}格式非法，回退为前7天")
-                i_datum_f = (now - timedelta(days=7)).strftime('%Y%m%d')
+        try:
+            mo_result = await db_query(
+                db_name=MYAPS_MAIN_DB,
+                model_or_tablename="t_supply",
+                select="SupplyNo,Create_Date",
+                filter_string="`Type`='MO'",
+                order_string="Create_Date ASC",
+                page_size=10000,
+            )
+        except Exception as e:
+            CLIENT_LOGGER.fail("生产投料同步", "MO白名单查询失败，跳过MI投料取数", str(e))
+            return None
+        if not mo_result.data:
+            CLIENT_LOGGER.info("生产投料同步", "无MO工单，跳过投料取数")
+            return None
+        mo_whitelist = {row['supplyno'] for row in mo_result.data}
+        earliest = mo_result.data[0]['create_date']
+        if isinstance(earliest, str):
+            i_datum_f = datetime.strptime(earliest[:10], '%Y-%m-%d').strftime('%Y%m%d')
         else:
-            i_datum_f = (now - timedelta(days=7)).strftime('%Y%m%d')
-        i_datum_t = yesterday_str
+            i_datum_f = earliest.strftime('%Y%m%d')
+        i_datum_t = datetime.now().strftime('%Y%m%d')
 
         if i_datum_f > i_datum_t:
-            CLIENT_LOGGER.info("生产投料同步", f"已处理到{last_date}，无需取数(区间{i_datum_f}~{i_datum_t}为空)")
-            return None, None
+            CLIENT_LOGGER.info("生产投料同步", f"区间{i_datum_f}~{i_datum_t}为空，跳过")
+            return None
+
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
         def fetch_input_data():
             response = sap_session.get(
@@ -302,7 +306,6 @@ class StockManager:
             data = response.get('data', [])
             if not data:
                 return pd.DataFrame()
-
             df = pd.DataFrame(data)
             df = df.astype({
                 'werks': 'str', 'matnr': 'str', 'aufnr': 'str',
@@ -311,11 +314,10 @@ class StockManager:
             df = df[df['bwart'].isin(['261', '262'])]
             if df.empty:
                 return pd.DataFrame()
-
             df['avail_qty'] = df['menge'].where(df['bwart'] == '261', -df['menge'])
             df['supplyno'] = 'MI-' + df['aufnr'] + '-' + df['matnr'] + '-' + df['werks']
             df['materialno'] = df['matnr']
-            df['type'] = ''
+            df['type'] = 'ST'
             df['priority'] = 0
             df['avail_date'] = now_str
             df['dt_req'] = now_str
@@ -323,7 +325,6 @@ class StockManager:
             df['category'] = ''
             df['create_date'] = now_str
             df['itemno'] = pdv.ITEMNO
-
             df = (df
                   .groupby(['supplyno'], as_index=False)
                   .agg({
@@ -341,124 +342,27 @@ class StockManager:
             )
         except asyncio.TimeoutError:
             CLIENT_LOGGER.fail("生产投料同步", "获取SAP投料数据超时", "超过75秒")
-            return None, None
+            return None
         except Exception as e:
             CLIENT_LOGGER.fail("生产投料同步", "获取SAP投料数据失败", str(e))
-            return None, None
+            return None
 
         if df_input.empty:
             CLIENT_LOGGER.info("生产投料同步", f"区间{i_datum_f}~{i_datum_t}无投料数据")
-            return None, yesterday_str
+            return None
 
-        CLIENT_LOGGER.success("生产投料同步", f"获取{len(df_input)}条投料虚拟库存", f"区间{i_datum_f}~{i_datum_t}")
-        return df_input, yesterday_str
+        before = len(df_input)
+        df_input = df_input[df_input['supplyno'].str.split('-').str[1].isin(mo_whitelist)]
+        filtered = before - len(df_input)
+        if filtered > 0:
+            CLIENT_LOGGER.info("生产投料同步", f"白名单过滤: 剔除{filtered}条(AUFNR不在MO白名单)")
 
-    @staticmethod
-    async def _toggle_mi_type(to_st: bool, dbs: str = MYAPS_DB_SET):
-        """切换MI投料虚拟库存的Type字段：to_st=True置'ST'(供SRM推送)，False置空(避免APS误计入)"""
-        target = 'ST' if to_st else ''
-        for db_name in dbs.split(','):
-            db_name = db_name.strip()
-            if not db_name:
-                continue
-            await db_exec_sql(
-                db_name=db_name,
-                sql="UPDATE t_supply SET Type=%s WHERE SupplyNo LIKE 'MI-%'",
-                params=[target],
-                description=f"切换MI投料Type为{'ST' if to_st else '空'}",
-            )
+        CLIENT_LOGGER.success("生产投料同步", f"获取{len(df_input)}条投料虚拟库存", f"区间{i_datum_f}~{i_datum_t}, 白名单{len(mo_whitelist)}个")
+        return df_input
 
     @staticmethod
-    async def _upsert_input_stock(df_input: pd.DataFrame, dbs: str = MYAPS_DB_SET):
-        """投料虚拟库存累加写入：读存量MI按supplyno累加avail_qty后upsert，type置空，独立于ST全量替换"""
-        existing_qty: Dict[str, float] = {}
-        supplynos = df_input['supplyno'].unique().tolist()
-        if supplynos:
-            quoted = ",".join(f"'{s}'" for s in supplynos)
-            filter_str = f"`SupplyNo` IN ({quoted})" if len(supplynos) > 1 else f"`SupplyNo`='{supplynos[0]}'"
-            existing_result = await db_query(
-                db_name=MYAPS_MAIN_DB,
-                model_or_tablename="t_supply",
-                select="SupplyNo,Avail_Qty",
-                filter_string=filter_str,
-            )
-            if existing_result.data:
-                for row in existing_result.data:
-                    existing_qty[row['supplyno']] = existing_qty.get(row['supplyno'], 0) + (row.get('avail_qty') or 0)
-        df_merged = df_input.copy()
-        df_merged['avail_qty'] = df_merged['supplyno'].map(existing_qty).fillna(0) + df_merged['avail_qty']
-        records = df_merged.to_dict(orient='records')
-        await db_bupsert(db_names=dbs, model_or_tablename="t_supply", data_list=records)
-        CLIENT_LOGGER.success("投料虚拟库存累加", f"写入{len(records)}条", f"存量{len(existing_qty)}条")
-        await StockManager.cleanup_mi_stock(dbs)
-
-    @staticmethod
-    async def cleanup_mi_stock(dbs: str = MYAPS_DB_SET):
-        """淘汰无效工单对应的MI投料虚拟库存。有效工单=Type='MO'且Status!='CMP'，MI的AUFNR不在有效集合中则DELETE"""
-        valid_result = await db_query(
-            db_name=MYAPS_MAIN_DB,
-            model_or_tablename="t_supply",
-            select="SupplyNo",
-            filter_string="`Type`='MO' AND `Status`!='CMP'",
-            page_size=10000,
-        )
-        valid_aufnrs = {row['supplyno'] for row in valid_result.data} if valid_result.data else set()
-
-        mi_supplynos = []
-        page_index = 1
-        page_size = 1000
-        while True:
-            batch = await db_query(
-                db_name=MYAPS_MAIN_DB,
-                model_or_tablename="t_supply",
-                select="SupplyNo",
-                filter_string="`SupplyNo` LIKE 'MI-%'",
-                page_size=page_size,
-                page_index=page_index,
-            )
-            if not batch.data:
-                break
-            mi_supplynos.extend(row['supplyno'] for row in batch.data)
-            if len(batch.data) < page_size:
-                break
-            page_index += 1
-
-        to_delete = []
-        for s in mi_supplynos:
-            parts = s.split('-')
-            if len(parts) >= 4 and parts[1] not in valid_aufnrs:
-                to_delete.append(s)
-
-        if not to_delete:
-            CLIENT_LOGGER.info("MI投料淘汰", "无需淘汰", f"有效工单{len(valid_aufnrs)}个, MI共{len(mi_supplynos)}条")
-            return
-
-        deleted = 0
-        for i in range(0, len(to_delete), 500):
-            chunk = to_delete[i:i + 500]
-            quoted = ",".join(f"'{s}'" for s in chunk)
-            for db_name in dbs.split(','):
-                db_name = db_name.strip()
-                if not db_name:
-                    continue
-                await db_exec_sql(
-                    db_name=db_name,
-                    sql=f"DELETE FROM t_supply WHERE SupplyNo IN ({quoted})",
-                    params=None,
-                    description=f"淘汰无效MI投料({i + 1}-{i + len(chunk)})",
-                )
-            deleted += len(chunk)
-
-        CLIENT_LOGGER.success("MI投料淘汰", f"删除{deleted}条", f"有效工单{len(valid_aufnrs)}个, MI共{len(mi_supplynos)}条")
-
-    @staticmethod
-    async def refresh(dbs: str = MYAPS_DB_SET, include_input_stock: bool = False):
-        """
-        刷新库存：SAP库存+MTO全量替换Type='ST'，可选投料MI累加(type='')
-        Args:
-            dbs: 对哪些账套生效，逗号分隔
-            include_input_stock: False=仅SAP库存+MTO(高频), True=额外取前一日投料(每日00:05)
-        """
+    async def refresh(dbs: str = MYAPS_DB_SET):
+        """刷新库存：SAP库存+MTO+MI投料 全量替换Type='ST'"""
         def get_sap_stock_data():
             now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             try:
@@ -507,38 +411,24 @@ class StockManager:
             CLIENT_LOGGER.fail("刷新库存任务", "获取SAP库存数据失败", str(e))
             return
 
-        df_input_vir = None
-        pending_input_date = None
-        if include_input_stock:
-            df_input_vir, pending_input_date = await StockManager.get_sap_input_stock()
+        df_input_vir = await StockManager.get_sap_input_stock()
 
         parts = [df_sap_st]
         if mto_vir_st is not None:
             parts.append(mto_vir_st)
+        if df_input_vir is not None:
+            parts.append(df_input_vir)
         stock_data_total = pd.concat(parts, axis=0, ignore_index=True)
 
         stock_data_total.fillna('', inplace=True)
         try:
             await ApsPayloadSponsor.refresh_supply(stock_data_total.to_dict(orient='records'), dbs=dbs)
         except Exception:
-            CLIENT_LOGGER.fail("刷新库存任务", "全量替换供应数据失败", "投料时点不推进，下次将重试该区间" if include_input_stock else "")
+            CLIENT_LOGGER.fail("刷新库存任务", "全量替换供应数据失败", "")
             raise
 
-        if df_input_vir is not None:
-            try:
-                await StockManager._upsert_input_stock(df_input_vir, dbs=dbs)
-            except Exception as e:
-                CLIENT_LOGGER.fail("刷新库存任务", "投料虚拟库存累加失败", str(e))
-                raise
 
-        if pending_input_date:
-            try:
-                StockManager._update_last_input_date(pending_input_date)
-            except Exception as e:
-                CLIENT_LOGGER.warning("刷新库存任务", f"投料查询时点持久化失败: {e}")
-
-
-async def _push_pr_impl(period: int = 30, groupdates: List[str] | str = None):
+async def push_pr(period: int = 30, groupdates: List[str] | str = None):
     """
     推送要货计划到SRM（分批发送）
     
@@ -701,13 +591,6 @@ async def push_monthpr_to_srm():
         CLIENT_LOGGER.fail("推送月度要货计划到SRM任务", "", "执行失败")
 
 
-async def push_pr(period: int = 30, groupdates: List[str] | str = None):
-    """推送要货计划到SRM，推送前将MI投料Type置ST(供SRM计入)，结束后置回空"""
-    await StockManager._toggle_mi_type(to_st=True)
-    try:
-        return await _push_pr_impl(period, groupdates)
-    finally:
-        await StockManager._toggle_mi_type(to_st=False)
 #################################################################################
 # ⬇️定时任务设置
 #################################################################################
@@ -715,17 +598,11 @@ async def push_pr(period: int = 30, groupdates: List[str] | str = None):
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(), description="刷新库存数据(不含投料)")
 async def task_refresh_stock():
     try:
-        await StockManager.refresh(include_input_stock=False)
+        await StockManager.refresh()
     except Exception as e:
         pass
 
 
-@cron_task(hour=0, minute=5, description="刷新库存数据(含前一日投料虚拟库存)")
-async def task_refresh_stock_with_input():
-    try:
-        await StockManager.refresh(include_input_stock=True)
-    except Exception as e:
-        pass
 
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2), description="确认报工")
