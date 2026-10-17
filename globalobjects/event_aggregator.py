@@ -82,10 +82,15 @@ class EventThreadPoolManager:
                 'max_workers': 6,
                 'description': 'PR创建事件'
             },
-            'pl_to_mo': {
+            # 'pl_to_mo': {
+            #     'min_workers': 2,
+            #     'max_workers': 6,
+            #     'description': 'PL变更为MO事件'
+            # },
+            'mo_release_success': {
                 'min_workers': 2,
                 'max_workers': 6,
-                'description': 'PL变更为MO事件'
+                'description': 'MO首次对外推送成功事件'
             },
             'pr_deleted': {
                 'min_workers': 1,

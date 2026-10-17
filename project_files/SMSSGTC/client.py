@@ -483,11 +483,11 @@ async def _push_outplan_single(event_data: dict, _aps: ApsPayloadSponsor, _erp: 
 
 @event_batch_handler(reminder=None, remind_start=False)
 @batch_service_operation(module="事件处理")
-async def batch_handle_pl_to_mo(event_data_list: list[dict], _erp: EventResultPoster, description="推送出库通知单至WMS"):
+async def batch_handle_mo_release_success(event_data_list: list[dict], _erp: EventResultPoster, description="推送出库通知单至WMS"):
     """
     数据库事件，批量推送出库通知单至WMS
 
-    当PL变为MO时触发，将出库需求推送到WMS系统。
+    当MO首次对外推送成功时触发，将出库需求推送到WMS系统。
 
     Args:
         event_data_list: 事件数据列表，每条包含 supplyno

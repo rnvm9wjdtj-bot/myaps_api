@@ -69,6 +69,7 @@ class DbEventType(Enum):
     NEW_BATCHLOG = "new_batchlog"  # 新的 一键通排 记录
     MAT_WC_INSERT = "mat_wc_insert"  # 工艺路线新增
     WORKCENTER_INSERT = "workcenter_insert"  # 工作中心新增
+    MO_RELEASE_SUCCESS = "mo_release_success"  # MO 工单首次对外推送成功（apiex_firstpush 从 NULL 变为非 NULL）
 
 
 # 模块级变量，用于跟踪事件是否已经注册
@@ -161,11 +162,12 @@ class ApsEvent:
 if not _events_registered:
     aps_pl_status_a2e_event = ApsEvent(event_type=DbEventType.PL_STATUS_A2E, description="PL 单据 下达")
     aps_pr_status_a2e_event = ApsEvent(event_type=DbEventType.PR_STATUS_A2E, description="PR 单据 下达")
-    aps_pl_typeto_mo_event = ApsEvent(event_type=DbEventType.PL_TYPETO_MO, description="PL 变更为 MO")
+    # aps_pl_typeto_mo_event = ApsEvent(event_type=DbEventType.PL_TYPETO_MO, description="PL 变更为 MO")
     aps_pr_deleted_event = ApsEvent(event_type=DbEventType.PR_DELETED, description="PR 单据 删除")
     aps_new_batchlog_event = ApsEvent(event_type=DbEventType.NEW_BATCHLOG, description="新的 一键通排 记录", batch_size=1, quiet_window=1)
     aps_mat_wc_insert_event = ApsEvent(event_type=DbEventType.MAT_WC_INSERT, description="工艺路线新增", batch_size=100000, quiet_window=5)
     aps_workcenter_insert_event = ApsEvent(event_type=DbEventType.WORKCENTER_INSERT, description="工作中心新增", batch_size=100000, quiet_window=5)
+    aps_mo_release_success_event = ApsEvent(event_type=DbEventType.MO_RELEASE_SUCCESS, description="MO 工单首次对外推送成功")
 
     _events_registered = True
     logger.success("数据库事件注册", "", "所有事件已成功注册")
@@ -183,21 +185,28 @@ def handle_update_supply(database: str, table: str, data: dict, data_diff: dict)
         data_before = dict_to_lower_keys(data['old'])
         type_before = data_before['type']
         status_before = data_before['status']
+        firstpush_before = data_before.get('apiex_firstpush')
         
         data_now = dict_to_lower_keys(data['new'])
         type_now = data_now['type']
         status_now = data_now['status']
+        firstpush_now = data_now.get('apiex_firstpush')
+
         
-        match (type_now, status_now, type_before, status_before):
+        match (type_now, status_now, type_before, status_before, firstpush_before, firstpush_now):
             # PL 和 MO 都支持进入事件处理逻辑
-            case ('PL' | 'MO', 'A2E', _, 'NEW' | 'CRE'):
+            case ('PL' | 'MO', 'A2E', _, 'NEW' | 'CRE', _, _):
                 # plno = data_now['supplyno']
                 aps_pl_status_a2e_event.add_event(data_now)
 
-            case ('MO', _, 'PL', _):
-                aps_pl_typeto_mo_event.add_event(data_now)
+            # case ('MO', _, 'PL', _, _, _):
+            #     aps_pl_typeto_mo_event.add_event(data_now)
 
-            case ('PR', 'A2E', 'PR', 'NEW' | 'CRE'):
+            # MO 首次对外推送成功：apiex_firstpush 从空（NULL/空串等）变为非空
+            case ('MO', _, _, _, firstpush_before, firstpush_now) if not firstpush_before and firstpush_now:
+                aps_mo_release_success_event.add_event(data_now)
+
+            case ('PR', 'A2E', 'PR', 'NEW' | 'CRE', _, _):
                 # prno = data_now['supplyno']
                 aps_pr_status_a2e_event.add_event(data_now)
 
