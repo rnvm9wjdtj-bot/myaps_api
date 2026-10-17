@@ -327,7 +327,7 @@ cd D:\myaps_api
    REDIS_PORT=6379
 
    # 项目配置
-   PROJECT_DIR=HACYXS
+   PROJECT_DIR={{ 租户文件夹名称 }}
    PROJECT_JSON=dev
    ```
 
@@ -483,7 +483,7 @@ myaps_api/
 ├── globalobjects/                  # 全局对象管理
 │   └── logger/                     # 统一日志系统
 ├── project_files/                  # 租户配置目录
-│   ├── HACYXS/                     # 示例租户
+│   ├── {{ 租户文件夹名称 }}/                     # 示例租户
 │   └── ...
 ├── scripts/                        # 脚本目录
 │   ├── dev_server.bat              # 开发服务管理

@@ -113,8 +113,12 @@ read -p "Redis 密码 (可选，直接回车跳过): " REDIS_PASSWORD
 # 项目配置
 echo ""
 echo "--- 项目配置 ---"
-read -p "租户项目目录名 [HACYXS]: " PROJECT_DIR
-PROJECT_DIR=${PROJECT_DIR:-HACYXS}
+read -p "租户项目目录名 [{{ 租户文件夹名称 }}]: " PROJECT_DIR
+PROJECT_DIR=${PROJECT_DIR:-{{ 租户文件夹名称 }}}
+if [[ "$PROJECT_DIR" == *"{{"* ]]; then
+    echo "❌ PROJECT_DIR 未替换占位符，请输入实际租户目录名（对应 project_files/ 下的子目录）"
+    exit 1
+fi
 
 read -p "配置文件名 (不含.json) [dev]: " PROJECT_JSON
 PROJECT_JSON=${PROJECT_JSON:-dev}

@@ -37,7 +37,7 @@ git sparse-checkout init --no-cone
 
 根据您的客户名称，修改以下配置：
 
-**对于CHANGDE客户：**
+**对于{{ 租户文件夹名称 }}客户：**
 ```bash
 # 写入sparse-checkout配置
 echo "apps/" >> .git/info/sparse-checkout
@@ -50,39 +50,7 @@ echo "pyproject.toml" >> .git/info/sparse-checkout
 echo "requirements.txt" >> .git/info/sparse-checkout
 echo "run.bat" >> .git/info/sparse-checkout
 echo "README.md" >> .git/info/sparse-checkout
-echo "project_files/CHANGDE/" >> .git/info/sparse-checkout
-```
-
-**对于HACYXS客户：**
-```bash
-# 写入sparse-checkout配置
-echo "apps/" >> .git/info/sparse-checkout
-echo "config/" >> .git/info/sparse-checkout
-echo "globalobjects/" >> .git/info/sparse-checkout
-echo "migrations/" >> .git/info/sparse-checkout
-echo "static/" >> .git/info/sparse-checkout
-echo "main.py" >> .git/info/sparse-checkout
-echo "pyproject.toml" >> .git/info/sparse-checkout
-echo "requirements.txt" >> .git/info/sparse-checkout
-echo "run.bat" >> .git/info/sparse-checkout
-echo "README.md" >> .git/info/sparse-checkout
-echo "project_files/HACYXS/" >> .git/info/sparse-checkout
-```
-
-**对于JYHDXS客户：**
-```bash
-# 写入sparse-checkout配置
-echo "apps/" >> .git/info/sparse-checkout
-echo "config/" >> .git/info/sparse-checkout
-echo "globalobjects/" >> .git/info/sparse-checkout
-echo "migrations/" >> .git/info/sparse-checkout
-echo "static/" >> .git/info/sparse-checkout
-echo "main.py" >> .git/info/sparse-checkout
-echo "pyproject.toml" >> .git/info/sparse-checkout
-echo "requirements.txt" >> .git/info/sparse-checkout
-echo "run.bat" >> .git/info/sparse-checkout
-echo "README.md" >> .git/info/sparse-checkout
-echo "project_files/JYHDXS/" >> .git/info/sparse-checkout
+echo "project_files/{{ 租户文件夹名称 }}/" >> .git/info/sparse-checkout
 ```
 
 ### 3. 拉取代码

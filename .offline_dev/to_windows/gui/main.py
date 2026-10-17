@@ -432,7 +432,7 @@ class OfflineMigrationTool:
         ])
 
         self._add_config_section(scrollable_frame, "项目配置", [
-            ("PROJECT_DIR", "租户目录", "HACYXS"),
+            ("PROJECT_DIR", "租户目录", "{{ 租户文件夹名称 }}"),
             ("PROJECT_JSON", "配置文件", "dev"),
         ])
 
@@ -522,6 +522,11 @@ class OfflineMigrationTool:
     def save_env(self):
         """保存到 .env"""
         env_file = self.project_root / ".env"
+
+        project_dir_val = self.config_entries.get("PROJECT_DIR")
+        if project_dir_val and "{{" in project_dir_val.get():
+            messagebox.showerror("错误", "PROJECT_DIR 未替换占位符，请输入实际租户目录名（对应 project_files/ 下的子目录）")
+            return
 
         if env_file.exists():
             if not messagebox.askyesno("确认", ".env 文件已存在，是否覆盖？"):

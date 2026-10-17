@@ -314,7 +314,7 @@ bash .offline_dev/to_linux/scripts/setup_env.sh
    REDIS_PORT=6379
 
    # 项目配置
-   PROJECT_DIR=HACYXS
+   PROJECT_DIR={{ 租户文件夹名称 }}
    PROJECT_JSON=dev
    ```
 

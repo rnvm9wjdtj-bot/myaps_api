@@ -100,8 +100,13 @@ if "!REDIS_PORT!"=="" set "REDIS_PORT=6379"
 REM 项目配置
 echo.
 echo 项目配置:
-set /p "PROJECT_DIR=租户项目目录 [HACYXS]: "
-if "!PROJECT_DIR!"=="" set "PROJECT_DIR=HACYXS"
+set /p "PROJECT_DIR=租户项目目录 [{{ 租户文件夹名称 }}]: "
+if "!PROJECT_DIR!"=="" set "PROJECT_DIR={{ 租户文件夹名称 }}"
+echo "!PROJECT_DIR!" | find "{{" >nul
+if not errorlevel 1 (
+    echo 错误：PROJECT_DIR 未替换占位符，请输入实际租户目录名
+    exit /b 1
+)
 
 set /p "PROJECT_JSON=配置文件名 [dev]: "
 if "!PROJECT_JSON!"=="" set "PROJECT_JSON=dev"

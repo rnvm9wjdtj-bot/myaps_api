@@ -1,6 +1,6 @@
-# MyAPS API 部署指南 - JYHDXS项目
+# MyAPS API 部署指南 - {{ 租户文件夹名称 }}项目
 
-本文档详细介绍了在新环境中部署MyAPS API项目，仅检出JYHDXS项目相关文件的完整步骤。
+本文档详细介绍了在新环境中部署MyAPS API项目，仅检出{{ 租户文件夹名称 }}项目相关文件的完整步骤。
 
 ## 目录
 
@@ -101,13 +101,13 @@ git sparse-checkout init --no-cone
 #### 3.2 设置Sparse-Checkout路径
 
 ```bash
-git sparse-checkout set  apps/   config/  globalobjects/  migrations/  static/  /main.py  /pyproject.toml  /requirements.txt  /run.bat  /README.md  /project_files/__init__.py  /project_files/_base.py  /project_files/_template.py  project_files/JYHDXS/
+git sparse-checkout set  apps/   config/  globalobjects/  migrations/  static/  /main.py  /pyproject.toml  /requirements.txt  /run.bat  /README.md  /project_files/__init__.py  /project_files/_base.py  /project_files/_template.py  project_files/{{ 租户文件夹名称 }}/
 ```
 
 **说明**：
 - 目录路径不需要前导斜杠（如 `apps/`）
 - 单个文件路径需要前导斜杠（如 `/main.py`）
-- `project_files/JYHDXS/` 表示检出整个JYHDXS项目目录
+- `project_files/{{ 租户文件夹名称 }}/` 表示检出整个{{ 租户文件夹名称 }}项目目录
 
 #### 3.3 验证Sparse-Checkout配置
 
@@ -130,7 +130,7 @@ static/
 /project_files/__init__.py
 /project_files/_base.py
 /project_files/_template.py
-project_files/JYHDXS/
+project_files/{{ 租户文件夹名称 }}/
 ```
 
 #### 3.4 检查检出状态
@@ -155,7 +155,7 @@ nothing to commit, working tree clean
 
 ```bash
 ls -la
-ls project_files/JYHDXS/
+ls project_files/{{ 租户文件夹名称 }}/
 ```
 
 应该能看到 `client.py` 和 `cache.json` 文件。
@@ -208,15 +208,15 @@ SCHEDULED_DBS=haida1,dev_mes
 # 主账套
 MYAPS_MAIN_DB=haida1
 
-# 项目文件
-PROJECT_FILE=pf_jyhdxs.py
+# 项目文件（格式如 pf_xxx.py）
+PROJECT_FILE={{ 租户项目文件名 }}
 
-# 项目目录（重要：设置为JYHDXS）
-PROJECT_DIR=JYHDXS
+# 项目目录（重要：设置为{{ 租户文件夹名称 }}）
+PROJECT_DIR={{ 租户文件夹名称 }}
 ```
 
 **重要配置说明**：
-- `PROJECT_DIR=JYHDXS`: 必须设置为JYHDXS，指定使用JYHDXS项目配置
+- `PROJECT_DIR={{ 租户文件夹名称 }}`: 必须设置为{{ 租户文件夹名称 }}，指定使用{{ 租户文件夹名称 }}项目配置
 - 数据库密码等敏感信息请根据实际情况修改
 - 确保MYAPS数据库连接信息正确
 
@@ -402,13 +402,13 @@ tail -f logs/app.log
 tail -f logs/error.log
 ```
 
-#### 9.4 验证JYHDXS项目配置
+#### 9.4 验证{{ 租户文件夹名称 }}项目配置
 
-确认系统使用的是JYHDXS项目配置：
+确认系统使用的是{{ 租户文件夹名称 }}项目配置：
 
-- 检查 `project_files/JYHDXS/client.py` 是否存在
-- 检查 `project_files/JYHDXS/cache.json` 是否存在
-- 验证 `.env` 文件中 `PROJECT_DIR=JYHDXS` 配置
+- 检查 `project_files/{{ 租户文件夹名称 }}/client.py` 是否存在
+- 检查 `project_files/{{ 租户文件夹名称 }}/cache.json` 是否存在
+- 验证 `.env` 文件中 `PROJECT_DIR={{ 租户文件夹名称 }}` 配置
 
 ## 常见问题
 
@@ -423,7 +423,7 @@ git sparse-checkout reapply
 # 如果仍然有问题，重新初始化
 git sparse-checkout disable
 git sparse-checkout init --no-cone
-git sparse-checkout set apps/ config/ globalobjects/ migrations/ static/ /main.py /pyproject.toml /requirements.txt /run.bat /README.md /project_files/__init__.py /project_files/_base.py /project_files/_template.py project_files/JYHDXS/
+git sparse-checkout set apps/ config/ globalobjects/ migrations/ static/ /main.py /pyproject.toml /requirements.txt /run.bat /README.md /project_files/__init__.py /project_files/_base.py /project_files/_template.py project_files/{{ 租户文件夹名称 }}/
 ```
 
 ### Q2: Python依赖安装失败？
@@ -540,16 +540,16 @@ sudo systemctl status myaps_api
 部署完成后，请检查以下项目：
 
 - [ ] Git sparse-checkout配置正确
-- [ ] JYHDXS项目文件已检出
+- [ ] {{ 租户文件夹名称 }}项目文件已检出
 - [ ] Python虚拟环境已创建并激活
 - [ ] 所有依赖包已安装
-- [ ] .env文件配置正确，特别是PROJECT_DIR=JYHDXS
+- [ ] .env文件配置正确，特别是PROJECT_DIR={{ 租户文件夹名称 }}
 - [ ] PostgreSQL数据库已创建并初始化
 - [ ] 数据库迁移已应用
 - [ ] 服务已启动并正常运行
 - [ ] API文档可以访问
 - [ ] 日志文件正常生成
-- [ ] JYHDXS项目配置生效
+- [ ] {{ 租户文件夹名称 }}项目配置生效
 
 ## 技术支持
 
@@ -562,4 +562,4 @@ sudo systemctl status myaps_api
 
 **文档版本**: 1.0  
 **最后更新**: 2026-01-31  
-**适用项目**: MyAPS API - JYHDXS
+**适用项目**: MyAPS API - {{ 租户文件夹名称 }}

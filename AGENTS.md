@@ -425,7 +425,7 @@ class UploadResponse(BaseModel):
 - 调用方通过外层 `except Exception` 统一兜底，调用 `mo_release_failed` 标记失败
 
 **调用方处理方式**：
-- `client.py`（JYHDXS）：异常传播到外层 `except Exception`，以"处理请求时出错"统一处理
+- `client.py`（{{ 租户文件夹名称 }}）：异常传播到外层 `except Exception`，以"处理请求时出错"统一处理
 - `mino_ime.py` / `yonyou_tplus.py`：通过 `asyncio.gather(..., return_exceptions=True)` + `isinstance(x, Exception)` 捕获后重新抛出，由外层 `except Exception` 兜底
 
 **业务字段校验留在调用方**：方法只负责取数，不校验业务字段（如日期是否为空）。业务校验由编排层（如 `handle_pl_status_a2e`）负责，避免取数方法越界承担业务校验职责。
@@ -623,7 +623,7 @@ STAGING_DB_NAME=--s           # 用于数据清洗模式的特殊数据库标识
 
 #### 项目配置
 ```bash
-PROJECT_DIR=HACYXS            # 租户项目目录名（对应 project_files/ 下的子目录）
+PROJECT_DIR={{ 租户文件夹名称 }}            # 租户项目目录名（对应 project_files/ 下的子目录）
 PROJECT_JSON=dev              # 配置文件名（不含.json 后缀）
 ```
 
