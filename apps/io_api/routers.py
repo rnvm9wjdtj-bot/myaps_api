@@ -22,6 +22,7 @@ from .utils.db_operation import db_exec_sql, db_managers, db_query, db_supsert, 
 # from project_files import hap_conn
 from apps.data_opt.utils.data_processor import DataProcessor
 from apps.data_opt.components import ApsPayloadSponsor
+from apps.common.utils.distributed_lock import DistributedLock
 
 
 logger = log_config.get_logger(__name__)
@@ -885,7 +886,7 @@ async def post_mat_wc_mold(
 @rt.post("/t_supply",
     tags=["生产数据 - 供应"],
     summary="新增或修改供应记录（供应来源包含：生产生产计划PL、生产工单MO、库存ST、采购订单PO）",
-    description="根据🗝️【料号+供应号】新增或修改供应记录"
+    description="PL/MO类型按【供应号】覆盖存量（先删后插），其他类型按【料号+供应号】upsert"
 )
 async def post_supply(
     request: Request,
@@ -897,13 +898,52 @@ async def post_supply(
     log_api_request(request)
     db_name = db_name.replace(" ", "")
     try:
-        result = await db_bupsert(db_names=db_name, model_or_tablename="t_supply", data_list=data)
+        # 按 type 分组：PL/MO 按 supplyno 覆盖（先删后插），其他类型走 upsert
+        # AcceptSupply.model_valid 已将 MO 强制转为 PL，故此处只需判断 PL
+        pl_mo_data = [item for item in data if item.type == gc.SupplyTypeEnum.PL]
+        other_data = [item for item in data if item.type != gc.SupplyTypeEnum.PL]
+
+        results = []
+
+        if pl_mo_data:
+            # 按 supplyno 去重（保留最后一条）
+            supplyno_map = {}
+            for item in pl_mo_data:
+                supplyno_map[item.supplyno] = item
+            pl_mo_data = list(supplyno_map.values())
+
+            # 先删存量（按 supplyno + Type IN PL/MO 限定）
+            quoted_sn = ",".join(f"'{sn.replace(chr(39), chr(39)*2)}'" for sn in supplyno_map.keys())
+            filter_string = f"`SupplyNo` IN ({quoted_sn}) AND `Type` IN ('PL','MO')"
+            # 分布式锁防并发竞态：同账套 PL/MO 先删后插串行化，避免并发覆盖丢数据
+            # Redis 不可用时自动降级无锁模式，不影响业务
+            async with DistributedLock(f"t_supply:{db_name}:pl_mo").lock() as acquired:
+                if not acquired:
+                    raise Exception("获取分布式锁失败，请稍后重试")
+                await db_delete(db_names=db_name, model_or_tablename="t_supply", filter_string=filter_string)
+                # 再插入
+                results.append(await db_bupsert(db_names=db_name, model_or_tablename="t_supply", data_list=pl_mo_data))
+
+        if other_data:
+            results.append(await db_bupsert(db_names=db_name, model_or_tablename="t_supply", data_list=other_data))
+
+        # 合并结果
+        if not results:
+            return standard_response(status_code=200, success=1, message="无数据处理", data=None, meta={})
+        success = 1 if all(r.success for r in results) else 0
+        message = "; ".join(r.message for r in results)
+        merged_data = []
+        for r in results:
+            merged_data.extend(r.data or [])
+        merged_meta = {}
+        for r in results:
+            merged_meta.update(r.meta or {})
         return standard_response(
             status_code=200,
-            success=result.success,
-            message=result.message,
-            data=result.data if return_data else None,
-            meta=result.meta
+            success=success,
+            message=message,
+            data=merged_data if return_data else None,
+            meta=merged_meta
         )
     except Exception as e:
         logger.error(f"新增或修改供应记录失败: {str(e)}")
