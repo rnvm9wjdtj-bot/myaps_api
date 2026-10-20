@@ -32,6 +32,13 @@
                         "updateAt": "2026-03-01"
                     },
                     {
+                        "name": "数据校验报错排查",
+                        "url": "/static/help/md-viewer.html?md=/static/help/resource/api_validation_errors.md&title=数据校验报错排查",
+                        "icon": "🔧",
+                        "description": "API 返回 422 校验错误时，快速定位请求数据问题并修正",
+                        "updateAt": "2026-10-20"
+                    },
+                    {
                         "name": "数据对接指引",
                         "url": "https://docs.qq.com/aio/DWGJBSXdMRHJnb1ZL",
                         "icon": "📄",
