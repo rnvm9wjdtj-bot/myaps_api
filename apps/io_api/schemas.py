@@ -132,7 +132,7 @@ class AcceptMaterial(BaseModel):
         })
         if values.get("price") in gc.NONE_AND_EMPTY:
             values["price"] = 0.00
-        if values.get("phantommin", "") == "":
+        if values.get("phantommin") in gc.NONE_AND_EMPTY:
             values["phantommin"] = 0
         _cache_raw_input_data(cls, values)
         
@@ -161,39 +161,39 @@ class AcceptMaterial(BaseModel):
                     else:
                         values[field] = None
         
-        if "fifo" not in pdv.no_fill_defaults and values.get("fifo", "") == "":
+        if "fifo" not in pdv.no_fill_defaults and values.get("fifo") in gc.NONE_AND_EMPTY:
             values["fifo"] = pdv.MAT_FIFO
-        if "expday" not in pdv.no_fill_defaults and values.get("expday", "") == "":
+        if "expday" not in pdv.no_fill_defaults and values.get("expday") in gc.NONE_AND_EMPTY:
             values["expday"] = pdv.MAT_EXPDAY
-        if "firmday" not in pdv.no_fill_defaults and values.get("firmday", "") == "":
+        if "firmday" not in pdv.no_fill_defaults and values.get("firmday") in gc.NONE_AND_EMPTY:
             values["firmday"] = pdv.MAT_FIRMDAY
-        if "lotfix" not in pdv.no_fill_defaults and values.get("lotfix", "") == "":
+        if "lotfix" not in pdv.no_fill_defaults and values.get("lotfix") in gc.NONE_AND_EMPTY:
             values["lotfix"] = pdv.MAT_LOTFIX
-        if "lotmin" not in pdv.no_fill_defaults and values.get("lotmin", "") == "":
+        if "lotmin" not in pdv.no_fill_defaults and values.get("lotmin") in gc.NONE_AND_EMPTY:
             values["lotmin"] = pdv.MAT_LOTMIN
-        if "lotmax" not in pdv.no_fill_defaults and values.get("lotmax", "") == "":
+        if "lotmax" not in pdv.no_fill_defaults and values.get("lotmax") in gc.NONE_AND_EMPTY:
             values["lotmax"] = pdv.MAT_LOTMAX
-        if "lotround" not in pdv.no_fill_defaults and values.get("lotround", "") == "":
+        if "lotround" not in pdv.no_fill_defaults and values.get("lotround") in gc.NONE_AND_EMPTY:
             values["lotround"] = pdv.MAT_LOTROUND
-        if "lotss" not in pdv.no_fill_defaults and values.get("lotss", "") == "":
+        if "lotss" not in pdv.no_fill_defaults and values.get("lotss") in gc.NONE_AND_EMPTY:
             values["lotss"] = pdv.MAT_LOTSS
-        if "lotpoint" not in pdv.no_fill_defaults and values.get("lotpoint", "") == "":
+        if "lotpoint" not in pdv.no_fill_defaults and values.get("lotpoint") in gc.NONE_AND_EMPTY:
             values["lotpoint"] = pdv.MAT_LOTPOINT
-        if "lottop" not in pdv.no_fill_defaults and values.get("lottop", "") == "":
+        if "lottop" not in pdv.no_fill_defaults and values.get("lottop") in gc.NONE_AND_EMPTY:
             values["lottop"] = pdv.MAT_LOTTOP
-        if "preday" not in pdv.no_fill_defaults and values.get("preday", "") == "":
+        if "preday" not in pdv.no_fill_defaults and values.get("preday") in gc.NONE_AND_EMPTY:
             values["preday"] = pdv.MAT_PREDAY
-        if "subday" not in pdv.no_fill_defaults and values.get("subday", "") == "":
+        if "subday" not in pdv.no_fill_defaults and values.get("subday") in gc.NONE_AND_EMPTY:
             values["subday"] = pdv.MAT_SUBDAY
-        if "leadday" not in pdv.no_fill_defaults and values.get("leadday", "") == "":
+        if "leadday" not in pdv.no_fill_defaults and values.get("leadday") in gc.NONE_AND_EMPTY:
             values["leadday"] = pdv.MAT_LEADDAY_E if values.get("type") == "E" else pdv.MAT_LEADDAY_F
-        if "grday" not in pdv.no_fill_defaults and values.get("grday", "") == "":
+        if "grday" not in pdv.no_fill_defaults and values.get("grday") in gc.NONE_AND_EMPTY:
             values["grday"] = pdv.MAT_GRDAY_E if values.get("type") == "E" else pdv.MAT_GRDAY_F
-        if "abc" not in pdv.no_fill_defaults and values.get("abc", "") == "":
+        if "abc" not in pdv.no_fill_defaults and values.get("abc") in gc.NONE_AND_EMPTY:
             values["abc"] = "A" if values.get("type") == "E" else "B"
-        if "plant" not in pdv.no_fill_defaults and values.get("plant", "") == "":
+        if "plant" not in pdv.no_fill_defaults and values.get("plant") in gc.NONE_AND_EMPTY:
             values["plant"] = pdv.MAT_PLANT
-        if "planner" not in pdv.no_fill_defaults and values.get("planner", "") == "":
+        if "planner" not in pdv.no_fill_defaults and values.get("planner") in gc.NONE_AND_EMPTY:
             values["planner"] = pdv.MAT_PLANNER
         return values
     
@@ -510,7 +510,7 @@ class AcceptMatWcBom(BaseModel):
                     else:
                         values[field] = None
         
-        if values.get("itemno", "") == "":
+        if values.get("itemno") in gc.NONE_AND_EMPTY:
             values["itemno"] = pdv.ITEMNO
         denominator = values.get("denominator")
         if denominator:
@@ -862,7 +862,7 @@ class AcceptDemand(BaseModel):
             req_qty = float(values.get("req_qty"))
             if req_qty > 0:
                 values["req_qty"] = -1 * req_qty
-        except ValueError:
+        except (ValueError, TypeError):
             req_qty = None
         
         if "ori_qty" in values:
