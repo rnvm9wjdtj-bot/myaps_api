@@ -699,6 +699,8 @@ class AcceptSupply(BaseModel):
             "category": gc.ProductCategoryEnum,
             "status": gc.OrderStatusEnum,
         })
+        if values.get('type') in PL_OR_MO and values.get('category') == gc.ProductCategoryEnum.MTO.value and values.get('vendorno') in gc.NONE_AND_EMPTY:
+            raise ValueError("type为PL或MO且category为MTO时，vendorno不能为空")
         if values.get("apiex_id") not in gc.NONE_AND_EMPTY and values.get("apiex_entryid") in gc.NONE_AND_EMPTY:
             values["apiex_entryid"] = values["apiex_id"]
         _cache_raw_input_data(cls, values)
@@ -736,8 +738,6 @@ class AcceptSupply(BaseModel):
             values["avail_date"] = now
         if values.get("dt_req") in gc.NONE_AND_EMPTY:
             values["dt_req"] = now
-        # if values.get("category") == gc.ProductCategoryEnum.MTO and values.get("vendorno") in gc.NONE_AND_EMPTY:
-        #     raise ValueError("MTO订单号vendorno不能为空")
         if values.get("vendorno"):
             values["category"] = gc.ProductCategoryEnum.MTO.value
         else:

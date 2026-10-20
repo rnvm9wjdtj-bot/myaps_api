@@ -44,7 +44,7 @@
 
 > `body->索引->字段名` 中的索引从 0 开始，对应请求数组中的元素位置。
 >
-> **`input` 字段说明**：当 `type` 为 `missing`（必填字段缺失）时不携带此字段；其他错误类型均会返回出错字段的实际传入值，方便您直接对照修正，无需回查原始请求体。
+> **`input` 字段说明**：当 `type` 为 `missing`（必填字段缺失）时不携带此字段；字段级错误返回出错字段的实际传入值，跨字段业务规则错误（`field` 为 `body->索引` 级别、`type=value_error`）返回整条记录，方便您直接对照修正，无需回查原始请求体。
 >
 > **`record_key` 字段说明**：返回出错记录的唯一标识字段（如物料的 `materialno`、工序的 `materialno+matver+itemno`、供应的 `materialno+supplyno` 等）。若唯一标识中的某个字段本身缺失，则 `record_key` 中不包含该字段——此时结合 `field` 和 `type=missing` 即可判断是哪个标识字段未传。
 
@@ -303,15 +303,21 @@
 |------|------|------|------|
 | priority | int | — | 优先级 |
 | status | 枚举 | 见下方 | 状态 |
-| category | 枚举 | MTO / MTS | 分类（由系统自动判断） |
+| category | 枚举 | MTO / MTS | 分类（由系统按 vendorno 自动判定） |
+| vendorno | str | ≤64字 | 源销售订单号 |
 
 **status 合法值**：`NEW` `CRE` `SCH` `REL` `CNF` `CMP` `A2E` `E2A`
+
+**跨字段业务规则**：
+- `category` 最终由系统按 `vendorno` 是否有值自动判定（有值→MTO，空→MTS）；传入 `category=MTO` 仅用于在 `type` 为 `PL`/`MO` 时声明需校验 `vendorno` 非空
+- 当 `type` 为 `PL` 或 `MO` 且 `category` 为 `MTO` 时，`vendorno` 必须有值
 
 **常见错误**：
 - **`priority` 传非空非数字字符串（如 `"高"`、`"N/A"`）→ `int_type`**，应传整数（传 `null` 或 `""` 可兜底为 0）
 - `avail_qty` 传 `null` 或 `"abc"` → `float_type`，应传数字
 - `type` 传 `"XX"` → `enum`，应传 `PL`/`MO`/`PR`/`PO`/`ST`
 - `avail_qty` 传负数 → `greater_than_equal`，应传 ≥0
+- **`type` 为 `PL`/`MO` 且 `category` 为 `MTO` 但 `vendorno` 为空 → `value_error`**，需补充 `vendorno` 或将 `category` 改为 `MTS`
 
 ### 4.9 PUT /t_supply/type/{type_} — 按类型替换供应记录
 
@@ -464,12 +470,18 @@
 
 **报错**：
 ```json
-{ "field": "body->0", "type": "value_error", "message": "MTO订单号refno不能为空" }
+{
+  "field": "body->0",
+  "input": { "materialno": "M001", "supplyno": "MO123", "type": "PL", "category": "MTO", "vendorno": null, "...": "其余字段" },
+  "record_key": { "materialno": "M001", "supplyno": "MO123" },
+  "type": "value_error",
+  "message": "type为PL或MO且category为MTO时，vendorno不能为空"
+}
 ```
 
-**原因**：`category` 为 `MTO` 时，`refno` 不能为空。
+**原因**：`type` 为 `PL` 或 `MO` 且 `category` 为 `MTO` 时，`vendorno` 必须有值。`record_key` 标识出错记录为供应 `M001/MO123`，`input` 为该条完整记录。
 
-**修正**：补充 `refno` 字段，或将 `category` 改为 `MTS`。
+**修正**：补充 `vendorno` 字段，或将 `category` 改为 `MTS`。
 
 ---
 
