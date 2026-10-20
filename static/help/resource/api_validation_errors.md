@@ -17,8 +17,14 @@
     "error_details": [
       {
         "field": "body->8->priority",
-        "message": "Input should be a valid integer",
-        "type": "int_type"
+        "input": "高",
+        "record_key": {
+          "materialno": "M002",
+          "matver": "V1",
+          "itemno": "020"
+        },
+        "message": "Input should be a valid integer, unable to parse string as an integer",
+        "type": "int_parsing"
       }
     ]
   },
@@ -30,11 +36,17 @@
 
 | 字段 | 含义 | 示例 |
 |------|------|------|
-| `field` | 出错字段位置 | `body->8->priority` = 请求数组第【9】个元素的 `priority` 字段|
-| `type` | 错误类型代码 | `int_type` = 值不是整数 |
-| `message` | 错误描述 | `Input should be a valid integer` |
+| `field` | 出错字段位置 | `body->8->priority` = 请求数组第 8 个元素的 `priority` 字段 |
+| `type` | 错误类型代码 | `int_parsing` = 字符串无法解析为整数 |
+| `message` | 错误描述 | `Input should be a valid integer...` |
+| `input` | **出错字段的实际传入值** | `"高"` = 您传了 `"高"`，应为整数 |
+| `record_key` | **出错记录的唯一标识** | `{"materialno":"M002","matver":"V1","itemno":"020"}` = 凭此业务键定位出错记录 |
 
 > `body->索引->字段名` 中的索引从 0 开始，对应请求数组中的元素位置。
+>
+> **`input` 字段说明**：当 `type` 为 `missing`（必填字段缺失）时不携带此字段；其他错误类型均会返回出错字段的实际传入值，方便您直接对照修正，无需回查原始请求体。
+>
+> **`record_key` 字段说明**：返回出错记录的唯一标识字段（如物料的 `materialno`、工序的 `materialno+matver+itemno`、供应的 `materialno+supplyno` 等）。若唯一标识中的某个字段本身缺失，则 `record_key` 中不包含该字段——此时结合 `field` 和 `type=missing` 即可判断是哪个标识字段未传。
 
 ---
 
@@ -383,10 +395,10 @@
 
 **报错**：
 ```json
-{ "field": "body->3->leadday", "type": "int_type", "message": "Input should be a valid integer" }
+{ "field": "body->3->leadday", "input": null, "record_key": {"materialno": "M004"}, "type": "int_type", "message": "Input should be a valid integer" }
 ```
 
-**原因**：请求数组第 3 个元素的 `leadday` 字段传了 `null`，该字段要求整数。
+**原因**：`record_key` 标识出错记录为料号 `M004`，其 `leadday` 字段传了 `null`（`input` 显示为 `null`），该字段要求整数。
 
 **修正**：传整数数字，或省略该字段（省略时使用默认值）：
 ```json
@@ -402,10 +414,10 @@
 
 **报错**：
 ```json
-{ "field": "body->8->priority", "type": "int_type", "message": "Input should be a valid integer" }
+{ "field": "body->8->priority", "input": "高", "record_key": {"materialno": "M002", "matver": "V1", "itemno": "020"}, "type": "int_parsing", "message": "Input should be a valid integer, unable to parse string as an integer" }
 ```
 
-**原因**：`priority` 字段传了如 `"高"`、`"N/A"` 等非数字字符串。
+**原因**：`record_key` 标识出错记录为工序 `M002/V1/020`，其 `priority` 字段传了 `"高"`（`input` 直接显示传入值），非数字字符串无法解析为整数。
 
 **修正**：传整数：
 ```json
@@ -419,10 +431,10 @@
 
 **报错**：
 ```json
-{ "field": "body->0->type", "type": "enum", "message": "..." }
+{ "field": "body->0->type", "input": "XX", "record_key": {"materialno": "M001", "supplyno": "MO123"}, "type": "enum", "message": "..." }
 ```
 
-**原因**：`type` 字段传了不在合法值列表中的值。
+**原因**：`record_key` 标识出错记录为供应 `M001/MO123`，其 `type` 字段传了 `"XX"`（`input` 显示传入值），不在合法值列表中。
 
 **修正**：查本文档第 4 节对应 API 的枚举合法值，传合法值之一。枚举大小写不敏感，`"mo"` 等效 `"MO"`。
 
@@ -430,10 +442,10 @@
 
 **报错**：
 ```json
-{ "field": "body->2->materialno", "type": "missing", "message": "Field required" }
+{ "field": "body->2->materialno", "record_key": {}, "type": "missing", "message": "Field required" }
 ```
 
-**原因**：第 2 个元素未传必填字段 `materialno`。
+**原因**：第 2 个元素未传必填字段 `materialno`。注意：`missing` 类型**不携带 `input` 字段**（字段本身未提供，无值可展示）。`record_key` 为空对象 `{}` 表示唯一标识字段（此处为 `materialno`）本身缺失，无法定位具体记录——需结合 `field` 中的索引回查请求数组。
 
 **修正**：补充该字段。
 

@@ -98,6 +98,7 @@ class AcceptMaterial(BaseModel):
 
     class Config:
         title = "验证规则 - 物料"
+        record_key_fields = ('materialno',)
         extra = "ignore"
         json_schema_extra = {
             "example": {
@@ -223,6 +224,7 @@ class AcceptWorkcenter(BaseModel):
     
     class Config:
         title = "验证规则 - 工作中心"
+        record_key_fields = ('workcenter',)
         extra = "ignore"
         json_schema_extra = {
             "example": {
@@ -323,6 +325,7 @@ class AcceptMatWc(BaseModel):
 
     class Config:
         title = "验证规则 - 工序"
+        record_key_fields = ('materialno', 'matver', 'itemno')
         extra = "ignore"
         json_schema_extra = {
             "example": {
@@ -404,6 +407,7 @@ class AcceptMatVer(BaseModel):
 
     class Config:
         title = "验证规则 - 产线版本"
+        record_key_fields = ('materialno', 'matver')
         extra = "ignore"
         json_schema_extra = {
             "example": {
@@ -470,6 +474,7 @@ class AcceptMatWcBom(BaseModel):
     
     class Config:
         title = "验证规则 - BOM"
+        record_key_fields = ('productno', 'matver', 'itemno', 'materialno')
         extra = "allow"
         json_schema_extra = {
             "example": {
@@ -540,6 +545,7 @@ class AcceptMold(BaseModel):
     
     class Config:
         title = "验证规则 - 模具"
+        record_key_fields = ('moldno',)
         extra = "ignore"
         json_schema_extra = {
             "example": {
@@ -590,6 +596,7 @@ class AcceptMatWcMold(BaseModel):
 
     class Config:
         title = "验证规则 - 机台模具"
+        record_key_fields = ('materialno', 'workcenter', 'itemno', 'moldno')
         extra = "ignore"
         json_schema_extra = {
             "example": {
@@ -664,6 +671,7 @@ class AcceptSupply(BaseModel):
 
     class Config:
         title = "验证规则 - 供应"
+        record_key_fields = ('materialno', 'supplyno')
         extra = "ignore"
         json_schema_extra = {
             "example": {
@@ -818,6 +826,7 @@ class AcceptDemand(BaseModel):
 
     class Config:
         title = "验证规则 - 需求"
+        record_key_fields = ('materialno', 'demandno', 'itemno')
         extra = "ignore"
         json_schema_extra = {
             "example": {
@@ -931,6 +940,7 @@ class AcceptConfirm(BaseModel):
 
     class Config:
         title = "验证规则 - 报工"
+        record_key_fields = ('supplyno', 'itemno')
         extra = "ignore"
         json_schema_extra = {
             "example": {
@@ -988,5 +998,6 @@ class AcceptCheckQtyReport(BaseModel):
 
     class Config:
         title = "验证规则 - 班次报工"
+        record_key_fields = ('workcenter', 'materialno', 'checktime')
         extra = "ignore"
 

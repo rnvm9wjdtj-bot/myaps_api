@@ -1,5 +1,7 @@
-from typing import Dict, Any, List, Tuple, Literal
+import typing
+from typing import Dict, Any, List, Tuple, Literal, Optional
 import enum
+import json
 from datetime import datetime
 
 from fastapi import status, HTTPException, status, Request
@@ -166,14 +168,50 @@ class CustomValidationError(HTTPException):
         super().__init__(status_code=status_code, detail=detail)
 
 
+def _get_record_key_fields(request: Request) -> Optional[Tuple[str, ...]]:
+    """从路由 body 参数的 schema Config 中读取 record_key_fields（声明式关联，无需硬编码映射）"""
+    try:
+        route = request.scope.get('route')
+        if not route or not route.dependant.body_params:
+            return None
+        annotation = route.dependant.body_params[0].field_info.annotation
+        if typing.get_origin(annotation) is list:
+            schema_cls = typing.get_args(annotation)[0]
+            return schema_cls.model_config.get('record_key_fields')
+        return None
+    except (AttributeError, IndexError, TypeError):
+        return None
+
+
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     errors = []
+    body = exc.body
+    unique_keys = _get_record_key_fields(request)
     for error in exc.errors():
-        errors.append({
+        err_item = {
             "field": "->".join(str(loc) for loc in error['loc']),
             "message": error['msg'],
             "type": error['type']
-        })
+        }
+        if error['type'] != 'missing':
+            input_value = error.get('input')
+            try:
+                json.dumps(input_value)
+                err_item["input"] = input_value
+            except (TypeError, ValueError):
+                err_item["input"] = str(input_value)
+        if unique_keys and isinstance(body, list) and len(error['loc']) >= 2:
+            index = error['loc'][1]
+            if isinstance(index, int) and 0 <= index < len(body):
+                record = body[index]
+                if isinstance(record, dict):
+                    record_key = {k: record[k] for k in unique_keys if k in record}
+                    try:
+                        json.dumps(record_key)
+                        err_item["record_key"] = record_key
+                    except (TypeError, ValueError):
+                        err_item["record_key"] = str(record_key)
+        errors.append(err_item)
     raise CustomValidationError(errors=errors)
 
 
