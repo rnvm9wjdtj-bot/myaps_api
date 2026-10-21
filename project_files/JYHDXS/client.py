@@ -314,8 +314,15 @@ class StockManager:
             df = df[df['bwart'].isin(['261', '262'])]
             if df.empty:
                 return pd.DataFrame()
+            before = len(df)
+            df = df[df['aufnr'].isin(mo_whitelist)]
+            filtered = before - len(df)
+            if filtered > 0:
+                CLIENT_LOGGER.info("生产投料同步", f"白名单过滤: 剔除{filtered}条(AUFNR不在MO白名单)")
+            if df.empty:
+                return pd.DataFrame()
             df['avail_qty'] = df['menge'].where(df['bwart'] == '261', -df['menge'])
-            df['supplyno'] = 'MI-' + df['aufnr'] + '-' + df['matnr'] + '-' + df['werks']
+            df['supplyno'] = 'MI-' + df['matnr'] + '-' + df['werks']
             df['materialno'] = df['matnr']
             df['type'] = 'ST'
             df['priority'] = 0
@@ -351,11 +358,6 @@ class StockManager:
             CLIENT_LOGGER.info("生产投料同步", f"区间{i_datum_f}~{i_datum_t}无投料数据")
             return None
 
-        before = len(df_input)
-        df_input = df_input[df_input['supplyno'].str.split('-').str[1].isin(mo_whitelist)]
-        filtered = before - len(df_input)
-        if filtered > 0:
-            CLIENT_LOGGER.info("生产投料同步", f"白名单过滤: 剔除{filtered}条(AUFNR不在MO白名单)")
 
         CLIENT_LOGGER.success("生产投料同步", f"获取{len(df_input)}条投料虚拟库存", f"区间{i_datum_f}~{i_datum_t}, 白名单{len(mo_whitelist)}个")
         return df_input
@@ -595,7 +597,7 @@ async def push_monthpr_to_srm():
 # ⬇️定时任务设置
 #################################################################################
 
-@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(), description="刷新库存数据(不含投料)")
+@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(), description="刷新库存数据")
 async def task_refresh_stock():
     try:
         await StockManager.refresh()
@@ -604,20 +606,19 @@ async def task_refresh_stock():
 
 
 
-
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2), description="确认报工")
 async def task_confirm_workreport():
     await ApsPayloadSponsor.confirm_workreport()
 
 
-CHANGED_ORDERWC_POLL_INTERVAL_MINUTES = 10
 
+CHANGED_MO_POLL_INTERVAL_MINUTES = 10
 
-@cron_task(minute=f"*/{CHANGED_ORDERWC_POLL_INTERVAL_MINUTES}", description="查询有变化的工单号")
-async def task_push_changed_orderwc():
+@cron_task(minute=f"*/{CHANGED_MO_POLL_INTERVAL_MINUTES}", description="查询有变化的工单号")
+async def task_push_changed_mo():
     # 不传时间：横向比对 Sys_Stamp > ApiEx_LastPush，直接查所有未推送变更
-    # 日志已集成在 get_changed_orderwc 内部
-    await ApsPayloadSponsor.get_changed_orderwc(db_name=MYAPS_MAIN_DB)
+    # 日志已集成在 get_changed_mo 内部
+    await ApsPayloadSponsor.get_changed_mo(db_name=MYAPS_MAIN_DB)
 
 
 @cron_task(hour=0, minute=30, description="推送周要货计划到SRM")  # 日初00:05刷新库存(含投料)后执行

@@ -2386,8 +2386,8 @@ class ApsPayloadSponsor:
 
 
     @classmethod
-    @async_aps_error_handler("筛选有过变更的orderwc排期")
-    async def get_changed_orderwc(
+    @async_aps_error_handler("筛选有过变更的MO工单")
+    async def get_changed_mo(
         cls,
         start_time: Optional[datetime] = None,
         end_time: Optional[datetime] = None,
@@ -2396,7 +2396,7 @@ class ApsPayloadSponsor:
         update_lastpush: bool = True,
         log_preview_count: int = 50,
     ) -> Dict[str, Any]:
-        """筛选出对外推送后有变更的orderwc排期
+        """筛选出对外推送后有变更的MO工单（t_orderwc 排期变更 或 t_supply 主表 Type='MO' 变更）
 
         Args:
             start_time: 开始时间，筛选此时间之后的变更；为空且 end_time 也为空时
@@ -2406,7 +2406,7 @@ class ApsPayloadSponsor:
             db_name: 账套名称，默认 MYAPS_MAIN_DB
             with_detail: 是否返回工单详情；False 时 data 为 supplyno 列表，
                          True 时通过 get_mo_by_supplyno 并发查询，data 为工单详情列表
-            update_lastpush: 是否将命中的 orderwc 的 ApiEx_LastPush 更新为当前时间；
+            update_lastpush: 是否将命中的 t_orderwc 与 t_supply 的 ApiEx_LastPush 更新为当前时间；
                              默认 True，设 False 可纯查询不写库
             log_preview_count: 日志中最多展示的变更单号数量，超出仅提示总数；默认 50
 
@@ -2452,67 +2452,76 @@ class ApsPayloadSponsor:
         snapshot_str = snapshot_dt.strftime("%Y-%m-%d %H:%M:%S")
         filter_string += f" AND `Sys_Stamp` <= '{snapshot_str}'"
 
+        # t_supply 主表变更检测：在基础 filter 上附加 Type='MO'，只筛 MO 工单主表变更
+        filter_supply = filter_string + " AND `Type` = 'MO'"
+
         # 游标分页查询，避免 LIMIT/OFFSET 幻读问题
         page_size = 1000
-        all_data: List[Dict[str, Any]] = []
-        cursor_values = None
         max_rounds = 1000
         order_fields = [("SupplyNo", "ASC")]
 
-        for round_idx in range(1, max_rounds + 1):
-            result: DbResult = await db_query_cursor(
-                db_name=db_name,
-                model_or_tablename="t_orderwc",
-                select="`SupplyNo`",
-                filter_string=filter_string,
-                order_fields=order_fields,
-                page_size=page_size,
-                cursor_values=cursor_values,
-            )
-            if not result.data:
-                break
-            all_data.extend(result.data)
-            cursor_values = result.meta.get("cursor_values")
-            has_more = result.meta.get("has_more", False)
-            if not has_more:
-                break
-        else:
-            logger.warning(
-                "筛选有过变更的orderwc排期",
-                db_name,
-                f"已达游标分页上限 {max_rounds} 轮（{max_rounds * page_size} 行），数据可能不完整",
-            )
+        async def _cursor_select_supplyno(tablename: str, flt: str) -> List[str]:
+            """对指定表按 filter 游标分页查 SupplyNo，返回去空列表"""
+            rows: List[Dict[str, Any]] = []
+            cursor_values = None
+            for _round in range(1, max_rounds + 1):
+                result: DbResult = await db_query_cursor(
+                    db_name=db_name,
+                    model_or_tablename=tablename,
+                    select="`SupplyNo`",
+                    filter_string=flt,
+                    order_fields=order_fields,
+                    page_size=page_size,
+                    cursor_values=cursor_values,
+                )
+                if not result.data:
+                    break
+                rows.extend(result.data)
+                cursor_values = result.meta.get("cursor_values")
+                if not result.meta.get("has_more", False):
+                    break
+            else:
+                logger.warning(
+                    "筛选有过变更的MO工单",
+                    db_name,
+                    f"{tablename} 已达游标分页上限 {max_rounds} 轮（{max_rounds * page_size} 行），数据可能不完整",
+                )
+            return [r.get("supplyno") for r in rows if r.get("supplyno")]
 
-        # 去重并保持首次出现顺序
+        # 两路检测：t_orderwc 排期变更 + t_supply 主表(Type='MO')变更
+        orderwc_supplynos, supply_supplynos = await asyncio.gather(
+            _cursor_select_supplyno("t_orderwc", filter_string),
+            _cursor_select_supplyno("t_supply", filter_supply),
+        )
+
+        # 合并两路结果并去重，保持首次出现顺序
         seen = set()
         supplynos: List[str] = []
-        for row in all_data:
-            sno = row.get("supplyno")
+        for sno in orderwc_supplynos + supply_supplynos:
             if sno and sno not in seen:
                 seen.add(sno)
                 supplynos.append(sno)
 
-        # 将命中的 orderwc 及其对应 supply 的 ApiEx_LastPush 更新为当前时间
+        # 分别推进两表各自命中的 ApiEx_LastPush 水位
         # 注意：Sys_Stamp 具有 ON UPDATE CURRENT_TIMESTAMP 属性，UPDATE 会自动将其对齐到当前时间，
         # 导致下一轮增量查询误命中。显式 SET Sys_Stamp = Sys_Stamp 保留原值可绕过该机制。
+        # 两表各自只推进自己 filter 命中的行，互不交叉，避免顺带推进掩盖主表独立变更。
         if update_lastpush and supplynos:
             try:
                 # 用 MySQL NOW() 写入，按会话时区取值，与 Sys_Stamp 的 CURRENT_TIMESTAMP 完全一致，
                 # 无需 Python 传时间字面值，杜绝连接池会话时区不一致导致的 8 小时偏差
-                update_sql = (
+                update_orderwc_sql = (
                     f"UPDATE `t_orderwc` SET `ApiEx_LastPush` = NOW(), `Sys_Stamp` = `Sys_Stamp` "
                     f"WHERE {filter_string}"
                 )
                 await db_exec_sql(
                     db_name=db_name,
-                    sql=update_sql,
+                    sql=update_orderwc_sql,
                     description="更新命中orderwc的ApiEx_LastPush",
                 )
-                # 同步更新 t_supply 对应 SupplyNo 的 ApiEx_LastPush
-                supplyno_list = ",".join(f"'{s}'" for s in supplynos)
                 update_supply_sql = (
                     f"UPDATE `t_supply` SET `ApiEx_LastPush` = NOW(), `Sys_Stamp` = `Sys_Stamp` "
-                    f"WHERE `SupplyNo` IN ({supplyno_list})"
+                    f"WHERE {filter_supply}"
                 )
                 await db_exec_sql(
                     db_name=db_name,
@@ -2520,7 +2529,7 @@ class ApsPayloadSponsor:
                     description="更新命中supply的ApiEx_LastPush",
                 )
             except Exception as e:
-                logger.fail("更新命中orderwc的ApiEx_LastPush", db_name, str(e))
+                logger.fail("更新命中MO工单的ApiEx_LastPush", db_name, str(e))
 
         if with_detail:
             # 并发查询每个 supplyno 的工单详情，信号量控制并发避免压垮数据库
@@ -2529,12 +2538,18 @@ class ApsPayloadSponsor:
             async def fetch_detail(sno: str) -> Optional[Dict[str, Any]]:
                 async with semaphore:
                     try:
-                        res: DbResult = await cls.get_mo_by_supplyno(
-                            supplyno=sno,
-                            db_name=db_name,
+                        mo_res, demand_res = await asyncio.gather(
+                            cls.get_mo_by_supplyno(supplyno=sno, db_name=db_name),
+                            db_query(
+                                db_name=db_name,
+                                model_or_tablename="t_demand",
+                                filter_string=f"`DemandNo`='{sno}'",
+                            ),
                         )
-                        if res.success and res.data:
-                            return res.data[0]
+                        if mo_res.success and mo_res.data:
+                            detail = mo_res.data[0]
+                            detail['demand'] = demand_res.data if (demand_res.success and demand_res.data) else []
+                            return detail
                         return None
                     except Exception as e:
                         logger.fail("查询变更工单详情", sno, str(e))
@@ -2547,12 +2562,12 @@ class ApsPayloadSponsor:
 
         mo_qty = len(supplynos)
         if mo_qty == 0:
-            logger.info("筛选有过变更的orderwc排期", db_name, "无变更数据")
+            logger.info("筛选有过变更的MO工单", db_name, "无变更数据")
         else:
             preview = ",".join(supplynos[:log_preview_count])
             if mo_qty > log_preview_count:
                 preview += f" 等共{mo_qty}条"
-            logger.success("筛选有过变更的orderwc排期", db_name, f"共{mo_qty}条变更", preview)
+            logger.success("筛选有过变更的MO工单", db_name, f"共{mo_qty}条变更", preview)
 
         return {
             # 无时间窗口：下界不限、上界为本次快照时刻；指定窗口：实际生效边界
