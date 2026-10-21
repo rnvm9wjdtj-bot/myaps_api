@@ -740,13 +740,18 @@ class TplusStock(BaseSource):
 
     _QUERY_BATCH_ENDPOINT = "/tplus/api/v2/currentStock/Query"
     _PULL_PYDANTIC_MODEL = StockPullModel
-    _FIELD_HINTS = {"InventoryCode": "存货编码", "ExistingQuantity": "现存量", "TS": "时间戳"}
+    _FIELD_HINTS = {"InventoryCode": "存货编码", "ExistingQuantity": "现存量", "TS": "时间戳", "WarehouseCode": "仓库编码"}
+    _DOCUMENTATION_URL = "https://open.chanjet.com/docs/file/apiFile/tcloud/tjqt/xcl?id=30875"
 
 
     @classmethod
-    async def query_batch(cls, is_include_zero: bool = False):
+    async def query_batch(cls, is_include_zero: bool = False, exclude_warehouses: list[str] | str | None = None):
         """
         查询批量库存数据
+
+        Args:
+            is_include_zero: 是否包含零数据
+            exclude_warehouses: 需排除的仓库编码，支持 list（如 ["ck06","ck07"]）或逗号分隔字符串（如 "ck06,ck07"），按 WarehouseCode 过滤；None/空表示不过滤
         """
         assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
         await cls._CONNECTION.auth()
@@ -756,6 +761,18 @@ class TplusStock(BaseSource):
             field_hints=cls._FIELD_HINTS,
             filter={"IsIncludeZero": is_include_zero}
         )
+
+        if exclude_warehouses:
+            if isinstance(exclude_warehouses, str):
+                exclude_set = {w.strip() for w in exclude_warehouses.split(",") if w.strip()}
+            else:
+                exclude_set = set(exclude_warehouses)
+            if exclude_set:
+                before = len(data)
+                data = [d for d in data if d.get("仓库编码") not in exclude_set]
+                filtered = before - len(data)
+                if filtered:
+                    logger.info(f"库存排除仓库过滤：排除 {filtered} 条（仓库 {sorted(exclude_set)}），剩余 {len(data)} 条")
 
         return ExternalDataSet(raw_data=data, pydantic_model=cls._PULL_PYDANTIC_MODEL)
 

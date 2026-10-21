@@ -56,10 +56,12 @@ CLIENT_LOGGER.info("binlog监听提示提醒器已注册到全局RemindManager")
 #################################################################################
 # ⬇️ 定时任务
 #################################################################################
+_STOCK_EXCLUDE_WAREHOUSES = []
+
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute())
 @async_service_operation(module="定时任务")
 async def task_refresh_stock(description="刷新库存数据"):
-    stock_data = await TplusStock.query_batch()
+    stock_data = await TplusStock.query_batch(exclude_warehouses=_STOCK_EXCLUDE_WAREHOUSES or None)
     await ApsPayloadSponsor.refresh_stock(stock_data, dbs=MYAPS_DB_SET)
 
 
