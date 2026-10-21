@@ -7,7 +7,7 @@ import pandas as pd
 from datetime import datetime
 from typing import Optional, Dict, Any, ClassVar
 
-from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
+from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR, STAGING_DB_NAME
 
 from apps.data_opt.components.qingflow import (
     QingflowConnection, QingflowSource, model_validator,
@@ -87,7 +87,7 @@ smssgtc_qingflow_conn.register_source(QingflowMaterial)
 async def pull_all_material():
     """拉取所有物料数据"""
     materials = await QingflowMaterial.query_batch()
-    # return await materials.persist(to_dbtable='t_material', to_dbs="--s")
+    # return await materials.persist(to_dbtable='t_material', to_dbs=STAGING_DB_NAME, source_system='轻流')
     return await materials.persist(to_dbtable='t_material')
 
 
@@ -140,6 +140,7 @@ smssgtc_qingflow_conn.register_source(QingflowWorkcenter)
 async def pull_all_workcenter():
     """拉取所有工作中心数据"""
     workcenters = await QingflowWorkcenter.query_batch()
+    # return await workcenters.persist(to_dbtable='t_workcenter', to_dbs=STAGING_DB_NAME, source_system='轻流')
     return await workcenters.persist(to_dbtable='t_workcenter')
 
 
@@ -185,7 +186,8 @@ smssgtc_qingflow_conn.register_source(QingflowWorkcenterMold)
 async def pull_all_wcmold():
     """拉取所有机台模具数据"""
     molds = await QingflowWorkcenterMold.query_batch()
-    return await molds.persist(to_dbtable='t_mat_wc_mold', drop='all')
+    # return await molds.persist(to_dbtable='t_mat_wc_mold', to_dbs=STAGING_DB_NAME, source_system='轻流')
+    return await molds.persist(to_dbtable='t_mat_wc_mold')
 
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2))
@@ -232,7 +234,8 @@ smssgtc_qingflow_conn.register_source(QingflowBom)
 async def pull_all_bom():
     """拉取所有BOM数据"""
     bom = await QingflowBom.query_batch()
-    return await bom.persist(to_dbtable='t_mat_wc_bom', drop='all')
+    # return await bom.persist(to_dbtable='t_mat_wc_bom', to_dbs=STAGING_DB_NAME, source_system='轻流')
+    return await bom.persist(to_dbtable='t_mat_wc_bom')
 
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(4))
@@ -520,3 +523,19 @@ async def batch_handle_mo_release_success(event_data_list: list[dict], _erp: Eve
                 )
             )
         await asyncio.gather(*fallback_tasks, return_exceptions=True)
+
+
+
+#################################################################################
+# ⬇️MES
+#################################################################################
+"""
+APS工序t_mat_wc数据需从西门子MES中获取，初步计划的映射规则为
+ SortNo → sortno
+ No → itemno
+ APS Name → itemname
+ Work Center→ workcenter 
+ S/F → sf
+ → 
+ → 
+"""
