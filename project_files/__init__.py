@@ -160,14 +160,14 @@ class ApsEvent:
 
 # 只在第一次导入时注册事件
 if not _events_registered:
-    aps_pl_status_a2e_event = ApsEvent(event_type=DbEventType.PL_STATUS_A2E, description="PL 单据 下达")
-    aps_pr_status_a2e_event = ApsEvent(event_type=DbEventType.PR_STATUS_A2E, description="PR 单据 下达")
+    aps_pl_status_a2e_event = ApsEvent(event_type=DbEventType.PL_STATUS_A2E, description="下达生产工单")
+    aps_pr_status_a2e_event = ApsEvent(event_type=DbEventType.PR_STATUS_A2E, description="下达采购申请")
     # aps_pl_typeto_mo_event = ApsEvent(event_type=DbEventType.PL_TYPETO_MO, description="PL 变更为 MO")
-    aps_pr_deleted_event = ApsEvent(event_type=DbEventType.PR_DELETED, description="PR 单据 删除")
-    aps_new_batchlog_event = ApsEvent(event_type=DbEventType.NEW_BATCHLOG, description="新的 一键通排 记录", batch_size=1, quiet_window=1)
-    aps_mat_wc_insert_event = ApsEvent(event_type=DbEventType.MAT_WC_INSERT, description="工艺路线新增", batch_size=100000, quiet_window=5)
-    aps_workcenter_insert_event = ApsEvent(event_type=DbEventType.WORKCENTER_INSERT, description="工作中心新增", batch_size=100000, quiet_window=5)
-    aps_mo_release_success_event = ApsEvent(event_type=DbEventType.MO_RELEASE_SUCCESS, description="MO 工单首次对外推送成功")
+    aps_pr_deleted_event = ApsEvent(event_type=DbEventType.PR_DELETED, description="删除采购申请")
+    aps_new_batchlog_event = ApsEvent(event_type=DbEventType.NEW_BATCHLOG, description="收到批处理任务", batch_size=1, quiet_window=1)
+    aps_mat_wc_insert_event = ApsEvent(event_type=DbEventType.MAT_WC_INSERT, description="新增工艺路线", batch_size=100000, quiet_window=5)
+    aps_workcenter_insert_event = ApsEvent(event_type=DbEventType.WORKCENTER_INSERT, description="新增工作中心", batch_size=100000, quiet_window=5)
+    aps_mo_release_success_event = ApsEvent(event_type=DbEventType.MO_RELEASE_SUCCESS, description="生产工单首推成功")
 
     _events_registered = True
     logger.success("数据库事件注册", "", "所有事件已成功注册")
