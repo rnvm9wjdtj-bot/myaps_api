@@ -5,10 +5,15 @@ import hashlib
 import hmac
 import time
 from fastapi import Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from starlette.middleware.base import BaseHTTPMiddleware
+from typing import Callable
 
 IP_WHITELIST = [ip.strip() for ip in os.getenv("IP_WHITELIST", "").split(",") if ip.strip()]
 API_KEY = os.getenv("API_KEY", "")
+
+# 路由守卫配置（独立于鉴权，拦截未注册路径）
+ENABLE_ROUTE_GUARD = os.getenv("ENABLE_ROUTE_GUARD", "true").strip().lower() in ("true", "1", "yes", "on")
 
 # HMAC签名验证配置
 
@@ -180,6 +185,28 @@ def is_route_exists(request_path: str, request_method: str) -> bool:
 
     return False
 
+
+class RouteGuardMiddleware(BaseHTTPMiddleware):
+    """路由守卫中间件
+
+    拦截未注册的非法路径，返回统一格式 404。
+    与鉴权逻辑解耦，仅校验路径是否存在于已注册路由表，不依赖 IP_WHITELIST/API_KEY。
+    拦截的请求不进入后续中间件（如监控中间件），避免监控日志污染。
+    """
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        # OPTIONS 预检直接放行，交由 CORS 处理
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
+        url_path = request.url.path
+        if not is_route_exists(url_path, request.method):
+            return JSONResponse(
+                status_code=404,
+                content={"status_code": 404, "success": 0, "meta": {}, "data": None, "message": "Not Found"}
+            )
+
+        return await call_next(request)
 
 
 def _match_ip_wildcard(client_ip: str, pattern: str) -> bool:

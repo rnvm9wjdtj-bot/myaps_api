@@ -53,7 +53,7 @@ def create_event_loop():
 from core.app import create_app
 from core.lifespan import lifespan
 from core.openapi import setup_custom_openapi
-from core.middleware import create_security_middleware, IP_WHITELIST, API_KEY, init_registered_routes
+from core.middleware import create_security_middleware, IP_WHITELIST, API_KEY, init_registered_routes, RouteGuardMiddleware, ENABLE_ROUTE_GUARD
 from core.websocket import websocket_endpoint, websocket_root
 from core.routes_register import register_routes
 from core.database import register_database
@@ -74,6 +74,11 @@ app.add_middleware(HTTPMonitorMiddleware)
 # API_KEY配置后，非白名单请求必须携带HMAC签名
 if IP_WHITELIST or API_KEY:
     app.middleware("http")(create_security_middleware())
+
+# 配置路由守卫中间件（独立于鉴权，拦截未注册路径，默认开启）
+# 执行顺序：CORS → 路由守卫 → 安全中间件 → 监控 → 路由
+if ENABLE_ROUTE_GUARD:
+    app.add_middleware(RouteGuardMiddleware)
 
 # 配置CORS中间件
 app.add_middleware(
