@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 # import enum
-from typing import Literal, Dict, Optional, Any#, List
+from typing import Literal, Dict, Optional, Any, List
 from decimal import Decimal
 
 from pydantic import BaseModel, Field, model_validator, PrivateAttr#, ValidationError, field_validator
@@ -38,6 +38,13 @@ def _cache_raw_input_data(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         }
         cls._cached_raw_input_data = filtered_values
     return values
+
+def _coerce_to_str(values: Dict[str, Any], fields: List[str]) -> None:
+    """将指定字段的 int/float 值转为 str，容错外部系统传数字而非字符串"""
+    for field in fields:
+        val = values.get(field)
+        if isinstance(val, (int, float)) and not isinstance(val, bool):
+            values[field] = str(val)
 
 def _set_raw_input_data(self):
     if not hasattr(self, "_cached_raw_input_data"):
@@ -703,6 +710,7 @@ class AcceptSupply(BaseModel):
             raise ValueError("type为PL或MO且category为MTO时，vendorno不能为空")
         if values.get("apiex_id") not in gc.NONE_AND_EMPTY and values.get("apiex_entryid") in gc.NONE_AND_EMPTY:
             values["apiex_entryid"] = values["apiex_id"]
+        _coerce_to_str(values, ["apiex_id", "apiex_entryid"])
         _cache_raw_input_data(cls, values)
         
         # 转换整数字段 - 支持字符串形式的浮点数（如 "30.00000000000000"）
@@ -856,6 +864,7 @@ class AcceptDemand(BaseModel):
         })
         if values.get("apiex_id") not in gc.NONE_AND_EMPTY and values.get("apiex_entryid") in gc.NONE_AND_EMPTY:
             values["apiex_entryid"] = values["apiex_id"]
+        _coerce_to_str(values, ["apiex_id", "apiex_entryid"])
         _cache_raw_input_data(cls, values)
         
         # 转换整数字段 - 支持字符串形式的浮点数（如 "30.00000000000000"）
