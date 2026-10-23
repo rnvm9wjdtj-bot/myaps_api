@@ -24,7 +24,7 @@ import uuid
 from dataclasses import dataclass, field
 
 
-from core.settings import THIS_BASE_URL, MYAPS_MAIN_DB, MYAPS_DB_SET, MAX_EVENTS_PER_SECOND
+from core.settings import THIS_BASE_URL, MYAPS_MAIN_DB, MYAPS_DB_SET, MAX_EVENTS_PER_SECOND, STAGING_DB_NAME
 
 
 # 控制 T+ API 并发请求的信号量（根据 MAX_EVENTS_PER_SECOND 动态调整）
@@ -1842,7 +1842,6 @@ class ExternalDataSet:
                 raise RuntimeError(f"写库 {to_dbtable} 失败: {response.get('message')}")
             return data
 
-        from core.settings import STAGING_DB_NAME
         if to_dbs == STAGING_DB_NAME:
             raise RuntimeError(f"清洗模式({STAGING_DB_NAME})不支持表 {to_dbtable} 的写入")
 
