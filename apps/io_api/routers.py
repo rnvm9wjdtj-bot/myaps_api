@@ -886,7 +886,7 @@ async def post_mat_wc_mold(
 @rt.post("/t_supply",
     tags=["生产数据 - 供应"],
     summary="新增或修改供应记录（供应来源包含：生产生产计划PL、生产工单MO、库存ST、采购订单PO）",
-    description="PL/MO类型按【供应号】覆盖存量（先删后插），其他类型按【料号+供应号】upsert"
+    description="按【供应号】整条覆盖：先删除供应及关联记录，再新增本批数据"
 )
 async def post_supply(
     request: Request,
@@ -898,34 +898,52 @@ async def post_supply(
     log_api_request(request)
     db_name = db_name.replace(" ", "")
     try:
-        # 按 type 分组：PL/MO 按 supplyno 覆盖（先删后插），其他类型走 upsert
-        # AcceptSupply.model_valid 已将 MO 强制转为 PL，故此处只需判断 PL
-        pl_mo_data = [item for item in data if item.type == gc.SupplyTypeEnum.PL]
-        other_data = [item for item in data if item.type != gc.SupplyTypeEnum.PL]
+        # 按 supplyno 整条覆盖：先调 SupplyDeleteAll 删除供应及关联记录
+        # （t_supply/t_orderwc/t_demand/t_peg），再插入本批数据
+        # 业务前提：supplyno 具主键性质，每批同一 supplyno 仅一种 type；
+        #           子表删除为期望行为（重置 MO 关联，后续数据重新流入）
+        supplyno_map = {}
+        for item in data:
+            supplyno_map[item.supplyno] = item
+        deduped_data = list(supplyno_map.values())
 
         results = []
 
-        if pl_mo_data:
-            # 按 supplyno 去重（保留最后一条）
-            supplyno_map = {}
-            for item in pl_mo_data:
-                supplyno_map[item.supplyno] = item
-            pl_mo_data = list(supplyno_map.values())
-
-            # 先删存量（按 supplyno + Type IN PL/MO 限定）
-            quoted_sn = ",".join(f"'{sn.replace(chr(39), chr(39)*2)}'" for sn in supplyno_map.keys())
-            filter_string = f"`SupplyNo` IN ({quoted_sn}) AND `Type` IN ('PL','MO')"
-            # 分布式锁防并发竞态：同账套 PL/MO 先删后插串行化，避免并发覆盖丢数据
+        if deduped_data:
+            # 分布式锁防并发竞态：同账套先删后插串行化，避免并发覆盖丢数据
             # Redis 不可用时自动降级无锁模式，不影响业务
-            async with DistributedLock(f"t_supply:{db_name}:pl_mo").lock() as acquired:
+            async with DistributedLock(f"t_supply:{db_name}:post").lock() as acquired:
                 if not acquired:
                     raise Exception("获取分布式锁失败，请稍后重试")
-                await db_delete(db_names=db_name, model_or_tablename="t_supply", filter_string=filter_string)
-                # 再插入
-                results.append(await db_bupsert(db_names=db_name, model_or_tablename="t_supply", data_list=pl_mo_data))
+                # 先删：按 supplyno 调用存储过程删除供应及关联记录（同一连接批量 CALL）
+                delete_params = [[sn] for sn in supplyno_map.keys()]
+                await call_dbprocdure(
+                    db_names=db_name,
+                    procedure_name="SupplyDeleteAll",
+                    params_list=delete_params
+                )
+                # 再插
+                results.append(await db_bupsert(db_names=db_name, model_or_tablename="t_supply", data_list=deduped_data))
 
-        if other_data:
-            results.append(await db_bupsert(db_names=db_name, model_or_tablename="t_supply", data_list=other_data))
+        # === 旧逻辑（按 type 分组：PL/MO 先删后插，其他 upsert）保留备查 ===
+        # # 按 type 分组：PL/MO 按 supplyno 覆盖（先删后插），其他类型走 upsert
+        # # AcceptSupply.model_valid 已将 MO 强制转为 PL，故此处只需判断 PL
+        # pl_mo_data = [item for item in data if item.type == gc.SupplyTypeEnum.PL]
+        # other_data = [item for item in data if item.type != gc.SupplyTypeEnum.PL]
+        # if pl_mo_data:
+        #     supplyno_map = {}
+        #     for item in pl_mo_data:
+        #         supplyno_map[item.supplyno] = item
+        #     pl_mo_data = list(supplyno_map.values())
+        #     quoted_sn = ",".join(f"'{sn.replace(chr(39), chr(39)*2)}'" for sn in supplyno_map.keys())
+        #     filter_string = f"`SupplyNo` IN ({quoted_sn}) AND `Type` IN ('PL','MO')"
+        #     async with DistributedLock(f"t_supply:{db_name}:pl_mo").lock() as acquired:
+        #         if not acquired:
+        #             raise Exception("获取分布式锁失败，请稍后重试")
+        #         await db_delete(db_names=db_name, model_or_tablename="t_supply", filter_string=filter_string)
+        #         results.append(await db_bupsert(db_names=db_name, model_or_tablename="t_supply", data_list=pl_mo_data))
+        # if other_data:
+        #     results.append(await db_bupsert(db_names=db_name, model_or_tablename="t_supply", data_list=other_data))
 
         # 合并结果
         if not results:
