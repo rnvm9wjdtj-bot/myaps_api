@@ -1,5 +1,5 @@
 import typing
-from typing import Dict, Any, List, Tuple, Literal, Optional
+from typing import Dict, Any, List, Tuple, Literal, Optional, Set
 import enum
 import json
 from datetime import datetime
@@ -73,6 +73,45 @@ def standard_response(
         "meta": meta,
         "data": data
     }
+
+
+def group_rows(
+    rows: List[Dict[str, Any]],
+    group_fields: List[str],
+    date_fields: Optional[Set] = None
+) -> List[Dict[str, Any]]:
+    """
+    按指定字段对行记录分组
+
+    Args:
+        rows: 行记录列表（建议已按期望顺序排序，组顺序=首次出现序）
+        group_fields: 分组字段名列表（小写）
+        date_fields: 需按"日"归组的字段集合（小写），其值截断为日期部分(YYYY-MM-DD)
+
+    Returns:
+        [{"group": {field: value, ...}, "data": [row, ...]}, ...]
+        字段值为 None 的记录归入对应字段值为 None 的组
+    """
+    date_fields = date_fields or set()
+    groups: Dict[tuple, Dict[str, Any]] = {}
+    order: List[tuple] = []
+    for row in rows:
+        key_parts = []
+        for f in group_fields:
+            val = row.get(f)
+            if f in date_fields and val is not None:
+                val = str(val)[:10]
+            key_parts.append(val)
+        key = tuple(key_parts)
+        if key not in groups:
+            groups[key] = {
+                "group": {f: key_parts[i] for i, f in enumerate(group_fields)},
+                "data": []
+            }
+            order.append(key)
+        groups[key]["data"].append(row)
+    return [groups[k] for k in order]
+
 
 # # url - 公共参数
 # common_params = {

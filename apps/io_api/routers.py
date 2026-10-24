@@ -17,8 +17,8 @@ from .schemas import (
     #DeleteSupply
 )
 
-from .utils.common import standard_response, drop_matched_data, mark_as_removing
-from .utils.db_operation import db_exec_sql, db_managers, db_query, db_supsert, db_bupsert, db_delete, call_dbprocdure, db_update_by_index
+from .utils.common import standard_response, drop_matched_data, mark_as_removing, group_rows
+from .utils.db_operation import db_exec_sql, db_managers, db_query, db_query_cursor, db_supsert, db_bupsert, db_delete, call_dbprocdure, db_update_by_index
 # from project_files import hap_conn
 from apps.data_opt.utils.data_processor import DataProcessor
 from apps.data_opt.components import ApsPayloadSponsor
@@ -1357,19 +1357,33 @@ async def get_mo_by_supplyno(
 #     return await db_query(db_name=db_name, model_or_tablename="v_supply_complete")
 
 
+V_ORDERWC_FIELDS = frozenset({
+    "orderno", "supplyno", "itemno", "matver", "materialno", "description",
+    "workcenter", "moldno", "moldnum", "sortno", "bottleneck", "groupno",
+    "color", "fix", "type", "category", "priority", "s_priority", "status",
+    "orderqty", "confirmqty", "originalqty", "baseqty", "basesec", "fixsec",
+    "sf", "offsetsec", "setupcost", "setupsec", "abc", "delay_hour", "setuptime",
+    "dt_start", "dt_end", "processtime", "dt_req", "req_date", "remaintime",
+    "vendorno", "memo", "apiex_firstpush", "apiex_lastpush", "sys_stamp",
+})
+V_ORDERWC_DATE_FIELDS = frozenset({
+    "dt_start", "dt_end", "dt_req", "req_date",
+    "apiex_firstpush", "apiex_lastpush", "sys_stamp",
+})
+
+
 @rt.get(
-    "/v_orderwc/page",
+    "/v_orderwc/group",
     tags=["报表 - 工序报表"],
     summary="获取工序报表",
-    description="按工序开完工时间获取工序报表，默认开工时间为今日，默认完工时间为一周后。"
+    description="按工序开完工时间获取工序报表，默认开工时间为今日，默认完工时间为一周后。支持按指定字段分组（group_by），datetime/timestamp字段按日归组。"
 )
-async def get_orderwc_page(
+async def get_orderwc_group(
     request: Request,
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-    start_time: datetime = Query(None, description="工序开工时间"),
-    end_time: datetime = Query(None, description="工序完工时间"),
-    page_size: int = Query(1000, ge=0, description="每页数量"),
-    page_index: int = Query(1, gt=0, description="页码"),
+    start_time: datetime = Query(None, description="时间窗口下界（开工或完工至少一个落在窗口内即命中）；均不传时默认昨天至+15天"),
+    end_time: datetime = Query(None, description="时间窗口上界（开工或完工至少一个落在窗口内即命中）；均不传时默认昨天至+15天"),
+    group_by: str = Query("supplyno", description="分组字段，逗号分隔，不区分大小写；datetime/timestamp字段按日归组"),
     # x_api_key: str = Header(None, description="API密钥")
 ):
     log_api_request(request)
@@ -1377,20 +1391,79 @@ async def get_orderwc_page(
     
     from globalobjects.db_manager import build_safe_filter
     
-    conditions = []
-    if start_time:
-        conditions.append(("DT_Start", ">=", start_time))
-    if end_time:
-        conditions.append(("DT_End", "<=", end_time))
-    filter_string = build_safe_filter(conditions)
+    group_fields = [f.strip().lower() for f in group_by.split(",") if f.strip()]
+    invalid = [f for f in group_fields if f not in V_ORDERWC_FIELDS]
+    if invalid:
+        return standard_response(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            success=0,
+            message=f"非法分组字段: {','.join(invalid)}",
+            data=[],
+            meta={"valid_fields": sorted(V_ORDERWC_FIELDS)}
+        )
+
+    if start_time is None and end_time is None:
+        today = datetime.now().date()
+        start_time = datetime.combine(today - timedelta(days=1), datetime.min.time())
+        end_time = datetime.combine(today + timedelta(days=15), datetime.max.time()).replace(microsecond=0)
+
+    if start_time and end_time:
+        start_cond = build_safe_filter([("DT_Start", ">=", start_time), ("DT_Start", "<=", end_time)], "AND")
+        end_cond = build_safe_filter([("DT_End", ">=", start_time), ("DT_End", "<=", end_time)], "AND")
+        filter_string = f"({start_cond}) OR ({end_cond})"
+    elif start_time:
+        filter_string = build_safe_filter([("DT_Start", ">=", start_time), ("DT_End", ">=", start_time)], "OR")
+    elif end_time:
+        filter_string = build_safe_filter([("DT_Start", "<=", end_time), ("DT_End", "<=", end_time)], "OR")
+    else:
+        filter_string = ""
     try:
-        result = await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=filter_string, order_string="`OrderNo`", page_size=page_size, page_index=page_index)
+        all_data: List[Dict[str, Any]] = []
+        cursor_values = None
+        max_rounds = 1000
+        order_fields = [("OrderNo", "ASC")]
+        success = 1
+        for _round in range(1, max_rounds + 1):
+            result = await db_query_cursor(
+                db_name=db_name,
+                model_or_tablename="v_orderwc",
+                filter_string=filter_string,
+                order_fields=order_fields,
+                cursor_values=cursor_values,
+            )
+            if not result.data:
+                break
+            all_data.extend(result.data)
+            success = success and result.success
+            cursor_values = result.meta.get("cursor_values")
+            if not result.meta.get("has_more", False):
+                break
+        else:
+            logger.warning(
+                "获取工序报表",
+                db_name,
+                f"已达游标分页上限 {max_rounds} 轮，数据可能不完整",
+            )
+
+        data = sorted(
+            all_data,
+            key=lambda r: (
+                r.get("supplyno") or "",
+                r.get("sortno") is None, r.get("sortno") or 0,
+                r.get("dt_start") is None, r.get("dt_start") or ""
+            )
+        )
+        date_group_fields = set(group_fields) & V_ORDERWC_DATE_FIELDS
+        grouped = group_rows(data, group_fields, date_group_fields)
+
+        meta = {"group_by": group_fields, "group_count": len(grouped), "total": len(all_data)}
+
         return standard_response(
             status_code=200,
-            success=result.success,
-            message=result.message,
-            data=result.data,
-            meta=result.meta
+            success=success,
+            message=f"查询成功，共{len(all_data)}条记录",
+            data=grouped,
+            meta=meta
         )
     except Exception as e:
         logger.error(f"获取工序报表失败: {str(e)}")
