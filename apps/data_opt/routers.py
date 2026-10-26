@@ -1,7 +1,7 @@
 # from datetime import datetime
 import os#, importlib#, uuid
 from pathlib import Path
-from typing import Optional#, Dict, Any
+from typing import Optional, Literal#, Dict, Any
 # from datetime import datetime
 
 
@@ -356,7 +356,7 @@ async def bom_check_page():
     description="校验三方系统的BOM，结果输出至 excel 文件 或 HAP"
 )
 async def get_bom_check_result_api(
-    output_method: str = Query(..., example="EXCEL", enum=["EXCEL", "HAP"], description="输出方式"),
+    output_method: Literal["EXCEL", "HAP"] = Query(..., example="EXCEL", description="输出方式"),
     # 鉴权已由中间件HMAC签名统一处理
 ):
     try:

@@ -1082,7 +1082,7 @@ async def post_supply(
 async def replace_supply(
     request: Request,
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-    type_: str = Path(..., enum=['PL', 'MO', 'PR', 'PO', 'ST'], description="供应类型"),
+    type_: Literal['PL', 'MO', 'PR', 'PO', 'ST'] = Path(..., description="供应类型"),
     data: List[AcceptSupply] = Body(..., description="替换为这些供应记录"),
     return_data: bool = Query(False, description="是否返回数据"),
     # 鉴权已由中间件HMAC签名统一处理，路由内不再声明x_api_key

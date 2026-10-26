@@ -245,10 +245,10 @@ class ImeOperationPushModel(PydanticModel):
     siteCode: str = Field()             # 企业编号
     operationCode: str = Field()        # 工序编码
     operationName: str = Field()        # 工序名称
-    operationTypeCode: str = Field("PRODUCTION", enum=["PRODUCTION", "OUTSOURCING", "BLANK", "QUALITY", "ENGINEERING"])    # 工序类型
+    operationTypeCode: Literal["PRODUCTION", "OUTSOURCING", "BLANK", "QUALITY", "ENGINEERING"] = Field("PRODUCTION")    # 工序类型
     workUnitTypeCode: str = Field()     # 作业单元类型编号（系统中必须存在）
     standardTime: float = Field()       # 标准用时
-    standardTimeUnit: str = Field("SECOND", enum=["SECOND", "MINUTE", "HOUR", "DAY"])       # 标准用时单位
+    standardTimeUnit: Literal["SECOND", "MINUTE", "HOUR", "DAY"] = Field("SECOND")       # 标准用时单位
     standardCapacity: float = Field(1)  # 标准产能
 
     class Config:
