@@ -213,8 +213,8 @@ class SchedulerManager:
                 seen_tasks.add(task_key)
                 seen_task_signatures.add(task_signature)
                 
-                # 为每个任务创建唯一的ID
-                job_id = f"{task_info['module']}_{task_info['func_name']}_{i}"
+                # 稳定ID：module_func_name（task_key 已去重保证唯一），不依赖注册顺序索引
+                job_id = task_key
                 
                 # 包装函数，添加错误处理
                 logger.start(f"添加任务到调度器", f"任务名: {task_info['module']}.{task_info['func_name']}", to_file=True)
