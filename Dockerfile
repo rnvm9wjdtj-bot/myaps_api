@@ -23,14 +23,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 
-# 分层安装依赖，避免单层过大
-RUN pip install --no-cache-dir --user fastapi "uvicorn[standard]" websockets tortoise-orm pydantic
-RUN pip install --no-cache-dir --user aiomysql asyncpg python-dotenv requests tomlkit
-RUN pip install --no-cache-dir --user apscheduler pandas mysql-replication
-RUN pip install --no-cache-dir --user qrcode pillow python-barcode python-multipart
-RUN pip install --no-cache-dir --user xlrd openpyxl pycryptodome
-RUN pip install --no-cache-dir --user aiohttp httpx "httpx[http2]" psutil redis
-RUN pip install --no-cache-dir --user gunicorn loguru prometheus-client
+# 按 requirements.txt 安装依赖（版本 pin 在 requirements.txt 中统一管理）
+RUN pip install --no-cache-dir --user -r requirements.txt
 
 # 运行阶段
 FROM ${PYTHON_IMAGE}

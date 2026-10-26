@@ -457,7 +457,7 @@ class MoPushModel(PydanticModel):   # 对应 productionOrderVo
     plannedQuantity: float = Field()            # 计划数量
     createUser: str = Field()                   # 创建人 员工工号
     createDateTime: str = Field()               # 创建时间
-    priority: str = Field(enmu=["0", "1"])      # 优先 1：是 0：否
+    priority: Literal["0", "1"] = Field()      # 优先 1：是 0：否
     operationTaskOrderVoList: list[dict] = Field()  # 工序任务单信息
 
     
