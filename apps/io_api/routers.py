@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta
 from typing import List, Dict, Optional, Literal#, Any
 from enum import Enum
 import inspect, functools, pandas as pd, asyncio
+import re
 # import httpx
 from fastapi import APIRouter, Path, Query, Body, status, Request, HTTPException, Depends
 # from tortoise import Tortoise
@@ -26,6 +27,34 @@ from apps.common.utils.distributed_lock import DistributedLock
 
 
 logger = log_config.get_logger(__name__)
+
+
+# 业务键（工单号/供应号/工序号）合法字符白名单：字母、数字、下划线、点、连字符
+# 路由层正则校验，非法字符直接 400 拒绝，防止 SQL 注入（components 内部拼接不再承担入口校验）
+_VALID_BUSINESS_KEY = re.compile(r"^[A-Za-z0-9_.\-]+$")
+
+
+def _reject_if_invalid_business_key(value: str, field_label: str):
+    """
+    路由层业务键白名单校验。
+
+    Args:
+        value: 路径参数值
+        field_label: 参数中文名（用于错误消息，如"工单号""工序号"）
+
+    Returns:
+        400 响应 dict（非法）或 None（合法）
+    """
+    if not _VALID_BUSINESS_KEY.match(value):
+        logger.warning(f"非法{field_label}请求: {value}")
+        return standard_response(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            success=0,
+            message=f"请求参数错误：非法{field_label}(含非法字符): {value}",
+            data=[],
+            meta={}
+        )
+    return None
 
 
 class DedupStrategyEnum(str, Enum):
@@ -1114,6 +1143,9 @@ async def delete_supply(
 ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
+    bad = _reject_if_invalid_business_key(supplyno, "供应号")
+    if bad:
+        return bad
     try:
         result = await call_dbprocdure(db_names=db_name, procedure_name="SupplyDeleteAll", params_list=[[supplyno]])
         return standard_response(
@@ -1322,6 +1354,9 @@ async def get_mo_by_supplyno(
     # x_api_key: str = Header(None, description="API密钥")
 ):
     log_api_request(request)
+    bad = _reject_if_invalid_business_key(supplyno, "工单号")
+    if bad:
+        return bad
     try:
         result = await ApsPayloadSponsor.get_mo_by_supplyno(db_name=db_name, supplyno=supplyno, prev_mo=prev_mo, next_mo=next_mo, origin_so=origin_so, with_demand=with_demand)
         return standard_response(
@@ -1494,6 +1529,9 @@ async def get_orderwc(
 ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
+    bad = _reject_if_invalid_business_key(supplyno, "工单号")
+    if bad:
+        return bad
     
     from globalobjects.db_manager import build_safe_condition
     filter_string = build_safe_condition("SupplyNo", "=", supplyno)
@@ -1531,6 +1569,9 @@ async def get_mo_demand(
 ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
+    bad = _reject_if_invalid_business_key(supplyno, "工单号")
+    if bad:
+        return bad
     from globalobjects.db_manager import build_safe_condition
     filter_string = build_safe_condition("DemandNo", "=", supplyno)
     try:
@@ -1707,6 +1748,14 @@ async def delete_workreport(
 ):
     log_api_request(request)
     db_name = db_name.replace(" ", "")
+    
+    bad = _reject_if_invalid_business_key(supplyno, "工单号")
+    if bad:
+        return bad
+    if itemno != "...":
+        bad = _reject_if_invalid_business_key(itemno, "工序号")
+        if bad:
+            return bad
     
     from globalobjects.db_manager import build_safe_filter
     

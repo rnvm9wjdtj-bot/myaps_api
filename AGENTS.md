@@ -430,6 +430,33 @@ class UploadResponse(BaseModel):
 
 **业务字段校验留在调用方**：方法只负责取数，不校验业务字段（如日期是否为空）。业务校验由编排层（如 `handle_pl_status_a2e`）负责，避免取数方法越界承担业务校验职责。
 
+#### 路径参数白名单校验
+
+**约定**：所有 `supplyno` / `itemno` 等业务键路径参数路由，必须在路由层走公共校验函数 `_reject_if_invalid_business_key(value, field_label)`（定义于 `apps/io_api/routers.py`），非法字符直接返回 400，不进入内部函数。
+
+**原因**：
+- `db_query` 的 `filter_string` 是纯字符串 WHERE，无参数化通道，components 内部拼接存在 SQL 注入风险
+- 防范对象是外部调用者，校验应放路由层（信任边界），内部函数信任内部调用者（如 DB 查出的工单号），不再二次校验
+- 内部已有的 `build_safe_condition` / `build_safe_filter` 转义保留作纵深防御，不冲突
+
+**用法**：
+```python
+bad = _reject_if_invalid_business_key(supplyno, "工单号")
+if bad:
+    return bad
+```
+
+**合法字符集**：`^[A-Za-z0-9_.\-]+$`（字母、数字、下划线、点、连字符），覆盖工单号/供应号/工序号常见格式（如 `MO001`、`2100-011-300`、`A1`）。`itemno="..."` 是约定占位符（表示不限制工序），校验放行。
+
+**已接入路由**：
+- `DELETE /t_supply/{supplyno}`（delete_supply）
+- `GET /v_supply_mo/{supplyno}`（get_mo_by_supplyno）
+- `GET /v_orderwc/{supplyno}`（get_orderwc）
+- `GET /v_mo_demand/{supplyno}`（get_mo_demand）
+- `DELETE /t_confirm/{supplyno}/{itemno}`（delete_workreport，含 itemno 校验）
+
+**新增路由时**：若路径参数含业务键，必须接入此校验，避免遗漏。
+
 ### 日志记录
 项目使用loguru或原生logging：
 ```python
