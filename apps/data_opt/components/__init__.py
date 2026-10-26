@@ -2542,18 +2542,9 @@ class ApsPayloadSponsor:
             async def fetch_detail(sno: str) -> Optional[Dict[str, Any]]:
                 async with semaphore:
                     try:
-                        mo_res, demand_res = await asyncio.gather(
-                            cls.get_mo_by_supplyno(supplyno=sno, db_name=db_name),
-                            db_query(
-                                db_name=db_name,
-                                model_or_tablename="t_demand",
-                                filter_string=f"`DemandNo`='{sno}'",
-                            ),
-                        )
+                        mo_res = await cls.get_mo_by_supplyno(supplyno=sno, db_name=db_name, with_demand=True)
                         if mo_res.success and mo_res.data:
-                            detail = mo_res.data[0]
-                            detail['demand'] = demand_res.data if (demand_res.success and demand_res.data) else []
-                            return detail
+                            return mo_res.data[0]
                         return None
                     except Exception as e:
                         logger.fail("查询变更工单详情", sno, str(e))
