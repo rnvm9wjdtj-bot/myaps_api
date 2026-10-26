@@ -1318,11 +1318,12 @@ async def get_mo_by_supplyno(
     prev_mo: bool = Query(False, description="是否查询前 前置 工单"),
     next_mo: bool = Query(False, description="是否查询后 后续 工单"),
     origin_so: bool = Query(False, description="是否查询销售订单SO"),
+    with_demand: bool = Query(False, description="是否查询关联需求 t_demand"),
     # x_api_key: str = Header(None, description="API密钥")
 ):
     log_api_request(request)
     try:
-        result = await ApsPayloadSponsor.get_mo_by_supplyno(db_name=db_name, supplyno=supplyno, prev_mo=prev_mo, next_mo=next_mo, origin_so=origin_so)
+        result = await ApsPayloadSponsor.get_mo_by_supplyno(db_name=db_name, supplyno=supplyno, prev_mo=prev_mo, next_mo=next_mo, origin_so=origin_so, with_demand=with_demand)
         return standard_response(
             status_code=200,
             success=result.success,

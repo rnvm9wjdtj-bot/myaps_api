@@ -1952,7 +1952,7 @@ class ApsPayloadSponsor:
 
 
     @classmethod
-    async def get_mo_by_supplyno(cls, supplyno: str, db_name: str=MYAPS_MAIN_DB, prev_mo:bool=False, next_mo:bool=False, origin_so:bool=False) -> DbResult:
+    async def get_mo_by_supplyno(cls, supplyno: str, db_name: str=MYAPS_MAIN_DB, prev_mo:bool=False, next_mo:bool=False, origin_so:bool=False, with_demand:bool=False) -> DbResult:
         """
         异步获取工单的工序详情、及MTO销售订单信息
         Args:
@@ -1961,6 +1961,7 @@ class ApsPayloadSponsor:
             prev_mo: 是否查询前 前置 工单
             next_mo: 是否查询后 后置 工单
             origin_so: 是否查询原始销售订单信息
+            with_demand: 是否查询关联需求 t_demand（DemandNo=SupplyNo）
         Returns:
             工单计划单详情
         """
@@ -2045,6 +2046,9 @@ class ApsPayloadSponsor:
                     result.data[0]['prev_mo'] = await get_prev_mo(supplyno)
                 if next_mo:
                     result.data[0]['next_mo'] = await get_next_mo(supplyno)
+                if with_demand:
+                    demand_res: DbResult = await db_query(db_name=db_name, model_or_tablename="t_demand", filter_string=f"`DemandNo`='{supplyno}'")
+                    result.data[0]['demand'] = demand_res.data if (demand_res.success and demand_res.data) else []
 
             return result
         except Exception as e:
