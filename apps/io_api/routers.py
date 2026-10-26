@@ -1407,6 +1407,9 @@ async def get_orderwc_group(
         start_time = datetime.combine(today - timedelta(days=1), datetime.min.time())
         end_time = datetime.combine(today + timedelta(days=15), datetime.max.time()).replace(microsecond=0)
 
+    if end_time and end_time.time() == datetime.min.time():
+        end_time = end_time.replace(hour=23, minute=59, second=59)
+
     if start_time and end_time:
         start_cond = build_safe_filter([("DT_Start", ">=", start_time), ("DT_Start", "<=", end_time)], "AND")
         end_cond = build_safe_filter([("DT_End", ">=", start_time), ("DT_End", "<=", end_time)], "AND")
