@@ -27,7 +27,8 @@ from globalobjects import logger as log_config, ProjectDefaultValues as pdv, Sta
 from dataclasses import dataclass, field
 from core.settings import THIS_BASE_URL, MYAPS_MAIN_DB, MYAPS_DB_SET, TIMEZONE_NAME
 from apps.io_api.utils.db_operation import db_exec_sql, db_query, db_query_cursor, db_update_by_index, db_delete, db_bupsert, call_dbprocdure, DbResult, MultiDbResult
-from apps.io_api.models import TBatchLog 
+from apps.io_api.models import TBatchLog
+from globalobjects.db_manager import escape_sql_value
 
 
 
@@ -2397,10 +2398,11 @@ class ApsPayloadSponsor:
         end_time: Optional[datetime] = None,
         db_name: str = MYAPS_MAIN_DB,
         with_detail: bool = False,
-        update_lastpush: bool = True,
         log_preview_count: int = 50,
     ) -> Dict[str, Any]:
         """筛选出对外推送后有变更的MO工单（t_orderwc 排期变更 或 t_supply 主表 Type='MO' 变更）
+
+        纯检测不写库，推进水位请调 advance_mo_lastpush。
 
         Args:
             start_time: 开始时间，筛选此时间之后的变更；为空且 end_time 也为空时
@@ -2410,8 +2412,6 @@ class ApsPayloadSponsor:
             db_name: 账套名称，默认 MYAPS_MAIN_DB
             with_detail: 是否返回工单详情；False 时 data 为 supplyno 列表，
                          True 时通过 get_mo_by_supplyno 并发查询，data 为工单详情列表
-            update_lastpush: 是否将命中的 t_orderwc 与 t_supply 的 ApiEx_LastPush 更新为当前时间；
-                             默认 True，设 False 可纯查询不写库
             log_preview_count: 日志中最多展示的变更单号数量，超出仅提示总数；默认 50
 
         Returns:
@@ -2419,8 +2419,10 @@ class ApsPayloadSponsor:
                 "time_range": 实际筛选区间；无时间窗口时为 [None, snapshot]
                                （下界不限，上界为本次查询快照时刻 snapshot），
                                指定时间窗口时为 [start_time, end_time],
-                "mo_qty": 去重后的 supplyno 数量，
-                "data": with_detail=False 时为 supplyno 列表（去重，保持首次出现顺序）,
+                "mo_qty": 去重后的 supplyno 数量,
+                "supplynos": 去重后的 supplyno 列表（保持首次出现顺序）,
+                "supplynos_str": 逗号分隔的 supplyno 字符串,
+                "data": with_detail=False 时为 supplyno 列表（同 supplynos）,
                         with_detail=True 时为工单详情列表,
             }
         """
@@ -2447,11 +2449,8 @@ class ApsPayloadSponsor:
                 f"AND `Sys_Stamp` > `ApiEx_LastPush`"
             )
 
-        # 固定查询快照时刻作为 Sys_Stamp 上界。
-        # 查询与 UPDATE 复用同一 filter_string，但分别在两个时刻求值：
-        # 无上界时，查询结束后、UPDATE 前产生的新变更行也满足 WHERE，会被一并置为已推送，
-        # 却不在本次返回的 supplynos 中，导致这些变更永久漏推（竞态漏推）。
-        # 加上界后两次求值范围一致，快照之后的新变更留待下一轮处理。
+        # 固定查询快照时刻作为 Sys_Stamp 上界，保证本轮检测范围稳定。
+        # 快照之后的新变更留待下一轮处理，避免游标分页期间新数据混入导致结果不一致。
         snapshot_dt = datetime.now(_BUSINESS_TIMEZONE).replace(tzinfo=None)
         snapshot_str = snapshot_dt.strftime("%Y-%m-%d %H:%M:%S")
         filter_string += f" AND `Sys_Stamp` <= '{snapshot_str}'"
@@ -2506,34 +2505,6 @@ class ApsPayloadSponsor:
                 seen.add(sno)
                 supplynos.append(sno)
 
-        # 分别推进两表各自命中的 ApiEx_LastPush 水位
-        # 注意：Sys_Stamp 具有 ON UPDATE CURRENT_TIMESTAMP 属性，UPDATE 会自动将其对齐到当前时间，
-        # 导致下一轮增量查询误命中。显式 SET Sys_Stamp = Sys_Stamp 保留原值可绕过该机制。
-        # 两表各自只推进自己 filter 命中的行，互不交叉，避免顺带推进掩盖主表独立变更。
-        if update_lastpush and supplynos:
-            try:
-                # 用 MySQL NOW() 写入，按会话时区取值，与 Sys_Stamp 的 CURRENT_TIMESTAMP 完全一致，
-                # 无需 Python 传时间字面值，杜绝连接池会话时区不一致导致的 8 小时偏差
-                update_orderwc_sql = (
-                    f"UPDATE `t_orderwc` SET `ApiEx_LastPush` = NOW(), `Sys_Stamp` = `Sys_Stamp` "
-                    f"WHERE {filter_string}"
-                )
-                await db_exec_sql(
-                    db_name=db_name,
-                    sql=update_orderwc_sql,
-                    description="更新命中orderwc的ApiEx_LastPush",
-                )
-                update_supply_sql = (
-                    f"UPDATE `t_supply` SET `ApiEx_LastPush` = NOW(), `Sys_Stamp` = `Sys_Stamp` "
-                    f"WHERE {filter_supply}"
-                )
-                await db_exec_sql(
-                    db_name=db_name,
-                    sql=update_supply_sql,
-                    description="更新命中supply的ApiEx_LastPush",
-                )
-            except Exception as e:
-                logger.fail("更新命中MO工单的ApiEx_LastPush", db_name, str(e))
 
         if with_detail:
             # 并发查询每个 supplyno 的工单详情，信号量控制并发避免压垮数据库
@@ -2567,9 +2538,90 @@ class ApsPayloadSponsor:
         return {
             # 无时间窗口：下界不限、上界为本次快照时刻；指定窗口：实际生效边界
             "time_range": [None, snapshot_dt] if unbounded else [start_time, end_time],
+            "snapshot": snapshot_dt,
             "mo_qty": mo_qty,
+            "supplynos": supplynos,
+            "supplynos_str": ",".join(supplynos),
             "data": data,
         }
+
+
+    @classmethod
+    @async_aps_error_handler("推进MO工单推送水位")
+    async def advance_mo_lastpush(
+        cls,
+        supplynos: Union[List[str], str],
+        db_name: str = MYAPS_MAIN_DB,
+        max_sys_stamp: Optional[datetime] = None,
+    ) -> int:
+        """按 supplyno 列表推进 t_orderwc + t_supply(Type='MO') 的 ApiEx_LastPush 水位
+
+        供各租户 client.py 在推送外部系统成功后调用，只推进指定工单的水位。
+        推送失败的工单不传入，保留旧水位下一轮重检。
+
+        get_changed_mo 负责纯检测，本方法负责按显式 supplyno 列表推进水位，
+        使调用方能精确控制"只推进推送成功的行"。
+
+        Args:
+            supplynos: 推送成功的工单号，支持 List[str] 或逗号分隔字符串
+            db_name: 账套名称，默认 MYAPS_MAIN_DB
+            max_sys_stamp: 本轮检测的 Sys_Stamp 快照上界（取自 get_changed_mo 返回的 snapshot）；
+                           传入时只推进 Sys_Stamp <= 该时刻的行，快照之后的新变更保留旧水位
+                           留待下一轮重检，避免"检测后推进前产生的新变更被误标记为已推送"。
+
+        Returns:
+            去重后实际处理的 supplyno 数量
+        """
+        if not supplynos:
+            return 0
+
+        if isinstance(supplynos, str):
+            supplynos = [s.strip() for s in supplynos.split(",") if s.strip()]
+
+        seen = set()
+        unique_supplynos: List[str] = []
+        for sno in supplynos:
+            if sno and sno not in seen:
+                seen.add(sno)
+                unique_supplynos.append(sno)
+        if not unique_supplynos:
+            return 0
+
+        # Sys_Stamp 具有 ON UPDATE CURRENT_TIMESTAMP 属性，UPDATE 会自动将其对齐到当前时间，
+        # 导致下一轮增量查询误命中。显式 SET Sys_Stamp = Sys_Stamp 保留原值可绕过该机制。
+        # 用 MySQL NOW() 写入 ApiEx_LastPush，按会话时区取值，与 Sys_Stamp 的 CURRENT_TIMESTAMP
+        # 完全一致，无需 Python 传时间字面值，杜绝连接池会话时区不一致导致的 8 小时偏差。
+        stamp_bound = ""
+        if max_sys_stamp is not None:
+            stamp_bound = f" AND `Sys_Stamp` <= '{max_sys_stamp.strftime('%Y-%m-%d %H:%M:%S')}'"
+
+        batch_size = 500
+        for i in range(0, len(unique_supplynos), batch_size):
+            batch = unique_supplynos[i:i + batch_size]
+            in_list = ",".join(escape_sql_value(s) for s in batch)
+
+            update_orderwc_sql = (
+                f"UPDATE `t_orderwc` SET `ApiEx_LastPush` = NOW(), `Sys_Stamp` = `Sys_Stamp` "
+                f"WHERE `SupplyNo` IN ({in_list}){stamp_bound}"
+            )
+            await db_exec_sql(
+                db_name=db_name,
+                sql=update_orderwc_sql,
+                description="按列表推进t_orderwc的ApiEx_LastPush",
+            )
+
+            update_supply_sql = (
+                f"UPDATE `t_supply` SET `ApiEx_LastPush` = NOW(), `Sys_Stamp` = `Sys_Stamp` "
+                f"WHERE `SupplyNo` IN ({in_list}) AND `Type` = 'MO'{stamp_bound}"
+            )
+            await db_exec_sql(
+                db_name=db_name,
+                sql=update_supply_sql,
+                description="按列表推进t_supply的ApiEx_LastPush",
+            )
+
+        logger.success("推进MO工单推送水位", db_name, f"共{len(unique_supplynos)}条")
+        return len(unique_supplynos)
 
 
 

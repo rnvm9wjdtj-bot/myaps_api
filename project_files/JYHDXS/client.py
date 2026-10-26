@@ -618,7 +618,14 @@ CHANGED_MO_POLL_INTERVAL_MINUTES = 10
 async def task_push_changed_mo():
     # 不传时间：横向比对 Sys_Stamp > ApiEx_LastPush，直接查所有未推送变更
     # 日志已集成在 get_changed_mo 内部
-    await ApsPayloadSponsor.get_changed_mo(db_name=MYAPS_MAIN_DB)
+    result = await ApsPayloadSponsor.get_changed_mo(db_name=MYAPS_MAIN_DB)
+    if result["supplynos"]:
+        # 推送逻辑待对方接口完成后在此插入；当前先全量推进水位防止数据量无限增长
+        await ApsPayloadSponsor.advance_mo_lastpush(
+            result["supplynos_str"],
+            db_name=MYAPS_MAIN_DB,
+            max_sys_stamp=result["snapshot"],
+        )
 
 
 @cron_task(hour=0, minute=30, description="推送周要货计划到SRM")  # 日初00:05刷新库存(含投料)后执行
