@@ -365,6 +365,7 @@ _PAGE_COLUMNS_CONFIG = {
         {"field": "materialno", "title": "物料号", "sortable": True},
         {"field": "matver", "title": "版本号"},
         {"field": "itemno", "title": "工序号"},
+        {"field": "itemname", "title": "工序名称"},
         {"field": "workcenter", "title": "工作中心"},
         {"field": "sortno", "title": "排序"},
         {"field": "basesec", "title": "基础工时"},
@@ -372,10 +373,12 @@ _PAGE_COLUMNS_CONFIG = {
         {"field": "fixsec", "title": "额定时间"},
         {"field": "sf", "title": "串并行"},
         {"field": "offsetsec", "title": "偏置时间"},
+        {"field": "lotsize", "title": "批量大小"},
+        {"field": "lotsec", "title": "批量时间"},
         {"field": "rate", "title": "配比"},
         {"field": "memo", "title": "备注"},
     ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
-    
+
     "t_mat_wc_bom": SYSTEM_COMMON_COLUMNS_PREFIX + [
         {"field": "productno", "title": "父件号", "sortable": True},
         {"field": "productunit", "title": "父件单位"},

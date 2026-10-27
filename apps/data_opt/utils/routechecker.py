@@ -85,7 +85,11 @@ class RouteChecker:
         # 转换为DataFrame
         df_data = []
         for item in route_list:
-            row = {mk: item.get(ok, '') for mk, ok in self.mainfield_mapper.items()}
+            # mainfield_mapper 为空时，数据已是内部短键格式，直接使用
+            if self.mainfield_mapper:
+                row = {mk: item.get(ok, '') for mk, ok in self.mainfield_mapper.items()}
+            else:
+                row = dict(item)
             
             # 填充 ItemNo
             if not row.get(self.HAP_CTRLID['item_no']):

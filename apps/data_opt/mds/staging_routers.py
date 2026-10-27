@@ -213,6 +213,9 @@ async def insert_to_staging_table(
                         value = Decimal(str(value))
                     except:
                         pass
+                elif field_type in ('CharField', 'TextField'):
+                    if not isinstance(value, str):
+                        value = str(value)
                 values.append(value)
         
         placeholders = ", ".join(["$" + str(i+1) for i in range(len(values))])
