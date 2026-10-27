@@ -194,7 +194,7 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "").strip()
 MONITOR_THRESHOLDS = {
     # 资源监控阈值
     "resource": {
-        "cpu": 80.0,      # CPU使用率阈值（百分比）
+        "cpu": 80.0,      # 系统CPU使用率阈值（百分比，反映整机紧张程度）
         "memory": 80.0,   # 内存使用率阈值（百分比）
         "threads": 200,    # 线程数阈值
     },
@@ -224,6 +224,9 @@ RESOURCE_CLEANUP_CONFIG = {
     "interval": 300,  # 资源清理间隔（秒）
     "memory_threshold": 600.0,  # 触发清理的内存阈值（MB）
 }
+
+# 资源监控采样配置
+RESOURCE_CPU_SAMPLE_INTERVAL = max(0.1, float(os.getenv("RESOURCE_CPU_SAMPLE_INTERVAL", "1.0")))
 
 
 

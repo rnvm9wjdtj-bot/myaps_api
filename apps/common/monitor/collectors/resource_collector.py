@@ -139,7 +139,7 @@ class ResourceCollector:
             list: 告警信息列表
         """
         # 从settings.py加载阈值
-        from core.settings import MONITOR_THRESHOLDS
+        from core.settings import MONITOR_THRESHOLDS, RESOURCE_CPU_SAMPLE_INTERVAL
         resource_thresholds = MONITOR_THRESHOLDS.get('resource', {})
         
         default_thresholds = {
@@ -151,9 +151,16 @@ class ResourceCollector:
         alerts = []
 
         if "cpu" in check_thresholds and "cpu" in metrics:
-            cpu_system = metrics["cpu"].get("system", 0)
+            # get_current_metrics 用 0.01s 快照供图表展示瞬时趋势，
+            # 告警判断改用 RESOURCE_CPU_SAMPLE_INTERVAL 平滑窗口重新采样，
+            # 与 resource_monitor._monitor_loop 口径一致，避免亚秒尖峰误报。
+            try:
+                import psutil
+                cpu_system = psutil.cpu_percent(interval=RESOURCE_CPU_SAMPLE_INTERVAL)
+            except Exception:
+                cpu_system = metrics["cpu"].get("system", 0)
             if cpu_system > check_thresholds["cpu"]:
-                alerts.append(f"CPU使用率 ({cpu_system}%) 超过阈值 ({check_thresholds['cpu']}%)")
+                alerts.append(f"CPU使用率 ({cpu_system:.1f}%) 超过阈值 ({check_thresholds['cpu']}%)")
 
         if "memory" in check_thresholds and "memory" in metrics:
             mem_percent = metrics["memory"].get("percent", 0)

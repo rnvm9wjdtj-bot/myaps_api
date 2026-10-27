@@ -19,7 +19,7 @@ class ResourceMonitor:
         self._alert_state = {}  # 告警状态去重: {alert_key: bool}，True表示当前处于告警中
         
         # 从settings.py加载阈值
-        from core.settings import MONITOR_THRESHOLDS, RESOURCE_CLEANUP_CONFIG
+        from core.settings import MONITOR_THRESHOLDS, RESOURCE_CLEANUP_CONFIG, RESOURCE_CPU_SAMPLE_INTERVAL
         
         resource_thresholds = MONITOR_THRESHOLDS.get('resource', {})
         self._thresholds = {
@@ -32,6 +32,7 @@ class ResourceMonitor:
         self._cleanup_thresholds = {
             'memory': RESOURCE_CLEANUP_CONFIG.get('memory_threshold', 600.0)
         }
+        self._cpu_sample_interval = RESOURCE_CPU_SAMPLE_INTERVAL
     
     def get_resource_usage(self):
         """获取系统资源使用情况
@@ -43,15 +44,16 @@ class ResourceMonitor:
             import psutil
             process = psutil.Process()
             memory = process.memory_info()
-            # 获取系统CPU使用率
-            system_cpu = psutil.cpu_percent(interval=0.1)
-            # 获取进程CPU使用率（相对于所有核心）
+            vm_percent = psutil.virtual_memory().percent
+            # 获取系统CPU使用率（采样窗口加长以减少瞬时尖峰污染，作为整机CPU告警依据）
+            system_cpu = psutil.cpu_percent(interval=self._cpu_sample_interval)
+            # 获取进程CPU使用率（相对于所有核心，基于上次调用基线，监控循环间隔内均值）
             process_cpu = process.cpu_percent(interval=0.0)
             threads = process.num_threads()
             # 获取CPU核心数
             cpu_count = psutil.cpu_count()
-            # 计算进程CPU使用率（相对于系统总CPU）
-            process_cpu_system_percent = process_cpu / cpu_count
+            # 计算进程CPU使用率（相对于系统总CPU，供展示/调试，不参与告警判断）
+            process_cpu_system_percent = process_cpu / (cpu_count or 1)
             
             # 添加详细日志
             logger.debug(f"CPU使用率调试: 系统CPU={system_cpu}%, 进程CPU={process_cpu}%, 核心数={cpu_count}, 进程相对系统={process_cpu_system_percent:.2f}%")
@@ -61,6 +63,7 @@ class ResourceMonitor:
                 'memory': {
                     'rss': memory.rss / 1024 / 1024,  # MB
                     'vms': memory.vms / 1024 / 1024,  # MB
+                    'percent': vm_percent,  # 系统内存使用率（百分比）
                 },
                 'cpu': {
                     'process': process_cpu,  # 进程CPU使用率（相对于单个核心）
@@ -100,23 +103,28 @@ class ResourceMonitor:
         
         check_thresholds = thresholds or self._thresholds
         
-        # 检查系统CPU使用率
+        # 检查系统CPU使用率（整机紧张程度，与 resource_collector 口径一致）
         if 'cpu' in check_thresholds:
             if isinstance(usage.get('cpu'), dict):
-                if usage['cpu'].get('system', 0) > check_thresholds['cpu']:
-                    alerts.append(f"CPU usage ({usage['cpu']['system']}%) exceeds threshold ({check_thresholds['cpu']}%)")
+                system_cpu_percent = usage['cpu'].get('system', 0)
+                if system_cpu_percent > check_thresholds['cpu']:
+                    alerts.append(f"CPU使用率 ({system_cpu_percent:.1f}%) 超过阈值 ({check_thresholds['cpu']}%)")
             else:
                 if usage.get('cpu', 0) > check_thresholds['cpu']:
-                    alerts.append(f"CPU usage ({usage.get('cpu', 0)}%) exceeds threshold ({check_thresholds['cpu']}%)")
+                    alerts.append(f"CPU使用率 ({usage.get('cpu', 0)}%) 超过阈值 ({check_thresholds['cpu']}%)")
         
         if 'memory' in check_thresholds:
-            import psutil
-            memory_percent = psutil.virtual_memory().percent
+            memory_info = usage.get('memory', {})
+            if isinstance(memory_info, dict) and memory_info.get('percent') is not None:
+                memory_percent = memory_info['percent']
+            else:
+                import psutil
+                memory_percent = psutil.virtual_memory().percent
             if memory_percent > check_thresholds['memory']:
-                alerts.append(f"Memory usage ({memory_percent:.2f}%) exceeds threshold ({check_thresholds['memory']}%)")
+                alerts.append(f"内存使用率 ({memory_percent:.2f}%) 超过阈值 ({check_thresholds['memory']}%)")
         
         if 'threads' in check_thresholds and usage.get('threads', 0) > check_thresholds['threads']:
-            alerts.append(f"Thread count ({usage['threads']}) exceeds threshold ({check_thresholds['threads']})")
+            alerts.append(f"线程数 ({usage['threads']}) 超过阈值 ({check_thresholds['threads']})")
         
         return alerts
     
