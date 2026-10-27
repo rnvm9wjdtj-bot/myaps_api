@@ -1625,7 +1625,8 @@ async def get_peg_page(
             message=f"操作失败：{str(e)}",
             data=[],
             meta={}
-        )  
+        )
+
 
 
 # @rt.get(
@@ -1864,3 +1865,29 @@ async def post_checkqty_report(
             data=[],
             meta={}
         )
+
+
+########################################################################
+# 模拟推送接收端点（仅限本机，调试用）
+########################################################################
+
+@rt.post("/mock/push", include_in_schema=False, dependencies=[Depends(only_localhost())])
+async def mock_push(request: Request):
+    """模拟外部系统推送接收端点（仅限本机调用）
+
+    接收任意形式的报文，原样回显，用作 task_push_changed_mo 模拟推送逻辑的调试目标。
+    """
+    body = await request.body()
+    content_type = request.headers.get("content-type", "")
+    logger.success("模拟推送接收", content_type, f"{len(body)}字节")
+    try:
+        body_text = body.decode("utf-8")
+    except UnicodeDecodeError:
+        body_text = f"<binary {len(body)} bytes, hex={body.hex()[:200]}>"
+    return standard_response(
+        status_code=200,
+        success=1,
+        message="模拟推送接收成功",
+        data={"content_type": content_type, "body": body_text},
+        meta={"content_length": len(body)},
+    )
