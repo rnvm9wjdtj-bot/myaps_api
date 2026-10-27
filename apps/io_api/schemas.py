@@ -356,6 +356,8 @@ class AcceptMatWc(BaseModel):
     def model_valid(cls, values):
         _normalize_enum_fields(values, {"sf": gc.SfEnum})
         _cache_raw_input_data(cls, values)
+        if pdv.auto_matver: # 无条件覆盖原始产线版本字段
+            values["matver"] = pdv.MATVER
         try:
             # 先转换为 float 再转换为 int，支持字符串形式的浮点数（如 "30.00000000000000"）
             values["sortno"] = int(float(values["sortno"]))
@@ -507,6 +509,8 @@ class AcceptMatWcBom(BaseModel):
             "alt": gc.YesNoEnum,
         })
         _cache_raw_input_data(cls, values)
+        if pdv.auto_matver:
+            values["matver"] = pdv.MATVER
         
         # 转换整数字段 - 支持字符串形式的浮点数（如 "30.00000000000000"）
         # int_fields = ["offsethour", "treeno"]
@@ -712,6 +716,8 @@ class AcceptSupply(BaseModel):
             values["apiex_entryid"] = values["apiex_id"]
         _coerce_to_str(values, ["apiex_id", "apiex_entryid"])
         _cache_raw_input_data(cls, values)
+        if pdv.auto_matver:
+            values["matver"] = pdv.MATVER
         
         # 转换整数字段 - 支持字符串形式的浮点数（如 "30.00000000000000"）
         if "priority" in values:
