@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>数据清洗管理系统</title>
-    <link rel="icon" type="image/png" href="/static/swagger/favicon.png">
+    <link rel="icon" type="image/png" sizes="64x64" href="/static/mds/favicon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/mds/favicon-32x32.png">
+    <link rel="icon" type="image/svg+xml" href="/static/mds/favicon.svg">
     <link href="/static/lib/bootstrap/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/static/mds/css/bootstrap-icons.css">
     <script src="/static/lib/bootstrap/bootstrap.bundle.min.js"></script>
@@ -413,6 +415,17 @@
                     }
                 });
             }
+            
+            // 卡片导航：左键复用已开标签页（跳转+刷新），中键/修饰键放行由浏览器强制新开
+            document.querySelectorAll('a.card-nav-link').forEach(function(link) {
+                link.addEventListener('click', function(e) {
+                    if (e.button !== 0) return;
+                    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+                    e.preventDefault();
+                    var windowName = 'mds_' + link.pathname.replace(/\//g, '_');
+                    window.open(link.href, windowName);
+                });
+            });
         });
     </script>
 </body>

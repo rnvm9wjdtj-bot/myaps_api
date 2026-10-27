@@ -21,7 +21,9 @@ var GlobalOpsController = (function() {
         moduleStats: {},
         executionResults: {},
         isExecuting: true,
-        startTime: null
+        startTime: null,
+        reloadTimer: null,
+        cancelled: false
     };
 
     var dom = {};
@@ -72,6 +74,15 @@ var GlobalOpsController = (function() {
         if (dom.viewDetailBtn) {
             dom.viewDetailBtn.addEventListener('click', function() {
                 window.location.reload();
+            });
+        }
+        if (dom.closeProgressBtn) {
+            dom.closeProgressBtn.addEventListener('click', function() {
+                if (state.reloadTimer) {
+                    clearInterval(state.reloadTimer);
+                    state.reloadTimer = null;
+                }
+                if (dom.progressTitle) dom.progressTitle.textContent = '执行完成';
             });
         }
     }
@@ -158,6 +169,11 @@ var GlobalOpsController = (function() {
         state.executionResults = {};
         state.isExecuting = true;
         state.startTime = Date.now();
+        state.cancelled = false;
+        if (state.reloadTimer) {
+            clearInterval(state.reloadTimer);
+            state.reloadTimer = null;
+        }
         
         if (dom.progressIcon) dom.progressIcon.className = 'bi bi-hourglass-split';
         if (dom.progressTitle) dom.progressTitle.textContent = '执行中...';
@@ -321,11 +337,33 @@ var GlobalOpsController = (function() {
         if (dom.cancelExecutionBtn) dom.cancelExecutionBtn.classList.add('d-none');
         if (dom.viewDetailBtn) dom.viewDetailBtn.classList.remove('d-none');
         if (dom.closeProgressBtn) dom.closeProgressBtn.classList.remove('d-none');
+        
+        if (!state.cancelled) {
+            startAutoReload();
+        } else if (dom.progressTitle) {
+            dom.progressTitle.textContent = '已取消执行';
+        }
+    }
+    
+    function startAutoReload() {
+        var seconds = 3;
+        if (dom.progressTitle) dom.progressTitle.textContent = '执行完成，' + seconds + ' 秒后自动刷新...';
+        state.reloadTimer = setInterval(function() {
+            seconds--;
+            if (seconds <= 0) {
+                clearInterval(state.reloadTimer);
+                state.reloadTimer = null;
+                window.location.reload();
+                return;
+            }
+            if (dom.progressTitle) dom.progressTitle.textContent = '执行完成，' + seconds + ' 秒后自动刷新...';
+        }, 1000);
     }
 
     function handleCancelExecution() {
         if (confirm('确定要取消执行吗？已处理的模块将保留结果。')) {
             state.isExecuting = false;
+            state.cancelled = true;
             addLog('用户取消执行', 'warning');
         }
     }

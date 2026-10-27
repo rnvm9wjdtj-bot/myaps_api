@@ -766,8 +766,8 @@ class DataTable {
         // 清理旧提示框
         document.querySelectorAll('.error-tooltip').forEach(t => t.remove());
         
-        // 错误单元格提示（包括普通错误和枚举错误）
-        document.querySelectorAll('.error-cell, .enum-tag-error').forEach(cell => {
+        // 错误单元格提示（包括普通错误、枚举错误和外键错误）
+        document.querySelectorAll('.error-cell, .enum-tag-error, .foreign-key-tag-error').forEach(cell => {
             cell.addEventListener('mouseenter', (e) => this.showErrorTooltip(e));
             cell.addEventListener('mouseleave', (e) => this.hideErrorTooltip(e));
         });
@@ -783,8 +783,9 @@ class DataTable {
      * 显示错误提示框
      */
     showErrorTooltip(e) {
-        const errorType = e.target.dataset.errorType;
-        const errorMsg = e.target.dataset.errorMsg;
+        const target = e.currentTarget;
+        const errorType = target.dataset.errorType;
+        const errorMsg = target.dataset.errorMsg;
         
         if (!errorType || !errorMsg) return;
         
@@ -795,9 +796,9 @@ class DataTable {
             <div class="error-tooltip-msg">${errorMsg}</div>
         `;
         document.body.appendChild(tooltip);
-        e.target._tooltip = tooltip;
+        target._tooltip = tooltip;
         
-        const rect = e.target.getBoundingClientRect();
+        const rect = target.getBoundingClientRect();
         tooltip.style.left = rect.left + 'px';
         tooltip.style.top = rect.bottom + 5 + 'px';
         tooltip.style.display = 'block';
@@ -807,9 +808,10 @@ class DataTable {
      * 隐藏错误提示框
      */
     hideErrorTooltip(e) {
-        if (e.target._tooltip) {
-            e.target._tooltip.remove();
-            e.target._tooltip = null;
+        const target = e.currentTarget;
+        if (target._tooltip) {
+            target._tooltip.remove();
+            target._tooltip = null;
         }
     }
     
