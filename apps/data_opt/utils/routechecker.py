@@ -5,7 +5,7 @@ from typing import List, Dict, Any, DefaultDict
 from collections import defaultdict
 
 from fastapi.responses import StreamingResponse
-from globalobjects import logger as log_config
+from globalobjects import logger as log_config, ProjectDefaultValues as pdv
 from core.settings import LOG_LEVEL
 
 
@@ -72,16 +72,8 @@ class RouteChecker:
         else:
             route_list = json_data
 
-        # 从项目配置获取 ItemNo 前缀和宽度
-        try:
-            from project_files import project_client
-            itemno_prefix = project_client.itemno_prefix
-            itemno_width = project_client.itemno_width
-        except:
-            itemno_prefix = 'P'
-            itemno_width = 2
-            logger.warning_msg("配置警告", f"未配置 ItemNo 前缀和宽度，默认使用 {itemno_prefix} 作为前缀，宽度为 {itemno_width}")
-        
+        itemno_prefix = pdv.itemno_prefix
+        itemno_width = pdv.itemno_width
         # 转换为DataFrame
         df_data = []
         for item in route_list:
@@ -135,16 +127,8 @@ class RouteChecker:
         
         # 填充缺失的ItemNo
         if self.itemno_col in df.columns:
-            # 从项目配置获取 ItemNo 前缀和宽度
-            try:
-                from project_files import project_client
-                itemno_prefix = project_client.itemno_prefix
-                itemno_width = project_client.itemno_width
-            except:
-                itemno_prefix = 'P'
-                itemno_width = 2
-                logger.warning_msg("配置警告", f"未配置 ItemNo 前缀和宽度，默认使用 {itemno_prefix} 作为前缀，宽度为 {itemno_width}")
-            
+            itemno_prefix = pdv.itemno_prefix
+            itemno_width = pdv.itemno_width
             # 处理缺失的ItemNo
             if self.sortno_col in df.columns:
                 for idx in df.index:
