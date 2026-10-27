@@ -265,6 +265,7 @@ start_app() {
         echo -e "${GREEN}[应用]${NC} ✓ 已在运行 (PID: $(get_pid))"
         echo -e "${GREEN}[应用]${NC}   访问地址: http://localhost:$PORT"
         echo -e "${GREEN}[应用]${NC}   API文档: http://localhost:$PORT/docs"
+        echo -e "${GREEN}[应用]${NC}   监控面板: http://localhost:$PORT/monitor"
         return 0
     fi
     
@@ -301,6 +302,7 @@ start_app() {
         echo -e "${GREEN}[应用]${NC} ✓ 启动成功 (PID: $pid)"
         echo -e "${GREEN}[应用]${NC}   访问地址: http://localhost:$PORT"
         echo -e "${GREEN}[应用]${NC}   API文档: http://localhost:$PORT/docs"
+        echo -e "${GREEN}[应用]${NC}   监控面板: http://localhost:$PORT/monitor"
         echo -e "${GREEN}[应用]${NC}   日志文件: $LOG_FILE"
         return 0
     else
@@ -477,6 +479,7 @@ cmd_status() {
         echo -e "  PID: $pid"
         echo -e "  访问地址: http://localhost:$PORT"
         echo -e "  API文档: http://localhost:$PORT/docs"
+        echo -e "  监控面板: http://localhost:$PORT/monitor"
         if command -v ps &> /dev/null; then
             ps -p "$pid" -o pid,ppid,%cpu,%mem,etime 2>/dev/null || true
         fi

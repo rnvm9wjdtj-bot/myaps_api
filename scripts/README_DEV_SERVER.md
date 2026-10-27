@@ -4,8 +4,8 @@
 
 | 脚本 | 适用系统 | 说明 |
 |------|---------|------|
-| `dev_server.sh` | Linux/macOS | Bash脚本 |
-| `dev_server.bat` | Windows | 批处理脚本 |
+| `dev_server.sh` | Linux/macOS | Bash脚本 (后台启停管理) |
+| `dev_run.bat` | Windows | 批处理脚本 (前台看门狗, 崩溃自动重启) |
 
 ## 使用方法
 
@@ -43,18 +43,18 @@ chmod +x scripts/dev_server.sh
 # 进入项目目录
 cd D:\myaps_api\myaps_api
 
-# 启动服务
-scripts\dev_server.bat start
+# 启动服务 (前台运行, 崩溃自动重启, 配置自动从 .env 读取)
+scripts\dev_run.bat
 
-# 查看状态
-scripts\dev_server.bat status
-
-# 重启服务
-scripts\dev_server.bat restart
-
-# 停止服务
-scripts\dev_server.bat stop
+# 按 Ctrl+C 停止服务
+# 查看帮助
+scripts\dev_run.bat /?
 ```
+
+> Windows 下仅保留 `dev_run.bat` 一个启动脚本, 采用前台看门狗模式:
+> 配置自动从 `.env` 读取 HOST/PORT/PROJECT_DIR/PROJECT_JSON,
+> 使用 uvicorn 多 worker 启动 (对标生产 Docker 部署),
+> 崩溃自动重启最多 5 次, 间隔 5 秒.
 
 ## 访问地址
 
@@ -65,6 +65,7 @@ scripts\dev_server.bat stop
 | http://localhost:8000 | 服务首页 |
 | http://localhost:8000/docs | Swagger API文档 |
 | http://localhost:8000/redoc | ReDoc API文档 |
+| http://localhost:8000/monitor | 监控面板 |
 
 ## 测试MDS路由
 
@@ -93,4 +94,4 @@ scripts\dev_server.bat stop
 ## 日志位置
 
 - Linux/macOS: `logs/dev_server.log`
-- Windows: 控制台窗口输出
+- Windows: 控制台窗口实时输出 (前台运行)
