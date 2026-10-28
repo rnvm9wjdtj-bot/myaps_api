@@ -593,6 +593,13 @@ class MaterialStaging(Model):
 - 内容在每个块内垂直分布
 - 必填星号紧贴字段名右侧
 
+### 列配置自动生成（`config_generator.py`）
+前端表格列配置由 `_generate_columns_from_proto()` 从 `proto_model._meta.fields_map` 自动生成，`title` 取字段 `description`，列顺序跟随模型字段定义顺序。`_TABLES_COLUMNS_CONFIG` 仅维护例外：
+- `override`：列属性覆盖（title/sortable/readOnly/width/after 等）
+- `exclude`：该表隐藏字段列表（显式维护，含审计字段）
+
+**约定**：新增审计字段（如 `sys_user`/`sys_date`/`sys_stamp`/`vid`/`treeno`）到某 `proto_model` 时，**必须同步在该表 `exclude` 里追加**，否则会直接暴露到前端列。反之，未来想开放某审计字段显示，从 `exclude` 移除即可。
+
 ## 部署配置
 
 ### 环境变量

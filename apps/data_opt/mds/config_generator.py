@@ -294,43 +294,57 @@ SYSTEM_COMMON_COLUMNS_SUFFIX = [
 
 # 自动列生成配置（从 proto_model 自动生成基础列，叠加覆盖配置）
 # 启用表 = _TABLES_COLUMNS_CONFIG 的 key：业务列从 proto_model._meta.fields_map 自动生成（field + title=description，顺序=字段定义顺序）
-# 覆盖配置：仅写需要特殊处理的列（title/sortable/readOnly/width/hidden 等，除 hidden 外均透传至前端）
-# 系统审计字段统一隐藏
-_SYS_HIDDEN = {"vid", "sys_user", "sys_date", "sys_stamp", "treeno"}
+# 结构：{"override": {字段: {列属性}}, "exclude": [隐藏字段]}
+#   override：列属性覆盖（title/sortable/readOnly/width/after 等，透传至前端；after 指定 extra field 插入位置）
+#   exclude：该表隐藏字段列表（显式维护，含审计字段；未来开放某审计字段从此处移除即可）
+# 约定：新增审计字段（如 sys_user/sys_date/sys_stamp/vid/treeno）到某 proto_model 时，必须同步在该表 exclude 里追加，否则会直接暴露到前端列
 
 _TABLES_COLUMNS_CONFIG = {
     "t_material": {
-        "materialno": {"sortable": True, "readOnly": True},
-        "abc": {"title": "ABC"},
-        "memo": {"hidden": True},
-        **{f: {"hidden": True} for f in _SYS_HIDDEN},
+        "override": {
+            "materialno": {"sortable": True, "readOnly": True},
+            "abc": {"title": "ABC"},
+        },
+        "exclude": ["memo", "sys_user", "sys_date", "sys_stamp"],
     },
     "t_mat_ver": {
-        "materialno": {"sortable": True},
-        "matver": {"sortable": True},
-        **{f: {"hidden": True} for f in _SYS_HIDDEN},
+        "override": {
+            "materialno": {"sortable": True},
+            "matver": {"sortable": True},
+        },
+        "exclude": ["vid"],
     },
     "t_workcenter": {
-        "workcenter": {"sortable": True, "readOnly": True},
-        **{f: {"hidden": True} for f in _SYS_HIDDEN},
+        "override": {
+            "workcenter": {"sortable": True, "readOnly": True},
+        },
+        "exclude": [],
     },
     "t_mat_wc": {
-        "materialno": {"sortable": True},
-        **{f: {"hidden": True} for f in _SYS_HIDDEN},
+        "override": {
+            "materialno": {"sortable": True},
+        },
+        "exclude": ["vid", "sys_stamp"],
     },
     "t_mat_wc_bom": {
-        "productno": {"sortable": True},
-        "productunit": {"title": "父件单位", "after": "productno"},
-        "materialunit": {"title": "子件单位", "after": "materialno"},
-        **{f: {"hidden": True} for f in _SYS_HIDDEN},
+        "override": {
+            "productno": {"sortable": True},
+            "productunit": {"title": "父件单位", "after": "productno"},
+            "materialunit": {"title": "子件单位", "after": "materialno"},
+        },
+        "exclude": ["vid", "sys_stamp", "treeno"],
     },
     "t_mold": {
-        "moldno": {"sortable": True, "readOnly": True},
-        **{f: {"hidden": True} for f in _SYS_HIDDEN},
+        "override": {
+            "moldno": {"sortable": True, "readOnly": True},
+        },
+        "exclude": [],
     },
     "t_mat_wc_mold": {
-        "materialno": {"sortable": True},
-        **{f: {"hidden": True} for f in _SYS_HIDDEN},
+        "override": {
+            "materialno": {"sortable": True},
+        },
+        "exclude": ["vid"],
     },
 }
 
@@ -340,13 +354,17 @@ def _generate_columns_from_proto(proto_model, table_key):
 
     业务列顺序 = proto_model 字段定义顺序；title = field.description（缺失则用字段名）。
     系统前缀/后缀列由 SYSTEM_COMMON_COLUMNS_PREFIX/SUFFIX 拼接。
+    override：列属性覆盖；exclude：该表隐藏字段（显式维护，含审计字段）；
+    override 中不在 fields_map 且未 exclude 的字段为 extra field，按 after 定位插入。
     """
-    overrides = _TABLES_COLUMNS_CONFIG.get(table_key, {})
+    cfg = _TABLES_COLUMNS_CONFIG.get(table_key, {})
+    overrides = cfg.get("override", {})
+    exclude = set(cfg.get("exclude", []))
     fields_map = proto_model._meta.fields_map
     extra_by_after = {}
     extra_tail = []
     for k, v in overrides.items():
-        if k in fields_map or v.get("hidden"):
+        if k in fields_map or k in exclude:
             continue
         after = v.get("after")
         if after:
@@ -355,21 +373,20 @@ def _generate_columns_from_proto(proto_model, table_key):
             extra_tail.append(k)
     columns = []
     for field_name, field_obj in fields_map.items():
-        col_override = overrides.get(field_name, {})
-        if col_override.get("hidden"):
+        if field_name in exclude:
             continue
         col = {"field": field_name, "title": field_obj.description or field_name}
-        col.update({k: v for k, v in col_override.items() if k != "hidden"})
+        col.update(overrides.get(field_name, {}))
         columns.append(col)
         for extra_field in extra_by_after.get(field_name, []):
             eo = overrides[extra_field]
             ec = {"field": extra_field, "title": eo.get("title", extra_field)}
-            ec.update({k: v for k, v in eo.items() if k not in ("hidden", "after")})
+            ec.update({k: v for k, v in eo.items() if k != "after"})
             columns.append(ec)
     for extra_field in extra_tail:
         eo = overrides[extra_field]
         ec = {"field": extra_field, "title": eo.get("title", extra_field)}
-        ec.update({k: v for k, v in eo.items() if k not in ("hidden", "after")})
+        ec.update({k: v for k, v in eo.items() if k != "after"})
         columns.append(ec)
     return SYSTEM_COMMON_COLUMNS_PREFIX + columns + SYSTEM_COMMON_COLUMNS_SUFFIX
 
