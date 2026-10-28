@@ -632,7 +632,7 @@ class YonyouTplusConnection(ExternalBaseConnection):
 
     async def _pull_simple_data(self, endpoint: str, field_hints: dict[str, str], filter: dict=None):
         # await self.auth()
-        # ⚠️ 分页说明：T+ Query 接口支持标准 PageIndex 分页（每次返回体的 TotalCount 恒定）。
+        # ⚠️ 分页说明：T+ Query 接口支持标准 PageIndex 分页。TotalCount 在拉取期间可能因并发写入漂移（非恒定，实测 7613→7614）。
         # 其 Ts 参数语义是“返回 TS 不小于该值的记录集”，属于过滤条件，并非分页游标。
         # 若翻页时同时递增 PageIndex 又回传 Ts，服务端会在不断收缩的集合上继续按页号取数，
         # 页码很快越过收缩后集合的末尾并返回空，导致大量记录被静默丢弃
@@ -648,6 +648,9 @@ class YonyouTplusConnection(ExternalBaseConnection):
         params = {k: v for k, v in params.items() if v is not None}
 
         data_list = []
+        # 分页提前终止用首页快照 break_count（避免拉取期间数据减少时提前 break 而漏取）；
+        # 最终对账用每页最新 total_count（贴近拉取结束时刻的数据集大小，消除拉取期间数据增长导致的虚假告警）。
+        break_count = None
         total_count = None
         max_pages = 100000  # 防御性上限，防止接口异常时死循环
         while params["PageIndex"] <= max_pages:
@@ -661,15 +664,22 @@ class YonyouTplusConnection(ExternalBaseConnection):
             if not isinstance(raw_data, list):
                 logger.warning(f"T+拉取[{endpoint}]返回非列表数据，已终止分页：{str(raw_data)[:200]}")
                 break
-            if total_count is None and isinstance(raw_data[0], dict):
-                total_count = _coerce_total_count(raw_data[0].get("TotalCount"))
+            if isinstance(raw_data[0], dict):
+                page_total = _coerce_total_count(raw_data[0].get("TotalCount"))
+                if page_total is not None:
+                    total_count = page_total
+                    if break_count is None:
+                        break_count = page_total
             data_list.extend([{v: row.get(k) for k, v in field_hints.items()} for row in raw_data])
-            if total_count is not None and len(data_list) >= total_count:
+            if break_count is not None and len(data_list) >= break_count:
                 break
             params["PageIndex"] += 1
 
         if total_count is not None and len(data_list) != total_count:
-            logger.warning(f"T+拉取[{endpoint}]数量与TotalCount不一致：实取 {len(data_list)} 条 / 接口总数 {total_count} 条")
+            logger.warning(
+                f"T+拉取[{endpoint}]数量与TotalCount不一致：实取 {len(data_list)} 条 / 接口总数 {total_count} 条"
+                f"（可能是拉取期间并发写入漂移，建议重试）"
+            )
         return data_list
 
 
@@ -933,6 +943,9 @@ class TplusBom(BaseSource):
         # 分页采用纯 PageIndex 递增（与 _pull_simple_data 对齐），并用 TotalCount 做完整性对账。
         # 注意：process_bomdata_async 会把单个 BOM 展开成多行子件，故以“原始记录数 fetched”对账，
         # 不能用展开后的 data_list 长度，否则会提前终止翻页而丢数据。
+        # 分页提前终止用首页快照 break_count（避免拉取期间数据减少时提前 break 而漏取）；
+        # 最终对账用每页最新 total_count（贴近拉取结束时刻的数据集大小，消除拉取期间数据增长导致的虚假告警）。
+        break_count = None
         total_count = None
         fetched = 0
         max_pages = 100000  # 防御性上限，防止接口异常时死循环
@@ -944,16 +957,23 @@ class TplusBom(BaseSource):
             if not isinstance(raw_data, list):
                 logger.warning(f"T+拉取[{cls._QUERY_BATCH_ENDPOINT}]返回非列表数据，已终止分页：{str(raw_data)[:200]}")
                 break
-            if total_count is None and isinstance(raw_data[0], dict):
-                total_count = _coerce_total_count(raw_data[0].get("TotalCount"))
+            if isinstance(raw_data[0], dict):
+                page_total = _coerce_total_count(raw_data[0].get("TotalCount"))
+                if page_total is not None:
+                    total_count = page_total
+                    if break_count is None:
+                        break_count = page_total
             fetched += len(raw_data)
             data_list.extend(await process_bomdata_async(raw_data, field_map=cls._FIELD_HINTS))
-            if total_count is not None and fetched >= total_count:
+            if break_count is not None and fetched >= break_count:
                 break
             params["PageIndex"] += 1
 
         if total_count is not None and fetched != total_count:
-            logger.warning(f"T+拉取[{cls._QUERY_BATCH_ENDPOINT}]数量与TotalCount不一致：实取 {fetched} 条 / 接口总数 {total_count} 条")
+            logger.warning(
+                f"T+拉取[{cls._QUERY_BATCH_ENDPOINT}]数量与TotalCount不一致：实取 {fetched} 条 / 接口总数 {total_count} 条"
+                f"（可能是拉取期间并发写入漂移，建议重试）"
+            )
 
         return ExternalDataSet(raw_data=data_list, pydantic_model=cls._PULL_PYDANTIC_MODEL)
 

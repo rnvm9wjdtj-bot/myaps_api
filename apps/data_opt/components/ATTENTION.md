@@ -64,5 +64,6 @@
 | 返回契约误用 | `TplusBom` 对 `_post` 返回值再 `.json()` | 直接用解析结果 |
 | classmethod 用 self | `TplusRouting` 嵌套函数 NameError 被吞 | 改 `cls` |
 | 展开后对账基数错 | （修复时规避） | 用原始记录数 `fetched` |
+| 跨页并发写入漂移 | 实取 7614 > TotalCount 7613（多 1 条），翻页期间 T+ 侧入库/出库致数据集膨胀 | 对账用每页最新 total_count，break 用首页快照 break_count（防漏取） |
 
 详见 `yonyou_tplus.py` 与 `tests/test_yonyou_tplus_paging.py`。
