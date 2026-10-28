@@ -1,7 +1,7 @@
 # MDS 缓冲系统配置指南
 
-> **版本**：v1.0  
-> **更新日期**：2026-05-16  
+> **版本**：v1.1  
+> **更新日期**：2026-10-28  
 > **适用范围**：新增主数据表到缓冲系统
 
 ---
@@ -15,9 +15,11 @@
 - [步骤三：定义 Schema](#步骤三定义-schema校验规则)
 - [步骤四：配置 STAGING_TABLE_CONFIG](#步骤四配置-staging_table_config)
 - [步骤五：实现校验器](#步骤五实现校验器可选)
+- [步骤六：配置前端列](#步骤六配置前端列可选)
 - [配置字段说明](#配置字段说明)
 - [外键配置说明](#外键配置说明)
 - [钩子配置说明](#钩子配置说明)
+- [字段变动与迁移链路](#字段变动与迁移链路)
 - [业务主键配置注意事项](#业务主键配置注意事项)
 - [完整示例](#完整示例)
 
@@ -51,8 +53,9 @@
 ### 仍需手动处理的部分
 
 1. **数据库表创建**：需通过 aerich 迁移或手动建表
-2. **前端页面**：需创建对应的 HTML/JS 页面
-3. **复杂业务规则**：如跨表关联、复合外键等需自定义函数
+2. **前端列覆盖/隐藏**：列名与顺序已从 ProtoModel 自动生成，仅需在 `_TABLES_COLUMNS_CONFIG` 中配置 override（sortable/readOnly/width 等）和 exclude（隐藏审计字段）
+3. **前端页面**：需创建对应的 HTML/JS 页面
+4. **复杂业务规则**：如跨表关联、复合外键等需自定义函数
 
 ### 配置化程度评估
 
@@ -65,7 +68,7 @@
 ### 未来优化方向
 
 如需进一步提升配置化程度，可考虑：
-1. **前端页面模板化**：根据元数据自动生成列表页、编辑页
+1. **前端页面模板化**：根据元数据自动生成列表页、编辑页（列名/列顺序已自动生成，页面框架仍需开发）
 2. **数据库表自动创建**：根据 ProtoModel 生成 DDL 并自动执行
 
 ---
@@ -81,7 +84,9 @@
    ↓
 4. 配置 STAGING_TABLE_CONFIG
    ↓
-5. 前端页面（可选）
+5. 配置 _TABLES_COLUMNS_CONFIG（前端列覆盖/隐藏，可选）
+   ↓
+6. 前端页面（可选）
 ```
 
 ---
@@ -106,7 +111,7 @@ class ProtoXxx(TortoiseBaseModel):
 
 **说明**：
 - `source_field`：数据库列名（PascalCase）
-- `description`：字段描述，用于生成校验错误信息
+- `description`：字段描述，用于生成校验错误信息**及前端列标题**（列配置自动生成时读取此值）
 - `abstract = True`：抽象模型，不直接创建表
 
 ---
@@ -288,6 +293,75 @@ async def validate_xxx_rules(cleaner, data, staging_id):
 
 ---
 
+## 步骤六：配置前端列（可选）
+
+**文件**：`apps/data_opt/mds/config_generator.py`
+
+### 自动生成机制
+
+前端表格列配置由 `_generate_columns_from_proto()` 从 `proto_model._meta.fields_map` 自动生成：
+
+- **列顺序**：跟随 ProtoModel 字段定义顺序
+- **列标题**：取字段 `description`（缺失则用字段名）
+- **前端展示、Excel 导入模板、Excel 导出模板** 三者同源，均从此配置生成
+
+`_TABLES_COLUMNS_CONFIG` 仅维护**例外**，无需逐表逐字段手写完整配置。
+
+### 配置结构
+
+```python
+_TABLES_COLUMNS_CONFIG = {
+    "t_xxx": {
+        "override": {                          # 列属性覆盖
+            "xxxno": {"sortable": True},       # 可排序
+            "description": {"readOnly": True}, # 只读
+            "price": {"width": 120},           # 列宽
+            # extra field（不在 proto_model 中）按 after 定位插入：
+            "extra_field": {"title": "额外字段", "after": "xxxno"},
+        },
+        "exclude": ["vid", "sys_stamp"],       # 隐藏字段（审计字段等）
+    },
+}
+```
+
+### override 可传递属性
+
+| 属性 | 说明 | 示例 |
+|------|------|------|
+| `title` | 覆盖列标题（默认取 description） | `{"title": "物料编码"}` |
+| `width` | 列宽（像素） | `{"width": 120}` |
+| `sortable` | 是否可排序 | `{"sortable": True}` |
+| `readOnly` | 是否只读 | `{"readOnly": True}` |
+| `after` | extra field 插入位置（指定前一字段名） | `{"after": "productno"}` |
+
+### exclude 说明
+
+> 隐藏字段一律走 `exclude`，`override` 不处理 `hidden`（在 override 写 `hidden` 不会跳过该列，只会被透传到前端列 dict，后端不保证隐藏效果）。
+
+
+- 显式维护需隐藏的字段列表（如审计字段 `vid`/`sys_user`/`sys_date`/`sys_stamp`/`treeno`）
+- 新增审计字段到 ProtoModel 时，**必须同步在 exclude 中追加**，否则会暴露到前端列
+- 未来想开放某字段显示，从 exclude 移除即可
+
+### extra field（`after` 机制）
+
+当某字段不在 `proto_model._meta.fields_map` 中（如 StagingModel 自身额外定义的字段），通过 `override` + `after` 定位插入：
+
+```python
+# TMatWcBomStaging 额外定义了 productunit/materialunit（不在 ProtoMatWcBom 中）
+"t_mat_wc_bom": {
+    "override": {
+        "productunit": {"title": "父件单位", "after": "productno"},   # 插入到 productno 之后
+        "materialunit": {"title": "子件单位", "after": "materialno"}, # 插入到 materialno 之后
+    },
+    "exclude": ["vid", "sys_stamp", "treeno"],
+}
+```
+
+未指定 `after` 的 extra field 追加到列尾。
+
+---
+
 ## 配置字段说明
 
 | 字段 | 必填 | 类型 | 说明 |
@@ -424,6 +498,51 @@ post_batch_hook(context, stats)
 | 9 | `post_validate_hook` **行级别后置** |
 | 10 | 批次循环结束 |
 | 11 | `post_batch_hook` **表级别后置** |
+
+---
+
+## 字段变动与迁移链路
+
+### 侦测机制
+
+当 ProtoModel 或 StagingModel 发生字段变动（新增/删除/改类型）时，迁移链路会自动侦测并生成 ALTER TABLE 语句。
+
+**两种变动均能侦测**：
+
+| 变动来源 | 侦测路径 | 说明 |
+|----------|----------|------|
+| ProtoModel 字段变动 | Proto → Staging 继承 → `_meta.fields_map` 包含 | 所有继承该 Proto 的 Staging 表同步变动 |
+| StagingModel 自身新增字段 | Staging 直接定义 → `_meta.fields_map` 包含 | 仅影响该 Staging 表（如 `TMatWcBomStaging` 的 `productunit`/`materialunit`） |
+
+### 迁移链路
+
+```
+migrate_router.py
+  ↓ 调用 differ.diff_all(STAGING_MODEL_MAPPING)
+  ↓
+STAGING_MODEL_MAPPING = {table_key: config["model"] ...}   # ← 取 "model"（Staging 模型），非 "proto_model"
+  ↓
+model_diff.py: ModelDiffer.diff(model_class)
+  ↓ 读取 model_class._meta.fields_map
+  ↓ 对比数据库实际表结构
+  ↓ 生成 ALTER TABLE 语句
+```
+
+### 关键设计：迁移与列配置解耦
+
+| 层 | 依赖 | 用途 |
+|----|------|------|
+| **迁移链路** | `STAGING_MODEL_MAPPING` → Staging 模型 `_meta.fields_map` | 侦测表结构变动，生成 DDL |
+| **前端列配置** | `_TABLES_COLUMNS_CONFIG` + `_generate_columns_from_proto()` | 前端列名/顺序/隐藏，Excel 导入导出模板 |
+
+两者完全解耦：列配置（`_TABLES_COLUMNS_CONFIG`）纯属展示层，**不参与迁移**。修改列配置不会触发迁移，修改 ORM 字段不会影响列配置（列配置自动跟随 ProtoModel 的 `description` 和字段顺序）。
+
+### 注意事项
+
+1. **`STAGING_MODEL_MAPPING` 用 `config["model"]`**（Staging 模型），不是 `config["proto_model"]`（正式表模型）。迁移 diff 的是 **Staging 表 vs 数据库实际表**
+2. **正式表 ORM（`apps/io_api/models.py` 中的 `TMaterial` 等）不参与迁移**，仅用于前端列配置的 `proto_model` 引用和业务主键提取
+3. **ProtoModel 改字段会同时传导**到 Staging 模型（继承）和正式表模型（继承），迁移链路检测到 Staging 表结构变化
+4. **StagingModel 自身新增字段**（非 Proto 定义）仅影响 Staging 表，迁移能侦测到，但前端列配置需在 `_TABLES_COLUMNS_CONFIG` 的 `override` 中用 `after` 机制补充
 
 ---
 
@@ -716,6 +835,19 @@ STAGING_TABLE_CONFIG["t_supplier"] = {
 }
 ```
 
+#### 5. 配置前端列（可选）
+
+**文件**：`apps/data_opt/mds/config_generator.py`
+
+```python
+_TABLES_COLUMNS_CONFIG["t_supplier"] = {
+    "override": {
+        "supplierno": {"sortable": True},
+    },
+    "exclude": ["vid", "sys_stamp"],
+}
+```
+
 ---
 
 ### 新增采购订单表（t_po，含外键）
@@ -783,6 +915,19 @@ STAGING_TABLE_CONFIG["t_po"] = {
     "config_rules": [
         create_positive_rule("qty", "数量必须大于0"),
     ],
+}
+```
+
+#### 5. 配置前端列（可选）
+
+**文件**：`apps/data_opt/mds/config_generator.py`
+
+```python
+_TABLES_COLUMNS_CONFIG["t_po"] = {
+    "override": {
+        "pono": {"sortable": True},
+    },
+    "exclude": ["vid", "sys_stamp"],
 }
 ```
 
