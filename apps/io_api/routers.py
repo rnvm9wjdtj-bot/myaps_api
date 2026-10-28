@@ -927,8 +927,7 @@ async def post_supply(
     log_api_request(request)
     db_name = db_name.replace(" ", "")
     try:
-        # 按 supplyno 整条覆盖：先调 SupplyDeleteAll 删除供应及关联记录
-        # （t_supply/t_orderwc/t_demand/t_peg），再插入本批数据
+        # 按 supplyno 整条覆盖：先调 SupplyDeleteAll 删除供应及关联记录（t_supply/t_orderwc/t_demand/t_peg），再插入本批数据
         # 业务前提：supplyno 具主键性质，每批同一 supplyno 仅一种 type；
         #           子表删除为期望行为（重置 MO 关联，后续数据重新流入）
         supplyno_map = {}
@@ -1220,7 +1219,7 @@ async def delete_supply(
     "/t_demand",
     tags=["生产数据 - 需求"],
     summary="新增或修改需求记录（需求来源包含：销售订单SO、计划需求DM、工单预留RS、预测FC、安全库存SS）",
-    description="根据🗝️【料号+需求号+项目号】新增或修改需求记录"
+    description="根据🗝️【需求号+料号+项目号】新增或修改需求记录"
 )
 async def post_demand(
     request: Request,

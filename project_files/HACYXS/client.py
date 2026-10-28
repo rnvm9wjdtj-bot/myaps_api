@@ -56,7 +56,7 @@ CLIENT_LOGGER.info("binlog监听提示提醒器已注册到全局RemindManager")
 #################################################################################
 # ⬇️ 定时任务
 #################################################################################
-_STOCK_EXCLUDE_WAREHOUSES = []
+_STOCK_EXCLUDE_WAREHOUSES = ['ck04']
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute())
 @async_service_operation(module="定时任务")

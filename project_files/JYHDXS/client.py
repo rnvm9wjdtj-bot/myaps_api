@@ -618,22 +618,25 @@ CHANGED_MO_POLL_INTERVAL_MINUTES = 10
 async def task_push_changed_mo():
     # 不传时间：横向比对 Sys_Stamp > ApiEx_LastPush，直接查所有未推送变更
     # 日志已集成在 get_changed_mo 内部
-    result = await ApsPayloadSponsor.get_changed_mo(db_name=MYAPS_MAIN_DB, with_detail=True)
+    result = await ApsPayloadSponsor.get_changed_mo(db_name=MYAPS_MAIN_DB)
     if not result["supplynos"]:
         return
-    # 模拟推送：逐条 POST 到本机 /api/mock/push（对方接口完成后替换为真实推送）
+    # 模拟推送：一次性 POST 全部 supplynos 到本机 /api/mock/push（对方接口完成后替换为真实推送）
     success_supplynos = []
-    async with httpx.AsyncClient() as client:
-        for item in result["data"]:
-            sno = item.get("supplyno", "?")
-            try:
-                resp = await client.post(f"{THIS_BASE_URL}/api/mock/push", json=item, timeout=10)
-                if resp.status_code == 200:
-                    success_supplynos.append(sno)
-                else:
-                    CLIENT_LOGGER.fail("模拟推送", sno, f"HTTP {resp.status_code}")
-            except Exception as e:
-                CLIENT_LOGGER.fail("模拟推送", sno, str(e))
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{THIS_BASE_URL}/api/mock/push",
+                content=json.dumps({"supplynos": result["supplynos"]}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                timeout=30,
+            )
+        if resp.status_code == 200:
+            success_supplynos = result["supplynos"]
+        else:
+            CLIENT_LOGGER.fail("模拟推送", "批量", f"HTTP {resp.status_code}")
+    except Exception as e:
+        CLIENT_LOGGER.fail("模拟推送", "批量", str(e))
     # 只推进推送成功的水位
     if success_supplynos:
         await ApsPayloadSponsor.advance_mo_lastpush(

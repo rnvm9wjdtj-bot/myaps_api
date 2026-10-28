@@ -44,7 +44,9 @@ _REMAIN_NATIVE_SUPPLYNO = False
 #################################################################################
 # ⬇️ 定时任务
 #################################################################################
-
+@cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2), description="确认报工")
+async def task_confirm_workreport():
+    await ApsPayloadSponsor.confirm_workreport()
 
 
 
