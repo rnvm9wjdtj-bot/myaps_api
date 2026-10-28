@@ -18,7 +18,7 @@ class TMaterial(pm.ProtoMaterial):
 
 
 class TWorkcenter(pm.ProtoWorkcenter):
-    workcenter = fields.CharField(source_field='WorkCenter', primary_key=True, max_length=32)
+    workcenter = fields.CharField(source_field='WorkCenter', primary_key=True, max_length=32, description='编号')
 
     class Meta:
         managed = False
@@ -126,7 +126,7 @@ class TDemand(pm.ProtoDemand):
 
 
 class TMold(pm.ProtoMold):
-    moldno = fields.CharField(source_field='MoldNo', primary_key=True, max_length=32)
+    moldno = fields.CharField(source_field='MoldNo', primary_key=True, max_length=32, description='模具号')
 
     class Meta:
         managed = False

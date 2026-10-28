@@ -16,14 +16,23 @@ logger = log_config.get_logger(__name__)
 def get_table_field_mappers() -> Dict[str, Dict[str, str]]:
     """
     动态生成所有表的字段映射
-    
+
     Returns:
         {表名: {字段名: 中文名}}
     """
-    from apps.data_opt.mds.config_generator import _PAGE_COLUMNS_CONFIG
-    
+    from apps.data_opt.mds.config_generator import (
+        _TABLES_COLUMNS_CONFIG,
+        _generate_columns_from_proto,
+    )
+    from apps.data_opt.mds.staging_cleaner import STAGING_TABLE_CONFIG
+
     mappers = {}
-    for table_key, columns in _PAGE_COLUMNS_CONFIG.items():
+    # 所有表列配置从 proto_model 自动生成，与导出模板同源
+    for table_key in _TABLES_COLUMNS_CONFIG:
+        proto_model = STAGING_TABLE_CONFIG.get(table_key, {}).get("proto_model")
+        if not proto_model:
+            continue
+        columns = _generate_columns_from_proto(proto_model, table_key)
         field_mapper = {}
         for col in columns:
             field = col.get("field")
@@ -32,7 +41,7 @@ def get_table_field_mappers() -> Dict[str, Dict[str, str]]:
                 field_mapper[field] = title
         if field_mapper:
             mappers[table_key] = field_mapper
-    
+
     return mappers
 
 

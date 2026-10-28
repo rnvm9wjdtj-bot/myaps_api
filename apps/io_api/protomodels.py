@@ -10,7 +10,7 @@ class ProtoBatchLog(TortoiseBaseModel):
     task = fields.CharField(source_field='Task', max_length=1000, null=True, description="任务")  # Field name made lowercase.
     strategy = fields.CharField(source_field='Strategy', max_length=32, null=True, description="策略")  # Field name made lowercase.
     target = fields.CharField(source_field='Target', max_length=1000, null=True, description="对象")  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
 
     class Meta:
         abstract = True
@@ -22,7 +22,7 @@ class ProtoCalendar(TortoiseBaseModel):
     shiftdate = fields.DateField(source_field='ShiftDate', unique=True)  # Field name made lowercase.
     shiftno = fields.CharField(source_field='ShiftNo', max_length=4)  # Field name made lowercase.
     caprate = fields.FloatField(source_field='CapRate', description='机台利用率%')  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
 
     class Meta:
         abstract = True
@@ -142,7 +142,7 @@ class ProtoCheckqtyRecord(TortoiseBaseModel):
     checkqty = fields.FloatField(source_field='CheckQty', blank=True, null=True)  # Field name made lowercase.
     confirmqty = fields.FloatField(source_field='ConfirmQty', blank=True, null=True)  # Field name made lowercase.
     sysuser = fields.CharField(source_field='SysUser', max_length=32, blank=True, null=True)  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
     systime = fields.DatetimeField(source_field='SysTime')  # Field name made lowercase.
 
     class Meta:
@@ -196,7 +196,7 @@ class ProtoDemand(TortoiseBaseModel):
     itemno = fields.CharField(source_field='ItemNo', max_length=6)  # Field name made lowercase.
     type = fields.CharField(source_field='Type', max_length=64, blank=True, null=True)  # Field name made lowercase.
     category = fields.CharField(source_field='Category', max_length=32, blank=True, null=True, description='MTS/MTO')  # Field name made lowercase.
-    priority = fields.IntField(source_field='Priority')  # Field name made lowercase.
+    priority = fields.IntField(source_field='Priority', description='优先级')  # Field name made lowercase.
     workcenter = fields.CharField(source_field='WorkCenter', max_length=32, blank=True, null=True)  # Field name made lowercase.
     status = fields.CharField(source_field='Status', max_length=32, blank=True, null=True, description='NEW/CRE/REL')  # Field name made lowercase.
     req_qty = fields.FloatField(source_field='Req_Qty')  # Field name made lowercase.
@@ -211,7 +211,7 @@ class ProtoDemand(TortoiseBaseModel):
     free1 = fields.CharField(source_field='Free1', max_length=255, blank=True, null=True)  # Field name made lowercase.
     free2 = fields.CharField(source_field='Free2', max_length=255, blank=True, null=True)  # Field name made lowercase.
     free3 = fields.CharField(source_field='Free3', max_length=255, blank=True, null=True)  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
     apiex_sn = fields.CharField(source_field='ApiEx_SN', max_length=32, blank=True, null=True)  # Field name made lowercase.
     apiex_id = fields.CharField(source_field='ApiEx_ID', max_length=32, blank=True, null=True)  # Field name made lowercase.
     apiex_entryid = fields.CharField(source_field='ApiEx_EntryID', max_length=32, blank=True, null=True)  # Field name made lowercase.
@@ -256,7 +256,7 @@ class ProtoForecast(TortoiseBaseModel):
     m10 = fields.FloatField(source_field='M10', blank=True, null=True)  # Field name made lowercase.
     m11 = fields.FloatField(source_field='M11', blank=True, null=True)  # Field name made lowercase.
     m12 = fields.FloatField(source_field='M12', blank=True, null=True)  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
     sys_stamp = fields.DatetimeField(source_field='Sys_Stamp')  # Field name made lowercase.
 
     class Meta:
@@ -285,7 +285,7 @@ class ProtoForecastlog(TortoiseBaseModel):
     m10 = fields.FloatField(source_field='M10', blank=True, null=True)  # Field name made lowercase.
     m11 = fields.FloatField(source_field='M11', blank=True, null=True)  # Field name made lowercase.
     m12 = fields.FloatField(source_field='M12', blank=True, null=True)  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
     sys_stamp = fields.DatetimeField(source_field='Sys_Stamp')  # Field name made lowercase.
 
     class Meta:
@@ -313,7 +313,7 @@ class ProtoForecastlogv2(TortoiseBaseModel):
     m10 = fields.FloatField(source_field='M10', blank=True, null=True)  # Field name made lowercase.
     m11 = fields.FloatField(source_field='M11', blank=True, null=True)  # Field name made lowercase.
     m12 = fields.FloatField(source_field='M12', blank=True, null=True)  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
     sys_stamp = fields.DatetimeField(source_field='Sys_Stamp')  # Field name made lowercase.
 
     class Meta:
@@ -338,7 +338,7 @@ class ProtoGroupcolor(TortoiseBaseModel):
     groupno = fields.CharField(source_field='GroupNo', unique=True, max_length=32)  # Field name made lowercase.
     grouptxt = fields.CharField(source_field='GroupTxt', max_length=255, blank=True, null=True)  # Field name made lowercase.
     color = fields.CharField(source_field='Color', max_length=16, blank=True, null=True)  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
 
     class Meta:
         abstract = True
@@ -355,7 +355,7 @@ class ProtoMatAlt(TortoiseBaseModel):
     altqty = fields.FloatField(source_field='AltQty', blank=True, null=True)  # Field name made lowercase.
     grppri = fields.IntField(source_field='GrpPri', blank=True, null=True)  # Field name made lowercase.
     grprate = fields.DecimalField(source_field='GrpRate', max_digits=5, decimal_places=2, blank=True, null=True, description='%')  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
 
     class Meta:
         abstract = True
@@ -381,10 +381,10 @@ class ProtoMatVer(TortoiseBaseModel):
     matver = fields.CharField(source_field='MatVer', max_length=4, description='版本号')  # Field name made lowercase.
     lotfrom = fields.IntField(source_field='LotFrom', blank=True, null=True, description='批量下限')  # Field name made lowercase.
     lotto = fields.IntField(source_field='LotTo', blank=True, null=True, description='批量上限')  # Field name made lowercase.
-    priority = fields.IntField(source_field='Priority', blank=True, null=True)  # Field name made lowercase.
+    priority = fields.IntField(source_field='Priority', blank=True, null=True, description='优先级')  # Field name made lowercase.
     refno = fields.CharField(source_field='RefNo', max_length=64, blank=True, null=True, description='MTO订单号/认证线')  # Field name made lowercase.
     active = fields.CharField(source_field='Active', max_length=1, blank=True, null=True, description='激活')  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
 
     class Meta:
         abstract = True
@@ -408,7 +408,7 @@ class ProtoMatWc(TortoiseBaseModel):
     lotsize = fields.FloatField(source_field='LotSize', description='批量大小')  # Field name made lowercase.
     lotsec = fields.IntField(source_field='LotSec', description='批量时间(秒)')  # Field name made lowercase.
     rate = fields.FloatField(source_field='Rate', blank=True, null=True, description='配比')  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
     sys_stamp = fields.DatetimeField(source_field='Sys_Stamp', blank=True, null=True)  # Field name made lowercase.
 
     class Meta:
@@ -429,7 +429,7 @@ class ProtoMatWcBom(TortoiseBaseModel):
     mto = fields.CharField(source_field='MTO', max_length=1, blank=True, null=True, description='是否MTO')  # Field name made lowercase.
     scrap = fields.FloatField(source_field='Scrap', blank=True, null=True, description='报废率')  # Field name made lowercase.
     alt = fields.CharField(source_field='Alt', max_length=1, blank=True, null=True, description='是否是替代')  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
     sys_stamp = fields.DatetimeField(source_field='Sys_Stamp', blank=True, null=True)  # Field name made lowercase.
 
     class Meta:
@@ -451,7 +451,7 @@ class ProtoMatWcBomNa(TortoiseBaseModel):
     treeno = fields.IntField(source_field='TreeNo', blank=True, null=True)  # Field name made lowercase.
     mto = fields.CharField(source_field='MTO', max_length=1, blank=True, null=True, description='Y/N')  # Field name made lowercase.
     scrap = fields.FloatField(source_field='Scrap', blank=True, null=True, description='%')  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
     sys_stamp = fields.DatetimeField(source_field='Sys_Stamp')  # Field name made lowercase.
 
     class Meta:
@@ -482,7 +482,7 @@ class ProtoMatWcMold(TortoiseBaseModel):
     fixsec = fields.IntField(source_field='FixSec', blank=True, null=True, description='额定时间(秒)')  # Field name made lowercase.
     priority = fields.IntField(source_field='Priority', blank=True, null=True, description='优先级')  # Field name made lowercase.
     worker = fields.FloatField(source_field='Worker', blank=True, null=True, description='人员')  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
 
     class Meta:
         abstract = True
@@ -496,8 +496,8 @@ class ProtoMatWcSwitch(TortoiseBaseModel):
     materialno = fields.CharField(source_field='MaterialNo', max_length=64, description='产品')  # Field name made lowercase.
     workcenter = fields.CharField(source_field='WorkCenter', max_length=32, description='机台')  # Field name made lowercase.
     wbasesec = fields.IntField(source_field='WBaseSec')  # Field name made lowercase.
-    priority = fields.IntField(source_field='Priority', blank=True, null=True)  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    priority = fields.IntField(source_field='Priority', blank=True, null=True, description='优先级')  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
 
     class Meta:
         abstract = True
@@ -540,7 +540,7 @@ class ProtoMaterial(TortoiseBaseModel):
     free1 = fields.CharField(source_field='Free1', max_length=255, blank=True, null=True, description='自定义1')  # Field name made lowercase.
     free2 = fields.CharField(source_field='Free2', max_length=255, blank=True, null=True, description='自定义2')  # Field name made lowercase.
     free3 = fields.CharField(source_field='Free3', max_length=255, blank=True, null=True, description='自定义3')  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
     sys_user = fields.CharField(source_field='Sys_User', max_length=32, blank=True, null=True)  # Field name made lowercase.
     sys_date = fields.DatetimeField(source_field='Sys_Date', blank=True, null=True)  # Field name made lowercase.
     sys_stamp = fields.DatetimeField(source_field='Sys_Stamp', blank=True, null=True)
@@ -579,7 +579,7 @@ class ProtoMaterialData(TortoiseBaseModel):
     free1 = fields.CharField(source_field='Free1', max_length=255, blank=True, null=True)  # Field name made lowercase.
     free2 = fields.CharField(source_field='Free2', max_length=255, blank=True, null=True)  # Field name made lowercase.
     free3 = fields.CharField(source_field='Free3', max_length=255, blank=True, null=True)  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
     sys_user = fields.CharField(source_field='Sys_User', max_length=32, blank=True, null=True)  # Field name made lowercase.
     sys_date = fields.DatetimeField(source_field='Sys_Date')  # Field name made lowercase.
     sys_stamp = fields.DatetimeField(source_field='Sys_Stamp')  # Field name made lowercase.
@@ -622,7 +622,7 @@ class ProtoMaterialNa(TortoiseBaseModel):
     free1 = fields.CharField(source_field='Free1', max_length=255, blank=True, null=True)  # Field name made lowercase.
     free2 = fields.CharField(source_field='Free2', max_length=255, blank=True, null=True)  # Field name made lowercase.
     free3 = fields.CharField(source_field='Free3', max_length=255, blank=True, null=True)  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
     sys_user = fields.CharField(source_field='Sys_User', max_length=32, blank=True, null=True)  # Field name made lowercase.
     sys_date = fields.DatetimeField(source_field='Sys_Date')  # Field name made lowercase.
     sys_stamp = fields.DatetimeField(source_field='Sys_Stamp')  # Field name made lowercase.
@@ -639,7 +639,7 @@ class ProtoMold(TortoiseBaseModel):
     status = fields.CharField(source_field='Status', max_length=8, blank=True, null=True, description="状态")  # Field name made lowercase.
     moldnum = fields.IntField(source_field='MoldNum', blank=True, null=True, description='穴数')  # Field name made lowercase.
     qty = fields.IntField(source_field='Qty', blank=True, null=True, description='台数')  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
 
     class Meta:
         abstract = True
@@ -652,7 +652,7 @@ class ProtoNamemapping(TortoiseBaseModel):
     no = fields.CharField(source_field='No', max_length=12)  # Field name made lowercase.
     name = fields.CharField(source_field='Name', max_length=255, blank=True, null=True)  # Field name made lowercase.
     lang = fields.CharField(source_field='Lang', max_length=2)  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
 
     class Meta:
         abstract = True
@@ -690,7 +690,7 @@ class ProtoOrderwc(TortoiseBaseModel):
     materialno = fields.CharField(source_field='MaterialNo', max_length=64)  # Field name made lowercase.
     workcenter = fields.CharField(source_field='WorkCenter', max_length=32)  # Field name made lowercase.
     moldno = fields.CharField(source_field='MoldNo', max_length=32, blank=True, null=True)  # Field name made lowercase.
-    priority = fields.IntField(source_field='Priority', blank=True, null=True)  # Field name made lowercase.
+    priority = fields.IntField(source_field='Priority', blank=True, null=True, description='优先级')  # Field name made lowercase.
     status = fields.CharField(source_field='Status', max_length=64, blank=True, null=True)  # Field name made lowercase.
     fix = fields.CharField(source_field='Fix', max_length=1, blank=True, null=True)  # Field name made lowercase.
     orderqty = fields.FloatField(source_field='OrderQty')  # Field name made lowercase.
@@ -722,7 +722,7 @@ class ProtoOrderwcBackup(TortoiseBaseModel):
     materialno = fields.CharField(source_field='MaterialNo', max_length=64)  # Field name made lowercase.
     workcenter = fields.CharField(source_field='WorkCenter', max_length=32)  # Field name made lowercase.
     moldno = fields.CharField(source_field='MoldNo', max_length=32, blank=True, null=True)  # Field name made lowercase.
-    priority = fields.IntField(source_field='Priority', blank=True, null=True)  # Field name made lowercase.
+    priority = fields.IntField(source_field='Priority', blank=True, null=True, description='优先级')  # Field name made lowercase.
     status = fields.CharField(source_field='Status', max_length=64, blank=True, null=True)  # Field name made lowercase.
     fix = fields.CharField(source_field='Fix', max_length=1, blank=True, null=True)  # Field name made lowercase.
     orderqty = fields.FloatField(source_field='OrderQty')  # Field name made lowercase.
@@ -755,7 +755,7 @@ class ProtoOrderwcLog(TortoiseBaseModel):
     sortno = fields.IntField(source_field='SortNo', blank=True, null=True)  # Field name made lowercase.
     materialno = fields.CharField(source_field='MaterialNo', max_length=64)  # Field name made lowercase.
     workcenter = fields.CharField(source_field='WorkCenter', max_length=32)  # Field name made lowercase.
-    priority = fields.IntField(source_field='Priority', blank=True, null=True)  # Field name made lowercase.
+    priority = fields.IntField(source_field='Priority', blank=True, null=True, description='优先级')  # Field name made lowercase.
     status = fields.CharField(source_field='Status', max_length=64, blank=True, null=True)  # Field name made lowercase.
     fix = fields.CharField(source_field='Fix', max_length=1, blank=True, null=True)  # Field name made lowercase.
     orderqty = fields.FloatField(source_field='OrderQty')  # Field name made lowercase.
@@ -901,7 +901,7 @@ class ProtoPlanlog(TortoiseBaseModel):
 class ProtoPlanner(TortoiseBaseModel):
     planner = fields.CharField(source_field='Planner', unique=True, max_length=8)  # Field name made lowercase.
     plannertxt = fields.CharField(source_field='PlannerTxt', max_length=255, blank=True, null=True)  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
     status = fields.CharField(source_field='Status', max_length=1, blank=True, null=True)  # Field name made lowercase.
 
     class Meta:
@@ -937,7 +937,7 @@ class ProtoPlanresult(TortoiseBaseModel):
 class ProtoPriority(TortoiseBaseModel):
     priortyno = fields.CharField(source_field='PriortyNo', unique=True, max_length=16)  # Field name made lowercase.
     priorityname = fields.CharField(source_field='PriorityName', max_length=255, blank=True, null=True)  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
 
     class Meta:
         abstract = True
@@ -998,7 +998,7 @@ class ProtoSetuptime(TortoiseBaseModel):
     subgroup = fields.CharField(source_field='SubGroup', max_length=32)  # Field name made lowercase.
     setupsec = fields.IntField(source_field='SetupSec')  # Field name made lowercase.
     setupcost = fields.IntField(source_field='SetupCost')  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
 
     class Meta:
         abstract = True
@@ -1014,7 +1014,7 @@ class ProtoShiftdate(TortoiseBaseModel):
     shiftno = fields.CharField(source_field='ShiftNo', max_length=4)  # Field name made lowercase.
     capnum = fields.IntField(source_field='CapNum')  # Field name made lowercase.
     caprate = fields.FloatField(source_field='CapRate')  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
 
     class Meta:
         abstract = True
@@ -1027,7 +1027,7 @@ class ProtoShifttime(TortoiseBaseModel):
     shiftno = fields.CharField(source_field='ShiftNo', max_length=4)  # Field name made lowercase.
     starttime = fields.TimeField(source_field='StartTime')  # Field name made lowercase.
     endtime = fields.TimeField(source_field='EndTime')  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
 
     class Meta:
         abstract = True
@@ -1064,7 +1064,7 @@ class ProtoSoPln(TortoiseBaseModel):
     refno = fields.CharField(source_field='RefNo', max_length=64, blank=True, null=True)  # Field name made lowercase.
     partnerno = fields.CharField(source_field='PartnerNo', max_length=64, blank=True, null=True)  # Field name made lowercase.
     partnername = fields.CharField(source_field='PartnerName', max_length=255, blank=True, null=True)  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
 
     class Meta:
         abstract = True
@@ -1098,7 +1098,7 @@ class ProtoSqlcheck(TortoiseBaseModel):
     noid = fields.IntField(source_field='NoID', unique=True)  # Field name made lowercase.
     name = fields.CharField(source_field='Name', max_length=32, blank=True, null=True)  # Field name made lowercase.
     sqltext = fields.CharField(source_field='SQLText', max_length=255, blank=True, null=True)  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
 
     class Meta:
         abstract = True
@@ -1113,7 +1113,7 @@ class ProtoSupply(TortoiseBaseModel):
     itemno = fields.CharField(source_field='ItemNo', max_length=6)  # Field name made lowercase.
     type = fields.CharField(source_field='Type', max_length=64, blank=True, null=True, description='PL/MO')  # Field name made lowercase.
     category = fields.CharField(source_field='Category', max_length=32, blank=True, null=True, description='MTO/MTS')  # Field name made lowercase.
-    priority = fields.IntField(source_field='Priority')  # Field name made lowercase.
+    priority = fields.IntField(source_field='Priority', description='优先级')  # Field name made lowercase.
     status = fields.CharField(source_field='Status', max_length=32, blank=True, null=True, description='Release, Confirmation')  # Field name made lowercase.
     avail_qty = fields.FloatField(source_field='Avail_Qty')  # Field name made lowercase.
     create_date = fields.DatetimeField(source_field='Create_Date', blank=True, null=True)  # Field name made lowercase.
@@ -1152,7 +1152,7 @@ class ProtoSupplyNa(TortoiseBaseModel):
     itemno = fields.CharField(source_field='ItemNo', max_length=64)  # Field name made lowercase.
     type = fields.CharField(source_field='Type', max_length=64, blank=True, null=True, description='PL/MO')  # Field name made lowercase.
     category = fields.CharField(source_field='Category', max_length=32, blank=True, null=True, description='MTO/MTS')  # Field name made lowercase.
-    priority = fields.IntField(source_field='Priority')  # Field name made lowercase.
+    priority = fields.IntField(source_field='Priority', description='优先级')  # Field name made lowercase.
     status = fields.CharField(source_field='Status', max_length=32, blank=True, null=True, description='Release, Confirmation')  # Field name made lowercase.
     avail_qty = fields.FloatField(source_field='Avail_Qty')  # Field name made lowercase.
     create_date = fields.DatetimeField(source_field='Create_Date', blank=True, null=True)  # Field name made lowercase.
@@ -1166,7 +1166,7 @@ class ProtoSupplyNa(TortoiseBaseModel):
     free1 = fields.CharField(source_field='Free1', max_length=255, blank=True, null=True)  # Field name made lowercase.
     free2 = fields.CharField(source_field='Free2', max_length=255, blank=True, null=True)  # Field name made lowercase.
     free3 = fields.CharField(source_field='Free3', max_length=255, blank=True, null=True)  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
     sys_date = fields.DatetimeField(source_field='Sys_Date', blank=True, null=True)  # Field name made lowercase.
     sys_user = fields.CharField(source_field='Sys_User', max_length=32, blank=True, null=True)  # Field name made lowercase.
     sys_stamp = fields.DatetimeField(source_field='Sys_Stamp')  # Field name made lowercase.
@@ -1195,7 +1195,7 @@ class ProtoSyslog(TortoiseBaseModel):
     timeid = fields.DatetimeField(source_field='TimeID')  # Field name made lowercase.
     userid = fields.CharField(source_field='UserID', max_length=40)  # Field name made lowercase.
     action = fields.CharField(source_field='Action', max_length=255)  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
 
     class Meta:
         abstract = True
@@ -1205,7 +1205,7 @@ class ProtoSyslog(TortoiseBaseModel):
 class ProtoSyspara(TortoiseBaseModel):
     paraid = fields.CharField(source_field='ParaID', unique=True, max_length=32)  # Field name made lowercase.
     paravalue = fields.CharField(source_field='ParaValue', max_length=32, blank=True, null=True)  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
 
     class Meta:
         abstract = True
@@ -1234,7 +1234,7 @@ class ProtoTimepara(TortoiseBaseModel):
     schetime = fields.TimeField(source_field='ScheTime', blank=True, null=True)  # Field name made lowercase.
     zoomnum = fields.IntField(source_field='ZoomNum', blank=True, null=True)  # Field name made lowercase.
     initial = fields.CharField(source_field='Initial', max_length=1, blank=True, null=True)  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
     workcenter = fields.TextField(source_field='WorkCenter', blank=True, null=True)  # Field name made lowercase.
 
     class Meta:
@@ -1293,7 +1293,7 @@ class ProtoTreeso(TortoiseBaseModel):
 class ProtoType(TortoiseBaseModel):
     type = fields.CharField(source_field='Type', unique=True, max_length=8)  # Field name made lowercase.
     category = fields.CharField(source_field='Category', max_length=2, blank=True, null=True)  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
 
     class Meta:
         abstract = True
@@ -1310,7 +1310,7 @@ class ProtoVendor(TortoiseBaseModel):
     web = fields.CharField(source_field='Web', max_length=255, blank=True, null=True)  # Field name made lowercase.
     address = fields.CharField(source_field='Address', max_length=255, blank=True, null=True)  # Field name made lowercase.
     status = fields.CharField(source_field='Status', max_length=255, blank=True, null=True)  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
 
     class Meta:
         abstract = True
@@ -1332,7 +1332,7 @@ class ProtoWorkcenter(TortoiseBaseModel):
     worker = fields.FloatField(source_field='Worker', blank=True, null=True, description='工时')  # Field name made lowercase.
     setupno = fields.CharField(source_field='SetupNo', max_length=6, blank=True, null=True, description='切换组')  # Field name made lowercase.
     grpno = fields.CharField(source_field='GrpNo', max_length=6, blank=True, null=True, description='同组号')  # Field name made lowercase.
-    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True)  # Field name made lowercase.
+    memo = fields.CharField(source_field='Memo', max_length=255, blank=True, null=True, description='备注')  # Field name made lowercase.
 
     class Meta:
         abstract = True

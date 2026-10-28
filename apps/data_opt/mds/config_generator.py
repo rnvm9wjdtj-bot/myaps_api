@@ -292,130 +292,86 @@ SYSTEM_COMMON_COLUMNS_SUFFIX = [
 ]
 
 
-# 前端配置（列配置等）
-# TODO: 可以进一步优化，从模型中提取更多信息
-_PAGE_COLUMNS_CONFIG = {
-    "t_material": SYSTEM_COMMON_COLUMNS_PREFIX + [
-        {"field": "materialno", "title": "物料号", "sortable": True, "readOnly": True},
-        {"field": "description", "title": "物料描述"},
-        {"field": "size", "title": "规格"},
-        {"field": "plant", "title": "工厂"},
-        {"field": "planner", "title": "计划员"},
-        {"field": "fifo", "title": "FIFO"},
-        {"field": "leadday", "title": "提前期"},
-        {"field": "expday", "title": "保质期"},
-        {"field": "grday", "title": "质检期"},
-        {"field": "abc", "title": "ABC"},
-        {"field": "unit", "title": "单位"},
-        {"field": "warehouse", "title": "仓库"},
-        {"field": "price", "title": "价格"},
-        {"field": "groupno", "title": "型号"},
-        {"field": "type", "title": "类型"},
-        {"field": "phantom", "title": "虚拟件"},
-        {"field": "phantommin", "title": "虚拟时间"},
-        {"field": "firmday", "title": "固定天数"},
-        {"field": "daygap", "title": "拆分天数"},
-        {"field": "candelay", "title": "可延迟"},
-        {"field": "lotsize", "title": "批量策略"},
-        {"field": "lotfix", "title": "固定批"},
-        {"field": "lotmin", "title": "最小批"},
-        {"field": "lotmax", "title": "最大批"},
-        {"field": "lotround", "title": "取整值"},
-        {"field": "lotss", "title": "安全库存"},
-        {"field": "lotpoint", "title": "订货点"},
-        {"field": "lottop", "title": "最大库存"},
-        {"field": "planitem", "title": "产品组"},
-        {"field": "preday", "title": "向前冲销"},
-        {"field": "subday", "title": "向后冲销"},
-        {"field": "free1", "title": "自定义1"},
-        {"field": "free2", "title": "自定义2"},
-        {"field": "free3", "title": "自定义3"},
-    ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
+# 自动列生成配置（从 proto_model 自动生成基础列，叠加覆盖配置）
+# 启用表 = _TABLES_COLUMNS_CONFIG 的 key：业务列从 proto_model._meta.fields_map 自动生成（field + title=description，顺序=字段定义顺序）
+# 覆盖配置：仅写需要特殊处理的列（title/sortable/readOnly/width/hidden 等，除 hidden 外均透传至前端）
+# 系统审计字段统一隐藏
+_SYS_HIDDEN = {"vid", "sys_user", "sys_date", "sys_stamp", "treeno"}
 
-    "t_mat_ver": SYSTEM_COMMON_COLUMNS_PREFIX + [
-        {"field": "materialno", "title": "物料号", "sortable": True},
-        {"field": "matver", "title": "版本号", "sortable": True},
-        {"field": "lotfrom", "title": "批量下限"},
-        {"field": "lotto", "title": "批量上限"},
-        {"field": "priority", "title": "优先级"},
-        {"field": "refno", "title": "MTO订单号/认证线"},
-        {"field": "active", "title": "激活"},
-        {"field": "memo", "title": "备注"},
-    ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
-
-    "t_workcenter": SYSTEM_COMMON_COLUMNS_PREFIX + [
-        {"field": "workcenter", "title": "编号", "sortable": True, "readOnly": True},
-        {"field": "workcentername", "title": "名称"},
-        {"field": "pri_wc", "title": "优先级"},
-        {"field": "bottleneck", "title": "是否瓶颈"},
-        {"field": "sortno", "title": "序号"},
-        {"field": "plant", "title": "工厂"},
-        {"field": "location", "title": "车间"},
-        {"field": "finite", "title": "有限产能"},
-        {"field": "type", "title": "首页显示"},
-        {"field": "worker", "title": "工时"},
-        {"field": "capnum", "title": "默认机台数"},
-        {"field": "capmax", "title": "最大机台数"},
-        {"field": "setupno", "title": "切换组别"},
-        {"field": "grpno", "title": "同组号"},
-        {"field": "memo", "title": "备注"},
-    ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
-
-    "t_mat_wc": SYSTEM_COMMON_COLUMNS_PREFIX + [
-        {"field": "materialno", "title": "物料号", "sortable": True},
-        {"field": "matver", "title": "版本号"},
-        {"field": "itemno", "title": "工序号"},
-        {"field": "itemname", "title": "工序名称"},
-        {"field": "workcenter", "title": "工作中心"},
-        {"field": "sortno", "title": "排序"},
-        {"field": "basesec", "title": "基础工时"},
-        {"field": "fixqty", "title": "额定量"},
-        {"field": "fixsec", "title": "额定时间"},
-        {"field": "sf", "title": "串并行"},
-        {"field": "offsetsec", "title": "偏置时间"},
-        {"field": "lotsize", "title": "批量大小"},
-        {"field": "lotsec", "title": "批量时间"},
-        {"field": "rate", "title": "配比"},
-        {"field": "memo", "title": "备注"},
-    ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
-
-    "t_mat_wc_bom": SYSTEM_COMMON_COLUMNS_PREFIX + [
-        {"field": "productno", "title": "父件号", "sortable": True},
-        {"field": "productunit", "title": "父件单位"},
-        {"field": "matver", "title": "版本号"},
-        {"field": "itemno", "title": "工序号"},
-        {"field": "materialno", "title": "子件号"},
-        {"field": "materialunit", "title": "子件单位"},
-        {"field": "qty", "title": "用量"},
-        {"field": "offsethour", "title": "偏置小时"},
-        {"field": "mto", "title": "MTO"},
-        {"field": "scrap", "title": "损耗率"},
-        {"field": "alt", "title": "替代组"},
-        {"field": "memo", "title": "备注"},
-    ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
-
-    "t_mold": SYSTEM_COMMON_COLUMNS_PREFIX + [
-        {"field": "moldno", "title": "模具号", "sortable": True, "readOnly": True},
-        {"field": "moldname", "title": "模具名称"},
-        {"field": "type", "title": "类型"},
-        {"field": "status", "title": "状态"},
-        {"field": "moldnum", "title": "穴数"},
-        {"field": "qty", "title": "台数"},
-        {"field": "memo", "title": "备注"},
-    ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
-    
-    "t_mat_wc_mold": SYSTEM_COMMON_COLUMNS_PREFIX + [
-        {"field": "materialno", "title": "物料号", "sortable": True},
-        {"field": "workcenter", "title": "工作中心"},
-        {"field": "itemno", "title": "工序号"},
-        {"field": "moldno", "title": "模具号"},
-        {"field": "basesec", "title": "基础工时"},
-        {"field": "fixsec", "title": "额定时间"},
-        {"field": "priority", "title": "优先级"},
-        {"field": "worker", "title": "人员"},
-        {"field": "memo", "title": "备注"},
-    ] + SYSTEM_COMMON_COLUMNS_SUFFIX,
+_TABLES_COLUMNS_CONFIG = {
+    "t_material": {
+        "materialno": {"sortable": True, "readOnly": True},
+        "abc": {"title": "ABC"},
+        "memo": {"hidden": True},
+        **{f: {"hidden": True} for f in _SYS_HIDDEN},
+    },
+    "t_mat_ver": {
+        "materialno": {"sortable": True},
+        "matver": {"sortable": True},
+        **{f: {"hidden": True} for f in _SYS_HIDDEN},
+    },
+    "t_workcenter": {
+        "workcenter": {"sortable": True, "readOnly": True},
+        **{f: {"hidden": True} for f in _SYS_HIDDEN},
+    },
+    "t_mat_wc": {
+        "materialno": {"sortable": True},
+        **{f: {"hidden": True} for f in _SYS_HIDDEN},
+    },
+    "t_mat_wc_bom": {
+        "productno": {"sortable": True},
+        "productunit": {"title": "父件单位", "after": "productno"},
+        "materialunit": {"title": "子件单位", "after": "materialno"},
+        **{f: {"hidden": True} for f in _SYS_HIDDEN},
+    },
+    "t_mold": {
+        "moldno": {"sortable": True, "readOnly": True},
+        **{f: {"hidden": True} for f in _SYS_HIDDEN},
+    },
+    "t_mat_wc_mold": {
+        "materialno": {"sortable": True},
+        **{f: {"hidden": True} for f in _SYS_HIDDEN},
+    },
 }
+
+
+def _generate_columns_from_proto(proto_model, table_key):
+    """从 proto_model 自动生成列配置，叠加覆盖配置。
+
+    业务列顺序 = proto_model 字段定义顺序；title = field.description（缺失则用字段名）。
+    系统前缀/后缀列由 SYSTEM_COMMON_COLUMNS_PREFIX/SUFFIX 拼接。
+    """
+    overrides = _TABLES_COLUMNS_CONFIG.get(table_key, {})
+    fields_map = proto_model._meta.fields_map
+    extra_by_after = {}
+    extra_tail = []
+    for k, v in overrides.items():
+        if k in fields_map or v.get("hidden"):
+            continue
+        after = v.get("after")
+        if after:
+            extra_by_after.setdefault(after, []).append(k)
+        else:
+            extra_tail.append(k)
+    columns = []
+    for field_name, field_obj in fields_map.items():
+        col_override = overrides.get(field_name, {})
+        if col_override.get("hidden"):
+            continue
+        col = {"field": field_name, "title": field_obj.description or field_name}
+        col.update({k: v for k, v in col_override.items() if k != "hidden"})
+        columns.append(col)
+        for extra_field in extra_by_after.get(field_name, []):
+            eo = overrides[extra_field]
+            ec = {"field": extra_field, "title": eo.get("title", extra_field)}
+            ec.update({k: v for k, v in eo.items() if k not in ("hidden", "after")})
+            columns.append(ec)
+    for extra_field in extra_tail:
+        eo = overrides[extra_field]
+        ec = {"field": extra_field, "title": eo.get("title", extra_field)}
+        ec.update({k: v for k, v in eo.items() if k not in ("hidden", "after")})
+        columns.append(ec)
+    return SYSTEM_COMMON_COLUMNS_PREFIX + columns + SYSTEM_COMMON_COLUMNS_SUFFIX
 
 # 筛选字段配置
 _PAGE_FILTER_CONFIG = {
@@ -499,7 +455,10 @@ def generate_generic_page_config(page_key: str) -> Optional[Dict[str, Any]]:
     )
     
     # 获取列配置
-    columns = _PAGE_COLUMNS_CONFIG.get(table_key, [])
+    if table_key in _TABLES_COLUMNS_CONFIG and proto_model:
+        columns = _generate_columns_from_proto(proto_model, table_key)
+    else:
+        columns = []
     
     # 处理外键配置
     foreign_keys = []
