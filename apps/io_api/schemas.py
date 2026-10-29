@@ -965,7 +965,6 @@ class AcceptConfirm(BaseModel):
             "example": {
                 "supplyno": "MO123456",
                 "itemno": pdv.ITEMNO,
-                "workcenter": "WC001",
                 "recordqty": 100.0,
                 "recorddt": "2025-01-07 10:00:00",
                 "status": "Y",

@@ -1781,6 +1781,32 @@ async def create_workreport(
     log_api_request(request)
     db_name = db_name.replace(" ", "")
     try:
+        # 写库前校验：supplyno+itemno 必须在 t_orderwc 中存在
+        from globalobjects.db_manager import escape_sql_value
+        from apps.io_api.utils.db_operation import validate_databases
+
+        valid_dbs = validate_databases(db_name)
+        required_pairs = {(d.supplyno, d.itemno) for d in data}
+        supplynos = list({sn for sn, _ in required_pairs})
+        all_missing = {}
+        for db in valid_dbs:
+            in_values = ", ".join(escape_sql_value(sn) for sn in supplynos)
+            filter_string = f"SupplyNo IN ({in_values})"
+            orderwc_result = await db_query(db_name=db, model_or_tablename="t_orderwc", filter_string=filter_string, page_size=100000)
+            existing_pairs = {(r.get("supplyno"), r.get("itemno")) for r in (orderwc_result.data or [])}
+            missing = required_pairs - existing_pairs
+            if missing:
+                all_missing[db] = [f"{sn}/{ino}" for sn, ino in sorted(missing)]
+
+        if all_missing:
+            return api_response(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                success=0,
+                message=f"校验失败：以下工单号/工序号在t_orderwc中不存在: {all_missing}",
+                data=[],
+                meta={"missing": all_missing}
+            )
+
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_confirm", data_list=data, return_inserted_detail=return_data)
         return api_response(
             status_code=200,
@@ -1819,7 +1845,7 @@ async def delete_workreport(
     request: Request,
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     supplyno: str = Path(..., description="工单号"),
-    itemno: str = Path(..., description="工序项目"),
+    itemno: str = Path(..., description="工序项目，传入 ... 表示不限制工序号"),
     # 鉴权已由中间件HMAC签名统一处理，路由内不再声明x_api_key
 ):
     log_api_request(request)
@@ -1836,7 +1862,7 @@ async def delete_workreport(
     from globalobjects.db_manager import build_safe_filter
     
     conditions = [("SupplyNo", "=", supplyno)]
-    if not itemno == _WILDCARD:
+    if itemno != _WILDCARD:
         conditions.append(("ItemNo", "=", itemno))
     filter_string = build_safe_filter(conditions)
     try:
