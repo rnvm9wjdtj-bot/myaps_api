@@ -33,6 +33,9 @@ logger = log_config.get_logger(__name__)
 # 路由层正则校验，非法字符直接 400 拒绝，防止 SQL 注入（components 内部拼接不再承担入口校验）
 _VALID_BUSINESS_KEY = re.compile(r"^[A-Za-z0-9_.\-]+$")
 
+# 路径参数通配符占位符：传入该值表示不限制该字段（如仅按需求号删除时，料号与项目号传此值）
+_WILDCARD = "..."
+
 
 def _reject_if_invalid_business_key(value: str, field_label: str):
     """
@@ -446,7 +449,7 @@ async def get_material(
     log_api_request(request)
     db_name = db_name.replace(" ", "")
     try:
-        if materialnos != "...":
+        if materialnos != _WILDCARD:
             # 使用安全的SQL条件构建器，防止注入
             materialno_list = materialnos.split(",")
             from globalobjects.db_manager import build_safe_condition
@@ -1192,27 +1195,47 @@ async def delete_supply(
 #     return await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=filter_string, page_size=page_size, page_index=page_index)
 
 
-# @rt.get(
-#     "/v_demand/{demandno}",
-#     tags=["生产数据 - 需求"],
-#     summary="根据需求号获取物料需求详情",
-#     description="根据 APS pegging 算法，需求号与供应号一致，所以该接口也即是：根据工单的 supplyno 获取原料需求"
-# )
-# async def get_demand(
-#     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
-#     demandno: str = Path(..., description="需求号"),
-#     # type_: str = Path(..., enum=["DM", "RS"], description="需求类型"),
-# ):
-#     query_result_demand = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{demandno}'")
-#     if query_result_demand.success == 0:
-#         return query_result_demand
-#     query_result_supply = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=f"`SupplyNo`='{demandno}'")
-#     if query_result_supply.success == 0:
-#         return query_result_demand
-#     if query_result_supply.data:
-#         # 合并需求和供应数据
-#         query_result_demand.meta["mo"] = query_result_supply.data[0]
-#     return query_result_demand
+@rt.get(
+    "/v_demand/{demandno}",
+    tags=["生产数据 - 需求"],
+    summary="根据需求号获取物料需求详情",
+    description="根据 APS pegging 算法，需求号与供应号一致，所以该接口也即是：根据工单的 supplyno 获取原料需求"
+)
+async def get_demand(
+    request: Request,
+    db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+    demandno: str = Path(..., description="需求号"),
+):
+    log_api_request(request)
+    db_name = db_name.replace(" ", "")
+    bad = _reject_if_invalid_business_key(demandno, "需求号")
+    if bad:
+        return bad
+    from globalobjects.db_manager import build_safe_condition
+    filter_demand = build_safe_condition("DemandNo", "=", demandno)
+    filter_supply = build_safe_condition("SupplyNo", "=", demandno)
+    try:
+        result_demand = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=filter_demand)
+        result_supply = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=filter_supply)
+        meta = dict(result_demand.meta or {})
+        if result_supply.success and result_supply.data:
+            meta["mo"] = result_supply.data[0]
+        return standard_response(
+            status_code=200,
+            success=result_demand.success,
+            message=result_demand.message,
+            data=result_demand.data,
+            meta=meta
+        )
+    except Exception as e:
+        logger.error(f"根据需求号获取物料需求详情失败: {str(e)}")
+        return standard_response(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            success=0,
+            message=f"操作失败：{str(e)}",
+            data=[],
+            meta={}
+        )
 
 
 @rt.post(
@@ -1241,6 +1264,59 @@ async def post_demand(
         )
     except Exception as e:
         logger.error(f"新增或修改需求记录失败: {str(e)}")
+        return standard_response(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            success=0,
+            message=f"操作失败：{str(e)}",
+            data=[],
+            meta={}
+        )
+
+
+@rt.delete(
+    "/t_demand/{demandno}/{materialno}/{itemno}",
+    tags=["生产数据 - 需求"],
+    summary="删除需求记录",
+    description="根据需求号、料号、项目号删除需求记录。传入 ... 表示不限制该字段（如仅按需求号删除时，料号与项目号传 ...）"
+)
+async def delete_demand(
+    request: Request,
+    db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
+    demandno: str = Path(..., description="需求号"),
+    materialno: str = Path(..., description="料号，传 ... 表示不限制"),
+    itemno: str = Path(..., description="项目号，传 ... 表示不限制"),
+):
+    log_api_request(request)
+    db_name = db_name.replace(" ", "")
+    bad = _reject_if_invalid_business_key(demandno, "需求号")
+    if bad:
+        return bad
+    if materialno != _WILDCARD:
+        bad = _reject_if_invalid_business_key(materialno, "料号")
+        if bad:
+            return bad
+    if itemno != _WILDCARD:
+        bad = _reject_if_invalid_business_key(itemno, "项目号")
+        if bad:
+            return bad
+    from globalobjects.db_manager import build_safe_filter
+    conditions = [("DemandNo", "=", demandno)]
+    if materialno != _WILDCARD:
+        conditions.append(("MaterialNo", "=", materialno))
+    if itemno != _WILDCARD:
+        conditions.append(("ItemNo", "=", itemno))
+    filter_string = build_safe_filter(conditions)
+    try:
+        result = await db_delete(db_names=db_name, model_or_tablename="t_demand", filter_string=filter_string)
+        return standard_response(
+            status_code=200,
+            success=result.success,
+            message=result.message,
+            data=result.data,
+            meta=result.meta
+        )
+    except Exception as e:
+        logger.error(f"删除需求记录失败: {str(e)}")
         return standard_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
@@ -1752,7 +1828,7 @@ async def delete_workreport(
     bad = _reject_if_invalid_business_key(supplyno, "工单号")
     if bad:
         return bad
-    if itemno != "...":
+    if itemno != _WILDCARD:
         bad = _reject_if_invalid_business_key(itemno, "工序号")
         if bad:
             return bad
@@ -1760,7 +1836,7 @@ async def delete_workreport(
     from globalobjects.db_manager import build_safe_filter
     
     conditions = [("SupplyNo", "=", supplyno)]
-    if not itemno == "...":
+    if not itemno == _WILDCARD:
         conditions.append(("ItemNo", "=", itemno))
     filter_string = build_safe_filter(conditions)
     try:
