@@ -18,7 +18,7 @@ from .schemas import (
     #DeleteSupply
 )
 
-from .utils.common import standard_response, drop_matched_data, mark_as_removing, group_rows
+from .utils.common import standard_response, api_response, drop_matched_data, mark_as_removing, group_rows
 from .utils.db_operation import db_exec_sql, db_managers, db_query, db_query_cursor, db_supsert, db_bupsert, db_delete, call_dbprocdure, db_update_by_index
 # from project_files import hap_conn
 from apps.data_opt.utils.data_processor import DataProcessor
@@ -50,7 +50,7 @@ def _reject_if_invalid_business_key(value: str, field_label: str):
     """
     if not _VALID_BUSINESS_KEY.match(value):
         logger.warning(f"非法{field_label}请求: {value}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_400_BAD_REQUEST,
             success=0,
             message=f"请求参数错误：非法{field_label}(含非法字符): {value}",
@@ -310,7 +310,7 @@ async def get_meta(request: Request):
         # 检查缓存是否有效
         if current_time - _cache_timestamp < CACHE_DURATION and _db_health_cache:
             logger.debug("使用缓存的健康检查结果")
-            return standard_response(
+            return api_response(
                 success=1,
                 message="获取元数据成功（缓存）",
                 meta=_db_health_cache,
@@ -376,7 +376,7 @@ async def get_meta(request: Request):
         _cache_timestamp = current_time
         
         logger.debug("更新健康检查缓存")
-        return standard_response(
+        return api_response(
             success=1,
             message="获取元数据成功",
             meta=_db_health_cache,
@@ -385,7 +385,7 @@ async def get_meta(request: Request):
     except Exception as e:
             logger.error(f"获取元数据失败: {str(e)}")
             # 即使出错也返回基本信息，确保接口不会崩溃
-            return standard_response(
+            return api_response(
                 success=0,
                 message=f"获取元数据失败: {str(e)}",
                 meta={
@@ -417,7 +417,7 @@ async def get_material_page(
     db_name = db_name.replace(" ", "")
     try:
         result = await db_query(db_name=db_name, model_or_tablename="t_material", order_string="`MaterialNo`", page_index=page_index, page_size=page_size)
-        return standard_response(
+        return api_response(
             status_code=200,
             success=result.success,
             message=result.message,
@@ -426,7 +426,7 @@ async def get_material_page(
         )
     except Exception as e:
         logger.error(f"获取物料分页数据失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -457,7 +457,7 @@ async def get_material(
         else:
             filter_string = ""
         result = await db_query(db_name=db_name, model_or_tablename="t_material", filter_string=filter_string)
-        return standard_response(
+        return api_response(
             status_code=200,
             success=result.success,
             message=result.message,
@@ -466,7 +466,7 @@ async def get_material(
         )
     except Exception as e:
         logger.error(f"根据料号获取物料信息失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -529,7 +529,7 @@ async def post_material(
 
     try:
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_material", data_list=data)
-        return standard_response(
+        return api_response(
             status_code=200,
             success=result.success,
             message=result.message,
@@ -538,7 +538,7 @@ async def post_material(
         )
     except Exception as e:
         logger.error(f"新增或修改物料失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -581,7 +581,7 @@ async def post_workcenter(
     logger.info_console(f"路由分发: post_workcenter -> 直接模式 (db_name={db_name})")
     try:
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_workcenter", data_list=data)
-        return standard_response(
+        return api_response(
             status_code=200,
             success=result.success,
             message=result.message,
@@ -590,7 +590,7 @@ async def post_workcenter(
         )
     except Exception as e:
         logger.error(f"新增或修改工作中心失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -646,7 +646,7 @@ async def post_mat_wc(
                 db_fields=("MaterialNo", "MatVer")
             )
         result = await db_bupsert(db_names=db_name, model_or_tablename=db_table, data_list=data)
-        return standard_response(
+        return api_response(
             status_code=200,
             success=result.success,
             message=result.message,
@@ -655,7 +655,7 @@ async def post_mat_wc(
         )
     except Exception as e:
         logger.error(f"新增或修改工序失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -697,7 +697,7 @@ async def post_mat_ver(
     logger.info_console(f"路由分发: post_mat_ver -> 直接模式 (db_name={db_name})")
     try:
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_mat_ver", data_list=data)
-        return standard_response(
+        return api_response(
             status_code=200,
             success=result.success,
             message=result.message,
@@ -706,7 +706,7 @@ async def post_mat_ver(
         )
     except Exception as e:
         logger.error(f"新增或修改产线版本失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -761,7 +761,7 @@ async def post_mat_wc_bom(
                 db_fields=("ProductNo", "MatVer"),
             )
         result = await db_bupsert(db_names=db_name, model_or_tablename=db_table, data_list=data)
-        return standard_response(
+        return api_response(
             status_code=200,
             success=result.success,
             message=result.message,
@@ -770,7 +770,7 @@ async def post_mat_wc_bom(
         )
     except Exception as e:
         logger.error(f"新增或修改BOM失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -812,7 +812,7 @@ async def post_mold(
     logger.info_console(f"路由分发: post_mold -> 直接模式 (db_name={db_name})")
     try:
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_mold", data_list=data)
-        return standard_response(
+        return api_response(
             status_code=200,
             success=result.success,
             message=result.message,
@@ -821,7 +821,7 @@ async def post_mold(
         )
     except Exception as e:
         logger.error(f"新增或修改模具失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -876,7 +876,7 @@ async def post_mat_wc_mold(
                 match_on=("materialno", "itemno")
             ) 
         result = await db_bupsert(db_names=db_name, model_or_tablename=db_table, data_list=data)
-        return standard_response(
+        return api_response(
             status_code=200,
             success=result.success,
             message=result.message,
@@ -885,7 +885,7 @@ async def post_mat_wc_mold(
         )
     except Exception as e:
         logger.error(f"新增或修改机台模具失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -912,7 +912,7 @@ async def post_mat_wc_mold(
 #     supply_query_result = await db_query(db_name=db_name, model_or_tablename="v_supply", filter_string=filter_string)
 #     supply_data = supply_query_result.data
 
-#     return standard_response(data=supply_data)
+#     return api_response(data=supply_data)
 
 
 @rt.post("/t_supply",
@@ -978,7 +978,7 @@ async def post_supply(
 
         # 合并结果
         if not results:
-            return standard_response(status_code=200, success=1, message="无数据处理", data=None, meta={})
+            return api_response(status_code=200, success=1, message="无数据处理", data=None, meta={})
         success = 1 if all(r.success for r in results) else 0
         message = "; ".join(r.message for r in results)
         merged_data = []
@@ -987,7 +987,7 @@ async def post_supply(
         merged_meta = {}
         for r in results:
             merged_meta.update(r.meta or {})
-        return standard_response(
+        return api_response(
             status_code=200,
             success=success,
             message=message,
@@ -996,7 +996,7 @@ async def post_supply(
         )
     except Exception as e:
         logger.error(f"新增或修改供应记录失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -1058,7 +1058,7 @@ async def post_supply(
 #
 #     query_data = query_result.data
 #     if not query_data[0]["type"] == "PL":
-#         return standard_response(
+#         return api_response(
 #             status_code=status.HTTP_400_BAD_REQUEST,
 #             success=0,
 #             message=f"Supply {supplyno} is not a PL.")
@@ -1095,7 +1095,7 @@ async def replace_supply(
         if item.type != type_:
             wrong_type_count += 1
     if wrong_type_count > 0:
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_400_BAD_REQUEST,
             success=0,
             message=f"Supply type {type_} in data does not match.")
@@ -1105,7 +1105,7 @@ async def replace_supply(
         delete_result = await db_delete(db_names=db_name, model_or_tablename="t_supply", filter_string=f"`Type`='{type_}'")
         if data:
             create_result = await db_bupsert(db_names=db_name, model_or_tablename="t_supply", data_list=data)
-            return standard_response(
+            return api_response(
                 status_code=200,
                 success=create_result.success,
                 message=create_result.message,
@@ -1113,7 +1113,7 @@ async def replace_supply(
                 meta=create_result.meta
             )
         else:
-            return standard_response(
+            return api_response(
                 status_code=200,
                 success=delete_result.success,
                 message=delete_result.message,
@@ -1122,7 +1122,7 @@ async def replace_supply(
             )
     except Exception as e:
         logger.error(f"按类型替换供应记录失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -1150,7 +1150,7 @@ async def delete_supply(
         return bad
     try:
         result = await call_dbprocdure(db_names=db_name, procedure_name="SupplyDeleteAll", params_list=[[supplyno]])
-        return standard_response(
+        return api_response(
             status_code=200,
             success=result.success,
             message="success",
@@ -1159,7 +1159,7 @@ async def delete_supply(
         )
     except Exception as e:
         logger.error(f"删除供应记录失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -1220,7 +1220,7 @@ async def get_demand(
         meta = dict(result_demand.meta or {})
         if result_supply.success and result_supply.data:
             meta["mo"] = result_supply.data[0]
-        return standard_response(
+        return api_response(
             status_code=200,
             success=result_demand.success,
             message=result_demand.message,
@@ -1229,7 +1229,7 @@ async def get_demand(
         )
     except Exception as e:
         logger.error(f"根据需求号获取物料需求详情失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -1255,7 +1255,7 @@ async def post_demand(
     db_name = db_name.replace(" ", "")
     try:
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_demand", data_list=data)
-        return standard_response(
+        return api_response(
             status_code=200,
             success=result.success,
             message=result.message,
@@ -1264,7 +1264,7 @@ async def post_demand(
         )
     except Exception as e:
         logger.error(f"新增或修改需求记录失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -1308,7 +1308,7 @@ async def delete_demand(
     filter_string = build_safe_filter(conditions)
     try:
         result = await db_delete(db_names=db_name, model_or_tablename="t_demand", filter_string=filter_string)
-        return standard_response(
+        return api_response(
             status_code=200,
             success=result.success,
             message=result.message,
@@ -1317,7 +1317,7 @@ async def delete_demand(
         )
     except Exception as e:
         logger.error(f"删除需求记录失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -1394,7 +1394,7 @@ async def get_mo_page(
     filter_string = build_safe_filter(conditions)
     try:
         result = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=filter_string, order_string="`MaterialNo`, `SupplyNo`", page_size=page_size, page_index=page_index)
-        return standard_response(
+        return api_response(
             status_code=200,
             success=result.success,
             message=result.message,
@@ -1403,7 +1403,7 @@ async def get_mo_page(
         )
     except Exception as e:
         logger.error(f"获取工单报表失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -1434,7 +1434,7 @@ async def get_mo_by_supplyno(
         return bad
     try:
         result = await ApsPayloadSponsor.get_mo_by_supplyno(db_name=db_name, supplyno=supplyno, prev_mo=prev_mo, next_mo=next_mo, origin_so=origin_so, with_demand=with_demand)
-        return standard_response(
+        return api_response(
             status_code=200,
             success=result.success,
             message=result.message,
@@ -1443,7 +1443,7 @@ async def get_mo_by_supplyno(
         )
     except Exception as e:
         logger.error(f"获取工单报表失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -1505,7 +1505,7 @@ async def get_orderwc_group(
     group_fields = [f.strip().lower() for f in group_by.split(",") if f.strip()]
     invalid = [f for f in group_fields if f not in V_ORDERWC_FIELDS]
     if invalid:
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_400_BAD_REQUEST,
             success=0,
             message=f"非法分组字段: {','.join(invalid)}",
@@ -1572,7 +1572,7 @@ async def get_orderwc_group(
 
         meta = {"group_by": group_fields, "group_count": len(grouped), "total": len(all_data)}
 
-        return standard_response(
+        return api_response(
             status_code=200,
             success=success,
             message=f"查询成功，共{len(all_data)}条记录",
@@ -1581,7 +1581,7 @@ async def get_orderwc_group(
         )
     except Exception as e:
         logger.error(f"获取工序报表失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -1612,7 +1612,7 @@ async def get_orderwc(
     filter_string = build_safe_condition("SupplyNo", "=", supplyno)
     try:
         result = await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=filter_string)
-        return standard_response(
+        return api_response(
             status_code=200,
             success=result.success,
             message=result.message,
@@ -1621,7 +1621,7 @@ async def get_orderwc(
         )
     except Exception as e:
         logger.error(f"获取工序报表失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -1651,7 +1651,7 @@ async def get_mo_demand(
     filter_string = build_safe_condition("DemandNo", "=", supplyno)
     try:
         result = await db_query(db_name=db_name, model_or_tablename="v_mo_demand", filter_string=filter_string)
-        return standard_response(
+        return api_response(
             status_code=200,
             success=result.success,
             message=result.message,
@@ -1660,7 +1660,7 @@ async def get_mo_demand(
         )
     except Exception as e:
         logger.error(f"获取工单需求失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -1685,7 +1685,7 @@ async def get_peg_page(
     db_name = db_name.replace(" ", "")
     try:
         result = await db_query(db_name=db_name, model_or_tablename="v_peg", order_string="`id`", page_size=page_size, page_index=page_index)
-        return standard_response(
+        return api_response(
             status_code=200,
             success=result.success,
             message=result.message,
@@ -1694,7 +1694,7 @@ async def get_peg_page(
         )
     except Exception as e:
         logger.error(f"获取匹配关系报表失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -1751,12 +1751,12 @@ async def get_matdailyqtyreport(
             materialno=materialno
         )
     except ValueError as e:
-        return standard_response(status_code=status.HTTP_400_BAD_REQUEST, success=0, message=str(e))
+        return api_response(status_code=status.HTTP_400_BAD_REQUEST, success=0, message=str(e))
     
     if not result:
-        return standard_response(status_code=status.HTTP_204_NO_CONTENT, message="No data available", meta={'total': 0}, data=result)
+        return api_response(status_code=status.HTTP_200_OK, success=1, message="No data available", meta={'total': 0}, data=[])
     
-    return standard_response(status_code=status.HTTP_200_OK, meta={'total': len(result)}, data=result)
+    return api_response(status_code=status.HTTP_200_OK, meta={'total': len(result)}, data=result)
 
 
 @rt.post(
@@ -1782,7 +1782,7 @@ async def create_workreport(
     db_name = db_name.replace(" ", "")
     try:
         result = await db_bupsert(db_names=db_name, model_or_tablename="t_confirm", data_list=data, return_inserted_detail=return_data)
-        return standard_response(
+        return api_response(
             status_code=200,
             success=result.success,
             message=result.message,
@@ -1790,7 +1790,7 @@ async def create_workreport(
             meta=result.meta
         )
     except ValueError as e:
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_400_BAD_REQUEST,
             success=0,
             message=f"参数错误：{str(e)}",
@@ -1799,7 +1799,7 @@ async def create_workreport(
         )
     except Exception as e:
         logger.error(f"新增报工记录失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -1841,7 +1841,7 @@ async def delete_workreport(
     filter_string = build_safe_filter(conditions)
     try:
         result = await db_delete(db_names=db_name, model_or_tablename="t_confirm", filter_string=filter_string)
-        return standard_response(
+        return api_response(
             status_code=200,
             success=result.success,
             message=result.message,
@@ -1850,7 +1850,7 @@ async def delete_workreport(
         )
     except Exception as e:
         logger.error(f"删除报工记录失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -1880,7 +1880,7 @@ async def delete_workreport_by_noid(
     filter_string = build_safe_filter(conditions)
     try:
         result = await db_delete(db_names=db_name, model_or_tablename="t_confirm", filter_string=filter_string)
-        return standard_response(
+        return api_response(
             status_code=200,
             success=result.success,
             message=result.message,
@@ -1889,7 +1889,7 @@ async def delete_workreport_by_noid(
         )
     except Exception as e:
         logger.error(f"按NoID删除报工记录失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -1924,7 +1924,7 @@ async def post_checkqty_report(
             db_fields=("WorkCenter", "CheckTime")
         )
         result = await db_bupsert(db_names=db_name, model_or_tablename=db_table, data_list=data)
-        return standard_response(
+        return api_response(
             status_code=200,
             success=result.success,
             message=result.message,
@@ -1933,7 +1933,7 @@ async def post_checkqty_report(
         )
     except Exception as e:
         logger.error(f"新增或修改班次报工失败: {str(e)}")
-        return standard_response(
+        return api_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             success=0,
             message=f"操作失败：{str(e)}",
@@ -1959,7 +1959,7 @@ async def mock_push(request: Request):
         body_text = body.decode("utf-8")
     except UnicodeDecodeError:
         body_text = f"<binary {len(body)} bytes, hex={body.hex()[:200]}>"
-    return standard_response(
+    return api_response(
         status_code=200,
         success=1,
         message="模拟推送接收成功",

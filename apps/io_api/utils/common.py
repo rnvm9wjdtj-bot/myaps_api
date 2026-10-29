@@ -75,6 +75,29 @@ def standard_response(
     }
 
 
+def api_response(
+    status_code: int = status.HTTP_200_OK,
+    success: int = 1,
+    message: str = "success",
+    data: Any = None,
+    meta: Dict[str, Any] = None
+):
+    """
+    与 standard_response 参数一致，但返回 JSONResponse 并透传 HTTP 状态码。
+    供对外集成 API 路由使用，使 HTTP 层状态码与 body 内 status_code 一致，
+    便于监控/网关/APM 正确识别业务错误。
+    """
+    from fastapi.encoders import jsonable_encoder
+    body = standard_response(
+        status_code=status_code,
+        success=success,
+        message=message,
+        data=data,
+        meta=meta
+    )
+    return JSONResponse(status_code=status_code, content=jsonable_encoder(body))
+
+
 def group_rows(
     rows: List[Dict[str, Any]],
     group_fields: List[str],
