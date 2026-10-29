@@ -864,6 +864,7 @@ class AcceptDemand(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def model_valid(cls, values):
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         _normalize_enum_fields(values, {
             "type": gc.DemandTypeEnum,
             "category": gc.ProductCategoryEnum,
