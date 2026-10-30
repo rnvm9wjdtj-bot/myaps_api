@@ -1,5 +1,6 @@
 """
 用友T+ 接口组件
+文档地址：https://open.chanjet.com/docs/file/apiFile/tcloud/
 """
 import json, time, inspect, asyncio
 from typing import Dict, Any, Literal, Optional, NamedTuple, Type, Callable
@@ -689,6 +690,7 @@ class YonyouTplusConnection(ExternalBaseConnection):
 
 class TplusMaterial(BaseSource):
 
+    _DOCUMENTATION_URL = "https://open.chanjet.com/docs/file/apiFile/tcloud/t+jcda/t+ch?id=30878"
     _QUERY_BATCH_ENDPOINT = "/tplus/api/v2/inventory/Query"
     _PULL_PYDANTIC_MODEL = MaterialPullModel
     _FIELD_HINTS = {
@@ -725,6 +727,7 @@ class TplusMaterial(BaseSource):
 
 class TplusWorkcenter(BaseSource):
 
+    _DOCUMENTATION_URL = "https://open.chanjet.com/docs/file/apiFile/tcloud/t+jcda/t+gzzx?id=33327"
     _QUERY_BATCH_ENDPOINT = "/tplus/api/v2/WorkCenter/QueryPage"
     _PULL_PYDANTIC_MODEL = WorkcenterPullModel
     _FIELD_HINTS = {"ID": "ID", "Code": "编码", "Name": "名称", "Disabled": "是否停用"}
@@ -748,10 +751,10 @@ class TplusWorkcenter(BaseSource):
 
 class TplusStock(BaseSource):
 
+    _DOCUMENTATION_URL = "https://open.chanjet.com/docs/file/apiFile/tcloud/tjqt/xcl?id=30875"
     _QUERY_BATCH_ENDPOINT = "/tplus/api/v2/currentStock/Query"
     _PULL_PYDANTIC_MODEL = StockPullModel
     _FIELD_HINTS = {"InventoryCode": "存货编码", "ExistingQuantity": "现存量", "TS": "时间戳", "WarehouseCode": "仓库编码"}
-    _DOCUMENTATION_URL = "https://open.chanjet.com/docs/file/apiFile/tcloud/tjqt/xcl?id=30875"
 
 
     @classmethod
@@ -817,6 +820,7 @@ class TplusStock(BaseSource):
         
 class TplusRouting(BaseSource):
 
+    _DOCUMENTATION_URL = "https://open.chanjet.com/docs/file/apiFile/tcloud/t+jcda/tcbom?id=31071"
     _QUERY_ENDPOINT = "/tplus/api/v2/bom/Query"
     _PULL_PYDANTIC_MODEL = RoutePullModel
     _FIELD_HINTS = {
@@ -900,6 +904,7 @@ class TplusRouting(BaseSource):
 
 class TplusBom(BaseSource):
     
+    _DOCUMENTATION_URL = "https://open.chanjet.com/docs/file/apiFile/tcloud/t+jcda/tcbom?id=32410"
     _QUERY_BATCH_ENDPOINT = "/tplus/api/v2/bom/QueryPage"
     _FIELD_HINTS = {
         "ID": "ID", "Disabled": "是否停用", "Code": "父件编码", "Name": "父件名称", "Version": "版本号", "IsPhantom": "是否虚拟",
@@ -983,15 +988,13 @@ class TplusMo(MoVoucher):
     """
     生产加工单
     """
-    # from . import CacheItem
-
+    _DOCUMENTATION_URL = "https://open.chanjet.com/docs/file/apiFile/tcloud/t+dj/t+scjgd?id=31949"
     _QUERY_ENDPOINT = "/tplus/api/v2/ManufactureOrderOpenApi/GetVoucherDTO"
     _CREATE_ENDPOINT = "/tplus/api/v2/ManufactureOrderOpenApi/Create"
     _APPROVE_ENDPOINT = "/tplus/api/v2/ManufactureOrderOpenApi/Audit"
     # _PULL_PYDANTIC_MODEL = MoPullModel
     # _FIELD_HINTS = {"ID": "ID", "Code": "编码", "ExternalCode": "外部编码"}
     _PUSH_PYDANTIC_MODEL = MoPushModel
-    _DOCUMENTATION_URL = None
     
     @classmethod
     @async_rate_limit()
@@ -1106,8 +1109,9 @@ class TplusRs(RsVoucher):
     """
     领料申请单
     """
-    from . import CacheItem
+    # from . import CacheItem
 
+    _DOCUMENTATION_URL = "https://open.chanjet.com/docs/file/apiFile/tcloud/t+dj/t+llsqd?id=33106"
     _CREATE_ENDPOINT = "/tplus/api/v2/MaterialRequestOpenApi/Create"
     _PUSH_PYDANTIC_MODEL = RsPushModel
     _DOCUMENTATION_URL = None
@@ -1194,11 +1198,11 @@ class TplusPr(BaseVoucher):
     """
     请购单
     """
+    _DOCUMENTATION_URL = "https://open.chanjet.com/docs/file/apiFile/tcloud/t%2Bdj/t%2Bqgd?id=32741"
     _CREATE_ENDPOINT = "/tplus/api/v2/PurchaseRequisitionOpenApi/Create"
     _DELETE_ENDPOINT = "/tplus/api/v2/PurchaseRequisitionOpenApi/Delete"
     _APPROVE_ENDPOINT = "/tplus/api/v2/PurchaseRequisitionOpenApi/Audit"
     _PUSH_PYDANTIC_MODEL = PrPushModel
-    _DOCUMENTATION_URL = None
 
 
     @classmethod

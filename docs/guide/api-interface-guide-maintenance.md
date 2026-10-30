@@ -198,6 +198,43 @@ grep -nE '^## ' docs/guide/api-interface-guide.md
 
 ---
 
-**最后更新**：2026-10-29
+## 九、字段映射文档（FieldMapping-*.md）书写标准
+
+本节规范 `docs/guide/FieldMapping-{连接器名称}.md` 系列文档的书写，适用于所有连接器（`yonyou_tplus`/`kingdee_k3`/`ecerp_jky`/`qingflow`/`simple_hap` 等）。
+
+### 1. 命名与位置
+- **命名**：`FieldMapping-{连接器名称}.md`，`{连接器名称}` 与 `apps/data_opt/components/` 下连接器模块名一致（如 `FieldMapping-yonyou_tplus.md`）
+- **位置**：`docs/guide/`
+
+### 2. 文档定位
+- **双方共用**：既供我方实施人员抓取对接参考，也供三方系统服务商推送对接参考
+- **目的**：降低语义鸿沟带来的沟通成本
+- **受众**：我方实施人员 + 三方系统服务商
+
+### 3. 内容约定
+- **保留双方字段名称**：外部系统接口字段 + APS API 字段（snake_case），这是文档核心价值
+- **不声明数据方向**：不写 `**方向**：T+ → APS（拉取）` 等元数据声明；标题用「X 与 APS」中性表述（如「用友 T+ 与 APS 字段映射指引」）
+- **不泄露我方源码细节**：禁止出现源码文件路径（如 `apps/data_opt/components/xxx.py`）、类名（如 `MaterialPullModel`）、函数名（如 `convert_timeunit`）、配置变量名（如 `pdv`）、实现术语（如「拉取模型」「清洗逻辑」）
+- **可保留外部系统侧技术事实**：接口端点、分页参数、响应字段等（三方对接需要知道）
+
+### 4. 必填标记（与第四节一致）
+- ✅ 必填
+- ⚪ 可选
+- ⚠️ 条件必填
+
+### 5. 检查清单
+```bash
+# 1. 无我方源码细节泄漏（以下均应无输出）
+grep -nE 'apps/data_opt/components' docs/guide/FieldMapping-*.md
+grep -nE 'PullModel|PushModel|model_validator' docs/guide/FieldMapping-*.md
+grep -nE '\bpdv\b|convert_timeunit|clean_value' docs/guide/FieldMapping-*.md
+
+# 2. 无方向元数据声明（应无输出）
+grep -nE '^\*\*方向\*\*' docs/guide/FieldMapping-*.md
+```
+
+---
+
+**最后更新**：2026-10-30
 **维护对象**：`docs/guide/api-interface-guide.md`
 **本指南位置**：`docs/guide/api-interface-guide-maintenance.md`
