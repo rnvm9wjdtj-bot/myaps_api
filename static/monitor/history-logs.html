@@ -882,7 +882,7 @@
                     <button class="btn btn-secondary header-btn" onclick="quickTimeRange('6h')" data-i18n="monitor.time.last_6h">6小时</button>
                     <button class="btn btn-secondary header-btn" onclick="quickTimeRange('24h')" data-i18n="monitor.time.last_24h">24小时</button>
                     <button class="btn btn-secondary header-btn header-btn-reset" onclick="resetHistoryQuery()" data-i18n="monitor.btn.reset">重置</button>
-                    <button class="btn btn-primary header-btn" id="query-btn" onclick="executeHistoryQuery()" data-i18n="monitor.btn.query">查询</button>
+                    <button class="btn btn-primary header-btn" id="query-btn" onclick="executeHistoryQuery(true)" data-i18n="monitor.btn.query">查询</button>
                     <button class="btn btn-secondary header-btn" id="realtime-btn" onclick="toggleRealtimeTracking()" data-i18n="monitor.btn.realtime_off">实时追踪</button>
                 </div>
                 <div id="precise-mode-container"></div>
@@ -1175,7 +1175,14 @@
             return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
         }
 
-        async function executeHistoryQuery() {
+        async function executeHistoryQuery(resetPage = false) {
+            // 新查询（查询按钮/快捷时间范围）时重置所有页签页码到第 1 页，
+            // 避免缩小范围后仍停留在旧页码导致空数据；翻页/改页大小不传此参数
+            if (resetPage) {
+                ['http', 'outbound', 'logs'].forEach(t => {
+                    if (paginationState[t]) paginationState[t].page = 1;
+                });
+            }
             let startTime = document.getElementById('history-start-time').value;
             let endTime = document.getElementById('history-end-time').value;
             const logLevel = document.getElementById('history-log-level').value;
@@ -1405,17 +1412,31 @@
             
             updateFilterActiveState();
             
-            document.getElementById('result-tabs').style.display = 'none';
-            
+            // 保持页签按钮可见，仅清空数据（用户可切换页签选择下次查询类型）
+            document.getElementById('result-tabs').style.display = 'flex';
+
             document.getElementById('http-results-body').innerHTML = '<tr><td colspan="8" class="no-data">' + i18n.t('monitor.status.no_data') + '</td></tr>';
             document.getElementById('outbound-results-body').innerHTML = '<tr><td colspan="9" class="no-data">' + i18n.t('monitor.status.no_data') + '</td></tr>';
             document.getElementById('logs-results-body').innerHTML = '<tr><td colspan="6" class="no-data">' + i18n.t('monitor.status.no_data') + '</td></tr>';
-            
+
             historyQueryData = { http: [], outbound: [], logs: [] };
             // 清理缓存的排序数据
             sortedHttpData = [];
             sortedOutboundData = [];
             sortedLogsData = [];
+            // 归零汇总计数与级别徽章
+            queryStats = null;
+            updateQuerySummary(null, null);
+            // 归零分页状态并隐藏分页器
+            ['http', 'outbound', 'logs'].forEach(t => {
+                paginationState[t].totalCount = 0;
+                paginationState[t].totalPages = 0;
+                paginationState[t].page = 1;
+                const paginationEl = document.getElementById(`${t}-pagination`);
+                if (paginationEl) {
+                    paginationEl.style.display = 'none';
+                }
+            });
             
             const badge = document.getElementById('history-query-badge');
             if (badge) {
@@ -1454,7 +1475,7 @@
             document.getElementById('history-end-time').value = formatDateTime(end);
             
             // 自动触发查询
-            executeHistoryQuery();
+            executeHistoryQuery(true);
         }
         
         // 高级过滤面板控制
