@@ -27,5 +27,7 @@ def create_app(lifespan=None):
     )
     
     app.openapi_version = "3.0.2"
-    
+
+    app.router.redirect_slashes = False
+
     return app
