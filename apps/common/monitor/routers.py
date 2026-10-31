@@ -17,22 +17,8 @@ from .service import monitor_service
 from .log_stream_service import log_stream_service
 from .storage import request_storage, outbound_request_storage, system_log_storage
 from .models import APIRequest, OutboundAPIRequest, SystemLog
-from core.settings import TIMEZONE, SQLITE_FILE
+from core.settings import TIMEZONE_OFFSET, SQLITE_FILE
 from apps.common.utils.redis_pool_manager import get_redis_client
-from globalobjects import logger as log_config
-import time
-import json
-import asyncio
-from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, HTTPException, WebSocket, Request
-from fastapi.responses import JSONResponse, StreamingResponse
-from typing import Dict, Any, List, Optional
-from tortoise import Tortoise
-from .service import monitor_service
-from .log_stream_service import log_stream_service
-from .storage import request_storage, outbound_request_storage, system_log_storage
-from .models import APIRequest, OutboundAPIRequest, SystemLog
-from core.settings import TIMEZONE
 from globalobjects import logger as log_config
 
 logger = log_config.get_logger(__name__)
@@ -756,12 +742,7 @@ async def get_http_requests_by_time_range(
     """
     # 获取时区偏移（优先使用参数，否则使用配置）
     if timezone_offset is None:
-        # 解析 TIMEZONE 配置，如 "+8" 转换为 480 分钟
-        try:
-            tz_hours = float(TIMEZONE)
-            timezone_offset = int(tz_hours * 60)
-        except ValueError:
-            timezone_offset = 480  # 默认 UTC+8
+        timezone_offset = TIMEZONE_OFFSET
     
     # 转换为UTC时间
     utc_start = local_to_utc(start_time, timezone_offset)
@@ -817,11 +798,7 @@ async def get_outbound_http_requests_by_time_range(
     """
     # 获取时区偏移
     if timezone_offset is None:
-        try:
-            tz_hours = float(TIMEZONE)
-            timezone_offset = int(tz_hours * 60)
-        except ValueError:
-            timezone_offset = 480
+        timezone_offset = TIMEZONE_OFFSET
     
     # 转换为UTC时间
     utc_start = local_to_utc(start_time, timezone_offset)
@@ -877,11 +854,7 @@ async def get_logs_by_time_range(
     """
     # 获取时区偏移
     if timezone_offset is None:
-        try:
-            tz_hours = float(TIMEZONE)
-            timezone_offset = int(tz_hours * 60)
-        except ValueError:
-            timezone_offset = 480
+        timezone_offset = TIMEZONE_OFFSET
     
     # 转换为UTC时间
     utc_start = local_to_utc(start_time, timezone_offset)
@@ -962,16 +935,7 @@ async def get_history_by_time_range(
     """
     # 获取时区偏移 - 添加防御性检查
     if timezone_offset is None:
-        try:
-            # 移除可能的符号前缀（如 "+8" 或 "-5"）
-            tz_str = str(TIMEZONE).strip()
-            if tz_str.startswith(('+', '-')):
-                tz_hours = float(tz_str)
-            else:
-                tz_hours = float(tz_str)
-            timezone_offset = int(tz_hours * 60)
-        except (ValueError, TypeError):
-            timezone_offset = 480  # 默认 UTC+8
+        timezone_offset = TIMEZONE_OFFSET
     
     # 转换为UTC时间（如果提供了时间范围）
     utc_start = local_to_utc(start_time, timezone_offset) if start_time else None
@@ -1222,13 +1186,8 @@ async def get_history_stats(
         - 慢请求TOP10
     """
     if timezone_offset is None:
-        try:
-            tz_str = str(TIMEZONE).strip()
-            tz_hours = float(tz_str) if tz_str.startswith(('+', '-')) else float(tz_str)
-            timezone_offset = int(tz_hours * 60)
-        except (ValueError, TypeError):
-            timezone_offset = 480
-    
+        timezone_offset = TIMEZONE_OFFSET
+
     utc_start = local_to_utc(start_time, timezone_offset)
     utc_end = local_to_utc(end_time, timezone_offset)
     
@@ -1318,15 +1277,7 @@ async def get_history_timeline(
     """
     # 时区处理
     if timezone_offset is None:
-        try:
-            tz_str = str(TIMEZONE).strip()
-            if tz_str.startswith(('+', '-')):
-                tz_hours = float(tz_str)
-            else:
-                tz_hours = float(tz_str)
-            timezone_offset = int(tz_hours * 60)
-        except (ValueError, TypeError):
-            timezone_offset = 480
+        timezone_offset = TIMEZONE_OFFSET
     
     utc_start = local_to_utc(start_time, timezone_offset)
     utc_end = local_to_utc(end_time, timezone_offset)
@@ -1550,15 +1501,7 @@ async def export_history_data(
     """
     # 时区处理
     if timezone_offset is None:
-        try:
-            tz_str = str(TIMEZONE).strip()
-            if tz_str.startswith(('+', '-')):
-                tz_hours = float(tz_str)
-            else:
-                tz_hours = float(tz_str)
-            timezone_offset = int(tz_hours * 60)
-        except (ValueError, TypeError):
-            timezone_offset = 480
+        timezone_offset = TIMEZONE_OFFSET
     
     utc_start = local_to_utc(start_time, timezone_offset)
     utc_end = local_to_utc(end_time, timezone_offset)

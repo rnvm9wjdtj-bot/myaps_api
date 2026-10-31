@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from datetime import datetime
 from dotenv import load_dotenv
 
 # 先加载环境变量，确保 USE_LOGURU 在 logger 导入前就已设置
@@ -120,6 +121,39 @@ def get_timezone_name(timezone_str):
     return offset_map.get(timezone_str, "Asia/Shanghai")
 
 TIMEZONE_NAME = get_timezone_name(TIMEZONE)
+
+
+def get_timezone_offset() -> int:
+    """从 TIMEZONE 配置计算 UTC 偏移分钟数，消除硬编码 480。
+
+    支持两种配置格式：
+    - 偏移量格式（如 "+8"、"-5"）：直接换算
+    - IANA 格式（如 Asia/Shanghai）：用 zoneinfo 算真实偏移
+
+    解析失败回退 UTC(0)，让异常显式可识别而非悄悄按东八区。
+    """
+    # 1. 偏移量格式（如 "+8"、"-5"）
+    try:
+        tz_hours = float(TIMEZONE)
+        return int(tz_hours * 60)
+    except (ValueError, TypeError):
+        pass
+    # 2. IANA 格式（如 Asia/Shanghai），用 zoneinfo 算真实偏移
+    try:
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo(TIMEZONE_NAME))
+        off = now.utcoffset()
+        if off is not None:
+            return int(off.total_seconds() // 60)
+    except Exception as e:
+        logger.warning("zoneinfo 解析时区失败 TIMEZONE_NAME=%s: %s", TIMEZONE_NAME, e)
+    # 3. 解析失败回退 UTC，而非硬编码东八区
+    logger.warning("无法解析时区配置 TIMEZONE=%s, TIMEZONE_NAME=%s，回退 UTC(0)", TIMEZONE, TIMEZONE_NAME)
+    return 0
+
+
+# 时区偏移分钟数（UTC+8 = 480），启动时算一次（TIMEZONE 来自环境变量，运行期不变）
+TIMEZONE_OFFSET = get_timezone_offset()
 
 
 # 数据库监控开关，默认关闭

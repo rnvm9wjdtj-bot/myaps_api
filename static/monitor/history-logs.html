@@ -89,7 +89,7 @@
             white-space: nowrap;
         }
         .filters-header-controls .filter-input,
-        .filters-header-controls
+
         .filters-header-controls .range-input-group {
             display: flex;
             align-items: center;
@@ -523,8 +523,7 @@
             gap: 8px;
             font-size: 14px;
         }
-        .result-summary-inline
-        .result-summary-inline
+
         .result-summary-inline .summary-separator {
             color: var(--border-color);
             margin: 0 4px;
@@ -884,6 +883,7 @@
                     <button class="btn btn-secondary header-btn" onclick="quickTimeRange('24h')" data-i18n="monitor.time.last_24h">24小时</button>
                     <button class="btn btn-secondary header-btn header-btn-reset" onclick="resetHistoryQuery()" data-i18n="monitor.btn.reset">重置</button>
                     <button class="btn btn-primary header-btn" id="query-btn" onclick="executeHistoryQuery()" data-i18n="monitor.btn.query">查询</button>
+                    <button class="btn btn-secondary header-btn" id="realtime-btn" onclick="toggleRealtimeTracking()" data-i18n="monitor.btn.realtime_off">实时追踪</button>
                 </div>
                 <div id="precise-mode-container"></div>
             </div>
@@ -1077,7 +1077,7 @@
                             <th data-i18n="monitor.col.URL">URL</th>
                             <th data-i18n="monitor.col.status_code">状态码</th>
                             <th data-i18n="monitor.col.duration">响应时间</th>
-                            <th data-i18n="monitor.col.模块">模块</th>
+                            <th data-i18n="monitor.col.module">模块</th>
                             <th data-i18n="monitor.col.operation">操作</th>
                         </tr>
                     </thead>
@@ -1220,7 +1220,8 @@
             
             let timezoneOffset = -new Date().getTimezoneOffset();
             if (isNaN(timezoneOffset)) {
-                timezoneOffset = 480; // 默认 UTC+8
+                console.warn('无法获取浏览器时区偏移，回退 UTC(0)');
+                timezoneOffset = 0;
             }
             
             try {
