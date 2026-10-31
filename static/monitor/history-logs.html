@@ -2341,7 +2341,7 @@
             
             tbody.innerHTML = sortedHttpData.map((req, index) => {
                 const methodClass = req.method.toLowerCase();
-                const statusClass = req.status_code >= 400 ? 'error' : 'success';
+                const statusClass = req.status_code >= 400 ? 'error' : (req.status_code >= 300 ? 'warning' : 'success');
                 const time = formatDateTime(req.timestamp);
                 const duration = req.duration ? req.duration.toFixed(2) + 'ms' : '-';
                 const timestamp = new Date(req.timestamp).getTime();
@@ -2378,7 +2378,7 @@
             
             tbody.innerHTML = sortedOutboundData.map((req, index) => {
                 const methodClass = req.method.toLowerCase();
-                const statusClass = req.status_code >= 400 ? 'error' : 'success';
+                const statusClass = req.status_code >= 400 ? 'error' : (req.status_code >= 300 ? 'warning' : 'success');
                 const time = formatDateTime(req.timestamp);
                 const requestTime = formatDateTime(req.request_timestamp);
                 const duration = req.duration ? req.duration.toFixed(2) + 'ms' : '-';
@@ -2496,7 +2496,7 @@
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求方法</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;"><span class="api-method ${(detailData.method || '').toLowerCase()}">${detailData.method || '-'}</span></td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求路径</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.path || '-'}</td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">查询参数</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${formatQueryParams(detailData.query_params)}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">状态码</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono api-status ${(detailData.status_code || 0) >= 400 ? 'error' : 'success'}">${detailData.status_code || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">状态码</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono api-status ${(detailData.status_code || 0) >= 400 ? 'error' : ((detailData.status_code || 0) >= 300 ? 'warning' : 'success')}">${detailData.status_code || '-'}</td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">响应时间</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.duration ? detailData.duration.toFixed(2) + 'ms' : '-'}</td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">客户端IP</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.client_ip || '-'}</td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">User Agent</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.user_agent || '-'}</td></tr>
@@ -2537,7 +2537,7 @@
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">发送时间</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.request_timestamp || '-'}</td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求方法</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;"><span class="api-method ${(detailData.method || '').toLowerCase()}">${detailData.method || '-'}</span></td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">请求URL</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.url || '-'}</td></tr>
-        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">状态码</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono api-status ${(detailData.status_code || 0) >= 400 ? 'error' : 'success'}">${detailData.status_code || '-'}</td></tr>
+        <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">状态码</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono api-status ${(detailData.status_code || 0) >= 400 ? 'error' : ((detailData.status_code || 0) >= 300 ? 'warning' : 'success')}">${detailData.status_code || '-'}</td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">响应时间</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.duration ? detailData.duration.toFixed(2) + 'ms' : '-'}</td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">模块</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;" class="font-mono">${detailData.module || '-'}</td></tr>
         <tr><td style="padding: 8px; border-bottom: 1px solid #e8e8e8; color: #8c8c8c;">${typeof i18n !== 'undefined' ? i18n.t('monitor.col.is_slow') : '是否慢请求'}</td><td style="padding: 8px; border-bottom: 1px solid #e8e8e8;">${detailData.is_slow ? (typeof i18n !== 'undefined' ? i18n.t('monitor.other.yes') : '是') : (typeof i18n !== 'undefined' ? i18n.t('monitor.other.no') : '否')}</td></tr>

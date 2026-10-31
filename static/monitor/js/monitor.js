@@ -2312,8 +2312,7 @@ function updateAPIRequestsDisplay(data) {
         const timeStr = formatDateTime(req.timestamp, 'datetime');
         
         const methodClass = req.method.toLowerCase();
-        const isSuccess = req.status_code < 400;
-        const statusClass = isSuccess ? 'success' : 'error';
+        const statusClass = req.status_code >= 400 ? 'error' : (req.status_code >= 300 ? 'warning' : 'success');
         const errorMsg = req.error_message || '';
         
         // 转义特殊字符，防止HTML属性值被截断
@@ -2808,8 +2807,7 @@ function updateAPIRequestsTable(requests) {
         const timeStr = formatDateTime(req.timestamp, 'datetime');
         
         const methodClass = req.method.toLowerCase();
-        const isSuccess = req.status_code < 400;
-        const statusClass = isSuccess ? 'success' : 'error';
+        const statusClass = req.status_code >= 400 ? 'error' : (req.status_code >= 300 ? 'warning' : 'success');
         const errorMsg = req.error_message || '';
         
         // 转义特殊字符，防止HTML属性值被截断
@@ -3714,7 +3712,7 @@ function getStatusDescription(statusCode) {
 function formatOutboundRequestRow(request, index) {
     const timestamp = formatDateTime(request.timestamp, 'datetime');
     const duration = (request.duration * 1000).toFixed(0);
-    const statusClass = request.status_code >= 400 ? 'error' : 'success';
+    const statusClass = request.status_code >= 400 ? 'error' : (request.status_code >= 300 ? 'warning' : 'success');
     const durationClass = request.duration > 1 ? 'slow' : '';
     
     // 获取状态码描述
@@ -3814,7 +3812,7 @@ function showOutboundRequestDetail(index) {
                             </tr>
                             <tr>
                                 <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.modal.status_code') : '状态码:'}</td>
-                                <td class="detail-value ${request.status_code >= 400 ? 'error' : 'success'}">${request.status_code}</td>
+                                <td class="detail-value ${request.status_code >= 400 ? 'error' : (request.status_code >= 300 ? 'warning' : 'success')}">${request.status_code}</td>
                             </tr>
                             <tr>
                                 <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.modal.response_time') : '响应时间:'}</td>
@@ -4171,6 +4169,9 @@ function exportOutboundRequestDetail(index) {
             .detail-value.success {
                 color: #4CAF50;
             }
+            .detail-value.warning {
+                color: #faad14;
+            }
             .detail-value.slow {
                 color: #ff9800;
             }
@@ -4211,7 +4212,7 @@ function exportOutboundRequestDetail(index) {
                             </tr>
                             <tr>
                                 <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.modal.status_code') : '状态码:'}</td>
-                                <td class="detail-value ${request.status_code >= 400 ? 'error' : 'success'}">${request.status_code}</td>
+                                <td class="detail-value ${request.status_code >= 400 ? 'error' : (request.status_code >= 300 ? 'warning' : 'success')}">${request.status_code}</td>
                             </tr>
                             <tr>
                                 <td class="detail-label">${typeof i18n !== 'undefined' ? i18n.t('monitor.modal.response_time') : '响应时间:'}</td>
@@ -4490,7 +4491,7 @@ function updateOverviewOutboundList(requests) {
     listEl.innerHTML = requests.map(request => {
         const timestamp = new Date(request.timestamp * 1000).toLocaleString('zh-CN');
         const duration = (request.duration * 1000).toFixed(0);
-        const statusClass = request.status_code >= 400 ? 'error' : 'success';
+        const statusClass = request.status_code >= 400 ? 'error' : (request.status_code >= 300 ? 'warning' : 'success');
         
         return `
             <div class="outbound-item">

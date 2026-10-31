@@ -1027,6 +1027,11 @@ body {
     color: var(--error-color);
 }
 
+.api-status.warning {
+    background: #fffbe6;
+    color: var(--warning-color);
+}
+
 .api-result {
     display: flex;
     align-items: center;
@@ -2126,6 +2131,10 @@ code[class*="language-"] {
     color: var(--error-color);
 }
 
+.outbound-requests-table .status.warning {
+    color: var(--warning-color);
+}
+
 .outbound-requests-table .duration {
     font-weight: 500;
 }
@@ -2296,6 +2305,10 @@ td {
 
 .outbound-footer .status.error {
     color: var(--error-color);
+}
+
+.outbound-footer .status.warning {
+    color: var(--warning-color);
 }
 
 .outbound-footer .duration {
@@ -2577,6 +2590,10 @@ td {
 
 .history-table .api-status.error {
     color: var(--error-color);
+}
+
+.history-table .api-status.warning {
+    color: var(--warning-color);
 }
 
 .history-table .log-level-badge {
