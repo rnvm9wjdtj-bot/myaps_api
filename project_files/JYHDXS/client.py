@@ -15,7 +15,7 @@ from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_
 from .._base import (
     get_scheduler_minute, async_rate_limit, CacheItem,
     ApsPayloadSponsor, EventResultPoster, CLIENT_LOGGER, standard_response, get_session, get_async_session, event_batch_handler,
-    cron_task, add_basic_auth_requests, db_delete, db_bupsert, db_query, PROJECT_JSON_FILE, pdv,
+    cron_task, db_delete, db_bupsert, db_query, PROJECT_JSON_FILE, pdv,
 )
 
 
@@ -31,10 +31,6 @@ sap_url2 = erp.get("base_url", "") + '/zrestful_plan?sap-client=' + erp.get("sap
 werks = erp.get("werks", "")
 sap_username = erp.get("username", "")
 sap_password = erp.get("password", "")
-# 创建requests会话
-sap_session = get_session(allowed_methods=["GET", "POST"])
-# 添加Basic认证
-add_basic_auth_requests(sap_session, sap_username, sap_password)
 
 # API 超时配置
 API_TIMEOUT = 1800.0  # API 调用超时（秒）
@@ -55,6 +51,32 @@ try:
 except Exception as e:
     CLIENT_LOGGER.warning("SAP异步客户端", f"监控包装初始化失败，降级为裸客户端: {e}")
     sap_async_client = _sap_async_client
+
+_SAP_RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
+_SAP_MAX_RETRIES = 3
+_SAP_RETRY_BACKOFF = 1.0
+_SAP_CONNECT_TIMEOUT = 15
+_SAP_READ_TIMEOUT = 170
+
+
+async def _sap_get_with_retry(url: str, headers: dict):
+    """SAP GET 请求，对 5xx/429 状态码应用层重试（httpx transport retries 仅覆盖连接级错误）。"""
+    for attempt in range(_SAP_MAX_RETRIES + 1):
+        resp = await sap_async_client.get(
+            url=url,
+            headers=headers,
+            timeout=httpx.Timeout(connect=_SAP_CONNECT_TIMEOUT, read=_SAP_READ_TIMEOUT, write=_SAP_CONNECT_TIMEOUT, pool=_SAP_CONNECT_TIMEOUT),
+        )
+        if resp.status_code == status.HTTP_200_OK:
+            return resp
+        if resp.status_code in _SAP_RETRY_STATUS_CODES and attempt < _SAP_MAX_RETRIES:
+            backoff = _SAP_RETRY_BACKOFF * (2 ** attempt)
+            CLIENT_LOGGER.warning("SAP请求重试", f"状态码{resp.status_code}", f"第{attempt + 1}次重试，等待{backoff}s")
+            await asyncio.sleep(backoff)
+            continue
+        raise Exception(f"SAP返回状态码{resp.status_code}: {resp.text}")
+    raise Exception("SAP请求重试耗尽")
+
 
 mes = PROJECT_JSON_FILE.get("mes", {})
 mes_url = mes.get("base_url", "")
@@ -292,8 +314,8 @@ class StockManager:
 
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-        def fetch_input_data():
-            response = sap_session.get(
+        async def fetch_input_data_async():
+            resp = await _sap_get_with_retry(
                 url=sap_url1,
                 headers={
                     'interface': 'order_material_input',
@@ -301,8 +323,8 @@ class StockManager:
                     'i_datum_f': i_datum_f,
                     'i_datum_t': i_datum_t,
                 },
-                timeout=(15, 60),
-            ).json()
+            )
+            response = resp.json()
             data = response.get('data', [])
             if not data:
                 return pd.DataFrame()
@@ -341,14 +363,10 @@ class StockManager:
                   }))
             return df
 
-        loop = asyncio.get_event_loop()
         try:
-            df_input = await asyncio.wait_for(
-                loop.run_in_executor(None, fetch_input_data),
-                timeout=75,
-            )
+            df_input = await asyncio.wait_for(fetch_input_data_async(), timeout=180)
         except asyncio.TimeoutError:
-            CLIENT_LOGGER.fail("生产投料同步", "获取SAP投料数据超时", "超过75秒")
+            CLIENT_LOGGER.fail("生产投料同步", "获取SAP投料数据超时", "超过180秒")
             return None
         except Exception as e:
             CLIENT_LOGGER.fail("生产投料同步", "获取SAP投料数据失败", str(e))
@@ -365,49 +383,46 @@ class StockManager:
     @staticmethod
     async def refresh(dbs: str = MYAPS_DB_SET):
         """刷新库存：SAP库存+MTO+MI投料 全量替换Type='ST'"""
-        def get_sap_stock_data():
+        async def get_sap_stock_data_async():
             now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            try:
-                sap_stock_response = sap_session.get(url=f"{sap_url1}", headers={'interface': 'stock', 'werks': werks}, timeout=(15, 60)).json()
-                sap_st_data = sap_stock_response.get('data', [])
-                df_sap_st = pd.DataFrame(sap_st_data)
-                df_sap_st = df_sap_st.astype({
-                    'werks': 'str', 'matnr': 'str', 'lgort': 'str',
-                    'labst': 'int32', 'labst2': 'int32', 'charg': 'str',
-                })
-                df_sap_st['avail_qty'] = df_sap_st['labst'] + df_sap_st['labst2']
-                df_sap_st['supplyno'] = df_sap_st['matnr'] + '-' + df_sap_st['werks']
-                df_sap_st['type'] = 'ST'
-                df_sap_st['priority'] = 0
-                df_sap_st['avail_date'] = now
-                df_sap_st['dt_req'] = now
-                df_sap_st['status'] = 'NEW'
-                df_sap_st['category'] = ''
-                df_sap_st['create_date'] = now
-                df_sap_st = (df_sap_st
-                                .groupby(['supplyno'], as_index=False)
-                                .agg({
-                                    'matnr': 'first', 'avail_qty': 'sum', 'type': 'first',
-                                    'avail_date': 'first', 'dt_req': 'first', 'priority': 'first',
-                                    'status': 'first', 'category': 'first', 'create_date': 'first',
-                                }))
-                df_sap_st = df_sap_st.rename(columns={'matnr': 'materialno'})
-                df_sap_st['itemno'] = pdv.ITEMNO
-            except Exception as e:
-                raise
+            resp = await _sap_get_with_retry(
+                url=sap_url1,
+                headers={'interface': 'stock', 'werks': werks},
+            )
+            sap_stock_response = resp.json()
+            sap_st_data = sap_stock_response.get('data', [])
+            df_sap_st = pd.DataFrame(sap_st_data)
+            df_sap_st = df_sap_st.astype({
+                'werks': 'str', 'matnr': 'str', 'lgort': 'str',
+                'labst': 'int32', 'labst2': 'int32', 'charg': 'str',
+            })
+            df_sap_st['avail_qty'] = df_sap_st['labst'] + df_sap_st['labst2']
+            df_sap_st['supplyno'] = df_sap_st['matnr'] + '-' + df_sap_st['werks']
+            df_sap_st['type'] = 'ST'
+            df_sap_st['priority'] = 0
+            df_sap_st['avail_date'] = now
+            df_sap_st['dt_req'] = now
+            df_sap_st['status'] = 'NEW'
+            df_sap_st['category'] = ''
+            df_sap_st['create_date'] = now
+            df_sap_st = (df_sap_st
+                            .groupby(['supplyno'], as_index=False)
+                            .agg({
+                                'matnr': 'first', 'avail_qty': 'sum', 'type': 'first',
+                                'avail_date': 'first', 'dt_req': 'first', 'priority': 'first',
+                                'status': 'first', 'category': 'first', 'create_date': 'first',
+                            }))
+            df_sap_st = df_sap_st.rename(columns={'matnr': 'materialno'})
+            df_sap_st['itemno'] = pdv.ITEMNO
             return df_sap_st
 
         CLIENT_LOGGER.start("刷新库存任务")
         mto_vir_st = await ApsPayloadSponsor.mto_workreport_to_virtual_stock()
 
-        loop = asyncio.get_event_loop()
         try:
-            df_sap_st = await asyncio.wait_for(
-                loop.run_in_executor(None, get_sap_stock_data),
-                timeout=75
-            )
+            df_sap_st = await asyncio.wait_for(get_sap_stock_data_async(), timeout=180)
         except asyncio.TimeoutError:
-            CLIENT_LOGGER.fail("刷新库存任务", "获取SAP库存数据超时", "超过75秒")
+            CLIENT_LOGGER.fail("刷新库存任务", "获取SAP库存数据超时", "超过180秒")
             return
         except Exception as e:
             CLIENT_LOGGER.fail("刷新库存任务", "获取SAP库存数据失败", str(e))
