@@ -98,30 +98,4 @@ services:
       start_period: 10s
       retries: 3
 
-  # ============ 附加服务（默认开启）============
-  # 监控和管理工具，随基础服务一起启动
-  
-  uptime-kuma:
-    image: louislam/uptime-kuma:1.23.13
-    container_name: myaps_uptime_kuma
-    restart: unless-stopped
-    network_mode: host
-    environment:
-      - UPTIME_KUMA_LISTEN=0.0.0.0:${UPTIME_KUMA_PORT:-3001}
-      - TZ=${TIMEZONE:-Asia/Shanghai}
-    volumes:
-      - ./volumes/uptime-kuma:/app/data
-    healthcheck:
-      test: ["CMD", "node", "server/server.js", "--healthcheck"]
-      interval: 60s
-      timeout: 20s
-      start_period: 40s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 128M
+

@@ -11,7 +11,7 @@ import logging
 import threading
 import glob as glob_module
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List
 
 from ..models import LogRecord
@@ -67,6 +67,7 @@ class DatePrefixFileHandler(Handler):
         
         self._ensure_log_dir()
         self._open_file()
+        self._cleanup_old_files()
     
     def _ensure_log_dir(self) -> None:
         """确保日志目录存在"""
@@ -191,8 +192,6 @@ class DatePrefixFileHandler(Handler):
                     pass
                 self._current_file = None
 
-
-from datetime import timedelta
 
 
 class SmartFileHandler(Handler):

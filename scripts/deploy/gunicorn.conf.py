@@ -1,8 +1,6 @@
 # gunicorn.conf.py
 import os
-import shutil
 import multiprocessing
-from datetime import datetime, timedelta
 
 # 设置工作目录
 # Docker环境下使用/app，否则基于脚本位置计算
@@ -32,7 +30,6 @@ log_dir = os.path.join(chdir, "logs")
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
 
-_log_retention_days = int(os.getenv("LOG_RETENTION_DAYS", "15"))
 
 LOGGING_CONFIG = {
     "version": 1,
@@ -41,32 +38,22 @@ LOGGING_CONFIG = {
     # 此处显式覆盖 root 为空 handler，避免引用不存在的 handler
     "root": {"level": "INFO", "handlers": []},
     "formatters": {
-        # access 日志：gunicorn 已将 atoms 解析进 message，formatter 只需输出 message
-        "access": {"()": "logging.Formatter", "fmt": "%(message)s"},
         "error": {"()": "logging.Formatter", "fmt": "[%(asctime)s] [%(levelname)s] %(message)s"},
     },
     "handlers": {
-        "access_file": {
-            "()": "logging.handlers.TimedRotatingFileHandler",
-            "filename": os.path.join(log_dir, "access.log"),
-            "when": "midnight",
-            "interval": 1,
-            "backupCount": _log_retention_days,
-            "encoding": "utf-8",
-            "formatter": "access",
-        },
         "error_file": {
             "()": "logging.handlers.TimedRotatingFileHandler",
             "filename": os.path.join(log_dir, "error.log"),
             "when": "midnight",
             "interval": 1,
-            "backupCount": _log_retention_days,
+            "backupCount": 0,  # 仅保留当天活跃 error.log，不保留跨日归档
             "encoding": "utf-8",
             "formatter": "error",
         },
     },
     "loggers": {
-        "gunicorn.access": {"handlers": ["access_file"], "level": "INFO", "propagate": False},
+        # 关闭 access log：HTTP 请求已由 HTTPMonitorMiddleware 入库，history-logs.html 可查
+        "gunicorn.access": {"handlers": [], "level": "CRITICAL", "propagate": False},
         "gunicorn.error": {"handlers": ["error_file"], "level": "INFO", "propagate": False},
     },
 }
@@ -83,55 +70,9 @@ loglevel = "info"
 # 而非 Gunicorn 钩子。这样做更加可靠，避免了对 UvicornWorker 与 Gunicorn 钩子
 # 兼容性的依赖。
 
-def _rotate_active_logs():
-    """启动时轮转活跃日志文件，将历史内容归档到独立命名空间并清理过期归档
-
-    归档文件命名为 gunicorn_{error|access}_{YYYYMMDD}.log：
-    - 避免与 App 统一日志系统（SmartFileHandler）的 {YYYYMMDD}_error.log 同文件混写
-    - 避免被监控页 *_error.log 通配读取（gunicorn 行格式与 App 格式不同，会造成解析错乱）
-    """
-    today = datetime.now().strftime("%Y%m%d")
-    for prefix in ("error", "access"):
-        active = os.path.join(log_dir, f"{prefix}.log")
-        if not os.path.isfile(active) or os.path.getsize(active) == 0:
-            continue
-        archived = os.path.join(log_dir, f"gunicorn_{prefix}_{today}.log")
-        try:
-            with open(active, "rb") as src, open(archived, "ab") as dst:
-                shutil.copyfileobj(src, dst)
-            with open(active, "wb"):
-                pass
-        except Exception:
-            pass
-    _cleanup_old_gunicorn_logs()
-
-
-def _cleanup_old_gunicorn_logs():
-    """清理超过保留期的 gunicorn 归档日志（默认 LOG_RETENTION_DAYS 天）"""
-    retention_days = _log_retention_days
-    if retention_days <= 0:
-        return
-    cutoff = (datetime.now() - timedelta(days=retention_days)).strftime("%Y%m%d")
-    try:
-        for filename in os.listdir(log_dir):
-            if not filename.startswith("gunicorn_") or not filename.endswith(".log"):
-                continue
-            try:
-                date_str = filename.rsplit("_", 1)[1][:-len(".log")]
-            except Exception:
-                continue
-            if len(date_str) != 8 or not date_str.isdigit():
-                continue
-            if date_str < cutoff:
-                os.remove(os.path.join(log_dir, filename))
-    except Exception:
-        pass
-
-
 def on_starting(server):
-    """Master 进程启动时设置标记并轮转日志"""
+    """Master 进程启动时设置标记"""
     os.environ['GUNICORN_MASTER_PID'] = str(os.getpid())
-    _rotate_active_logs()
 
 def post_fork(server, worker):
     """Worker fork 后立即注入进程标识，供应用代码感知 Gunicorn 环境"""
