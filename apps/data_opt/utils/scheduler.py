@@ -13,7 +13,8 @@ from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED, EVENT_JOB_EXEC
 
 from globalobjects import logger as log_config
 from apps.common.utils.thread_pool_manager import global_pool_manager
-import os
+from core.settings import TIMEZONE_NAME
+
 
 LOG_LEVEL = os.getenv("LOG_LEVEL") or "INFO"
 # 获取统一日志器
@@ -156,7 +157,7 @@ class SchedulerManager:
                 jobstores=jobstores,
                 executors=executors,
                 job_defaults=job_defaults,
-                timezone='Asia/Shanghai'
+                timezone=TIMEZONE_NAME
             )
             
             # 添加事件监听
