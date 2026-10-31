@@ -1403,8 +1403,7 @@ async def call_dbprocdure(
         valid_dbs=valid_dbs,
         operation_name=f"存储过程调用 {procedure_name}",
         extra_meta={
-            "affected_rows": total_affect_rows,
-            "procedure_name": procedure_name
+            "affected_rows": total_affect_rows
         }
     )
 
