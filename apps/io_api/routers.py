@@ -1802,7 +1802,7 @@ async def create_workreport(
             return api_response(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 success=0,
-                message=f"校验失败：以下工单号/工序号在t_orderwc中不存在: {all_missing}",
+                message=f"校验失败：工单/工序号不存在: {all_missing}",
                 data=[],
                 meta={"missing": all_missing}
             )
