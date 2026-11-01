@@ -13,6 +13,8 @@ from .logger import (
     set_db_initialized,
 )
 
+from .reminder import Reminder, RemindType, remind_manager, QqEmailReminder
+
 current_dir = Path(__file__).resolve().parent
 root_dir = current_dir.parent
 pf_dir = os.getenv("PROJECT_DIR")
@@ -24,8 +26,7 @@ if pf_dir is not None:
     
     from .event_aggregator import get_global_handler_aggregator
     EVENT_AGGREGATOR = get_global_handler_aggregator()
-    
-    from .reminder import Reminder, RemindType, remind_manager, QqEmailReminder
+
     from .globalconst import StaticString
 else:
     PROJECT_JSON_FILE = None
@@ -41,14 +42,14 @@ __all__ = [
     "initialize_logging",
     "shutdown_logging",
     "set_db_initialized",
+    "Reminder",
+    "RemindType",
+    "remind_manager",
+    "QqEmailReminder",
 ]
 
 if pf_dir is not None:
     __all__.extend([
-        "Reminder",
-        "RemindType",
-        "remind_manager",
-        "QqEmailReminder",
         "StaticString",
         "ProjectDefaultValues",
     ])
