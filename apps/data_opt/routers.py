@@ -98,13 +98,34 @@ from apps.data_opt.utils.binlog_ha import (
 async def prometheus_metrics_endpoint():
     """
     Prometheus 指标暴露端点
-    
+
+    合并 binlog 与 db_query 两个独立 Registry 的指标输出。
     指标类型：
     - binlog_events_processed_total: 已处理事件总数 (Counter)
     - binlog_queue_size: 当前队列大小 (Gauge)
     - binlog_processing_delay_seconds: 处理延迟分布 (Histogram)
+    - db_query_total / db_query_duration_seconds / db_slow_query_total 等: DB 查询监测
     """
-    return await prometheus_metrics.expose_endpoint()
+    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+    from fastapi.responses import Response
+
+    try:
+        data_binlog = generate_latest(prometheus_metrics._registry)
+    except Exception as e:
+        data_binlog = f"# binlog metrics ERROR: {e}\n".encode()
+
+    try:
+        from apps.common.monitor.db_query_hook import _registry as db_registry
+        data_db = generate_latest(db_registry)
+    except Exception as e:
+        # db_query 模块导入失败不影响 binlog 指标输出
+        data_db = f"# db_query metrics ERROR: {e}\n".encode()
+
+    return Response(
+        content=data_binlog + data_db,
+        media_type=CONTENT_TYPE_LATEST,
+        status_code=200,
+    )
 
 
 @rt.get("/binlog/status",

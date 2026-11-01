@@ -575,6 +575,18 @@ async def lifespan(app):
     elapsed = time.time() - start_wait
     log_config.info(f"✅ Tortoise ORM 已初始化（等待{elapsed:.2f}秒）")
     
+    # 安装 DB 查询监测 hook（在 Tortoise 初始化后、标记完成前）
+    from core.settings import DB_QUERY_MONITOR_ENABLED
+    if DB_QUERY_MONITOR_ENABLED:
+        try:
+            from apps.common.monitor.db_query_hook import install_hook
+            install_hook()
+            log_config.info("✅ DB 查询监测 hook 已安装")
+        except Exception as e:
+            log_config.warning(f"⚠️ 安装 DB 查询监测 hook 失败: {e}")
+    else:
+        log_config.info("ℹ️ DB 查询监测未启用（DB_QUERY_MONITOR_ENABLED=false）")
+    
     # 标记初始化完成
     db_init_manager.mark_initialized()
     
@@ -1148,6 +1160,14 @@ async def lifespan(app):
         log_config.warning(f"⚠️ 关闭项目HTTP客户端失败: {e}")
     
     # 3.3 关闭数据库连接（最后关闭）
+    # 先卸载 DB 查询监测 hook，避免关闭过程中 asyncio.create_task 在已关闭的事件循环上报警告
+    try:
+        from apps.common.monitor.db_query_hook import uninstall_hook
+        uninstall_hook()
+        log_config.info("✅ DB 查询监测 hook 已卸载")
+    except Exception as e:
+        log_config.warning(f"⚠️ 卸载 DB 查询监测 hook 失败: {e}")
+    
     log_config.info("关闭数据库连接...")
     try:
         from tortoise import Tortoise

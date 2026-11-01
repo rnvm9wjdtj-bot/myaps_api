@@ -6,7 +6,7 @@
 
 import time
 import asyncio
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from globalobjects import logger as log_config, RemindType, remind_manager
 from globalobjects.db_manager import get_db_managers
 from core.settings import MYAPS_MAIN_DB
@@ -149,3 +149,26 @@ class DatabaseCollector:
             "connections": connections,
             "pool": pool,
         }
+    async def get_query_metrics(self) -> Dict[str, Any]:
+        """获取 SQL 查询监测聚合统计（委托给 db_query_hook.collector 单例）"""
+        from ..db_query_hook import collector
+        return collector.get_stats()
+
+    async def get_recent_queries(
+        self,
+        operation: Optional[str] = None,
+        connection: Optional[str] = None,
+        slow_only: bool = False,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """获取最近 SQL 列表（委托给 db_query_hook.collector 单例）"""
+        from ..db_query_hook import collector
+        return collector.get_recent(operation, connection, slow_only, limit)
+
+    async def get_slow_queries(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """获取慢查询列表（委托给 db_query_hook.collector 单例）。
+
+        不调用 trigger_remind（RemindType.DB_SLOW_QUERY 未确认存在，避免引入未定义枚举）。
+        """
+        from ..db_query_hook import collector
+        return collector.get_recent(slow_only=True, limit=limit)

@@ -224,6 +224,60 @@
                             </tbody>
                         </table>
                     </div>
+
+                    <!-- SQL 监控统计指标区 -->
+                    <div class="sql-monitor-summary" id="sql-monitor-summary" style="margin-top:16px;">
+                        <h3 data-i18n="monitor.card.sql_monitor">SQL 监控</h3>
+                        <div class="sql-metrics-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;">
+                            <div class="metric-item">
+                                <div class="metric-label" data-i18n="monitor.metric.total_queries">总查询数</div>
+                                <div class="metric-value" id="sql-total-count">0</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-label" data-i18n="monitor.metric.slow_queries">慢查询数</div>
+                                <div class="metric-value" id="sql-slow-count" style="color:#ef4444;">0</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-label" data-i18n="monitor.metric.query_errors">错误数</div>
+                                <div class="metric-value" id="sql-error-count" style="color:#ef4444;">0</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-label" data-i18n="monitor.metric.slow_threshold">慢查询阈值</div>
+                                <div class="metric-value" id="sql-slow-threshold">1.0s</div>
+                            </div>
+                        </div>
+                        <table class="db-detail-table" id="sql-operation-stats" style="margin-top:12px;">
+                            <thead>
+                                <tr>
+                                    <th data-i18n="monitor.col.operation">操作</th>
+                                    <th data-i18n="monitor.col.connection">连接</th>
+                                    <th data-i18n="monitor.col.count">次数</th>
+                                    <th data-i18n="monitor.col.avg_duration">平均耗时</th>
+                                    <th data-i18n="monitor.col.max_duration">最大耗时</th>
+                                    <th data-i18n="monitor.col.slow_count">慢查询</th>
+                                    <th data-i18n="monitor.col.error_count">错误</th>
+                                </tr>
+                            </thead>
+                            <tbody id="sql-operation-tbody"></tbody>
+                        </table>
+                    </div>
+
+                    <!-- 慢查询 TOP 列表区 -->
+                    <div class="sql-slow-list" id="sql-slow-list" style="margin-top:16px;">
+                        <h3 data-i18n="monitor.card.slow_queries">慢查询列表</h3>
+                        <table class="db-detail-table" id="sql-slow-table">
+                            <thead>
+                                <tr>
+                                    <th data-i18n="monitor.col.timestamp">时间</th>
+                                    <th data-i18n="monitor.col.connection">连接</th>
+                                    <th data-i18n="monitor.col.operation">操作</th>
+                                    <th data-i18n="monitor.col.duration">耗时</th>
+                                    <th data-i18n="monitor.col.sql">SQL</th>
+                                </tr>
+                            </thead>
+                            <tbody id="sql-slow-tbody"></tbody>
+                        </table>
+                    </div>
                 </div>
             </section>
 

@@ -187,6 +187,14 @@ else:
 TRUNON_SCHEDULER = os.getenv("TRUNON_SCHEDULER", "False").lower().strip() == "true"
 
 
+# DB 查询监测
+DB_QUERY_MONITOR_ENABLED = os.getenv("DB_QUERY_MONITOR_ENABLED", "true").lower().strip() == "true"
+DB_QUERY_SLOW_THRESHOLD = float(os.getenv("DB_QUERY_SLOW_THRESHOLD", "1.0"))
+DB_QUERY_LOG_ALL = os.getenv("DB_QUERY_LOG_ALL", "true").lower().strip() == "true"
+DB_QUERY_HISTORY_SIZE = max(100, min(10000, int(os.getenv("DB_QUERY_HISTORY_SIZE", "2000"))))
+DB_QUERY_SAMPLE_RATE = max(0.0, min(1.0, float(os.getenv("DB_QUERY_SAMPLE_RATE", "1.0"))))
+
+
 LOG_LEVEL = os.getenv("LOG_LEVEL", "").strip() or "INFO"
 
 # 日志文件保留天数，默认7

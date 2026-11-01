@@ -533,6 +533,51 @@ async def get_pool_leak_detection():
         }
 
 
+@router.get("/database/query/stats",
+    tags=["监控 - 数据库查询"],
+    summary="SQL 查询监测聚合统计",
+)
+async def get_db_query_stats():
+    """获取 SQL 查询监测聚合统计（按 operation/connection 分组的次数/平均/最大耗时/慢查询数/错误数）"""
+    try:
+        return await monitor_service.db_collector.get_query_metrics()
+    except Exception as e:
+        return {"error": str(e), "stats": [], "history_size": 0}
+
+
+@router.get("/database/query/recent",
+    tags=["监控 - 数据库查询"],
+    summary="最近 SQL 列表",
+)
+async def get_db_query_recent(
+    operation: Optional[str] = None,
+    connection: Optional[str] = None,
+    slow: bool = False,
+    limit: int = 100,
+):
+    """获取最近 SQL 列表，可按 operation/connection/slow 过滤，limit 上限 1000"""
+    safe_limit = max(1, min(1000, limit))
+    try:
+        return await monitor_service.db_collector.get_recent_queries(
+            operation, connection, slow, safe_limit
+        )
+    except Exception as e:
+        return [{"error": str(e)}]
+
+
+@router.get("/database/query/slow",
+    tags=["监控 - 数据库查询"],
+    summary="慢查询列表",
+)
+async def get_db_query_slow(limit: int = 20):
+    """获取慢查询列表（含调用栈）"""
+    safe_limit = max(1, min(1000, limit))
+    try:
+        return await monitor_service.db_collector.get_slow_queries(safe_limit)
+    except Exception as e:
+        return [{"error": str(e)}]
+
+
 @router.get("/env")
 async def get_environment():
     """

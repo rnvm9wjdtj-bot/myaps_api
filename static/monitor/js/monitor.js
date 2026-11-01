@@ -2156,9 +2156,84 @@ async function fetchDatabaseDetail() {
         const response = await fetch(`${API_BASE}/database`);
         const data = await response.json();
         updateDatabaseDetailDisplay(data);
+        await fetchDbQueryStats();
+        await fetchDbSlowQueries();
     } catch (error) {
         console.error('获取数据库详情失败:', error);
     }
+}
+
+async function fetchDbQueryStats() {
+    try {
+        const response = await fetch(`${API_BASE}/database/query/stats`);
+        const data = await response.json();
+        updateSqlMonitorSummary(data);
+    } catch (error) {
+        console.error('获取 SQL 监控统计失败:', error);
+    }
+}
+
+async function fetchDbSlowQueries() {
+    try {
+        const response = await fetch(`${API_BASE}/database/query/slow?limit=10`);
+        const data = await response.json();
+        updateSqlSlowList(data);
+    } catch (error) {
+        console.error('获取慢查询列表失败:', error);
+    }
+}
+
+function updateSqlMonitorSummary(data) {
+    if (!data) return;
+    const stats = data.stats || [];
+    let totalCount = 0, slowCount = 0, errorCount = 0;
+    stats.forEach(s => {
+        totalCount += s.count || 0;
+        slowCount += s.slow || 0;
+        errorCount += s.errors || 0;
+    });
+    const totalEl = document.getElementById('sql-total-count');
+    const slowEl = document.getElementById('sql-slow-count');
+    const errEl = document.getElementById('sql-error-count');
+    const thrEl = document.getElementById('sql-slow-threshold');
+    if (totalEl) totalEl.textContent = totalCount;
+    if (slowEl) slowEl.textContent = slowCount;
+    if (errEl) errEl.textContent = errorCount;
+    if (thrEl) thrEl.textContent = (data.slow_threshold || 1.0) + 's';
+
+    const tbody = document.getElementById('sql-operation-tbody');
+    if (!tbody) return;
+    if (!stats.length) {
+        const noData = typeof i18n !== 'undefined' ? i18n.t('monitor.status.no_data') : '暂无数据';
+        tbody.innerHTML = `<tr><td colspan="7" class="empty-state">${noData}</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = stats.map(s => `<tr>
+        <td>${escapeHtml(s.operation || '')}</td>
+        <td>${escapeHtml(s.connection || '')}</td>
+        <td>${s.count || 0}</td>
+        <td>${((s.avg_time || 0) * 1000).toFixed(1)}ms</td>
+        <td>${((s.max_time || 0) * 1000).toFixed(1)}ms</td>
+        <td style="color:${(s.slow || 0) > 0 ? '#ef4444' : ''}">${s.slow || 0}</td>
+        <td style="color:${(s.errors || 0) > 0 ? '#ef4444' : ''}">${s.errors || 0}</td>
+    </tr>`).join('');
+}
+
+function updateSqlSlowList(data) {
+    const tbody = document.getElementById('sql-slow-tbody');
+    if (!tbody) return;
+    if (!data || !data.length) {
+        const noSlow = typeof i18n !== 'undefined' ? i18n.t('monitor.status.no_slow_queries') : '暂无慢查询';
+        tbody.innerHTML = `<tr><td colspan="5" class="empty-state">${noSlow}</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = data.map(r => `<tr>
+        <td>${new Date((r.timestamp || 0) * 1000).toLocaleString()}</td>
+        <td>${escapeHtml(r.connection || '')}</td>
+        <td>${escapeHtml(r.operation || '')}</td>
+        <td style="color:#ef4444;font-weight:bold;">${((r.duration || 0) * 1000).toFixed(0)}ms</td>
+        <td style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.sql || '')}">${escapeHtml((r.sql || '').substring(0, 100))}</td>
+    </tr>`).join('');
 }
 
 function updateDatabaseDetailDisplay(data) {
