@@ -200,12 +200,26 @@ collector = DBQueryCollector()
 _originals: Dict[type, Callable] = {}
 
 
+def _resolve_original(cls: type) -> Callable:
+    """按 MRO 回退查找已 patch 的原始 execute_query。
+
+    事务中 self 为 TransactionWrapper（继承 MySQLClient），type(self) 不在
+    _originals 字典中，需沿 __mro__ 回退到已 patch 的基类。
+    """
+    for base in cls.__mro__:
+        original = _originals.get(base)
+        if original is not None:
+            return original
+    raise KeyError(cls)
+
+
 async def _patched_execute_query(self, query: str, values: Optional[list] = None):
     """execute_query 的 patched 版本，记录 SQL 执行信息"""
+    original = _resolve_original(type(self))
     if not DB_QUERY_MONITOR_ENABLED:
-        return await _originals[type(self)](self, query, values)
+        return await original(self, query, values)
     if random.random() > DB_QUERY_SAMPLE_RATE:
-        return await _originals[type(self)](self, query, values)
+        return await original(self, query, values)
 
     start = time.perf_counter()
     operation = classify_sql(query)
@@ -213,7 +227,7 @@ async def _patched_execute_query(self, query: str, values: Optional[list] = None
 
     db_query_in_progress.labels(connection).inc()
     try:
-        result = await _originals[type(self)](self, query, values)
+        result = await original(self, query, values)
         duration = time.perf_counter() - start
         affected = _extract_affected(result)
         asyncio.create_task(
