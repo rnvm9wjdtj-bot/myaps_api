@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from core.settings import THIS_BASE_URL, MYAPS_MAIN_DB, MYAPS_DB_SET, TIMEZONE_NAME
 from apps.io_api.utils.db_operation import db_exec_sql, db_query, db_query_cursor, db_update_by_index, db_delete, db_bupsert, call_dbprocdure, DbResult, MultiDbResult
 from apps.io_api.models import TBatchLog
-from globalobjects.db_manager import escape_sql_value
+from globalobjects.db_manager import escape_sql_value, build_safe_condition
 
 
 
@@ -595,7 +595,7 @@ class _ProductionDataCache:
             return
         
         bom_keys = {
-            (item.get('materialno'), item.get('matver'))
+            ((item.get('materialno') or '').lower(), (item.get('matver') or '').lower())
             for item in self._cache[CacheItem.SUPPLY_MO.value].values()
             if item.get('materialno') and item.get('matver')
         }
@@ -620,11 +620,11 @@ class _ProductionDataCache:
             itemno = item.get('itemno', '')
             
             if productno and matver:
-                key_product = (productno, matver)
+                key_product = (productno.lower(), matver.lower())
                 bom_cache_by_product[key_product].append(item)
                 
                 if itemno:
-                    key_item = (productno, matver, itemno)
+                    key_item = (productno.lower(), matver.lower(), itemno.lower())
                     bom_cache_by_item[key_item].append(item)
         
         batch_size = 500
@@ -699,7 +699,7 @@ class _ProductionDataCache:
             return
         
         mat_wc_keys = {
-            (item.get('materialno'), item.get('matver'))
+            ((item.get('materialno') or '').lower(), (item.get('matver') or '').lower())
             for item in self._cache[CacheItem.SUPPLY_MO.value].values()
             if item.get('materialno') and item.get('matver')
         }
@@ -715,7 +715,7 @@ class _ProductionDataCache:
             materialno = item.get('materialno', '')
             matver = item.get('matver', '')
             if materialno and matver:
-                key = (materialno, matver)
+                key = (materialno.lower(), matver.lower())
                 cache[key].append(item)
         
         batch_size = 500
@@ -1165,10 +1165,10 @@ class _ProductionDataCache:
         bom_cache = self._cache[CacheItem.BOM.value]
         
         if itemno:
-            key = (productno, matver, itemno)
+            key = ((productno or '').lower(), (matver or '').lower(), (itemno or '').lower())
             data = bom_cache.get('by_item', {}).get(key, [])
         else:
-            key = (productno, matver)
+            key = ((productno or '').lower(), (matver or '').lower())
             data = bom_cache.get('by_product', {}).get(key, [])
         
         if data:
@@ -1200,10 +1200,11 @@ class _ProductionDataCache:
         results = {}
         
         for key in bom_keys:
-            if len(key) == 3:
-                data = bom_cache.get('by_item', {}).get(key, [])
-            elif len(key) == 2:
-                data = bom_cache.get('by_product', {}).get(key, [])
+            norm_key = tuple((v or '').lower() if isinstance(v, str) else v for v in key)
+            if len(norm_key) == 3:
+                data = bom_cache.get('by_item', {}).get(norm_key, [])
+            elif len(norm_key) == 2:
+                data = bom_cache.get('by_product', {}).get(norm_key, [])
             else:
                 data = []
             
@@ -1231,7 +1232,7 @@ class _ProductionDataCache:
             self._stats['total_misses'] += 1
             return []
         
-        key = (materialno, matver)
+        key = ((materialno or '').lower(), (matver or '').lower())
         data = self._cache[CacheItem.MAT_WC.value].get(key, [])
         if data:
             self._stats['total_hits'] += 1
@@ -1258,7 +1259,8 @@ class _ProductionDataCache:
         
         results = {}
         for key in mat_wc_keys:
-            data = self._cache[CacheItem.MAT_WC.value].get(key, [])
+            norm_key = tuple((v or '').lower() if isinstance(v, str) else v for v in key)
+            data = self._cache[CacheItem.MAT_WC.value].get(norm_key, [])
             results[key] = data
             if data:
                 self._stats['total_hits'] += 1
@@ -2124,8 +2126,9 @@ class ApsPayloadSponsor:
             dates = [(start_date + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(period)]
         filter_string = f"`DateStr` >= '{start_date}' AND `DateStr` <= '{end_date}'"
         if materialno:
-            sql_matno = ','.join([f"'{matno.strip()}'" for matno in materialno.split(',')])
-            filter_string += f" AND `MaterialNo` IN ({sql_matno})"
+            matno_list = [matno.strip() for matno in materialno.split(',') if matno.strip()]
+            if matno_list:
+                filter_string += " AND " + build_safe_condition("MaterialNo", "IN", matno_list)
         
         # 游标分页查询，避免 LIMIT/OFFSET 幻读问题
         page_size = 1000

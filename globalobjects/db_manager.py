@@ -2262,7 +2262,7 @@ class DbManager:
         # 创建现有记录的冲突字段值的集合，用于快速查找
         existing_keys = set()
         for record in existing_records:
-            key = tuple(getattr(record, field) for field in conflict_fields)
+            key = tuple((v.lower() if isinstance(v, str) else v) for v in (getattr(record, field) for field in conflict_fields))
             existing_keys.add(key)
         
         # 计算新增和更新数量
@@ -2270,7 +2270,7 @@ class DbManager:
         inserted_count = 0
         
         for data in filtered_data:
-            key = tuple(data.get(field) for field in conflict_fields)
+            key = tuple((v.lower() if isinstance(v, str) else v) for v in (data.get(field) for field in conflict_fields))
             if key in existing_keys:
                 updated_count += 1
             else:
