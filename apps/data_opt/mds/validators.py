@@ -219,11 +219,12 @@ async def bom_structure_check_hook(processor, table_name: str, context: dict) ->
         for detail in problematic_details:
             material_number = detail.get('material_number', '')
             unit_distribution = detail.get('unit_distribution', {})
+            material_number_lower = (material_number or '').lower()
             
             # 找到所有涉及该物料的记录
             for business_key, sid in staging_id_map.items():
                 productno, materialno, matver, itemno = business_key
-                if productno == material_number or materialno == material_number:
+                if (productno or '').lower() == material_number_lower or (materialno or '').lower() == material_number_lower:
                     if sid not in batch_errors:
                         batch_errors[sid] = []
                     
@@ -235,7 +236,7 @@ async def bom_structure_check_hook(processor, table_name: str, context: dict) ->
                         batch_errors[sid].append({
                             'staging_id': sid,
                             'error_type': 'unit_inconsistency',
-                            'error_field': 'productunit' if productno == material_number else 'materialunit',
+                            'error_field': 'productunit' if (productno or '').lower() == material_number_lower else 'materialunit',
                             'error_value': str(unit_distribution),
                             'error_message': unit_msg
                         })

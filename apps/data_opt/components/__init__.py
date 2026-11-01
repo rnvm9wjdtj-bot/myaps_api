@@ -392,7 +392,7 @@ class _ProductionDataCache:
         def process_item(item, cache):
             supply_no = item.get('supplyno', '')
             if supply_no:
-                cache[supply_no] = item
+                cache[supply_no.lower()] = item
         
         # 构建过滤条件
         filter_string = ''
@@ -421,7 +421,7 @@ class _ProductionDataCache:
         def process_item(item, cache):
             supply_no = item.get('supplyno', '')
             if supply_no:
-                cache[supply_no].append(item)
+                cache[supply_no.lower()].append(item)
         
         # 构建过滤条件
         filter_string = ''
@@ -450,7 +450,7 @@ class _ProductionDataCache:
         def process_item(item, cache):
             demand_no = item.get('demandno', '')
             if demand_no:
-                cache[demand_no].append(item)
+                cache[demand_no.lower()].append(item)
         
         # 构建过滤条件
         filter_string = ''
@@ -524,10 +524,10 @@ class _ProductionDataCache:
                     demand_nos.add(demand_no)
                     
                     # 构建双向索引
-                    if s_supply_no not in peg_cache[self.PEG_DEMAND_TO_SUPPLY_KEY][demand_no]:
-                        peg_cache[self.PEG_DEMAND_TO_SUPPLY_KEY][demand_no].append(s_supply_no)
-                    if demand_no not in peg_cache[self.PEG_SUPPLY_TO_DEMAND_KEY][s_supply_no]:
-                        peg_cache[self.PEG_SUPPLY_TO_DEMAND_KEY][s_supply_no].append(demand_no)
+                    if s_supply_no not in peg_cache[self.PEG_DEMAND_TO_SUPPLY_KEY][demand_no.lower()]:
+                        peg_cache[self.PEG_DEMAND_TO_SUPPLY_KEY][demand_no.lower()].append(s_supply_no)
+                    if demand_no not in peg_cache[self.PEG_SUPPLY_TO_DEMAND_KEY][s_supply_no.lower()]:
+                        peg_cache[self.PEG_SUPPLY_TO_DEMAND_KEY][s_supply_no.lower()].append(demand_no)
             
             # 更新缓存
             self._cache[CacheItem.PEG.value] = peg_cache
@@ -550,7 +550,7 @@ class _ProductionDataCache:
         def process_item(item, cache):
             material_no = item.get('materialno', '')
             if material_no:
-                cache[material_no] = item
+                cache[material_no.lower()] = item
         
         filter_string = ''
         if material_nos:
@@ -944,7 +944,7 @@ class _ProductionDataCache:
             self._stats['total_misses'] += 1
             return {}
         
-        data = self._cache[CacheItem.SUPPLY_MO.value].get(supply_no)
+        data = self._cache[CacheItem.SUPPLY_MO.value].get((supply_no or '').lower())
         if data:
             self._stats['total_hits'] += 1
             return data
@@ -963,7 +963,7 @@ class _ProductionDataCache:
         
         results = []
         for supply_no in supplynos:
-            data = self._cache[CacheItem.SUPPLY_MO.value].get(supply_no)
+            data = self._cache[CacheItem.SUPPLY_MO.value].get((supply_no or '').lower())
             if data:
                 results.append(data)
                 self._stats['total_hits'] += 1
@@ -979,7 +979,7 @@ class _ProductionDataCache:
             self._stats['total_misses'] += 1
             return []
         
-        data = self._cache[CacheItem.ORDER_WC.value].get(supply_no, [])
+        data = self._cache[CacheItem.ORDER_WC.value].get((supply_no or '').lower(), [])
         if data:
             self._stats['total_hits'] += 1
         else:
@@ -997,7 +997,7 @@ class _ProductionDataCache:
         
         results = []
         for supply_no in supplynos:
-            data_list = self._cache[CacheItem.ORDER_WC.value].get(supply_no, [])
+            data_list = self._cache[CacheItem.ORDER_WC.value].get((supply_no or '').lower(), [])
             results.extend(data_list)
             if data_list:
                 self._stats['total_hits'] += 1
@@ -1013,7 +1013,7 @@ class _ProductionDataCache:
             self._stats['total_misses'] += 1
             return []
         
-        data = self._cache[CacheItem.DEMAND.value].get(demand_no, [])
+        data = self._cache[CacheItem.DEMAND.value].get((demand_no or '').lower(), [])
         if data:
             self._stats['total_hits'] += 1
         else:
@@ -1031,7 +1031,7 @@ class _ProductionDataCache:
         
         results = []
         for demand_no in demandnos:
-            data_list = self._cache[CacheItem.DEMAND.value].get(demand_no, [])
+            data_list = self._cache[CacheItem.DEMAND.value].get((demand_no or '').lower(), [])
             results.extend(data_list)
             if data_list:
                 self._stats['total_hits'] += 1
@@ -1047,14 +1047,13 @@ class _ProductionDataCache:
             return []
         
         cache = self._cache[CacheItem.PEG.value][self.PEG_DEMAND_TO_SUPPLY_KEY]
-        data = cache.get(demand_no, [])
+        data = cache.get((demand_no or '').lower(), [])
         if data:
             self._stats['total_hits'] += 1
         else:
             self._stats['total_misses'] += 1
         return data
     
-
     def get_peg_by_supply(self, supply_no: str) -> List[str]:
         """根据 S_SupplyNo 获取对应的 DemandNo 列表，也可用于获取后续工单号"""
         if self._is_cache_expired(CacheItem.PEG.value):
@@ -1062,14 +1061,13 @@ class _ProductionDataCache:
             return []
         
         cache = self._cache[CacheItem.PEG.value][self.PEG_SUPPLY_TO_DEMAND_KEY]
-        data = cache.get(supply_no, [])
+        data = cache.get((supply_no or '').lower(), [])
         if data:
             self._stats['total_hits'] += 1
         else:
             self._stats['total_misses'] += 1
         return data
     
-
     def batch_get_peg_by_demand(self, demandnos: List[str]) -> Dict[str, List[str]]:
         """批量根据 DemandNo 获取 S_SupplyNo 列表"""
         if self._is_cache_expired(CacheItem.PEG.value):
@@ -1082,7 +1080,7 @@ class _ProductionDataCache:
         cache = self._cache[CacheItem.PEG.value][self.PEG_DEMAND_TO_SUPPLY_KEY]
         results = {}
         for demand_no in demandnos:
-            data = cache.get(demand_no, [])
+            data = cache.get((demand_no or '').lower(), [])
             results[demand_no] = data
             if data:
                 self._stats['total_hits'] += 1
@@ -1103,7 +1101,7 @@ class _ProductionDataCache:
         cache = self._cache[CacheItem.PEG.value][self.PEG_SUPPLY_TO_DEMAND_KEY]
         results = {}
         for supply_no in supplynos:
-            data = cache.get(supply_no, [])
+            data = cache.get((supply_no or '').lower(), [])
             results[supply_no] = data
             if data:
                 self._stats['total_hits'] += 1
@@ -1119,7 +1117,7 @@ class _ProductionDataCache:
             self._stats['total_misses'] += 1
             return []
         
-        data = self._cache[CacheItem.MATERIAL.value].get(material_no)
+        data = self._cache[CacheItem.MATERIAL.value].get((material_no or '').lower())
         if data:
             self._stats['total_hits'] += 1
             return [data]
@@ -1138,7 +1136,7 @@ class _ProductionDataCache:
         
         results = []
         for material_no in materialnos:
-            data = self._cache[CacheItem.MATERIAL.value].get(material_no)
+            data = self._cache[CacheItem.MATERIAL.value].get((material_no or '').lower())
             if data:
                 results.append(data)
                 self._stats['total_hits'] += 1
@@ -1804,8 +1802,8 @@ class ApsPayloadSponsor:
         cached_data = self._production_cache.batch_get_material(material_list)
         
         # 检查缓存命中情况
-        cached_keys = {item['materialno'] for item in cached_data}
-        missing_materials = [m for m in material_list if m not in cached_keys]
+        cached_keys = {(item['materialno'] or '').lower() for item in cached_data}
+        missing_materials = [m for m in material_list if m.lower() not in cached_keys]
         
         return material_list, cached_data, missing_materials
 
@@ -1838,7 +1836,7 @@ class ApsPayloadSponsor:
             for item in api_data:
                 material_no = item.get('materialno', '')
                 if material_no:
-                    self._production_cache._cache[CacheItem.MATERIAL.value][material_no] = item
+                    self._production_cache._cache[CacheItem.MATERIAL.value][material_no.lower()] = item
             
             # 合并结果
             cached_data.extend(api_data)
@@ -1902,7 +1900,7 @@ class ApsPayloadSponsor:
             for item in api_data:
                 material_no = item.get('materialno', '')
                 if material_no:
-                    self._production_cache._cache[CacheItem.MATERIAL.value][material_no] = item
+                    self._production_cache._cache[CacheItem.MATERIAL.value][material_no.lower()] = item
 
             # 合并结果
             cached_data.extend(api_data)

@@ -80,7 +80,13 @@ def compare_content(existing_record, new_data: Dict, field_map: Dict = None, upd
                 existing_value, new_value = normalize_types(existing_value, new_value)
             
             # 比较
-            if existing_value != new_value:
+            if isinstance(existing_value, str) and isinstance(new_value, str):
+                if existing_value.lower() != new_value.lower():
+                    diff_fields.append(field_name)
+                    diff_count += 1
+                else:
+                    same_count += 1
+            elif existing_value != new_value:
                 diff_fields.append(field_name)
                 diff_count += 1
             else:
@@ -373,7 +379,8 @@ class DuplicateChecker:
         for pk in self.pk_fields:
             value = data.get(pk)
             if value is not None and value != '':
-                values.append(str(value))
+                v = str(value)
+                values.append(v.lower() if isinstance(value, str) else v)
             else:
                 return None
         return "/".join(values) if values else None
@@ -384,7 +391,8 @@ class DuplicateChecker:
         for pk in self.pk_fields:
             value = getattr(record, pk, None)
             if value is not None and value != '':
-                values.append(str(value))
+                v = str(value)
+                values.append(v.lower() if isinstance(value, str) else v)
             else:
                 return None
         return "/".join(values) if values else None
