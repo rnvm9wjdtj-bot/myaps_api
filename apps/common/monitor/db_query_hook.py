@@ -134,12 +134,8 @@ class DBQueryCollector:
             if is_slow:
                 db_slow_query_total.labels(operation, connection).inc()
 
-            # 慢查询告警日志
-            if is_slow:
-                logger.warning_msg(
-                    f"慢SQL {operation}@{connection}",
-                    f"耗时 {duration:.3f}s, SQL: {record['sql'][:200]}",
-                )
+            # 慢查询不输出日志告警（避免淹没真正有价值的错误信息），
+            # 仅通过 Prometheus 指标 + 内存队列 + /database/query/slow API 暴露
             if not success:
                 logger.fail(
                     operation, f"@{connection}", f"{type(error).__name__}: {error}"
