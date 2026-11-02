@@ -2254,7 +2254,7 @@ function updateSqlSlowList(data) {
         <td>${escapeHtml(r.connection || '')}</td>
         <td>${escapeHtml(r.operation || '')}</td>
         <td style="color:#ef4444;font-weight:bold;">${((r.duration || 0) * 1000).toFixed(0)}ms</td>
-        <td style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.sql || '')}">${escapeHtml((r.sql || '').substring(0, 100))}</td>
+        <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.sql || '')}">${escapeHtml((r.sql || '').substring(0, 100))}</td>
     </tr>`).join('');
 }
 
@@ -2328,7 +2328,7 @@ function updateSqlRecentList(records) {
         <td>${escapeHtml(r.operation || '')}</td>
         <td style="color:${(r.isSlow || r.is_slow) ? '#f59e0b' : (r.success === false ? '#ef4444' : '')};font-weight:${(r.isSlow || r.is_slow) || r.success === false ? 'bold' : 'normal'};">${((r.duration || 0) * 1000).toFixed(0)}ms</td>
         <td>${formatRecentStatus(r).text}</td>
-        <td style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.sql || '')}">${escapeHtml(truncateSqlSummary(r.sql || '', 100))}</td>
+        <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.sql || '')}">${escapeHtml(truncateSqlSummary(r.sql || '', 100))}</td>
     </tr>`).join('');
 }
 

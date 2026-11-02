@@ -1696,6 +1696,22 @@ code[class*="language-"] {
     height: calc(100vh - 32px);
 }
 
+/* SQL 查询列表表格：固定前几列宽度，SQL 列撑满剩余空间 */
+#sql-slow-table, #sql-recent-table {
+    table-layout: fixed;
+    width: 100%;
+}
+#sql-slow-table th:nth-child(1), #sql-recent-table th:nth-child(1) { width: 160px; }
+#sql-slow-table th:nth-child(2), #sql-recent-table th:nth-child(2) { width: 120px; }
+#sql-slow-table th:nth-child(3), #sql-recent-table th:nth-child(3) { width: 80px; }
+#sql-slow-table th:nth-child(4), #sql-recent-table th:nth-child(4) { width: 80px; }
+#sql-recent-table th:nth-child(5) { width: 80px; }
+#sql-slow-table td, #sql-recent-table td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* 监控暂停模态框样式 */
 #inactivity-modal .modal-content {
     /* 利用绝对定位将其移到视口中心点 */
