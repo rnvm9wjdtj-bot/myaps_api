@@ -1631,6 +1631,76 @@ class ApsPayloadSponsor:
             raise e
 
 
+    _OVERLONG_PROCESS_HOUR_THRESHOLD = 838
+
+    @classmethod
+    async def _clamp_overlong_process_time(cls, db_name: str) -> list[dict]:
+        """
+        钳制 t_orderwc 中 DT_End-DT_Start 超过 MySQL TIME 上限(838:59:59)的记录。
+        v_orderwc.ProcessTime = timediff(DT_End, DT_Start) 在物化到临时表时会触发 1292，
+        故在调用 UpdateConfirmQtyToOrderWC 前临时把 DT_End 改成 DT_Start+838h。
+        返回被钳制记录的原始快照，供 _restore_overlong_process_time 恢复。
+
+        注意：
+        - 快照通过游标分页取全量，避免 db_query 默认 1000 条上限漏取导致原值丢失。
+        - 钳制 UPDATE 以快照内 OrderNo 列表限定，避免 SELECT/UPDATE 之间新出现的超长记录
+          被误钳却不在快照中、恢复时漏回写而丢失原值。
+        - 钳制失败抛异常，由上层 confirm_workreport 统一兜底，避免降级继续触发存储过程 1292。
+        """
+        threshold = cls._OVERLONG_PROCESS_HOUR_THRESHOLD
+        overlong_filter = (
+            f"`DT_Start` IS NOT NULL AND `DT_End` IS NOT NULL "
+            f"AND TIMESTAMPDIFF(HOUR, `DT_Start`, `DT_End`) > {threshold}"
+        )
+        dirty_rows: list[dict] = []
+        cursor_values = None
+        while True:
+            page = await db_query_cursor(
+                db_name=db_name,
+                model_or_tablename="t_orderwc",
+                select="OrderNo, SupplyNo, ItemNo, DT_Start, DT_End",
+                filter_string=overlong_filter,
+                order_fields=[("OrderNo", "ASC")],
+                page_size=1000,
+                cursor_values=cursor_values,
+            )
+            dirty_rows.extend(page.data)
+            if not page.meta.get("has_more"):
+                break
+            cursor_values = page.meta.get("cursor_values")
+        if not dirty_rows:
+            return []
+        keys = ", ".join(f"{r.get('SupplyNo')}/{r.get('ItemNo')}" for r in dirty_rows)
+        logger.warning(
+            f"发现 {len(dirty_rows)} 条超长工序时长记录（DT_End-DT_Start>{threshold}h），"
+            f"临时钳制 DT_End=DT_Start+{threshold}h：{keys}"
+        )
+        orderno_list = ", ".join(escape_sql_value(r.get("OrderNo")) for r in dirty_rows)
+        await db_exec_sql(
+            db_name=db_name,
+            sql=(
+                f"UPDATE `t_orderwc` SET `DT_End` = DATE_ADD(`DT_Start`, INTERVAL {threshold} HOUR) "
+                f"WHERE `OrderNo` IN ({orderno_list})"
+            ),
+            description="钳制超长工序时长",
+        )
+        return dirty_rows
+
+    @classmethod
+    async def _restore_overlong_process_time(cls, db_name: str, dirty_rows: list[dict]):
+        """
+        恢复被钳制的 DT_End 原值（按预检快照逐条回写）。
+        恢复失败抛异常，由上层 confirm_workreport 兜底，避免 DT_End 静默停留在钳制值。
+        """
+        for row in dirty_rows:
+            await db_exec_sql(
+                db_name=db_name,
+                sql="UPDATE `t_orderwc` SET `DT_End` = %s WHERE `OrderNo` = %s",
+                params=[row.get("DT_End"), row.get("OrderNo")],
+                description="恢复超长工序时长",
+            )
+        logger.success("恢复超长工序时长", f"共{len(dirty_rows)}条")
+
     @classmethod
     async def confirm_workreport(cls, db_name:str=MYAPS_MAIN_DB):
         """
@@ -1640,9 +1710,28 @@ class ApsPayloadSponsor:
         """
         try:
             logger.start("确认报工记录任务")
-            response_json: MultiDbResult = await call_dbprocdure(db_names=db_name, procedure_name="UpdateConfirmQtyToOrderWC")
+            dirty_rows = await cls._clamp_overlong_process_time(db_name)
+            proc_result: Optional[MultiDbResult] = None
+            proc_error: Optional[Exception] = None
+            try:
+                proc_result = await call_dbprocdure(db_names=db_name, procedure_name="UpdateConfirmQtyToOrderWC")
+            except Exception as e:
+                proc_error = e
+            finally:
+                if dirty_rows:
+                    try:
+                        await cls._restore_overlong_process_time(db_name, dirty_rows)
+                    except Exception as restore_err:
+                        proc_status = "成功" if proc_error is None else f"失败({proc_error})"
+                        raise Exception(
+                            f"恢复超长工序时长DT_End失败，t_orderwc.DT_End可能停留在钳制值；"
+                            f"存储过程UpdateConfirmQtyToOrderWC执行{proc_status}；"
+                            f"恢复异常: {restore_err}"
+                        ) from restore_err
+                if proc_error is not None:
+                    raise proc_error
             logger.success("确认报工记录任务")
-            return response_json
+            return proc_result
         except Exception as e:
             logger.fail("确认报工记录任务", "", f"{e}")
             raise e
