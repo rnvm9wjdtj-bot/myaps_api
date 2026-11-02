@@ -34,6 +34,8 @@ _SQL_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+_HEALTH_CHECK_PATTERN = re.compile(r'^\s*SELECT\s+1\s*;?\s*$', re.IGNORECASE)
+
 
 def classify_sql(sql: str) -> str:
     """识别 SQL 操作类型，返回小写类型名；无法识别返回 'other'"""
@@ -41,6 +43,11 @@ def classify_sql(sql: str) -> str:
         return 'other'
     m = _SQL_PATTERN.match(sql)
     return m.group(1).lower() if m else 'other'
+
+
+def _is_health_check(query: str) -> bool:
+    """判断是否为连接健康检查查询（如 SELECT 1），这类查询无业务价值应跳过记录"""
+    return bool(query) and bool(_HEALTH_CHECK_PATTERN.match(query))
 
 
 # ========== Prometheus 指标（独立 Registry，参考 binlog） ==========
@@ -149,6 +156,7 @@ class DBQueryCollector:
         operation: Optional[str] = None,
         connection: Optional[str] = None,
         slow_only: bool = False,
+        error_only: bool = False,
         limit: int = 100,
     ) -> List[Dict[str, Any]]:
         """从内存队列过滤最近 SQL，按时间倒序返回"""
@@ -159,6 +167,8 @@ class DBQueryCollector:
             if connection and r['connection'] != connection:
                 continue
             if slow_only and not r['is_slow']:
+                continue
+            if error_only and r.get('success', True):
                 continue
             results.append(r)
             if len(results) >= limit:
@@ -217,6 +227,8 @@ async def _patched_execute_query(self, query: str, values: Optional[list] = None
     """execute_query 的 patched 版本，记录 SQL 执行信息"""
     original = _resolve_original(type(self))
     if not DB_QUERY_MONITOR_ENABLED:
+        return await original(self, query, values)
+    if _is_health_check(query):
         return await original(self, query, values)
     if random.random() > DB_QUERY_SAMPLE_RATE:
         return await original(self, query, values)

@@ -1680,6 +1680,14 @@ code[class*="language-"] {
     z-index: 1001;
 }
 
+/* SQL 查询监测模态框：铺满屏幕，四周留 16px 空隙 */
+#sql-slow-modal .modal-content,
+#sql-recent-modal .modal-content {
+    width: calc(100vw - 32px);
+    max-width: none;
+    height: calc(100vh - 32px);
+}
+
 /* 监控暂停模态框样式 */
 #inactivity-modal .modal-content {
     /* 利用绝对定位将其移到视口中心点 */

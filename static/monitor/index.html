@@ -229,21 +229,18 @@
                     <div class="sql-monitor-summary" id="sql-monitor-summary" style="margin-top:16px;">
                         <h3 data-i18n="monitor.card.sql_monitor">SQL 监控</h3>
                         <div class="sql-metrics-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;">
-                            <div class="metric-item">
+                            <div class="metric-item" onclick="openRecentQueryModal()" style="cursor:pointer;" title="点击查看最近查询列表">
                                 <div class="metric-label" data-i18n="monitor.metric.total_queries">总查询数</div>
                                 <div class="metric-value" id="sql-total-count">0</div>
                             </div>
-                            <div class="metric-item">
+                            <div class="metric-item" onclick="openSlowQueryModal()" style="cursor:pointer;" title="点击查看慢查询列表">
                                 <div class="metric-label" data-i18n="monitor.metric.slow_queries">慢查询数</div>
                                 <div class="metric-value" id="sql-slow-count" style="color:#ef4444;">0</div>
+                                <div class="metric-note" id="sql-slow-threshold-note" style="font-size:12px;color:#888;"></div>
                             </div>
                             <div class="metric-item">
                                 <div class="metric-label" data-i18n="monitor.metric.query_errors">错误数</div>
                                 <div class="metric-value" id="sql-error-count" style="color:#ef4444;">0</div>
-                            </div>
-                            <div class="metric-item">
-                                <div class="metric-label" data-i18n="monitor.metric.slow_threshold">慢查询阈值</div>
-                                <div class="metric-value" id="sql-slow-threshold">1.0s</div>
                             </div>
                         </div>
                         <table class="db-detail-table" id="sql-operation-stats" style="margin-top:12px;">
@@ -262,21 +259,78 @@
                         </table>
                     </div>
 
-                    <!-- 慢查询 TOP 列表区 -->
-                    <div class="sql-slow-list" id="sql-slow-list" style="margin-top:16px;">
-                        <h3 data-i18n="monitor.card.slow_queries">慢查询列表</h3>
-                        <table class="db-detail-table" id="sql-slow-table">
-                            <thead>
-                                <tr>
-                                    <th data-i18n="monitor.col.timestamp">时间</th>
-                                    <th data-i18n="monitor.col.connection">连接</th>
-                                    <th data-i18n="monitor.col.operation">操作</th>
-                                    <th data-i18n="monitor.col.duration">耗时</th>
-                                    <th data-i18n="monitor.col.sql">SQL</th>
-                                </tr>
-                            </thead>
-                            <tbody id="sql-slow-tbody"></tbody>
-                        </table>
+                    <!-- 慢查询列表模态框 -->
+                    <div class="modal" id="sql-slow-modal" style="display:none;">
+                        <div class="modal-overlay" onclick="closeSlowQueryModal()"></div>
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h3 data-i18n="monitor.card.slow_queries">慢查询列表</h3>
+                                <button class="btn btn-small close-btn" onclick="closeSlowQueryModal()">×</button>
+                            </div>
+                            <div class="modal-body">
+                                <table class="db-detail-table" id="sql-slow-table">
+                                    <thead>
+                                        <tr>
+                                            <th data-i18n="monitor.col.timestamp">时间</th>
+                                            <th data-i18n="monitor.col.connection">连接</th>
+                                            <th data-i18n="monitor.col.operation">操作</th>
+                                            <th data-i18n="monitor.col.duration">耗时</th>
+                                            <th data-i18n="monitor.col.sql">SQL</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="sql-slow-tbody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 最近查询列表模态框 -->
+                    <div class="modal" id="sql-recent-modal" style="display:none;">
+                        <div class="modal-overlay" onclick="closeRecentQueryModal()"></div>
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h3 data-i18n="monitor.card.recent_queries">最近查询列表</h3>
+                                <button class="btn btn-small close-btn" onclick="closeRecentQueryModal()">×</button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="sql-recent-filters" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:12px;">
+                                    <label data-i18n="monitor.filter.operation">操作类型</label>
+                                    <select id="sql-recent-operation-filter" onchange="applyRecentFilters()">
+                                        <option value="" data-i18n="monitor.button.all_operations">全部操作</option>
+                                        <option value="select">select</option>
+                                        <option value="insert">insert</option>
+                                        <option value="update">update</option>
+                                        <option value="delete">delete</option>
+                                        <option value="call">call</option>
+                                        <option value="other">other</option>
+                                    </select>
+                                    <label data-i18n="monitor.filter.connection">连接</label>
+                                    <select id="sql-recent-connection-filter" onchange="applyRecentFilters()">
+                                        <option value="" data-i18n="monitor.button.all_connections">全部连接</option>
+                                    </select>
+                                    <label><input type="checkbox" id="sql-recent-slow-filter" onchange="applyRecentFilters()"> <span data-i18n="monitor.filter.slow_only">仅慢查询</span></label>
+                                    <label><input type="checkbox" id="sql-recent-error-filter" onchange="applyRecentFilters()"> <span data-i18n="monitor.filter.error_only">仅错误</span></label>
+                                    <button id="sql-recent-reset-filter" onclick="resetRecentFilters()" data-i18n="monitor.button.reset_filter">重置筛选</button>
+                                </div>
+                                <table class="db-detail-table" id="sql-recent-table">
+                                    <thead>
+                                        <tr>
+                                            <th data-i18n="monitor.col.timestamp">时间</th>
+                                            <th data-i18n="monitor.col.connection">连接</th>
+                                            <th data-i18n="monitor.col.operation">操作</th>
+                                            <th data-i18n="monitor.col.duration">耗时</th>
+                                            <th data-i18n="monitor.col.status">状态</th>
+                                            <th data-i18n="monitor.col.sql_summary">SQL</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="sql-recent-tbody"></tbody>
+                                </table>
+                                <div class="sql-recent-footer" style="text-align:center;margin-top:12px;">
+                                    <button id="sql-recent-load-more" onclick="loadMoreRecent()" data-i18n="monitor.button.load_more">加载更多</button>
+                                    <span id="sql-recent-no-more" style="display:none;" data-i18n="monitor.status.no_more_data">无更多数据</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -288,18 +342,14 @@
                     <span class="badge" id="redis-badge" data-i18n="monitor.status.checking">检查中</span>
                 </div>
                 <div class="card-body">
-                    <div class="redis-metrics-grid">
+                    <div class="redis-pool-metrics">
                         <div class="metric-item">
                             <div class="metric-label" data-i18n="monitor.metric.connection_status">连接状态</div>
                             <div class="metric-value" id="redis-status">--</div>
                         </div>
                         <div class="metric-item">
-                            <div class="metric-label" data-i18n="monitor.metric.host">主机</div>
-                            <div class="metric-value" id="redis-host">--</div>
-                        </div>
-                        <div class="metric-item">
-                            <div class="metric-label" data-i18n="monitor.metric.port">端口</div>
-                            <div class="metric-value" id="redis-port">--</div>
+                            <div class="metric-label" data-i18n="monitor.metric.address">地址</div>
+                            <div class="metric-value" id="redis-address">--</div>
                         </div>
                         <div class="metric-item">
                             <div class="metric-label" data-i18n="monitor.metric.database">数据库</div>

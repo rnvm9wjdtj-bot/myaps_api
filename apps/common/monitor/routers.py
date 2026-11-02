@@ -553,13 +553,14 @@ async def get_db_query_recent(
     operation: Optional[str] = None,
     connection: Optional[str] = None,
     slow: bool = False,
+    error: bool = False,
     limit: int = 100,
 ):
-    """获取最近 SQL 列表，可按 operation/connection/slow 过滤，limit 上限 1000"""
+    """获取最近 SQL 列表，可按 operation/connection/slow/error 过滤，limit 上限 1000"""
     safe_limit = max(1, min(1000, limit))
     try:
         return await monitor_service.db_collector.get_recent_queries(
-            operation, connection, slow, safe_limit
+            operation, connection, slow, error, safe_limit
         )
     except Exception as e:
         return [{"error": str(e)}]

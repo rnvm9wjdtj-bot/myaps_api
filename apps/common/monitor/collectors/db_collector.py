@@ -159,11 +159,12 @@ class DatabaseCollector:
         operation: Optional[str] = None,
         connection: Optional[str] = None,
         slow_only: bool = False,
+        error_only: bool = False,
         limit: int = 100,
     ) -> List[Dict[str, Any]]:
         """获取最近 SQL 列表（委托给 db_query_hook.collector 单例）"""
         from ..db_query_hook import collector
-        return collector.get_recent(operation, connection, slow_only, limit)
+        return collector.get_recent(operation, connection, slow_only, error_only, limit)
 
     async def get_slow_queries(self, limit: int = 20) -> List[Dict[str, Any]]:
         """获取慢查询列表（委托给 db_query_hook.collector 单例）。

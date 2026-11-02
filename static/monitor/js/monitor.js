@@ -1718,9 +1718,8 @@ function updateRedisDisplay(data) {
     }
     
     // 更新主机信息
-    document.getElementById('redis-host').textContent = data.host || '-';
-    document.getElementById('redis-port').textContent = data.port || '-';
-    document.getElementById('redis-db').textContent = data.db || '-';
+    document.getElementById('redis-address').textContent = `${data.host || '-'}:${data.port || '-'}`;
+    document.getElementById('redis-db').textContent = data.db ?? '-';
     
     // 更新连接池信息
     document.getElementById('redis-connections-used').textContent = data.connections_used || 0;
@@ -2157,10 +2156,29 @@ async function fetchDatabaseDetail() {
         const data = await response.json();
         updateDatabaseDetailDisplay(data);
         await fetchDbQueryStats();
-        await fetchDbSlowQueries();
+
     } catch (error) {
         console.error('获取数据库详情失败:', error);
     }
+}
+
+function openSlowQueryModal() {
+    const m = document.getElementById('sql-slow-modal');
+    if (m) m.style.display = 'flex';
+    fetchDbSlowQueries();
+}
+function closeSlowQueryModal() {
+    const m = document.getElementById('sql-slow-modal');
+    if (m) m.style.display = 'none';
+}
+function openRecentQueryModal() {
+    const m = document.getElementById('sql-recent-modal');
+    if (m) m.style.display = 'flex';
+    fetchDbRecentQueries();
+}
+function closeRecentQueryModal() {
+    const m = document.getElementById('sql-recent-modal');
+    if (m) m.style.display = 'none';
 }
 
 async function fetchDbQueryStats() {
@@ -2195,11 +2213,14 @@ function updateSqlMonitorSummary(data) {
     const totalEl = document.getElementById('sql-total-count');
     const slowEl = document.getElementById('sql-slow-count');
     const errEl = document.getElementById('sql-error-count');
-    const thrEl = document.getElementById('sql-slow-threshold');
+    const thrNoteEl = document.getElementById('sql-slow-threshold-note');
     if (totalEl) totalEl.textContent = totalCount;
     if (slowEl) slowEl.textContent = slowCount;
     if (errEl) errEl.textContent = errorCount;
-    if (thrEl) thrEl.textContent = (data.slow_threshold || 1.0) + 's';
+    if (thrNoteEl) {
+        const label = typeof i18n !== 'undefined' ? i18n.t('monitor.metric.slow_threshold') : '慢查询阈值';
+        thrNoteEl.textContent = `${label}: ${(data.slow_threshold || 1.0)}s`;
+    }
 
     const tbody = document.getElementById('sql-operation-tbody');
     if (!tbody) return;
@@ -2234,6 +2255,167 @@ function updateSqlSlowList(data) {
         <td style="color:#ef4444;font-weight:bold;">${((r.duration || 0) * 1000).toFixed(0)}ms</td>
         <td style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.sql || '')}">${escapeHtml((r.sql || '').substring(0, 100))}</td>
     </tr>`).join('');
+}
+
+// ========== 最近查询列表 ==========
+let _recentLimit = 50;
+let _expandedRecentRowIdx = null;
+let _recentFilterDebounceTimer = null;
+let _recentAllRecords = [];
+
+async function fetchDbRecentQueries() {
+    const tbody = document.getElementById('sql-recent-tbody');
+    try {
+        const params = new URLSearchParams();
+        params.set('limit', _recentLimit);
+        const op = document.getElementById('sql-recent-operation-filter')?.value || '';
+        const conn = document.getElementById('sql-recent-connection-filter')?.value || '';
+        const slow = document.getElementById('sql-recent-slow-filter')?.checked || false;
+        const error = document.getElementById('sql-recent-error-filter')?.checked || false;
+        if (op) params.set('operation', op);
+        if (conn) params.set('connection', conn);
+        if (slow) params.set('slow', 'true');
+        if (error) params.set('error', 'true');
+
+        const response = await fetch(`${API_BASE}/database/query/recent?${params.toString()}`);
+        const data = await response.json();
+        _recentAllRecords = Array.isArray(data) ? data : [];
+
+        if (!conn) populateRecentConnectionOptions(_recentAllRecords);
+        updateSqlRecentList(_recentAllRecords);
+
+        const loadMoreBtn = document.getElementById('sql-recent-load-more');
+        const noMoreSpan = document.getElementById('sql-recent-no-more');
+        const noMore = _recentAllRecords.length < _recentLimit || _recentLimit >= 1000;
+        if (loadMoreBtn) loadMoreBtn.disabled = noMore;
+        if (loadMoreBtn) loadMoreBtn.style.display = noMore ? 'none' : '';
+        if (noMoreSpan) noMoreSpan.style.display = noMore ? '' : 'none';
+    } catch (error) {
+        console.error('获取最近查询列表失败:', error);
+        if (tbody) {
+            const failed = typeof i18n !== 'undefined' ? i18n.t('monitor.status.load_failed') : '加载失败';
+            tbody.innerHTML = `<tr><td colspan="6" class="empty-state">${failed}</td></tr>`;
+        }
+    }
+}
+
+function populateRecentConnectionOptions(records) {
+    const select = document.getElementById('sql-recent-connection-filter');
+    if (!select) return;
+    const prevValue = select.value;
+    const connections = [...new Set(records.map(r => r.connection || '').filter(c => c))];
+    const allConn = typeof i18n !== 'undefined' ? i18n.t('monitor.button.all_connections') : '全部连接';
+    select.innerHTML = `<option value="">${escapeHtml(allConn)}</option>` +
+        connections.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+    if (connections.includes(prevValue)) select.value = prevValue;
+}
+
+function updateSqlRecentList(records) {
+    const tbody = document.getElementById('sql-recent-tbody');
+    if (!tbody) return;
+    _expandedRecentRowIdx = null;
+    if (!records || !records.length) {
+        const noData = typeof i18n !== 'undefined' ? i18n.t('monitor.status.no_data') : '暂无数据';
+        tbody.innerHTML = `<tr><td colspan="6" class="empty-state">${noData}</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = records.map((r, idx) => `<tr data-row-idx="${idx}" onclick="toggleRecentRowDetail(${idx})" style="cursor:pointer;">
+        <td>${new Date((r.timestamp || 0) * 1000).toLocaleString()}</td>
+        <td>${escapeHtml(r.connection || '')}</td>
+        <td>${escapeHtml(r.operation || '')}</td>
+        <td style="color:${(r.isSlow || r.is_slow) ? '#f59e0b' : (r.success === false ? '#ef4444' : '')};font-weight:${(r.isSlow || r.is_slow) || r.success === false ? 'bold' : 'normal'};">${((r.duration || 0) * 1000).toFixed(0)}ms</td>
+        <td>${formatRecentStatus(r).text}</td>
+        <td style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.sql || '')}">${escapeHtml(truncateSqlSummary(r.sql || '', 100))}</td>
+    </tr>`).join('');
+}
+
+function formatRecentStatus(record) {
+    const t = (k, fallback) => typeof i18n !== 'undefined' ? i18n.t(k) : fallback;
+    if (record.success === false) {
+        return { text: `<span style="color:#ef4444;font-weight:bold;">${t('monitor.status.error', '错误')}</span>` };
+    }
+    if (record.isSlow || record.is_slow) {
+        return { text: `<span style="color:#f59e0b;font-weight:bold;">${t('monitor.status.slow_query', '慢查询')}</span>` };
+    }
+    return { text: t('monitor.status.normal', '正常') };
+}
+
+function truncateSqlSummary(sql, maxLen = 100) {
+    if (!sql) return '';
+    return sql.length > maxLen ? sql.substring(0, maxLen) + '...' : sql;
+}
+
+function toggleRecentRowDetail(rowIdx) {
+    const existingDetail = document.querySelector('#sql-recent-tbody tr.recent-detail-row');
+    if (existingDetail) existingDetail.remove();
+
+    if (_expandedRecentRowIdx === rowIdx) {
+        _expandedRecentRowIdx = null;
+        return;
+    }
+
+    const row = document.querySelector(`#sql-recent-tbody tr[data-row-idx="${rowIdx}"]`);
+    if (!row) return;
+    const record = _recentAllRecords[rowIdx];
+    if (!record) return;
+    row.insertAdjacentHTML('afterend', renderRecentDetailRow(record));
+    _expandedRecentRowIdx = rowIdx;
+}
+
+function renderRecentDetailRow(record) {
+    const t = (k, fallback) => typeof i18n !== 'undefined' ? i18n.t(k) : fallback;
+    const none = t('monitor.label.placeholder_none', '-');
+    const noStack = t('monitor.label.no_stack', '无调用栈');
+    const paramsLabel = t('monitor.label.params', '参数');
+    const durationLabel = t('monitor.label.duration', '耗时');
+    const affectedLabel = t('monitor.label.affected', '影响行数');
+    const stackLabel = t('monitor.label.stack', '调用栈');
+    const sqlLabel = t('monitor.col.sql', 'SQL');
+
+    const params = record.params ? escapeHtml(String(record.params)) : none;
+    const affected = (record.affected !== null && record.affected !== undefined) ? record.affected : none;
+    const stack = record.stack ? `<pre style="white-space:pre-wrap;max-height:200px;overflow-y:auto;background:#f5f5f5;padding:8px;border-radius:4px;">${escapeHtml(record.stack)}</pre>` : noStack;
+
+    return `<tr class="recent-detail-row"><td colspan="6" style="background:#fafafa;padding:12px;">
+        <div style="margin-bottom:8px;"><strong>${sqlLabel}:</strong><pre style="white-space:pre-wrap;max-height:300px;overflow-y:auto;background:#f5f5f5;padding:8px;border-radius:4px;">${escapeHtml(record.sql || '')}</pre></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;">
+            <div><strong>${paramsLabel}:</strong> ${params}</div>
+            <div><strong>${durationLabel}:</strong> ${((record.duration || 0) * 1000).toFixed(0)}ms</div>
+            <div><strong>${affectedLabel}:</strong> ${affected}</div>
+        </div>
+        <div style="margin-top:8px;"><strong>${stackLabel}:</strong> ${stack}</div>
+    </td></tr>`;
+}
+
+function applyRecentFilters() {
+
+    debounceFetchRecent(400);
+}
+
+function debounceFetchRecent(delay = 400) {
+    if (_recentFilterDebounceTimer) clearTimeout(_recentFilterDebounceTimer);
+    _recentFilterDebounceTimer = setTimeout(() => {
+        fetchDbRecentQueries();
+        _recentFilterDebounceTimer = null;
+    }, delay);
+}
+
+function resetRecentFilters() {
+    const opFilter = document.getElementById('sql-recent-operation-filter');
+    const connFilter = document.getElementById('sql-recent-connection-filter');
+    const slowFilter = document.getElementById('sql-recent-slow-filter');
+    const errorFilter = document.getElementById('sql-recent-error-filter');
+    if (opFilter) opFilter.value = '';
+    if (connFilter) connFilter.value = '';
+    if (slowFilter) slowFilter.checked = false;
+    if (errorFilter) errorFilter.checked = false;
+    _recentLimit = 50;
+    fetchDbRecentQueries();
+}
+
+function loadMoreRecent() {
+    _recentLimit = Math.min(1000, _recentLimit + 50);
+    fetchDbRecentQueries();
 }
 
 function updateDatabaseDetailDisplay(data) {
