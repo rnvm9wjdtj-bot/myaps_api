@@ -24,6 +24,7 @@ from core.settings import (
     DB_QUERY_LOG_ALL,
     DB_QUERY_HISTORY_SIZE,
     DB_QUERY_SAMPLE_RATE,
+    MYAPS_DBSET_LIST,
 )
 
 logger = log_config.get_logger(__name__)
@@ -176,17 +177,21 @@ class DBQueryCollector:
         return results
 
     def get_stats(self) -> Dict[str, Any]:
-        """返回聚合统计"""
+        """返回聚合统计，按 MYAPS_DB_SET 顺序排序，同连接按 count 倒序"""
+        db_order = {name: i for i, name in enumerate(MYAPS_DBSET_LIST)}
+        fallback = len(db_order)
+        raw = [
+            {
+                'operation': k[0],
+                'connection': k[1],
+                **v,
+                'avg_time': v['total_time'] / v['count'] if v['count'] else 0.0,
+            }
+            for k, v in self._stats.items()
+        ]
+        raw.sort(key=lambda s: (db_order.get(s['connection'], fallback), -s.get('count', 0)))
         return {
-            'stats': [
-                {
-                    'operation': k[0],
-                    'connection': k[1],
-                    **v,
-                    'avg_time': v['total_time'] / v['count'] if v['count'] else 0.0,
-                }
-                for k, v in self._stats.items()
-            ],
+            'stats': raw,
             'history_size': len(self._history),
             'slow_threshold': DB_QUERY_SLOW_THRESHOLD,
         }

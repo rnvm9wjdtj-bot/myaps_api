@@ -2154,6 +2154,7 @@ async function fetchDatabaseDetail() {
     try {
         const response = await fetch(`${API_BASE}/database`);
         const data = await response.json();
+        _dbDetailData = data;
         updateDatabaseDetailDisplay(data);
         await fetchDbQueryStats();
 
@@ -2261,6 +2262,8 @@ function updateSqlSlowList(data) {
 let _recentLimit = 50;
 let _expandedRecentRowIdx = null;
 let _recentFilterDebounceTimer = null;
+let _deadlockDbMap = {};
+let _dbDetailData = null;
 let _recentAllRecords = [];
 
 async function fetchDbRecentQueries() {
@@ -2426,19 +2429,25 @@ function updateDatabaseDetailDisplay(data) {
     const mainDb = data.main_db;
     
     if (Object.keys(dbConnections).length === 0) {
-        tbodyEl.innerHTML = '<tr><td colspan="11" class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('monitor.status.no_db_connections') : '暂无数据库连接') + '</td></tr>';
+        tbodyEl.innerHTML = '<tr><td colspan="16" class="empty-state">' + (typeof i18n !== 'undefined' ? i18n.t('monitor.status.no_db_connections') : '暂无数据库连接') + '</td></tr>';
         checkAlertConditions();
         return;
     }
     
     const badge = document.getElementById('db-detail-badge');
     const summary = connections.summary || {};
+    const dlBadge = document.getElementById('deadlock-badge');
     if (summary.unhealthy === 0) {
         badge.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.metric.healthy') : '正常';
         badge.className = 'badge healthy';
     } else {
         badge.textContent = typeof i18n !== 'undefined' ? i18n.t('monitor.metric.unhealthy') : '异常';
         badge.className = 'badge error';
+        if (dlBadge) {
+            const naText = typeof i18n !== 'undefined' ? i18n.t('monitor.status.deadlock_n_a') : '-';
+            dlBadge.textContent = naText;
+            dlBadge.className = 'badge disabled';
+        }
     }
     
     // 更新数据库页签的红点角标
@@ -2484,11 +2493,33 @@ function updateDatabaseDetailDisplay(data) {
             </td>
             <td>${stats.total_processed || 0}</td>
             <td>${stats.batches_executed || 0}</td>
+            ${renderDeadlockColumns(name)}
         </tr>
         `;
     }).join('');
     
     checkAlertConditions();
+}
+
+function renderDeadlockColumns(dbName) {
+    const d = _deadlockDbMap[dbName];
+    const t = (k, fallback) => typeof i18n !== 'undefined' ? i18n.t(k) : fallback;
+    if (!d) {
+        return '<td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>';
+    }
+    const stateIcons = {
+        'closed': t('monitor.status.circuit_state_closed', '✅ 正常'),
+        'open': t('monitor.status.circuit_state_open', '🔴 熔断'),
+        'half_open': t('monitor.status.circuit_state_half_open', '🟡 半开'),
+        'unknown': t('monitor.status.circuit_state_unknown', '❓ 未知'),
+    };
+    const alertStyles = { 'normal': '', 'warning': 'background-color: #fff3cd;', 'critical': 'background-color: #f8d7da;' };
+    return `
+            <td>${stateIcons[d.state] || d.state || '-'}</td>
+            <td class="${d.deadlock_count > 0 ? 'error' : ''}">${d.deadlock_count || 0}</td>
+            <td>${d.half_open_success || 0}</td>
+            <td>${d.half_open_failure || 0}</td>
+            <td style="${alertStyles[d.alert_level] || ''}">${(d.alert_level || '-').toUpperCase()}</td>`;
 }
 
 // API 请求页面
@@ -5209,75 +5240,27 @@ async function fetchDeadlockStats() {
 
 // 更新死锁监控显示
 function updateDeadlockDisplay(data) {
-    // 更新汇总信息
-    const totalEl = getElement('deadlock-total');
-    if (totalEl) {
-        totalEl.textContent = data.summary.total_deadlocks || 0;
-        totalEl.className = 'summary-value ' + (data.summary.total_deadlocks > 0 ? 'error' : '');
-    }
-    
-    const circuitCountEl = getElement('deadlock-circuit-count');
-    if (circuitCountEl) {
-        circuitCountEl.textContent = data.summary.circuit_open_count || 0;
-        circuitCountEl.className = 'summary-value ' + (data.summary.circuit_open_count > 0 ? 'error' : '');
-    }
-    
-    const highRiskEl = getElement('deadlock-high-risk');
-    if (highRiskEl) {
-        const highRisk = data.summary.high_risk_databases || [];
-        highRiskEl.textContent = highRisk.length > 0 ? highRisk.join(', ') : '无';
-        highRiskEl.className = 'summary-value ' + (highRisk.length > 0 ? 'warning' : '');
-    }
-    
+
     // 更新状态徽章
     const badgeEl = getElement('deadlock-badge');
+    const _t = (k, fallback) => typeof i18n !== 'undefined' ? i18n.t(k) : fallback;
     if (badgeEl) {
         if (data.summary.circuit_open_count > 0) {
-            badgeEl.textContent = '🚨 熔断中';
+            badgeEl.textContent = _t('monitor.status.circuit_open_badge', '🚨 熔断中');
             badgeEl.className = 'badge error';
         } else if (data.summary.total_deadlocks > 0) {
-            badgeEl.textContent = '⚠️ 有死锁';
+            badgeEl.textContent = _t('monitor.status.has_deadlock_badge', '⚠️ 有死锁');
             badgeEl.className = 'badge warning';
         } else {
-            badgeEl.textContent = '✅ 正常';
-            badgeEl.className = 'badge success';
+            badgeEl.textContent = _t('monitor.status.circuit_normal_badge', '无死锁');
+            badgeEl.className = 'badge healthy';
         }
     }
     
-    // 更新死锁详情表格
-    const tbody = getElement('deadlock-tbody');
-    if (tbody && data.databases) {
-        tbody.innerHTML = '';
-        
-        for (const [dbName, dbStats] of Object.entries(data.databases)) {
-            const row = document.createElement('tr');
-            
-            // 状态图标
-            const stateIcons = {
-                'closed': '✅ 正常',
-                'open': '🔴 熔断',
-                'half_open': '🟡 半开',
-                'unknown': '❓ 未知'
-            };
-            
-            // 告警级别样式
-            const alertStyles = {
-                'normal': '',
-                'warning': 'background-color: #fff3cd;',
-                'critical': 'background-color: #f8d7da;'
-            };
-            
-            row.innerHTML = `
-                <td><strong>${dbName}</strong></td>
-                <td>${stateIcons[dbStats.state] || dbStats.state}</td>
-                <td class="${dbStats.deadlock_count > 0 ? 'error' : ''}">${dbStats.deadlock_count}</td>
-                <td>${dbStats.half_open_success || 0}</td>
-                <td>${dbStats.half_open_failure || 0}</td>
-                <td style="${alertStyles[dbStats.alert_level] || ''}">${dbStats.alert_level.toUpperCase()}</td>
-            `;
-            
-            tbody.appendChild(row);
-        }
+    // 缓存死锁数据供账套列表 join，并刷新已渲染的账套表格
+    _deadlockDbMap = data.databases || {};
+    if (_dbDetailData) {
+        updateDatabaseDetailDisplay(_dbDetailData);
     }
     
     // 更新告警列表

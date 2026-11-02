@@ -199,6 +199,7 @@
                 <div class="card-header">
                     <h2 data-i18n="monitor.card.mysql">MySQL</h2>
                     <span class="badge" id="db-detail-badge" data-i18n="monitor.status.checking">检查中</span>
+                    <span class="badge" id="deadlock-badge" data-i18n="monitor.status.checking">检查中</span>
                 </div>
                 <div class="card-body">
                     <!-- 数据库详细信息 -->
@@ -217,6 +218,11 @@
                                     <th data-i18n="monitor.col.usage">使用率</th>
                                     <th data-i18n="monitor.col.processed_records">处理记录</th>
                                     <th data-i18n="monitor.col.count">次数</th>
+                                    <th data-i18n="monitor.col.circuit_state">熔断器状态</th>
+                                    <th data-i18n="monitor.col.deadlock_count">死锁次数</th>
+                                    <th data-i18n="monitor.col.half_open_success">半开成功</th>
+                                    <th data-i18n="monitor.col.half_open_failure">半开失败</th>
+                                    <th data-i18n="monitor.col.alert_level">告警级别</th>
                                 </tr>
                             </thead>
                             <tbody id="db-detail-tbody">
@@ -332,6 +338,12 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- 死锁告警列表 -->
+                    <div class="deadlock-alerts" id="deadlock-alerts" style="display: none;">
+                        <h4 data-i18n="monitor.card.deadlock_alerts">🚨 告警信息</h4>
+                        <div id="deadlock-alert-list"></div>
+                    </div>
                 </div>
             </section>
 
@@ -392,56 +404,7 @@
                         <h3 data-i18n="monitor.chart.redis_buffer">Redis 缓冲大小变化</h3>
                         <canvas id="redis-buffer-chart"></canvas>
                     </div>
-                </div>
-            </section>
-            
-            <!-- 死锁监控卡片 -->
-            <section class="card full-width">
-                <div class="card-header">
-                    <h2>🔒 死锁监控</h2>
-                    <span class="badge" id="deadlock-badge">检查中</span>
-                </div>
-                <div class="card-body">
-                    <!-- 死锁汇总信息 -->
-                    <div class="deadlock-summary">
-                        <div class="summary-item">
-                            <span class="summary-label">总死锁次数</span>
-                            <span class="summary-value" id="deadlock-total">0</span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="summary-label">熔断数据库数</span>
-                            <span class="summary-value" id="deadlock-circuit-count">0</span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="summary-label">高风险数据库</span>
-                            <span class="summary-value" id="deadlock-high-risk">无</span>
-                        </div>
-                    </div>
-                    
-                    <!-- 死锁详情表格 -->
-                    <div class="db-detail-table-container">
-                        <table class="db-detail-table" id="deadlock-table">
-                            <thead>
-                                <tr>
-                                    <th>数据库</th>
-                                    <th>熔断器状态</th>
-                                    <th>死锁次数</th>
-                                    <th>半开成功</th>
-                                    <th>半开失败</th>
-                                    <th>告警级别</th>
-                                </tr>
-                            </thead>
-                            <tbody id="deadlock-tbody">
-                                <!-- 动态生成死锁监控信息 -->
-                            </tbody>
-                        </table>
-                    </div>
-                    
-                    <!-- 死锁告警列表 -->
-                    <div class="deadlock-alerts" id="deadlock-alerts" style="display: none;">
-                        <h4>🚨 告警信息</h4>
-                        <div id="deadlock-alert-list"></div>
-                    </div>
+
                 </div>
             </section>
         </main>
