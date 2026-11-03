@@ -978,5 +978,6 @@ async def validate_po_rules(cleaner, data, staging_id):
 
 ## 相关文档
 
+- [MDS 缓冲系统架构与设计文档](./ARCHITECTURE.md) — 模块设计理念、分层架构、状态机、API 清单与维护操作手册
 - [MDS 优化计划（已归档）](../../docs/archive/mds_optimization_plan.md)
 - [数据清洗模块设计文档](../../docs/data_cleaning_spec.md)
