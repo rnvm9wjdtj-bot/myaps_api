@@ -144,4 +144,5 @@ class StaticString(str, Enum):
     ASSERT_CONNECTION = "未获得连接对象，请先注册"
     MERGE_ENTRIY_KEY = "_entries_"
     AUTH_AT = "_auth_at_"
+    PLACEHOLDER_SENTINEL = "🈳❗"
 

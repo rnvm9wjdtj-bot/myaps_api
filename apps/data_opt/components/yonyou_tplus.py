@@ -45,7 +45,7 @@ def _coerce_total_count(value):
 以下模型适用于 清洗转换 从T+获取的数据用于向HAP发送
 需要客户在HAP中填写的字段统一设为 Optional[str/int/...] = Field(None)。
 在 @model_validator 中需要将：
-无法通过处理原生数据获取的联合索引字段设为  "🈳❗"  占位，以保证能构成完整的联合索引
+无法通过处理原生数据获取的联合索引字段设为  PLACEHOLDER_SENTINEL  占位，以保证能构成完整的联合索引
 """
 
 class MaterialPullModel(AcceptMaterial):
@@ -142,7 +142,7 @@ class RoutePullModel(AcceptMatWc):
     def model_valid(cls, values: Dict[str, Any]):
         cleaned_values = {}
         cleaned_values['materialno'] = values['父件编码']
-        cleaned_values['matver'] = "🈳❗"
+        cleaned_values['matver'] = globalconst.StaticString.PLACEHOLDER_SENTINEL.value
         cleaned_values['workcenter'] = values['工作中心']
         cleaned_values['itemno'] = values['工序编码']
         cleaned_values['sortno'] = clean_value(values['加工顺序'])
@@ -168,8 +168,8 @@ class BomPullModel(AcceptMatWcBom):
     def model_valid(cls, values: Dict[str, Any]):
         cleaned_values = {}
         cleaned_values['productno'] = values['父件编码']
-        cleaned_values['matver'] = "🈳❗"
-        cleaned_values['itemno'] = "🈳❗"
+        cleaned_values['matver'] = globalconst.StaticString.PLACEHOLDER_SENTINEL.value
+        cleaned_values['itemno'] = globalconst.StaticString.PLACEHOLDER_SENTINEL.value
         cleaned_values['materialno'] = values['子件编码']
         cleaned_values['qty'] = values['需用数量']
         # cleaned_values['offsethour'] = values['']

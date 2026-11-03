@@ -12,7 +12,7 @@ from apps.common.monitor.http_client_wrapper import HTTPMonitorWrapper
 
 
 
-from globalobjects import logger as log_config
+from globalobjects import logger as log_config, globalconst
 # 获取日志器
 logger = log_config.get_logger(__name__, level=LOG_LEVEL)
 
@@ -393,7 +393,7 @@ def convert_timeunit(value, from_unit: str, to_unit: str = 'day'):
     return value * unit_factors[from_unit] / unit_factors[to_unit]
 
 
-def clean_value(value: Union[str, int, float, None], if_none_return='🈳❗'):
+def clean_value(value: Union[str, int, float, None], if_none_return=globalconst.StaticString.PLACEHOLDER_SENTINEL.value):
     if value is None:
         return if_none_return
     value_type = type(value)

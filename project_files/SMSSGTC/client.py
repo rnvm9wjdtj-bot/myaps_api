@@ -213,8 +213,8 @@ class BomPullModel(AcceptMatWcBom):
     def model_valid(cls, values: Dict[str, Any]):
         cleaned_values = {}
         cleaned_values['productno'] = clean_value(values.get('productno', ''))
-        cleaned_values['matver'] = "🈳❗"
-        cleaned_values['itemno'] = "🈳❗"
+        cleaned_values['matver'] = clean_value(values.get('matver'))
+        cleaned_values['itemno'] = clean_value(values.get('itemno'))
         cleaned_values['materialno'] = clean_value(values.get('materialno', ''))
         cleaned_values['qty'] = values.get('qty', 0)
         cleaned_values['scrap'] = values.get('scrap', 0)
