@@ -8,9 +8,9 @@
 
 from ._base import (
     logger,
-    DataProcessor, globalconst,
+    DataProcessor, gc,
     ExternalBaseConnection, convert_timeunit, clean_value, #reset_default_values,
-    BaseModel as PydanticModel, model_validator, Field,
+    PydanticModel, model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
     AcceptMold, AcceptMatWcMold
 )

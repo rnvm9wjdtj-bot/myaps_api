@@ -16,7 +16,7 @@ from . import ApsPayloadSponsor, EventResultPoster
 from ._base import (
     PydanticModel, JSONManager, 
     logger,
-    DataProcessor, globalconst, PROJECT_JSON_FILE, pdv,
+    DataProcessor, gc, PROJECT_JSON_FILE, pdv,
     convert_timeunit, clean_value,
     model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,

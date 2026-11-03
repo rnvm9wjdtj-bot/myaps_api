@@ -55,7 +55,7 @@ from apps.io_api.schemas import (
 from apps.io_api.models import TSupply, TDemand
 from apps.io_api.utils.db_operation import db_query, db_update_by_index, db_query, db_delete, db_bupsert, call_dbprocdure
 from apps.io_api.utils.common import standard_response
-from globalobjects import globalconst, logger as log_config, PROJECT_JSON_FILE, ProjectDefaultValues as pdv, StaticString as ce
+from globalobjects import globalconst as gc, logger as log_config, PROJECT_JSON_FILE, ProjectDefaultValues as pdv, StaticString as ce
 from globalobjects.json_manager import JSONManager
 
 
@@ -1590,7 +1590,7 @@ class MoVoucher(BaseVoucher):
         from . import ApsPayloadSponsor, CacheItem
         
 
-        assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
+        assert cls._CONNECTION, gc.StaticString.ASSERT_CONNECTION.value
         # await cls._CONNECTION.auth()
 
         if production_cache_items is None:
@@ -1654,7 +1654,7 @@ class RsVoucher(BaseVoucher):
         from . import ApsPayloadSponsor, CacheItem
         
 
-        assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
+        assert cls._CONNECTION, gc.StaticString.ASSERT_CONNECTION.value
         # await cls._CONNECTION.auth()
 
         if production_cache_items is None:

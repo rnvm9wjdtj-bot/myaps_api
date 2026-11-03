@@ -22,7 +22,7 @@ from . import ApsPayloadSponsor, EventResultPoster
 from ._base import (
     PydanticModel, JSONManager,
     logger,
-    DataProcessor, globalconst, PROJECT_JSON_FILE, pdv,
+    DataProcessor, gc, PROJECT_JSON_FILE, pdv,
     convert_timeunit, clean_value,
     model_validator, Field,
     AcceptMaterial, AcceptSupply, AcceptMatWcBom, AcceptWorkcenter, AcceptMatWcMold,
@@ -102,7 +102,7 @@ class QingflowConnection(ExternalBaseConnection):
         self.config = config
         self.base_url = self.config.base_url
         self.cache_file = self.config.cache_file
-        self.credential_keys = ("ws_id", "ws_secret", "app_keys", "access_token", globalconst.StaticString.AUTH_AT.value)
+        self.credential_keys = ("ws_id", "ws_secret", "app_keys", "access_token", gc.StaticString.AUTH_AT.value)
         cache_qf = self.cache_file.get("qingflow", {})
         _defaults = {"app_keys": {}}
         for key in self.credential_keys:
@@ -167,7 +167,7 @@ class QingflowConnection(ExternalBaseConnection):
                         self._auth_at_ = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         self.access_token = result.get("accessToken", "")
                         self.cache_file.update("qingflow", {
-                            globalconst.StaticString.AUTH_AT.value: self._auth_at_,
+                            gc.StaticString.AUTH_AT.value: self._auth_at_,
                             "access_token": self.access_token,
                         })
                         self.cache_file.save()
@@ -536,7 +536,7 @@ class QingflowSource(BaseSource):
         Returns:
             ExternalDataSet 包装的数据
         """
-        assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
+        assert cls._CONNECTION, gc.StaticString.ASSERT_CONNECTION.value
         assert cls._PULL_PYDANTIC_MODEL, "未配置 pydantic_model 数据模型"
         app_key = app_key or cls._APP_KEY
         if not app_key:

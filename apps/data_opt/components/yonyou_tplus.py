@@ -14,7 +14,7 @@ from . import ApsPayloadSponsor, EventResultPoster
 from ._base import (
     PydanticModel, JSONManager, 
     logger,
-    DataProcessor, globalconst, PROJECT_JSON_FILE, pdv,
+    DataProcessor, gc, PROJECT_JSON_FILE, pdv,
     convert_timeunit, clean_value,
     model_validator, Field,
     AcceptMaterial, AcceptWorkcenter, AcceptMatVer, AcceptMatWc, AcceptMatWcBom,
@@ -71,16 +71,16 @@ class MaterialPullModel(AcceptMaterial):
         cleaned_values['leadday'] = pdv.MAT_LEADDAY_E if values['是否需要检验'] else pdv.MAT_LEADDAY_F
         cleaned_values['expday'] = convert_timeunit(values.get('保质期', 0), values['保质期单位'], 'day')
         cleaned_values['grday'] = 1 if values['是否需要检验'] else 0
-        cleaned_values['abc'] = globalconst.AbcEnum.A if values['是否自制'] == 'True' else globalconst.AbcEnum.B
+        cleaned_values['abc'] = gc.AbcEnum.A if values['是否自制'] == 'True' else gc.AbcEnum.B
         cleaned_values['unit'] = clean_value(values['主计量单位Name'])
         cleaned_values['price'] = values['平均成本']
         cleaned_values['groupno'] = str(values['存货分类Name'])
-        cleaned_values['type'] = globalconst.EfEnum.E if values['是否自制'] == 'True' else globalconst.EfEnum.F
-        cleaned_values['phantom'] = globalconst.YesNoEnum.YES if values['是否虚拟件'] else globalconst.YesNoEnum.NO
+        cleaned_values['type'] = gc.EfEnum.E if values['是否自制'] == 'True' else gc.EfEnum.F
+        cleaned_values['phantom'] = gc.YesNoEnum.YES if values['是否虚拟件'] else gc.YesNoEnum.NO
         # cleaned_values['phantommin'] = values['']
         # cleaned_values['firmday'] = values['']
         # cleaned_values['daygap'] = values['']
-        # cleaned_values['candelay'] = globalconst.YesNoEnum.YES
+        # cleaned_values['candelay'] = gc.YesNoEnum.YES
         # cleaned_values['lotsize'] = values['']
         # cleaned_values['lotfix'] = values['']
         # cleaned_values['lotmin'] = values['']
@@ -142,7 +142,7 @@ class RoutePullModel(AcceptMatWc):
     def model_valid(cls, values: Dict[str, Any]):
         cleaned_values = {}
         cleaned_values['materialno'] = values['父件编码']
-        cleaned_values['matver'] = globalconst.StaticString.PLACEHOLDER_SENTINEL.value
+        cleaned_values['matver'] = gc.StaticString.PLACEHOLDER_SENTINEL.value
         cleaned_values['workcenter'] = values['工作中心']
         cleaned_values['itemno'] = values['工序编码']
         cleaned_values['sortno'] = clean_value(values['加工顺序'])
@@ -168,8 +168,8 @@ class BomPullModel(AcceptMatWcBom):
     def model_valid(cls, values: Dict[str, Any]):
         cleaned_values = {}
         cleaned_values['productno'] = values['父件编码']
-        cleaned_values['matver'] = globalconst.StaticString.PLACEHOLDER_SENTINEL.value
-        cleaned_values['itemno'] = globalconst.StaticString.PLACEHOLDER_SENTINEL.value
+        cleaned_values['matver'] = gc.StaticString.PLACEHOLDER_SENTINEL.value
+        cleaned_values['itemno'] = gc.StaticString.PLACEHOLDER_SENTINEL.value
         cleaned_values['materialno'] = values['子件编码']
         cleaned_values['qty'] = values['需用数量']
         # cleaned_values['offsethour'] = values['']
@@ -317,10 +317,10 @@ class RsPushModel(PydanticModel):
         cleaned_values = {}
         cleaned_values['ExternalCode'] = values['demandno']
         cleaned_values['VoucherType'] = {"Code": "ST1039"}
-        cleaned_values['VoucherDate'] = values[globalconst.StaticString.MERGE_ENTRIY_KEY.value][0]['req_date']
+        cleaned_values['VoucherDate'] = values[gc.StaticString.MERGE_ENTRIY_KEY.value][0]['req_date']
         cleaned_values['BusiType'] = {"Code": "MR01"}
         cleaned_values['Department'] = {"Code": values.get('tplus_mo_data', {}).get('Department', {}).get('Code', "")}
-        aps_demand_qty = {_['materialno']: _ for _ in values[globalconst.StaticString.MERGE_ENTRIY_KEY.value]}
+        aps_demand_qty = {_['materialno']: _ for _ in values[gc.StaticString.MERGE_ENTRIY_KEY.value]}
         tplus_material_details = values["mo_material_details"]
         mr_details = []
 
@@ -459,7 +459,7 @@ class YonyouTplusConnection(ExternalBaseConnection):
         self.base_url = self.config.base_url
         self.cache_file = self.config.cache_file
         # 从缓存文件中读取认证信息，并将其设置为类实例属性
-        self.credential_keys = ("app_key", "app_secret", "access_token", "refresh_token", "org_id", globalconst.StaticString.AUTH_AT.value)
+        self.credential_keys = ("app_key", "app_secret", "access_token", "refresh_token", "org_id", gc.StaticString.AUTH_AT.value)
         cache_erp = self.cache_file.get("erp", {})
         for key in self.credential_keys:
             setattr(self, key, cache_erp.get(key, ""))
@@ -521,7 +521,7 @@ class YonyouTplusConnection(ExternalBaseConnection):
                         self.access_token = auth_result["access_token"]
                         self.refresh_token = auth_result["refresh_token"]
                         self.cache_file.update("erp", {
-                            globalconst.StaticString.AUTH_AT.value: self._auth_at_,
+                            gc.StaticString.AUTH_AT.value: self._auth_at_,
                             "access_token": self.access_token,
                             "refresh_token": self.refresh_token})
                         self.cache_file.save()
@@ -707,7 +707,7 @@ class TplusMaterial(BaseSource):
         """
         查询批量物料数据
         """
-        assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
+        assert cls._CONNECTION, gc.StaticString.ASSERT_CONNECTION.value
         await cls._CONNECTION.auth()
         endpoint = cls._QUERY_BATCH_ENDPOINT
         filter = {
@@ -737,7 +737,7 @@ class TplusWorkcenter(BaseSource):
         """
         查询批量工作中心数据
         """
-        assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
+        assert cls._CONNECTION, gc.StaticString.ASSERT_CONNECTION.value
         await cls._CONNECTION.auth()
         endpoint = cls._QUERY_BATCH_ENDPOINT
         data = await cls._CONNECTION._pull_simple_data(
@@ -766,7 +766,7 @@ class TplusStock(BaseSource):
             is_include_zero: 是否包含零数据
             exclude_warehouses: 需排除的仓库编码，支持 list（如 ["ck06","ck07"]）或逗号分隔字符串（如 "ck06,ck07"），按 WarehouseCode 过滤；None/空表示不过滤
         """
-        assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
+        assert cls._CONNECTION, gc.StaticString.ASSERT_CONNECTION.value
         await cls._CONNECTION.auth()
         endpoint = cls._QUERY_BATCH_ENDPOINT
         data = await cls._CONNECTION._pull_simple_data(
@@ -857,7 +857,7 @@ class TplusRouting(BaseSource):
                 logger.fail("BOM处理", bom_code, str(e))
                 return []
 
-        assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
+        assert cls._CONNECTION, gc.StaticString.ASSERT_CONNECTION.value
         assert cls._CONNECTION._BOM_CODES, "请先拉取BOM数据，获取BOM CODES"
         await cls._CONNECTION.auth()
 
@@ -928,7 +928,7 @@ class TplusBom(BaseSource):
                     processed_data.append({v: row.get(k) for k, v in field_map.items()})
             return processed_data
 
-        assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
+        assert cls._CONNECTION, gc.StaticString.ASSERT_CONNECTION.value
         await cls._CONNECTION.auth()
 
         params = {
@@ -1075,7 +1075,7 @@ class TplusMo(MoVoucher):
 
     @classmethod
     async def approve(cls, tplus_moid: str):
-        assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
+        assert cls._CONNECTION, gc.StaticString.ASSERT_CONNECTION.value
         await cls._CONNECTION.auth()
 
         endpoint = cls._APPROVE_ENDPOINT
@@ -1095,7 +1095,7 @@ class TplusMo(MoVoucher):
         index_value: str | int,
         filter_field: Literal['voucherID', 'voucherCode', 'externalCode']='voucherID'
     ):
-        assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
+        assert cls._CONNECTION, gc.StaticString.ASSERT_CONNECTION.value
         await cls._CONNECTION.auth()
 
         payload = {"param": {filter_field: index_value}}
@@ -1152,7 +1152,7 @@ class TplusRs(RsVoucher):
             processed_rsdata = DataProcessor.merge_common_fields(
                 data=rs_data_list,
                 merge_with=["demandno", "type", "status", "create_date"],
-                entries_key=globalconst.StaticString.MERGE_ENTRIY_KEY.value
+                entries_key=gc.StaticString.MERGE_ENTRIY_KEY.value
             )
 
             mo_id = tplus_mo_data['ID']
@@ -1218,7 +1218,7 @@ class TplusPr(BaseVoucher):
         if not event_data_list:
             return
             
-        assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
+        assert cls._CONNECTION, gc.StaticString.ASSERT_CONNECTION.value
         await cls._CONNECTION.auth()
         try:
             pydantic_model = pydantic_model or cls._PUSH_PYDANTIC_MODEL
@@ -1274,7 +1274,7 @@ class TplusPr(BaseVoucher):
 
     @classmethod
     async def approve(cls, tplus_pr_code: str):
-        assert cls._CONNECTION, globalconst.StaticString.ASSERT_CONNECTION.value
+        assert cls._CONNECTION, gc.StaticString.ASSERT_CONNECTION.value
 
         endpoint = cls._APPROVE_ENDPOINT
         payload = {"param": {'voucherCode': tplus_pr_code}}
