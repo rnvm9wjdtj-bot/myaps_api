@@ -2093,7 +2093,6 @@ class ApsPayloadSponsor:
                         pred_mo_query_result: DbResult = await db_query(
                             db_name=db_name,
                             model_or_tablename="v_supply_mo",
-                            select="`SupplyNo`",
                             filter_string=f"`SupplyNo` IN ({supplies_no})"
                         )
                         pred_mo = pred_mo_query_result.data
@@ -2112,7 +2111,6 @@ class ApsPayloadSponsor:
                     next_mo_query_result: DbResult = await db_query(
                         db_name=db_name,
                         model_or_tablename="v_supply_mo",
-                        select="`SupplyNo`",
                         filter_string=f"`SupplyNo` IN ({demands_no})"
                     )
                     next_mo = next_mo_query_result.data
