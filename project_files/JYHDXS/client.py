@@ -12,10 +12,11 @@ from fastapi import status
 from dateutil.relativedelta import relativedelta
 
 from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR
+from globalobjects import globalconst as gc
 from .._base import (
     get_scheduler_minute, async_rate_limit, CacheItem,
     ApsPayloadSponsor, EventResultPoster, CLIENT_LOGGER, standard_response, get_session, get_async_session, event_batch_handler,
-    cron_task, db_delete, db_bupsert, db_query, PROJECT_JSON_FILE, pdv, gc,
+    cron_task, db_delete, db_bupsert, db_query, PROJECT_JSON_FILE, pdv,
 )
 
 
