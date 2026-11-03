@@ -285,6 +285,10 @@ class AcceptWorkcenter(BaseModel):
             values["sortno"] = ""
         if values.get("bottleneck") in gc.NONE_AND_EMPTY:
             values["bottleneck"] = "N"
+        if values.get("finite") in gc.NONE_AND_EMPTY:
+            values["finite"] = gc.YesNoEnum.YES
+        if values.get("type") in gc.NONE_AND_EMPTY:
+            values["type"] = gc.YesNoEnum.YES
         if values.get("location") in gc.NONE_AND_EMPTY:
             values["location"] = pdv.MAT_LOCATION
         if values.get("worker") in gc.NONE_AND_EMPTY:
