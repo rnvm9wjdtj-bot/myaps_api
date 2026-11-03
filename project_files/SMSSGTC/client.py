@@ -89,8 +89,8 @@ smssgtc_qingflow_conn.register_source(QingflowMaterial)
 async def pull_all_material():
     """拉取所有物料数据"""
     materials = await QingflowMaterial.query_batch()
-    # return await materials.persist(to_dbtable='t_material', to_dbs=STAGING_DB_NAME, source_system='轻流')
-    return await materials.persist(to_dbtable='t_material')
+    return await materials.persist(to_dbtable='t_material', to_dbs=STAGING_DB_NAME, source_system='轻流')
+    # return await materials.persist(to_dbtable='t_material')
 
 
 
@@ -142,8 +142,8 @@ smssgtc_qingflow_conn.register_source(QingflowWorkcenter)
 async def pull_all_workcenter():
     """拉取所有工作中心数据"""
     workcenters = await QingflowWorkcenter.query_batch()
-    # return await workcenters.persist(to_dbtable='t_workcenter', to_dbs=STAGING_DB_NAME, source_system='轻流')
-    return await workcenters.persist(to_dbtable='t_workcenter')
+    return await workcenters.persist(to_dbtable='t_workcenter', to_dbs=STAGING_DB_NAME, source_system='轻流')
+    # return await workcenters.persist(to_dbtable='t_workcenter')
 
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(1))
@@ -166,7 +166,7 @@ class WorkcenterMoldPullModel(AcceptMatWcMold):
         cleaned_values = {}
         cleaned_values['materialno'] = clean_value(values.get('materialno', ''))
         cleaned_values['workcenter'] = clean_value(values.get('workcenter', ''))
-        cleaned_values['itemno'] = values.get('itemno', '🈳❗')
+        cleaned_values['itemno'] = clean_value(values.get('itemno'))
         cleaned_values['moldno'] = values.get('moldno', '')
         cleaned_values['basesec'] = values.get('basesec', 0)
         cleaned_values['fixsec'] = values.get('fixsec', 0)
@@ -188,8 +188,8 @@ smssgtc_qingflow_conn.register_source(QingflowWorkcenterMold)
 async def pull_all_wcmold():
     """拉取所有机台模具数据"""
     molds = await QingflowWorkcenterMold.query_batch()
-    # return await molds.persist(to_dbtable='t_mat_wc_mold', to_dbs=STAGING_DB_NAME, source_system='轻流')
-    return await molds.persist(to_dbtable='t_mat_wc_mold')
+    return await molds.persist(to_dbtable='t_mat_wc_mold', to_dbs=STAGING_DB_NAME, source_system='轻流')
+    # return await molds.persist(to_dbtable='t_mat_wc_mold')
 
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(2))
@@ -236,8 +236,8 @@ smssgtc_qingflow_conn.register_source(QingflowBom)
 async def pull_all_bom():
     """拉取所有BOM数据"""
     bom = await QingflowBom.query_batch()
-    # return await bom.persist(to_dbtable='t_mat_wc_bom', to_dbs=STAGING_DB_NAME, source_system='轻流')
-    return await bom.persist(to_dbtable='t_mat_wc_bom')
+    return await bom.persist(to_dbtable='t_mat_wc_bom', to_dbs=STAGING_DB_NAME, source_system='轻流')
+    # return await bom.persist(to_dbtable='t_mat_wc_bom')
 
 
 @cron_task(hour=SCHEDULER_HOUR, minute=get_scheduler_minute(4))
