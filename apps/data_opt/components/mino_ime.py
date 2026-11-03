@@ -487,7 +487,7 @@ class MoPushModel(PydanticModel):   # 对应 productionOrderVo
         cleaned_values['operationTaskOrderVoList'] = otovl
         if orderwc_list:
             for orderwc in orderwc_list:
-                bom_list = values['_production_cache'].get_bom(
+                bom_list = values[gc.StaticString.PRODUCTION_CACHE_KEY.value].get_bom(
                     productno=orderwc['materialno'],
                     matver=orderwc['matver'],
                     itemno=orderwc['itemno']
@@ -547,7 +547,7 @@ class ImeMo(MoVoucher):
             supplymo_detaildata = supplymo_detaildata[0]
             if isinstance(supplymo_detaildata, Exception):
                 raise supplymo_detaildata
-            supplymo_detaildata['_production_cache'] = _aps._production_cache
+            supplymo_detaildata[gc.StaticString.PRODUCTION_CACHE_KEY.value] = _aps._production_cache
 
             pydantic_model = pydantic_model or cls._PUSH_PYDANTIC_MODEL
 

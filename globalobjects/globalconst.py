@@ -145,4 +145,6 @@ class StaticString(str, Enum):
     MERGE_ENTRIY_KEY = "_entries_"
     AUTH_AT = "_auth_at_"
     PLACEHOLDER_SENTINEL = "🈳❗"
+    DEMAND_LIST_KEY = "demand_list"
+    PRODUCTION_CACHE_KEY = "_production_cache"
 

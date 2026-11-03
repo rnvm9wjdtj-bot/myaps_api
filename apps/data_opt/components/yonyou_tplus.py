@@ -234,7 +234,7 @@ class MoPushModel(PydanticModel):
     def model_valid(cls, values: Dict[str, Any]):
         cleaned_values = {}
 
-        demand_list = values.get('demand_list')
+        demand_list = values.get(gc.StaticString.DEMAND_LIST_KEY.value)
         orderwc_list = values.get('orderwc')
         mopd = []
         
@@ -1020,8 +1020,8 @@ class TplusMo(MoVoucher):
                 raise demand_list
             if isinstance(supplymo_detaildata, Exception):
                 raise supplymo_detaildata
-            supplymo_detaildata['demand_list'] = demand_list
-            supplymo_detaildata['_production_cache'] = _aps._production_cache
+            supplymo_detaildata[gc.StaticString.DEMAND_LIST_KEY.value] = demand_list
+            supplymo_detaildata[gc.StaticString.PRODUCTION_CACHE_KEY.value] = _aps._production_cache
 
             if data_preprocessor:
                 result = data_preprocessor(supplymo_detaildata, _aps)

@@ -18,7 +18,7 @@ from .._base import (
     get_scheduler_minute, cron_task, CLIENT_LOGGER, CLIENT_SESSION, PROJECT_JSON_FILE,
     ApsPayloadSponsor, EventResultPoster, get_session, CacheItem,
     RemindType, async_rate_limit, event_batch_handler,
-    TSupply, async_service_operation, batch_service_operation
+    TSupply, async_service_operation, batch_service_operation, gc
 )
 
 
@@ -79,7 +79,7 @@ back_flush_warehouse = 'ck06'
 
 async def mo_data_preprocessor(data: dict, _aps: ApsPayloadSponsor) -> dict:
     """MO 推送数据预处理器：补充物料信息映射和后续工单关系"""
-    demand_list = data.get('demand_list', [])
+    demand_list = data.get(gc.StaticString.DEMAND_LIST_KEY.value, [])
     if demand_list:
         materialnos = [d['materialno'] for d in demand_list if d.get('materialno')]
         if materialnos:

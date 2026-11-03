@@ -2138,7 +2138,7 @@ class ApsPayloadSponsor:
                     result.data[0]['next_mo'] = await get_next_mo(supplyno)
                 if with_demand:
                     demand_res: DbResult = await db_query(db_name=db_name, model_or_tablename="t_demand", filter_string=f"`DemandNo`='{supplyno}'")
-                    result.data[0]['demand'] = demand_res.data if (demand_res.success and demand_res.data) else []
+                    result.data[0][ce.DEMAND_LIST_KEY.value] = demand_res.data if (demand_res.success and demand_res.data) else []
 
             return result
         except Exception as e:
