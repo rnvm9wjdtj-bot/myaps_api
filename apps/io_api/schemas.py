@@ -194,11 +194,11 @@ class AcceptMaterial(BaseModel):
         if "subday" not in pdv.no_fill_defaults and values.get("subday") in gc.NONE_AND_EMPTY:
             values["subday"] = pdv.MAT_SUBDAY
         if "leadday" not in pdv.no_fill_defaults and values.get("leadday") in gc.NONE_AND_EMPTY:
-            values["leadday"] = pdv.MAT_LEADDAY_E if values.get("type") == "E" else pdv.MAT_LEADDAY_F
+            values["leadday"] = pdv.MAT_LEADDAY_E if values.get("type") == gc.EfEnum.E else pdv.MAT_LEADDAY_F
         if "grday" not in pdv.no_fill_defaults and values.get("grday") in gc.NONE_AND_EMPTY:
-            values["grday"] = pdv.MAT_GRDAY_E if values.get("type") == "E" else pdv.MAT_GRDAY_F
+            values["grday"] = pdv.MAT_GRDAY_E if values.get("type") == gc.EfEnum.E else pdv.MAT_GRDAY_F
         if "abc" not in pdv.no_fill_defaults and values.get("abc") in gc.NONE_AND_EMPTY:
-            values["abc"] = "A" if values.get("type") == "E" else "B"
+            values["abc"] = gc.AbcEnum.A if values.get("type") == gc.EfEnum.E else gc.AbcEnum.B
         if "plant" not in pdv.no_fill_defaults and values.get("plant") in gc.NONE_AND_EMPTY:
             values["plant"] = pdv.MAT_PLANT
         if "planner" not in pdv.no_fill_defaults and values.get("planner") in gc.NONE_AND_EMPTY:
@@ -284,7 +284,7 @@ class AcceptWorkcenter(BaseModel):
         if values.get("sortno") is None:
             values["sortno"] = ""
         if values.get("bottleneck") in gc.NONE_AND_EMPTY:
-            values["bottleneck"] = "N"
+            values["bottleneck"] = gc.YesNoEnum.NO
         if values.get("finite") in gc.NONE_AND_EMPTY:
             values["finite"] = gc.YesNoEnum.YES
         if values.get("type") in gc.NONE_AND_EMPTY:
@@ -398,7 +398,7 @@ class AcceptMatWc(BaseModel):
             else:
                 values["fixsec"] = None
         if values.get("sf") in gc.NONE_AND_EMPTY:
-            values["sf"] = "F"
+            values["sf"] = gc.SfEnum.F
         return values
 
     @model_validator(mode="after")
@@ -460,7 +460,7 @@ class AcceptMatVer(BaseModel):
         if values.get("priority") in gc.NONE_AND_EMPTY:
             values["priority"] = pdv.MATVER_PRIORITY
         if values.get("active") in gc.NONE_AND_EMPTY:
-            values["active"] = "Y"
+            values["active"] = gc.YesNoEnum.YES
         return values
 
     @model_validator(mode="after")
@@ -664,7 +664,7 @@ class AcceptSupply(BaseModel):
     type: gc.SupplyTypeEnum = Field(..., example="MO", description='类型 PL-生产计划 MO-生产工单 ST-库存 PO-采购订单')
     category: gc.ProductCategoryEnum = Field(gc.ProductCategoryEnum.MTS, example="MTS", description='分类(MTO/MTS)')
     priority: int = Field(0, description='优先级', example=0)
-    status: gc.OrderStatusEnum = Field("CRE", example="CRE", description='状态 NEW-新增 CRE-已创建 SCH-计划 REL-已发布 PNF-已报工, CMP-已完成')
+    status: gc.OrderStatusEnum = Field(gc.OrderStatusEnum.CRE, example="CRE", description='状态 NEW-新增 CRE-已创建 SCH-计划 REL-已发布 PNF-已报工, CMP-已完成')
     avail_qty: float = Field(..., ge=0, description='可用数量', example=100.0)
     create_date: Optional[str] = Field(None, description='创建日期', example="2023-01-01")
     avail_date: str = Field(..., description='可用日期 / 开工日期', example="2023-01-01")
@@ -826,7 +826,7 @@ class AcceptDemand(BaseModel):
     category: gc.ProductCategoryEnum = Field(gc.ProductCategoryEnum.MTS, example="MTS", description='分类(MTO/MTS)')
     priority: int = Field(..., description='优先级', example=1)
     workcenter: Optional[str] = Field(None, max_length=32, description='工作中心', example="WC001")
-    status: gc.OrderStatusEnum = Field("CRE", example="CRE", description=f'状态 {list(gc.OrderStatusEnum.__members__.keys())}')
+    status: gc.OrderStatusEnum = Field(gc.OrderStatusEnum.CRE, example="CRE", description=f'状态 {list(gc.OrderStatusEnum.__members__.keys())}')
     create_date: Optional[str] = Field(None, description='创建日期', example="2023-01-01")
     req_qty: float = Field(..., description='需求数量（须为负数，若输入正数则自动转为负数）', example=-100.0)
     req_date: datetime = Field(..., description='需求日期', example="2023-01-07T10:00:00")

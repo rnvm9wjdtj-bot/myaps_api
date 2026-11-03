@@ -9,10 +9,12 @@ from typing import Optional, Dict, Any, ClassVar
 
 from core.settings import MYAPS_DB_SET, MYAPS_MAIN_DB, THIS_BASE_URL, SCHEDULER_HOUR, STAGING_DB_NAME
 
+from globalobjects import globalconst as gc
+
 from apps.data_opt.components.qingflow import (
     QingflowConnection, QingflowSource, model_validator,
     AcceptMaterial, AcceptMatWcBom, AcceptWorkcenter, AcceptMatWcMold,
-    Field, clean_value, globalconst
+    Field, clean_value
 )
 
 from .._base import (
@@ -62,14 +64,14 @@ class MaterialPullModel(AcceptMaterial):
         cleaned_values['leadday'] = pdv.MAT_LEADDAY_F
         cleaned_values['expday'] = 0
         cleaned_values['grday'] = 0
-        cleaned_values['abc'] = globalconst.AbcEnum.B
+        cleaned_values['abc'] = gc.AbcEnum.B
         cleaned_values['candelay'] = values.get('candelay') or pdv.MAT_CANDELAY
         cleaned_values['lotsize'] = values.get('lotsize') or pdv.MAT_LOTSIZE
         cleaned_values['unit'] = values.get('unit', '')
         cleaned_values['price'] = values.get('price', 0)
         cleaned_values['groupno'] = values.get('groupno', '')
-        cleaned_values['type'] = globalconst.EfEnum.F
-        cleaned_values['phantom'] = globalconst.YesNoEnum.NO
+        cleaned_values['type'] = gc.EfEnum.F
+        cleaned_values['phantom'] = gc.YesNoEnum.NO
         values = cleaned_values
         return values
 
@@ -518,7 +520,7 @@ async def batch_handle_mo_release_success(event_data_list: list[dict], _erp: Eve
                     db_names=MYAPS_MAIN_DB,
                     model_or_tablename="t_supply",
                     index_dict={"SupplyNo": item["supplyno"]},
-                    new_values_dict={"Status": "CRE", "Memo": f"{now} 推送失败，请重试"},
+                    new_values_dict={"Status": gc.OrderStatusEnum.CRE, "Memo": f"{now} 推送失败，请重试"},
                     not_found_behavior="skip",
                 )
             )

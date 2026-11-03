@@ -27,7 +27,7 @@ if pf_dir is not None:
     from .event_aggregator import get_global_handler_aggregator
     EVENT_AGGREGATOR = get_global_handler_aggregator()
 
-    from .globalconst import StaticString
+    from .globalconst import StaticString, YesNoEnum, LotSizeEnum
 else:
     PROJECT_JSON_FILE = None
     EVENT_AGGREGATOR = None
@@ -71,12 +71,12 @@ if pf_dir is not None:
         MAT_EXPDAY = defaults.get("expday", 365)
         MAT_GRDAY_E = defaults.get("grday_e", 0)
         MAT_GRDAY_F = defaults.get("grday_f", 0)
-        MAT_PHANTOM = defaults.get("phantom", "N")
+        MAT_PHANTOM = defaults.get("phantom", YesNoEnum.NO)
         MAT_PHANTOMMIN = defaults.get("phantommin", 0)
         MAT_FIRMDAY = defaults.get("firmday", 0)
         MAT_DAYGAP = defaults.get("daygap", 1)
-        MAT_CANDELAY = defaults.get("candelay", "Y")
-        MAT_LOTSIZE = defaults.get("lotsize", "EX")
+        MAT_CANDELAY = defaults.get("candelay", YesNoEnum.YES)
+        MAT_LOTSIZE = defaults.get("lotsize", LotSizeEnum.EX)
         MAT_LOTFIX = defaults.get("lotfix", 0)
         MAT_LOTMIN = defaults.get("lotmin", 0)
         MAT_LOTMAX = defaults.get("lotmax", 0)

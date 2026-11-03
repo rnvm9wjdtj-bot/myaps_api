@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Literal, Optional, NamedTuple, Type, Callable
 
 from globalobjects import logger as log_config
+from globalobjects import globalconst as gc
 
 from . import ApsPayloadSponsor, EventResultPoster
 from ._base import (
@@ -48,12 +49,12 @@ class K3Material(AcceptMaterial):
         cleaned_values['unit'] = clean_value(values['生产单位'])
         cleaned_values['price'] = values['参考成本']
         # cleaned_values['groupno'] = values['']
-        cleaned_values['type'] = 'E' if values['物料属性'].replace(' ','') == '自制' else 'F'
-        cleaned_values['phantom'] = 'Y' if values['物料属性'].replace(' ','') == '虚拟' else 'N'
+        cleaned_values['type'] = gc.EfEnum.E if values['物料属性'].replace(' ','') == '自制' else gc.EfEnum.F
+        cleaned_values['phantom'] = gc.YesNoEnum.YES if values['物料属性'].replace(' ','') == '虚拟' else gc.YesNoEnum.NO
         # cleaned_values['phantommin'] = values['']
         # cleaned_values['firmday'] = values['']
         cleaned_values['daygap'] = values['批量拆分间隔天数']
-        cleaned_values['candelay'] = 'Y' if values.get('允许延后天数', 0) > 0 else 'N'
+        cleaned_values['candelay'] = gc.YesNoEnum.YES if values.get('允许延后天数', 0) > 0 else gc.YesNoEnum.NO
         # cleaned_values['lotsize'] = values['']
         cleaned_values['lotfix'] = values['固定/经济批量']
         cleaned_values['lotmin'] = values['最小批量']

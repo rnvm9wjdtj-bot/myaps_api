@@ -517,7 +517,7 @@ async def post_material(
             "lotfrom": pdv.MATVER_LOTFROM,
             "lotto": pdv.MATVER_LOTTO,
             "priority": pdv.MATVER_PRIORITY,
-        } for _ in data if _.type == "E"]
+        } for _ in data if _.type == gc.EfEnum.E]
         
         async def run_matver_task():
             try:
