@@ -150,4 +150,5 @@ class StaticString(str, Enum):
     NEXT_MO_KEY = "next_mo"
     SOURCE_SO_KEY = "source_so"
     PRED_MO_KEY = "pred_mo"
+    MO_OP_KEY = "orderwc"
 

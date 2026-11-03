@@ -2016,7 +2016,7 @@ class ApsPayloadSponsor:
         mo_data = self._production_cache.get_supply_mo(supplyno)
 
         if mo_data:
-            mo_data['orderwc'] = self._production_cache.get_orderwc(supplyno)
+            mo_data[ce.MO_OP_KEY.value] = self._production_cache.get_orderwc(supplyno)
             
             if get_source_so:
                 vendorno = mo_data.get('vendorno', '')
@@ -2140,7 +2140,7 @@ class ApsPayloadSponsor:
             )
             
             if result.success and result.meta.get('affected_rows') == 1:  # 筛选到唯一的工单，则补充工序信息（v_orderwc）
-                result.data[0]['orderwc'] = await get_orderwc(mono=supplyno)
+                result.data[0][ce.MO_OP_KEY.value] = await get_orderwc(mono=supplyno)
 
                 vendorno = result.data[0].get('vendorno')
                 if source_so and result.data[0].get('category') == 'MTO' and vendorno:

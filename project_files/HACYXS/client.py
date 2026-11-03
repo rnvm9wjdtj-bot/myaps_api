@@ -115,7 +115,7 @@ class CustomMoPushModel(MoPushModel):
 
         workcenter = None
         try:
-            first_orderwc = values['orderwc'][0]
+            first_orderwc = values[gc.StaticString.MO_OP_KEY.value][0]
             workcenter = first_orderwc.get("workcenter", "")
         except:
             workcenter = ""

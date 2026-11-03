@@ -482,7 +482,7 @@ class MoPushModel(PydanticModel):   # 对应 productionOrderVo
         cleaned_values['createDateTime'] = values['create_date']
         cleaned_values['priority'] = '1'
 
-        orderwc_list = values.get('orderwc')
+        orderwc_list = values.get(gc.StaticString.MO_OP_KEY.value)
         otovl = []
         cleaned_values['operationTaskOrderVoList'] = otovl
         if orderwc_list:

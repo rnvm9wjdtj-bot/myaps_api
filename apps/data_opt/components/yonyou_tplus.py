@@ -235,7 +235,7 @@ class MoPushModel(PydanticModel):
         cleaned_values = {}
 
         demand_list = values.get(gc.StaticString.DEMAND_LIST_KEY.value)
-        orderwc_list = values.get('orderwc')
+        orderwc_list = values.get(gc.StaticString.MO_OP_KEY.value)
         mopd = []
         
         if orderwc_list:
