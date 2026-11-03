@@ -280,7 +280,7 @@ class MoPushModel(PydanticModel):
             'ManufactureOrderProcessDetails': mopd
         }
 
-        so = values.get('so')
+        so = values.get(gc.StaticString.SOURCE_SO_KEY.value)
         if so:
             partnerno = so.get('partnerno')
             # if partnerno:
@@ -1014,7 +1014,7 @@ class TplusMo(MoVoucher):
             endpoint = cls._CREATE_ENDPOINT
             supplyno = event_data.get('supplyno')
             task1 = _aps.get_demand_datalist(demandno=supplyno)
-            task2 = _aps.get_supplymo_detaildata(supplyno=supplyno, get_next_mo=True, get_origin_so=True)
+            task2 = _aps.get_supplymo_detaildata(supplyno=supplyno, get_next_mo=True, get_source_so=True)
             demand_list, supplymo_detaildata = await asyncio.gather(task1, task2, return_exceptions=True)
             if isinstance(demand_list, Exception):
                 raise demand_list

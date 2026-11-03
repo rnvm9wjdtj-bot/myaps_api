@@ -1998,12 +1998,17 @@ class ApsPayloadSponsor:
 
 
     @async_aps_error_handler("获取工单计划单详情")
-    async def get_supplymo_detaildata(self, supplyno: str, get_prev_mo:bool=False, get_next_mo:bool=False, get_origin_so:bool=False):
+    async def get_supplymo_detaildata(
+        self, supplyno: str,
+        get_pred_mo:bool=False,
+        get_next_mo:bool=False,
+        get_source_so:bool=False
+    ):
         """
         异步获取工单的工序详情、及MTO销售订单信息
         Args:
             supplyno: 工单号
-            get_prev_mo: 是否查询前 前置 工单
+            get_pred_mo: 是否查询前 前置 工单
             get_next_mo: 是否查询后 后置 工单
         Returns:
             工单计划单详情
@@ -2013,25 +2018,25 @@ class ApsPayloadSponsor:
         if mo_data:
             mo_data['orderwc'] = self._production_cache.get_orderwc(supplyno)
             
-            if get_origin_so:
+            if get_source_so:
                 vendorno = mo_data.get('vendorno', '')
                 if vendorno:
-                    mo_data['so'] = await self.get_demand_datalist(vendorno)
+                    mo_data[ce.SOURCE_SO_KEY.value] = await self.get_demand_datalist(vendorno)
 
-            if get_prev_mo:
+            if get_pred_mo:
                 related_demand = self._production_cache.get_demand(demand_no=supplyno)
                 demands_data = [_ for _ in related_demand if _.get('type') != 'SO']
                 if demands_data:
                     demands_no = [_['demandno'] for _ in demands_data]
                     peg_query_result = self._production_cache.batch_get_peg_by_demand(demands_no)
-                    mo_data['prev_mo'] = self._production_cache.batch_get_supply_mo(peg_query_result)
+                    mo_data[ce.PRED_MO_KEY.value] = self._production_cache.batch_get_supply_mo(peg_query_result)
                 
             if get_next_mo:
                 demands_no = self._production_cache.get_peg_by_supply(supplyno)
-                mo_data['next_mo'] = self._production_cache.batch_get_supply_mo(demands_no)
+                mo_data[ce.NEXT_MO_KEY.value] = self._production_cache.batch_get_supply_mo(demands_no)
             return mo_data
         else:
-            supply_response_json = await self.get_mo_by_supplyno(supplyno, db_name=MYAPS_MAIN_DB, prev_mo=get_prev_mo, next_mo=get_next_mo, origin_so=get_origin_so)
+            supply_response_json = await self.get_mo_by_supplyno(supplyno, db_name=MYAPS_MAIN_DB, pred_mo=get_pred_mo, next_mo=get_next_mo, source_so=get_source_so)
             if supply_response_json.success != 0 and supply_response_json.data:
                 mo_data = supply_response_json.data[0]
                 self._production_cache._cache[CacheItem.SUPPLY_MO.value][supplyno] = mo_data
@@ -2042,15 +2047,23 @@ class ApsPayloadSponsor:
 
 
     @classmethod
-    async def get_mo_by_supplyno(cls, supplyno: str, db_name: str=MYAPS_MAIN_DB, prev_mo:bool=False, next_mo:bool=False, origin_so:bool=False, with_demand:bool=False) -> DbResult:
+    async def get_mo_by_supplyno(
+        cls,
+        supplyno: str,
+        db_name: str=MYAPS_MAIN_DB,
+        pred_mo:bool=False,
+        next_mo:bool=False,
+        source_so:bool=False,
+        with_demand:bool=False
+    ) -> DbResult:
         """
         异步获取工单的工序详情、及MTO销售订单信息
         Args:
             supplyno: 工单号
             db_name: 数据库名称
-            prev_mo: 是否查询前 前置 工单
+            pred_mo: 是否查询前 前置 工单
             next_mo: 是否查询后 后置 工单
-            origin_so: 是否查询原始销售订单信息
+            source_so: 是否查询原始销售订单信息
             with_demand: 是否查询关联需求 t_demand（DemandNo=SupplyNo）
         Returns:
             工单计划单详情
@@ -2060,13 +2073,13 @@ class ApsPayloadSponsor:
                 orderwc: DbResult = await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=f"`SupplyNo`='{mono}'")
                 return orderwc.data
 
-            async def get_prev_mo(mono: str):
+            async def get_pred_mo(mono: str):
                 """
                 通过工单 supplyno 号查询前 前置 工单
                 """
                 for_demands: DbResult = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{mono}' AND `Type` IN ('DM', 'RS', 'PR', 'PO')")
                 demands_data = for_demands.data
-                prev_mo = []
+                pred_mo = []
                 if demands_data:
                     demands_no = ','.join([f"'{i['demandno']}'" for i in demands_data])
                     peg_query_result: DbResult = await db_exec_sql(
@@ -2076,15 +2089,15 @@ class ApsPayloadSponsor:
                     )
                     if peg_query_result.data:
                         supplies_no = ','.join([f"'{i['s_supplyno']}'" for i in peg_query_result.data])
-                        # prev_mo_query_result = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplynos=supplies_no), description=f"查询{supplies_no}的前置工单信息")
-                        prev_mo_query_result: DbResult = await db_query(
+                        # pred_mo_query_result = await db_exec_sql(db_name=db_name, sql=V_SUPPLY_MO_SQL.format(supplynos=supplies_no), description=f"查询{supplies_no}的前置工单信息")
+                        pred_mo_query_result: DbResult = await db_query(
                             db_name=db_name,
                             model_or_tablename="v_supply_mo",
                             select="`SupplyNo`",
                             filter_string=f"`SupplyNo` IN ({supplies_no})"
                         )
-                        prev_mo = prev_mo_query_result.data
-                return prev_mo
+                        pred_mo = pred_mo_query_result.data
+                return pred_mo
 
             async def get_next_mo(mono: str): 
                 """
@@ -2130,12 +2143,12 @@ class ApsPayloadSponsor:
                 result.data[0]['orderwc'] = await get_orderwc(mono=supplyno)
 
                 vendorno = result.data[0].get('vendorno')
-                if origin_so and result.data[0].get('category') == 'MTO' and vendorno:
-                    result.data[0]['so'] = await get_so(vendorno)
-                if prev_mo:
-                    result.data[0]['prev_mo'] = await get_prev_mo(supplyno)
+                if source_so and result.data[0].get('category') == 'MTO' and vendorno:
+                    result.data[0][ce.SOURCE_SO_KEY.value] = await get_so(vendorno)
+                if pred_mo:
+                    result.data[0][ce.PRED_MO_KEY.value] = await get_pred_mo(supplyno)
                 if next_mo:
-                    result.data[0]['next_mo'] = await get_next_mo(supplyno)
+                    result.data[0][ce.NEXT_MO_KEY.value] = await get_next_mo(supplyno)
                 if with_demand:
                     demand_res: DbResult = await db_query(db_name=db_name, model_or_tablename="t_demand", filter_string=f"`DemandNo`='{supplyno}'")
                     result.data[0][ce.DEMAND_LIST_KEY.value] = demand_res.data if (demand_res.success and demand_res.data) else []

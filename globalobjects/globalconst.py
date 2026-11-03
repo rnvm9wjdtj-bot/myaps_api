@@ -141,10 +141,13 @@ class SfEnum(str, Enum):
 class StaticString(str, Enum):
     RELEASE_SUCCESS = "✅"
     RELEASE_FAILED = "🚫"
-    ASSERT_CONNECTION = "未获得连接对象，请先注册"
-    MERGE_ENTRIY_KEY = "_entries_"
-    AUTH_AT = "_auth_at_"
     PLACEHOLDER_SENTINEL = "🈳❗"
-    DEMAND_LIST_KEY = "demand_list"
+    ASSERT_CONNECTION = "未获得连接对象，请先注册"
+    AUTH_AT = "_auth_at_"
+    MERGE_ENTRIY_KEY = "_entries_"
     PRODUCTION_CACHE_KEY = "_production_cache"
+    DEMAND_LIST_KEY = "demand_list"
+    NEXT_MO_KEY = "next_mo"
+    SOURCE_SO_KEY = "source_so"
+    PRED_MO_KEY = "pred_mo"
 

@@ -542,7 +542,7 @@ class ImeMo(MoVoucher):
         try:
             endpoint = cls._CREATE_ENDPOINT
             supplyno = event_data.get('supplyno')
-            task2 = _aps.get_supplymo_detaildata(supplyno=supplyno, get_next_mo=False, get_origin_so=False)
+            task2 = _aps.get_supplymo_detaildata(supplyno=supplyno, get_next_mo=False, get_source_so=False)
             supplymo_detaildata = await asyncio.gather(task2, return_exceptions=True)
             supplymo_detaildata = supplymo_detaildata[0]
             if isinstance(supplymo_detaildata, Exception):

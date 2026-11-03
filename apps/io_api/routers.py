@@ -1422,9 +1422,9 @@ async def get_mo_by_supplyno(
     request: Request,
     db_name: str = Query(MYAPS_MAIN_DB, examples={"default": {"value": MYAPS_MAIN_DB}}, description="账套"),
     supplyno: str = Path(..., description="工单（供应）号"),
-    prev_mo: bool = Query(False, description="是否查询前 前置 工单"),
+    pred_mo: bool = Query(False, description="是否查询前 前置 工单"),
     next_mo: bool = Query(False, description="是否查询后 后续 工单"),
-    origin_so: bool = Query(False, description="是否查询销售订单SO"),
+    source_so: bool = Query(False, description="是否查询销售订单SO"),
     with_demand: bool = Query(False, description="是否查询关联需求 t_demand"),
     # x_api_key: str = Header(None, description="API密钥")
 ):
@@ -1433,7 +1433,14 @@ async def get_mo_by_supplyno(
     if bad:
         return bad
     try:
-        result = await ApsPayloadSponsor.get_mo_by_supplyno(db_name=db_name, supplyno=supplyno, prev_mo=prev_mo, next_mo=next_mo, origin_so=origin_so, with_demand=with_demand)
+        result = await ApsPayloadSponsor.get_mo_by_supplyno(
+            db_name=db_name,
+            supplyno=supplyno,
+            pred_mo=pred_mo,
+            next_mo=next_mo,
+            source_so=source_so,
+            with_demand=with_demand
+        )
         return api_response(
             status_code=200,
             success=result.success,

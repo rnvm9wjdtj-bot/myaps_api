@@ -115,7 +115,7 @@ class CustomMoPushModel(MoPushModel):
 
         workcenter = None
         try:
-            first_orderwc = values["orderwc"][0]
+            first_orderwc = values['orderwc'][0]
             workcenter = first_orderwc.get("workcenter", "")
         except:
             workcenter = ""
@@ -141,7 +141,7 @@ class CustomMoPushModel(MoPushModel):
                 mo_details['DynamicPropertyKeys'].append('priuserdefnvc1')
                 mo_details['DynamicPropertyValues'].append(next_mo_sn)
 
-        so = values.get('so')
+        so = values.get(gc.StaticString.SOURCE_SO_KEY.value)
         if so:
             mo_details['DynamicPropertyKeys'].append('priuserdefnvc4')
             mo_details['DynamicPropertyValues'].append(so.get('demandno', ""))
