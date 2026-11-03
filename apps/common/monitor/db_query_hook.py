@@ -79,8 +79,7 @@ class DBQueryCollector:
 
     def __init__(self):
         self._history: deque = deque(maxlen=DB_QUERY_HISTORY_SIZE)
-        # (operation, connection) -> {count, total_time, max_time, slow, errors}
-        self._stats: Dict[tuple, Dict[str, Any]] = {}
+
 
     async def record(
         self,
@@ -118,19 +117,6 @@ class DBQueryCollector:
                 # 非全记录模式只留慢查询+错误
                 self._history.append(record)
 
-            # 聚合统计
-            key = (operation, connection)
-            s = self._stats.setdefault(
-                key, {'count': 0, 'total_time': 0.0, 'max_time': 0.0, 'slow': 0, 'errors': 0}
-            )
-            s['count'] += 1
-            s['total_time'] += duration
-            if duration > s['max_time']:
-                s['max_time'] = duration
-            if is_slow:
-                s['slow'] += 1
-            if not success:
-                s['errors'] += 1
 
             # Prometheus
             db_query_total.labels(operation, connection).inc()
@@ -177,9 +163,27 @@ class DBQueryCollector:
         return results
 
     def get_stats(self) -> Dict[str, Any]:
-        """返回聚合统计，按 MYAPS_DB_SET 顺序排序，同连接按 count 倒序"""
+        """返回聚合统计，按 MYAPS_DB_SET 顺序排序，同连接按 count 倒序。
+
+        从内存队列 _history 重新聚合（而非 _stats 累计字典），
+        保证统计卡片数字与列表条数一致，避免 deque 淘汰旧记录导致偏差。
+        """
         db_order = {name: i for i, name in enumerate(MYAPS_DBSET_LIST)}
         fallback = len(db_order)
+        stats_map: Dict[tuple, Dict[str, Any]] = {}
+        for r in self._history:
+            key = (r['operation'], r['connection'])
+            s = stats_map.setdefault(
+                key, {'count': 0, 'total_time': 0.0, 'max_time': 0.0, 'slow': 0, 'errors': 0}
+            )
+            s['count'] += 1
+            s['total_time'] += r['duration']
+            if r['duration'] > s['max_time']:
+                s['max_time'] = r['duration']
+            if r['is_slow']:
+                s['slow'] += 1
+            if not r.get('success', True):
+                s['errors'] += 1
         raw = [
             {
                 'operation': k[0],
@@ -187,7 +191,7 @@ class DBQueryCollector:
                 **v,
                 'avg_time': v['total_time'] / v['count'] if v['count'] else 0.0,
             }
-            for k, v in self._stats.items()
+            for k, v in stats_map.items()
         ]
         raw.sort(key=lambda s: (db_order.get(s['connection'], fallback), -s.get('count', 0)))
         return {
