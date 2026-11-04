@@ -3514,7 +3514,6 @@ class ProcedureQueue:
 
 # 高风险存储过程列表（需要串行化执行的存储过程）
 HIGH_RISK_PROCEDURES = {
-    'SupplyConvertMOByE2A',
     'UpdateConfirmQtyToOrderWC',
 }
 

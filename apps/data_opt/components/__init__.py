@@ -2926,6 +2926,154 @@ async def _acquire_release_presem(key: str, timeout: float = _RELEASE_PRESEM_QUE
         sem.release()
 
 
+# 应用层实现原存储过程 ApiEx__MoReleaseSuccess 的等价逻辑。
+# 背景：目标数据库归属于外部系统，存储过程由本项目维护存在职责混乱；
+# 改为应用层承载 4 表更新逻辑，纳入版本控制，新账套零 DDL 成本。
+# 与原 SP 语义保持一致：单事务内完成 t_supply/t_OrderWC/t_demand/t_peg 更新，
+# v_firstpush 取数据库 NOW() 保证 4 表时间完全一致，t_supply 未更新任何行则回滚 + 抛异常。
+async def _apiex_mo_release_success_in_db(
+    db_name: str,
+    native_plno: str,
+    mono: str,
+    to_status: Optional[str],
+    apiex_id: str,
+    apiex_entryid: str,
+    memo: str,
+) -> Dict[str, Any]:
+    """
+    MO 下达成功回写：在单事务内完成 4 表更新（应用层等价存储过程 ApiEx__MoReleaseSuccess）。
+
+    Args:
+        db_name: 账套名
+        native_plno: 原生供应单号（PL 或 MO）
+        mono: MO 单号，空值则沿用 native_plno
+        to_status: 目标状态，None 则保持原 Status
+        apiex_id: 外部系统返回的 MO ID
+        apiex_entryid: 外部系统返回的 MO 详情 ID
+        memo: 备注（已截断 255）
+
+    Returns:
+        各表更新行数统计与结果文案
+
+    Raises:
+        ValueError: native_plno 为空
+        Exception: 供应单不存在或类型不支持；t_supply 未更新任何行
+
+    与新版 SP ApiEx__MoReleaseSuccess 的有意偏离：
+        1. ApiEx_FirstPush 用 IFNULL(`ApiEx_FirstPush`, @v_firstpush) 而非直接赋值——
+           保留首次推送时间，重复下达不覆盖；LastPush 才更新。
+           原因：SP 注释声明"已经是 MO 也允许重复下达"，但 SQL 里 ApiEx_FirstPush = v_firstpush
+           仍会覆盖首次值，与"首次推送"语义矛盾。此处修正为只首次设置（NULL→非NULL），
+           重复下达保持原值。对 binlog MO_RELEASE_SUCCESS 事件触发无影响（falsy guard
+           `if not firstpush_before and firstpush_now` 在两种方式下行为一致）。
+        2. ApiEx_ID/ApiEx_EntryID 用 IFNULL(NULLIF(%s, ''), col) 而非 IFNULL(%s, col)——
+           调用方传 str(_id or "")，空串经 NULLIF 转 NULL 后才保留原列值，
+           避免 "" 误覆盖已有外部 ID。
+        3. 首次推送时间用 MySQL 会话变量 @v_firstpush := NOW() 在事务内一次求值，
+           4 个 UPDATE 引用 @v_firstpush，不再经 Python naive datetime 往返。
+           原因：连接池中各连接 session.time_zone 不一致（+00:00 vs SYSTEM/+08），
+           若 SELECT NOW() 在事务外、UPDATE 在事务内，两者可能用不同 session.tz 的连接，
+           timestamp 列按 UPDATE 时 session.tz 解释传入 datetime，导致存储 UTC 偏移 8h。
+           会话变量由 MySQL 服务器端在同一连接内求值并解释，消除跨连接时区偏差。
+    """
+    from tortoise import Tortoise
+    from tortoise.transactions import in_transaction
+
+    if not native_plno:
+        raise ValueError("参数 native_plno 不能为空")
+
+    mono = mono or native_plno
+
+    conn = Tortoise.get_connection(db_name)
+
+    # 1. 校验供应单存在且类型支持（PL / MO）
+    _, count_rows = await conn.execute_query(
+        "SELECT COUNT(1) AS c FROM t_supply WHERE `SupplyNo` = %s AND `Type` IN ('PL', 'MO')",
+        [native_plno],
+    )
+    if not count_rows or int(count_rows[0].get("c", 0)) == 0:
+        raise Exception(
+            f"供应单号 {native_plno} 不存在或类型不支持（仅支持 PL / MO）"
+        )
+
+    # 2. 主事务：4 表更新，in_transaction 退出时异常自动回滚
+    #    首次推送时间用 MySQL 会话变量 @v_firstpush := NOW() 在事务内一次求值，
+    #    4 个 UPDATE 引用 @v_firstpush，保证 4 表时间完全一致。
+    #    会话变量由 MySQL 服务器端求值，避免 Python naive datetime 往返导致
+    #    跨连接 session.time_zone 不一致时的 8h 偏差。
+    async with in_transaction(db_name):
+        await conn.execute_query("SET @v_firstpush := NOW()")
+
+        # 2.1 t_supply：PL → MO（已经是 MO 也允许重复下达）
+        supply_sql = (
+            "UPDATE t_supply SET "
+            "`Type` = 'MO', "
+            "`Memo` = %s, "
+            "`Status` = IFNULL(%s, `Status`), "
+            "`ApiEx_SN` = %s, "
+            "`ApiEx_ID` = IFNULL(NULLIF(%s, ''), `ApiEx_ID`), "
+            "`ApiEx_EntryID` = IFNULL(NULLIF(%s, ''), `ApiEx_EntryID`), "
+            "`SupplyNo` = %s, "
+            "`ApiEx_FirstPush` = IFNULL(`ApiEx_FirstPush`, @v_firstpush), "
+            "`ApiEx_LastPush` = @v_firstpush "
+            "WHERE `SupplyNo` = %s AND `Type` IN ('PL', 'MO')"
+        )
+        supply_affected, _ = await conn.execute_query(supply_sql, [
+            memo, to_status, native_plno, apiex_id, apiex_entryid,
+            mono, native_plno,
+        ])
+
+        if supply_affected == 0:
+            raise Exception("未找到符合条件的供应单或类型不匹配")
+
+        # 2.2 t_OrderWC：OrderNo 拼接新单号前缀
+        orderwc_sql = (
+            "UPDATE t_OrderWC SET "
+            "`SupplyNo` = %s, "
+            "`OrderNo` = CONCAT(IFNULL(%s, ''), `ItemNo`), "
+            "`ApiEx_FirstPush` = IFNULL(`ApiEx_FirstPush`, @v_firstpush), "
+            "`ApiEx_LastPush` = @v_firstpush "
+            "WHERE `SupplyNo` = %s"
+        )
+        orderwc_affected, _ = await conn.execute_query(orderwc_sql, [
+            mono, mono, native_plno,
+        ])
+
+        # 2.3 t_demand
+        demand_sql = (
+            "UPDATE t_demand SET "
+            "`Type` = 'RS', "
+            "`DemandNo` = %s, "
+            "`ApiEx_SN` = %s "
+            "WHERE `DemandNo` = %s"
+        )
+        demand_affected, _ = await conn.execute_query(demand_sql, [
+            mono, native_plno, native_plno,
+        ])
+
+        # 2.4 t_peg：更新领料需求（Type='DM'）+ 更新匹配的原工单号
+        peg1_sql = (
+            "UPDATE t_peg SET `Type` = 'RS', `DemandNo` = %s "
+            "WHERE `DemandNo` = %s AND `Type` = 'DM'"
+        )
+        peg1_affected, _ = await conn.execute_query(peg1_sql, [mono, native_plno])
+
+        # S_SupplyNo 改名：mono == native_plno 时值不变，跳过无意义 UPDATE
+        if mono != native_plno:
+            peg2_sql = "UPDATE t_peg SET `S_SupplyNo` = %s WHERE `S_SupplyNo` = %s"
+            peg2_affected, _ = await conn.execute_query(peg2_sql, [mono, native_plno])
+        else:
+            peg2_affected = 0
+
+    result_text = "已下达（新单号）" if mono != native_plno else "已下达（原单号）"
+    return {
+        "t_supply_updated": int(supply_affected),
+        "t_orderwc_updated": int(orderwc_affected),
+        "t_demand_updated": int(demand_affected),
+        "t_peg_updated": int(peg1_affected) + int(peg2_affected),
+        "Result": result_text,
+    }
+
 
 class EventResultPoster:
 
@@ -2973,11 +3121,36 @@ class EventResultPoster:
         logger.update("PL状态", f"目标状态{to_status}，MO单号{native_plno} -> {mono}", 1)
         
         async with _get_release_presem(f"release:{self.db_name}"):
-            response_json: MultiDbResult = await call_dbprocdure(
-                db_names=self.db_name,
-                procedure_name="SupplyConvertMOByE2A",
-                params_list=[[native_plno, mono, to_status, str(_id or ""), str(_entryid or ""), memo[:255], None]],
-                use_distributed_lock=True
+            from apps.common.utils.distributed_lock import DistributedLock, get_distributed_lock_config
+            _lock_max_wait = get_distributed_lock_config()["wait_timeout"]
+            async with DistributedLock(f"mo_release_success:{self.db_name}").lock(max_wait=_lock_max_wait) as acquired:
+                if not acquired:
+                    raise Exception(f"无法获取分布式锁 mo_release_success:{self.db_name}")
+                release_result = await _apiex_mo_release_success_in_db(
+                    db_name=self.db_name,
+                    native_plno=native_plno,
+                    mono=mono,
+                    to_status=to_status,
+                    apiex_id=str(_id or ""),
+                    apiex_entryid=str(_entryid or ""),
+                    memo=memo[:255],
+                )
+            _total_affected = (
+                release_result["t_supply_updated"]
+                + release_result["t_orderwc_updated"]
+                + release_result["t_demand_updated"]
+                + release_result["t_peg_updated"]
+            )
+            response_json = MultiDbResult(
+                success=1,
+                data=[release_result],
+                message=f"MO发布成功：{release_result['Result']}",
+                meta={
+                    "db_names": [self.db_name],
+                    "success_db": [self.db_name],
+                    "has_errors": False,
+                    "affected_rows": _total_affected,
+                },
             )
         
         logger.info(f"更新PL状态响应：成功")
