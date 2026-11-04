@@ -45,7 +45,7 @@ class K3Material(AcceptMaterial):
         cleaned_values['leadday'] = convert_timeunit(values.get('固定提前期', 0), values['固定提前期单位'], 'day')
         cleaned_values['expday'] = convert_timeunit(values.get('保质期', 0), values['保质期单位'], 'day')
         cleaned_values['grday'] = convert_timeunit(values.get('检验提前期', 0), values['检验提前期单位'], 'day')
-        cleaned_values['abc'] = 'A' if values['物料属性'].replace(' ','') == '自制' else 'B'
+        cleaned_values['abc'] = gc.AbcEnum.A if values['物料属性'].replace(' ','') == '自制' else gc.AbcEnum.B
         cleaned_values['unit'] = clean_value(values['生产单位'])
         cleaned_values['price'] = values['参考成本']
         # cleaned_values['groupno'] = values['']

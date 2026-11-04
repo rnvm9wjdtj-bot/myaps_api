@@ -74,7 +74,7 @@ class TMatVer(pm.ProtoMatVer):
                 "lotfrom": lotfrom,
                 "lotto": lotto,
                 "priority": priority,
-                "active": "Y"
+                "active": gc.YesNoEnum.YES
             }])
 
 

@@ -23,7 +23,7 @@ from pydantic import BaseModel as PydanticModel
 import uuid
 
 
-from globalobjects import logger as log_config, ProjectDefaultValues as pdv, StaticString as ce
+from globalobjects import logger as log_config, ProjectDefaultValues as pdv, StaticString as ce, globalconst as gc
 from dataclasses import dataclass, field
 from core.settings import THIS_BASE_URL, MYAPS_MAIN_DB, MYAPS_DB_SET, TIMEZONE_NAME
 from apps.io_api.utils.db_operation import db_exec_sql, db_query, db_query_cursor, db_update_by_index, db_delete, db_bupsert, call_dbprocdure, DbResult, MultiDbResult
@@ -1559,7 +1559,7 @@ class ApsPayloadSponsor:
             df_mto_vir_st = None
             if mo_complete_data:
                 df_mo_complete = pd.DataFrame(mo_complete_data)
-                df_mto_vir_st = (df_mo_complete[df_mo_complete['category'] == 'MTO']
+                df_mto_vir_st = (df_mo_complete[df_mo_complete['category'] == gc.ProductCategoryEnum.MTO]
                         [['materialno', 'vendorno', 'finalopqty', 'category', 'avail_date']]
                         .groupby('vendorno', as_index=False)
                         .agg({
@@ -1569,9 +1569,9 @@ class ApsPayloadSponsor:
                             'avail_date': 'first',
                         }))
                 df_mto_vir_st['supplyno'] = df_mto_vir_st['materialno'] + '-' + df_mto_vir_st['vendorno']
-                df_mto_vir_st['type'] = 'ST'
+                df_mto_vir_st['type'] = gc.SupplyTypeEnum.ST
                 df_mto_vir_st['priority'] = 0
-                df_mto_vir_st['status'] = 'NEW'
+                df_mto_vir_st['status'] = gc.OrderStatusEnum.NEW
                 df_mto_vir_st['dt_req'] = df_mto_vir_st['avail_date']
                 df_mto_vir_st['create_date'] = now
                 df_mto_vir_st['itemno'] = pdv.ITEMNO
@@ -1598,7 +1598,7 @@ class ApsPayloadSponsor:
         aggregated_stock = aggregated_stock.replace({pd.NA: None, pd.NaT: None, float('nan'): None})
         # 生成supplyno字段为materialno@timestamp
         aggregated_stock['supplyno'] = aggregated_stock[group_by].apply(lambda x: '-'.join(x.astype(str)), axis=1) + '@' + timestamp
-        await cls.refresh_supply(aggregated_stock.to_dict(orient='records'), type_='ST', dbs=dbs)
+        await cls.refresh_supply(aggregated_stock.to_dict(orient='records'), type_=gc.SupplyTypeEnum.ST, dbs=dbs)
 
 
 
@@ -2025,7 +2025,7 @@ class ApsPayloadSponsor:
 
             if get_pred_mo:
                 related_demand = self._production_cache.get_demand(demand_no=supplyno)
-                demands_data = [_ for _ in related_demand if _.get('type') != 'SO']
+                demands_data = [_ for _ in related_demand if _.get('type') != gc.DemandTypeEnum.SO]
                 if demands_data:
                     demands_no = [_['demandno'] for _ in demands_data]
                     peg_query_result = self._production_cache.batch_get_peg_by_demand(demands_no)
@@ -2141,7 +2141,7 @@ class ApsPayloadSponsor:
                 result.data[0][ce.MO_OP_KEY.value] = await get_orderwc(mono=supplyno)
 
                 vendorno = result.data[0].get('vendorno')
-                if source_so and result.data[0].get('category') == 'MTO' and vendorno:
+                if source_so and result.data[0].get('category') == gc.ProductCategoryEnum.MTO and vendorno:
                     result.data[0][ce.SOURCE_SO_KEY.value] = await get_so(vendorno)
                 if pred_mo:
                     result.data[0][ce.PRED_MO_KEY.value] = await get_pred_mo(supplyno)

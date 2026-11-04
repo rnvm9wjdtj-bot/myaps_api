@@ -347,11 +347,11 @@ class StockManager:
             df['avail_qty'] = df['menge'].where(df['bwart'] == '261', -df['menge'])
             df['supplyno'] = 'MI-' + df['matnr'] + '-' + df['werks']
             df['materialno'] = df['matnr']
-            df['type'] = 'ST'
+            df['type'] = gc.SupplyTypeEnum.ST
             df['priority'] = 0
             df['avail_date'] = now_str
             df['dt_req'] = now_str
-            df['status'] = 'NEW'
+            df['status'] = gc.OrderStatusEnum.NEW
             df['category'] = ''
             df['create_date'] = now_str
             df['itemno'] = pdv.ITEMNO
@@ -399,11 +399,11 @@ class StockManager:
             })
             df_sap_st['avail_qty'] = df_sap_st['labst'] + df_sap_st['labst2']
             df_sap_st['supplyno'] = df_sap_st['matnr'] + '-' + df_sap_st['werks']
-            df_sap_st['type'] = 'ST'
+            df_sap_st['type'] = gc.SupplyTypeEnum.ST
             df_sap_st['priority'] = 0
             df_sap_st['avail_date'] = now
             df_sap_st['dt_req'] = now
-            df_sap_st['status'] = 'NEW'
+            df_sap_st['status'] = gc.OrderStatusEnum.NEW
             df_sap_st['category'] = ''
             df_sap_st['create_date'] = now
             df_sap_st = (df_sap_st

@@ -694,7 +694,7 @@ class AcceptSupply(BaseModel):
                 "supplyno": "MO123456",
                 "matver": pdv.MATVER,
                 "itemno": pdv.ITEMNO,
-                "type": "MO",
+                "type": gc.SupplyTypeEnum.MO,
                 "category": "MTO",
                 "priority": 1,
                 "status": "NEW",

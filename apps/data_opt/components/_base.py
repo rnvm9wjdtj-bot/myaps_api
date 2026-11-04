@@ -1617,7 +1617,7 @@ class MoVoucher(BaseVoucher):
         ]
         await asyncio.gather(*tasks, return_exceptions=True)
         # 最后兜底，更新所有状态为 A2E 的生产加工单为 CRE
-        unknown_failed = await TSupply.filter(status='A2E', supplyno__in=supply_nos).values('supplyno')
+        unknown_failed = await TSupply.filter(status=gc.OrderStatusEnum.A2E, supplyno__in=supply_nos).values('supplyno')
         if unknown_failed:
             tasks = [
                 _erp.mo_release_failed(native_plno=_["supplyno"], msg="推送失败，请重试")
@@ -1660,7 +1660,7 @@ class RsVoucher(BaseVoucher):
         if production_cache_items is None:
             production_cache_items = [CacheItem.SUPPLY_MO, CacheItem.DEMAND]
         supply_nos = [s['supplyno'] for s in event_data_list]
-        await TDemand.filter(demandno__in=supply_nos).update(status='A2E', memo=" 📤 正在推送...")
+        await TDemand.filter(demandno__in=supply_nos).update(status=gc.OrderStatusEnum.A2E, memo=" 📤 正在推送...")
 
         _aps = ApsPayloadSponsor(production_cache_items=production_cache_items)
         await _aps.establish_production_cache(supplynos=supply_nos)
@@ -1680,7 +1680,7 @@ class RsVoucher(BaseVoucher):
         ]
         await asyncio.gather(*tasks, return_exceptions=True)
 
-        unknown_failed = await TDemand.filter(status='A2E', demandno__in=supply_nos).values('demandno')
+        unknown_failed = await TDemand.filter(status=gc.OrderStatusEnum.A2E, demandno__in=supply_nos).values('demandno')
         if unknown_failed:
             tasks = [
                 _erp.rs_release_failed(rsno=_["demandno"], msg="推送失败，请重试")

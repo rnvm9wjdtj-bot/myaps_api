@@ -94,8 +94,8 @@ class OrderStatusEnum(str, Enum):
     REL = "REL"   # 释放
     CNF = "CNF"   # 报工
     CMP = "CMP"   # 已完成
-    A2E = "A2E"   
-    E2A = "E2A"   
+    A2E = "A2E"   # APS 推送到 外部系统
+    E2A = "E2A"   # 外部系统 返回给 APS
 
 
 class AbcEnum(str, Enum):

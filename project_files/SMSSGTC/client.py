@@ -338,12 +338,12 @@ async def refresh_stock(dbs: str=MYAPS_DB_SET):
     df_wms_st['supplyno'] = df_wms_st['PRODUCT_CODE']
     df_wms_st['materialno'] = df_wms_st['PRODUCT_CODE']
     df_wms_st['avail_qty'] = df_wms_st['AVAILABLE_QUANTITY']
-    df_wms_st['type'] = 'ST'
+    df_wms_st['type'] = gc.SupplyTypeEnum.ST
     df_wms_st['priority'] = 0
     df_wms_st['avail_date'] = now
     df_wms_st['dt_req'] = now
-    df_wms_st['status'] = 'CRE'
-    df_wms_st['category'] = 'MTS'
+    df_wms_st['status'] = gc.OrderStatusEnum.CRE
+    df_wms_st['category'] = gc.ProductCategoryEnum.MTS
     df_wms_st['create_date'] = now
     df_wms_st['itemno'] = pdv.ITEMNO
     df_wms_st['batchno'] = ''
@@ -510,7 +510,7 @@ async def batch_handle_mo_release_success(event_data_list: list[dict], _erp: Eve
     ]
     await asyncio.gather(*tasks, return_exceptions=True)
 
-    unknown_failed = await TSupply.filter(status='A2E', supplyno__in=supply_nos).values('supplyno')
+    unknown_failed = await TSupply.filter(status=gc.OrderStatusEnum.A2E, supplyno__in=supply_nos).values('supplyno')
     if unknown_failed:
         fallback_tasks = []
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

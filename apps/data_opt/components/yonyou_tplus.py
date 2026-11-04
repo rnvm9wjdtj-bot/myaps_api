@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, date
 import pandas as pd
 from pydantic.v1.errors import cls_kwargs
 
+from globalobjects import globalconst as gc
 from core.settings import MYAPS_MAIN_DB
 
 from . import ApsPayloadSponsor, EventResultPoster
@@ -185,9 +186,9 @@ class BomPullModel(AcceptMatWcBom):
 
 class StockPullModel(AcceptSupply):
 
-    type: str = Field('ST')
+    type: str = Field(gc.SupplyTypeEnum.ST)
     priority: int = Field(0)
-    status: str = Field('CRE')
+    status: str = Field(gc.OrderStatusEnum.CRE)
 
     class Config:
         extra = 'allow'
@@ -204,10 +205,10 @@ class StockPullModel(AcceptSupply):
         cleaned_values['create_date'] = now
         cleaned_values['avail_date'] = now
         cleaned_values['dt_req'] = now
-        cleaned_values['category'] = 'MTS'
-        cleaned_values['type'] = 'ST'
+        cleaned_values['category'] = gc.ProductCategoryEnum.MTS
+        cleaned_values['type'] = gc.SupplyTypeEnum.ST
         cleaned_values['priority'] = 0
-        cleaned_values['status'] = 'CRE'
+        cleaned_values['status'] = gc.OrderStatusEnum.CRE
         return cleaned_values
 
 
