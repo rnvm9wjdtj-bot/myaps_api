@@ -188,6 +188,7 @@ window.__i18n_de_DE__ = {
     'monitor.col.function': 'Funktion',
     'monitor.col.line': 'Zeile',
     'monitor.col.operation': 'Aktion',
+    'monitor.col.object': 'Objekt',
     'monitor.col.connection': 'Verbindung',
     'monitor.col.count': 'Anzahl',
     'monitor.col.avg_duration': 'Ø Dauer',

@@ -1704,8 +1704,9 @@ code[class*="language-"] {
 #sql-slow-table th:nth-child(1), #sql-recent-table th:nth-child(1) { width: 160px; }
 #sql-slow-table th:nth-child(2), #sql-recent-table th:nth-child(2) { width: 120px; }
 #sql-slow-table th:nth-child(3), #sql-recent-table th:nth-child(3) { width: 80px; }
-#sql-slow-table th:nth-child(4), #sql-recent-table th:nth-child(4) { width: 80px; }
-#sql-recent-table th:nth-child(5) { width: 80px; }
+#sql-slow-table th:nth-child(4), #sql-recent-table th:nth-child(4) { width: 140px; }
+#sql-slow-table th:nth-child(5), #sql-recent-table th:nth-child(5) { width: 80px; }
+#sql-recent-table th:nth-child(6) { width: 80px; }
 #sql-slow-table td, #sql-recent-table td {
     overflow: hidden;
     text-overflow: ellipsis;

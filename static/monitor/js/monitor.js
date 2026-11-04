@@ -2215,12 +2215,9 @@ function updateSqlMonitorSummary(data) {
         }
     }
     const stats = data.stats || [];
-    let totalCount = 0, slowCount = 0, errorCount = 0;
-    stats.forEach(s => {
-        totalCount += s.count || 0;
-        slowCount += s.slow || 0;
-        errorCount += s.errors || 0;
-    });
+    const totalCount = data.total_count || 0;
+    const slowCount = data.slow_count || 0;
+    const errorCount = data.error_count || 0;
     const totalEl = document.getElementById('sql-total-count');
     const slowEl = document.getElementById('sql-slow-count');
     const errEl = document.getElementById('sql-error-count');
@@ -2256,13 +2253,14 @@ function updateSqlSlowList(data) {
     if (!tbody) return;
     if (!data || !data.length) {
         const noSlow = typeof i18n !== 'undefined' ? i18n.t('monitor.status.no_slow_queries') : '暂无慢查询';
-        tbody.innerHTML = `<tr><td colspan="5" class="empty-state">${noSlow}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="empty-state">${noSlow}</td></tr>`;
         return;
     }
     tbody.innerHTML = data.map(r => `<tr>
         <td>${new Date((r.timestamp || 0) * 1000).toLocaleString()}</td>
         <td>${escapeHtml(r.connection || '')}</td>
         <td>${escapeHtml(r.operation || '')}</td>
+        <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.object || '')}">${escapeHtml(r.object || '')}</td>
         <td style="color:#ef4444;font-weight:bold;">${((r.duration || 0) * 1000).toFixed(0)}ms</td>
         <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.sql || '')}">${escapeHtml(r.sql || '')}</td>
     </tr>`).join('');
@@ -2319,13 +2317,14 @@ function updateSqlRecentList(records) {
     _expandedRecentRowIdx = null;
     if (!records || !records.length) {
         const noData = typeof i18n !== 'undefined' ? i18n.t('monitor.status.no_data') : '暂无数据';
-        tbody.innerHTML = `<tr><td colspan="6" class="empty-state">${noData}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" class="empty-state">${noData}</td></tr>`;
         return;
     }
     tbody.innerHTML = records.map((r, idx) => `<tr data-row-idx="${idx}" onclick="toggleRecentRowDetail(${idx})" style="cursor:pointer;">
         <td>${new Date((r.timestamp || 0) * 1000).toLocaleString()}</td>
         <td>${escapeHtml(r.connection || '')}</td>
         <td>${escapeHtml(r.operation || '')}</td>
+        <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.object || '')}">${escapeHtml(r.object || '')}</td>
         <td style="color:${(r.isSlow || r.is_slow) ? '#f59e0b' : (r.success === false ? '#ef4444' : '')};font-weight:${(r.isSlow || r.is_slow) || r.success === false ? 'bold' : 'normal'};">${((r.duration || 0) * 1000).toFixed(0)}ms</td>
         <td>${formatRecentStatus(r).text}</td>
         <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.sql || '')}">${escapeHtml(r.sql || '')}</td>
@@ -2375,7 +2374,7 @@ function renderRecentDetailRow(record) {
     const affected = (record.affected !== null && record.affected !== undefined) ? record.affected : none;
     const stack = record.stack ? `<pre style="white-space:pre-wrap;max-height:200px;overflow-y:auto;background:#f5f5f5;padding:8px;border-radius:4px;">${escapeHtml(record.stack)}</pre>` : noStack;
 
-    return `<tr class="recent-detail-row"><td colspan="6" style="background:#fafafa;padding:12px;">
+    return `<tr class="recent-detail-row"><td colspan="7" style="background:#fafafa;padding:12px;">
         <div style="margin-bottom:8px;"><strong>${sqlLabel}:</strong><pre style="white-space:pre-wrap;max-height:300px;overflow-y:auto;background:#f5f5f5;padding:8px;border-radius:4px;">${escapeHtml(record.sql || '')}</pre></div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;">
             <div><strong>${paramsLabel}:</strong> ${params}</div>

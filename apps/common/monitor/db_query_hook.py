@@ -63,6 +63,48 @@ def _is_health_check(query: str) -> bool:
     return bool(query) and bool(_HEALTH_CHECK_PATTERN.match(query))
 
 
+# ========== SQL 目标对象（表/视图/存储过程）提取 ==========
+# 标识符字符：\w + 点号 + 反引号（支持 `db`.`t_material` 形式，反引号在 replace 阶段去除）
+_IDENT = r'[\w.`]+'
+# DML 目标对象：FROM/JOIN/INTO/UPDATE 后的表名
+_DML_OBJECT_PATTERN = re.compile(
+    rf'(?:\bFROM\b|\bJOIN\b|\bINTO\b|\bUPDATE\b)\s+({_IDENT})',
+    re.IGNORECASE,
+)
+# DDL 目标对象：TABLE/VIEW 后的表名，跳过 IF [NOT] EXISTS / TEMPORARY / TEMP
+_DDL_OBJECT_PATTERN = re.compile(
+    rf'\b(?:TABLE|VIEW)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+|TEMPORARY\s+|TEMP\s+)?({_IDENT})',
+    re.IGNORECASE,
+)
+_CALL_PATTERN = re.compile(rf'\bCALL\s+({_IDENT})', re.IGNORECASE)
+# SQL 字符串字面量（单引号，支持 '' 转义）
+_SQL_STRING_PATTERN = re.compile(r"'(?:[^']|'')*'")
+
+
+def extract_sql_object(sql: str) -> str:
+    """从 SQL 语句提取目标表/视图/存储过程名，多个用逗号分隔。
+
+    覆盖 DML（FROM/JOIN/INTO/UPDATE）、DDL（CREATE/ALTER/DROP TABLE/VIEW，跳过
+    IF [NOT] EXISTS/TEMPORARY/TEMP）后的表名，以及 CALL 后的存储过程名。
+    先剥离字符串字面量避免误匹配；去重保序，保留 schema 前缀（如 db.table）。
+    """
+    if not sql:
+        return ''
+    cleaned = _SQL_STRING_PATTERN.sub(' ', sql)
+    m = _CALL_PATTERN.search(cleaned)
+    if m:
+        return m.group(1).replace('`', '')
+    seen: set = set()
+    result: List[str] = []
+    for pattern in (_DML_OBJECT_PATTERN, _DDL_OBJECT_PATTERN):
+        for name in pattern.findall(cleaned):
+            name = name.replace('`', '')
+            if name and name not in seen:
+                seen.add(name)
+                result.append(name)
+    return ', '.join(result)
+
+
 # ========== Prometheus 指标（独立 Registry，参考 binlog） ==========
 _registry = CollectorRegistry()
 db_query_total = Counter(
@@ -91,6 +133,10 @@ class DBQueryCollector:
 
     def __init__(self):
         self._history: deque = deque(maxlen=DB_QUERY_HISTORY_SIZE)
+        # 累计计数器（从启动至今，不封顶），用于统计卡片
+        self._total_count: int = 0
+        self._slow_count: int = 0
+        self._error_count: int = 0
 
 
     async def record(
@@ -110,10 +156,16 @@ class DBQueryCollector:
         """
         try:
             is_slow = duration >= DB_QUERY_SLOW_THRESHOLD
+            self._total_count += 1
+            if is_slow:
+                self._slow_count += 1
+            if not success:
+                self._error_count += 1
             record = {
                 'timestamp': time.time(),
                 'operation': operation,
                 'connection': connection,
+                'object': extract_sql_object(sql),
                 'sql': self._truncate(sql, 2000),
                 'params': self._truncate(str(params), 500),
                 'duration': duration,
@@ -175,10 +227,11 @@ class DBQueryCollector:
         return results
 
     def get_stats(self) -> Dict[str, Any]:
-        """返回聚合统计，按 MYAPS_DB_SET 顺序排序，同连接按 count 倒序。
+        """返回聚合统计。
 
-        从内存队列 _history 重新聚合（而非 _stats 累计字典），
-        保证统计卡片数字与列表条数一致，避免 deque 淘汰旧记录导致偏差。
+        - total_count/slow_count/error_count：累计计数器（从启动至今，不封顶），用于统计卡片
+        - stats：从内存队列 _history 重新聚合的操作分布（最近 N 条快照），用于操作分布表格
+        - history_size：当前内存队列长度（<= maxlen）
         """
         db_order = {name: i for i, name in enumerate(MYAPS_DBSET_LIST)}
         fallback = len(db_order)
@@ -208,7 +261,11 @@ class DBQueryCollector:
         raw.sort(key=lambda s: (db_order.get(s['connection'], fallback), -s.get('count', 0)))
         return {
             'stats': raw,
+            'total_count': self._total_count,
+            'slow_count': self._slow_count,
+            'error_count': self._error_count,
             'history_size': len(self._history),
+            'history_max': DB_QUERY_HISTORY_SIZE,
             'slow_threshold': DB_QUERY_SLOW_THRESHOLD,
             'connections': list(_ALL_CONNECTION_NAMES),
         }

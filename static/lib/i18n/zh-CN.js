@@ -188,6 +188,7 @@ window.__i18n_zh_CN__ = {
     'monitor.col.function': '函数',
     'monitor.col.line': '行号',
     'monitor.col.operation': '操作',
+    'monitor.col.object': '对象',
     'monitor.col.connection': '连接',
     'monitor.col.count': '数量',
     'monitor.col.avg_duration': '平均耗时',
