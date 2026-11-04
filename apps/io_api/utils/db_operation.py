@@ -450,12 +450,14 @@ def retry_on_connection_error(max_retries: int = 3, retry_delay: float = 1.0):
                     )
                     
                     if not is_connection_error or attempt >= max_retries:
-                        # 如果不是连接错误或已达到最大重试次数
-                        logger.fail(
-                            f"执行 {func.__name__}",
-                            f"（尝试 {attempt + 1}/{max_retries + 1}）",
-                            error_str
-                        )
+                        # 非连接错误：根因处已记录，直接抛出避免重复日志
+                        # 连接错误重试耗尽：记录失败日志并持久化告警
+                        if is_connection_error:
+                            logger.fail(
+                                f"执行 {func.__name__}",
+                                f"（尝试 {attempt + 1}/{max_retries + 1}）",
+                                error_str
+                            )
                         
                         # 如果是连接错误，持久化到SQLite并告警
                         if is_connection_error and db_names:
@@ -644,7 +646,7 @@ async def db_exec_sql(db_name: str, sql: str, params: Optional[List[Any]] = None
     valid_dbs = validate_databases(db_name)
     if not valid_dbs:
         logger.fail("数据库验证", f"{db_name}", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
-        raise ValueError(f"操作失败：未找到有效账套，input_db_name: {db_name}, available_dbs: {MYAPS_DB_SET}")
+        raise ValueError(f"未找到有效账套，input_db_name: {db_name}")
     valid_db = valid_dbs[0]
 
     db_manager = get_db_manager(valid_db)
@@ -704,7 +706,7 @@ async def db_query(
     valid_dbs = validate_databases(db_name)
     if not valid_dbs:
         logger.fail("数据库验证", f"{db_name}", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
-        raise ValueError(f"操作失败：未找到有效账套，input_db_name: {db_name}, available_dbs: {MYAPS_DB_SET}")
+        raise ValueError(f"未找到有效账套，input_db_name: {db_name}")
     valid_db = valid_dbs[0]
 
     db_manager = get_db_manager(valid_db)
@@ -773,7 +775,7 @@ async def db_query_cursor(
     valid_dbs = validate_databases(db_name)
     if not valid_dbs:
         logger.fail("数据库验证", f"{db_name}", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
-        raise ValueError(f"操作失败：未找到有效账套，input_db_name: {db_name}, available_dbs: {MYAPS_DB_SET}")
+        raise ValueError(f"未找到有效账套，input_db_name: {db_name}")
     valid_db = valid_dbs[0]
 
     db_manager = get_db_manager(valid_db)
@@ -914,7 +916,7 @@ async def db_supsert(
     mdl, table_name = process_model_or_tablename(model_or_tablename)
     
     if not mdl:
-        raise ValueError(f"操作失败：未找到对应模型，input_table_name: {table_name}, available_tables: {list(TABLE_MODEL_MAPPING.keys())}")
+        raise ValueError(f"未找到对应模型，input_table_name: {table_name}")
 
     if isinstance(data_item, PydanticSchema):
         if use_rawdata:
@@ -927,7 +929,7 @@ async def db_supsert(
     valid_dbs = validate_databases(db_names)
     if not valid_dbs:
         logger.fail("数据库验证", f"{db_names}", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
-        raise ValueError(f"操作失败：未找到有效账套，input_db_name: {db_names}, available_dbs: {MYAPS_DB_SET}")
+        raise ValueError(f"未找到有效账套，input_db_name: {db_names}")
 
     success_db = []
     create_count_total = 0
@@ -1033,12 +1035,12 @@ async def db_bupsert(
     valid_dbs = validate_databases(db_names)
     if not valid_dbs:
         logger.fail("数据库验证", "", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
-        raise ValueError(f"操作失败：未找到有效账套，input_db_name: {db_names}, available_dbs: {MYAPS_DB_SET}")
+        raise ValueError(f"未找到有效账套，input_db_name: {db_names}")
 
     mdl, table_name = process_model_or_tablename(model_or_tablename)
     
     if not mdl:
-        raise ValueError(f"操作失败：未找到对应模型，input_table_name: {table_name}, available_tables: {list(TABLE_MODEL_MAPPING.keys())}")
+        raise ValueError(f"未找到对应模型，input_table_name: {table_name}")
 
     origin_total = len(data_list)
     # 记录日志
@@ -1298,7 +1300,7 @@ async def db_delete(
     valid_dbs = validate_databases(db_names)
     if not valid_dbs:
         logger.fail("数据库验证", f"{db_names}", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
-        raise ValueError(f"操作失败：未找到有效账套，input_db_name: {db_names}, available_dbs: {MYAPS_DB_SET}")
+        raise ValueError(f"未找到有效账套，input_db_name: {db_names}")
 
     total_count = 0
     is_truncate = filter_string is None
@@ -1380,7 +1382,7 @@ async def call_dbprocdure(
     valid_dbs = validate_databases(db_names)
     if not valid_dbs:
         logger.fail("数据库验证", f"{db_names}", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
-        raise ValueError(f"操作失败：未找到有效账套，input_db_name: {db_names}, available_dbs: {MYAPS_DB_SET}")
+        raise ValueError(f"未找到有效账套，input_db_name: {db_names}")
 
     async def single_db_operation(db_manager: DbManager) -> Dict[str, Any]:
         return await db_manager.call_stored_procedure(
@@ -1504,12 +1506,12 @@ async def db_update_by_index(
     mdl, table_name = process_model_or_tablename(model_or_tablename)
     
     if not mdl:
-        raise ValueError(f"操作失败：未找到对应模型，input_table_name: {table_name}, available_tables: {list(TABLE_MODEL_MAPPING.keys())}")
+        raise ValueError(f"未找到对应模型，input_table_name: {table_name}")
 
     valid_dbs = validate_databases(db_names)
     if not valid_dbs:
         logger.fail("数据库验证", "", f"未找到有效账套（available_dbs：{MYAPS_DB_SET}）")
-        raise ValueError(f"操作失败：未找到有效账套，input_db_name: {db_names}, available_dbs: {MYAPS_DB_SET}")
+        raise ValueError(f"未找到有效账套，input_db_name: {db_names}")
 
     success_db = []
     affect_count_total = 0

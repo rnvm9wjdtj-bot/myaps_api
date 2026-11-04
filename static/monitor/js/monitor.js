@@ -2204,6 +2204,16 @@ async function fetchDbSlowQueries() {
 
 function updateSqlMonitorSummary(data) {
     if (!data) return;
+    if (Array.isArray(data.connections)) {
+        const select = document.getElementById('sql-recent-connection-filter');
+        if (select) {
+            const prevValue = select.value;
+            const allConn = typeof i18n !== 'undefined' ? i18n.t('monitor.button.all_connections') : '全部连接';
+            select.innerHTML = `<option value="">${escapeHtml(allConn)}</option>` +
+                data.connections.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+            if (data.connections.includes(prevValue)) select.value = prevValue;
+        }
+    }
     const stats = data.stats || [];
     let totalCount = 0, slowCount = 0, errorCount = 0;
     stats.forEach(s => {
@@ -2254,7 +2264,7 @@ function updateSqlSlowList(data) {
         <td>${escapeHtml(r.connection || '')}</td>
         <td>${escapeHtml(r.operation || '')}</td>
         <td style="color:#ef4444;font-weight:bold;">${((r.duration || 0) * 1000).toFixed(0)}ms</td>
-        <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.sql || '')}">${escapeHtml((r.sql || '').substring(0, 100))}</td>
+        <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.sql || '')}">${escapeHtml(r.sql || '')}</td>
     </tr>`).join('');
 }
 
@@ -2284,7 +2294,7 @@ async function fetchDbRecentQueries() {
         const data = await response.json();
         _recentAllRecords = Array.isArray(data) ? data : [];
 
-        if (!conn) populateRecentConnectionOptions(_recentAllRecords);
+
         updateSqlRecentList(_recentAllRecords);
 
         const loadMoreBtn = document.getElementById('sql-recent-load-more');
@@ -2302,16 +2312,6 @@ async function fetchDbRecentQueries() {
     }
 }
 
-function populateRecentConnectionOptions(records) {
-    const select = document.getElementById('sql-recent-connection-filter');
-    if (!select) return;
-    const prevValue = select.value;
-    const connections = [...new Set(records.map(r => r.connection || '').filter(c => c))];
-    const allConn = typeof i18n !== 'undefined' ? i18n.t('monitor.button.all_connections') : '全部连接';
-    select.innerHTML = `<option value="">${escapeHtml(allConn)}</option>` +
-        connections.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
-    if (connections.includes(prevValue)) select.value = prevValue;
-}
 
 function updateSqlRecentList(records) {
     const tbody = document.getElementById('sql-recent-tbody');
@@ -2328,7 +2328,7 @@ function updateSqlRecentList(records) {
         <td>${escapeHtml(r.operation || '')}</td>
         <td style="color:${(r.isSlow || r.is_slow) ? '#f59e0b' : (r.success === false ? '#ef4444' : '')};font-weight:${(r.isSlow || r.is_slow) || r.success === false ? 'bold' : 'normal'};">${((r.duration || 0) * 1000).toFixed(0)}ms</td>
         <td>${formatRecentStatus(r).text}</td>
-        <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.sql || '')}">${escapeHtml(truncateSqlSummary(r.sql || '', 100))}</td>
+        <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.sql || '')}">${escapeHtml(r.sql || '')}</td>
     </tr>`).join('');
 }
 
@@ -2343,10 +2343,6 @@ function formatRecentStatus(record) {
     return { text: t('monitor.status.normal', '正常') };
 }
 
-function truncateSqlSummary(sql, maxLen = 100) {
-    if (!sql) return '';
-    return sql.length > maxLen ? sql.substring(0, maxLen) + '...' : sql;
-}
 
 function toggleRecentRowDetail(rowIdx) {
     const existingDetail = document.querySelector('#sql-recent-tbody tr.recent-detail-row');

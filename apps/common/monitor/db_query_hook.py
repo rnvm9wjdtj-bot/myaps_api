@@ -25,9 +25,21 @@ from core.settings import (
     DB_QUERY_HISTORY_SIZE,
     DB_QUERY_SAMPLE_RATE,
     MYAPS_DBSET_LIST,
+    SQLITE_FILE,
 )
 
 logger = log_config.get_logger(__name__)
+
+# ========== 全部连接名（用于前端筛选下拉框） ==========
+# MySQL 账套 + SQLite 监控库，排除 default 别名，去空去重
+# 不含 PostgreSQL staging 库（THIS_DB_NAME），清洗库查询不纳入业务筛选
+_ALL_CONNECTION_NAMES: List[str] = []
+_seen_conn = set()
+for _c in [*MYAPS_DBSET_LIST, SQLITE_FILE]:
+    if _c and _c != 'default' and _c not in _seen_conn:
+        _ALL_CONNECTION_NAMES.append(_c)
+        _seen_conn.add(_c)
+del _seen_conn
 
 # ========== SQL 分类 ==========
 _SQL_PATTERN = re.compile(
@@ -198,6 +210,7 @@ class DBQueryCollector:
             'stats': raw,
             'history_size': len(self._history),
             'slow_threshold': DB_QUERY_SLOW_THRESHOLD,
+            'connections': list(_ALL_CONNECTION_NAMES),
         }
 
     @staticmethod
