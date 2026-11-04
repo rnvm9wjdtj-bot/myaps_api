@@ -311,6 +311,72 @@ Pydantic Schema 是字段元数据的**唯一来源**：必填、枚举、范围
 
 钩子产出的错误通过 `context['batch_errors']` 传递给 `process_staging`，与逐条校验错误合并。`bom_structure_error` 视为合规错误（阻断同步），`bom_structure_warning` 仅警告不阻断。
 
+### 6.6 产线版本自动补充
+
+#### 6.6.1 两条路径
+
+| 路径 | 配置开关 | 触发位置 | 行为 |
+|------|----------|----------|------|
+| **缓冲表校验** | `staging_auto_matver` | `t_material` 的 `post_batch_hook`（`auto_matver_from_refs_hook`） | 扫描 `t_mat_wc_staging`/`t_mat_wc_bom_staging` 的产线版本组合，批量补充到 `t_mat_ver_staging` |
+| **直接写正式表** | `auto_matver` | `post_material` 路由（`routers.py:513`） | 用预设值 `pdv.MATVER`（如 `V1`）为 E 类物料生成产线版本，异步写正式表 |
+
+两个开关独立，互不影响。`auto_matver` 仅路由直接模式生效，`staging_auto_matver` 仅缓冲表校验生效。
+
+**互斥机制**：`post_material` 路由在 staging 模式下（`routers.py:499` 的 `is_staging_mode` 分支）已 `return`，`auto_matver` 分支（`routers.py:513`）只在直接模式执行；`staging_auto_matver` 钩子只在 `process_staging` 路径触发，直接模式不调 `process_staging`。两条路径写不同的表（`t_mat_ver` 正式表 vs `t_mat_ver_staging` 缓冲表），**两开关同时为 true 不会重复创建产线版本**，无需互斥防护。
+
+#### 6.6.2 缓冲表自动补充机制（`staging_auto_matver`）
+
+**触发条件**：`pdv.staging_auto_matver == True`，在 `t_material` 批量校验完成后（`post_batch_hook`）执行。
+
+**钩子位置选择**：挂在 `t_material` 而非 `t_mat_wc_bom`（顺序末尾）。因 `TABLE_PROCESS_ORDER` 为 `t_material → t_mat_ver → t_workcenter → t_mat_wc → t_mat_wc_bom`，钩子须在 `t_mat_ver` 校验与 `t_mat_wc` 外键校验**之前**补充 `t_mat_ver_staging`，否则 `t_mat_wc` 外键校验 `(materialno, matver) ∈ t_mat_ver_staging` 会失败。
+
+**前置条件**：钩子扫描 `t_mat_wc_staging`/`t_mat_wc_bom_staging` 已导入数据。基于三阶段解耦设计（导入→校验→同步，见 4.1），推荐通过 `/validate_all` 整体校验。单表 `/validate?table_name=t_material` 时若 `t_mat_wc_staging` 尚未导入，钩子静默补 0 条（不报错），后续单表校验 `t_mat_wc` 时外键校验会暴露缺失，不会静默错同步。
+
+**执行流程**：
+
+```
+1. 查 t_material_staging 中 type=="E" 的料号集合
+2. 扫描 t_mat_wc_staging WHERE materialno IN (E型料号) → DISTINCT (materialno, matver)
+3. 扫描 t_mat_wc_bom_staging WHERE productno IN (E型料号) → DISTINCT (productno, matver)
+4. 合并组合 → 正则过滤 ^[A-Za-z0-9\-]+$ → 去重
+5. 查 t_mat_ver_staging 已有组合 → 差集
+6. 批量 bulk_create（_source_system="SYS_AUTO"）
+```
+
+**与逐条校验的关系**：`validate_material_type_e_rules` 中，`staging_auto_matver=True` 时不报"缺产线版本"错误（批量钩子会补充）；`False` 时报 `BUSINESS_RULE` 错误。
+
+**正则过滤**：`matver` 需匹配 `^[A-Za-z0-9\-]+$`（字母、数字、杠），不匹配的跳过（如空值、占位符 `"🈳❗"`）。
+
+**幂等性**：已存在于 `t_mat_ver_staging` 的组合跳过，不重复创建。
+
+**自动生成的记录字段**：
+
+| 字段 | 值 | 来源 |
+|------|----|------|
+| `materialno` | 扫描出的料号 | `t_mat_wc_staging.materialno` / `t_mat_wc_bom_staging.productno` |
+| `matver` | 扫描出的版本号 | `t_mat_wc_staging.matver` / `t_mat_wc_bom_staging.matver` |
+| `lotfrom` | `pdv.MATVER_LOTFROM`（默认 `0`） | `defaults.lotfrom` |
+| `lotto` | `pdv.MATVER_LOTTO`（默认 `9999999`） | `defaults.lotto` |
+| `priority` | `pdv.MATVER_PRIORITY`（默认 `0`） | `defaults.priority` |
+| `_source_system` | `"SYS_AUTO"` | 常量，标记系统自动生成 |
+
+#### 6.6.3 激活配置
+
+编辑租户配置文件 `project_files/{PROJECT_DIR}/{PROJECT_JSON}.json`，在 `defaults` 节添加 `"staging_auto_matver": true`：
+
+```json
+{
+  "defaults": {
+    "staging_auto_matver": true,
+    "lotfrom": 0,
+    "lotto": 9999999,
+    "priority": 0
+  }
+}
+```
+
+重启服务使配置生效。`auto_matver`（直接模式）保持独立配置，不受影响。
+
 ---
 
 ## 7. 去重与覆盖机制

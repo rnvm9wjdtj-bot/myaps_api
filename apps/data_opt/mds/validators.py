@@ -1,3 +1,5 @@
+import re
+
 from ._base import ErrorType
 from .staging_models import (
     ValidationError, TransformRule,
@@ -12,6 +14,9 @@ from .staging_models import (
 from globalobjects import logger as log_config, globalconst as gc, ProjectDefaultValues as pdv
 
 logger = log_config.get_logger(__name__)
+
+_MATVER_PATTERN = re.compile(r'^[A-Za-z0-9\-]+$')
+SYS_AUTO = "SYS_AUTO"
 
 
 # ==============================================
@@ -45,23 +50,81 @@ async def validate_material_type_e_rules(cleaner, data, staging_id):
         # 校验产线版本存在（从缓冲表查找）
         matver_exists = await TMatVerStaging.filter(materialno=materialno).exists()
         if not matver_exists:
-            if pdv.auto_matver:
-                # 自动生成产线版本
-                await TMatVerStaging.create(
-                    materialno=materialno,
-                    matver=pdv.MATVER,
-                    lotfrom=pdv.MATVER_LOTFROM,
-                    lotto=pdv.MATVER_LOTTO,
-                    priority=pdv.MATVER_PRIORITY,
-                    _source_system="SYS_AUTO",
-                )
-            else:
+            if not pdv.staging_auto_matver:
                 errors.append(cleaner._create_error(
-                    staging_id, ErrorType.BUSINESS_RULE, 
+                    staging_id, ErrorType.BUSINESS_RULE,
                     ["materialno", "type"],
                     materialno, "自制件必须有产线版本"
                 ))
     return errors
+
+
+async def auto_matver_from_refs_hook(processor, table_name: str, context: dict, stats: dict) -> dict:
+    """
+    批量钩子：从 t_mat_wc_staging/t_mat_wc_bom_staging 扫描产线版本组合，
+    自动补充到 t_mat_ver_staging。
+
+    触发条件：pdv.staging_auto_matver == True
+    扫描范围：E 类（自制件）料号在 t_mat_wc_staging 的 (materialno, matver)
+             和 t_mat_wc_bom_staging 的 (productno, matver)
+    过滤规则：matver 需匹配 ^[A-Za-z0-9\\-]+$（字母、数字、杠）
+    幂等性：已存在于 t_mat_ver_staging 的组合跳过
+    """
+    if not pdv.staging_auto_matver:
+        return context
+
+    e_materials = await TMaterialStaging.filter(type=gc.EfEnum.E.value).values("materialno")
+    e_material_set = {m["materialno"] for m in e_materials if m["materialno"]}
+    if not e_material_set:
+        return context
+
+    mat_wc_rows = await TMatWcStaging.filter(
+        materialno__in=list(e_material_set)
+    ).values("materialno", "matver")
+
+    mat_wc_bom_rows = await TMatWcBomStaging.filter(
+        productno__in=list(e_material_set)
+    ).values("productno", "matver")
+
+    needed_combos = set()
+    for row in mat_wc_rows:
+        mn, mv = row.get("materialno"), row.get("matver")
+        if mn and mv and _MATVER_PATTERN.match(mv):
+            needed_combos.add((mn, mv))
+    for row in mat_wc_bom_rows:
+        pn, mv = row.get("productno"), row.get("matver")
+        if pn and mv and _MATVER_PATTERN.match(mv):
+            needed_combos.add((pn, mv))
+
+    if not needed_combos:
+        return context
+
+    all_materialnos = {mn for mn, _ in needed_combos}
+    existing_rows = await TMatVerStaging.filter(
+        materialno__in=list(all_materialnos)
+    ).values("materialno", "matver")
+    existing = {(r["materialno"], r["matver"]) for r in existing_rows}
+
+    to_create = needed_combos - existing
+    if not to_create:
+        return context
+
+    new_records = [
+        TMatVerStaging(
+            materialno=mn,
+            matver=mv,
+            lotfrom=pdv.MATVER_LOTFROM,
+            lotto=pdv.MATVER_LOTTO,
+            priority=pdv.MATVER_PRIORITY,
+            _source_system=SYS_AUTO,
+        )
+        for mn, mv in to_create
+    ]
+    await TMatVerStaging.bulk_create(new_records)
+
+    logger.info(f"auto_matver_from_refs: 从 t_mat_wc/t_mat_wc_bom 补充 {len(to_create)} 条产线版本")
+
+    return context
 
 
 async def bom_structure_check_hook(processor, table_name: str, context: dict) -> dict:

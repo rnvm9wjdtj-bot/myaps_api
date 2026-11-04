@@ -58,6 +58,7 @@ if pf_dir is not None:
         defaults = PROJECT_JSON_FILE.get("defaults", {})
         no_fill_defaults = defaults.get("!no_fill_defaults", [])
         auto_matver = defaults.get("auto_matver", False)
+        staging_auto_matver = defaults.get("staging_auto_matver", False)
         matver_prefix = defaults.get("matver_prefix", "V")
         matver_width = defaults.get("matver_width", 1)
         itemno_prefix = defaults.get("itemno_prefix", "A")
