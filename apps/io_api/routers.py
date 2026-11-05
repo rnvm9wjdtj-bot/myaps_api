@@ -1131,11 +1131,14 @@ async def replace_supply(
         )
 
 
+_SUPPLY_DELETABLE_STATUS = frozenset({gc.OrderStatusEnum.NEW, gc.OrderStatusEnum.CRE})
+
+
 @rt.delete(
     "/t_supply/{supplyno}",
     tags=["生产数据 - 供应"],
     summary="删除供应记录",
-    description="根据供应号删除对应记录。也可用于完结工单。"
+    description="根据供应号删除对应记录。也可用于完结工单。仅允许删除 NEW/CRE 状态的记录。"
 )
 async def delete_supply(
     request: Request,
@@ -1149,6 +1152,31 @@ async def delete_supply(
     if bad:
         return bad
     try:
+        status_result = await db_query(
+            db_name=db_name,
+            model_or_tablename="t_supply",
+            select="Status",
+            filter_string=f"`SupplyNo`='{supplyno}'",
+        )
+        records = status_result.data or []
+        if not records:
+            return api_response(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                success=0,
+                message=f"供应号 {supplyno} 不存在，无法删除",
+                data=[],
+                meta={"supplyno": supplyno}
+            )
+        for row in records:
+            current_status = row.get("status")
+            if current_status not in _SUPPLY_DELETABLE_STATUS:
+                return api_response(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    success=0,
+                    message=f"供应号 {supplyno} 当前状态为 {current_status}，不在允许删除范围",
+                    data=[],
+                    meta={"supplyno": supplyno, "status": current_status}
+                )
         result = await call_dbprocdure(db_names=db_name, procedure_name="SupplyDeleteAll", params_list=[[supplyno]])
         return api_response(
             status_code=200,
@@ -1307,6 +1335,45 @@ async def delete_demand(
         conditions.append(("ItemNo", "=", itemno))
     filter_string = build_safe_filter(conditions)
     try:
+        supply_status_result = await db_query(
+            db_name=db_name,
+            model_or_tablename="t_supply",
+            select="Status",
+            filter_string=f"`SupplyNo`='{demandno}'",
+        )
+        supply_rows = supply_status_result.data or []
+        if not supply_rows:
+            return api_response(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                success=0,
+                message=f"供应号 {demandno} 不存在",
+                data=[],
+                meta={"demandno": demandno}
+            )
+        for row in supply_rows:
+            current_status = row.get("status")
+            if current_status is not None and current_status not in _SUPPLY_DELETABLE_STATUS:
+                return api_response(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    success=0,
+                    message=f"供应号 {demandno} 当前状态为 {current_status}，不在允许删除范围",
+                    data=[],
+                    meta={"demandno": demandno, "status": current_status}
+                )
+        demand_exist_result = await db_query(
+            db_name=db_name,
+            model_or_tablename="t_demand",
+            select="DemandNo",
+            filter_string=filter_string,
+        )
+        if not (demand_exist_result.data or []):
+            return api_response(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                success=0,
+                message=f"需求记录不存在（demandno={demandno}, materialno={materialno}, itemno={itemno}）",
+                data=[],
+                meta={"demandno": demandno, "materialno": materialno, "itemno": itemno}
+            )
         result = await db_delete(db_names=db_name, model_or_tablename="t_demand", filter_string=filter_string)
         return api_response(
             status_code=200,
@@ -1873,6 +1940,20 @@ async def delete_workreport(
         conditions.append(("ItemNo", "=", itemno))
     filter_string = build_safe_filter(conditions)
     try:
+        exist_result = await db_query(
+            db_name=db_name,
+            model_or_tablename="t_confirm",
+            select="NoID",
+            filter_string=filter_string,
+        )
+        if not (exist_result.data or []):
+            return api_response(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                success=0,
+                message=f"报工记录不存在（supplyno={supplyno}, itemno={itemno}）",
+                data=[],
+                meta={"supplyno": supplyno, "itemno": itemno}
+            )
         result = await db_delete(db_names=db_name, model_or_tablename="t_confirm", filter_string=filter_string)
         return api_response(
             status_code=200,
@@ -1912,6 +1993,20 @@ async def delete_workreport_by_noid(
     conditions = [("NoID", "=", noid)]
     filter_string = build_safe_filter(conditions)
     try:
+        exist_result = await db_query(
+            db_name=db_name,
+            model_or_tablename="t_confirm",
+            select="NoID",
+            filter_string=filter_string,
+        )
+        if not (exist_result.data or []):
+            return api_response(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                success=0,
+                message=f"报工记录不存在（noid={noid}）",
+                data=[],
+                meta={"noid": noid}
+            )
         result = await db_delete(db_names=db_name, model_or_tablename="t_confirm", filter_string=filter_string)
         return api_response(
             status_code=200,
