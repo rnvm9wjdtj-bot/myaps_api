@@ -2262,8 +2262,11 @@ function updateSqlSlowList(data) {
         <td>${escapeHtml(r.operation || '')}</td>
         <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.object || '')}">${escapeHtml(r.object || '')}</td>
         <td style="color:#ef4444;font-weight:bold;">${((r.duration || 0) * 1000).toFixed(0)}ms</td>
-        <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.sql || '')}">${escapeHtml(r.sql || '')}</td>
+        <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.sql_rendered || r.sql || '')}"><code class="language-sql">${escapeHtml(r.sql_rendered || r.sql || '')}</code></td>
     </tr>`).join('');
+    if (typeof Prism !== 'undefined' && Prism.languages.sql) {
+        tbody.querySelectorAll('code.language-sql').forEach(b => { try { Prism.highlightElement(b); } catch (e) {} });
+    }
 }
 
 // ========== 最近查询列表 ==========
@@ -2327,8 +2330,11 @@ function updateSqlRecentList(records) {
         <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.object || '')}">${escapeHtml(r.object || '')}</td>
         <td style="color:${(r.isSlow || r.is_slow) ? '#f59e0b' : (r.success === false ? '#ef4444' : '')};font-weight:${(r.isSlow || r.is_slow) || r.success === false ? 'bold' : 'normal'};">${((r.duration || 0) * 1000).toFixed(0)}ms</td>
         <td>${formatRecentStatus(r).text}</td>
-        <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.sql || '')}">${escapeHtml(r.sql || '')}</td>
+        <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.sql_rendered || r.sql || '')}"><code class="language-sql">${escapeHtml(r.sql_rendered || r.sql || '')}</code></td>
     </tr>`).join('');
+    if (typeof Prism !== 'undefined' && Prism.languages.sql) {
+        tbody.querySelectorAll('code.language-sql').forEach(b => { try { Prism.highlightElement(b); } catch (e) {} });
+    }
 }
 
 function formatRecentStatus(record) {
@@ -2358,6 +2364,10 @@ function toggleRecentRowDetail(rowIdx) {
     if (!record) return;
     row.insertAdjacentHTML('afterend', renderRecentDetailRow(record));
     _expandedRecentRowIdx = rowIdx;
+    if (typeof Prism !== 'undefined' && Prism.languages.sql) {
+        const code = document.querySelector('#sql-recent-tbody tr.recent-detail-row code.language-sql');
+        if (code) { try { Prism.highlightElement(code); } catch (e) {} }
+    }
 }
 
 function renderRecentDetailRow(record) {
@@ -2375,7 +2385,7 @@ function renderRecentDetailRow(record) {
     const stack = record.stack ? `<pre style="white-space:pre-wrap;max-height:200px;overflow-y:auto;background:#f5f5f5;padding:8px;border-radius:4px;">${escapeHtml(record.stack)}</pre>` : noStack;
 
     return `<tr class="recent-detail-row"><td colspan="7" style="background:#fafafa;padding:12px;">
-        <div style="margin-bottom:8px;"><strong>${sqlLabel}:</strong><pre style="white-space:pre-wrap;max-height:300px;overflow-y:auto;background:#f5f5f5;padding:8px;border-radius:4px;">${escapeHtml(record.sql || '')}</pre></div>
+        <div style="margin-bottom:8px;"><strong>${sqlLabel}:</strong><pre style="white-space:pre-wrap;max-height:300px;overflow-y:auto;background:#f5f5f5;padding:8px;border-radius:4px;"><code class="language-sql">${escapeHtml(record.sql_rendered || record.sql || '')}</code></pre></div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;">
             <div><strong>${paramsLabel}:</strong> ${params}</div>
             <div><strong>${durationLabel}:</strong> ${((record.duration || 0) * 1000).toFixed(0)}ms</div>

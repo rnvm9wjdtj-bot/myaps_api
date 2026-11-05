@@ -11,6 +11,7 @@ import time
 import re
 import random
 import asyncio
+import datetime
 import traceback
 from collections import deque
 from typing import Optional, Dict, Any, List, Callable
@@ -79,6 +80,8 @@ _DDL_OBJECT_PATTERN = re.compile(
 _CALL_PATTERN = re.compile(rf'\bCALL\s+({_IDENT})', re.IGNORECASE)
 # SQL 字符串字面量（单引号，支持 '' 转义）
 _SQL_STRING_PATTERN = re.compile(r"'(?:[^']|'')*'")
+# 非占位符的 % （即 % 后面不是 s 也不是 (name)s），需 escape 为 %% 避免 str.__mod__ 误解析
+_NON_PLACEHOLDER_PERCENT = re.compile(r"%(?!s|\(\w+\)s)")
 
 
 def extract_sql_object(sql: str) -> str:
@@ -103,6 +106,66 @@ def extract_sql_object(sql: str) -> str:
                 seen.add(name)
                 result.append(name)
     return ', '.join(result)
+
+
+def _readable_value(v: Any) -> Any:
+    """递归把 params 中的日期等对象转为可读字符串，其他原样。
+
+    datetime/date/time → isoformat（T 替换为空格，保留时区信息）；
+    list/tuple/dict 递归处理元素；其他类型原样返回。
+    """
+    if isinstance(v, datetime.datetime):
+        return v.isoformat().replace('T', ' ')
+    if isinstance(v, datetime.date):
+        return v.isoformat()
+    if isinstance(v, datetime.time):
+        return v.isoformat()
+    if isinstance(v, (list, tuple)):
+        return type(v)(_readable_value(x) for x in v)
+    if isinstance(v, dict):
+        return {k: _readable_value(x) for k, x in v.items()}
+    return v
+
+
+def _sql_value_repr(v: Any) -> str:
+    """参数值转 SQL 字面量表示，用于渲染可读 SQL。"""
+    if v is None:
+        return 'NULL'
+    if isinstance(v, bool):
+        return 'TRUE' if v else 'FALSE'
+    if isinstance(v, (int, float)):
+        return str(v)
+    if isinstance(v, (datetime.datetime, datetime.date, datetime.time)):
+        return "'" + v.isoformat().replace('T', ' ') + "'"
+    return "'" + str(v).replace("'", "''") + "'"
+
+
+def render_sql(sql: str, params: Any) -> str:
+    """将参数整合进 SQL 模板，生成可读的完整 SQL。
+
+    支持 %s、%(name)s、? 占位符；参数值按 SQL 字面量渲染（字符串加引号、None→NULL）。
+    渲染失败（参数数量不匹配、含 % 字面量等）回退到原模板。
+    """
+    if not sql:
+        return ''
+    if not params:
+        return sql
+    try:
+        if isinstance(params, dict) and '%(' in sql:
+            safe = {k: _sql_value_repr(v) for k, v in params.items()}
+            return _NON_PLACEHOLDER_PERCENT.sub('%%', sql) % safe
+        if isinstance(params, (list, tuple)):
+            if '%s' in sql:
+                safe = tuple(_sql_value_repr(p) for p in params)
+                return _NON_PLACEHOLDER_PERCENT.sub('%%', sql) % safe
+            if '?' in sql:
+                rendered = sql
+                for p in params:
+                    rendered = rendered.replace('?', _sql_value_repr(p), 1)
+                return rendered
+    except Exception:
+        pass
+    return sql
 
 
 # ========== Prometheus 指标（独立 Registry，参考 binlog） ==========
@@ -167,7 +230,8 @@ class DBQueryCollector:
                 'connection': connection,
                 'object': extract_sql_object(sql),
                 'sql': self._truncate(sql, 2000),
-                'params': self._truncate(str(params), 500),
+                'sql_rendered': self._truncate(render_sql(sql, params), 2000),
+                'params': self._truncate(str(_readable_value(params)), 500),
                 'duration': duration,
                 'success': success,
                 'affected': affected,

@@ -1712,6 +1712,11 @@ code[class*="language-"] {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+#sql-slow-table code.language-sql, #sql-recent-table code.language-sql {
+    background: none;
+    padding: 0;
+    border-radius: 0;
+}
 
 /* 监控暂停模态框样式 */
 #inactivity-modal .modal-content {
