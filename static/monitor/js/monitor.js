@@ -2163,23 +2163,46 @@ async function fetchDatabaseDetail() {
     }
 }
 
+const SQL_LIST_REFRESH_INTERVAL = 10000;
+let _slowQueryRefreshTimer = null;
+let _recentQueryRefreshTimer = null;
+
+function _scheduleSlowQueryRefresh() {
+    _slowQueryRefreshTimer = setTimeout(async () => {
+        await fetchDbSlowQueries();
+        _scheduleSlowQueryRefresh();
+    }, SQL_LIST_REFRESH_INTERVAL);
+}
+function _scheduleRecentQueryRefresh() {
+    _recentQueryRefreshTimer = setTimeout(async () => {
+        await fetchDbRecentQueries();
+        _scheduleRecentQueryRefresh();
+    }, SQL_LIST_REFRESH_INTERVAL);
+}
+
 function openSlowQueryModal() {
     const m = document.getElementById('sql-slow-modal');
     if (m) m.style.display = 'flex';
     fetchDbSlowQueries();
+    if (_slowQueryRefreshTimer) clearTimeout(_slowQueryRefreshTimer);
+    _scheduleSlowQueryRefresh();
 }
 function closeSlowQueryModal() {
     const m = document.getElementById('sql-slow-modal');
     if (m) m.style.display = 'none';
+    if (_slowQueryRefreshTimer) { clearTimeout(_slowQueryRefreshTimer); _slowQueryRefreshTimer = null; }
 }
 function openRecentQueryModal() {
     const m = document.getElementById('sql-recent-modal');
     if (m) m.style.display = 'flex';
     fetchDbRecentQueries();
+    if (_recentQueryRefreshTimer) clearTimeout(_recentQueryRefreshTimer);
+    _scheduleRecentQueryRefresh();
 }
 function closeRecentQueryModal() {
     const m = document.getElementById('sql-recent-modal');
     if (m) m.style.display = 'none';
+    if (_recentQueryRefreshTimer) { clearTimeout(_recentQueryRefreshTimer); _recentQueryRefreshTimer = null; }
 }
 
 async function fetchDbQueryStats() {
