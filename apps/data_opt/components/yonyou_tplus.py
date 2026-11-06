@@ -3,7 +3,7 @@
 文档地址：https://open.chanjet.com/docs/file/apiFile/tcloud/
 """
 import json, time, inspect, asyncio
-from typing import Dict, Any, Literal, Optional, NamedTuple, Type, Callable
+from typing import Dict, Any, Literal, Optional, NamedTuple, Type, Callable, List
 from datetime import datetime, timedelta, date
 import pandas as pd
 from pydantic.v1.errors import cls_kwargs
@@ -11,7 +11,7 @@ from pydantic.v1.errors import cls_kwargs
 from globalobjects import globalconst as gc
 from core.settings import MYAPS_MAIN_DB
 
-from . import ApsPayloadSponsor, EventResultPoster
+from . import ApsPayloadSponsor, EventResultPoster, CacheItem
 from ._base import (
     PydanticModel, JSONManager, 
     logger,
@@ -363,6 +363,10 @@ class PrPushModel(PydanticModel):
             'Code': now_stamp,
             'RequisitionPerson': {"Code": CACHE_ERP.get("$RequisitionPerson", "")}
         }
+        # 取出生产缓存（由 TplusPr.create 注入）
+        production_cache = None
+        if isinstance(values, dict):
+            production_cache = values.get(gc.StaticString.PRODUCTION_CACHE_KEY.value)
         # 处理直接传递列表的情况
         if isinstance(values, list):
             data_list = values
@@ -386,9 +390,15 @@ class PrPushModel(PydanticModel):
             
             if avail_date < earliest_req_date:
                 earliest_req_date = avail_date
+            # 从物料缓存取单位
+            unit = ""
+            if production_cache:
+                material_list = production_cache.get_material(_['materialno'])
+                if material_list:
+                    unit = material_list[0].get('unit', "") or ""
             prd.append({
                 'Inventory': {'Code': _['materialno']},
-                'Unit': {},
+                'Unit': {'Code': unit, 'Name': unit},
                 'Quantity': _['avail_qty'],
                 'RequireDate': avail_date,
             })
@@ -1214,6 +1224,7 @@ class TplusPr(BaseVoucher):
         event_data_list: list[dict],
         _erp: EventResultPoster,
         pydantic_model: Type[PydanticModel] = None,
+        production_cache_items: List[CacheItem] = None,
         **kwargs
     ):
         if not event_data_list:
@@ -1226,6 +1237,15 @@ class TplusPr(BaseVoucher):
             
             logger.info(f"开始推送请购单，共 {len(event_data_list)} 条原始数据")
             
+            # 建立生产缓存（含物料主数据，供 PrPushModel 取单位）
+            _production_cache = None
+            if production_cache_items:
+                _aps = ApsPayloadSponsor(production_cache_items=production_cache_items)
+                supply_nos = [s['supplyno'] for s in event_data_list if s.get('supplyno')]
+                if supply_nos:
+                    await _aps.establish_production_cache(supplynos=supply_nos)
+                    _production_cache = _aps._production_cache
+            
             pr_batches = await ApsPayloadSponsor.aggregate_pr_data(pr_data_list=event_data_list)
             
             for batch_idx, (batch_agg_data, batch_supplynos) in enumerate(pr_batches, 1):
@@ -1233,7 +1253,10 @@ class TplusPr(BaseVoucher):
                               f"处理 {len(batch_agg_data)} 条聚合数据，对应 {len(batch_supplynos)} 条原始记录")
                 
                 try:
-                    tplus_pr_data = pydantic_model(data=batch_agg_data).model_dump(exclude_none=True)
+                    model_kwargs = {'data': batch_agg_data}
+                    if _production_cache is not None:
+                        model_kwargs[gc.StaticString.PRODUCTION_CACHE_KEY.value] = _production_cache
+                    tplus_pr_data = pydantic_model(**model_kwargs).model_dump(exclude_none=True)
                     payload = {"dto": tplus_pr_data}
                     endpoint = cls._CREATE_ENDPOINT
                     pr_create_response_json = await cls._CONNECTION._post(endpoint=endpoint, data=payload)

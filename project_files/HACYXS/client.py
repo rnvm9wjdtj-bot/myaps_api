@@ -204,6 +204,7 @@ async def batch_handle_pr_status_a2e(pr_data_list: list[dict], _erp: EventResult
     await TplusPr.create(
         event_data_list=pr_data_list,
         _erp=_erp,
+        production_cache_items=[CacheItem.SUPPLY_MO, CacheItem.DEMAND, CacheItem.MATERIAL],
         auto_approve=_AUTO_APPROVE_PR,
     )
 
