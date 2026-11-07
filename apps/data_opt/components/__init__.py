@@ -1397,6 +1397,25 @@ class ApsPayloadSponsor:
         return self._production_cache
 
 
+    @async_aps_error_handler("建立物料缓存")
+    async def establish_material_cache(
+        self,
+        material_nos: List[str],
+        db_name: str = MYAPS_MAIN_DB,
+    ) -> _ProductionDataCache:
+        """
+        按 materialno 直接建立物料主数据缓存（不依赖 supply_mo/demand）
+
+        Args:
+            material_nos: MaterialNo 列表
+            db_name: 数据库名称，默认主账套
+        """
+        await self._production_cache._build_material_cache(
+            db_name=db_name, material_nos=material_nos
+        )
+        return self._production_cache
+
+
     @classmethod
     async def _call_api(cls, method: str, url: str, **kwargs) -> Dict[str, Any]:
         """

@@ -398,7 +398,8 @@ class PrPushModel(PydanticModel):
                     unit = material_list[0].get('unit', "") or ""
             prd.append({
                 'Inventory': {'Code': _['materialno']},
-                'Unit': {'Code': unit, 'Name': unit},
+                # 'Unit': {'Code': unit, 'Name': unit},
+                'Unit': {'Name': unit},
                 'Quantity': _['avail_qty'],
                 'RequireDate': avail_date,
             })
@@ -1237,13 +1238,13 @@ class TplusPr(BaseVoucher):
             
             logger.info(f"开始推送请购单，共 {len(event_data_list)} 条原始数据")
             
-            # 建立生产缓存（含物料主数据，供 PrPushModel 取单位）
+            # 建立物料缓存（PR 的 supplyno 不在 v_supply_mo 视图中，需直接按 materialno 加载）
             _production_cache = None
             if production_cache_items:
                 _aps = ApsPayloadSponsor(production_cache_items=production_cache_items)
-                supply_nos = [s['supplyno'] for s in event_data_list if s.get('supplyno')]
-                if supply_nos:
-                    await _aps.establish_production_cache(supplynos=supply_nos)
+                material_nos = list({s.get('materialno') for s in event_data_list if s.get('materialno')})
+                if material_nos:
+                    await _aps.establish_material_cache(material_nos=material_nos)
                     _production_cache = _aps._production_cache
             
             pr_batches = await ApsPayloadSponsor.aggregate_pr_data(pr_data_list=event_data_list)
