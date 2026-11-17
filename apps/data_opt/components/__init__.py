@@ -436,7 +436,7 @@ class _ProductionDataCache:
             cache_factory=lambda: defaultdict(list),
             process_item=process_item,
             filter_string=filter_string,
-            order_fields=[("OrderNo", "ASC")]
+            order_fields=[("SortNo", "ASC"), ("OrderNo", "ASC")]
         )
 
 
@@ -2089,7 +2089,7 @@ class ApsPayloadSponsor:
         """
         try:
             async def get_orderwc(mono: str):
-                orderwc: DbResult = await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=f"`SupplyNo`='{mono}'")
+                orderwc: DbResult = await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=f"`SupplyNo`='{mono}'", order_string="SortNo ASC, OrderNo ASC")
                 return orderwc.data
 
             async def get_pred_mo(mono: str):
