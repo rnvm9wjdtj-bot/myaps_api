@@ -6,9 +6,9 @@
 
 ### 签名算法
 ```
-sign = md5(json.dumps(body, ensure_ascii=False) + erptimestamp + access_key_secret).lower()
+sign = md5(param + erptimestamp + access_key_secret).lower()
 ```
-- **POST**：param = 完整 JSON body（`json.dumps` 后的字符串）
+- **POST**：`param = json.dumps(body, ensure_ascii=False, separators=(',', ':'))`（**必须用 compact separators 去掉空格**，否则签名不合法）
 - **GET**：param = URL 参数按 ASCII 字典序排序拼接（`k1=v1&k2=v2`）
 - Header 传 `sign` / `erptimestamp` / `Content-Type`，**不需要 memberId**
 - `erptimestamp` 为毫秒级时间戳字符串
@@ -197,6 +197,11 @@ await ImeRoute.create(data=event_data_list)             # 后工艺路线
 ### 5.2 returnCode=11 是密钥错误
 - **现象**：`returnCode=11`，曾误判为 memberId 缺失
 - **解决**：检查 `access_key_secret` 是否正确
+
+### 5.2b returnCode=-6 签名不合法（json.dumps 缺 separators）
+- **现象**：`returnCode=-6, returnMsg="签名不合法"`，明珞方收紧签名校验后暴露
+- **根因**：`json.dumps` 默认在 `,` 和 `:` 后加空格（`{"k": "v"}`），明珞方要求 compact 格式（`{"k":"v"}`），MD5 签名因空格差异不一致
+- **解决**：`json.dumps(body, ensure_ascii=False, separators=(',', ':'))`
 
 ### 5.3 工序 standardCapacity 文档标选填但实际必填
 - **现象**：不传 `standardCapacity` 时明珞 500 NPE

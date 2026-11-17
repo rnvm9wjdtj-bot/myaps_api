@@ -132,7 +132,7 @@ class ImeConnection(ExternalBaseConnection):
         if method.upper() == "GET":
             param = _sort_params(params or {})
         else:
-            param = json.dumps(body, ensure_ascii=False) if body else ""
+            param = json.dumps(body, ensure_ascii=False, separators=(',', ':')) if body else ""
         
         sign = _generate_sign(param, erptimestamp)
         
@@ -561,11 +561,14 @@ class ImeMo(MoVoucher):
             mo_create_response_json = await cls._CONNECTION._post(endpoint=endpoint, data=payload)
 
             if mo_create_response_json.get("success"):
+                ok_msg = mo_create_response_json.get("errorMessage") or mo_create_response_json.get("returnMsg")
                 await _erp.mo_release_success(
                     native_plno=supplyno,
+                    msg=ok_msg,
+                    msg_from='MES',
                 )
             else:
-                err_msg = mo_create_response_json.get("errorMessage")
+                err_msg = mo_create_response_json.get("errorMessage") or mo_create_response_json.get("returnMsg")
                 await _erp.mo_release_failed(
                     native_plno=supplyno,
                     msg=err_msg,
