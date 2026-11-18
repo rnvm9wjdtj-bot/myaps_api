@@ -436,7 +436,7 @@ class _ProductionDataCache:
             cache_factory=lambda: defaultdict(list),
             process_item=process_item,
             filter_string=filter_string,
-            order_fields=[("SortNo", "ASC"), ("OrderNo", "ASC")]
+            order_fields=[("SupplyNo", "ASC"), ("SortNo", "ASC"), ("OrderNo", "ASC")]
         )
 
 
@@ -470,7 +470,7 @@ class _ProductionDataCache:
             cache_factory=lambda: defaultdict(list),
             process_item=process_item,
             filter_string=filter_string,
-            order_fields=[("MaterialNo", "ASC"), ("DemandNo", "ASC"), ("ItemNo", "ASC")]
+            order_fields=[("DemandNo", "ASC"), ("MaterialNo", "ASC"), ("ItemNo", "ASC")]
         )
 
 
@@ -2089,14 +2089,24 @@ class ApsPayloadSponsor:
         """
         try:
             async def get_orderwc(mono: str):
-                orderwc: DbResult = await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=f"`SupplyNo`='{mono}'", order_string="SortNo ASC, OrderNo ASC")
+                orderwc: DbResult = await db_query(
+                    db_name=db_name,
+                    model_or_tablename="v_orderwc",
+                    filter_string=f"`SupplyNo`='{mono}'",
+                    order_string="SupplyNo ASC, SortNo ASC, OrderNo ASC"
+                )
                 return orderwc.data
 
             async def get_pred_mo(mono: str):
                 """
                 通过工单 supplyno 号查询前 前置 工单
                 """
-                for_demands: DbResult = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=f"`DemandNo`='{mono}' AND `Type` IN ('DM', 'RS', 'PR', 'PO')")
+                for_demands: DbResult = await db_query(
+                    db_name=db_name,
+                    model_or_tablename="v_demand",
+                    filter_string=f"`DemandNo`='{mono}' AND `Type` IN ('DM', 'RS', 'PR', 'PO')",
+                    order_string="DemandNo ASC, MaterialNo ASC, ItemNo ASC"
+                )
                 demands_data = for_demands.data
                 pred_mo = []
                 if demands_data:
@@ -2142,7 +2152,8 @@ class ApsPayloadSponsor:
                 so_query_result: DbResult = await db_query(
                     db_name=db_name,
                     model_or_tablename="v_demand",
-                    filter_string=f"`DemandNo`='{so_demandno}' AND `Type`='SO'"
+                    filter_string=f"`DemandNo`='{so_demandno}' AND `Type`='SO'",
+                    order_string="DemandNo ASC, MaterialNo ASC, ItemNo ASC"
                 )
                 so_data = so_query_result.data
                 if so_data:
@@ -2167,7 +2178,12 @@ class ApsPayloadSponsor:
                 if next_mo:
                     result.data[0][ce.NEXT_MO_KEY.value] = await get_next_mo(supplyno)
                 if with_demand:
-                    demand_res: DbResult = await db_query(db_name=db_name, model_or_tablename="t_demand", filter_string=f"`DemandNo`='{supplyno}'")
+                    demand_res: DbResult = await db_query(
+                        db_name=db_name,
+                        model_or_tablename="t_demand",
+                        filter_string=f"`DemandNo`='{supplyno}'",
+                        order_string="DemandNo ASC, MaterialNo ASC, ItemNo ASC"
+                    )
                     result.data[0][ce.DEMAND_LIST_KEY.value] = demand_res.data if (demand_res.success and demand_res.data) else []
 
             return result
@@ -2191,7 +2207,12 @@ class ApsPayloadSponsor:
             return result_data
         
         filter_string = f"`DemandNo`='{demandno}'"
-        demand_response_json: DbResult = await db_query(db_name=MYAPS_MAIN_DB, model_or_tablename="v_demand", filter_string=filter_string)
+        demand_response_json: DbResult = await db_query(
+            db_name=MYAPS_MAIN_DB,
+            model_or_tablename="v_demand",
+            filter_string=filter_string,
+            order_string="DemandNo ASC, MaterialNo ASC, ItemNo ASC"
+        )
         api_data = demand_response_json.data
         
         if api_data:

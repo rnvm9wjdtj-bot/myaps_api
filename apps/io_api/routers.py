@@ -1186,7 +1186,12 @@ async def get_demand(
     filter_demand = build_safe_condition("DemandNo", "=", demandno)
     filter_supply = build_safe_condition("SupplyNo", "=", demandno)
     try:
-        result_demand = await db_query(db_name=db_name, model_or_tablename="v_demand", filter_string=filter_demand)
+        result_demand = await db_query(
+            db_name=db_name,
+            model_or_tablename="v_demand",
+            filter_string=filter_demand,
+            order_string="DemandNo ASC, MaterialNo ASC, ItemNo ASC"
+        )
         result_supply = await db_query(db_name=db_name, model_or_tablename="v_supply_mo", filter_string=filter_supply)
         meta = dict(result_demand.meta or {})
         if result_supply.success and result_supply.data:
@@ -1586,7 +1591,12 @@ async def get_orderwc(
     from globalobjects.db_manager import build_safe_condition
     filter_string = build_safe_condition("SupplyNo", "=", supplyno)
     try:
-        result = await db_query(db_name=db_name, model_or_tablename="v_orderwc", filter_string=filter_string)
+        result = await db_query(
+            db_name=db_name,
+            model_or_tablename="v_orderwc",
+            filter_string=filter_string,
+            order_string="SupplyNo ASC, SortNo ASC, OrderNo ASC"
+        )
         return api_response(
             status_code=status.HTTP_200_OK,
             success=result.success,
